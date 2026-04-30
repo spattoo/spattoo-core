@@ -5,6 +5,7 @@ const DEFAULT_DESIGN = {
     { color: '#f5b8c8', topPiping: null, bottomPiping: null },
   ],
   texts: [],
+  stickers: [],
   topper: null,
 };
 
@@ -97,6 +98,44 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, texts: prev.texts.filter(t => t.id !== id) }));
   }
 
+  function addSticker(element, zone, tierIndex, placementMode, position = {}) {
+    setDesign(prev => ({
+      ...prev,
+      stickers: [...prev.stickers, {
+        id:            Date.now(),
+        elementId:     element.id,
+        imageUrl:      element.image_url,
+        name:          element.name,
+        zone,
+        tierIndex:     tierIndex ?? 0,
+        placementMode: placementMode ?? 'hug',
+        theta:         position.theta ?? 0,
+        y:             position.y    ?? (BOTTOM_BASE + BOTTOM_H * 0.45),
+        x:             position.x    ?? 0,
+        z:             position.z    ?? 0,
+        scale:         1,
+        rotation:      0,
+        color:         null,
+        allowedActions: {
+          resize: element.allowed_actions?.resize ?? true,
+          color:  element.allowed_actions?.color  ?? false,
+          delete: true,
+        },
+      }],
+    }));
+  }
+
+  function updateSticker(id, changes) {
+    setDesign(prev => ({
+      ...prev,
+      stickers: prev.stickers.map(s => s.id === id ? { ...s, ...changes } : s),
+    }));
+  }
+
+  function removeSticker(id) {
+    setDesign(prev => ({ ...prev, stickers: prev.stickers.filter(s => s.id !== id) }));
+  }
+
   function setTopper(topper) {
     setDesign(prev => ({
       ...prev,
@@ -136,7 +175,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           ...(t.height != null  && { height: t.height }),
         };
       }),
-      texts: templateDesign.texts ?? [],
+      texts:    templateDesign.texts    ?? [],
+      stickers: templateDesign.stickers ?? [],
       topper: templateDesign.topper ? { ...templateDesign.topper, scale: templateDesign.topper.scale ?? 1 } : null,
     });
   }
@@ -150,8 +190,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       topPiping:    t.topPiping ?? null,
       bottomPiping: t.bottomPiping ?? null,
     })),
-    texts: design.texts,
-    topper: design.topper ?? null,
+    texts:    design.texts,
+    stickers: design.stickers,
+    topper:   design.topper ?? null,
   }), [design]);
 
   return {
@@ -159,6 +200,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierColor, setTopPiping, setBottomPiping,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
+    addSticker, updateSticker, removeSticker,
     setTopper, setTopperScale,
     loadDesign,
     canvasConfig,

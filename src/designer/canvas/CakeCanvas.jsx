@@ -1,6 +1,6 @@
-import { useRef, useMemo, useEffect, Suspense } from 'react';
+import { useRef, useMemo, useEffect, Suspense, Component } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Text3D, Center, Html, Environment, useGLTF } from '@react-three/drei';
+import { OrbitControls, Text3D, Center, Html, Environment, useGLTF, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
@@ -197,6 +197,332 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
   );
 }
 
+// ── Sticker components ────────────────────────────────────────────────────────
+
+const STICKER_SIZE = 0.28;
+
+class TextureErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() { return this.state.error ? null : this.props.children; }
+}
+
+function StickerTexture({ imageUrl, selected }) {
+  const texture = useTexture(imageUrl);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return (
+    <mesh>
+      <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+      <meshStandardMaterial
+        map={texture}
+        transparent
+        alphaTest={0.05}
+        roughness={0.75}
+        emissive={selected ? '#6c47ff' : '#000000'}
+        emissiveIntensity={selected ? 0.2 : 0}
+        side={THREE.DoubleSide}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+function StickerModel({ imageUrl, selected, color }) {
+  const { scene } = useGLTF(imageUrl);
+
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.updateMatrixWorld(true);
+    clone.traverse(obj => {
+      if (!obj.isMesh) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
+    });
+    return clone;
+  }, [scene]);
+
+  const { scale, position } = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(clonedScene);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
+    return { scale: sc, position: [-center.x * sc, -center.y * sc, -center.z * sc] };
+  }, [clonedScene]);
+
+  useEffect(() => {
+    clonedScene.traverse(obj => {
+      if (!obj.isMesh) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(mat => {
+        if (!mat.map && color) mat.color = new THREE.Color(color);
+        if (mat.emissive !== undefined) {
+          mat.emissive = new THREE.Color(selected ? '#6c47ff' : '#000000');
+          mat.emissiveIntensity = selected ? 0.2 : 0;
+        }
+        mat.needsUpdate = true;
+      });
+    });
+  }, [clonedScene, selected, color]);
+
+  return <primitive object={clonedScene} scale={scale} position={position} />;
+}
+
+function StickerFace({ imageUrl, selected, color }) {
+  if (!imageUrl) return null;
+  const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
+  return (
+    <TextureErrorBoundary>
+      <Suspense fallback={null}>
+        {isGlb
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} />
+        }
+      </Suspense>
+    </TextureErrorBoundary>
+  );
+}
+
+const OUTLINE_GEOM = new THREE.EdgesGeometry(new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE));
+const HANDLE_R = 0.06;
+
+function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSelect, onMove, onOrbitEnable, toolbar }) {
+  const { camera, gl } = useThree();
+  const didDrag      = useRef(false);
+  const startPos     = useRef({ x: 0, y: 0 });
+  const startHit     = useRef(null);
+  const startSticker = useRef(null);
+
+  const surfaceR = radius + 0.025;
+  const cx = surfaceR * Math.sin(sticker.theta);
+  const cz = surfaceR * Math.cos(sticker.theta);
+
+  function pointerRay(e) {
+    const rect = gl.domElement.getBoundingClientRect();
+    const ndx  = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    const ndy  = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    const rc   = new THREE.Raycaster();
+    rc.setFromCamera({ x: ndx, y: ndy }, camera);
+    return rc.ray;
+  }
+
+  return (
+    <group
+      position={[cx, sticker.y, cz]}
+      rotation={[0, sticker.theta, 0]}
+      scale={sticker.scale}
+    >
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} />
+      {selected && toolbar && (
+        <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
+          {toolbar}
+        </Html>
+      )}
+      {selected && (
+        <lineSegments geometry={OUTLINE_GEOM} position={[0, 0, 0.001]} renderOrder={1}>
+          <lineBasicMaterial color="#ffffff" depthTest={false} />
+        </lineSegments>
+      )}
+      <mesh
+        position={[0, 0, 0.001]}
+        onPointerDown={e => {
+          e.stopPropagation();
+          didDrag.current      = false;
+          startPos.current     = { x: e.clientX, y: e.clientY };
+          startHit.current     = cylinderHit(pointerRay(e), surfaceR);
+          startSticker.current = { theta: sticker.theta, y: sticker.y };
+          onOrbitEnable(false);
+
+          const canvas = gl.domElement;
+          function onMoveHandler(ev) {
+            const dx = ev.clientX - startPos.current.x;
+            const dy = ev.clientY - startPos.current.y;
+            if (dx * dx + dy * dy > 25) didDrag.current = true;
+            if (didDrag.current && startHit.current) {
+              const hit = cylinderHit(pointerRay(ev), surfaceR);
+              if (hit) onMove(sticker.id, {
+                theta: startSticker.current.theta + (hit.theta - startHit.current.theta),
+                y: Math.max(baseY + 0.05, Math.min(baseY + height - 0.05,
+                     startSticker.current.y + (hit.y - startHit.current.y))),
+              });
+            }
+          }
+          function onUp() {
+            onOrbitEnable(true);
+            if (!didDrag.current) onSelect(sticker.id);
+            canvas.removeEventListener('pointermove', onMoveHandler);
+            canvas.removeEventListener('pointerup', onUp);
+          }
+          canvas.addEventListener('pointermove', onMoveHandler);
+          canvas.addEventListener('pointerup', onUp);
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      {selected && sticker.allowedActions?.resize !== false && (
+        <group position={[STICKER_SIZE / 2, -STICKER_SIZE / 2, 0.012]} scale={1 / sticker.scale}>
+          <mesh>
+            <circleGeometry args={[HANDLE_R + 0.015, 12]} />
+            <meshBasicMaterial color="#888888" />
+          </mesh>
+          <mesh
+            position={[0, 0, 0.001]}
+            onPointerDown={e => {
+              e.stopPropagation();
+              onOrbitEnable(false);
+              const rect = gl.domElement.getBoundingClientRect();
+              const ndc  = new THREE.Vector3(cx, sticker.y, cz).project(camera);
+              const scx  = (ndc.x + 1) / 2 * rect.width  + rect.left;
+              const scy  = (-ndc.y + 1) / 2 * rect.height + rect.top;
+              const d0   = Math.hypot(e.clientX - scx, e.clientY - scy);
+              const s0   = sticker.scale;
+              function onResizeMove(ev) {
+                const d = Math.hypot(ev.clientX - scx, ev.clientY - scy);
+                if (d0 > 2) onMove(sticker.id, { scale: Math.max(0.25, Math.min(3, s0 * d / d0)) });
+              }
+              function onResizeUp() {
+                onOrbitEnable(true);
+                gl.domElement.removeEventListener('pointermove', onResizeMove);
+                gl.domElement.removeEventListener('pointerup', onResizeUp);
+              }
+              gl.domElement.addEventListener('pointermove', onResizeMove);
+              gl.domElement.addEventListener('pointerup', onResizeUp);
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <circleGeometry args={[HANDLE_R, 12]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        </group>
+      )}
+    </group>
+  );
+}
+
+function DraggableTopSticker({ sticker, topY, selected, onSelect, onMove, onOrbitEnable, toolbar }) {
+  const { camera, gl } = useThree();
+  const didDrag      = useRef(false);
+  const startPos     = useRef({ x: 0, y: 0 });
+  const startHit     = useRef(null);
+  const startSticker = useRef(null);
+  const plane        = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
+
+  const py = topY + 0.025;
+  const rotation = sticker.placementMode === 'stand'
+    ? [0, sticker.rotation ?? 0, 0]
+    : [-Math.PI / 2, 0, sticker.rotation ?? 0];
+
+  function pointerRay(e) {
+    const rect = gl.domElement.getBoundingClientRect();
+    const ndx  = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    const ndy  = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    const rc   = new THREE.Raycaster();
+    rc.setFromCamera({ x: ndx, y: ndy }, camera);
+    return rc.ray;
+  }
+
+  function planeHit(ray) {
+    const target = new THREE.Vector3();
+    return ray.intersectPlane(plane, target) ? { x: target.x, z: target.z } : null;
+  }
+
+  return (
+    <group
+      position={[sticker.x, py, sticker.z]}
+      rotation={rotation}
+      scale={sticker.scale}
+    >
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} />
+      {selected && toolbar && (
+        <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
+          {toolbar}
+        </Html>
+      )}
+      {selected && (
+        <lineSegments geometry={OUTLINE_GEOM} position={[0, 0, 0.001]} renderOrder={1}>
+          <lineBasicMaterial color="#ffffff" depthTest={false} />
+        </lineSegments>
+      )}
+      <mesh
+        position={[0, 0, 0.001]}
+        onPointerDown={e => {
+          e.stopPropagation();
+          didDrag.current      = false;
+          startPos.current     = { x: e.clientX, y: e.clientY };
+          startHit.current     = planeHit(pointerRay(e));
+          startSticker.current = { x: sticker.x, z: sticker.z };
+          onOrbitEnable(false);
+
+          const canvas = gl.domElement;
+          function onMoveHandler(ev) {
+            const dx = ev.clientX - startPos.current.x;
+            const dy = ev.clientY - startPos.current.y;
+            if (dx * dx + dy * dy > 25) didDrag.current = true;
+            if (didDrag.current && startHit.current) {
+              const hit = planeHit(pointerRay(ev));
+              if (hit) onMove(sticker.id, {
+                x: startSticker.current.x + (hit.x - startHit.current.x),
+                z: startSticker.current.z + (hit.z - startHit.current.z),
+              });
+            }
+          }
+          function onUp() {
+            onOrbitEnable(true);
+            if (!didDrag.current) onSelect(sticker.id);
+            canvas.removeEventListener('pointermove', onMoveHandler);
+            canvas.removeEventListener('pointerup', onUp);
+          }
+          canvas.addEventListener('pointermove', onMoveHandler);
+          canvas.addEventListener('pointerup', onUp);
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      {selected && sticker.allowedActions?.resize !== false && (
+        <group position={[STICKER_SIZE / 2, -STICKER_SIZE / 2, 0.012]} scale={1 / sticker.scale}>
+          <mesh>
+            <circleGeometry args={[HANDLE_R + 0.015, 12]} />
+            <meshBasicMaterial color="#888888" />
+          </mesh>
+          <mesh
+            position={[0, 0, 0.001]}
+            onPointerDown={e => {
+              e.stopPropagation();
+              onOrbitEnable(false);
+              const rect = gl.domElement.getBoundingClientRect();
+              const ndc  = new THREE.Vector3(sticker.x, py, sticker.z).project(camera);
+              const scx  = (ndc.x + 1) / 2 * rect.width  + rect.left;
+              const scy  = (-ndc.y + 1) / 2 * rect.height + rect.top;
+              const d0   = Math.hypot(e.clientX - scx, e.clientY - scy);
+              const s0   = sticker.scale;
+              function onResizeMove(ev) {
+                const d = Math.hypot(ev.clientX - scx, ev.clientY - scy);
+                if (d0 > 2) onMove(sticker.id, { scale: Math.max(0.25, Math.min(3, s0 * d / d0)) });
+              }
+              function onResizeUp() {
+                onOrbitEnable(true);
+                gl.domElement.removeEventListener('pointermove', onResizeMove);
+                gl.domElement.removeEventListener('pointerup', onResizeUp);
+              }
+              gl.domElement.addEventListener('pointermove', onResizeMove);
+              gl.domElement.addEventListener('pointerup', onResizeUp);
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <circleGeometry args={[HANDLE_R, 12]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        </group>
+      )}
+    </group>
+  );
+}
+
 export function preloadTopper(url) {
   if (url) useGLTF.preload(url);
 }
@@ -313,6 +639,12 @@ function CreamStylePicker({ styles = [], onSelect, onCancel }) {
   );
 }
 
+function CameraCapture({ cameraRef }) {
+  const { camera } = useThree();
+  cameraRef.current = camera;
+  return null;
+}
+
 function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
@@ -321,8 +653,10 @@ function CakeScene({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   onTopperClick,
+  selectedStickerId, onStickerSelect, onStickerMove, stickerToolbar,
+  tierDataRef,
 }) {
-  const { tiers, texts = [], topper = null } = config;
+  const { tiers, texts = [], stickers = [], topper = null } = config;
 
   let stackY = 0.1;
   const tierData = tiers.map(tier => {
@@ -330,6 +664,7 @@ function CakeScene({
     stackY += tier.height;
     return { ...tier, baseY };
   });
+  tierDataRef.current = tierData;
 
   const bottomTier = tierData[0];
   const minTextY = 0.1 + 0.18;
@@ -419,12 +754,49 @@ function CakeScene({
           />
         );
       })}
+
+      {stickers.map(sticker => {
+        const tier = tierData[sticker.tierIndex] ?? tierData[0];
+        const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+        const orbitEnable = enabled => { if (orbitRef.current) orbitRef.current.enabled = enabled; };
+
+        if (isSide) {
+          return (
+            <DraggableSideSticker
+              key={sticker.id}
+              sticker={sticker}
+              radius={tier.radius}
+              baseY={tier.baseY}
+              height={tier.height}
+              selected={selectedStickerId === sticker.id}
+              onSelect={onStickerSelect}
+              onMove={onStickerMove}
+              onOrbitEnable={orbitEnable}
+              toolbar={selectedStickerId === sticker.id ? stickerToolbar : null}
+            />
+          );
+        }
+        // top_surface
+        const topY = tier.baseY + tier.height;
+        return (
+          <DraggableTopSticker
+            key={sticker.id}
+            sticker={sticker}
+            topY={topY}
+            selected={selectedStickerId === sticker.id}
+            onSelect={onStickerSelect}
+            onMove={onStickerMove}
+            onOrbitEnable={orbitEnable}
+            toolbar={selectedStickerId === sticker.id ? stickerToolbar : null}
+          />
+        );
+      })}
     </>
   );
 }
 
 function CakeThumbnailScene({ config }) {
-  const { tiers, topper = null } = config;
+  const { tiers, stickers = [], topper = null } = config;
 
   let stackY = 0.1;
   const tierData = tiers.map(tier => {
@@ -466,6 +838,25 @@ function CakeThumbnailScene({ config }) {
           />
         </Suspense>
       )}
+      {stickers.map(sticker => {
+        const tier = tierData[sticker.tierIndex] ?? tierData[0];
+        const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+        if (isSide) {
+          const r = tier.radius + 0.025;
+          return (
+            <group key={sticker.id} position={[r * Math.sin(sticker.theta), sticker.y, r * Math.cos(sticker.theta)]} rotation={[0, sticker.theta, 0]} scale={sticker.scale}>
+              <StickerFace imageUrl={sticker.imageUrl} selected={false} />
+            </group>
+          );
+        }
+        const topY = tier.baseY + tier.height;
+        const rot = sticker.placementMode === 'stand' ? [0, sticker.rotation ?? 0, 0] : [-Math.PI / 2, 0, sticker.rotation ?? 0];
+        return (
+          <group key={sticker.id} position={[sticker.x, topY + 0.025, sticker.z]} rotation={rot} scale={sticker.scale}>
+            <StickerFace imageUrl={sticker.imageUrl} selected={false} />
+          </group>
+        );
+      })}
     </>
   );
 }
@@ -493,9 +884,66 @@ export default function CakeCanvas({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onTopperClick, topperSelected = false,
+  selectedStickerId, onStickerSelect, onStickerMove, stickerToolbar,
+  hitTestRef,
 }) {
-  const pointerRef = useRef({ x: 0, y: 0, dragged: false });
-  const orbitRef   = useRef();
+  const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
+  const orbitRef    = useRef();
+  const cameraRef   = useRef(null);
+  const tierDataRef = useRef([]);
+  const glRef       = useRef(null);
+
+  // Expose a hit-test function so the parent can raycast without drag events
+  useEffect(() => {
+    if (!hitTestRef) return;
+    hitTestRef.current = (clientX, clientY) => {
+      if (!cameraRef.current || !glRef.current) return null;
+      const rect = glRef.current.domElement.getBoundingClientRect();
+      const ndx  = ((clientX - rect.left) / rect.width)  * 2 - 1;
+      const ndy  = -((clientY - rect.top)  / rect.height) * 2 + 1;
+      const rc   = new THREE.Raycaster();
+      rc.setFromCamera({ x: ndx, y: ndy }, cameraRef.current);
+      const ray  = rc.ray;
+
+      const tiers = tierDataRef.current;
+      let best = null;
+      let bestDist = Infinity;
+
+      for (let i = 0; i < tiers.length; i++) {
+        const tier = tiers[i];
+        const topY = tier.baseY + tier.height;
+
+        const topPlane  = new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY);
+        const topTarget = new THREE.Vector3();
+        if (ray.intersectPlane(topPlane, topTarget)) {
+          const r = Math.sqrt(topTarget.x * topTarget.x + topTarget.z * topTarget.z);
+          if (r <= tier.radius) {
+            const dist = ray.origin.distanceTo(topTarget);
+            if (dist < bestDist) {
+              bestDist = dist;
+              best = { zone: 'top_surface', tierIndex: i, x: topTarget.x, z: topTarget.z };
+            }
+          }
+        }
+
+        const sideHit = cylinderHit(ray, tier.radius);
+        if (sideHit && sideHit.y >= tier.baseY && sideHit.y <= topY) {
+          const hitPt = new THREE.Vector3(
+            tier.radius * Math.sin(sideHit.theta),
+            sideHit.y,
+            tier.radius * Math.cos(sideHit.theta),
+          );
+          const dist = ray.origin.distanceTo(hitPt);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = { zone: 'side', tierIndex: i, theta: sideHit.theta, y: sideHit.y };
+          }
+        }
+      }
+      return best;
+    };
+    return () => { if (hitTestRef) hitTestRef.current = null; };
+  }, [hitTestRef]);
 
   return (
     <Canvas
@@ -503,6 +951,7 @@ export default function CakeCanvas({
       camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
       style={{ position: 'absolute', inset: 0 }}
       gl={{ preserveDrawingBuffer: true }}
+      onCreated={({ gl }) => { glRef.current = gl; }}
       onPointerDown={e => { pointerRef.current = { x: e.clientX, y: e.clientY, dragged: false }; }}
       onPointerMove={e => {
         const dx = e.clientX - pointerRef.current.x;
@@ -510,6 +959,7 @@ export default function CakeCanvas({
         if (dx * dx + dy * dy > 25) pointerRef.current.dragged = true;
       }}
     >
+      <CameraCapture cameraRef={cameraRef} />
       <CakeScene
         config={config}
         selectedTier={selectedTier}
@@ -530,6 +980,11 @@ export default function CakeCanvas({
         textToolbar={textToolbar}
         orbitRef={orbitRef}
         onTopperClick={() => { if (!pointerRef.current.dragged) onTopperClick?.(); }}
+        selectedStickerId={selectedStickerId}
+        onStickerSelect={id => { if (!pointerRef.current.dragged) onStickerSelect?.(id); }}
+        onStickerMove={onStickerMove}
+        stickerToolbar={stickerToolbar}
+        tierDataRef={tierDataRef}
       />
       <OrbitControls
         ref={orbitRef}

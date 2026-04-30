@@ -53,11 +53,11 @@ const ZONE_LABELS = {
 
 // ── Per-element-type card in the elements panel ───────────────────────────────
 function ElementTypeCard({
-  elementType, design, toppersDb = [], selectedPiping,
+  elementType, design, toppersDb = [], scatteredDecorElements = [], selectedPiping,
   onTopPipingSelect, onBottomPipingSelect,
   onAddTopPiping, onAddBottomPiping,
   onRemoveTopPiping, onRemoveBottomPiping,
-  onSetTopper,
+  onSetTopper, onDragStartSticker,
 }) {
   const { slug, name, placement_rules: pr } = elementType;
   const zones = pr?.zones ?? [];
@@ -164,6 +164,40 @@ function ElementTypeCard({
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  // ── scattered_decor — PNG stickers placeable on any zone ──────────────────
+  if (slug === 'scattered_decor') {
+    return (
+      <div style={{ ...s.elementCard, cursor: 'default' }}>
+        <div style={s.elementCardLabel}>{name}</div>
+        <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto cake to place</div>
+        {scatteredDecorElements.length === 0 && (
+          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No elements yet</div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {scatteredDecorElements.map(el => (
+            <div
+              key={el.id}
+              onPointerDown={e => {
+                e.preventDefault();
+                onDragStartSticker?.(el, e.clientX, e.clientY);
+              }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
+            >
+              <div style={{
+                width: 48, height: 48, borderRadius: 10, overflow: 'hidden',
+                background: 'repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 0 0 / 10px 10px',
+                border: '1.5px solid #f0dce3',
+              }}>
+                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
+              </div>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 52 }}>{el.name}</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -400,11 +434,12 @@ function AddUserModal({ onClose, brandBtn }) {
 
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate }) {
-  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [toppersDb, setToppersDb] = useState([]);
+  const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
   const [pipingStylesDb, setPipingStylesDb] = useState([]);
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
@@ -425,11 +460,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [colorOpen, setColorOpen] = useState(false);
 
   // Derived for backward-compat with canvas props
-  const selectedTier   = selectedEl?.type === 'tier'   ? selectedEl.index    : null;
-  const selectedPiping = selectedEl?.type === 'piping'  ? selectedEl          : null;
-  const selectedTextId = selectedEl?.type === 'text'    ? selectedEl.id       : null;
+  const selectedTier     = selectedEl?.type === 'tier'    ? selectedEl.index : null;
+  const selectedPiping   = selectedEl?.type === 'piping'  ? selectedEl       : null;
+  const selectedTextId   = selectedEl?.type === 'text'    ? selectedEl.id    : null;
+  const selectedStickerId = selectedEl?.type === 'sticker' ? selectedEl.id   : null;
+  const STICKER_CAPS = { resize: true, delete: true, color: false };
   const caps = selectedEl
-    ? (selectedEl.type === 'tier' ? TIER_CAPS : (allowedActionsBySlug[selectedEl.type] ?? null))
+    ? (selectedEl.type === 'tier'    ? TIER_CAPS
+     : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
+     : (allowedActionsBySlug[selectedEl.type] ?? null))
     : null;
 
   // pipingTarget: { tierIndex, zone } — triggers in-canvas style picker
@@ -453,8 +492,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
   const [userData,     setUserData]     = useState(null);
-  const settingsRef = useRef(null);
-  const profileRef  = useRef(null);
+  const settingsRef      = useRef(null);
+  const profileRef       = useRef(null);
+  const hitTestRef       = useRef(null);
+  const dragStickerRef   = useRef(null);  // element being pointer-dragged
+  const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
 
   const primaryColor = bakerData?.primary_color || '#1a1a1a';
   const accentColor  = bakerData?.accent_color  || '#333333';
@@ -534,8 +576,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         ...(t.radius != null && { radius: t.radius }),
         ...(t.height != null && { height: t.height }),
       })),
-      texts:  design.texts,
-      topper: design.topper ?? null,
+      texts:    design.texts,
+      stickers: design.stickers,
+      topper:   design.topper ?? null,
     };
 
     if (onSaveTemplate) {
@@ -607,7 +650,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setElementsOpen(opening);
     setTemplatesOpen(false);
     // Lazy-load top-level cake_elements when panel first opens
-    if (opening && toppersDb.length === 0) {
+    if (opening && toppersDb.length === 0 && scatteredDecorDb.length === 0) {
       setElementTypesLoading(true);
       let rows = [];
       if (apiClient) {
@@ -615,15 +658,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       } else {
         const { data: topLevelData } = await supabase
           .from('cake_elements')
-          .select('id, name, image_url, thumbnail_url, sort_order, element_type_id')
+          .select('id, name, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id')
           .is('parent_id', null)
           .eq('is_active', true)
           .order('sort_order');
         rows = topLevelData ?? [];
       }
       setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
-      const topperTypeId = elementTypes.find(et => et.slug === 'topper')?.id;
+      const topperTypeId        = elementTypes.find(et => et.slug === 'topper')?.id;
+      const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
       setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
+      setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
       setElementTypesLoading(false);
     }
   }
@@ -667,6 +712,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       return (selectedEl.zone === 'top' ? t?.topPiping?.color : t?.bottomPiping?.color) ?? '#f5e6c8';
     }
     if (selectedEl.type === 'text') return selectedText?.color ?? '#ffffff';
+    if (selectedEl.type === 'sticker') return design.stickers.find(s => s.id === selectedEl.id)?.color ?? '#ffffff';
     return '#f5b8c8';
   }
 
@@ -680,6 +726,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       return;
     }
     if (selectedEl.type === 'text') updateText(selectedEl.id, { color: c });
+    if (selectedEl.type === 'sticker') updateSticker(selectedEl.id, { color: c });
   }
 
   function handleDelete() {
@@ -689,6 +736,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       else setBottomPiping(selectedEl.tierIndex, null);
     } else if (selectedEl.type === 'text') {
       removeText(selectedEl.id);
+    } else if (selectedEl.type === 'sticker') {
+      removeSticker(selectedEl.id);
     } else if (selectedEl.type === 'topper') {
       setTopper(null);
     }
@@ -733,6 +782,42 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     stopRotatingOnFirstEdit();
     setSelectedEl(prev => prev?.type === 'topper' ? null : { type: 'topper' });
     setColorOpen(false);
+  }
+
+  function handleStickerSelect(id) {
+    stopRotatingOnFirstEdit();
+    setSelectedEl(prev => prev?.type === 'sticker' && prev.id === id ? null : { type: 'sticker', id });
+    setColorOpen(false);
+  }
+
+  function handleStickerMove(id, changes) {
+    updateSticker(id, changes);
+  }
+
+  function handleElementDrop(element, hit) {
+    stopRotatingOnFirstEdit();
+    const placementMode = element.placement_config?.[hit.zone] ?? 'hug';
+    addSticker(element, hit.zone, hit.tierIndex, placementMode, hit);
+    setElementsOpen(false);
+  }
+
+  function startStickerDrag(el, startX, startY) {
+    dragStickerRef.current = el;
+    setDragGhost({ x: startX, y: startY, el });
+
+    function onMove(e) {
+      setDragGhost({ x: e.clientX, y: e.clientY, el });
+    }
+    function onUp(e) {
+      setDragGhost(null);
+      dragStickerRef.current = null;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      const hit = hitTestRef.current?.(e.clientX, e.clientY);
+      if (hit) handleElementDrop(el, hit);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   }
 
   function handlePipingStyleSelect(element) {
@@ -781,12 +866,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
   const showRightPanel = tierPanelVisible
     || (caps?.color && colorOpen)
-    || (selectedEl?.type === 'topper');
+    || (selectedEl?.type === 'topper')
+    || (selectedEl?.type === 'sticker' && caps?.resize);
 
   // ── Caps-driven floating toolbar (text + piping) ──────────────────────────
   function buildToolbar(el) {
     if (!el) return null;
-    const c = el.type === 'tier' ? TIER_CAPS : (allowedActionsBySlug[el.type] ?? null);
+    const c = el.type === 'tier'    ? TIER_CAPS
+            : el.type === 'sticker' ? (design.stickers.find(s => s.id === el.id)?.allowedActions ?? STICKER_CAPS)
+            : (allowedActionsBySlug[el.type] ?? null);
     if (!c) return null;
     const items = [];
 
@@ -967,6 +1055,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 elementType={et}
                 design={design}
                 toppersDb={toppersDb}
+                scatteredDecorElements={scatteredDecorDb}
                 selectedPiping={selectedPiping}
                 onTopPipingSelect={i => { stopRotatingOnFirstEdit(); handleTopPipingSelect(i); setColorOpen(true); }}
                 onBottomPipingSelect={i => { stopRotatingOnFirstEdit(); handleBottomPipingSelect(i); setColorOpen(true); }}
@@ -975,6 +1064,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 onRemoveTopPiping={i => { setTopPiping(i, null); if (selectedPiping?.tierIndex === i && selectedPiping?.zone === 'top') clearAllSelections(); }}
                 onRemoveBottomPiping={i => { setBottomPiping(i, null); if (selectedPiping?.tierIndex === i && selectedPiping?.zone === 'bottom') clearAllSelections(); }}
                 onSetTopper={t => { if (t?.image_url) preloadTopper(t.image_url); setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
+                onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
               />
             ))}
 
@@ -1070,6 +1160,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               textToolbar={selectedText ? buildToolbar(selectedEl) : null}
               onTopperClick={handleTopperClick}
               topperSelected={selectedEl?.type === 'topper'}
+              selectedStickerId={selectedStickerId}
+              onStickerSelect={handleStickerSelect}
+              onStickerMove={handleStickerMove}
+              stickerToolbar={selectedStickerId !== null ? buildToolbar(selectedEl) : null}
+              hitTestRef={hitTestRef}
             />
           </Suspense>
 
@@ -1080,10 +1175,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
             <div style={s.wheelPanel}>
               <div style={s.wheelHeader}>
                 <span style={s.wheelTitle}>
-                  {selectedEl?.type === 'tier'   ? TIER_LABELS[selectedEl.index]
-                  : selectedEl?.type === 'piping' ? `${TIER_LABELS[selectedEl.tierIndex]} ${selectedEl.zone === 'top' ? 'Top' : 'Base'}`
-                  : selectedEl?.type === 'text'   ? 'Text Color'
-                  : selectedEl?.type === 'topper' ? (design.topper?.name ?? 'Topper')
+                  {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
+                  : selectedEl?.type === 'piping'  ? `${TIER_LABELS[selectedEl.tierIndex]} ${selectedEl.zone === 'top' ? 'Top' : 'Base'}`
+                  : selectedEl?.type === 'text'    ? 'Text Color'
+                  : selectedEl?.type === 'topper'  ? (design.topper?.name ?? 'Topper')
+                  : selectedEl?.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker')
                   : ''}
                 </span>
                 <button style={s.iconBtn} onClick={() => {
@@ -1100,6 +1196,24 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                   onChange={handleColorChange}
                 />
               )}
+
+              {/* Resize slider — sticker (delete/color are in the floating canvas toolbar) */}
+              {caps?.resize && selectedEl?.type === 'sticker' && (() => {
+                const sticker = design.stickers.find(s => s.id === selectedEl.id);
+                if (!sticker) return null;
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
+                    <input
+                      type="range" min={25} max={300} step={5}
+                      value={Math.round(sticker.scale * 100)}
+                      onChange={e => updateSticker(sticker.id, { scale: Number(e.target.value) / 100 })}
+                      style={{ width: 200, accentColor: '#9b5f72' }}
+                    />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(sticker.scale * 100)}%</span>
+                  </div>
+                );
+              })()}
 
               {/* Resize slider — topper */}
               {caps?.resize && selectedEl?.type === 'topper' && (
@@ -1192,6 +1306,27 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
       {/* Off-screen thumbnail canvas — no floor, transparent background */}
       <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
+
+      {/* Floating sticker ghost while pointer-dragging from elements panel */}
+      {dragGhost && (
+        <div style={{
+          position: 'fixed',
+          left: dragGhost.x - 28, top: dragGhost.y - 28,
+          width: 56, height: 56,
+          borderRadius: 12,
+          background: 'repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 0 0 / 10px 10px',
+          border: '2px solid #9b5f72',
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          opacity: 0.85,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+        }}>
+          {dragGhost.el.thumbnail_url && (
+            <img src={dragGhost.el.thumbnail_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          )}
+        </div>
+      )}
     </div>
   );
 }
