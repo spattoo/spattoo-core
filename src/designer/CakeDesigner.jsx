@@ -4,7 +4,8 @@ import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCan
 import { useCakeDesign } from './hooks/useCakeDesign';
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
-const TIER_CAPS = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
+const TIER_CAPS   = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
+const TOPPER_CAPS = { resize: true, delete: true };
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
@@ -57,7 +58,7 @@ function ElementTypeCard({
   onTopPipingSelect, onBottomPipingSelect,
   onAddTopPiping, onAddBottomPiping,
   onRemoveTopPiping, onRemoveBottomPiping,
-  onSetTopper, onDragStartSticker,
+  onSetTopper, onDragStartSticker, onDragStartTopper,
 }) {
   const { slug, name, placement_rules: pr } = elementType;
   const zones = pr?.zones ?? [];
@@ -141,14 +142,17 @@ function ElementTypeCard({
                 {/* Thumbnail */}
                 <div style={{
                   width: 80, height: 80, borderRadius: 10,
-                  background: 'linear-gradient(135deg,#fdf0f5,#fce4ec)',
+                  background: '#fff',
                   border: `2px solid ${isActive ? '#9b5f72' : '#f0dce3'}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  overflow: 'hidden', cursor: 'pointer',
+                  overflow: 'hidden', cursor: 'grab', touchAction: 'none',
                   boxShadow: isActive ? '0 0 0 2px rgba(155,95,114,0.2)' : 'none',
-                }} onClick={() => onSetTopper(isActive ? null : t)}>
+                }}
+                  onClick={() => onSetTopper(isActive ? null : t)}
+                  onPointerDown={e => { e.preventDefault(); onDragStartTopper?.(t, e.clientX, e.clientY); }}
+                >
                   {t.thumbnail_url
-                    ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
                     : null
                   }
                 </div>
@@ -188,13 +192,13 @@ function ElementTypeCard({
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
             >
               <div style={{
-                width: 48, height: 48, borderRadius: 10, overflow: 'hidden',
-                background: 'repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 0 0 / 10px 10px',
+                width: 64, height: 64, borderRadius: 10, overflow: 'hidden',
+                background: '#fff',
                 border: '1.5px solid #f0dce3',
               }}>
-                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
+                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
               </div>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 52 }}>{el.name}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
             </div>
           ))}
         </div>
@@ -434,7 +438,7 @@ function AddUserModal({ onClose, brandBtn }) {
 
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate }) {
-  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -464,9 +468,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const selectedPiping   = selectedEl?.type === 'piping'  ? selectedEl       : null;
   const selectedTextId   = selectedEl?.type === 'text'    ? selectedEl.id    : null;
   const selectedStickerId = selectedEl?.type === 'sticker' ? selectedEl.id   : null;
-  const STICKER_CAPS = { resize: true, delete: true, color: false };
+  const STICKER_CAPS = { resize: true, delete: true, color: false, duplicate: true };
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
+     : selectedEl.type === 'topper'  ? TOPPER_CAPS
      : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
      : (allowedActionsBySlug[selectedEl.type] ?? null))
     : null;
@@ -801,6 +806,28 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setElementsOpen(false);
   }
 
+  function startTopperDrag(topper, startX, startY) {
+    setDragGhost({ x: startX, y: startY, el: topper });
+    function onMove(e) {
+      setDragGhost({ x: e.clientX, y: e.clientY, el: topper });
+    }
+    function onUp(e) {
+      setDragGhost(null);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      const hit = hitTestRef.current?.(e.clientX, e.clientY);
+      if (hit) {
+        if (topper.image_url) preloadTopper(topper.image_url);
+        setTopper(topper);
+        setSelectedEl({ type: 'topper' });
+        stopRotatingOnFirstEdit();
+        setElementsOpen(false);
+      }
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
+
   function startStickerDrag(el, startX, startY) {
     dragStickerRef.current = el;
     setDragGhost({ x: startX, y: startY, el });
@@ -866,13 +893,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
   const showRightPanel = tierPanelVisible
     || (caps?.color && colorOpen)
-    || (selectedEl?.type === 'topper')
     || (selectedEl?.type === 'sticker' && caps?.resize);
 
   // ── Caps-driven floating toolbar (text + piping) ──────────────────────────
   function buildToolbar(el) {
     if (!el) return null;
     const c = el.type === 'tier'    ? TIER_CAPS
+            : el.type === 'topper'  ? TOPPER_CAPS
             : el.type === 'sticker' ? (design.stickers.find(s => s.id === el.id)?.allowedActions ?? STICKER_CAPS)
             : (allowedActionsBySlug[el.type] ?? null);
     if (!c) return null;
@@ -909,9 +936,33 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       );
     }
 
+    if (c.resize && el.type === 'topper') {
+      const sc = design.topper?.scale ?? 1;
+      items.push(
+        <button key="tp-" style={s.tbIconBtn} onClick={() => setTopperScale(Math.max(0.25, +(sc - 0.15).toFixed(2)))}>−</button>,
+        <button key="tp+" style={s.tbIconBtn} onClick={() => setTopperScale(Math.min(4, +(sc + 0.15).toFixed(2)))}>+</button>,
+        <div key="d-tp" style={s.tbDivider} />
+      );
+    }
+
+    if (c.resize && el.type === 'sticker') {
+      const sc = design.stickers.find(s => s.id === el.id)?.scale ?? 1;
+      items.push(
+        <button key="sc-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { scale: Math.max(0.25, +(sc - 0.15).toFixed(2)) })}>−</button>,
+        <button key="sc+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { scale: Math.min(6, +(sc + 0.15).toFixed(2)) })}>+</button>,
+        <div key="d4" style={s.tbDivider} />
+      );
+    }
+
     if (c.duplicate && el.type === 'text') {
       items.push(
-        <button key="dup" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>Copy</button>
+        <button key="dup" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>Duplicate</button>
+      );
+    }
+
+    if (c.duplicate && el.type === 'sticker') {
+      items.push(
+        <button key="dup-sticker" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateSticker(el.id); setSelectedEl(null); }}>Duplicate</button>
       );
     }
 
@@ -1065,6 +1116,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 onRemoveBottomPiping={i => { setBottomPiping(i, null); if (selectedPiping?.tierIndex === i && selectedPiping?.zone === 'bottom') clearAllSelections(); }}
                 onSetTopper={t => { if (t?.image_url) preloadTopper(t.image_url); setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
                 onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
+                onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
               />
             ))}
 
@@ -1160,6 +1212,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               textToolbar={selectedText ? buildToolbar(selectedEl) : null}
               onTopperClick={handleTopperClick}
               topperSelected={selectedEl?.type === 'topper'}
+              topperToolbar={selectedEl?.type === 'topper' ? buildToolbar(selectedEl) : null}
               selectedStickerId={selectedStickerId}
               onStickerSelect={handleStickerSelect}
               onStickerMove={handleStickerMove}
@@ -1215,28 +1268,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 );
               })()}
 
-              {/* Resize slider — topper */}
-              {caps?.resize && selectedEl?.type === 'topper' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
-                  <input
-                    type="range"
-                    min={50} max={200} step={5}
-                    value={Math.round((design.topper?.scale ?? 1) * 100)}
-                    onChange={e => setTopperScale(Number(e.target.value) / 100)}
-                    style={{ width: 200, accentColor: '#9b5f72' }}
-                  />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
-                    {Math.round((design.topper?.scale ?? 1) * 100)}%
-                  </span>
-                  {caps?.delete && (
-                    <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 4 }}>
-                      <button style={s.deleteBtn} onClick={handleDelete}>Remove</button>
-                      <button style={s.doneBtn} onClick={() => setSelectedEl(null)}>Done</button>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
         </div>

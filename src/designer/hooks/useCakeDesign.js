@@ -117,9 +117,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         rotation:      0,
         color:         null,
         allowedActions: {
-          resize: element.allowed_actions?.resize ?? true,
-          color:  element.allowed_actions?.color  ?? false,
-          delete: true,
+          resize:    element.allowed_actions?.resize    ?? true,
+          duplicate: element.allowed_actions?.duplicate ?? true,
+          color:     element.allowed_actions?.color     ?? false,
+          delete:    true,
         },
       }],
     }));
@@ -134,6 +135,17 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   function removeSticker(id) {
     setDesign(prev => ({ ...prev, stickers: prev.stickers.filter(s => s.id !== id) }));
+  }
+
+  function duplicateSticker(id) {
+    setDesign(prev => {
+      const original = prev.stickers.find(s => s.id === id);
+      if (!original) return prev;
+      return {
+        ...prev,
+        stickers: [...prev.stickers, { ...original, id: Date.now(), theta: original.theta + 0.3 }],
+      };
+    });
   }
 
   function setTopper(topper) {
@@ -200,7 +212,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierColor, setTopPiping, setBottomPiping,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
-    addSticker, updateSticker, removeSticker,
+    addSticker, updateSticker, removeSticker, duplicateSticker,
     setTopper, setTopperScale,
     loadDesign,
     canvasConfig,

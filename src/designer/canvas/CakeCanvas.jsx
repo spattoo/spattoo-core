@@ -319,11 +319,6 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
           {toolbar}
         </Html>
       )}
-      {selected && (
-        <lineSegments geometry={OUTLINE_GEOM} position={[0, 0, 0.001]} renderOrder={1}>
-          <lineBasicMaterial color="#ffffff" depthTest={false} />
-        </lineSegments>
-      )}
       <mesh
         position={[0, 0, 0.001]}
         onPointerDown={e => {
@@ -362,42 +357,6 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
         <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
-      {selected && sticker.allowedActions?.resize !== false && (
-        <group position={[STICKER_SIZE / 2, -STICKER_SIZE / 2, 0.012]} scale={1 / sticker.scale}>
-          <mesh>
-            <circleGeometry args={[HANDLE_R + 0.015, 12]} />
-            <meshBasicMaterial color="#888888" />
-          </mesh>
-          <mesh
-            position={[0, 0, 0.001]}
-            onPointerDown={e => {
-              e.stopPropagation();
-              onOrbitEnable(false);
-              const rect = gl.domElement.getBoundingClientRect();
-              const ndc  = new THREE.Vector3(cx, sticker.y, cz).project(camera);
-              const scx  = (ndc.x + 1) / 2 * rect.width  + rect.left;
-              const scy  = (-ndc.y + 1) / 2 * rect.height + rect.top;
-              const d0   = Math.hypot(e.clientX - scx, e.clientY - scy);
-              const s0   = sticker.scale;
-              function onResizeMove(ev) {
-                const d = Math.hypot(ev.clientX - scx, ev.clientY - scy);
-                if (d0 > 2) onMove(sticker.id, { scale: Math.max(0.25, Math.min(3, s0 * d / d0)) });
-              }
-              function onResizeUp() {
-                onOrbitEnable(true);
-                gl.domElement.removeEventListener('pointermove', onResizeMove);
-                gl.domElement.removeEventListener('pointerup', onResizeUp);
-              }
-              gl.domElement.addEventListener('pointermove', onResizeMove);
-              gl.domElement.addEventListener('pointerup', onResizeUp);
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <circleGeometry args={[HANDLE_R, 12]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-        </group>
-      )}
     </group>
   );
 }
@@ -441,11 +400,6 @@ function DraggableTopSticker({ sticker, topY, selected, onSelect, onMove, onOrbi
           {toolbar}
         </Html>
       )}
-      {selected && (
-        <lineSegments geometry={OUTLINE_GEOM} position={[0, 0, 0.001]} renderOrder={1}>
-          <lineBasicMaterial color="#ffffff" depthTest={false} />
-        </lineSegments>
-      )}
       <mesh
         position={[0, 0, 0.001]}
         onPointerDown={e => {
@@ -483,42 +437,6 @@ function DraggableTopSticker({ sticker, topY, selected, onSelect, onMove, onOrbi
         <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
-      {selected && sticker.allowedActions?.resize !== false && (
-        <group position={[STICKER_SIZE / 2, -STICKER_SIZE / 2, 0.012]} scale={1 / sticker.scale}>
-          <mesh>
-            <circleGeometry args={[HANDLE_R + 0.015, 12]} />
-            <meshBasicMaterial color="#888888" />
-          </mesh>
-          <mesh
-            position={[0, 0, 0.001]}
-            onPointerDown={e => {
-              e.stopPropagation();
-              onOrbitEnable(false);
-              const rect = gl.domElement.getBoundingClientRect();
-              const ndc  = new THREE.Vector3(sticker.x, py, sticker.z).project(camera);
-              const scx  = (ndc.x + 1) / 2 * rect.width  + rect.left;
-              const scy  = (-ndc.y + 1) / 2 * rect.height + rect.top;
-              const d0   = Math.hypot(e.clientX - scx, e.clientY - scy);
-              const s0   = sticker.scale;
-              function onResizeMove(ev) {
-                const d = Math.hypot(ev.clientX - scx, ev.clientY - scy);
-                if (d0 > 2) onMove(sticker.id, { scale: Math.max(0.25, Math.min(3, s0 * d / d0)) });
-              }
-              function onResizeUp() {
-                onOrbitEnable(true);
-                gl.domElement.removeEventListener('pointermove', onResizeMove);
-                gl.domElement.removeEventListener('pointerup', onResizeUp);
-              }
-              gl.domElement.addEventListener('pointermove', onResizeMove);
-              gl.domElement.addEventListener('pointerup', onResizeUp);
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <circleGeometry args={[HANDLE_R, 12]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-        </group>
-      )}
     </group>
   );
 }
@@ -527,7 +445,7 @@ export function preloadTopper(url) {
   if (url) useGLTF.preload(url);
 }
 
-function CakeTopper({ glbPath, topY, topRadius, scaleMultiplier = 1, onClick }) {
+function CakeTopper({ glbPath, topY, topRadius, scaleMultiplier = 1, onClick, selected, toolbar }) {
   const { scene } = useGLTF(glbPath);
 
   const clonedScene = useMemo(() => {
@@ -558,13 +476,25 @@ function CakeTopper({ glbPath, topY, topRadius, scaleMultiplier = 1, onClick }) 
     return { scale: sc, yPos: topY - box.min.y * sc * scaleMultiplier };
   }, [clonedScene, topRadius, topY, scaleMultiplier]);
 
+  const topHeight = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(clonedScene);
+    return (box.max.y - box.min.y) * scale * scaleMultiplier;
+  }, [clonedScene, scale, scaleMultiplier]);
+
   return (
-    <primitive
-      object={clonedScene}
-      position={[0, yPos, 0]}
-      scale={scale * scaleMultiplier}
-      onClick={e => { e.stopPropagation(); onClick?.(); }}
-    />
+    <group>
+      <primitive
+        object={clonedScene}
+        position={[0, yPos, 0]}
+        scale={scale * scaleMultiplier}
+        onClick={e => { e.stopPropagation(); onClick?.(); }}
+      />
+      {selected && toolbar && (
+        <Html position={[0, yPos + topHeight + 0.25, 0]} center zIndexRange={[200, 0]}>
+          {toolbar}
+        </Html>
+      )}
+    </group>
   );
 }
 
@@ -652,7 +582,7 @@ function CakeScene({
   selectedPiping, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
-  onTopperClick,
+  onTopperClick, topperSelected, topperToolbar,
   selectedStickerId, onStickerSelect, onStickerMove, stickerToolbar,
   tierDataRef,
 }) {
@@ -726,6 +656,8 @@ function CakeScene({
             topRadius={tierData[tierData.length - 1].radius}
             scaleMultiplier={topper.scale ?? 1}
             onClick={onTopperClick}
+            selected={topperSelected}
+            toolbar={topperToolbar}
           />
         </Suspense>
       )}
@@ -883,7 +815,7 @@ export default function CakeCanvas({
   selectedPiping, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
-  onTopperClick, topperSelected = false,
+  onTopperClick, topperSelected = false, topperToolbar,
   selectedStickerId, onStickerSelect, onStickerMove, stickerToolbar,
   hitTestRef,
 }) {
@@ -980,6 +912,8 @@ export default function CakeCanvas({
         textToolbar={textToolbar}
         orbitRef={orbitRef}
         onTopperClick={() => { if (!pointerRef.current.dragged) onTopperClick?.(); }}
+        topperSelected={topperSelected}
+        topperToolbar={topperToolbar}
         selectedStickerId={selectedStickerId}
         onStickerSelect={id => { if (!pointerRef.current.dragged) onStickerSelect?.(id); }}
         onStickerMove={onStickerMove}

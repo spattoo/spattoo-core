@@ -6,6 +6,7 @@ const isDev = process.env.NODE_ENV !== 'production';
 
 export default defineConfig({
   plugins: [react()],
+  server: { port: 5173 },
   root: isDev ? 'dev' : undefined,
   build: isDev ? undefined : {
     lib: {
