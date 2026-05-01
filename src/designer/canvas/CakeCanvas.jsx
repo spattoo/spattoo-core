@@ -229,11 +229,16 @@ function StickerTexture({ imageUrl, selected }) {
 
 function StickerModel({ imageUrl, selected, color, clipY }) {
   const { scene } = useGLTF(imageUrl);
+  const clipPlane = useRef(null);
 
   const clonedScene = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);
-    const plane = clipY !== undefined ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -clipY) : null;
+    // Create a stable plane object once; useEffect keeps its constant in sync.
+    const plane = clipY !== undefined
+      ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -clipY)
+      : null;
+    clipPlane.current = plane;
     clone.traverse(obj => {
       if (!obj.isMesh) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -244,7 +249,11 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
       });
     });
     return clone;
-  }, [scene, clipY]);
+  }, [scene]); // re-clone only when the source GLB changes, not on every clipY update
+
+  useEffect(() => {
+    if (clipPlane.current && clipY !== undefined) clipPlane.current.constant = -clipY;
+  }, [clipY]);
 
   const { scale, position } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
@@ -399,7 +408,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, on
       rotation={rotation}
       scale={sticker.scale}
     >
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={topY} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={py} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -792,10 +801,11 @@ function CakeThumbnailScene({ config }) {
           );
         }
         const topY = tier.baseY + tier.height;
+        const py   = topY + (sticker.yOffset ?? 0) + 0.025;
         const rot = sticker.placementMode === 'stand' ? [0, sticker.rotation ?? 0, 0] : [-Math.PI / 2, 0, sticker.rotation ?? 0];
         return (
-          <group key={sticker.id} position={[sticker.x, topY + (sticker.yOffset ?? 0) + 0.025, sticker.z]} rotation={rot} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={topY} />
+          <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={rot} scale={sticker.scale}>
+            <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={py} />
           </group>
         );
       })}
@@ -807,7 +817,8 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
   return (
     <div ref={containerRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 }}>
       <Canvas
-        gl={{ preserveDrawingBuffer: true, alpha: true, localClippingEnabled: true }}
+        gl={{ preserveDrawingBuffer: true, alpha: true }}
+        onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
         camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
         style={{ width: 400, height: 400 }}
       >
@@ -892,8 +903,8 @@ export default function CakeCanvas({
       shadows
       camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
       style={{ position: 'absolute', inset: 0 }}
-      gl={{ preserveDrawingBuffer: true, localClippingEnabled: true }}
-      onCreated={({ gl }) => { glRef.current = gl; }}
+      gl={{ preserveDrawingBuffer: true }}
+      onCreated={({ gl }) => { glRef.current = gl; gl.localClippingEnabled = true; }}
       onPointerDown={e => { pointerRef.current = { x: e.clientX, y: e.clientY, dragged: false }; }}
       onPointerMove={e => {
         const dx = e.clientX - pointerRef.current.x;
