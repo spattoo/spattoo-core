@@ -115,6 +115,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         x:             position.x    ?? 0,
         z:             position.z    ?? 0,
         scale:         isGlb ? 2.5 : 1,
+        yOffset:       0,
         rotation:      0,
         color:         null,
         allowedActions: {

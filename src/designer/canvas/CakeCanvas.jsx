@@ -227,19 +227,24 @@ function StickerTexture({ imageUrl, selected }) {
   );
 }
 
-function StickerModel({ imageUrl, selected, color }) {
+function StickerModel({ imageUrl, selected, color, clipY }) {
   const { scene } = useGLTF(imageUrl);
 
   const clonedScene = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);
+    const plane = clipY !== undefined ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -clipY) : null;
     clone.traverse(obj => {
       if (!obj.isMesh) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
+      mats.forEach(mat => {
+        mat.depthWrite = true;
+        if (plane) mat.clippingPlanes = [plane];
+        mat.needsUpdate = true;
+      });
     });
     return clone;
-  }, [scene]);
+  }, [scene, clipY]);
 
   const { scale, position } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
@@ -269,14 +274,14 @@ function StickerModel({ imageUrl, selected, color }) {
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color }) {
+function StickerFace({ imageUrl, selected, color, clipY }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   return (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} />
         }
       </Suspense>
@@ -361,7 +366,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
   );
 }
 
-function DraggableTopSticker({ sticker, topY, selected, onSelect, onMove, onOrbitEnable, toolbar }) {
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, onSelect, onMove, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
   const didDrag      = useRef(false);
   const startPos     = useRef({ x: 0, y: 0 });
@@ -369,7 +374,7 @@ function DraggableTopSticker({ sticker, topY, selected, onSelect, onMove, onOrbi
   const startSticker = useRef(null);
   const plane        = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
 
-  const py = topY + 0.025;
+  const py = topY + (sticker.yOffset ?? 0) + 0.025;
   const rotation = sticker.placementMode === 'stand'
     ? [0, sticker.rotation ?? 0, 0]
     : [-Math.PI / 2, 0, sticker.rotation ?? 0];
@@ -394,7 +399,7 @@ function DraggableTopSticker({ sticker, topY, selected, onSelect, onMove, onOrbi
       rotation={rotation}
       scale={sticker.scale}
     >
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={topY} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -417,10 +422,14 @@ function DraggableTopSticker({ sticker, topY, selected, onSelect, onMove, onOrbi
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (didDrag.current && startHit.current) {
               const hit = planeHit(pointerRay(ev));
-              if (hit) onMove(sticker.id, {
-                x: startSticker.current.x + (hit.x - startHit.current.x),
-                z: startSticker.current.z + (hit.z - startHit.current.z),
-              });
+              if (hit) {
+                let newX = startSticker.current.x + (hit.x - startHit.current.x);
+                let newZ = startSticker.current.z + (hit.z - startHit.current.z);
+                const r = Math.sqrt(newX * newX + newZ * newZ);
+                const maxR = topRadius * 0.92;
+                if (r > maxR) { newX = newX * maxR / r; newZ = newZ * maxR / r; }
+                onMove(sticker.id, { x: newX, z: newZ });
+              }
             }
           }
           function onUp() {
@@ -715,6 +724,7 @@ function CakeScene({
             key={sticker.id}
             sticker={sticker}
             topY={topY}
+            topRadius={tier.radius}
             selected={selectedStickerId === sticker.id}
             onSelect={onStickerSelect}
             onMove={onStickerMove}
@@ -784,8 +794,8 @@ function CakeThumbnailScene({ config }) {
         const topY = tier.baseY + tier.height;
         const rot = sticker.placementMode === 'stand' ? [0, sticker.rotation ?? 0, 0] : [-Math.PI / 2, 0, sticker.rotation ?? 0];
         return (
-          <group key={sticker.id} position={[sticker.x, topY + 0.025, sticker.z]} rotation={rot} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} selected={false} />
+          <group key={sticker.id} position={[sticker.x, topY + (sticker.yOffset ?? 0) + 0.025, sticker.z]} rotation={rot} scale={sticker.scale}>
+            <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={topY} />
           </group>
         );
       })}
@@ -797,7 +807,7 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
   return (
     <div ref={containerRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 }}>
       <Canvas
-        gl={{ preserveDrawingBuffer: true, alpha: true }}
+        gl={{ preserveDrawingBuffer: true, alpha: true, localClippingEnabled: true }}
         camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
         style={{ width: 400, height: 400 }}
       >
@@ -882,7 +892,7 @@ export default function CakeCanvas({
       shadows
       camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
       style={{ position: 'absolute', inset: 0 }}
-      gl={{ preserveDrawingBuffer: true }}
+      gl={{ preserveDrawingBuffer: true, localClippingEnabled: true }}
       onCreated={({ gl }) => { glRef.current = gl; }}
       onPointerDown={e => { pointerRef.current = { x: e.clientX, y: e.clientY, dragged: false }; }}
       onPointerMove={e => {

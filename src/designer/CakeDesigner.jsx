@@ -1285,6 +1285,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               {caps?.resize && selectedEl?.type === 'sticker' && (() => {
                 const sticker = design.stickers.find(s => s.id === selectedEl.id);
                 if (!sticker) return null;
+                const isGlbTopSurface = sticker.zone === 'top_surface' && /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
@@ -1295,6 +1296,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                       style={{ width: 200, accentColor: '#9b5f72' }}
                     />
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(sticker.scale * 100)}%</span>
+
+                    {isGlbTopSurface && (<>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Height</div>
+                      <input
+                        type="range" min={0} max={120} step={5}
+                        value={Math.round((sticker.yOffset ?? 0) * 100)}
+                        onChange={e => updateSticker(sticker.id, { yOffset: Number(e.target.value) / 100 })}
+                        style={{ width: 200, accentColor: '#9b5f72' }}
+                      />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round((sticker.yOffset ?? 0) * 100)}%</span>
+                    </>)}
                   </div>
                 );
               })()}
