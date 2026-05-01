@@ -99,6 +99,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   }
 
   function addSticker(element, zone, tierIndex, placementMode, position = {}) {
+    const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
     setDesign(prev => ({
       ...prev,
       stickers: [...prev.stickers, {
@@ -113,7 +114,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         y:             position.y    ?? (BOTTOM_BASE + BOTTOM_H * 0.45),
         x:             position.x    ?? 0,
         z:             position.z    ?? 0,
-        scale:         1,
+        scale:         isGlb ? 2.5 : 1,
         rotation:      0,
         color:         null,
         allowedActions: {
@@ -141,9 +142,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       const original = prev.stickers.find(s => s.id === id);
       if (!original) return prev;
+      const offset = original.zone === 'top_surface'
+        ? { x: original.x + 0.15 }
+        : { theta: original.theta + 0.3 };
       return {
         ...prev,
-        stickers: [...prev.stickers, { ...original, id: Date.now(), theta: original.theta + 0.3 }],
+        stickers: [...prev.stickers, { ...original, id: Date.now(), ...offset }],
       };
     });
   }
