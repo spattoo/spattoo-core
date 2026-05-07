@@ -54,7 +54,7 @@ const ZONE_LABELS = {
 
 // ── Per-element-type card in the elements panel ───────────────────────────────
 function ElementTypeCard({
-  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], selectedPiping,
+  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], otherElements = [], selectedPiping,
   onTopPipingSelect, onBottomPipingSelect,
   onAddTopPiping, onAddBottomPiping,
   onRemoveTopPiping, onRemoveBottomPiping,
@@ -233,14 +233,31 @@ function ElementTypeCard({
     );
   }
 
-  // ── All other types — coming soon placeholder ──────────────────────────────
+  // ── All other types — generic draggable grid ──────────────────────────────
   return (
-    <div style={{ ...s.elementCard, cursor: 'default', opacity: 0.55 }}>
+    <div style={{ ...s.elementCard, cursor: 'default' }}>
       <div style={s.elementCardLabel}>{name}</div>
-      <div style={{ fontSize: 9, color: '#888', letterSpacing: 0.5, textAlign: 'center' }}>
-        {zones.map(z => ZONE_LABELS[z] ?? z).join(' · ')}
-      </div>
-      <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>Coming soon</div>
+      {otherElements.length > 0 ? (
+        <>
+          <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto cake to place</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {otherElements.map(el => (
+              <div
+                key={el.id}
+                onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
+              >
+                <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
+                  {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                </div>
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No elements yet</div>
+      )}
     </div>
   );
 }
@@ -465,7 +482,7 @@ function AddUserModal({ onClose, brandBtn }) {
 
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate }) {
-  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -473,6 +490,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
   const [picksDb, setPicksDb] = useState([]);
   const [pipingStylesDb, setPipingStylesDb] = useState([]);
+  const [otherElementsDb, setOtherElementsDb] = useState({}); // typeId → elements[]
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -488,14 +506,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // type 'piping': { tierIndex, zone: 'top'|'bottom' }
   // type 'text':   { id }
   // type 'topper': {}
+  // type 'sticker': { id }  ← primary sticker (toolbar anchor)
   const [selectedEl, setSelectedEl] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
+  // Full sticker selection set (drives canvas highlight + group ops)
+  const [selectedStickerIds, setSelectedStickerIds] = useState(new Set());
+  // True when user entered multi-select via long-press (mobile) or Ctrl+click (desktop)
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
 
-  // Derived for backward-compat with canvas props
-  const selectedTier     = selectedEl?.type === 'tier'    ? selectedEl.index : null;
-  const selectedPiping   = selectedEl?.type === 'piping'  ? selectedEl       : null;
-  const selectedTextId   = selectedEl?.type === 'text'    ? selectedEl.id    : null;
-  const selectedStickerId = selectedEl?.type === 'sticker' ? selectedEl.id   : null;
+  // Derived
+  const selectedTier    = selectedEl?.type === 'tier'    ? selectedEl.index : null;
+  const selectedPiping  = selectedEl?.type === 'piping'  ? selectedEl       : null;
+  const selectedTextId  = selectedEl?.type === 'text'    ? selectedEl.id    : null;
+  const selectedStickerId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
   const STICKER_CAPS = { resize: true, delete: true, color: false, duplicate: true };
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
@@ -683,7 +706,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setElementsOpen(opening);
     setTemplatesOpen(false);
     // Lazy-load top-level cake_elements when panel first opens
-    if (opening && toppersDb.length === 0 && scatteredDecorDb.length === 0 && picksDb.length === 0) {
+    if (opening && toppersDb.length === 0 && scatteredDecorDb.length === 0 && picksDb.length === 0 && Object.keys(otherElementsDb).length === 0) {
       setElementTypesLoading(true);
       let rows = [];
       if (apiClient) {
@@ -701,9 +724,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
       const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
       const picksTypeId          = elementTypes.find(et => et.slug === 'picks')?.id;
+      const knownTypeIds         = new Set([topperTypeId, scatteredDecorTypeId, picksTypeId].filter(Boolean));
       setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
       setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
       setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
+      const others = {};
+      rows.filter(r => !knownTypeIds.has(r.element_type_id)).forEach(r => {
+        (others[r.element_type_id] ??= []).push(r);
+      });
+      setOtherElementsDb(others);
       setElementTypesLoading(false);
     }
   }
@@ -765,15 +794,16 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function handleDelete() {
-    if (!selectedEl) return;
-    if (selectedEl.type === 'piping') {
+    if (!selectedEl && selectedStickerIds.size === 0) return;
+    if (selectedEl?.type === 'piping') {
       if (selectedEl.zone === 'top') setTopPiping(selectedEl.tierIndex, null);
       else setBottomPiping(selectedEl.tierIndex, null);
-    } else if (selectedEl.type === 'text') {
+    } else if (selectedEl?.type === 'text') {
       removeText(selectedEl.id);
-    } else if (selectedEl.type === 'sticker') {
-      removeSticker(selectedEl.id);
-    } else if (selectedEl.type === 'topper') {
+    } else if (selectedStickerIds.size > 0) {
+      selectedStickerIds.forEach(id => removeSticker(id));
+      setSelectedStickerIds(new Set());
+    } else if (selectedEl?.type === 'topper') {
       setTopper(null);
     }
     setSelectedEl(null);
@@ -784,6 +814,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   function clearAllSelections() {
     setSelectedEl(null);
     setColorOpen(false);
+    setSelectedStickerIds(new Set());
+    setMultiSelectMode(false);
   }
 
   function handleDeselect() { clearAllSelections(); }
@@ -819,10 +851,49 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setColorOpen(false);
   }
 
-  function handleStickerSelect(id) {
+  function handleStickerSelect(id, ctrlKey = false) {
     stopRotatingOnFirstEdit();
-    setSelectedEl(prev => prev?.type === 'sticker' && prev.id === id ? null : { type: 'sticker', id });
+    const sticker = design.stickers.find(s => s.id === id);
+
+    if (ctrlKey || multiSelectMode) {
+      setMultiSelectMode(true);
+      setSelectedStickerIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) { next.delete(id); } else { next.add(id); }
+        const primaryId = next.has(id) ? id : ([...next][next.size - 1] ?? null);
+        setSelectedEl(primaryId ? { type: 'sticker', id: primaryId } : null);
+        return next;
+      });
+      setColorOpen(false);
+      return;
+    }
+
+    if (sticker?.groupId) {
+      // Auto-select all stickers in this group
+      const groupIds = new Set(
+        design.stickers.filter(s => s.groupId === sticker.groupId).map(s => s.id)
+      );
+      setSelectedStickerIds(groupIds);
+      setSelectedEl({ type: 'sticker', id });
+    } else {
+      // Toggle single selection
+      const isOnly = selectedStickerIds.size === 1 && selectedStickerIds.has(id);
+      setSelectedStickerIds(isOnly ? new Set() : new Set([id]));
+      setSelectedEl(isOnly ? null : { type: 'sticker', id });
+    }
     setColorOpen(false);
+  }
+
+  function handleStickerLongPress(id) {
+    stopRotatingOnFirstEdit();
+    setMultiSelectMode(true);
+    setSelectedStickerIds(new Set([id]));
+    setSelectedEl({ type: 'sticker', id });
+    setColorOpen(false);
+  }
+
+  function handleGroupMove(groupId, startPositions, delta) {
+    moveGroupStickers(groupId, startPositions, delta);
   }
 
   function handleStickerMove(id, changes) {
@@ -992,6 +1063,49 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           <div key="d-ht" style={s.tbDivider} />
         );
       }
+      // Depth (radialOffset) — side stickers only
+      const isSide = sticker?.zone === 'side' || sticker?.zone === 'middle_tier';
+      if (isSide) {
+        const ro = sticker?.radialOffset ?? 0;
+        items.push(
+          <span key="ro-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Depth</span>,
+          <button key="ro-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.max(0, +(ro - 0.05).toFixed(2)) })}>−</button>,
+          <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
+          <div key="d-ro" style={s.tbDivider} />
+        );
+      }
+      // Tilt — all stickers
+      {
+        const ta = sticker?.tiltAngle ?? 0;
+        items.push(
+          <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
+          <button key="ta-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.max(-1.2, +((ta) - 0.1).toFixed(3)) })}>−</button>,
+          <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(ta * 180 / Math.PI)}°</span>,
+          <button key="ta+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.min(1.2, +((ta) + 0.1).toFixed(3)) })}>+</button>,
+          <div key="d-ta" style={s.tbDivider} />
+        );
+      }
+      // Spin (rotation) — top_surface stand stickers only
+      if (sticker?.zone === 'top_surface' && sticker?.placementMode === 'stand') {
+        const rot = sticker?.rotation ?? 0;
+        items.push(
+          <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Spin</span>,
+          <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
+          <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
+          <div key="d-sp" style={s.tbDivider} />
+        );
+      }
+      // Group / Ungroup
+      const isGrouped = !!sticker?.groupId;
+      if (isGrouped) {
+        items.push(
+          <button key="ungroup" style={{ ...s.tbIconBtn, fontSize: 11, color: '#9b5f72' }}
+            onClick={() => { ungroupStickers(sticker.groupId); clearAllSelections(); }}>
+            Ungroup
+          </button>,
+          <div key="d-ug" style={s.tbDivider} />
+        );
+      }
     }
 
     if (c.duplicate && el.type === 'text') {
@@ -1001,20 +1115,24 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
 
     if (c.duplicate && el.type === 'sticker') {
-      items.push(
-        <button key="dup-sticker" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateSticker(el.id); setSelectedEl(null); }}>Duplicate</button>
-      );
+      const sticker = design.stickers.find(s => s.id === el.id);
+      if (!sticker?.groupId) {
+        items.push(
+          <button key="dup-sticker" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateSticker(el.id); clearAllSelections(); }}>Duplicate</button>
+        );
+      }
     }
 
     if (c.delete) {
+      const label = selectedStickerIds.size > 1 ? 'Remove all' : 'Remove';
       items.push(
-        <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>Remove</button>
+        <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>{label}</button>
       );
     }
 
     items.push(
       <button key="ok" style={{ ...s.tbIconBtn, color: '#6c47ff', fontWeight: 700, fontSize: 11 }}
-        onClick={() => { setSelectedEl(null); setColorOpen(false); }}>Done</button>
+        onClick={() => { clearAllSelections(); }}>Done</button>
     );
 
     return <div style={s.textToolbar}>{items}</div>;
@@ -1148,6 +1266,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 toppersDb={toppersDb}
                 scatteredDecorElements={scatteredDecorDb}
                 picksElements={picksDb}
+                otherElements={otherElementsDb[et.id] ?? []}
                 selectedPiping={selectedPiping}
                 onTopPipingSelect={i => { stopRotatingOnFirstEdit(); handleTopPipingSelect(i); setColorOpen(true); }}
                 onBottomPipingSelect={i => { stopRotatingOnFirstEdit(); handleBottomPipingSelect(i); setColorOpen(true); }}
@@ -1227,7 +1346,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               Save Template
             </button>
           </div>
-          {!selectedEl && (
+          {!selectedEl && selectedStickerIds.size === 0 && (
             <div style={s.hint}>Tap a tier or text to edit</div>
           )}
 
@@ -1254,13 +1373,57 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               onTopperClick={handleTopperClick}
               topperSelected={selectedEl?.type === 'topper'}
               topperToolbar={selectedEl?.type === 'topper' ? buildToolbar(selectedEl) : null}
-              selectedStickerId={selectedStickerId}
+              selectedStickerIds={selectedStickerIds}
               onStickerSelect={handleStickerSelect}
+              onStickerLongPress={handleStickerLongPress}
               onStickerMove={handleStickerMove}
-              stickerToolbar={selectedStickerId !== null ? buildToolbar(selectedEl) : null}
+              onGroupMove={handleGroupMove}
+              stickerToolbar={selectedEl?.type === 'sticker' ? buildToolbar(selectedEl) : null}
               hitTestRef={hitTestRef}
             />
           </Suspense>
+
+          {/* ── Multi-select group bar ── */}
+          {(multiSelectMode || selectedStickerIds.size > 1) && (() => {
+            const ids = [...selectedStickerIds];
+            const allGrouped = ids.length > 1 && ids.every(id => {
+              const s = design.stickers.find(x => x.id === id);
+              return s?.groupId && s.groupId === design.stickers.find(x => x.id === ids[0])?.groupId;
+            });
+            return (
+              <div style={s.groupBar}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#666' }}>
+                  {ids.length === 0 ? 'Tap to select' : ids.length === 1 ? '1 selected — tap more' : `${ids.length} selected`}
+                </span>
+                {ids.length > 1 && !allGrouped && (
+                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }}
+                    onClick={() => { groupStickers(ids); clearAllSelections(); }}>
+                    Group
+                  </button>
+                )}
+                {ids.length > 1 && allGrouped && (
+                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }}
+                    onClick={() => {
+                      const gid = design.stickers.find(x => x.id === ids[0])?.groupId;
+                      if (gid) ungroupStickers(gid);
+                      clearAllSelections();
+                    }}>
+                    Ungroup
+                  </button>
+                )}
+                {ids.length > 1 && (
+                  <button style={{ ...s.groupBarBtn, color: '#e53935', borderColor: '#fcc' }}
+                    onClick={handleDelete}>
+                    Delete all
+                  </button>
+                )}
+                <button style={{ ...s.groupBarBtn, color: '#6c47ff', borderColor: '#ddd' }}
+                  onClick={clearAllSelections}>
+                  Done
+                </button>
+              </div>
+            );
+          })()}
 
           <div style={s.rotateHint}>Drag to rotate</div>
 
@@ -1708,5 +1871,19 @@ const s = {
     boxShadow:'0 4px 16px rgba(0,0,0,0.2)',
     fontFamily:"'Quicksand',sans-serif",
     transition:'background 0.5s ease, box-shadow 0.5s ease',
+  },
+  groupBar: {
+    position:'absolute', bottom:60, left:'50%', transform:'translateX(-50%)',
+    display:'flex', alignItems:'center', gap:8,
+    background:'rgba(255,255,255,0.97)', backdropFilter:'blur(16px)',
+    padding:'8px 14px', borderRadius:12, whiteSpace:'nowrap',
+    boxShadow:'0 4px 20px rgba(107,45,66,0.22)',
+    border:'1px solid rgba(240,220,227,0.9)',
+    zIndex:30, pointerEvents:'auto',
+  },
+  groupBarBtn: {
+    background:'none', border:'1.5px solid #e0d0d5', borderRadius:8,
+    padding:'4px 10px', fontSize:11, cursor:'pointer',
+    fontWeight:700, fontFamily:"'Quicksand',sans-serif",
   },
 };

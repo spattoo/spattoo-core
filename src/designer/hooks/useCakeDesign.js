@@ -1,4 +1,7 @@
 import { useState, useMemo } from 'react';
+import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP } from '../constants.js';
+
+export { TIER_RADII };   // re-export so existing imports from this file keep working
 
 const DEFAULT_DESIGN = {
   tiers: [
@@ -9,15 +12,12 @@ const DEFAULT_DESIGN = {
   topper: null,
 };
 
-export const TIER_RADII  = [1.2, 0.9, 0.65, 0.45];
 export const FROSTING_TYPES = [
   { value: 'buttercream', label: 'Buttercream' },
   { value: 'whipped',     label: 'Whipped' },
   { value: 'fondant',     label: 'Fondant' },
   { value: 'naked',       label: 'Naked' },
 ];
-const BOTTOM_BASE = 0.1;
-const BOTTOM_H    = 1.45;
 
 // Passed as storageBaseUrl option — only used to migrate old-format templates
 // that stored decoration type 'swirl_ring'/'base_border' instead of piping objects.
@@ -117,6 +117,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         scale:         isGlb ? 2.5 : 1,
         yOffset:       0,
         rotation:      0,
+        radialOffset:  0,
+        tiltAngle:     0,
+        groupId:       null,
         color:         null,
         allowedActions: {
           resize:    element.allowed_actions?.resize    ?? true,
@@ -137,6 +140,40 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   function removeSticker(id) {
     setDesign(prev => ({ ...prev, stickers: prev.stickers.filter(s => s.id !== id) }));
+  }
+
+  function groupStickers(ids) {
+    const groupId = crypto.randomUUID();
+    setDesign(prev => ({
+      ...prev,
+      stickers: prev.stickers.map(s => ids.includes(s.id) ? { ...s, groupId } : s),
+    }));
+    return groupId;
+  }
+
+  function ungroupStickers(groupId) {
+    setDesign(prev => ({
+      ...prev,
+      stickers: prev.stickers.map(s => s.groupId === groupId ? { ...s, groupId: null } : s),
+    }));
+  }
+
+  // delta: { deltaTheta, deltaY } for side zone  /  { dx, dz } for top_surface zone
+  function moveGroupStickers(groupId, startPositions, delta) {
+    setDesign(prev => ({
+      ...prev,
+      stickers: prev.stickers.map(s => {
+        if (s.groupId !== groupId) return s;
+        const start = startPositions[s.id];
+        if (!start) return s;
+        const updated = { ...s };
+        if (delta.deltaTheta !== undefined) updated.theta = start.theta + delta.deltaTheta;
+        if (delta.deltaY    !== undefined) updated.y     = start.y     + delta.deltaY;
+        if (delta.dx        !== undefined) updated.x     = start.x     + delta.dx;
+        if (delta.dz        !== undefined) updated.z     = start.z     + delta.dz;
+        return updated;
+      }),
+    }));
   }
 
   function duplicateSticker(id) {
@@ -201,7 +238,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   const canvasConfig = useMemo(() => ({
     tiers: design.tiers.map((t, i) => ({
       radius:       t.radius  ?? TIER_RADII[i] ?? 0.35,
-      height:       t.height  ?? (1.45 - i * 0.08),
+      height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
       color:        t.color,
       frostingType: t.frostingType ?? 'buttercream',
       topPiping:    t.topPiping ?? null,
@@ -218,6 +255,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
     addSticker, updateSticker, removeSticker, duplicateSticker,
+    groupStickers, ungroupStickers, moveGroupStickers,
     setTopper, setTopperScale,
     loadDesign,
     canvasConfig,

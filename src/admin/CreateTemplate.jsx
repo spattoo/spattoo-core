@@ -2,8 +2,12 @@ import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import CakeCanvas, { CakeThumbnailCanvas } from '../designer/canvas/CakeCanvas.jsx';
 import { TIER_RADII, FROSTING_TYPES } from '../designer/hooks/useCakeDesign.js';
 
+const API_BASE = typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_API_URL ?? '') : '';
+
 const TIER_COLORS = ['#f5b8c8', '#ffffff', '#c8dff5', '#d4f5d4'];
 const TIER_LABELS = ['Bottom', '2nd', '3rd', 'Top'];
+const BOTTOM_BASE = 0.1;
+const BOTTOM_H    = 1.45;
 
 const s = {
   page: {
@@ -84,10 +88,6 @@ const s = {
     display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6,
   },
   pipingLabel: { fontSize: 10, color: '#b07a8a', width: 36, flexShrink: 0, fontWeight: 600 },
-  colorDot: (color) => ({
-    width: 22, height: 22, borderRadius: '50%', border: '1.5px solid #e0d0d5',
-    background: color, flexShrink: 0, cursor: 'pointer',
-  }),
   thumbnailBox: {
     width: '100%', aspectRatio: '1 / 1', border: '1.5px dashed #e0d0d5',
     borderRadius: 10, display: 'flex', alignItems: 'center',
@@ -101,9 +101,51 @@ const s = {
     background: variant === 'primary' ? '#9b5f72' : '#f5eaed',
     color: variant === 'primary' ? '#fff' : '#9b5f72',
   }),
-  removeBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    fontSize: 12, color: '#e57373', padding: 0, lineHeight: 1,
+  // Element panel
+  typeScrollRow: {
+    display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6,
+    marginBottom: 10, scrollbarWidth: 'none',
+  },
+  typePill: (active) => ({
+    flexShrink: 0, padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+    border: `1.5px solid ${active ? '#9b5f72' : '#f0dce3'}`,
+    background: active ? '#fdf0f5' : '#fff',
+    color: active ? '#6b2d42' : '#b07a8a',
+    fontSize: 11, fontWeight: 700,
+    fontFamily: "'Quicksand', sans-serif",
+  }),
+  elGrid: {
+    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6,
+  },
+  elCard: {
+    border: '1.5px solid #f0dce3', borderRadius: 8, overflow: 'hidden',
+    cursor: 'pointer', background: '#fdf9fb', display: 'flex',
+    flexDirection: 'column', alignItems: 'center',
+    padding: '6px 4px',
+    transition: 'border-color 0.15s',
+  },
+  elThumb: {
+    width: '100%', aspectRatio: '1/1', objectFit: 'contain',
+    borderRadius: 6, background: '#fff',
+  },
+  elName: {
+    fontSize: 9, color: '#9b5f72', fontWeight: 600, marginTop: 4,
+    textAlign: 'center', lineHeight: 1.2, wordBreak: 'break-word',
+  },
+  // Group bar overlay
+  groupBar: {
+    position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)',
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(16px)',
+    padding: '8px 14px', borderRadius: 12, whiteSpace: 'nowrap',
+    boxShadow: '0 4px 20px rgba(107,45,66,0.22)',
+    border: '1px solid rgba(240,220,227,0.9)',
+    zIndex: 30, pointerEvents: 'auto',
+  },
+  groupBarBtn: {
+    background: 'none', border: '1.5px solid #e0d0d5', borderRadius: 8,
+    padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+    fontWeight: 700, fontFamily: "'Quicksand', sans-serif",
   },
 };
 
@@ -136,54 +178,70 @@ function PipingSelect({ label, value, options, onSelect, onColorChange }) {
 }
 
 export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumbnails', onSave, onSaved }) {
-  const [name, setName] = useState('');
+  const [name, setName]           = useState('');
   const [tierCount, setTierCount] = useState(1);
-  const [tiers, setTiers] = useState([
+  const [tiers, setTiers]         = useState([
     { color: '#f5b8c8', frostingType: 'buttercream', topPiping: null, bottomPiping: null },
   ]);
-  const [topper, setTopper] = useState(null);
-  const [thumbnail, setThumbnail] = useState(null); // data URL
+  const [topper, setTopper]       = useState(null);
+  const [thumbnail, setThumbnail] = useState(null);
   const [pipingStyles, setPipingStyles] = useState([]);
   const [topperOptions, setTopperOptions] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState(null);
-  const canvasContainerRef  = useRef();
-  const thumbContainerRef   = useRef();
+  const [saving, setSaving]       = useState(false);
+  const [saveMsg, setSaveMsg]     = useState(null);
+  const canvasContainerRef = useRef();
+  const thumbContainerRef  = useRef();
+  const hitTestRef         = useRef(null);
+  const [dragGhost, setDragGhost] = useState(null); // { x, y, el }
 
-  // Load piping styles and toppers from DB
+  // Sticker state
+  const [stickers, setStickers]               = useState([]);
+  const [selectedStickerIds, setSelectedStickerIds] = useState(new Set());
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+
+  // Element panel state
+  const [stickerElements, setStickerElements] = useState([]);
+  const [elementTypes, setElementTypes]       = useState([]);
+  const [activeTypeId, setActiveTypeId]       = useState(null);
+
   useEffect(() => {
-    supabase
-      .from('element_types')
-      .select('id, slug')
-      .in('slug', ['piping_style', 'topper'])
-      .then(({ data }) => {
-        if (!data) return;
-        const pipingTypeId = data.find(t => t.slug === 'piping_style')?.id;
-        const topperTypeId = data.find(t => t.slug === 'topper')?.id;
+    async function loadElements() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const token = session.access_token;
 
-        if (pipingTypeId) {
-          supabase
-            .from('cake_elements')
-            .select('id, name, image_url, sort_order')
-            .eq('element_type_id', pipingTypeId)
-            .eq('is_active', true)
-            .order('sort_order')
-            .then(({ data: els }) => setPipingStyles(els ?? []));
-        }
-        if (topperTypeId) {
-          supabase
-            .from('cake_elements')
-            .select('id, name, image_url, thumbnail_url, sort_order')
-            .eq('element_type_id', topperTypeId)
-            .is('parent_id', null)
-            .eq('is_active', true)
-            .order('sort_order')
-            .then(({ data: els }) => setTopperOptions(els ?? []));
-        }
-      });
+      async function apiFetch(path) {
+        const res = await fetch(`${API_BASE}${path}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return [];
+        return res.json();
+      }
+
+      const [types, allElements] = await Promise.all([
+        apiFetch('/api/element-types'),
+        apiFetch('/api/elements?parents_only=true'),
+      ]);
+
+      if (!Array.isArray(types)) return;
+
+      const pipingTypeId = types.find(t => t.slug === 'piping_style')?.id;
+      const topperTypeId = types.find(t => t.slug === 'topper')?.id;
+
+      const elements = Array.isArray(allElements) ? allElements : [];
+      setPipingStyles(elements.filter(e => e.element_type_id === pipingTypeId));
+      setTopperOptions(elements.filter(e => e.element_type_id === topperTypeId));
+
+      const stickerTypes = types.filter(t => t.slug !== 'piping_style' && t.slug !== 'topper');
+      setElementTypes(stickerTypes);
+      if (stickerTypes.length > 0) setActiveTypeId(stickerTypes[0].id);
+
+      const excludeIds = new Set([pipingTypeId, topperTypeId].filter(Boolean));
+      setStickerElements(elements.filter(e => !excludeIds.has(e.element_type_id)));
+    }
+    loadElements();
   }, []);
 
-  // Keep tiers array in sync with tierCount
   useEffect(() => {
     setTiers(prev => {
       if (tierCount > prev.length) {
@@ -203,6 +261,134 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
     setTiers(prev => prev.map((t, i) => i === index ? { ...t, ...patch } : t));
   }
 
+  // ── Sticker management ──
+  function addStickerEl(element, hit = null) {
+    const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
+    const zone = hit?.zone ?? (element.placement_config?.top_surface ? 'top_surface' : 'side');
+    const placementMode = element.placement_config?.[zone] ?? 'hug';
+    setStickers(prev => [...prev, {
+      id:            Date.now(),
+      elementId:     element.id,
+      imageUrl:      element.image_url,
+      name:          element.name,
+      zone,
+      tierIndex:     hit?.tierIndex ?? 0,
+      placementMode,
+      theta:         hit?.theta ?? 0,
+      y:             hit?.y    ?? (BOTTOM_BASE + BOTTOM_H * 0.45),
+      x:             hit?.x    ?? 0,
+      z:             hit?.z    ?? 0,
+      scale:         isGlb ? 2.5 : 1,
+      yOffset:       0,
+      rotation:      0,
+      radialOffset:  0,
+      tiltAngle:     0,
+      groupId:       null,
+      color:         null,
+      allowedActions: {
+        resize:    element.allowed_actions?.resize    ?? true,
+        duplicate: element.allowed_actions?.duplicate ?? true,
+        color:     element.allowed_actions?.color     ?? false,
+        delete:    true,
+      },
+    }]);
+  }
+
+  function startStickerDrag(el, startX, startY) {
+    setDragGhost({ x: startX, y: startY, el });
+    function onMove(e) {
+      setDragGhost({ x: e.clientX, y: e.clientY, el });
+    }
+    function onUp(e) {
+      setDragGhost(null);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      const hit = hitTestRef.current?.(e.clientX, e.clientY);
+      if (hit) addStickerEl(el, hit);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
+
+  function updateStickerPos(id, changes) {
+    setStickers(prev => prev.map(s => s.id === id ? { ...s, ...changes } : s));
+  }
+
+  function removeStickerById(id) {
+    setStickers(prev => prev.filter(s => s.id !== id));
+    setSelectedStickerIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+  }
+
+  function moveGroupStickers(groupId, startPositions, delta) {
+    setStickers(prev => prev.map(s => {
+      if (s.groupId !== groupId) return s;
+      const start = startPositions[s.id];
+      if (!start) return s;
+      const u = { ...s };
+      if (delta.deltaTheta !== undefined) u.theta = start.theta + delta.deltaTheta;
+      if (delta.deltaY     !== undefined) u.y     = start.y     + delta.deltaY;
+      if (delta.dx         !== undefined) u.x     = start.x     + delta.dx;
+      if (delta.dz         !== undefined) u.z     = start.z     + delta.dz;
+      return u;
+    }));
+  }
+
+  // ── Selection ──
+  function clearSelection() {
+    setSelectedStickerIds(new Set());
+    setMultiSelectMode(false);
+  }
+
+  function handleStickerSelect(id, ctrlKey = false) {
+    if (ctrlKey || multiSelectMode) {
+      setMultiSelectMode(true);
+      setSelectedStickerIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+      return;
+    }
+    const sticker = stickers.find(s => s.id === id);
+    if (sticker?.groupId) {
+      setSelectedStickerIds(new Set(stickers.filter(s => s.groupId === sticker.groupId).map(s => s.id)));
+    } else {
+      const isOnly = selectedStickerIds.size === 1 && selectedStickerIds.has(id);
+      setSelectedStickerIds(isOnly ? new Set() : new Set([id]));
+    }
+  }
+
+  function handleStickerLongPress(id) {
+    setMultiSelectMode(true);
+    setSelectedStickerIds(new Set([id]));
+  }
+
+  function groupSelected() {
+    const ids = [...selectedStickerIds];
+    const groupId = crypto.randomUUID();
+    setStickers(prev => prev.map(s => ids.includes(s.id) ? { ...s, groupId } : s));
+    clearSelection();
+  }
+
+  function ungroupSelected() {
+    const ids = [...selectedStickerIds];
+    const gid = stickers.find(s => ids.includes(s.id))?.groupId;
+    if (!gid) return;
+    setStickers(prev => prev.map(s => s.groupId === gid ? { ...s, groupId: null } : s));
+    clearSelection();
+  }
+
+  function deleteSelected() {
+    const ids = new Set(selectedStickerIds);
+    setStickers(prev => prev.filter(s => !ids.has(s.id)));
+    clearSelection();
+  }
+
+  // ── Single sticker toolbar (shown in R3F Html — minimal) ──
+  const selectedId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
+  const selectedSticker = selectedId ? stickers.find(s => s.id === selectedId) : null;
+  const stickerToolbar = null; // edit panel below replaces the floating Html toolbar
+
   const canvasConfig = useMemo(() => ({
     tiers: tiers.map((t, i) => ({
       radius:       TIER_RADII[i] ?? 0.35,
@@ -212,9 +398,10 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
       topPiping:    t.topPiping,
       bottomPiping: t.bottomPiping,
     })),
-    texts: [],
-    topper: topper ? { ...topper, scale: 1 } : null,
-  }), [tiers, topper]);
+    texts:    [],
+    stickers,
+    topper:   topper ? { ...topper, scale: 1 } : null,
+  }), [tiers, topper, stickers]);
 
   function captureThumbnail() {
     const canvas = thumbContainerRef.current?.querySelector('canvas');
@@ -237,8 +424,9 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
         decorations:  [],
         texts:        [],
       })),
-      texts:  [],
-      topper: topper ?? null,
+      texts:    [],
+      stickers,
+      topper:   topper ?? null,
     };
 
     const thumbnailBlob = thumbnail ? await (await fetch(thumbnail)).blob() : null;
@@ -247,7 +435,6 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
       if (onSave) {
         await onSave({ name: name.trim(), tierCount, designJson, thumbnailBlob });
       } else {
-        // Legacy: direct Supabase save (fallback)
         let thumbnail_url = null;
         if (thumbnailBlob) {
           const fileName = `template-${Date.now()}.png`;
@@ -265,7 +452,6 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
         });
         if (error) throw new Error(error.message);
       }
-
       setSaveMsg({ ok: true, text: 'Template saved!' });
       onSaved?.();
       setTimeout(() => setSaveMsg(null), 2000);
@@ -275,6 +461,10 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
       setSaving(false);
     }
   }
+
+  const visibleElements = activeTypeId
+    ? stickerElements.filter(e => e.element_type_id === activeTypeId)
+    : stickerElements;
 
   return (
     <>
@@ -320,8 +510,6 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
                   <div style={s.tierHeader}>
                     <span style={s.tierLabel}>{TIER_LABELS[i]} Tier</span>
                   </div>
-
-                  {/* Color */}
                   <div style={s.row}>
                     <span style={s.rowLabel}>Color</span>
                     <input
@@ -332,8 +520,6 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
                     />
                     <span style={{ fontSize: 11, color: '#b07a8a' }}>{tier.color}</span>
                   </div>
-
-                  {/* Frosting type */}
                   <div style={s.row}>
                     <span style={s.rowLabel}>Frosting</span>
                     <select
@@ -346,8 +532,6 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
                       ))}
                     </select>
                   </div>
-
-                  {/* Piping */}
                   {pipingStyles.length > 0 && (
                     <>
                       <PipingSelect
@@ -387,6 +571,48 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
                 </select>
               </div>
             )}
+
+            {/* Elements */}
+            {stickerElements.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={s.sectionTitle}>Elements</div>
+                <div style={{ fontSize: 10, color: '#b07a8a', marginBottom: 8 }}>
+                  Tap to add · Long-press on canvas to multi-select
+                </div>
+
+                {/* Type filter pills */}
+                {elementTypes.length > 1 && (
+                  <div style={s.typeScrollRow}>
+                    {elementTypes.map(t => (
+                      <button key={t.id} style={s.typePill(activeTypeId === t.id)} onClick={() => setActiveTypeId(t.id)}>
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Element grid */}
+                <div style={s.elGrid}>
+                  {visibleElements.map(el => (
+                    <div
+                      key={el.id}
+                      style={{ ...s.elCard, touchAction: 'none' }}
+                      onPointerDown={e => { e.preventDefault(); startStickerDrag(el, e.clientX, e.clientY); }}
+                    >
+                      {(el.thumbnail_url || el.image_url) && (
+                        <img
+                          src={el.thumbnail_url ?? el.image_url}
+                          alt={el.name}
+                          style={s.elThumb}
+                        />
+                      )}
+                      <div style={s.elName}>{el.name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* ── Footer: thumbnail + save ── */}
@@ -426,7 +652,7 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
               config={canvasConfig}
               selectedTier={null}
               onTierClick={() => {}}
-              onDeselect={() => {}}
+              onDeselect={clearSelection}
               selectedPiping={null}
               onTopPipingSelect={() => {}}
               onBottomPipingSelect={() => {}}
@@ -438,14 +664,127 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
               onTextSelect={() => {}}
               onTextMove={() => {}}
               onTextContentChange={() => {}}
-              autoRotate={true}
+              autoRotate={false}
+              selectedStickerIds={selectedStickerIds}
+              onStickerSelect={handleStickerSelect}
+              onStickerLongPress={handleStickerLongPress}
+              onStickerMove={updateStickerPos}
+              onGroupMove={moveGroupStickers}
+              stickerToolbar={stickerToolbar}
+              hitTestRef={hitTestRef}
             />
           </Suspense>
+
+          {/* ── Drag ghost ── */}
+          {dragGhost && (
+            <div style={{
+              position: 'fixed', left: dragGhost.x - 28, top: dragGhost.y - 28,
+              width: 56, height: 56, borderRadius: 12, overflow: 'hidden',
+              background: 'rgba(255,255,255,0.9)', border: '2px solid #9b5f72',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+            }}>
+              {dragGhost.el.thumbnail_url && (
+                <img src={dragGhost.el.thumbnail_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              )}
+            </div>
+          )}
+
+          {/* ── Single sticker edit strip ── */}
+          {selectedSticker && !multiSelectMode && (
+            <div style={{
+              position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(16px)',
+              padding: '8px 12px', borderRadius: 12, whiteSpace: 'nowrap',
+              boxShadow: '0 4px 20px rgba(107,45,66,0.22)',
+              border: '1px solid rgba(240,220,227,0.9)', zIndex: 30,
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#c9a0b0', letterSpacing: 1, textTransform: 'uppercase', marginRight: 4 }}>
+                {selectedSticker.name}
+              </span>
+
+              {/* Height */}
+              <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700 }}>Height</span>
+              <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { yOffset: +(((selectedSticker.yOffset ?? 0) - 0.05).toFixed(3)) })}>−</button>
+              <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { yOffset: +(((selectedSticker.yOffset ?? 0) + 0.05).toFixed(3)) })}>+</button>
+
+              {/* Scale */}
+              <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Size</span>
+              <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: Math.max(0.3, +((selectedSticker.scale - 0.2).toFixed(2))) })}>−</button>
+              <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: +((selectedSticker.scale + 0.2).toFixed(2)) })}>+</button>
+
+              {/* Tilt — not applicable for faux_balls */}
+              {selectedSticker.placementMode !== 'faux_balls' && <>
+                <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Tilt</span>
+                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.max(-1.2, +((selectedSticker.tiltAngle ?? 0) - 0.1).toFixed(3)) })}>−</button>
+                <span style={{ fontSize: 10, color: '#9b5f72', minWidth: 28, textAlign: 'center' }}>{Math.round(((selectedSticker.tiltAngle ?? 0) * 180) / Math.PI)}°</span>
+                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.min(1.2, +((selectedSticker.tiltAngle ?? 0) + 0.1).toFixed(3)) })}>+</button>
+              </>}
+
+              {/* Spin (top surface stand stickers only) */}
+              {selectedSticker.zone === 'top_surface' && selectedSticker.placementMode === 'stand' && <>
+                <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Spin</span>
+                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { rotation: +((selectedSticker.rotation ?? 0) - 0.2).toFixed(3) })}>↺</button>
+                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { rotation: +((selectedSticker.rotation ?? 0) + 0.2).toFixed(3) })}>↻</button>
+              </>}
+
+              {/* Depth (side stickers only) */}
+              {selectedSticker.zone === 'side' && <>
+                <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Depth</span>
+                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { radialOffset: Math.max(0, +((selectedSticker.radialOffset ?? 0) - 0.05).toFixed(3)) })}>−</button>
+                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { radialOffset: Math.min(0.6, +((selectedSticker.radialOffset ?? 0) + 0.05).toFixed(3)) })}>+</button>
+              </>}
+
+              <button
+                style={{ ...s.groupBarBtn, color: '#e53935', borderColor: '#fcc', marginLeft: 4 }}
+                onClick={() => removeStickerById(selectedId)}>
+                Delete
+              </button>
+              <button style={{ ...s.groupBarBtn, color: '#6c47ff', borderColor: '#ddd' }} onClick={clearSelection}>
+                Done
+              </button>
+            </div>
+          )}
+
+          {/* ── Multi-select group bar ── */}
+          {(multiSelectMode || selectedStickerIds.size > 1) && (() => {
+            const ids = [...selectedStickerIds];
+            const allGrouped = ids.length > 1 && ids.every(id => {
+              const stk = stickers.find(x => x.id === id);
+              return stk?.groupId && stk.groupId === stickers.find(x => x.id === ids[0])?.groupId;
+            });
+            return (
+              <div style={s.groupBar}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#666' }}>
+                  {ids.length === 0 ? 'Tap to select' : ids.length === 1 ? '1 selected — tap more' : `${ids.length} selected`}
+                </span>
+                {ids.length > 1 && !allGrouped && (
+                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }} onClick={groupSelected}>
+                    Group
+                  </button>
+                )}
+                {ids.length > 1 && allGrouped && (
+                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }} onClick={ungroupSelected}>
+                    Ungroup
+                  </button>
+                )}
+                {ids.length > 1 && (
+                  <button style={{ ...s.groupBarBtn, color: '#e53935', borderColor: '#fcc' }} onClick={deleteSelected}>
+                    Delete all
+                  </button>
+                )}
+                <button style={{ ...s.groupBarBtn, color: '#6c47ff', borderColor: '#ddd' }} onClick={clearSelection}>
+                  Done
+                </button>
+              </div>
+            );
+          })()}
         </div>
 
       </div>
 
-      {/* Hidden off-screen canvas for clean thumbnail capture (no floor/board/background) */}
+      {/* Hidden off-screen canvas for thumbnail capture */}
       <Suspense fallback={null}>
         <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
       </Suspense>

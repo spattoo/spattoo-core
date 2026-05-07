@@ -5,6 +5,13 @@ import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
+import {
+  STICKER_SIZE, GOLD_COLOR, SELECTION_COLOR,
+  PICKER_ORIGIN_X, PICKER_STEP_X, PICKER_ORIGIN_Z, PICKER_STEP_Z,
+  CAMERA_POSITION, CAMERA_FOV,
+  SIDE_STICKER_SURFACE_OFFSET, FLAT_STICKER_Y_OFFSET,
+} from '../constants.js';
+import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 
 function darkenHex(hex, amount) {
   if (!hex || !hex.startsWith('#')) return '#888';
@@ -18,18 +25,6 @@ function darkenHex(hex, amount) {
     Math.round(b * f).toString(16).padStart(2,'0');
 }
 
-function cylinderHit(ray, radius) {
-  const { origin: o, direction: d } = ray;
-  const a = d.x * d.x + d.z * d.z;
-  const b = 2 * (o.x * d.x + o.z * d.z);
-  const c = o.x * o.x + o.z * o.z - radius * radius;
-  const disc = b * b - 4 * a * c;
-  if (disc < 0) return null;
-  const t = (-b - Math.sqrt(disc)) / (2 * a);
-  if (t < 0) return null;
-  const p = ray.at(t, new THREE.Vector3());
-  return { theta: Math.atan2(p.x, p.z), y: p.y };
-}
 
 function glyphAdvance(char) {
   const g = helvetikerBold.glyphs[char] ?? helvetikerBold.glyphs['?'];
@@ -71,15 +66,6 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
     [hitW, fs]
   );
 
-  function pointerRay(e) {
-    const rect = gl.domElement.getBoundingClientRect();
-    const ndx  = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
-    const ndy  = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
-    const rc   = new THREE.Raycaster();
-    rc.setFromCamera({ x: ndx, y: ndy }, camera);
-    return rc.ray;
-  }
-
   const totalArcAngle = totalWidth / surfaceR;
 
   return (
@@ -110,7 +96,7 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
                   color={faceColor}
                   roughness={0.78}
                   metalness={0.0}
-                  emissive={selected ? '#6c47ff' : '#000000'}
+                  emissive={selected ? SELECTION_COLOR : '#000000'}
                   emissiveIntensity={selected ? 0.10 : 0}
                 />
                 <meshStandardMaterial
@@ -128,7 +114,7 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
       <group position={[cx, textEl.y, cz]} rotation={[0, textEl.theta, 0]}>
         {selected && (
           <lineSegments position={[0, 0, 0.02]} geometry={boxGeom}>
-            <lineBasicMaterial color="#6c47ff" />
+            <lineBasicMaterial color={SELECTION_COLOR} />
           </lineSegments>
         )}
         {selected && toolbar && (
@@ -159,7 +145,7 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
           didDrag.current      = false;
           startPos.current     = { x: e.clientX, y: e.clientY };
           dragR.current        = surfaceR;
-          startHit.current     = cylinderHit(pointerRay(e), surfaceR);
+          startHit.current     = cylinderHit(pointerRay(e, gl.domElement, camera), surfaceR);
           startTextPos.current = { theta: textEl.theta, y: textEl.y };
           onOrbitEnable(false);
 
@@ -170,7 +156,7 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (didDrag.current && startHit.current) {
-              const hit = cylinderHit(pointerRay(ev), dragR.current);
+              const hit = cylinderHit(pointerRay(ev, gl.domElement, camera), dragR.current);
               if (hit) onMove_prop(textEl.id, {
                 theta: startTextPos.current.theta + (hit.theta - startHit.current.theta),
                 y:     startTextPos.current.y     + (hit.y     - startHit.current.y),
@@ -199,7 +185,9 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
 
 // ── Sticker components ────────────────────────────────────────────────────────
 
-const STICKER_SIZE = 0.28;
+// Cache of GLB URL → horizontal half-radius in model-local space (before group scale).
+// Populated by StickerModel when the bounding box is first computed.
+const glbXRadiusCache = {};
 
 class TextureErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -218,7 +206,7 @@ function StickerTexture({ imageUrl, selected }) {
         transparent
         alphaTest={0.05}
         roughness={0.75}
-        emissive={selected ? '#6c47ff' : '#000000'}
+        emissive={selected ? SELECTION_COLOR : '#000000'}
         emissiveIntensity={selected ? 0.2 : 0}
         side={THREE.DoubleSide}
         depthWrite={false}
@@ -234,26 +222,37 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
   const clonedScene = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);
-    // Create a stable plane object once; useEffect keeps its constant in sync.
-    const plane = clipY !== undefined
-      ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -clipY)
-      : null;
-    clipPlane.current = plane;
     clone.traverse(obj => {
       if (!obj.isMesh) return;
+      obj.raycast = () => {}; // hit plane handles interaction; GLB meshes must not absorb raycasts
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(mat => {
-        mat.depthWrite = true;
-        if (plane) mat.clippingPlanes = [plane];
-        mat.needsUpdate = true;
-      });
+      mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
     });
     return clone;
-  }, [scene]); // re-clone only when the source GLB changes, not on every clipY update
+  }, [scene]);
 
+  // Sync clip plane: set, update constant, or clear when clipY becomes undefined.
   useEffect(() => {
-    if (clipPlane.current && clipY !== undefined) clipPlane.current.constant = -clipY;
-  }, [clipY]);
+    if (clipY !== undefined) {
+      if (!clipPlane.current) {
+        clipPlane.current = new THREE.Plane(new THREE.Vector3(0, 1, 0), -clipY);
+      } else {
+        clipPlane.current.constant = -clipY;
+      }
+      const plane = clipPlane.current;
+      clonedScene.traverse(obj => {
+        if (!obj.isMesh) return;
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(mat => { mat.clippingPlanes = [plane]; mat.needsUpdate = true; });
+      });
+    } else {
+      clonedScene.traverse(obj => {
+        if (!obj.isMesh) return;
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(mat => { mat.clippingPlanes = []; mat.needsUpdate = true; });
+      });
+    }
+  }, [clipY, clonedScene]);
 
   const { scale, position } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
@@ -262,8 +261,9 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
     const center = new THREE.Vector3();
     box.getCenter(center);
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
+    glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
     return { scale: sc, position: [-center.x * sc, -center.y * sc, -center.z * sc] };
-  }, [clonedScene]);
+  }, [clonedScene, imageUrl]);
 
   useEffect(() => {
     clonedScene.traverse(obj => {
@@ -272,7 +272,7 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
       mats.forEach(mat => {
         if (!mat.map && color) mat.color = new THREE.Color(color);
         if (mat.emissive !== undefined) {
-          mat.emissive = new THREE.Color(selected ? '#6c47ff' : '#000000');
+          mat.emissive = new THREE.Color(selected ? SELECTION_COLOR : '#000000');
           mat.emissiveIntensity = selected ? 0.2 : 0;
         }
         mat.needsUpdate = true;
@@ -301,25 +301,19 @@ function StickerFace({ imageUrl, selected, color, clipY }) {
 const OUTLINE_GEOM = new THREE.EdgesGeometry(new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE));
 const HANDLE_R = 0.06;
 
-function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSelect, onMove, onOrbitEnable, toolbar }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSelect, onLongPress, onMove, onGroupMove, allStickers, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
-  const didDrag      = useRef(false);
-  const startPos     = useRef({ x: 0, y: 0 });
-  const startHit     = useRef(null);
-  const startSticker = useRef(null);
+  const didDrag           = useRef(false);
+  const startPos          = useRef({ x: 0, y: 0 });
+  const startHit          = useRef(null);
+  const startSticker      = useRef(null);
+  const groupStart        = useRef(null);
+  const pointerDownTime   = useRef(0);
+  const pressedRef        = useRef(false);
 
-  const surfaceR = radius + 0.025;
+  const surfaceR = radius + SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
   const cx = surfaceR * Math.sin(sticker.theta);
   const cz = surfaceR * Math.cos(sticker.theta);
-
-  function pointerRay(e) {
-    const rect = gl.domElement.getBoundingClientRect();
-    const ndx  = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
-    const ndy  = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
-    const rc   = new THREE.Raycaster();
-    rc.setFromCamera({ x: ndx, y: ndy }, camera);
-    return rc.ray;
-  }
 
   return (
     <group
@@ -327,6 +321,8 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
       rotation={[0, sticker.theta, 0]}
       scale={sticker.scale}
     >
+      {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
+      <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
       <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -334,14 +330,30 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
         </Html>
       )}
       <mesh
+        userData={{ isStickerHitPlane: true }}
         position={[0, 0, 0.001]}
+        onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
+        onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
           e.stopPropagation();
-          didDrag.current      = false;
-          startPos.current     = { x: e.clientX, y: e.clientY };
-          startHit.current     = cylinderHit(pointerRay(e), surfaceR);
-          startSticker.current = { theta: sticker.theta, y: sticker.y };
+          pressedRef.current   = true;
           onOrbitEnable(false);
+          try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+          didDrag.current      = false;
+          pointerDownTime.current = Date.now();
+          startPos.current     = { x: e.clientX, y: e.clientY };
+          startHit.current     = cylinderHit(pointerRay(e, gl.domElement, camera), surfaceR);
+          startSticker.current = { theta: sticker.theta, y: sticker.y };
+
+          if (sticker.groupId) {
+            groupStart.current = {};
+            allStickers.forEach(s => {
+              if (s.groupId === sticker.groupId)
+                groupStart.current[s.id] = { theta: s.theta, y: s.y };
+            });
+          } else {
+            groupStart.current = null;
+          }
 
           const canvas = gl.domElement;
           function onMoveHandler(ev) {
@@ -349,17 +361,32 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (didDrag.current && startHit.current) {
-              const hit = cylinderHit(pointerRay(ev), surfaceR);
-              if (hit) onMove(sticker.id, {
-                theta: startSticker.current.theta + (hit.theta - startHit.current.theta),
-                y: Math.max(baseY + 0.05, Math.min(baseY + height - 0.05,
-                     startSticker.current.y + (hit.y - startHit.current.y))),
-              });
+              const hit = cylinderHit(pointerRay(ev, gl.domElement, camera), surfaceR);
+              if (!hit) return;
+              const deltaTheta = hit.theta - startHit.current.theta;
+              const deltaY     = hit.y     - startHit.current.y;
+              if (sticker.groupId && groupStart.current && onGroupMove) {
+                onGroupMove(sticker.groupId, groupStart.current, { deltaTheta, deltaY });
+              } else {
+                onMove(sticker.id, {
+                  theta: startSticker.current.theta + deltaTheta,
+                  y: Math.max(baseY + 0.05, Math.min(baseY + height - 0.05,
+                       startSticker.current.y + deltaY)),
+                });
+              }
             }
           }
-          function onUp() {
+          function onUp(ev) {
+            pressedRef.current = false;
             onOrbitEnable(true);
-            if (!didDrag.current) onSelect(sticker.id);
+            if (!didDrag.current) {
+              const elapsed = Date.now() - pointerDownTime.current;
+              if (elapsed >= 500 && onLongPress) {
+                onLongPress(sticker.id);
+              } else {
+                onSelect(sticker.id, ev.ctrlKey || ev.metaKey);
+              }
+            }
             canvas.removeEventListener('pointermove', onMoveHandler);
             canvas.removeEventListener('pointerup', onUp);
           }
@@ -370,91 +397,358 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
       >
         <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      </group>
+    </group>
+  );
+}
+
+// ── Procedural faux-ball cluster ──────────────────────────────────────────────
+// Builds world-space ball positions from the sticker's (x,z) anchor point.
+// Top-surface balls sit on the cake top; side balls press against the cylinder.
+function buildFauxBallPositions(theta, topY, radius, baseY, scale, yOffset) {
+  const ty = topY + yOffset;
+
+  const r_big  = 0.075 * scale;
+  const r_sm   = 0.060 * scale;
+  const r_gap  = 0.046 * scale;   // gap balls — smaller, elevated between big & right/left
+  const rd_big = radius - 0.08 * scale;
+
+  // Back ball (dt=0, inward): (rd_big - rd_back)² + (r_big - r_sm)² = (r_big + r_sm)²
+  //   → rd_back = rd_big - 2√(r_big·r_sm)
+  const rd_back = rd_big - 2 * Math.sqrt(r_big * r_sm);
+  // Right/left (same rd as big): cos(dt) = 1 - 2·r_big·r_sm / rd_big²
+  const cos_dt  = 1 - (2 * r_big * r_sm) / (rd_big * rd_big);
+  const dt      = Math.acos(Math.max(-1, Math.min(1, cos_dt)));
+
+  const flat = (th, rd, r) => [rd * Math.sin(th), ty + r, rd * Math.cos(th)];
+
+  const B = flat(theta,      rd_big,  r_big);
+  const K = flat(theta,      rd_back, r_sm);
+  const R = flat(theta + dt, rd_big,  r_sm);
+  const L = flat(theta - dt, rd_big,  r_sm);
+
+  // 3-sphere Apollonius: centre of a ball of radius rG touching spheres P1,P2,P3
+  // from above (max-y solution). Uses pairwise subtraction of sphere equations to
+  // get two linear planes, finds their intersection line, then solves for the point
+  // on the line that lies on sphere-1. Returns max-y solution.
+  function apollo3(P1,rP1, P2,rP2, P3,rP3, rG) {
+    const R1=rP1+rG, R2=rP2+rG, R3=rP3+rG;
+    const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+    const sc=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+    const d12=[P2[0]-P1[0],P2[1]-P1[1],P2[2]-P1[2]];
+    const d23=[P3[0]-P2[0],P3[1]-P2[1],P3[2]-P2[2]];
+    const n=cross(d12,d23);
+    const nn=dot(n,n);
+    if(nn<1e-12) return null;
+    const b1=(R1*R1-R2*R2+dot(P2,P2)-dot(P1,P1))/2;
+    const b2=(R2*R2-R3*R3+dot(P3,P3)-dot(P2,P2))/2;
+    const G0=sc(add(sc(cross(d23,n),b1), sc(cross(n,d12),b2)), 1/nn);
+    const nLen=Math.sqrt(nn);
+    const nu=sc(n,1/nLen);
+    const v=[G0[0]-P1[0],G0[1]-P1[1],G0[2]-P1[2]];
+    const bq=2*dot(v,nu), cq=dot(v,v)-R1*R1;
+    const disc=bq*bq-4*cq;
+    if(disc<0) return null;
+    const sq=Math.sqrt(disc);
+    const C1=add(G0,sc(nu,(-bq+sq)/2));
+    const C2=add(G0,sc(nu,(-bq-sq)/2));
+    return C1[1]>=C2[1] ? C1 : C2;
+  }
+
+  const balls = [{ pos: B, r: r_big }];
+  if (rd_back > r_sm) balls.push({ pos: K, r: r_sm });
+  balls.push({ pos: R, r: r_sm }, { pos: L, r: r_sm });
+
+  // Gap balls touch big + back + right/left simultaneously
+  const g1 = apollo3(B,r_big, K,r_sm, R,r_sm, r_gap);
+  const g2 = apollo3(B,r_big, K,r_sm, L,r_sm, r_gap);
+  if (g1 && g1[1] - r_gap > topY) balls.push({ pos: g1, r: r_gap });
+  if (g2 && g2[1] - r_gap > topY) balls.push({ pos: g2, r: r_gap });
+
+
+  // ── Side cluster ──────────────────────────────────────────────────────────
+  // Center side ball pressed against the cake side, top edge at ty
+  const r_cs  = 0.055 * scale;
+  const r_fs  = 0.040 * scale;
+  const rd_cs = radius + r_cs;
+  const rd_fs = radius + r_fs;
+  const y_cs  = ty - r_cs * 0.3;       // center ball just below cake rim, close to top cluster
+  const y_fs  = y_cs - r_cs * 1.2;    // flanking balls below center
+
+  // dt so flanking ball (at rd_fs, y_fs) touches center ball (at rd_cs, y_cs)
+  // dist² = rd_cs² + rd_fs² - 2·rd_cs·rd_fs·cos(dt) + (y_cs-y_fs)² = (r_cs+r_fs)²
+  const dh = y_cs - y_fs;
+  const cos_dt_s = (rd_cs*rd_cs + rd_fs*rd_fs + dh*dh - (r_cs+r_fs)*(r_cs+r_fs))
+                   / (2 * rd_cs * rd_fs);
+  const dt_s = Math.acos(Math.max(-1, Math.min(1, cos_dt_s)));
+
+  const theta_s = theta + 0.40;        // shift side cluster to the right
+
+  // ── Connector ball — sits on the cake side at the rim, between top and side clusters ──
+  // Placed outside the rim (rd > radius) so it can't overlap the top-cluster balls (rd < radius)
+  const r_e    = 0.055 * scale;
+  const theta_e = theta + 0.20;        // between top cluster and side cluster
+  const rd_e   = radius + r_e;         // pressed against cake side (like side cluster)
+  const y_e    = ty + r_e * 0.3;       // near the rim edge, slightly above top surface
+  balls.push({ pos: [rd_e*Math.sin(theta_e), y_e, rd_e*Math.cos(theta_e)], r: r_e });
+
+  if (y_cs - r_cs > baseY)
+    balls.push({ pos: [rd_cs*Math.sin(theta_s), y_cs, rd_cs*Math.cos(theta_s)], r: r_cs });
+  if (y_fs - r_fs > baseY) {
+    balls.push({ pos: [rd_fs*Math.sin(theta_s+dt_s), y_fs, rd_fs*Math.cos(theta_s+dt_s)], r: r_fs });
+    balls.push({ pos: [rd_fs*Math.sin(theta_s-dt_s), y_fs, rd_fs*Math.cos(theta_s-dt_s)], r: r_fs });
+  }
+
+  return balls;
+}
+
+function FauxBallCluster({ sticker, topY, radius, baseY, selected, onSelect, onLongPress, onMove, onOrbitEnable, toolbar }) {
+  const { camera, gl } = useThree();
+  const didDrag        = useRef(false);
+  const startPos       = useRef({ x: 0, y: 0 });
+  const startHit       = useRef(null);
+  const startSticker   = useRef(null);
+  const pressedRef     = useRef(false);
+  const pointerDownTime = useRef(0);
+  const lastHitRef     = useRef(null);
+  const lastValidPos   = useRef(null);
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
+
+  const theta = Math.atan2(sticker.x, sticker.z);
+  const sc    = sticker.scale ?? 1;
+  const yo    = sticker.yOffset ?? 0;
+  const color = sticker.color ?? GOLD_COLOR;
+
+  const balls = useMemo(
+    () => buildFauxBallPositions(theta, topY, radius, baseY, sc, yo),
+    [theta, topY, radius, baseY, sc, yo]
+  );
+
+  const onDown = e => {
+    e.stopPropagation();
+    pressedRef.current = true;
+    onOrbitEnable(false);
+    try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+    didDrag.current         = false;
+    pointerDownTime.current = Date.now();
+    startPos.current        = { x: e.clientX, y: e.clientY };
+    startHit.current        = planeHit(pointerRay(e, gl.domElement, camera), plane);
+    startSticker.current    = { x: sticker.x, z: sticker.z };
+    lastHitRef.current      = null;
+    lastValidPos.current    = { x: sticker.x, z: sticker.z };
+
+    const canvas = gl.domElement;
+    function onMove_(ev) {
+      const dx = ev.clientX - startPos.current.x;
+      const dy = ev.clientY - startPos.current.y;
+      if (dx * dx + dy * dy > 25) didDrag.current = true;
+      if (didDrag.current && startHit.current) {
+        const hit = planeHit(pointerRay(ev, gl.domElement, camera), plane);
+        if (!hit) return;
+        const prev = lastHitRef.current ?? startHit.current;
+        let newX = lastValidPos.current.x + (hit.x - prev.x);
+        let newZ = lastValidPos.current.z + (hit.z - prev.z);
+        const maxR = radius * 0.99;
+        const rr = Math.sqrt(newX * newX + newZ * newZ);
+        if (rr > maxR) { newX = newX * maxR / rr; newZ = newZ * maxR / rr; }
+        lastValidPos.current = { x: newX, z: newZ };
+        onMove(sticker.id, { x: newX, z: newZ });
+        lastHitRef.current = hit;
+      }
+    }
+    function onUp(ev) {
+      pressedRef.current = false;
+      onOrbitEnable(true);
+      if (!didDrag.current) {
+        const elapsed = Date.now() - pointerDownTime.current;
+        if (elapsed >= 500 && onLongPress) onLongPress(sticker.id);
+        else onSelect(sticker.id, ev.ctrlKey || ev.metaKey);
+      }
+      canvas.removeEventListener('pointermove', onMove_);
+      canvas.removeEventListener('pointerup', onUp);
+    }
+    canvas.addEventListener('pointermove', onMove_);
+    canvas.addEventListener('pointerup', onUp);
+  };
+
+  return (
+    <group>
+      {balls.map((ball, i) => (
+        <mesh key={i} position={ball.pos} castShadow>
+          <sphereGeometry args={[ball.r, 24, 24]} />
+          <meshStandardMaterial
+            color={color}
+            metalness={0.88}
+            roughness={0.15}
+            emissive={selected ? SELECTION_COLOR : '#000000'}
+            emissiveIntensity={selected ? 0.15 : 0}
+          />
+        </mesh>
+      ))}
+      {selected && toolbar && (
+        <Html position={[sticker.x, topY + 0.22 * sc + yo + 0.12, sticker.z]} center zIndexRange={[200, 0]}>
+          {toolbar}
+        </Html>
+      )}
+      {/* Flat hit plane on the cake top for drag + click */}
+      <mesh
+        userData={{ isStickerHitPlane: true }}
+        position={[sticker.x, topY + 0.002, sticker.z]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
+        onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
+        onPointerDown={onDown}
+        onClick={e => e.stopPropagation()}
+      >
+        <planeGeometry args={[0.5, 0.5]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
 }
 
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, onSelect, onMove, onOrbitEnable, toolbar }) {
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, onSelect, onLongPress, onMove, onGroupMove, allStickers, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
-  const didDrag      = useRef(false);
-  const startPos     = useRef({ x: 0, y: 0 });
-  const startHit     = useRef(null);
-  const startSticker = useRef(null);
+  const didDrag         = useRef(false);
+  const startPos        = useRef({ x: 0, y: 0 });
+  const startHit        = useRef(null);
+  const startSticker    = useRef(null);
+  const groupStart      = useRef(null);
+  const pressedRef      = useRef(false);
+  const pointerDownTime = useRef(0);
+  const lastHitRef      = useRef(null);
+  const lastValidPos    = useRef(null);
   const plane        = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
 
-  const py = topY + (sticker.yOffset ?? 0) + 0.025;
-  const rotation = sticker.placementMode === 'stand'
-    ? [0, sticker.rotation ?? 0, 0]
-    : [-Math.PI / 2, 0, sticker.rotation ?? 0];
+  const py = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? -STICKER_SIZE * 0.3 : FLAT_STICKER_Y_OFFSET);
+  const isStand = sticker.placementMode === 'stand';
 
-  function pointerRay(e) {
-    const rect = gl.domElement.getBoundingClientRect();
-    const ndx  = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
-    const ndy  = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
-    const rc   = new THREE.Raycaster();
-    rc.setFromCamera({ x: ndx, y: ndy }, camera);
-    return rc.ray;
-  }
-
-  function planeHit(ray) {
-    const target = new THREE.Vector3();
-    return ray.intersectPlane(plane, target) ? { x: target.x, z: target.z } : null;
-  }
-
-  return (
-    <group
-      position={[sticker.x, py, sticker.z]}
-      rotation={rotation}
-      scale={sticker.scale}
-    >
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={py} />
+  // Shared children: face + toolbar Html + invisible hit mesh
+  const innerContent = (e_onDown) => (
+    <>
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
         </Html>
       )}
-      <mesh
-        position={[0, 0, 0.001]}
-        onPointerDown={e => {
-          e.stopPropagation();
-          didDrag.current      = false;
-          startPos.current     = { x: e.clientX, y: e.clientY };
-          startHit.current     = planeHit(pointerRay(e));
-          startSticker.current = { x: sticker.x, z: sticker.z };
-          onOrbitEnable(false);
-
-          const canvas = gl.domElement;
-          function onMoveHandler(ev) {
-            const dx = ev.clientX - startPos.current.x;
-            const dy = ev.clientY - startPos.current.y;
-            if (dx * dx + dy * dy > 25) didDrag.current = true;
-            if (didDrag.current && startHit.current) {
-              const hit = planeHit(pointerRay(ev));
-              if (hit) {
-                let newX = startSticker.current.x + (hit.x - startHit.current.x);
-                let newZ = startSticker.current.z + (hit.z - startHit.current.z);
-                const r = Math.sqrt(newX * newX + newZ * newZ);
-                const maxR = topRadius * 0.92;
-                if (r > maxR) { newX = newX * maxR / r; newZ = newZ * maxR / r; }
-                onMove(sticker.id, { x: newX, z: newZ });
-              }
-            }
-          }
-          function onUp() {
-            onOrbitEnable(true);
-            if (!didDrag.current) onSelect(sticker.id);
-            canvas.removeEventListener('pointermove', onMoveHandler);
-            canvas.removeEventListener('pointerup', onUp);
-          }
-          canvas.addEventListener('pointermove', onMoveHandler);
-          canvas.addEventListener('pointerup', onUp);
-        }}
-        onClick={e => e.stopPropagation()}
-      >
+      <mesh userData={{ isStickerHitPlane: true }} position={[0, 0, 0.001]}
+        onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
+        onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
+        onPointerDown={e_onDown} onClick={e => e.stopPropagation()}>
         <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
+    </>
+  );
+
+  const onDown = e => {
+    e.stopPropagation();
+    pressedRef.current = true;
+    onOrbitEnable(false);
+    try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+    didDrag.current         = false;
+    pointerDownTime.current = Date.now();
+    startPos.current        = { x: e.clientX, y: e.clientY };
+    startHit.current        = planeHit(pointerRay(e, gl.domElement, camera), plane);
+    startSticker.current    = { x: sticker.x, z: sticker.z };
+    lastHitRef.current      = null;
+    lastValidPos.current    = { x: sticker.x, z: sticker.z };
+
+    if (sticker.groupId) {
+      groupStart.current = {};
+      allStickers.forEach(s => {
+        if (s.groupId === sticker.groupId)
+          groupStart.current[s.id] = { x: s.x, z: s.z };
+      });
+    } else {
+      groupStart.current = null;
+    }
+
+    const canvas = gl.domElement;
+    function onMoveHandler(ev) {
+      const dx = ev.clientX - startPos.current.x;
+      const dy = ev.clientY - startPos.current.y;
+      if (dx * dx + dy * dy > 25) didDrag.current = true;
+      if (didDrag.current && startHit.current) {
+        const hit = planeHit(pointerRay(ev, gl.domElement, camera), plane);
+        if (!hit) return;
+        if (sticker.groupId && groupStart.current && onGroupMove) {
+          const rawDx = hit.x - startHit.current.x;
+          const rawDz = hit.z - startHit.current.z;
+          onGroupMove(sticker.groupId, groupStart.current, { dx: rawDx, dz: rawDz });
+        } else {
+          // Incremental delta from last frame so the collision direction never flips
+          // when the total drag overshoots the sibling centre.
+          const prevHit = lastHitRef.current ?? startHit.current;
+          const incrDx  = hit.x - prevHit.x;
+          const incrDz  = hit.z - prevHit.z;
+          let newX = lastValidPos.current.x + incrDx;
+          let newZ = lastValidPos.current.z + incrDz;
+          const maxR = topRadius * 0.92;
+          const r = Math.sqrt(newX * newX + newZ * newZ);
+          if (r > maxR) { newX = newX * maxR / r; newZ = newZ * maxR / r; }
+          const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
+          for (const sib of siblings) {
+            const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
+            const sibR  = (glbXRadiusCache[sib.imageUrl]    ?? STICKER_SIZE / 4) * (sib.scale ?? 1);
+            const minDist = selfR + sibR;
+            const ex = newX - sib.x, ez = newZ - sib.z;
+            const dist = Math.sqrt(ex * ex + ez * ez);
+            if (dist < minDist && dist > 0.001) {
+              newX = sib.x + ex * (minDist / dist);
+              newZ = sib.z + ez * (minDist / dist);
+              const r2 = Math.sqrt(newX * newX + newZ * newZ);
+              if (r2 > maxR) { newX = newX * maxR / r2; newZ = newZ * maxR / r2; }
+            }
+          }
+          lastValidPos.current = { x: newX, z: newZ };
+          onMove(sticker.id, { x: newX, z: newZ });
+        }
+        lastHitRef.current = hit;
+      }
+    }
+    function onUp(ev) {
+      pressedRef.current = false;
+      onOrbitEnable(true);
+      if (!didDrag.current) {
+        const elapsed = Date.now() - pointerDownTime.current;
+        if (elapsed >= 500 && onLongPress) {
+          onLongPress(sticker.id);
+        } else {
+          onSelect(sticker.id, ev.ctrlKey || ev.metaKey);
+        }
+      }
+      canvas.removeEventListener('pointermove', onMoveHandler);
+      canvas.removeEventListener('pointerup', onUp);
+    }
+    canvas.addEventListener('pointermove', onMoveHandler);
+    canvas.addEventListener('pointerup', onUp);
+  };
+
+  // Stand mode: outer=position+scale, middle=Y-spin, inner=X-tilt
+  if (isStand) {
+    return (
+      <group position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
+        <group rotation={[0, sticker.rotation ?? 0, 0]}>
+          <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
+            {innerContent(onDown)}
+          </group>
+        </group>
+      </group>
+    );
+  }
+  // Flat mode (sticker laid horizontal on top surface)
+  return (
+    <group
+      position={[sticker.x, py, sticker.z]}
+      rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}
+      scale={sticker.scale}
+    >
+      {innerContent(onDown)}
     </group>
   );
 }
@@ -515,11 +809,6 @@ function CakeTopper({ glbPath, topY, topRadius, scaleMultiplier = 1, onClick, se
     </group>
   );
 }
-
-const PICKER_ORIGIN_X = -0.5;
-const PICKER_STEP_X   = -0.62;
-const PICKER_ORIGIN_Z =  2.0;
-const PICKER_STEP_Z   = +0.52;
 
 function StyleTile({ id, label, glbPath, position, onSelect }) {
   const [px, py, pz] = position;
@@ -601,10 +890,31 @@ function CakeScene({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   onTopperClick, topperSelected, topperToolbar,
-  selectedStickerId, onStickerSelect, onStickerMove, stickerToolbar,
+  selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
   tierDataRef,
 }) {
   const { tiers, texts = [], stickers = [], topper = null } = config;
+  const orbitBlockSet = useRef(new Set());
+  const { gl, camera, scene } = useThree();
+
+  // Capture-phase pointerdown fires before OrbitControls' bubble-phase listener.
+  // Raycast here guarantees orbit is disabled before OrbitControls sees the event,
+  // even when onPointerEnter hasn't pre-fired (e.g. stationary pointer on a freshly placed sticker).
+  useEffect(() => {
+    const canvas = gl.domElement;
+    function onCaptureDown(e) {
+      const rect = canvas.getBoundingClientRect();
+      const ndx  = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+      const ndy  = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+      const rc   = new THREE.Raycaster();
+      rc.setFromCamera({ x: ndx, y: ndy }, camera);
+      const hits = rc.intersectObjects(scene.children, true);
+      const overSticker = hits.some(h => h.object.userData.isStickerHitPlane);
+      if (orbitRef.current) orbitRef.current.enabled = !overSticker;
+    }
+    canvas.addEventListener('pointerdown', onCaptureDown, { capture: true });
+    return () => canvas.removeEventListener('pointerdown', onCaptureDown, { capture: true });
+  }, [gl, camera, scene]);
 
   let stackY = 0.1;
   const tierData = tiers.map(tier => {
@@ -700,7 +1010,10 @@ function CakeScene({
               })}
             onContentChange={onTextContentChange}
             toolbar={selectedTextId === t.id ? textToolbar : null}
-            onOrbitEnable={enabled => { if (orbitRef.current) orbitRef.current.enabled = enabled; }}
+            onOrbitEnable={enabled => {
+              if (enabled) orbitBlockSet.current.delete(t.id); else orbitBlockSet.current.add(t.id);
+              if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
+            }}
           />
         );
       })}
@@ -708,8 +1021,12 @@ function CakeScene({
       {stickers.map(sticker => {
         const tier = tierData[sticker.tierIndex] ?? tierData[0];
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
-        const orbitEnable = enabled => { if (orbitRef.current) orbitRef.current.enabled = enabled; };
+        const orbitEnable = enabled => {
+          if (enabled) orbitBlockSet.current.delete(sticker.id); else orbitBlockSet.current.add(sticker.id);
+          if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
+        };
 
+        const isSelected = selectedStickerIds?.has(sticker.id) ?? false;
         if (isSide) {
           return (
             <DraggableSideSticker
@@ -718,27 +1035,50 @@ function CakeScene({
               radius={tier.radius}
               baseY={tier.baseY}
               height={tier.height}
-              selected={selectedStickerId === sticker.id}
-              onSelect={onStickerSelect}
+              selected={isSelected}
+              onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
+              onLongPress={onStickerLongPress}
               onMove={onStickerMove}
+              onGroupMove={onGroupMove}
+              allStickers={stickers}
               onOrbitEnable={orbitEnable}
-              toolbar={selectedStickerId === sticker.id ? stickerToolbar : null}
+              toolbar={isSelected ? stickerToolbar : null}
             />
           );
         }
         // top_surface
         const topY = tier.baseY + tier.height;
+        if (sticker.placementMode === 'faux_balls') {
+          return (
+            <FauxBallCluster
+              key={sticker.id}
+              sticker={sticker}
+              topY={topY}
+              radius={tier.radius}
+              baseY={tier.baseY}
+              selected={isSelected}
+              onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
+              onLongPress={onStickerLongPress}
+              onMove={onStickerMove}
+              onOrbitEnable={orbitEnable}
+              toolbar={isSelected ? stickerToolbar : null}
+            />
+          );
+        }
         return (
           <DraggableTopSticker
             key={sticker.id}
             sticker={sticker}
             topY={topY}
             topRadius={tier.radius}
-            selected={selectedStickerId === sticker.id}
-            onSelect={onStickerSelect}
+            selected={isSelected}
+            onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
+            onLongPress={onStickerLongPress}
             onMove={onStickerMove}
+            onGroupMove={onGroupMove}
+            allStickers={stickers}
             onOrbitEnable={orbitEnable}
-            toolbar={selectedStickerId === sticker.id ? stickerToolbar : null}
+            toolbar={isSelected ? stickerToolbar : null}
           />
         );
       })}
@@ -793,18 +1133,46 @@ function CakeThumbnailScene({ config }) {
         const tier = tierData[sticker.tierIndex] ?? tierData[0];
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
         if (isSide) {
-          const r = tier.radius + 0.025;
+          const r = tier.radius + SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
           return (
             <group key={sticker.id} position={[r * Math.sin(sticker.theta), sticker.y, r * Math.cos(sticker.theta)]} rotation={[0, sticker.theta, 0]} scale={sticker.scale}>
-              <StickerFace imageUrl={sticker.imageUrl} selected={false} />
+              <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
+                <StickerFace imageUrl={sticker.imageUrl} selected={false} />
+              </group>
             </group>
           );
         }
         const topY = tier.baseY + tier.height;
-        const py   = topY + (sticker.yOffset ?? 0) + 0.025;
-        const rot = sticker.placementMode === 'stand' ? [0, sticker.rotation ?? 0, 0] : [-Math.PI / 2, 0, sticker.rotation ?? 0];
+        if (sticker.placementMode === 'faux_balls') {
+          const balls = buildFauxBallPositions(
+            Math.atan2(sticker.x, sticker.z), topY, tier.radius, tier.baseY,
+            sticker.scale ?? 1, sticker.yOffset ?? 0
+          );
+          return (
+            <group key={sticker.id}>
+              {balls.map((ball, i) => (
+                <mesh key={i} position={ball.pos}>
+                  <sphereGeometry args={[ball.r, 16, 16]} />
+                  <meshStandardMaterial color={sticker.color ?? GOLD_COLOR} metalness={0.88} roughness={0.15} />
+                </mesh>
+              ))}
+            </group>
+          );
+        }
+        const py   = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? -STICKER_SIZE * 0.3 : FLAT_STICKER_Y_OFFSET);
+        if (sticker.placementMode === 'stand') {
+          return (
+            <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
+              <group rotation={[0, sticker.rotation ?? 0, 0]}>
+                <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
+                  <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={undefined} />
+                </group>
+              </group>
+            </group>
+          );
+        }
         return (
-          <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={rot} scale={sticker.scale}>
+          <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
             <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={py} />
           </group>
         );
@@ -819,7 +1187,7 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
       <Canvas
         gl={{ preserveDrawingBuffer: true, alpha: true }}
         onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
-        camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
+        camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
         style={{ width: 400, height: 400 }}
       >
         <CakeThumbnailScene config={config} />
@@ -837,7 +1205,7 @@ export default function CakeCanvas({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onTopperClick, topperSelected = false, topperToolbar,
-  selectedStickerId, onStickerSelect, onStickerMove, stickerToolbar,
+  selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
   hitTestRef,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
@@ -851,12 +1219,7 @@ export default function CakeCanvas({
     if (!hitTestRef) return;
     hitTestRef.current = (clientX, clientY) => {
       if (!cameraRef.current || !glRef.current) return null;
-      const rect = glRef.current.domElement.getBoundingClientRect();
-      const ndx  = ((clientX - rect.left) / rect.width)  * 2 - 1;
-      const ndy  = -((clientY - rect.top)  / rect.height) * 2 + 1;
-      const rc   = new THREE.Raycaster();
-      rc.setFromCamera({ x: ndx, y: ndy }, cameraRef.current);
-      const ray  = rc.ray;
+      const ray = buildRay(clientX, clientY, glRef.current.domElement, cameraRef.current);
 
       const tiers = tierDataRef.current;
       let best = null;
@@ -901,7 +1264,7 @@ export default function CakeCanvas({
   return (
     <Canvas
       shadows
-      camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
+      camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
       style={{ position: 'absolute', inset: 0 }}
       gl={{ preserveDrawingBuffer: true }}
       onCreated={({ gl }) => { glRef.current = gl; gl.localClippingEnabled = true; }}
@@ -935,13 +1298,16 @@ export default function CakeCanvas({
         onTopperClick={() => { if (!pointerRef.current.dragged) onTopperClick?.(); }}
         topperSelected={topperSelected}
         topperToolbar={topperToolbar}
-        selectedStickerId={selectedStickerId}
-        onStickerSelect={id => { if (!pointerRef.current.dragged) onStickerSelect?.(id); }}
+        selectedStickerIds={selectedStickerIds}
+        onStickerSelect={(id, ctrlKey) => onStickerSelect?.(id, ctrlKey)}
+        onStickerLongPress={(id) => onStickerLongPress?.(id)}
         onStickerMove={onStickerMove}
+        onGroupMove={onGroupMove}
         stickerToolbar={stickerToolbar}
         tierDataRef={tierDataRef}
       />
       <OrbitControls
+        makeDefault
         ref={orbitRef}
         enableZoom={false}
         enablePan={false}
