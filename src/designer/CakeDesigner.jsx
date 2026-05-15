@@ -2,6 +2,7 @@ import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
 import { useCakeDesign } from './hooks/useCakeDesign';
+import ColorGuide from './ColorGuide';
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
@@ -545,6 +546,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [profileOpen,  setProfileOpen]  = useState(false);
   const [addUserModal,        setAddUserModal]        = useState(false);
   const [changePasswordModal, setChangePasswordModal] = useState(false);
+  const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
   const [userData,     setUserData]     = useState(null);
@@ -1207,6 +1209,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 <div style={s.dropdown}>
                   <div style={s.dropdownSection}>Settings</div>
                   <button style={s.dropdownItem}
+                    onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>
+                    Color Guide
+                  </button>
+                  <button style={s.dropdownItem}
                     onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
                     Add User
                   </button>
@@ -1524,6 +1530,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Color Guide modal ── */}
+      {colorGuideOpen && (
+        <ColorGuide
+          onClose={() => setColorGuideOpen(false)}
+          primaryColor={primaryColor}
+          accentColor={accentColor}
+        />
       )}
 
       {/* ── Add User modal ── */}
