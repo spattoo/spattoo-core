@@ -157,6 +157,51 @@ function PlanRow({ planKey, selected, onSelect, currentTier, isActive, period, p
   );
 }
 
+function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', onConfirm, onCancel, danger = false }) {
+  if (!open) return null;
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 400,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)',
+      fontFamily: "'Quicksand', sans-serif",
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: 20, padding: '28px 28px 24px',
+        width: 340, maxWidth: 'calc(100vw - 40px)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+        display: 'flex', flexDirection: 'column', gap: 16,
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{title}</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#6B7280', lineHeight: 1.6 }}>{message}</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '9px 20px', borderRadius: 10, border: '1.5px solid #E5E7EB',
+              background: '#fff', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#6B7280',
+            }}
+          >
+            Keep subscription
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              padding: '9px 20px', borderRadius: 10, border: 'none',
+              background: danger ? '#DC2626' : '#1a1a1a', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#fff',
+              boxShadow: danger ? '0 4px 12px rgba(220,38,38,0.3)' : 'none',
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BillingPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [billing,        setBilling]        = useState(null);
@@ -167,6 +212,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [subscribing,    setSubscribing]    = useState(false);
   const [cancelling,     setCancelling]     = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [error,          setError]          = useState(null);
 
   useEffect(() => {
@@ -219,8 +265,12 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
     finally { setSubscribing(false); }
   }
 
-  async function handleCancel() {
-    if (!window.confirm("Cancel your subscription? You'll keep access until the end of this billing period.")) return;
+  function handleCancel() {
+    setShowCancelConfirm(true);
+  }
+
+  async function confirmCancel() {
+    setShowCancelConfirm(false);
     setCancelling(true); setError(null);
     try {
       await apiClient.cancelSubscription();
@@ -457,6 +507,16 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showCancelConfirm}
+        title="Cancel subscription?"
+        message="You'll keep full access until the end of your current billing period. This action cannot be undone."
+        confirmLabel="Yes, cancel"
+        danger
+        onConfirm={confirmCancel}
+        onCancel={() => setShowCancelConfirm(false)}
+      />
     </>
   );
 }
