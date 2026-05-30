@@ -505,6 +505,202 @@ function buildFauxBallPositions(theta, topY, radius, baseY, scale, yOffset) {
   return balls;
 }
 
+function FauxBallSingle({ sticker, topY, topRadius, allStickers, selected, onSelect, onLongPress, onMove, onOrbitEnable, toolbar }) {
+  const { gl, camera } = useThree();
+  const pressedRef      = useRef(false);
+  const didDrag         = useRef(false);
+  const pointerDownTime = useRef(0);
+  const startPos        = useRef({ x: 0, y: 0 });
+  const startHit        = useRef(null);
+  const lastHit         = useRef(null);
+  const lastValidPos    = useRef(null);
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
+
+  const color = sticker.color ?? GOLD_COLOR;
+  const r     = sticker.scale ?? 0.12;
+  const pos   = [sticker.x ?? 0, topY + r, sticker.z ?? 0];
+
+  return (
+    <group>
+      <mesh
+        position={pos}
+        castShadow
+        onClick={e => e.stopPropagation()}
+        onPointerDown={e => {
+          e.stopPropagation();
+          pressedRef.current      = true;
+          didDrag.current         = false;
+          pointerDownTime.current = Date.now();
+          startPos.current        = { x: e.clientX, y: e.clientY };
+          startHit.current        = planeHit(pointerRay(e, gl.domElement, camera), plane);
+          lastHit.current         = null;
+          lastValidPos.current    = { x: sticker.x ?? 0, z: sticker.z ?? 0 };
+          onOrbitEnable(false);
+          try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+
+          const canvas = gl.domElement;
+          function onMoveNative(ev) {
+            const dx = ev.clientX - startPos.current.x;
+            const dy = ev.clientY - startPos.current.y;
+            if (dx * dx + dy * dy > 25) didDrag.current = true;
+            if (!didDrag.current || !startHit.current) return;
+            const hit = planeHit(pointerRay(ev, gl.domElement, camera), plane);
+            if (!hit) return;
+            const prevHit = lastHit.current ?? startHit.current;
+            let newX = lastValidPos.current.x + (hit.x - prevHit.x);
+            let newZ = lastValidPos.current.z + (hit.z - prevHit.z);
+            const maxR = (topRadius ?? 1.2) * 0.92;
+            const rr = Math.sqrt(newX * newX + newZ * newZ);
+            if (rr > maxR) { newX = newX * maxR / rr; newZ = newZ * maxR / rr; }
+            const siblings = (allStickers ?? []).filter(
+              s => s.id !== sticker.id && s.placementMode === 'faux_ball_single' && s.tierIndex === sticker.tierIndex
+            );
+            for (const sib of siblings) {
+              const minDist = r + (sib.scale ?? 0.12);
+              const ex = newX - (sib.x ?? 0), ez = newZ - (sib.z ?? 0);
+              const dist = Math.sqrt(ex * ex + ez * ez);
+              if (dist < minDist && dist > 0.001) {
+                newX = (sib.x ?? 0) + ex * (minDist / dist);
+                newZ = (sib.z ?? 0) + ez * (minDist / dist);
+                const r2 = Math.sqrt(newX * newX + newZ * newZ);
+                if (r2 > maxR) { newX = newX * maxR / r2; newZ = newZ * maxR / r2; }
+              }
+            }
+            lastValidPos.current = { x: newX, z: newZ };
+            lastHit.current = hit;
+            onMove?.(sticker.id, { x: newX, z: newZ });
+          }
+          function onUpNative() {
+            canvas.removeEventListener('pointermove', onMoveNative);
+            canvas.removeEventListener('pointerup', onUpNative);
+          }
+          canvas.addEventListener('pointermove', onMoveNative);
+          canvas.addEventListener('pointerup', onUpNative);
+        }}
+        onPointerUp={e => {
+          e.stopPropagation();
+          onOrbitEnable(true);
+          if (pressedRef.current && !didDrag.current) {
+            const elapsed = Date.now() - pointerDownTime.current;
+            if (elapsed >= 500 && onLongPress) onLongPress(sticker.id);
+            else onSelect(sticker.id, e.ctrlKey || e.metaKey);
+          }
+          pressedRef.current = false;
+        }}
+      >
+        <sphereGeometry args={[r, 24, 24]} />
+        <meshStandardMaterial
+          color={color}
+          metalness={0.88}
+          roughness={0.15}
+          emissive={selected ? SELECTION_COLOR : '#000000'}
+          emissiveIntensity={selected ? 0.18 : 0}
+        />
+      </mesh>
+      {selected && toolbar && (
+        <Html position={[pos[0], pos[1] + r + 0.1, pos[2]]} center zIndexRange={[200, 0]}>
+          {toolbar}
+        </Html>
+      )}
+    </group>
+  );
+}
+
+function FauxBallSide({ sticker, radius, baseY, height, allStickers, selected, onSelect, onLongPress, onMove, onOrbitEnable, toolbar }) {
+  const { camera, gl } = useThree();
+  const pressedRef      = useRef(false);
+  const didDrag         = useRef(false);
+  const pointerDownTime = useRef(0);
+  const startPos        = useRef({ x: 0, y: 0 });
+  const startHit        = useRef(null);
+  const startSticker    = useRef(null);
+
+  const r       = sticker.scale ?? 0.12;
+  const color   = sticker.color ?? GOLD_COLOR;
+  const surfaceR = radius + r;
+  const cx = surfaceR * Math.sin(sticker.theta ?? 0);
+  const cy = sticker.y ?? (baseY + height * 0.5);
+  const cz = surfaceR * Math.cos(sticker.theta ?? 0);
+
+  return (
+    <group>
+      <mesh
+        position={[cx, cy, cz]}
+        castShadow
+        onClick={e => e.stopPropagation()}
+        onPointerDown={e => {
+          e.stopPropagation();
+          pressedRef.current      = true;
+          didDrag.current         = false;
+          pointerDownTime.current = Date.now();
+          startPos.current        = { x: e.clientX, y: e.clientY };
+          startHit.current        = cylinderHit(pointerRay(e, gl.domElement, camera), surfaceR);
+          startSticker.current    = { theta: sticker.theta ?? 0, y: sticker.y ?? (baseY + height * 0.5) };
+          onOrbitEnable(false);
+          try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+
+          const canvas = gl.domElement;
+          function onMoveHandler(ev) {
+            const dx = ev.clientX - startPos.current.x;
+            const dy = ev.clientY - startPos.current.y;
+            if (dx * dx + dy * dy > 25) didDrag.current = true;
+            if (!didDrag.current || !startHit.current) return;
+            const hit = cylinderHit(pointerRay(ev, gl.domElement, camera), surfaceR);
+            if (!hit) return;
+            let newTheta = startSticker.current.theta + (hit.theta - startHit.current.theta);
+            let newY     = Math.max(baseY + r, Math.min(baseY + height - r,
+              startSticker.current.y + (hit.y - startHit.current.y)));
+            const siblings = (allStickers ?? []).filter(
+              s => s.id !== sticker.id && s.placementMode === 'faux_ball_single' && s.tierIndex === sticker.tierIndex
+            );
+            for (const sib of siblings) {
+              const minDist = r + (sib.scale ?? 0.12);
+              const sibR = radius + (sib.scale ?? 0.12);
+              const ax = surfaceR * Math.sin(newTheta), ay = newY, az = surfaceR * Math.cos(newTheta);
+              const bx = sibR * Math.sin(sib.theta ?? 0), by = sib.y ?? (baseY + height * 0.5), bz = sibR * Math.cos(sib.theta ?? 0);
+              const ex = ax - bx, ey = ay - by, ez = az - bz;
+              const dist = Math.sqrt(ex * ex + ey * ey + ez * ez);
+              if (dist < minDist && dist > 0.001) {
+                newTheta = Math.atan2(bx + ex * (minDist / dist), bz + ez * (minDist / dist));
+                newY = Math.max(baseY + r, Math.min(baseY + height - r, by + ey * (minDist / dist)));
+              }
+            }
+            onMove?.(sticker.id, { theta: newTheta, y: newY });
+          }
+          function onUpHandler(ev) {
+            pressedRef.current = false;
+            onOrbitEnable(true);
+            if (!didDrag.current) {
+              const elapsed = Date.now() - pointerDownTime.current;
+              if (elapsed >= 500 && onLongPress) onLongPress(sticker.id);
+              else onSelect(sticker.id, ev.ctrlKey || ev.metaKey);
+            }
+            canvas.removeEventListener('pointermove', onMoveHandler);
+            canvas.removeEventListener('pointerup', onUpHandler);
+          }
+          canvas.addEventListener('pointermove', onMoveHandler);
+          canvas.addEventListener('pointerup', onUpHandler);
+        }}
+        onPointerUp={e => e.stopPropagation()}
+      >
+        <sphereGeometry args={[r, 24, 24]} />
+        <meshStandardMaterial
+          color={color}
+          metalness={0.88}
+          roughness={0.15}
+          emissive={selected ? SELECTION_COLOR : '#000000'}
+          emissiveIntensity={selected ? 0.18 : 0}
+        />
+      </mesh>
+      {selected && toolbar && (
+        <Html position={[cx, cy + r + 0.1, cz]} center zIndexRange={[200, 0]}>
+          {toolbar}
+        </Html>
+      )}
+    </group>
+  );
+}
+
 function FauxBallCluster({ sticker, topY, radius, baseY, selected, onSelect, onLongPress, onMove, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
   const didDrag        = useRef(false);
@@ -924,6 +1120,14 @@ function CameraCapture({ cameraRef }) {
   return null;
 }
 
+function CameraPositionSync({ position }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(position[0], position[1], position[2]);
+  }, [position[0], position[1], position[2]]);
+  return null;
+}
+
 
 function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
@@ -1071,6 +1275,24 @@ function CakeScene({
 
         const isSelected = selectedStickerIds?.has(sticker.id) ?? false;
         if (isSide) {
+          if (sticker.placementMode === 'faux_ball_single') {
+            return (
+              <FauxBallSide
+                key={sticker.id}
+                sticker={sticker}
+                radius={tier.radius}
+                baseY={tier.baseY}
+                height={tier.height}
+                allStickers={stickers}
+                selected={isSelected}
+                onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
+                onLongPress={onStickerLongPress}
+                onMove={onStickerMove}
+                onOrbitEnable={orbitEnable}
+                toolbar={isSelected ? stickerToolbar : null}
+              />
+            );
+          }
           return (
             <DraggableSideSticker
               key={sticker.id}
@@ -1091,6 +1313,23 @@ function CakeScene({
         }
         // top_surface
         const topY = tier.baseY + tier.height;
+        if (sticker.placementMode === 'faux_ball_single') {
+          return (
+            <FauxBallSingle
+              key={sticker.id}
+              sticker={sticker}
+              topY={topY}
+              topRadius={tier.radius}
+              allStickers={stickers}
+              selected={isSelected}
+              onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
+              onLongPress={onStickerLongPress}
+              onMove={onStickerMove}
+              onOrbitEnable={orbitEnable}
+              toolbar={isSelected ? stickerToolbar : null}
+            />
+          );
+        }
         if (sticker.placementMode === 'faux_balls') {
           return (
             <FauxBallCluster
@@ -1250,7 +1489,7 @@ export default function CakeCanvas({
   onTopperClick, topperSelected = false, topperToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
   hitTestRef,
-  isMobile = false,
+  cameraPosition = CAMERA_POSITION,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -1308,7 +1547,7 @@ export default function CakeCanvas({
   return (
     <Canvas
       shadows
-      camera={{ position: isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION, fov: CAMERA_FOV }}
+      camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
       style={{ position: 'absolute', inset: 0 }}
       gl={{ preserveDrawingBuffer: true }}
       onCreated={({ gl }) => { glRef.current = gl; gl.localClippingEnabled = true; }}
@@ -1320,6 +1559,7 @@ export default function CakeCanvas({
       }}
     >
       <CameraCapture cameraRef={cameraRef} />
+      <CameraPositionSync position={cameraPosition} />
       <CakeScene
         config={config}
         selectedTier={selectedTier}

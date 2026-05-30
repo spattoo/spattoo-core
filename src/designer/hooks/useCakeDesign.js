@@ -100,35 +100,75 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   function addSticker(element, zone, tierIndex, placementMode, position = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
-    setDesign(prev => ({
-      ...prev,
-      stickers: [...prev.stickers, {
-        id:            Date.now(),
-        elementId:     element.id,
-        imageUrl:      element.image_url,
-        name:          element.name,
-        zone,
-        tierIndex:     tierIndex ?? 0,
-        placementMode: placementMode ?? 'hug',
-        theta:         position.theta ?? 0,
-        y:             position.y    ?? (BOTTOM_BASE + BOTTOM_H * 0.45),
-        x:             position.x    ?? 0,
-        z:             position.z    ?? 0,
-        scale:         isGlb ? 2.5 : 1,
-        yOffset:       0,
-        rotation:      0,
-        radialOffset:  0,
-        tiltAngle:     0,
-        groupId:       null,
-        color:         element.default_color ?? null,
-        allowedActions: {
-          resize:    element.allowed_actions?.resize    ?? true,
-          duplicate: element.allowed_actions?.duplicate ?? true,
-          color:     element.allowed_actions?.color     ?? false,
-          delete:    true,
-        },
-      }],
-    }));
+    const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : 1);
+    setDesign(prev => {
+      let px = position.x ?? 0;
+      let pz = position.z ?? 0;
+      if (placementMode === 'faux_ball_single') {
+        const isSide = zone === 'side' || zone === 'middle_tier';
+        const siblings = prev.stickers.filter(
+          s => s.placementMode === 'faux_ball_single' && s.tierIndex === (tierIndex ?? 0)
+        );
+        if (isSide) {
+          let pt = position.theta ?? 0, py2 = position.y ?? 0;
+          for (const sib of siblings) {
+            const minDist = defaultScale + (sib.scale ?? 0.12);
+            const ax = Math.sin(pt), az = Math.cos(pt);
+            const bx = Math.sin(sib.theta ?? 0), bz = Math.cos(sib.theta ?? 0);
+            const ex = ax - bx, ey = py2 - (sib.y ?? 0), ez = az - bz;
+            const d = Math.sqrt(ex * ex + ey * ey + ez * ez);
+            if (d < minDist && d > 0.001) {
+              pt = Math.atan2(bx + ex * (minDist / d), bz + ez * (minDist / d));
+              py2 = (sib.y ?? 0) + ey * (minDist / d);
+            } else if (d < minDist) {
+              pt += minDist * 0.5;
+            }
+          }
+          // Store resolved theta/y back into position fields
+          px = pt; pz = py2; // repurpose px/pz as theta/y for side
+        } else {
+          for (const sib of siblings) {
+            const minDist = defaultScale + (sib.scale ?? 0.12);
+            const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
+            const d  = Math.sqrt(ex * ex + ez * ez);
+            if (d < minDist) {
+              const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
+              px = (sib.x ?? 0) + dir.x * minDist;
+              pz = (sib.z ?? 0) + dir.z * minDist;
+            }
+          }
+        }
+      }
+      return {
+        ...prev,
+        stickers: [...prev.stickers, {
+          id:            Date.now(),
+          elementId:     element.id,
+          imageUrl:      element.image_url,
+          name:          element.name,
+          zone,
+          tierIndex:     tierIndex ?? 0,
+          placementMode: placementMode ?? 'hug',
+          theta:         (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? px : (position.theta ?? 0),
+          y:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? pz : (position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45)),
+          x:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? 0 : px,
+          z:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? 0 : pz,
+          scale:         defaultScale,
+          yOffset:       0,
+          rotation:      0,
+          radialOffset:  0,
+          tiltAngle:     0,
+          groupId:       null,
+          color:         element.default_color ?? null,
+          allowedActions: {
+            resize:    element.allowed_actions?.resize    ?? true,
+            duplicate: element.allowed_actions?.duplicate ?? true,
+            color:     element.allowed_actions?.color     ?? false,
+            delete:    true,
+          },
+        }],
+      };
+    });
   }
 
   function updateSticker(id, changes) {
@@ -204,6 +244,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  function resetDesign() {
+    setDesign(DEFAULT_DESIGN);
+  }
+
+  function addStickerBatch(stickers) {
+    setDesign(prev => ({ ...prev, stickers: [...prev.stickers, ...stickers] }));
+  }
+
   function loadDesign(templateDesign) {
     const legacyGlbUrl = storageBaseUrl
       ? `${storageBaseUrl}/${LEGACY_PIPING_SLUG}`
@@ -257,6 +305,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers,
     setTopper, setTopperScale,
+    resetDesign,
+    addStickerBatch,
     loadDesign,
     canvasConfig,
   };

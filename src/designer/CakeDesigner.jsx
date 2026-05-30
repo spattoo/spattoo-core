@@ -1,4 +1,4 @@
-import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
+import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
 import { useCakeDesign } from './hooks/useCakeDesign';
@@ -256,6 +256,17 @@ function TextIcon({ size = 20 }) {
   );
 }
 
+function NewCakeIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      {/* large 4-pointed sparkle */}
+      <path d="M12 2.5c.28 0 .5.22.5.5 0 4.1 1.9 5.5 5.5 5.5.28 0 .5.22.5.5s-.22.5-.5.5c-3.6 0-5.5 1.4-5.5 5.5 0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-4.1-1.9-5.5-5.5-5.5-.28 0-.5-.22-.5-.5s.22-.5.5-.5c3.6 0 5.5-1.4 5.5-5.5 0-.28.22-.5.5-.5z" />
+      {/* small sparkle top-right */}
+      <path d="M19.5 2c.2 0 .35.16.35.35 0 1.75 1 2.65 2.65 2.65.19 0 .35.16.35.35s-.16.35-.35.35c-1.65 0-2.65.9-2.65 2.65 0 .19-.16.35-.35.35s-.35-.16-.35-.35c0-1.75-1-2.65-2.65-2.65-.19 0-.35-.16-.35-.35s.16-.35.35-.35c1.65 0 2.65-.9 2.65-2.65 0-.19.16-.35.35-.35z" />
+    </svg>
+  );
+}
+
 function DashboardIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -455,7 +466,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate }) {
-  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -536,6 +547,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [userData,     setUserData]     = useState(null);
   const [bakerSettings, setBakerSettings] = useState({});
   const [windowWidth, setWindowWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
+  const [mobilePanelHeight, setMobilePanelHeight] = useState(260);
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const hitTestRef       = useRef(null);
@@ -948,8 +960,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   function handleElementDrop(element, hit) {
     stopRotatingOnFirstEdit();
-    const placementMode = element.placement_config?.[hit.zone] ?? 'hug';
-    addSticker(element, hit.zone, hit.tierIndex, placementMode, hit);
+    let placementMode = element.placement_config?.[hit.zone];
+    if (!placementMode && Object.values(element.placement_config ?? {}).includes('faux_ball_single')) {
+      placementMode = 'faux_ball_single';
+    }
+    addSticker(element, hit.zone, hit.tierIndex, placementMode ?? 'hug', hit);
     setElementsOpen(false);
   }
 
@@ -1010,6 +1025,32 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }, [selectedEl?.type === 'text' ? selectedEl.id : null]);
 
 
+  function handleNewCake() {
+    resetDesign();
+    clearAllSelections();
+    setEditingOrder(null);
+    setAutoRotate(true);
+    hasEdited.current = false;
+    setElementsOpen(false);
+    setTemplatesOpen(false);
+  }
+
+  function handlePanelDrag(e) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = mobilePanelHeight;
+    function onMove(ev) {
+      const delta = startY - ev.clientY; // drag up → taller panel
+      setMobilePanelHeight(Math.min(560, Math.max(80, startH + delta)));
+    }
+    function onUp() {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
+
   function handleOrder() {
     setOrderModalOpen(true);
   }
@@ -1052,8 +1093,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const tierPanelVisible = selectedEl?.type === 'tier';
   const currentColor = getCurrentColor();
   // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
+  const selectedStickerIsFauxBall = selectedEl?.type === 'sticker' &&
+    (design.stickers.find(s => s.id === selectedEl.id)?.placementMode === 'faux_ball_single');
   const showRightPanel = tierPanelVisible
     || (caps?.color && colorOpen)
+    || selectedStickerIsFauxBall
     || (selectedEl?.type === 'sticker' && caps?.resize);
 
   // ── Caps-driven floating toolbar (text + piping) ──────────────────────────
@@ -1287,7 +1331,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       )}
 
       {/* ── Main ── */}
-      <div style={s.main}>
+      <div style={{ ...s.main, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
 
         {/* ── Left column: logo + sidebar ── */}
         {!isMobile && <div style={s.leftCol}>
@@ -1303,6 +1347,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         <div style={s.sidebar}>
           <nav style={s.sidebarNav}>
             {[
+              { id: 'new',        label: 'New Cake',  icon: null },
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} /> },
               { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} /> },
               { id: 'elements',   label: 'Elements',  icon: <ElementsIcon size={20} /> },
@@ -1311,11 +1356,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} /> },
             ].map(({ id, label, icon }) => {
               const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
+              const isNew  = id === 'new';
               return (
                 <SidebarTooltip key={id} label={label}>
                   <button
-                    style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
+                    style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}
                     onClick={() => {
+                      if (id === 'new')       handleNewCake();
                       if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
                       if (id === 'elements')  openElements();
                       if (id === 'templates') openTemplates();
@@ -1323,7 +1370,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                       if (id === 'orders')    setOrdersPanelOpen(true);
                       if (id === 'customers') setCustomersPanelOpen(true);
                     }}>
-                    {icon}
+                    {isNew
+                      ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                      : icon}
                   </button>
                 </SidebarTooltip>
               );
@@ -1400,12 +1451,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
         {/* ── Elements flyout ── */}
         {elementsOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? s.flyoutMobile : {}) }}>
+          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : {}) }}>
+            {isMobile && (
+              <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
+                <div style={s.panelHandlePill} />
+              </div>
+            )}
             <div style={s.flyoutHeader}>
               <span style={s.flyoutTitle}>Elements</span>
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
             </div>
-
+            <div style={s.flyoutScroll}>
             {elementTypesLoading && (
               <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
             )}
@@ -1456,24 +1512,32 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                   onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
                 />
               ))}
+            </div>{/* end flyoutScroll */}
           </div>
         )}
 
         {/* ── Templates flyout ── */}
         {templatesOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? s.flyoutMobile : {}) }}>
+          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : {}) }}>
+            {isMobile && (
+              <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
+                <div style={s.panelHandlePill} />
+              </div>
+            )}
             <div style={s.flyoutHeader}>
               <span style={s.flyoutTitle}>Templates</span>
               <button style={s.iconBtn} onClick={() => setTemplatesOpen(false)}>✕</button>
             </div>
+            <div style={s.flyoutScroll}>
             {templatesLoading && (
               <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
             )}
             {!templatesLoading && templates.length === 0 && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
+            <div style={isMobile ? s.templateGrid : null}>
             {templates.map(t => (
-              <div key={t.id} style={s.templateCard}
+              <div key={t.id} style={{ ...s.templateCard, ...(isMobile ? { flex: '0 0 calc(50% - 5px)' } : {}) }}
                 onClick={async () => {
                   let templateDesign = t.design ?? null;
                   if (!templateDesign) {
@@ -1497,7 +1561,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 }}
               >
                 {t.thumbnail_url
-                  ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }} />
+                  ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#faf7f5' }} />
                   : <div style={s.templateThumbPlaceholder} />
                 }
                 <div style={s.templateCardFooter}>
@@ -1511,11 +1575,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 </div>
               </div>
             ))}
+            </div>{/* end templateGrid */}
+            </div>{/* end flyoutScroll */}
           </div>
         )}
 
         {/* ── Canvas area ── */}
-        <div style={s.canvasArea}>
+        <div style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
           <div style={s.topControls}>
             <button style={{ ...s.addTierBtn, color: '#333' }}
               onClick={() => setSaveModal(true)}>
@@ -1551,9 +1617,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               onStickerLongPress={handleStickerLongPress}
               onStickerMove={handleStickerMove}
               onGroupMove={handleGroupMove}
-              stickerToolbar={selectedEl?.type === 'sticker' ? buildToolbar(selectedEl) : null}
+              stickerToolbar={selectedEl?.type === 'sticker' && !selectedStickerIsFauxBall ? buildToolbar(selectedEl) : null}
               hitTestRef={hitTestRef}
-              isMobile={isMobile}
+              cameraPosition={isMobile ? [6, 7, 9] : [4.5, 5.5, 6.5]}
             />
           </Suspense>
 
@@ -1635,19 +1701,159 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 />
               )}
 
-              {/* Resize slider — sticker (delete/color are in the floating canvas toolbar) */}
+              {/* Faux ball single controls */}
+              {selectedEl?.type === 'sticker' && (() => {
+                const sticker = design.stickers.find(s => s.id === selectedEl.id);
+                if (!sticker || sticker.placementMode !== 'faux_ball_single') return null;
+                const tierRadius = canvasConfig.tiers[sticker.tierIndex]?.radius ?? 1.2;
+                const isSideBall = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+                const dist  = Math.sqrt((sticker.x ?? 0) ** 2 + (sticker.z ?? 0) ** 2);
+                const theta = Math.atan2(sticker.x ?? 0, sticker.z ?? 0);
+                const rdInset = Math.max(0, tierRadius - dist);
+                const tierInfo = canvasConfig.tiers[sticker.tierIndex];
+                const tierBaseY = (() => {
+                  let y = 0;
+                  for (let i = 0; i < sticker.tierIndex; i++) y += (canvasConfig.tiers[i]?.height ?? 0.5);
+                  return y + 0.1;
+                })();
+                const tierHeight = tierInfo?.height ?? 0.5;
+                function pushApart(newX, newZ, selfR = sticker.scale ?? 0.12) {
+                  const maxR  = tierRadius * 0.92;
+                  let x = newX, z = newZ;
+                  const siblings = design.stickers.filter(
+                    s => s.id !== sticker.id && s.placementMode === 'faux_ball_single' && s.tierIndex === sticker.tierIndex && s.zone === sticker.zone
+                  );
+                  for (const sib of siblings) {
+                    const minDist = selfR + (sib.scale ?? 0.12);
+                    const ex = x - (sib.x ?? 0), ez = z - (sib.z ?? 0);
+                    const d  = Math.sqrt(ex * ex + ez * ez);
+                    if (d < minDist && d > 0.001) {
+                      x = (sib.x ?? 0) + ex * (minDist / d);
+                      z = (sib.z ?? 0) + ez * (minDist / d);
+                      const r2 = Math.sqrt(x * x + z * z);
+                      if (r2 > maxR) { x = x * maxR / r2; z = z * maxR / r2; }
+                    }
+                  }
+                  return { x, z };
+                }
+                function setAngle(v) {
+                  const { x, z } = pushApart(dist * Math.sin(v), dist * Math.cos(v));
+                  updateSticker(sticker.id, { x, z });
+                }
+                function setInset(v) {
+                  const d = Math.max(0, tierRadius - v);
+                  const { x, z } = pushApart(d * Math.sin(theta), d * Math.cos(theta));
+                  updateSticker(sticker.id, { x, z });
+                }
+                function pushApartSide(newTheta, newY, selfR = sticker.scale ?? 0.12) {
+                  const surfR = tierRadius + selfR;
+                  let t = newTheta, y = newY;
+                  const siblings = design.stickers.filter(
+                    s => s.id !== sticker.id && s.placementMode === 'faux_ball_single' && s.tierIndex === sticker.tierIndex
+                  );
+                  for (const sib of siblings) {
+                    const minDist = selfR + (sib.scale ?? 0.12);
+                    const sibSurfR = tierRadius + (sib.scale ?? 0.12);
+                    const ax = surfR * Math.sin(t), ay = y, az = surfR * Math.cos(t);
+                    const bx = sibSurfR * Math.sin(sib.theta ?? 0), by = sib.y ?? (tierBaseY + tierHeight * 0.5), bz = sibSurfR * Math.cos(sib.theta ?? 0);
+                    const ex = ax - bx, ey = ay - by, ez = az - bz;
+                    const d = Math.sqrt(ex * ex + ey * ey + ez * ez);
+                    if (d < minDist && d > 0.001) {
+                      t = Math.atan2(bx + ex * (minDist / d), bz + ez * (minDist / d));
+                      y = Math.max(tierBaseY + selfR, Math.min(tierBaseY + tierHeight - selfR, by + ey * (minDist / d)));
+                    }
+                  }
+                  return { theta: t, y };
+                }
+                const SliderRow = ({ label, value, min, max, step, onChange, display }) => {
+                  const pct = ((value - min) / (max - min)) * 100;
+                  function valFromEvent(e) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    const snapped = min + Math.round((ratio * (max - min)) / step) * step;
+                    return Math.min(max, Math.max(min, snapped));
+                  }
+                  return (
+                    <div style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#555', letterSpacing: 0.5 }}>{label}</span>
+                        <span style={{ fontSize: 10, color: '#888' }}>{display ?? value.toFixed(3)}</span>
+                      </div>
+                      <div
+                        style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
+                        onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); onChange(valFromEvent(e)); }}
+                        onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); onChange(valFromEvent(e)); }}
+                        onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
+                        onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
+                      >
+                        <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                        </div>
+                        <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#9b5268', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
+                      </div>
+                    </div>
+                  );
+                };
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4, width: '100%' }}>
+                    {isSideBall ? <>
+                      {SliderRow({ label: 'Angle', value: sticker.theta ?? 0, min: -Math.PI, max: Math.PI, step: 0.01, display: `${((sticker.theta ?? 0) * 180 / Math.PI).toFixed(1)}°`, onChange: v => { const { theta: t, y } = pushApartSide(v, sticker.y ?? (tierBaseY + tierHeight * 0.5)); updateSticker(sticker.id, { theta: t, y }); } })}
+                      {SliderRow({ label: 'Height', value: sticker.y ?? (tierBaseY + tierHeight * 0.5), min: tierBaseY, max: tierBaseY + tierHeight, step: 0.01, onChange: v => { const { theta: t, y } = pushApartSide(sticker.theta ?? 0, v); updateSticker(sticker.id, { theta: t, y }); } })}
+                    </> : <>
+                      {SliderRow({ label: 'Angle', value: theta, min: -Math.PI, max: Math.PI, step: 0.01, onChange: setAngle, display: `${(theta * 180 / Math.PI).toFixed(1)}°` })}
+                      {SliderRow({ label: 'Inset from rim', value: rdInset, min: 0, max: tierRadius * 0.95, step: 0.01, onChange: setInset })}
+                    </>}
+                    {SliderRow({ label: 'Radius', value: sticker.scale ?? 0.12, min: 0.03, max: 0.35, step: 0.005, onChange: v => {
+                      if (isSideBall) {
+                        const { theta: t, y } = pushApartSide(sticker.theta ?? 0, sticker.y ?? (tierBaseY + tierHeight * 0.5), v);
+                        updateSticker(sticker.id, { scale: v, theta: t, y });
+                      } else {
+                        const { x, z } = pushApart(sticker.x ?? 0, sticker.z ?? 0, v);
+                        updateSticker(sticker.id, { scale: v, x, z });
+                      }
+                    } })}
+                    <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
+                      onClick={handleDelete}>Remove</button>
+                  </div>
+                );
+              })()}
+
+              {/* Resize slider — regular stickers */}
               {caps?.resize && selectedEl?.type === 'sticker' && (() => {
                 const sticker = design.stickers.find(s => s.id === selectedEl.id);
-                if (!sticker) return null;
+                if (!sticker || sticker.placementMode === 'faux_ball_single') return null;
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
-                    <input
-                      type="range" min={25} max={300} step={5}
-                      value={Math.round(sticker.scale * 100)}
-                      onChange={e => updateSticker(sticker.id, { scale: Number(e.target.value) / 100 })}
-                      style={{ width: 200, accentColor: '#9b5f72' }}
-                    />
+                    {(() => {
+                      const pct = ((Math.round(sticker.scale * 100) - 25) / 275) * 100;
+                      return (
+                        <div
+                          style={{ width: 200, position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
+                          onPointerDown={e => {
+                            e.stopPropagation();
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                            updateSticker(sticker.id, { scale: (25 + Math.round(ratio * 275 / 5) * 5) / 100 });
+                          }}
+                          onPointerMove={e => {
+                            if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                            updateSticker(sticker.id, { scale: (25 + Math.round(ratio * 275 / 5) * 5) / 100 });
+                          }}
+                          onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
+                          onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
+                        >
+                          <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
+                            <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                          </div>
+                          <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
+                        </div>
+                      );
+                    })()}
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(sticker.scale * 100)}%</span>
                   </div>
                 );
@@ -1673,11 +1879,32 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 <input type="color" value={pipingPopupColor}
                   onChange={e => handlePipingColorChange(e.target.value)}
                   style={{ width: 28, height: 28, border: '1.5px solid #f0dce3', borderRadius: 6, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
-                <input type="range" min={0.5} max={2.0} step={0.05}
-                  value={pipingPopupSize}
-                  onChange={e => handlePipingSizeChange(parseFloat(e.target.value))}
-                  title="Size"
-                  style={{ flex: 1, accentColor: '#9b5f72' }} />
+                <div
+                  style={{ flex: 1, position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
+                  onPointerDown={e => {
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    handlePipingSizeChange(+(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
+                  }}
+                  onPointerMove={e => {
+                    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    handlePipingSizeChange(+(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
+                  }}
+                  onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
+                  onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
+                >
+                  {(() => { const pct = ((pipingPopupSize - 0.5) / 1.5) * 100; return (<>
+                    <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
+                      <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                    </div>
+                    <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
+                  </>); })()}
+                </div>
               </div>
 
               {/* Per-tier Rim / Board toggles */}
@@ -1709,14 +1936,22 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
       {/* ── Order button ── */}
       {selectedEl?.type !== 'text' && (
-        <div style={s.orderBar}>
-          <button style={{ ...s.orderBtn, ...brandBtn }} onClick={handleOrder}>{editingOrder ? 'Update Design' : 'Order This Cake'}</button>
+        <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : {}) }}>
+          <button style={{ ...s.orderBtn, ...brandBtn, ...(isMobile ? { padding: '10px', fontSize: 13 } : {}) }} onClick={handleOrder}>{editingOrder ? 'Update Design' : 'Order This Cake'}</button>
         </div>
       )}
 
       {/* ── Mobile bottom nav ── */}
       {isMobile && (
         <div style={s.mobileBottomNav}>
+          {/* New cake — circle + as first nav item */}
+          <button style={{ ...s.sidebarBtn, borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' }} onClick={handleNewCake}>
+            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+
           {[
             { id: 'dashboard',  icon: <DashboardIcon size={20} /> },
             { id: 'templates',  icon: <TemplatesIcon size={20} /> },
@@ -1894,6 +2129,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         />
       )}
 
+
       {/* Off-screen thumbnail canvas — no floor, transparent background */}
       <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
 
@@ -2029,6 +2265,11 @@ const s = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 4, flexShrink: 0,
   },
+  flyoutScroll: {
+    flex: 1, overflowY: 'auto', minHeight: 0,
+    display: 'flex', flexDirection: 'column', gap: 10,
+    paddingBottom: 8,
+  },
   flyoutTitle: {
     fontSize: 10, fontWeight: 700, color: '#888',
     letterSpacing: 1.5, textTransform: 'uppercase',
@@ -2043,6 +2284,7 @@ const s = {
     background: '#fff', border: '1.5px solid #f0dce3', borderRadius: 12,
     padding: '10px 8px', cursor: 'pointer', position: 'relative',
     transition: 'all 0.15s',
+    flexShrink: 0,
   },
   elementCardLabel: {
     fontSize: 10, fontWeight: 700, color: '#666',
@@ -2052,16 +2294,20 @@ const s = {
     position: 'absolute', top: 6, right: 8,
     fontSize: 11, color: '#333', fontWeight: 800,
   },
+  templateGrid: {
+    display: 'flex', flexWrap: 'wrap', gap: 10,
+  },
   templateCard: {
     border: '1.5px solid #f0dce3', borderRadius: 12,
     overflow: 'hidden', cursor: 'pointer',
     display: 'flex', flexDirection: 'column', gap: 6,
     padding: '0 0 8px',
     transition: 'all 0.15s',
+    flexShrink: 0,
   },
   templateThumbPlaceholder: {
-    width: '100%', height: 100,
-    background: '#fdf0f5', display: 'flex',
+    width: '100%', height: 120,
+    background: '#faf7f5', display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     fontSize: 32,
   },
@@ -2278,15 +2524,27 @@ const s = {
   },
   mobileBottomNav: {
     display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-    height: 60, background: '#18191b', flexShrink: 0, padding: '0 8px',
+    height: 60, background: '#18191b', flexShrink: 0, padding: '0 4px',
   },
   flyoutMobile: {
-    left: 0, top: 0, bottom: 0, width: '100%',
-    margin: 0, borderRadius: 0, zIndex: 30,
+    position: 'relative',
+    left: 'auto', top: 'auto', bottom: 'auto',
+    width: '100%', flexShrink: 0,
+    margin: 0, borderRadius: '20px 20px 0 0',
+    zIndex: 1, order: 0,
+    boxShadow: '0 -2px 16px rgba(0,0,0,0.10)',
+  },
+  panelHandle: {
+    width: '100%', display: 'flex', justifyContent: 'center',
+    padding: '6px 0 10px', cursor: 'ns-resize', touchAction: 'none', flexShrink: 0,
+  },
+  panelHandlePill: {
+    width: 36, height: 4, borderRadius: 2, background: '#ddd',
   },
   wheelPanelMobile: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
+    maxHeight: '80%', overflowY: 'auto',
     background: 'rgba(255,255,255,0.97)',
     backdropFilter: 'blur(18px)',
     WebkitBackdropFilter: 'blur(18px)',
