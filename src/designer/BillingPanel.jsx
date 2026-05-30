@@ -244,23 +244,29 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       }
       const periodObj = periods.find(p => inferPeriodType(p.display_name) === selectedPeriod) ?? periods[0];
       const data = await apiClient.createSubscription(selectedTier, periodObj?.id);
-      if (!window.Razorpay) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          s.onload = resolve; s.onerror = reject;
-          document.head.appendChild(s);
+
+      if (data.mock || !data.key_id) {
+        // TODO: remove this branch once Razorpay is live — open checkout instead
+        setBilling(b => ({ ...b, status: 'active', tier: selectedTier }));
+      } else {
+        if (!window.Razorpay) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            s.onload = resolve; s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+        await new Promise(resolve => {
+          const rzp = new window.Razorpay({
+            key: data.key_id, subscription_id: data.subscription_id,
+            name: 'Spattoo', theme: { color: primaryColor },
+            handler: () => { setBilling(b => ({ ...b, status: 'active', tier: selectedTier })); resolve(); },
+            modal: { ondismiss: resolve },
+          });
+          rzp.open();
         });
       }
-      await new Promise(resolve => {
-        const rzp = new window.Razorpay({
-          key: data.key_id, subscription_id: data.subscription_id,
-          name: 'Spattoo', theme: { color: primaryColor },
-          handler: () => { setBilling(b => ({ ...b, status: 'active', tier: selectedTier })); resolve(); },
-          modal: { ondismiss: resolve },
-        });
-        rzp.open();
-      });
     } catch (e) { setError(e.message); }
     finally { setSubscribing(false); }
   }
