@@ -183,7 +183,7 @@ export default function AuthGate({ supabase, children }) {
     return () => subscription.unsubscribe();
   }, [supabase]);
 
-  // When session arrives, check for baker_appusers row
+  // Depend on user ID, not the full session, so token refreshes on tab re-focus don't re-run this and unmount the designer.
   useEffect(() => {
     if (!session) return;
     setChecking(true);
@@ -202,7 +202,8 @@ export default function AuthGate({ supabase, children }) {
         setContact(data);
         setChecking(false);
       });
-  }, [session, supabase]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id, supabase]);
 
   const isLoading = session === undefined || (session && (checking || contact === undefined));
 

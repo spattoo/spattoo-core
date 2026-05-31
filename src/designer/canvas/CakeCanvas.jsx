@@ -1,6 +1,6 @@
 import { useRef, useMemo, useEffect, Suspense, Component } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Text3D, Center, Html, Environment, useGLTF, useTexture } from '@react-three/drei';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
+import { OrbitControls, Text3D, Center, Html, Environment, useGLTF, useTexture, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
@@ -819,8 +819,9 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, on
   const lastValidPos    = useRef(null);
   const plane        = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
 
-  const py = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? -STICKER_SIZE * 0.3 : FLAT_STICKER_Y_OFFSET);
   const isStand = sticker.placementMode === 'stand';
+  const isGlb2d = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
+  const py = topY + (sticker.yOffset ?? 0) + (isStand ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : FLAT_STICKER_Y_OFFSET);
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
@@ -926,8 +927,9 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, on
   };
 
   // Stand mode: outer=position+scale, middle=Y-spin, inner=X-tilt
+  // 2D images use Billboard so they always face the camera instead of leaning back.
   if (isStand) {
-    return (
+    const standInner = (
       <group position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
         <group rotation={[0, sticker.rotation ?? 0, 0]}>
           <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
@@ -936,6 +938,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, on
         </group>
       </group>
     );
+    return isGlb2d ? standInner : <Billboard lockX={true} lockY={false} lockZ={true}>{standInner}</Billboard>;
   }
   // Flat mode (sticker laid horizontal on top surface)
   return (
@@ -1125,6 +1128,30 @@ function CameraPositionSync({ position }) {
   useEffect(() => {
     camera.position.set(position[0], position[1], position[2]);
   }, [position[0], position[1], position[2]]);
+  return null;
+}
+
+// Smoothly lerps the camera to a target position when snapCameraRef.current() is called.
+function CameraSnapper({ snapCameraRef, orbitRef }) {
+  const { camera } = useThree();
+  const targetPos = useRef(null);
+
+  useEffect(() => {
+    if (!snapCameraRef) return;
+    snapCameraRef.current = (pos) => { targetPos.current = new THREE.Vector3(...pos); };
+  }, [snapCameraRef]);
+
+  useFrame(() => {
+    if (!targetPos.current) return;
+    camera.position.lerp(targetPos.current, 0.08);
+    orbitRef?.current?.update();
+    if (camera.position.distanceTo(targetPos.current) < 0.05) {
+      camera.position.copy(targetPos.current);
+      orbitRef?.current?.update();
+      targetPos.current = null;
+    }
+  });
+
   return null;
 }
 
@@ -1441,7 +1468,7 @@ function CakeThumbnailScene({ config }) {
             </group>
           );
         }
-        const py   = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? -STICKER_SIZE * 0.3 : FLAT_STICKER_Y_OFFSET);
+        const py   = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : FLAT_STICKER_Y_OFFSET);
         if (sticker.placementMode === 'stand') {
           return (
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
@@ -1489,6 +1516,7 @@ export default function CakeCanvas({
   onTopperClick, topperSelected = false, topperToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
   hitTestRef,
+  snapCameraRef,
   cameraPosition = CAMERA_POSITION,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
@@ -1560,6 +1588,7 @@ export default function CakeCanvas({
     >
       <CameraCapture cameraRef={cameraRef} />
       <CameraPositionSync position={cameraPosition} />
+      <CameraSnapper snapCameraRef={snapCameraRef} orbitRef={orbitRef} />
       <CakeScene
         config={config}
         selectedTier={selectedTier}

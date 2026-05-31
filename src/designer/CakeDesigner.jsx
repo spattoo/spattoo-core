@@ -61,7 +61,7 @@ const ZONE_LABELS = {
 
 // ── Per-element-type card in the elements panel ───────────────────────────────
 function ElementTypeCard({
-  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], otherElements = [],
+  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], imageTopperElements = [], otherElements = [],
   onSetTopper, onDragStartSticker, onDragStartTopper,
 }) {
   const { slug, name } = elementType;
@@ -164,6 +164,33 @@ function ElementTypeCard({
             >
               <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
                 {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+              </div>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── image_topper — draggable 2D images placed upright on top surface ────────
+  if (slug === 'image_topper') {
+    return (
+      <div style={{ ...s.elementCard, cursor: 'default' }}>
+        <div style={s.elementCardLabel}>{name}</div>
+        <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto top of cake to place</div>
+        {imageTopperElements.length === 0 && (
+          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No image toppers yet</div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {imageTopperElements.map(el => (
+            <div
+              key={el.id}
+              onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
+            >
+              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
+                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
               </div>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
             </div>
@@ -473,6 +500,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [toppersDb, setToppersDb] = useState([]);
   const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
   const [picksDb, setPicksDb] = useState([]);
+  const [imageTopperDb, setImageTopperDb] = useState([]);
   const [otherElementsDb, setOtherElementsDb] = useState({}); // typeId → elements[]
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   const [pipingPopupEl,     setPipingPopupEl]     = useState(null);
@@ -551,6 +579,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const hitTestRef       = useRef(null);
+  const snapCameraRef    = useRef(null);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
 
@@ -715,7 +744,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }, []);
 
   async function loadElementsIfNeeded() {
-    if (toppersDb.length > 0 || scatteredDecorDb.length > 0 || picksDb.length > 0 || Object.keys(otherElementsDb).length > 0) return;
+    if (toppersDb.length > 0 || scatteredDecorDb.length > 0 || picksDb.length > 0 || imageTopperDb.length > 0 || Object.keys(otherElementsDb).length > 0) return;
     setElementTypesLoading(true);
     let rows = [];
     if (apiClient) {
@@ -733,10 +762,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
     const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
     const picksTypeId          = elementTypes.find(et => et.slug === 'picks')?.id;
-    const knownTypeIds         = new Set([topperTypeId, scatteredDecorTypeId, picksTypeId].filter(Boolean));
+    const imageTopperTypeId    = elementTypes.find(et => et.slug === 'image_topper')?.id;
+    const knownTypeIds         = new Set([topperTypeId, scatteredDecorTypeId, picksTypeId, imageTopperTypeId].filter(Boolean));
     setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
     setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
     setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
+    setImageTopperDb(rows.filter(r => r.element_type_id === imageTopperTypeId));
     const others = {};
     rows.filter(r => !knownTypeIds.has(r.element_type_id)).forEach(r => {
       (others[r.element_type_id] ??= []).push(r);
@@ -964,8 +995,21 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     if (!placementMode && Object.values(element.placement_config ?? {}).includes('faux_ball_single')) {
       placementMode = 'faux_ball_single';
     }
-    addSticker(element, hit.zone, hit.tierIndex, placementMode ?? 'hug', hit);
+
+    const imageTopperTypeId = elementTypes.find(et => et.slug === 'image_topper')?.id;
+    const isImageTopper = element.element_type_id === imageTopperTypeId;
+
+    // Center image toppers on the top surface regardless of where they were dropped.
+    const effectiveHit = (isImageTopper && hit.zone === 'top_surface')
+      ? { ...hit, x: 0, z: 0 }
+      : hit;
+
+    addSticker(element, effectiveHit.zone, effectiveHit.tierIndex, placementMode ?? 'hug', effectiveHit);
     setElementsOpen(false);
+
+    if (isImageTopper && hit.zone === 'top_surface') {
+      snapCameraRef.current?.([0, 5.5, 8.7]);
+    }
   }
 
   function startTopperDrag(topper, startX, startY) {
@@ -1506,6 +1550,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                   toppersDb={toppersDb}
                   scatteredDecorElements={scatteredDecorDb}
                   picksElements={picksDb}
+                  imageTopperElements={imageTopperDb}
                   otherElements={otherElementsDb[et.id] ?? []}
                   onSetTopper={t => { if (t?.image_url) preloadTopper(t.image_url); setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
                   onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
@@ -1582,12 +1627,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
         {/* ── Canvas area ── */}
         <div style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
-          <div style={s.topControls}>
-            <button style={{ ...s.addTierBtn, color: '#333' }}
-              onClick={() => setSaveModal(true)}>
-              Save Template
-            </button>
-          </div>
 
           <Suspense fallback={<div style={s.loading}>Loading 3D cake...</div>}>
             <CakeCanvas
@@ -1619,6 +1658,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               onGroupMove={handleGroupMove}
               stickerToolbar={selectedEl?.type === 'sticker' && !selectedStickerIsFauxBall ? buildToolbar(selectedEl) : null}
               hitTestRef={hitTestRef}
+              snapCameraRef={snapCameraRef}
               cameraPosition={isMobile ? [6, 7, 9] : [4.5, 5.5, 6.5]}
             />
           </Suspense>
@@ -1934,10 +1974,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         </div>
       </div>{/* end main */}
 
-      {/* ── Order button ── */}
+      {/* ── Order + Save Template bar ── */}
       {selectedEl?.type !== 'text' && (
-        <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : {}) }}>
-          <button style={{ ...s.orderBtn, ...brandBtn, ...(isMobile ? { padding: '10px', fontSize: 13 } : {}) }} onClick={handleOrder}>{editingOrder ? 'Update Design' : 'Order This Cake'}</button>
+        <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : {}), display: 'flex', gap: 8 }}>
+          <button
+            style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+            onClick={handleOrder}>
+            {editingOrder ? 'Update Design' : 'Order This Cake'}
+          </button>
+          <button
+            style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+            onClick={() => setSaveModal(true)}>
+            Save as Template
+          </button>
         </div>
       )}
 
@@ -2015,7 +2064,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               onClick={handleSaveTemplate}
               disabled={saving || !templateName.trim()}
             >
-              {saving ? 'Saving...' : 'Save Template'}
+              {saving ? 'Saving...' : 'Save as Template'}
             </button>
           </div>
         </div>
@@ -2347,17 +2396,6 @@ const s = {
     zIndex:10, background:'rgba(107,45,66,0.7)', color:'#fff',
     fontSize:11, fontWeight:600, padding:'5px 14px', borderRadius:20,
     letterSpacing:0.3, pointerEvents:'none', backdropFilter:'blur(6px)',
-  },
-  topControls: {
-    position:'absolute', top:14, right:14, zIndex:10,
-    display:'flex', gap:8,
-  },
-  addTierBtn: {
-    zIndex:10,
-    background:'#fff', border:'1.5px solid #e0d0d5', borderRadius:20,
-    padding:'6px 14px', fontSize:11, fontWeight:700,
-    color:'#1a1a1a', cursor:'pointer',
-    boxShadow:'0 2px 8px rgba(0,0,0,0.08)',
   },
   rotateHint: {
     position:'absolute', bottom:12, left:'50%', transform:'translateX(-50%)',

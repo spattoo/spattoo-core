@@ -78,14 +78,10 @@ function createApiClient(supabaseClient) {
       fetch(`${API_URL}/api/flavours?bakerSlug=${bakerSlug}`).then(r => r.json()),
     placeOrder: async (payload) => {
       const profile = await authFetch('/api/baker/profile');
-      const r = await fetch(`${API_URL}/api/orders`, {
+      return authFetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, bakerSlug: profile.baker.slug }),
       });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error ?? `Order failed (${r.status})`);
-      return json;
     },
     fetchBakerSettings: () => authFetch('/api/baker/settings'),
     updateBakerSettings: (settings) =>
