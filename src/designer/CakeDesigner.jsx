@@ -999,8 +999,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const imageTopperTypeId = elementTypes.find(et => et.slug === 'image_topper')?.id;
     const isImageTopper = element.element_type_id === imageTopperTypeId;
 
-    // Center image toppers on the top surface regardless of where they were dropped.
-    const effectiveHit = (isImageTopper && hit.zone === 'top_surface')
+    // First image topper on an empty top surface → center it; subsequent ones → drop at cursor.
+    const hasTopperOnTier = isImageTopper && hit.zone === 'top_surface' &&
+      design.stickers.some(s => s.zone === 'top_surface' && s.tierIndex === hit.tierIndex && s.placementMode === 'stand');
+    const effectiveHit = (isImageTopper && hit.zone === 'top_surface' && !hasTopperOnTier)
       ? { ...hit, x: 0, z: 0 }
       : hit;
 

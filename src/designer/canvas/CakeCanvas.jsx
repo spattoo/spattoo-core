@@ -966,16 +966,21 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, selected, on
   // Stand mode: outer=position+scale, middle=Y-spin, inner=X-tilt
   // 2D images use Billboard so they always face the camera instead of leaning back.
   if (isStand) {
-    const standInner = (
-      <group position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
-        <group rotation={[0, sticker.rotation ?? 0, 0]}>
-          <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-            {innerContent(onDown)}
-          </group>
+    // Billboard must be INSIDE the world-positioned group, not wrapping it.
+    // If Billboard wraps the position group, it sits at origin and rotates its
+    // local frame — so any x/z offset becomes wrong world-space position.
+    const inner = (
+      <group rotation={[0, sticker.rotation ?? 0, 0]}>
+        <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
+          {innerContent(onDown)}
         </group>
       </group>
     );
-    return isGlb2d ? standInner : <Billboard lockX={true} lockY={false} lockZ={true}>{standInner}</Billboard>;
+    return (
+      <group position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
+        {isGlb2d ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
+      </group>
+    );
   }
   // Flat mode (sticker laid horizontal on top surface)
   return (

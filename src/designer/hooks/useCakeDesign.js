@@ -105,21 +105,24 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       let px = position.x ?? 0;
       let pz = position.z ?? 0;
       if (placementMode === 'stand' && zone === 'top_surface') {
+        // Nudge by a fixed STICKER_SIZE gap so both toppers have different centres
+        // and are separately selectable. Scale is intentionally ignored — the user
+        // will drag to the final position; drag-time collision handles visual overlap.
+        const tierRadius = TIER_RADII[tierIndex ?? 0] ?? TIER_RADII[0];
         const siblings = prev.stickers.filter(
           s => s.zone === 'top_surface' && s.tierIndex === (tierIndex ?? 0) && s.placementMode === 'stand'
         );
         for (const sib of siblings) {
-          const selfR = STICKER_SIZE / 2 * (defaultScale ?? 1);
-          const sibR  = STICKER_SIZE / 2 * (sib.scale ?? 1);
-          const minDist = selfR + sibR;
           const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
           const d = Math.sqrt(ex * ex + ez * ez);
-          if (d < minDist) {
+          if (d < STICKER_SIZE) {
             const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
-            px = (sib.x ?? 0) + dir.x * minDist;
-            pz = (sib.z ?? 0) + dir.z * minDist;
+            px = (sib.x ?? 0) + dir.x * STICKER_SIZE;
+            pz = (sib.z ?? 0) + dir.z * STICKER_SIZE;
           }
         }
+        const r = Math.sqrt(px * px + pz * pz);
+        if (r > tierRadius * 0.88) { px = px * tierRadius * 0.88 / r; pz = pz * tierRadius * 0.88 / r; }
       }
       if (placementMode === 'faux_ball_single') {
         const isSide = zone === 'side' || zone === 'middle_tier';
