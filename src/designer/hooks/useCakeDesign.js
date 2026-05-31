@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP } from '../constants.js';
+import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE } from '../constants.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 
@@ -104,6 +104,23 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       let px = position.x ?? 0;
       let pz = position.z ?? 0;
+      if (placementMode === 'stand' && zone === 'top_surface') {
+        const siblings = prev.stickers.filter(
+          s => s.zone === 'top_surface' && s.tierIndex === (tierIndex ?? 0) && s.placementMode === 'stand'
+        );
+        for (const sib of siblings) {
+          const selfR = STICKER_SIZE / 2 * (defaultScale ?? 1);
+          const sibR  = STICKER_SIZE / 2 * (sib.scale ?? 1);
+          const minDist = selfR + sibR;
+          const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
+          const d = Math.sqrt(ex * ex + ez * ez);
+          if (d < minDist) {
+            const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
+            px = (sib.x ?? 0) + dir.x * minDist;
+            pz = (sib.z ?? 0) + dir.z * minDist;
+          }
+        }
+      }
       if (placementMode === 'faux_ball_single') {
         const isSide = zone === 'side' || zone === 'middle_tier';
         const siblings = prev.stickers.filter(

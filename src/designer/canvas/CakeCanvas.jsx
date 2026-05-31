@@ -195,12 +195,48 @@ class TextureErrorBoundary extends Component {
   render() { return this.state.error ? null : this.props.children; }
 }
 
-function StickerTexture({ imageUrl, selected }) {
+// Builds a flat-strip geometry that curves around a cylinder of the given radius.
+// In the sticker's local space the cylinder axis is at z = -curveRadius, so the
+// strip follows the cake surface naturally.
+function createCurvedPlane(width, height, curveRadius, radialSegments = 16) {
+  const halfAngle = width / (2 * curveRadius);
+  const positions = [], normals = [], uvs = [], indices = [];
+  for (let j = 0; j <= 1; j++) {
+    const y = (j - 0.5) * height;
+    for (let i = 0; i <= radialSegments; i++) {
+      const u = i / radialSegments;
+      const a = (u - 0.5) * 2 * halfAngle;
+      positions.push(curveRadius * Math.sin(a), y, curveRadius * (Math.cos(a) - 1));
+      normals.push(Math.sin(a), 0, Math.cos(a));
+      uvs.push(u, j);
+    }
+  }
+  for (let i = 0; i < radialSegments; i++) {
+    const a = i, b = i + radialSegments + 1;
+    indices.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals,   3));
+  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs,       2));
+  geo.setIndex(indices);
+  return geo;
+}
+
+function StickerTexture({ imageUrl, selected, curved, curveRadius }) {
   const texture = useTexture(imageUrl);
   texture.colorSpace = THREE.SRGBColorSpace;
+  // Always build geometry in memo; for flat stickers use a standard PlaneGeometry.
+  // curveRadius is capped at 0.3 world units so the bend is actually visible —
+  // using the physical tier radius (~1.2) would produce only a 0.008-unit depth.
+  const geo = useMemo(
+    () => (curved && curveRadius)
+      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, Math.min(curveRadius, 0.3))
+      : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE),
+    [curved, curveRadius],
+  );
   return (
-    <mesh>
-      <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+    <mesh geometry={geo}>
       <meshStandardMaterial
         map={texture}
         transparent
@@ -283,7 +319,7 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, clipY }) {
+function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   return (
@@ -291,7 +327,7 @@ function StickerFace({ imageUrl, selected, color, clipY }) {
       <Suspense fallback={null}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -314,6 +350,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
   const surfaceR = radius + SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
   const cx = surfaceR * Math.sin(sticker.theta);
   const cz = surfaceR * Math.cos(sticker.theta);
+  const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
 
   return (
     <group
@@ -323,7 +360,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, selected, onSele
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb} curveRadius={surfaceR} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -1443,10 +1480,11 @@ function CakeThumbnailScene({ config }) {
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
         if (isSide) {
           const r = tier.radius + SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+          const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
           return (
             <group key={sticker.id} position={[r * Math.sin(sticker.theta), sticker.y, r * Math.cos(sticker.theta)]} rotation={[0, sticker.theta, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} />
+                <StickerFace imageUrl={sticker.imageUrl} selected={false} curved={!thumbIsGlb} curveRadius={r} />
               </group>
             </group>
           );
