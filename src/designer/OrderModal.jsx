@@ -164,6 +164,7 @@ export default function OrderModal({
   homeDeliveryEnabled = false,
   brandBtn, primaryColor = '#1a1a1a',
   editingOrder = null,
+  onViewOrder = null,
 }) {
   const isMobile = useIsMobile();
 
@@ -358,8 +359,21 @@ export default function OrderModal({
               </div>
             )}
           </div>
-          <div style={{ padding: isMobile ? '0 20px' : '0' }}>
-            <button style={{ ...btn(isMobile), ...brandBtn, width: '100%' }} onClick={onClose}>Done</button>
+          <div style={{ padding: isMobile ? '0 20px' : '0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {!editingOrder && onViewOrder && orderId !== 'ok' && (
+              <button
+                style={{ ...btn(isMobile), ...brandBtn, width: '100%' }}
+                onClick={() => { onViewOrder(orderId); onClose(); }}
+              >
+                View Order
+              </button>
+            )}
+            <button
+              style={{ ...btn(isMobile), width: '100%', background: 'transparent', color: '#666', border: '1.5px solid #e0e0e0', boxShadow: 'none' }}
+              onClick={onClose}
+            >
+              {(!editingOrder && onViewOrder && orderId !== 'ok') ? 'Close' : 'Done'}
+            </button>
           </div>
           {isMobile && <div style={{ height: 'env(safe-area-inset-bottom, 16px)', flexShrink: 0 }} />}
         </div>

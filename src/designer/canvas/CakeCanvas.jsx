@@ -1,6 +1,6 @@
 import { useRef, useMemo, useEffect, Suspense, Component } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Text3D, Center, Html, Environment, useGLTF, useTexture, Billboard } from '@react-three/drei';
+import { OrbitControls, Text3D, Text, Center, Html, Environment, useGLTF, useTexture, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
@@ -1198,6 +1198,22 @@ function CameraSnapper({ snapCameraRef, orbitRef }) {
 }
 
 
+function FrontMarker({ bottomRadius }) {
+  return (
+    <Text
+      position={[0, 0.002, bottomRadius + 0.82]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      fontSize={0.11}
+      color="#c8b8a2"
+      anchorX="center"
+      anchorY="middle"
+      letterSpacing={0.06}
+    >
+      FRONT
+    </Text>
+  );
+}
+
 function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
@@ -1263,6 +1279,8 @@ function CakeScene({
         <cylinderGeometry args={[bottomTier.radius + 0.6, bottomTier.radius + 0.6, 0.1, 64]} />
         <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
       </mesh>
+
+      <FrontMarker bottomRadius={bottomTier.radius} />
 
       {tierData.map((tier, i) => (
         <group key={i}>
@@ -1552,7 +1570,7 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
 export default function CakeCanvas({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
-  autoRotate = true,
+  autoRotate = false,
   selectedPiping, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,

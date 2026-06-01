@@ -537,7 +537,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null }) {
   const isMobile = useIsMobile();
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -555,6 +555,10 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
       .then(data => {
         const list = Array.isArray(data) ? data : [];
         setOrders(list);
+        if (initialOrderId) {
+          const match = list.find(o => o.id === initialOrderId);
+          if (match) { setSelected(match); return; }
+        }
         if (list.length && !isMobile) setSelected(list[0]);
       })
       .catch(err => setError(err.message ?? 'Failed to load orders'))

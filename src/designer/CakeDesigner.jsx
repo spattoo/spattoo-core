@@ -544,7 +544,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   // pipingTarget: { tierIndex, zone } — triggers in-canvas style picker
   const [pipingTarget, setPipingTarget] = useState(null);
-  const [autoRotate, setAutoRotate] = useState(true);
   const [saveModal, setSaveModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateOffering, setTemplateOffering] = useState('standard');
@@ -553,7 +552,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
-  const hasEdited = useRef(false);
   const textInputRef = useRef();
   const thumbContainerRef = useRef();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -562,6 +560,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
+  const [newOrderId,          setNewOrderId]          = useState(null);
   const [editingOrder,        setEditingOrder]        = useState(null);
   const [ordersPanelOpen,     setOrdersPanelOpen]     = useState(false);
   const [customersPanelOpen,  setCustomersPanelOpen]  = useState(false);
@@ -822,7 +821,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color: pipingPopupColor, size: pipingPopupSize };
       if (zone === 'rim') setTopPiping(tierIndex, piping);
       else                setBottomPiping(tierIndex, piping);
-      stopRotatingOnFirstEdit();
     }
   }
 
@@ -847,14 +845,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setTemplatesLoading(false);
   }
 
-  function stopRotatingOnFirstEdit() {
-    if (!hasEdited.current) {
-      hasEdited.current = true;
-      setAutoRotate(false);
-    }
-  }
-
-  const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
+const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   // ── Color helpers ─────────────────────────────────────────────────────────
   function getCurrentColor() {
@@ -910,38 +901,32 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   function handleDeselect() { clearAllSelections(); }
 
   function handleTierClick(i) {
-    stopRotatingOnFirstEdit();
     setSelectedEl(prev => (prev?.type === 'tier' && prev.index === i) ? null : { type: 'tier', index: i });
     setColorOpen(false);
   }
 
   function handleTextSelect(id) {
-    stopRotatingOnFirstEdit();
     setSelectedEl({ type: 'text', id });
     setColorOpen(false);
   }
 
   function handleTopPipingSelect(tierIndex) {
-    stopRotatingOnFirstEdit();
     setSelectedEl({ type: 'piping', tierIndex, zone: 'top' });
     setColorOpen(false);
   }
 
   function handleBottomPipingSelect(tierIndex) {
-    stopRotatingOnFirstEdit();
     setSelectedEl({ type: 'piping', tierIndex, zone: 'bottom' });
     setColorOpen(false);
   }
 
   function handleTopperClick() {
     if (!design.topper) return;
-    stopRotatingOnFirstEdit();
     setSelectedEl(prev => prev?.type === 'topper' ? prev : { type: 'topper' });
     setColorOpen(false);
   }
 
   function handleStickerSelect(id, ctrlKey = false) {
-    stopRotatingOnFirstEdit();
     const sticker = design.stickers.find(s => s.id === id);
 
     if (ctrlKey || multiSelectMode) {
@@ -974,7 +959,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function handleStickerLongPress(id) {
-    stopRotatingOnFirstEdit();
     setMultiSelectMode(true);
     setSelectedStickerIds(new Set([id]));
     setSelectedEl({ type: 'sticker', id });
@@ -990,7 +974,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function handleElementDrop(element, hit) {
-    stopRotatingOnFirstEdit();
     let placementMode = element.placement_config?.[hit.zone];
     if (!placementMode && Object.values(element.placement_config ?? {}).includes('faux_ball_single')) {
       placementMode = 'faux_ball_single';
@@ -1015,9 +998,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function startTopperDrag(topper, startX, startY) {
-    setDragGhost({ x: startX, y: startY, el: topper });
+    setDragGhost({ x: startX, y: startY, el: topper, canDrop: false });
     function onMove(e) {
-      setDragGhost({ x: e.clientX, y: e.clientY, el: topper });
+      const hit = hitTestRef.current?.(e.clientX, e.clientY);
+      setDragGhost({ x: e.clientX, y: e.clientY, el: topper, canDrop: !!hit });
     }
     function onUp(e) {
       setDragGhost(null);
@@ -1028,7 +1012,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         if (topper.image_url) preloadTopper(topper.image_url);
         setTopper(topper);
         setSelectedEl({ type: 'topper' });
-        stopRotatingOnFirstEdit();
         setElementsOpen(false);
       }
     }
@@ -1038,10 +1021,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   function startStickerDrag(el, startX, startY) {
     dragStickerRef.current = el;
-    setDragGhost({ x: startX, y: startY, el });
+    setDragGhost({ x: startX, y: startY, el, canDrop: false });
 
     function onMove(e) {
-      setDragGhost({ x: e.clientX, y: e.clientY, el });
+      const hit = hitTestRef.current?.(e.clientX, e.clientY);
+      setDragGhost({ x: e.clientX, y: e.clientY, el, canDrop: !!hit });
     }
     function onUp(e) {
       setDragGhost(null);
@@ -1075,8 +1059,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     resetDesign();
     clearAllSelections();
     setEditingOrder(null);
-    setAutoRotate(true);
-    hasEdited.current = false;
     setElementsOpen(false);
     setTemplatesOpen(false);
   }
@@ -1103,7 +1085,21 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   async function handleOrderSubmit(formData) {
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const designThumbnail = thumbCanvas ? thumbCanvas.toDataURL('image/png') : null;
+    const thumbnailBlob = await new Promise(resolve => {
+      if (!thumbCanvas) return resolve(null);
+      thumbCanvas.toBlob(blob => resolve(blob ?? null), 'image/png');
+    });
+
+    // Upload thumbnail directly to R2 via signed URL — never send base64 in JSON body
+    let designThumbnailKey = null;
+    if (thumbnailBlob && apiClient?.getSignedUploadUrl) {
+      try {
+        const filename = `${crypto.randomUUID()}.png`;
+        const { url, key } = await apiClient.getSignedUploadUrl('orders/thumbnails', filename, 'image/png');
+        await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: thumbnailBlob });
+        designThumbnailKey = key;
+      } catch (_) { /* thumbnail upload failure is non-fatal */ }
+    }
 
     const designSnapshot = {
       shape: 'round',
@@ -1122,13 +1118,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     };
 
     if (editingOrder) {
-      const payload = { designSnapshot, designThumbnail, comment: formData.comment };
+      const payload = { designSnapshot, designThumbnailKey, comment: formData.comment };
       if (apiClient?.updateOrderDesign) return await apiClient.updateOrderDesign(editingOrder.id, payload);
       if (onOrder)                       return await onOrder({ ...payload, mode: 'update_design', orderId: editingOrder.id });
       return;
     }
 
-    const payload = { ...formData, designSnapshot, designThumbnail };
+    const payload = { ...formData, designSnapshot, designThumbnailKey };
     if (apiClient?.placeOrder) return await apiClient.placeOrder(payload);
     if (onOrder)               return await onOrder(payload);
   }
@@ -1429,7 +1425,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                     style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}
                     onClick={() => {
                       if (id === 'new')       handleNewCake();
-                      if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
                       if (id === 'elements')  openElements();
                       if (id === 'templates') openTemplates();
                       if (id === 'dashboard') setDashboardOpen(true);
@@ -1574,7 +1569,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                   picksElements={picksDb}
                   imageTopperElements={imageTopperDb}
                   otherElements={otherElementsDb[et.id] ?? []}
-                  onSetTopper={t => { if (t?.image_url) preloadTopper(t.image_url); setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
                   onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
                   onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
                 />
@@ -1668,7 +1662,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               onTextSelect={handleTextSelect}
               onTextMove={(id, pos) => updateText(id, pos)}
               onTextContentChange={(id, content) => updateText(id, { content })}
-              autoRotate={autoRotate}
               textToolbar={selectedText ? buildToolbar(selectedEl) : null}
               onTopperClick={handleTopperClick}
               topperSelected={selectedEl?.type === 'topper'}
@@ -2058,7 +2051,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               <button key={id}
                 style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
                 onClick={() => {
-                  if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
                   if (id === 'elements')  openElements();
                   if (id === 'templates') openTemplates();
                   if (id === 'dashboard') setDashboardOpen(true);
@@ -2160,9 +2152,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       {/* ── Orders panel ── */}
       <OrdersPanel
         open={ordersPanelOpen}
-        onClose={() => { setOrdersPanelOpen(false); setOrdersFilter(null); }}
-        onBack={ordersFilter ? () => { setOrdersPanelOpen(false); setOrdersFilter(null); setDashboardOpen(true); } : null}
+        onClose={() => { setOrdersPanelOpen(false); setOrdersFilter(null); setNewOrderId(null); }}
+        onBack={ordersFilter ? () => { setOrdersPanelOpen(false); setOrdersFilter(null); setNewOrderId(null); setDashboardOpen(true); } : null}
         externalFilter={ordersFilter}
+        initialOrderId={newOrderId}
         onEditDesign={(order) => {
           setEditingOrder(order);
           setOrdersPanelOpen(false);
@@ -2219,6 +2212,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
           brandBtn={brandBtn}
           primaryColor={primaryColor}
+          onViewOrder={(id) => {
+            setOrderModalOpen(false);
+            setEditingOrder(null);
+            setNewOrderId(id);
+            setOrdersPanelOpen(true);
+          }}
         />
       )}
 
@@ -2233,13 +2232,16 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           left: dragGhost.x - 28, top: dragGhost.y - 28,
           width: 56, height: 56,
           borderRadius: 12,
-          background: 'repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 0 0 / 10px 10px',
-          border: '2px solid #9b5f72',
+          background: 'transparent',
+          border: dragGhost.canDrop ? '2.5px solid #22c55e' : '2px solid #9b5f72',
           overflow: 'hidden',
           pointerEvents: 'none',
           zIndex: 9999,
           opacity: 0.85,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          boxShadow: dragGhost.canDrop
+            ? '0 4px 16px rgba(34,197,94,0.35)'
+            : '0 4px 16px rgba(0,0,0,0.18)',
+          transition: 'border-color 0.12s, box-shadow 0.12s',
         }}>
           {dragGhost.el.thumbnail_url && (
             <img src={dragGhost.el.thumbnail_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
