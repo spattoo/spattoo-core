@@ -116,6 +116,7 @@ function Root() {
   return (
     <CakeDesigner
       apiClient={apiClient}
+      supabase={supabase}
       onOrder={({ design }) => console.log('Order:', design)}
     />
   );

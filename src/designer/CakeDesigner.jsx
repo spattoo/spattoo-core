@@ -1,6 +1,8 @@
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
+import { cfImg } from './utils/imageUtils';
+import { CAMERA_POSITION, CAMERA_POSITION_MOBILE } from './constants';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import ColorGuide from './ColorGuide';
 import OrderModal from './OrderModal';
@@ -9,6 +11,7 @@ import CustomersPanel from './CustomersPanel';
 import DashboardPanel from './DashboardPanel';
 import SettingsPanel from './SettingsPanel';
 import BillingPanel from './BillingPanel';
+
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
@@ -57,12 +60,95 @@ const ZONE_LABELS = {
 };
 
 
+// ── Filter ────────────────────────────────────────────────────────────────────
+const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', material: 'Material', theme: 'Theme', age_group: 'Age group', gender: 'Gender' };
+const TMPL_CATS = ['occasion', 'style', 'color', 'age_group', 'gender'];
+
+function FunnelIcon({ size = 15, active }) {
+  const c = active ? '#9b5f72' : '#888';
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1.5 2.5L14.5 2.5L9.5 8.5L9.5 13.5L6.5 13.5L6.5 8.5Z" />
+    </svg>
+  );
+}
+
+function FilterPanel({ allTags, active, onChange, categories, children }) {
+  const [open, setOpen] = useState(false);
+  const activeCount = Object.values(active).filter(Boolean).length;
+
+  const byCategory = categories.reduce((acc, cat) => {
+    const tags = allTags.filter(t => t.category === cat);
+    if (tags.length) acc[cat] = tags;
+    return acc;
+  }, {});
+
+  return (
+    <div style={{ borderBottom: '1px solid #f0dce3', marginBottom: 6 }}>
+      {/* Toggle row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 6px' }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <FunnelIcon active={activeCount > 0 || open} />
+          {activeCount > 0 && (
+            <span style={{ fontSize: 9, fontWeight: 800, color: '#9b5f72', fontFamily: "'Quicksand', sans-serif" }}>{activeCount}</span>
+          )}
+        </button>
+        {activeCount > 0 && (
+          <button onClick={() => onChange({})} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 9, color: '#9b5f72', fontWeight: 700, fontFamily: "'Quicksand', sans-serif" }}>
+            clear
+          </button>
+        )}
+      </div>
+
+      {/* Filter controls */}
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 10 }}>
+          {Object.keys(byCategory).length > 0
+            ? Object.entries(byCategory).map(([cat, tags]) => (
+                <div key={cat}>
+                  <div style={{ fontSize: 8, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>
+                    {CAT_LABEL[cat]}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {tags.map(tag => {
+                      const on = active[cat] === tag.slug;
+                      return (
+                        <button key={tag.slug}
+                          onClick={() => onChange({ ...active, [cat]: on ? null : tag.slug })}
+                          style={{ padding: '3px 8px', borderRadius: 20, border: `1.5px solid ${on ? '#9b5f72' : '#f0dce3'}`, background: on ? '#9b5f72' : '#fff', color: on ? '#fff' : '#666', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand', sans-serif", lineHeight: 1.4 }}
+                        >
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            : !children && <span style={{ fontSize: 10, color: '#c8b8a2', fontStyle: 'italic' }}>No tags configured yet</span>
+          }
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function matchesFilters(item, filters) {
+  return Object.entries(filters).every(([, slug]) => {
+    if (!slug) return true;
+    return item.tag_slugs?.includes(slug);
+  });
+}
+
 // TOPPERS + PIPING STYLES are loaded from Supabase cake_elements table
 
 // ── Per-element-type card in the elements panel ───────────────────────────────
 function ElementTypeCard({
   elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], imageTopperElements = [], otherElements = [],
-  onSetTopper, onDragStartSticker, onDragStartTopper,
+  onSetTopper, onDragStartSticker, onDragStartTopper, cfAssetsBase,
 }) {
   const { slug, name } = elementType;
 
@@ -92,7 +178,7 @@ function ElementTypeCard({
                   onPointerDown={e => { e.preventDefault(); onDragStartTopper?.(t, e.clientX, e.clientY); }}
                 >
                   {t.thumbnail_url
-                    ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
+                    ? <img src={cfImg(t.thumbnail_url, 80, 80, cfAssetsBase)} alt={t.name} width={80} height={80} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
                     : null
                   }
                 </div>
@@ -136,7 +222,7 @@ function ElementTypeCard({
                 background: '#fff',
                 border: '1.5px solid #f0dce3',
               }}>
-                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
               </div>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
             </div>
@@ -163,7 +249,7 @@ function ElementTypeCard({
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
             >
               <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
-                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
               </div>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
             </div>
@@ -190,7 +276,7 @@ function ElementTypeCard({
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
             >
               <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
-                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
+                {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} crossOrigin="anonymous" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
               </div>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
             </div>
@@ -215,7 +301,7 @@ function ElementTypeCard({
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
               >
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
-                  {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                  {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
                 </div>
                 <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
               </div>
@@ -492,7 +578,7 @@ function AddUserModal({ onClose, brandBtn }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate }) {
+export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
   const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
@@ -502,6 +588,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [picksDb, setPicksDb] = useState([]);
   const [imageTopperDb, setImageTopperDb] = useState([]);
   const [otherElementsDb, setOtherElementsDb] = useState({}); // typeId → elements[]
+  const [filterTags,      setFilterTags]      = useState([]);
+  const [templateFilters, setTemplateFilters] = useState({});
+  const [filterWeight,    setFilterWeight]    = useState('');
+  const [filterAge,       setFilterAge]       = useState('');
+  const [elemSearch,      setElemSearch]      = useState('');
+  const [tmplSearch,      setTmplSearch]      = useState('');
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   const [pipingPopupEl,     setPipingPopupEl]     = useState(null);
   const [pipingPopupColor,  setPipingPopupColor]  = useState('#f5e6c8');
@@ -547,6 +639,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [saveModal, setSaveModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateOffering, setTemplateOffering] = useState('standard');
+  const [templateWeight, setTemplateWeight] = useState('');
+  const [templateMinAge, setTemplateMinAge] = useState('');
+  const [templateMaxAge, setTemplateMaxAge] = useState('');
+  const [templateOccasionIds, setTemplateOccasionIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -658,7 +754,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const thumbnailBlob = await new Promise(resolve => {
       if (!thumbCanvas) return resolve(null);
-      thumbCanvas.toBlob(blob => resolve(blob ?? null), 'image/png');
+      try {
+        const timeout = setTimeout(() => resolve(null), 4000);
+        thumbCanvas.toBlob(blob => { clearTimeout(timeout); resolve(blob ?? null); }, 'image/png');
+      } catch {
+        resolve(null);
+      }
     });
 
     // Build design JSON
@@ -678,17 +779,22 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       topper:   design.topper ?? null,
     };
 
+    try {
     if (onSaveTemplate) {
       try {
         await onSaveTemplate({
-          name:      templateName.trim(),
-          offering:  templateOffering,
-          tierCount: design.tiers.length,
+          name:         templateName.trim(),
+          offering:     templateOffering,
+          tierCount:    design.tiers.length,
           designJson,
           thumbnailBlob,
+          weightKg:     templateWeight !== '' ? parseFloat(templateWeight) : null,
+          minAge:       templateMinAge !== '' ? parseInt(templateMinAge, 10) : null,
+          maxAge:       templateMaxAge !== '' ? parseInt(templateMaxAge, 10) : null,
+          occasionTagIds: [...templateOccasionIds],
         });
         setSaveMsg({ ok: true, text: 'Template saved!' });
-        setTimeout(() => { setSaveModal(false); setSaveMsg(null); setTemplateName(''); }, 1200);
+        setTimeout(() => { setSaveModal(false); setSaveMsg(null); setTemplateName(''); setTemplateWeight(''); setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set()); }, 1200);
       } catch (err) {
         setSaveMsg({ ok: false, text: err.message });
       }
@@ -707,23 +813,50 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       } catch (_) { /* thumbnail upload failure is non-fatal */ }
     }
 
-    const { error } = await supabase.from('cake_templates').insert({
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: bakerUser } = await supabase
+      .from('baker_appusers').select('baker_id').eq('auth_user_id', user?.id).maybeSingle();
+
+    const { data: newTpl, error } = await supabase.from('cake_templates').insert({
       name: templateName.trim(),
       shape: 'round',
       tier_count: design.tiers.length,
       offering: templateOffering,
       design: designJson,
       thumbnail_url,
+      baker_id: bakerUser?.baker_id ?? null,
       is_active: true,
       sort_order: 0,
-    });
+    }).select('id').single();
 
-    setSaving(false);
+    if (!error && newTpl) {
+      const hasAttrs = templateWeight !== '' || templateMinAge !== '' || templateMaxAge !== '';
+      if (hasAttrs) {
+        const { error: attrsErr } = await supabase.from('cake_template_attrs').upsert({
+          template_id:   newTpl.id,
+          min_weight_kg: templateWeight  !== '' ? parseFloat(templateWeight)      : null,
+          min_age:       templateMinAge  !== '' ? parseInt(templateMinAge, 10)    : null,
+          max_age:       templateMaxAge  !== '' ? parseInt(templateMaxAge, 10)    : null,
+        }, { onConflict: 'template_id' });
+        if (attrsErr) throw new Error(`Attrs save failed: ${attrsErr.message}`);
+      }
+      if (templateOccasionIds.size > 0) {
+        const rows = [...templateOccasionIds].map(tag_id => ({ template_id: newTpl.id, tag_id, source: 'manual' }));
+        const { error: tagsErr } = await supabase.from('template_tags').insert(rows);
+        if (tagsErr) throw new Error(`Tags save failed: ${tagsErr.message}`);
+      }
+    }
+
     if (error) {
       setSaveMsg({ ok: false, text: error.message });
     } else {
       setSaveMsg({ ok: true, text: 'Template saved!' });
-      setTimeout(() => { setSaveModal(false); setSaveMsg(null); setTemplateName(''); }, 1200);
+      setTimeout(() => { setSaveModal(false); setSaveMsg(null); setTemplateName(''); setTemplateWeight(''); setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set()); }, 1200);
+    }
+    } catch (err) {
+      setSaveMsg({ ok: false, text: err.message });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -732,6 +865,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   useEffect(() => {
     if (apiClient) {
       apiClient.fetchElementTypes().then(data => { if (data) setElementTypes(data); });
+      apiClient.fetchTags?.().then(data => { if (data) setFilterTags(data); }).catch(() => {});
     } else {
       supabase
         .from('element_types')
@@ -739,6 +873,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         .eq('is_active', true)
         .order('sort_order')
         .then(({ data }) => { if (data) setElementTypes(data); });
+      supabase
+        .from('tags')
+        .select('id, name, slug, category')
+        .eq('is_active', true)
+        .order('category').order('sort_order')
+        .then(({ data }) => { if (data) setFilterTags(data); });
+
     }
   }, []);
 
@@ -751,12 +892,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     } else {
       const { data: topLevelData } = await supabase
         .from('cake_elements')
-        .select('id, name, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id, default_color, allowed_actions')
+        .select('id, name, description, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id, default_color, allowed_actions')
         .is('parent_id', null)
         .eq('is_active', true)
         .order('sort_order');
       rows = topLevelData ?? [];
     }
+    // Normalise relative keys to full URLs so cfImg and canvas renderers work consistently
+    const resolveUrl = key => {
+      if (!key) return key;
+      try { new URL(key); return key; } catch { return cfAssetsBase ? `${cfAssetsBase}/${key}` : key; }
+    };
+    rows = rows.map(r => ({ ...r, image_url: resolveUrl(r.image_url), thumbnail_url: resolveUrl(r.thumbnail_url) }));
+
     setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
     const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
     const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
@@ -836,11 +984,18 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     } else {
       const { data, error } = await supabase
         .from('cake_templates')
-        .select('id, name, offering, tier_count, thumbnail_url, created_at')
+        .select('id, name, offering, tier_count, thumbnail_url, created_at, template_tags(tags(slug)), cake_template_attrs(min_weight_kg, min_age, max_age)')
         .eq('is_active', true)
         .order('sort_order')
         .order('created_at', { ascending: false });
-      setTemplates(error ? [] : data);
+      setTemplates(error ? [] : (data ?? []).map(({ template_tags, cake_template_attrs, ...t }) => {
+        const rawAttrs = cake_template_attrs;
+        return {
+          ...t,
+          tag_slugs: (template_tags ?? []).map(r => r.tags?.slug).filter(Boolean),
+          attrs: Array.isArray(rawAttrs) ? (rawAttrs[0] ?? null) : (rawAttrs ?? null),
+        };
+      }));
     }
     setTemplatesLoading(false);
   }
@@ -1522,20 +1677,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <span style={s.flyoutTitle}>Elements</span>
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
             </div>
+
+            {/* Search */}
+            <input
+              value={elemSearch}
+              onChange={e => setElemSearch(e.target.value)}
+              placeholder="Search elements…"
+              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #f0dce3', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#fdf9fa', flexShrink: 0 }}
+            />
+
             <div style={s.flyoutScroll}>
             {elementTypesLoading && (
               <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
             )}
 
             {/* Cream piping — thumbnail grid, tap a style to open popup */}
-            {creamPipingType && activeElementTypeIds.has(creamPipingType.id) && (
+            {creamPipingType && activeElementTypeIds.has(creamPipingType.id) && (() => {
+              const q = elemSearch.trim().toLowerCase();
+              const visiblePipingEls = q ? creamPipingEls.filter(el => `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q)) : creamPipingEls;
+              if (q && visiblePipingEls.length === 0) return null;
+              return (
               <div style={{ ...s.elementCard, cursor: 'default' }}>
                 <div style={s.elementCardLabel}>Cream Piping</div>
-                {creamPipingEls.length === 0 && (
+                {visiblePipingEls.length === 0 && (
                   <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No styles yet</div>
                 )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {creamPipingEls.map(el => {
+                  {visiblePipingEls.map(el => {
                     const isActive = design.tiers.some(t => t.topPiping?.id === el.id || t.bottomPiping?.id === el.id);
                     return (
                       <div key={el.id} onClick={() => openPipingPopup(el)}
@@ -1546,7 +1714,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           border: `1.5px solid ${isActive ? '#9b5f72' : '#f0dce3'}`,
                           boxShadow: isActive ? '0 0 0 2px rgba(155,95,114,0.18)' : 'none',
                         }}>
-                          {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                          {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
                         </div>
                         <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#9b5f72' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
                       </div>
@@ -1554,25 +1722,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   })}
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* All other element types */}
-            {elementTypes
-              .filter(et => et.slug !== 'cream_piping' && activeElementTypeIds.has(et.id))
-              .map(et => (
-                <ElementTypeCard
-                  key={et.id}
-                  elementType={et}
-                  design={design}
-                  toppersDb={toppersDb}
-                  scatteredDecorElements={scatteredDecorDb}
-                  picksElements={picksDb}
-                  imageTopperElements={imageTopperDb}
-                  otherElements={otherElementsDb[et.id] ?? []}
-                  onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
-                  onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
-                />
-              ))}
+            {(() => {
+              const q = elemSearch.trim().toLowerCase();
+              const filterEl = els => !q ? els : els.filter(el => {
+                const hay = `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase();
+                return hay.includes(q);
+              });
+              return elementTypes
+                .filter(et => et.slug !== 'cream_piping' && activeElementTypeIds.has(et.id))
+                .map(et => (
+                  <ElementTypeCard
+                    key={et.id}
+                    elementType={et}
+                    design={design}
+                    toppersDb={filterEl(toppersDb)}
+                    scatteredDecorElements={filterEl(scatteredDecorDb)}
+                    picksElements={filterEl(picksDb)}
+                    imageTopperElements={filterEl(imageTopperDb)}
+                    otherElements={filterEl(otherElementsDb[et.id] ?? [])}
+                    onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
+                    onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
+                    cfAssetsBase={cfAssetsBase}
+                  />
+              ));
+            })()}
             </div>{/* end flyoutScroll */}
           </div>
         )}
@@ -1589,7 +1766,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <span style={s.flyoutTitle}>Templates</span>
               <button style={s.iconBtn} onClick={() => setTemplatesOpen(false)}>✕</button>
             </div>
+
+            {/* Search */}
+            <input
+              value={tmplSearch}
+              onChange={e => setTmplSearch(e.target.value)}
+              placeholder="Search templates…"
+              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #f0dce3', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#fdf9fa', flexShrink: 0 }}
+            />
+
             <div style={s.flyoutScroll}>
+            {/* Filter panel — inside scroll, avoids outer flex/overflow conflicts */}
+            <FilterPanel
+              allTags={filterTags}
+              active={templateFilters}
+              onChange={setTemplateFilters}
+              categories={TMPL_CATS}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Weight</span>
+                  <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={filterWeight} onChange={e => setFilterWeight(e.target.value)}
+                    style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #f0dce3', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
+                  <span style={{ fontSize: 10, color: '#aaa' }}>kg+</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Age</span>
+                  <input type="number" min="0" max="120" step="1" placeholder="e.g. 8" value={filterAge} onChange={e => setFilterAge(e.target.value)}
+                    style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #f0dce3', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
+                  <span style={{ fontSize: 10, color: '#aaa' }}>yrs</span>
+                </div>
+              </div>
+            </FilterPanel>
+
             {templatesLoading && (
               <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
             )}
@@ -1597,7 +1806,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
             <div style={isMobile ? s.templateGrid : null}>
-            {templates.map(t => (
+            {templates
+              .filter(t => {
+                const q = tmplSearch.trim().toLowerCase();
+                if (q && !t.name?.toLowerCase().includes(q)) return false;
+                if (!matchesFilters(t, templateFilters)) return false;
+                if (filterWeight) {
+                  const w = parseFloat(filterWeight);
+                  if (!isNaN(w) && t.attrs?.min_weight_kg != null && t.attrs.min_weight_kg > w) return false;
+                }
+                if (filterAge) {
+                  const age = parseInt(filterAge);
+                  if (!isNaN(age)) {
+                    if (t.attrs?.min_age != null && t.attrs.min_age > age) return false;
+                    if (t.attrs?.max_age != null && t.attrs.max_age < age) return false;
+                  }
+                }
+                return true;
+              })
+              .map(t => (
               <div key={t.id} style={{ ...s.templateCard, ...(isMobile ? { flex: '0 0 calc(50% - 5px)' } : {}) }}
                 onClick={async () => {
                   let templateDesign = t.design ?? null;
@@ -1622,7 +1849,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 }}
               >
                 {t.thumbnail_url
-                  ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#faf7f5' }} />
+                  ? <img src={cfImg(t.thumbnail_url, 180, 120, cfAssetsBase)} alt={t.name} width={180} height={120} decoding="async" style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#faf7f5' }} />
                   : <div style={s.templateThumbPlaceholder} />
                 }
                 <div style={s.templateCardFooter}>
@@ -1635,7 +1862,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {t.tier_count}-tier
                 </div>
               </div>
-            ))}
+            ))
+            }
             </div>{/* end templateGrid */}
             </div>{/* end flyoutScroll */}
           </div>
@@ -1674,7 +1902,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               stickerToolbar={null}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
-              cameraPosition={isMobile ? [6, 7, 9] : [4.5, 5.5, 6.5]}
+              cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
             />
           </Suspense>
 
@@ -1945,7 +2173,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {/* Header: thumbnail + style name + close */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 8, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
-                  {pipingPopupEl.thumbnail_url && <img src={pipingPopupEl.thumbnail_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                  {pipingPopupEl.thumbnail_url && <img src={cfImg(pipingPopupEl.thumbnail_url, 36, 36, cfAssetsBase)} alt={pipingPopupEl.name} width={36} height={36} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                 </div>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', flex: 1, fontFamily: "'Quicksand',sans-serif" }}>{pipingPopupEl.name}</span>
                 <button style={s.iconBtn} onClick={() => setPipingPopupOpen(false)}>✕</button>
@@ -2090,6 +2318,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
               ))}
             </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Weight (kg)</div>
+                <input style={{ ...s.modalInput }} type="number" min="0" step="0.5" placeholder="e.g. 1.5" value={templateWeight} onChange={e => setTemplateWeight(e.target.value)} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Age Range</div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <input style={{ ...s.modalInput, width: '50%' }} type="number" min="0" step="1" placeholder="Min" value={templateMinAge} onChange={e => setTemplateMinAge(e.target.value)} />
+                  <span style={{ color: '#aaa', fontSize: 12 }}>–</span>
+                  <input style={{ ...s.modalInput, width: '50%' }} type="number" min="0" step="1" placeholder="Max" value={templateMaxAge} onChange={e => setTemplateMaxAge(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            {filterTags.filter(t => t.category === 'occasion').length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>Occasions</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {filterTags.filter(t => t.category === 'occasion').map(tag => {
+                    const on = templateOccasionIds.has(tag.id);
+                    return (
+                      <button key={tag.id} type="button"
+                        style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${on ? primaryColor : '#e5d0d8'}`, background: on ? hexToRgba(primaryColor, 0.1) : '#fff', color: on ? primaryColor : '#888', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}
+                        onClick={() => setTemplateOccasionIds(prev => { const next = new Set(prev); on ? next.delete(tag.id) : next.add(tag.id); return next; })}
+                      >
+                        {tag.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {saveMsg && (
               <div style={{ fontSize: 12, fontWeight: 600, color: saveMsg.ok ? '#4caf50' : '#e53935', marginTop: 8 }}>
                 {saveMsg.text}
@@ -2523,7 +2786,7 @@ const s = {
   },
   modal: {
     background: '#fff', borderRadius: 20, padding: '20px 22px 22px',
-    width: 280, boxShadow: '0 8px 40px rgba(107,45,66,0.18)',
+    width: 320, boxShadow: '0 8px 40px rgba(107,45,66,0.18)',
     display: 'flex', flexDirection: 'column', gap: 10,
   },
   modalHeader: {
