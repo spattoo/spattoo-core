@@ -145,9 +145,31 @@ const inp = {
   background: '#fff', width: '100%', boxSizing: 'border-box',
 };
 
+const DAYS = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+];
+
+const DEFAULT_DAY_HOURS = { open: '09:00', close: '23:30' };
+
+const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
+  const totalMins = 360 + i * 30;
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  const value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const h12  = h % 12 || 12;
+  return { value, label: `${h12}:${String(m).padStart(2,'0')} ${ampm}` };
+});
+
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate }) {
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved }) {
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
@@ -167,7 +189,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
       apiClient.fetchBakerProfile(),
     ])
       .then(([s, { baker }]) => {
-        setSettings(s ?? {});
+        const loaded = s ?? {};
+        if (!loaded.store_hours) {
+          loaded.store_hours = Object.fromEntries(DAYS.map(d => [d.key, { ...DEFAULT_DAY_HOURS }]));
+        }
+        setSettings(loaded);
         setProfile(baker ?? {});
       })
       .catch(e => setError(e.message))
@@ -239,6 +265,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
       ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+      onSettingsSaved?.();
       onBrandingUpdate?.({
         primary_color: profile.primary_color,
         accent_color:  profile.accent_color,
@@ -406,6 +433,52 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                       {urlError}
                     </span>
                   )}
+                </Field>
+              </Section>
+
+              {/* ── Store Hours ── */}
+              <Section title="Store Hours">
+                <Field label="Opening hours" hint="Customers will only see delivery time slots within these hours.">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                    {DAYS.map(({ key, label }) => {
+                      const hours = settings.store_hours?.[key] ?? null;
+                      const isOpen = hours !== null;
+                      return (
+                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#444', width: 34, flexShrink: 0 }}>{label}</span>
+                          <Toggle
+                            checked={isOpen}
+                            onChange={v => {
+                              const next = { ...(settings.store_hours ?? {}) };
+                              next[key] = v ? { ...DEFAULT_DAY_HOURS } : null;
+                              setSetting('store_hours', next);
+                            }}
+                          />
+                          {isOpen ? (
+                            <>
+                              <select
+                                value={hours.open}
+                                onChange={e => setSetting('store_hours', { ...settings.store_hours, [key]: { ...hours, open: e.target.value } })}
+                                style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #C5D4C8', fontSize: 12, fontFamily: 'inherit', color: '#2C4433', outline: 'none', background: '#fff', cursor: 'pointer' }}
+                              >
+                                {HOUR_SLOTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                              </select>
+                              <span style={{ fontSize: 12, color: '#9BB5A2', fontWeight: 700 }}>to</span>
+                              <select
+                                value={hours.close}
+                                onChange={e => setSetting('store_hours', { ...settings.store_hours, [key]: { ...hours, close: e.target.value } })}
+                                style={{ padding: '6px 8px', borderRadius: 8, border: '1.5px solid #C5D4C8', fontSize: 12, fontFamily: 'inherit', color: '#2C4433', outline: 'none', background: '#fff', cursor: 'pointer' }}
+                              >
+                                {HOUR_SLOTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                              </select>
+                            </>
+                          ) : (
+                            <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>Closed</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </Field>
               </Section>
 

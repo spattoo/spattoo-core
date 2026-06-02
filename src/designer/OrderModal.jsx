@@ -1,6 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
+
+const TIME_SLOTS = Array.from({ length: 36 }, (_, i) => {
+  const totalMins = 360 + i * 30; // 6:00 AM → 11:30 PM
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  const value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const h12  = h % 12 || 12;
+  const label = `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+  return { value, label };
+});
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
@@ -158,10 +169,21 @@ function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onS
   );
 }
 
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+function getSlotsForDate(dateStr, storeHours) {
+  if (!storeHours || !dateStr) return TIME_SLOTS;
+  const dayKey = DAY_KEYS[new Date(dateStr + 'T00:00:00').getDay()];
+  const hours = storeHours[dayKey];
+  if (!hours) return null; // closed
+  return TIME_SLOTS.filter(s => s.value >= hours.open && s.value <= hours.close);
+}
+
 export default function OrderModal({
   tierCount, onClose, onSubmit,
   apiClient, supabase, bakerId, bakerSlug,
   homeDeliveryEnabled = false,
+  storeHours = null,
   brandBtn, primaryColor = '#1a1a1a',
   editingOrder = null,
   onViewOrder = null,
@@ -249,30 +271,51 @@ export default function OrderModal({
   }, []);
 
   // ── Customer search ─────────────────────────────────────────────────────────
-  function handlePhoneSearch() {
-    const digits = searchPhone.replace(/\D/g, '');
-    if (!digits) return;
+  function selectCustomer(c) {
+    setFoundCustomer(c);
+    setCustomer({ firstName: c.first_name ?? '', lastName: c.last_name ?? '', email: c.email ?? '', phone: c.phone ?? '' });
+    setSearchPhase('found');
+  }
+
+  function handleSearch() {
+    const query = searchPhone.trim();
+    if (!query) return;
+
+    const digits = query.replace(/\D/g, '');
+    const lower  = query.toLowerCase();
 
     const match = (customers ?? []).find(c => {
-      const d = (c.phone ?? '').replace(/\D/g, '');
-      return d.length >= 6 && digits.length >= 6 && (d.includes(digits) || digits.includes(d));
+      if (digits.length >= 4) {
+        const d = (c.phone ?? '').replace(/\D/g, '');
+        if (d && (d.includes(digits) || digits.includes(d))) return true;
+      }
+      const fullName = `${c.first_name ?? ''} ${c.last_name ?? ''}`.toLowerCase().trim();
+      return fullName && fullName.includes(lower);
     });
 
     if (match) {
-      setFoundCustomer(match);
-      setCustomer({
-        firstName: match.first_name ?? '',
-        lastName:  match.last_name  ?? '',
-        email:     match.email      ?? '',
-        phone:     match.phone      ?? searchPhone,
-      });
-      setSearchPhase('found');
+      selectCustomer(match);
     } else {
-      setCustomer(c => ({ ...c, phone: searchPhone }));
+      setCustomer(c => ({ ...c, phone: digits.length >= 6 ? query : '' }));
       setFoundCustomer(null);
       setSearchPhase('not_found');
     }
   }
+
+  const searchResults = useMemo(() => {
+    const query = searchPhone.trim();
+    if (query.length < 2 || !customers?.length) return [];
+    const digits = query.replace(/\D/g, '');
+    const lower  = query.toLowerCase();
+    return customers.filter(c => {
+      if (digits.length >= 3) {
+        const d = (c.phone ?? '').replace(/\D/g, '');
+        if (d && d.includes(digits)) return true;
+      }
+      const fullName = `${c.first_name ?? ''} ${c.last_name ?? ''}`.toLowerCase().trim();
+      return fullName && fullName.includes(lower);
+    });
+  }, [searchPhone, customers]);
 
   function resetSearch() {
     setSearchPhase('phone');
@@ -289,7 +332,7 @@ export default function OrderModal({
   }
 
   // Validation
-  const canSearch   = searchPhone.replace(/\D/g, '').length >= 6 && !customersLoading;
+  const canSearch   = searchPhone.trim().length >= 2 && !customersLoading;
   const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim());
   const canSubmit   = deliveryMode === 'pickup' || deliveryAddress.trim();
 
@@ -448,7 +491,7 @@ export default function OrderModal({
     : false;
 
   function handleFooterPrimary() {
-    if (step === 0 && searchPhase === 'phone') { handlePhoneSearch(); return; }
+    if (step === 0 && searchPhase === 'phone') { handleSearch(); return; }
     if (step < 2) { setStep(s => s + 1); return; }
     handleSubmit();
   }
@@ -506,15 +549,15 @@ export default function OrderModal({
                 {/* PHASE: phone entry */}
                 {searchPhase === 'phone' && (
                   <div style={field}>
-                    <span style={lbl}>Customer's phone number</span>
+                    <span style={lbl}>Search by phone or name</span>
                     <input
                       style={inp}
-                      type="tel"
-                      placeholder="e.g. 98765 43210"
+                      type="text"
+                      placeholder="e.g. 98765 43210 or Priya"
                       value={searchPhone}
                       autoFocus
                       onChange={e => setSearchPhone(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && canSearch && handlePhoneSearch()}
+                      onKeyDown={e => e.key === 'Enter' && canSearch && handleSearch()}
                     />
                     {customersLoading && (
                       <span style={{ fontSize: 11, color: '#aaa' }}>Loading customer list…</span>
@@ -522,8 +565,25 @@ export default function OrderModal({
                     {!customersLoading && customersFetchErr && (
                       <span style={{ fontSize: 11, color: '#e53935' }}>Could not load customers: {customersFetchErr}</span>
                     )}
-                    {!customersLoading && !customersFetchErr && customers !== null && (
-                      <span style={{ fontSize: 11, color: '#aaa' }}>{customers.length} customer{customers.length !== 1 ? 's' : ''} on file</span>
+                    {searchResults.length > 0 && (
+                      <div style={{ display:'flex', flexDirection:'column', gap:4, marginTop:4 }}>
+                        {searchResults.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => selectCustomer(c)}
+                            style={{ display:'flex', alignItems:'center', gap:10, padding: isMobile?'10px 12px':'8px 10px', background:'#fafafa', border:'1px solid #eee', borderRadius:10, cursor:'pointer', textAlign:'left', width:'100%' }}
+                          >
+                            <div style={{ width:isMobile?32:26, height:isMobile?32:26, borderRadius:'50%', background:primaryColor, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:isMobile?13:10, flexShrink:0 }}>
+                              {(c.first_name?.[0] ?? '').toUpperCase()}
+                            </div>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontWeight:600, fontSize:isMobile?13:12, color:'#1a1a1a' }}>{c.first_name} {c.last_name ?? ''}</div>
+                              {c.phone && <div style={{ fontSize:isMobile?12:10, color:'#888' }}>{c.phone}</div>}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
@@ -594,13 +654,15 @@ export default function OrderModal({
                     onChange={e => setWeightKg(e.target.value)} />
                 </label>
 
-                <div style={{ ...field, gap: isMobile?12:8 }}>
-                  <span style={lbl}>Flavour per tier</span>
+                <div style={{ ...field, gap: isMobile?10:8 }}>
+                  <span style={lbl}>{tierCount === 1 ? 'Flavour' : 'Flavour per tier'}</span>
                   {Array.from({ length: tierCount }, (_, i) => (
-                    <div key={i} style={{ display:'flex', alignItems:'center', gap:10 }}>
-                      <span style={{ fontSize: isMobile?13:10, fontWeight:700, color:'#888', minWidth:90, flexShrink:0 }}>
-                        {TIER_LABELS[i] ?? `Tier ${i+1}`}
-                      </span>
+                    <div key={i} style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                      {tierCount > 1 && (
+                        <span style={{ fontSize: isMobile?12:10, fontWeight:700, color:'#888' }}>
+                          {TIER_LABELS[i] ?? `Tier ${i+1}`}
+                        </span>
+                      )}
                       {availableFlavours.length > 0 ? (
                         <FlavourSelect
                           options={availableFlavours}
@@ -610,7 +672,7 @@ export default function OrderModal({
                           primaryColor={primaryColor}
                         />
                       ) : (
-                        <input style={{ ...inp, flex:1 }} placeholder="e.g. Vanilla"
+                        <input style={inp} placeholder="e.g. Vanilla"
                           value={flavours[i]?.name ?? ''}
                           onChange={e => setFlavours(fs => fs.map(f => f.tier === i ? { ...f, name: e.target.value, flavourId: null, source: null } : f))} />
                       )}
@@ -639,8 +701,23 @@ export default function OrderModal({
                   </label>
                   <label style={{ ...field, flex:1 }}>
                     <span style={lbl}>Time</span>
-                    <input style={inp} type="time" value={deliveryTime}
-                      onChange={e => setDeliveryTime(e.target.value)} />
+                    {(() => {
+                      const slots = getSlotsForDate(deliveryDate, storeHours);
+                      if (slots === null) {
+                        return <div style={{ padding: '10px 12px', borderRadius: 12, background: '#FEF3C7', color: '#92400E', fontSize: isMobile?13:11, fontWeight: 600 }}>Closed on this day</div>;
+                      }
+                      return (
+                        <select style={{ ...inp, appearance:'none', WebkitAppearance:'none' }}
+                          value={deliveryTime}
+                          onChange={e => setDeliveryTime(e.target.value)}
+                        >
+                          <option value="">— Select —</option>
+                          {slots.map(s => (
+                            <option key={s.value} value={s.value}>{s.label}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </label>
                 </div>
 

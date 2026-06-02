@@ -2410,6 +2410,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         onBrandingUpdate={({ primary_color, accent_color, logo_url }) => {
           setBakerData(b => ({ ...b, primary_color, accent_color, logo_url }));
         }}
+        onSettingsSaved={() => {
+          if (apiClient?.fetchBakerSettings) {
+            apiClient.fetchBakerSettings().then(s => setBakerSettings(s ?? {})).catch(() => {});
+          }
+        }}
       />
 
       {/* ── Orders panel ── */}
@@ -2473,6 +2478,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           bakerId={bakerData?.id}
           bakerSlug={bakerData?.slug}
           homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
+          storeHours={bakerSettings?.store_hours ?? null}
           brandBtn={brandBtn}
           primaryColor={primaryColor}
           onViewOrder={(id) => {
