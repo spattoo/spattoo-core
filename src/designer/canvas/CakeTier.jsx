@@ -45,14 +45,18 @@ function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 
   return (
     <group onClick={onClick}>
       {positions.map((u, i) => (
-        <mesh key={i} geometry={geometry} position={u.pos} rotation={[0, u.rotY, 0]} scale={shellScale} castShadow>
-          <meshPhysicalMaterial
-            color={color} roughness={0.85}
-            sheen={0.4} sheenRoughness={0.9} sheenColor={color}
-            emissive={selected ? '#6c47ff' : '#000000'}
-            emissiveIntensity={selected ? 0.15 : 0}
-          />
-        </mesh>
+        <group key={i} position={u.pos} rotation={[0, u.rotY, 0]}>
+          <mesh geometry={geometry}
+            rotation={[rotationOffset[0] * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
+            scale={shellScale} castShadow>
+            <meshPhysicalMaterial
+              color={color} roughness={0.85}
+              sheen={0.4} sheenRoughness={0.9} sheenColor={color}
+              emissive={selected ? '#6c47ff' : '#000000'}
+              emissiveIntensity={selected ? 0.15 : 0}
+            />
+          </mesh>
+        </group>
       ))}
     </group>
   );
@@ -82,16 +86,18 @@ function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFacto
   return (
     <group onClick={onClick}>
       {positions.map((u, i) => (
-        <mesh key={i} geometry={geometry} position={u.pos}
-          rotation={[rotationOffset[0] * DEG, u.rotY + rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
-          scale={shellScale} castShadow>
-          <meshPhysicalMaterial
-            color={color} roughness={0.85}
-            sheen={0.4} sheenRoughness={0.9} sheenColor={color}
-            emissive={selected ? '#6c47ff' : '#000000'}
-            emissiveIntensity={selected ? 0.15 : 0}
-          />
-        </mesh>
+        <group key={i} position={u.pos} rotation={[0, u.rotY, 0]}>
+          <mesh geometry={geometry}
+            rotation={[rotationOffset[0] * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
+            scale={shellScale} castShadow>
+            <meshPhysicalMaterial
+              color={color} roughness={0.85}
+              sheen={0.4} sheenRoughness={0.9} sheenColor={color}
+              emissive={selected ? '#6c47ff' : '#000000'}
+              emissiveIntensity={selected ? 0.15 : 0}
+            />
+          </mesh>
+        </group>
       ))}
     </group>
   );
