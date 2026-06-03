@@ -4,13 +4,13 @@ import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCan
 import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE } from './constants';
 import { useCakeDesign } from './hooks/useCakeDesign';
-import ColorGuide from './ColorGuide';
-import OrderModal from './OrderModal';
-import OrdersPanel from './OrdersPanel';
-import CustomersPanel from './CustomersPanel';
-import DashboardPanel from './DashboardPanel';
-import SettingsPanel from './SettingsPanel';
-import BillingPanel from './BillingPanel';
+import ColorGuide from '../chefsdesk/ColorGuide';
+import OrderModal from '../orders/OrderModal';
+import OrdersPanel from '../orders/OrdersPanel';
+import CustomersPanel from '../customers/CustomersPanel';
+import DashboardPanel from '../dashboard/DashboardPanel';
+import SettingsPanel from '../settings/SettingsPanel';
+import BillingPanel from '../settings/BillingPanel';
 
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
