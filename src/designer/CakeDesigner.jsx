@@ -2212,7 +2212,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {[
                 { zone: 'rim',   label: 'Rim',   color: pipingRimColor,   size: pipingRimSize,   hasZone: t => t.topPiping?.id    === pipingPopupEl.id },
                 { zone: 'board', label: 'Board', color: pipingBoardColor, size: pipingBoardSize, hasZone: t => t.bottomPiping?.id === pipingPopupEl.id },
-              ].map(({ zone, label, color, size, hasZone }) => {
+              ].filter(({ zone }) => {
+                const allowed = pipingPopupEl.allowed_zones;
+                if (!allowed?.length) return true; // fallback: show all if unknown
+                return allowed.includes(zone);
+              }).map(({ zone, label, color, size, hasZone }) => {
                 const pct = ((size - 0.5) / 1.5) * 100;
                 return (
                   <div key={zone} style={{ borderTop: '1px solid #f5eaed', paddingTop: 8, paddingBottom: 4 }}>
