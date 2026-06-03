@@ -47,7 +47,7 @@ function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 
       {positions.map((u, i) => (
         <group key={i} position={u.pos} rotation={[0, u.rotY, 0]}>
           <mesh geometry={geometry}
-            rotation={[(rotationOffset[0] - 90) * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
+            rotation={[rotationOffset[0] * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
             scale={shellScale} castShadow>
             <meshPhysicalMaterial
               color={color} roughness={0.85}
@@ -88,7 +88,7 @@ function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFacto
       {positions.map((u, i) => (
         <group key={i} position={u.pos} rotation={[0, u.rotY, 0]}>
           <mesh geometry={geometry}
-            rotation={[(rotationOffset[0] - 90) * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
+            rotation={[rotationOffset[0] * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
             scale={shellScale} castShadow>
             <meshPhysicalMaterial
               color={color} roughness={0.85}
