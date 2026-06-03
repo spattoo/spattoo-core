@@ -862,6 +862,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
   }
 
+  // Eager load piping elements if any tier already has piping applied —
+  // ensures placement_config.rotation syncs without opening the elements panel.
+  useEffect(() => {
+    const hasPiping = design.tiers.some(t => t.topPiping || t.bottomPiping);
+    if (hasPiping) loadElementsIfNeeded();
+  }, []);
+
   // Eager load element_types (with allowed_actions) on mount so edit controls
   // are available immediately — before the elements panel is ever opened.
   useEffect(() => {
