@@ -2500,6 +2500,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         apiClient={apiClient}
         primaryColor={primaryColor}
         externalFilter={customersFilter}
+        onViewOrder={orderId => {
+          setCustomersPanelOpen(false);
+          setCustomersFilter(null);
+          setNewOrderId(orderId);
+          setOrdersPanelOpen(true);
+        }}
       />
 
       {/* ── Order modal ── */}

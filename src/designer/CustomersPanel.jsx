@@ -123,12 +123,66 @@ function CustomerForm({ initial = {}, onSave, onCancel, saving, serverError }) {
   );
 }
 
+const STATUS_STYLE = {
+  pending:   { bg: '#FEF9C3', color: '#92400E' },
+  approved:  { bg: '#D1FAE5', color: '#065F46' },
+  completed: { bg: '#DBEAFE', color: '#1E40AF' },
+  cancelled: { bg: '#FEE2E2', color: '#991B1B' },
+};
+
+function OrderHistoryRow({ order, onViewOrder }) {
+  const st    = STATUS_STYLE[order.status] ?? { bg: '#F3F4F6', color: '#374151' };
+  const date  = order.delivery_date
+    ? new Date(order.delivery_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return (
+    <div onClick={() => onViewOrder?.(order.id)}
+      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #F0EDE8', cursor: 'pointer' }}>
+      <div style={{ width: 44, height: 44, borderRadius: 8, flexShrink: 0, background: '#F0EDE8', overflow: 'hidden' }}>
+        {order.design_thumbnail_url
+          ? <img src={order.design_thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🎂</div>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{date}</div>
+        <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+          {[order.weight_kg ? `${order.weight_kg} kg` : null, order.flavours?.length ? order.flavours.map(f => f.name ?? f.flavour ?? f).join(', ') : null].filter(Boolean).join(' · ') || '—'}
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: st.bg, color: st.color, flexShrink: 0, textTransform: 'capitalize' }}>
+          {order.status}
+        </div>
+        <span style={{ fontSize: 16, color: '#ccc' }}>›</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Customer detail ───────────────────────────────────────────────────────────
-function CustomerDetail({ customer, onUpdated, apiClient, isMobile }) {
-  const [editing, setEditing] = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [toggling, setToggling] = useState(false);
-  const [saveError, setSaveError] = useState(null);
+function CustomerDetail({ customer, onUpdated, apiClient, isMobile, onViewOrder }) {
+  const [editing,      setEditing]      = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [toggling,     setToggling]     = useState(false);
+  const [saveError,    setSaveError]    = useState(null);
+  const [historyOpen,  setHistoryOpen]  = useState(false);
+  const [orders,       setOrders]       = useState(null);
+  const [ordersLoading,setOrdersLoading]= useState(false);
+
+  async function toggleHistory() {
+    if (!historyOpen && orders === null) {
+      setOrdersLoading(true);
+      try {
+        const data = await apiClient.fetchOrders({ customer_id: customer.id });
+        setOrders(Array.isArray(data) ? data : []);
+      } catch {
+        setOrders([]);
+      } finally {
+        setOrdersLoading(false);
+      }
+    }
+    setHistoryOpen(o => !o);
+  }
 
   async function handleSave(form) {
     setSaving(true); setSaveError(null);
@@ -218,6 +272,32 @@ function CustomerDetail({ customer, onUpdated, apiClient, isMobile }) {
               <InfoRow label="Status" value={customer.is_active ? 'Active' : 'Deactivated'} />
             </InfoSection>
           </div>
+
+          {/* Order history */}
+          <div style={{ marginTop: 28 }}>
+            <button onClick={toggleHistory} style={{
+              width: '100%', padding: '10px 14px', borderRadius: 10,
+              border: '1.5px solid #E0DDD8', background: historyOpen ? '#1a1a1a' : '#fff',
+              color: historyOpen ? '#fff' : '#444', fontSize: 13, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span>Order History</span>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>
+                {ordersLoading ? 'Loading…' : historyOpen ? '▲ Hide' : '▼ Show'}
+              </span>
+            </button>
+            {historyOpen && (
+              <div style={{ marginTop: 8 }}>
+                {ordersLoading
+                  ? <div style={{ padding: '16px 0', fontSize: 13, color: '#bbb', textAlign: 'center' }}>Loading…</div>
+                  : orders?.length
+                    ? orders.map(o => <OrderHistoryRow key={o.id} order={o} onViewOrder={onViewOrder} />)
+                    : <div style={{ padding: '16px 0', fontSize: 13, color: '#bbb', textAlign: 'center' }}>No orders yet</div>
+                }
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -294,7 +374,7 @@ function CustomerList({ customers, selected, onSelect, onToggle, togglingIds, is
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-export default function CustomersPanel({ open, onClose, onBack, apiClient, primaryColor = '#1a1a1a', externalFilter = null }) {
+export default function CustomersPanel({ open, onClose, onBack, apiClient, primaryColor = '#1a1a1a', externalFilter = null, onViewOrder }) {
   const isMobile = useIsMobile();
   const [customers,  setCustomers]  = useState([]);
   const [loading,    setLoading]    = useState(false);
@@ -394,15 +474,11 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
           borderBottom: '1.5px solid #E8E4DC', flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          {isMobile && (selected || adding)
-            ? <button onClick={() => { setSelected(null); setAdding(false); }} style={closeBtn}>←</button>
-            : <button onClick={onBack ?? onClose} style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: 'none', border: '1.5px solid #E8E4DC', borderRadius: 10,
-                padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit',
-                fontSize: 13, fontWeight: 700, color: '#555',
-              }}>{onBack ? '← Dashboard' : '← Back'}</button>
-          }
+          <button
+            onClick={isMobile && (selected || adding) ? () => { setSelected(null); setAdding(false); } : (onBack ?? onClose)}
+            style={closeBtn}>
+            <ArrowLeftIcon />
+          </button>
           <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{topBarTitle}</span>
           {(!isMobile || (!selected && !adding)) && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{customers.length} total</span>
@@ -414,6 +490,11 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
               padding: '8px 14px', cursor: 'pointer', fontFamily: 'inherit',
               fontSize: 13, fontWeight: 700,
             }}>+ Add</button>
+          )}
+          {onBack && (
+            <button onClick={onClose} style={closeBtn} title="Home">
+              <HomeIcon />
+            </button>
           )}
         </div>
 
@@ -504,6 +585,7 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
                   onUpdated={handleUpdated}
                   apiClient={apiClient}
                   isMobile={isMobile}
+                  onViewOrder={onViewOrder}
                 />
               ) : (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 13 }}>
@@ -533,3 +615,20 @@ const closeBtn = {
   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
   fontSize: 13, color: '#666', flexShrink: 0,
 };
+
+function ArrowLeftIcon() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5M12 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z" />
+      <path d="M9 21V12h6v9" />
+    </svg>
+  );
+}

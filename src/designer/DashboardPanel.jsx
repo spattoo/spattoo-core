@@ -292,11 +292,16 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
           position: 'relative', overflow: 'hidden',
         }}>
           <button onClick={onClose} style={{
-            display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+            width: 32, height: 32, flexShrink: 0, zIndex: 1,
             background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 10, padding: '7px 14px', cursor: 'pointer', fontFamily: 'inherit',
-            fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)', zIndex: 1,
-          }}>← Back</button>
+            borderRadius: 8, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'rgba(255,255,255,0.85)',
+          }}>
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 5l-7 7 7 7" />
+            </svg>
+          </button>
 
           <div style={{ flex: 1, zIndex: 1 }}>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>

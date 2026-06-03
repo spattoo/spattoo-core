@@ -295,7 +295,17 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
     }
   }
 
-  const editBtn = (
+  const isDelivered = order.status === 'delivered';
+  const editBtn = isDelivered ? (
+    <div style={{
+      padding: '13px', borderRadius: 14, background: '#F0FDF4',
+      border: '1.5px solid #BBF7D0', color: '#14532D',
+      fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%',
+    }}>
+      ✓ Delivered — design locked
+    </div>
+  ) : (
     <button
       onClick={() => onEditDesign(order)}
       disabled={!order.design_snapshot}
@@ -577,9 +587,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
   const showDetail = isMobile ? !!selected : true;
   const showList   = isMobile ? !selected  : true;
 
-  const topBarTitle = isMobile && selected
-    ? (() => { const c = selected.customers; return c ? `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() : 'Order'; })()
-    : 'Orders';
+  const topBarTitle = isMobile && selected ? 'Order Details' : 'Orders';
 
   return (
     <>
@@ -604,20 +612,17 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
           borderBottom: '1.5px solid #E8E4DC', flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          {isMobile && selected
-            ? <button onClick={() => setSelected(null)} style={closeBtn}>←</button>
-            : <button onClick={onBack ?? onClose} style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: 'none', border: '1.5px solid #E8E4DC', borderRadius: 10,
-                padding: '6px 12px', cursor: 'pointer', fontFamily: 'inherit',
-                fontSize: 13, fontWeight: 700, color: '#555',
-              }}>
-                {onBack ? '← Dashboard' : '← Back'}
-              </button>
-          }
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{topBarTitle}</span>
+          <button onClick={isMobile && selected ? () => setSelected(null) : (onBack ?? onClose)} style={closeBtn}>
+            <ArrowLeftIcon />
+          </button>
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{topBarTitle}</span>
           {(!isMobile || !selected) && (
-            <span style={{ fontSize: 13, color: '#bbb', marginLeft: 4 }}>{orders.length} total</span>
+            <span style={{ fontSize: 13, color: '#bbb' }}>{orders.length} total</span>
+          )}
+          {onBack && (
+            <button onClick={onClose} style={closeBtn} title="Home">
+              <HomeIcon />
+            </button>
           )}
         </div>
 
@@ -879,3 +884,20 @@ const closeBtn = {
   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
   fontSize: 13, color: '#666', flexShrink: 0,
 };
+
+function ArrowLeftIcon() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5M12 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z" />
+      <path d="M9 21V12h6v9" />
+    </svg>
+  );
+}
