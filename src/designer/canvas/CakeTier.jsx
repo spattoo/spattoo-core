@@ -56,25 +56,24 @@ function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 
   );
 }
 
-// ── Bottom piping ring — GLB shells at board level ────────────────────────────
+// ── Bottom piping ring — GLB shells hugging the cake base ─────────────────────
 function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, selected = false, onClick }) {
   const { scene } = useGLTF(glbPath);
 
-  const { geometry, shellScale } = useMemo(() => {
+  const { geometry, shellScale, positions } = useMemo(() => {
     const result = extractGeo(scene);
-    if (!result) return { geometry: null, shellScale: 1 };
-    return { geometry: result.geo, shellScale: (radius * 0.24) / result.sizeY * sizeFactor };
-  }, [scene, radius, sizeFactor]);
-
-  const positions = useMemo(() => {
-    const step = radius * 0.28 * sizeFactor;
+    if (!result) return { geometry: null, shellScale: 1, positions: [] };
+    const sc = (radius * 0.24) / result.sizeY * sizeFactor;
+    const step  = radius * 0.28 * sizeFactor;
     const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
-    const r = radius + radius * 0.06;
-    return Array.from({ length: count }, (_, i) => {
+    const r = radius * 1.01;                  // pressed against cake wall
+    const y = yBase + sc * 0.5;              // lifted so element stands at base
+    const pts = Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
-      return { pos: [Math.cos(angle) * r, yBase, Math.sin(angle) * r], rotY: angle };
+      return { pos: [Math.cos(angle) * r, y, Math.sin(angle) * r], rotY: angle };
     });
-  }, [radius, yBase, sizeFactor]);
+    return { geometry: result.geo, shellScale: sc, positions: pts };
+  }, [scene, radius, yBase, sizeFactor]);
 
   if (!geometry) return null;
 
