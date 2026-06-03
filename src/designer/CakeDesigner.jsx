@@ -1317,6 +1317,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const creamPipingType = elementTypes.find(et => et.slug === 'cream_piping');
   const creamPipingEls  = otherElementsDb[creamPipingType?.id] ?? [];
 
+  // Sync placement_config.rotation from DB into any already-applied piping
+  useEffect(() => {
+    if (!creamPipingEls.length) return;
+    const rotationById = Object.fromEntries(
+      creamPipingEls.map(e => [e.id, e.placement_config?.rotation ?? null])
+    );
+    design.tiers.forEach((tier, i) => {
+      if (tier.topPiping && rotationById[tier.topPiping.id] !== undefined) {
+        const rot = rotationById[tier.topPiping.id];
+        if (JSON.stringify(rot) !== JSON.stringify(tier.topPiping.rotation ?? null))
+          setTopPiping(i, { ...tier.topPiping, rotation: rot });
+      }
+      if (tier.bottomPiping && rotationById[tier.bottomPiping.id] !== undefined) {
+        const rot = rotationById[tier.bottomPiping.id];
+        if (JSON.stringify(rot) !== JSON.stringify(tier.bottomPiping.rotation ?? null))
+          setBottomPiping(i, { ...tier.bottomPiping, rotation: rot });
+      }
+    });
+  }, [creamPipingEls]);
+
   const tierPanelVisible = selectedEl?.type === 'tier';
   const currentColor = getCurrentColor();
   // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
