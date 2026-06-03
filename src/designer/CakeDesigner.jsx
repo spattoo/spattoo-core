@@ -596,8 +596,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [tmplSearch,      setTmplSearch]      = useState('');
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   const [pipingPopupEl,     setPipingPopupEl]     = useState(null);
-  const [pipingPopupColor,  setPipingPopupColor]  = useState('#f5e6c8');
-  const [pipingPopupSize,   setPipingPopupSize]    = useState(1.0);
+  const [pipingRimColor,    setPipingRimColor]    = useState('#f5e6c8');
+  const [pipingRimSize,     setPipingRimSize]     = useState(1.0);
+  const [pipingBoardColor,  setPipingBoardColor]  = useState('#f5e6c8');
+  const [pipingBoardSize,   setPipingBoardSize]   = useState(1.0);
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -932,33 +934,48 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   async function openPipingPopup(el) {
-    // Seed color/size from any existing application of this style
-    let color = '#f5e6c8', size = 1.0;
+    let rimColor = '#f5e6c8', rimSize = 1.0, boardColor = '#f5e6c8', boardSize = 1.0;
     for (const tier of design.tiers) {
-      if (tier.topPiping?.id === el.id)    { color = tier.topPiping.color ?? color;    size = tier.topPiping.size ?? size;    break; }
-      if (tier.bottomPiping?.id === el.id) { color = tier.bottomPiping.color ?? color; size = tier.bottomPiping.size ?? size; break; }
+      if (tier.topPiping?.id    === el.id) { rimColor   = tier.topPiping.color    ?? rimColor;   rimSize   = tier.topPiping.size    ?? rimSize;   }
+      if (tier.bottomPiping?.id === el.id) { boardColor = tier.bottomPiping.color ?? boardColor; boardSize = tier.bottomPiping.size ?? boardSize; }
     }
     setPipingPopupEl(el);
-    setPipingPopupColor(color);
-    setPipingPopupSize(size);
+    setPipingRimColor(rimColor);
+    setPipingRimSize(rimSize);
+    setPipingBoardColor(boardColor);
+    setPipingBoardSize(boardSize);
+    closeAllPopups();
     setPipingPopupOpen(true);
     setElementsOpen(false);
+    setSelectedEl(null);
   }
 
-  function handlePipingColorChange(c) {
-    setPipingPopupColor(c);
-    design.tiers.forEach((tier, i) => {
-      if (tier.topPiping?.id    === pipingPopupEl?.id) setTopPiping(i,    { ...tier.topPiping,    color: c });
-      if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, color: c });
-    });
+  function handlePipingColorChange(zone, c) {
+    if (zone === 'rim') {
+      setPipingRimColor(c);
+      design.tiers.forEach((tier, i) => {
+        if (tier.topPiping?.id === pipingPopupEl?.id) setTopPiping(i, { ...tier.topPiping, color: c });
+      });
+    } else {
+      setPipingBoardColor(c);
+      design.tiers.forEach((tier, i) => {
+        if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, color: c });
+      });
+    }
   }
 
-  function handlePipingSizeChange(v) {
-    setPipingPopupSize(v);
-    design.tiers.forEach((tier, i) => {
-      if (tier.topPiping?.id    === pipingPopupEl?.id) setTopPiping(i,    { ...tier.topPiping,    size: v });
-      if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, size: v });
-    });
+  function handlePipingSizeChange(zone, v) {
+    if (zone === 'rim') {
+      setPipingRimSize(v);
+      design.tiers.forEach((tier, i) => {
+        if (tier.topPiping?.id === pipingPopupEl?.id) setTopPiping(i, { ...tier.topPiping, size: v });
+      });
+    } else {
+      setPipingBoardSize(v);
+      design.tiers.forEach((tier, i) => {
+        if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, size: v });
+      });
+    }
   }
 
   function togglePipingZone(tierIndex, zone, isOn) {
@@ -966,7 +983,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       if (zone === 'rim') setTopPiping(tierIndex, null);
       else                setBottomPiping(tierIndex, null);
     } else {
-      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color: pipingPopupColor, size: pipingPopupSize };
+      const color = zone === 'rim' ? pipingRimColor : pipingBoardColor;
+      const size  = zone === 'rim' ? pipingRimSize  : pipingBoardSize;
+      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color, size };
       if (zone === 'rim') setTopPiping(tierIndex, piping);
       else                setBottomPiping(tierIndex, piping);
     }
@@ -1045,6 +1064,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setColorOpen(false);
   }
 
+  // ── Popup management — add new popups here to participate in mutual exclusion ──
+  function closeAllPopups() {
+    setPipingPopupOpen(false);
+    setColorOpen(false);
+  }
+
   // ── Selection handlers ────────────────────────────────────────────────────
   function clearAllSelections() {
     setSelectedEl(null);
@@ -1056,8 +1081,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleDeselect() { clearAllSelections(); }
 
   function handleTierClick(i) {
+    closeAllPopups();
     setSelectedEl(prev => (prev?.type === 'tier' && prev.index === i) ? null : { type: 'tier', index: i });
-    setColorOpen(false);
   }
 
   function handleTextSelect(id) {
@@ -1066,13 +1091,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleTopPipingSelect(tierIndex) {
-    setSelectedEl({ type: 'piping', tierIndex, zone: 'top' });
-    setColorOpen(false);
+    const piping = design.tiers[tierIndex]?.topPiping;
+    if (!piping) return;
+    const el = creamPipingEls.find(e => e.id === piping.id) ?? { id: piping.id, name: piping.name, image_url: piping.glbUrl, thumbnail_url: null };
+    openPipingPopup(el);
   }
 
   function handleBottomPipingSelect(tierIndex) {
-    setSelectedEl({ type: 'piping', tierIndex, zone: 'bottom' });
-    setColorOpen(false);
+    const piping = design.tiers[tierIndex]?.bottomPiping;
+    if (!piping) return;
+    const el = creamPipingEls.find(e => e.id === piping.id) ?? { id: piping.id, name: piping.name, image_url: piping.glbUrl, thumbnail_url: null };
+    openPipingPopup(el);
   }
 
   function handleTopperClick() {
@@ -1310,7 +1339,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       items.push(
         <button key="color"
           style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-          onClick={() => setColorOpen(o => !o)}>
+          onClick={() => { const opening = !colorOpen; closeAllPopups(); if (opening) setColorOpen(true); }}>
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>,
         <div key="d1" style={s.tbDivider} />
@@ -2179,61 +2208,68 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button style={s.iconBtn} onClick={() => setPipingPopupOpen(false)}>✕</button>
               </div>
 
-              {/* Color + Spacing */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid #f5eaed', borderBottom: '1px solid #f5eaed' }}>
-                <input type="color" value={pipingPopupColor}
-                  onChange={e => handlePipingColorChange(e.target.value)}
-                  style={{ width: 28, height: 28, border: '1.5px solid #f0dce3', borderRadius: 6, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
-                <div
-                  style={{ flex: 1, position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
-                  onPointerDown={e => {
-                    e.stopPropagation();
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    handlePipingSizeChange(+(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
-                  }}
-                  onPointerMove={e => {
-                    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-                    e.stopPropagation();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    handlePipingSizeChange(+(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
-                  }}
-                  onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-                  onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
-                >
-                  {(() => { const pct = ((pipingPopupSize - 0.5) / 1.5) * 100; return (<>
-                    <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                      <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+              {/* Rim section */}
+              {[
+                { zone: 'rim',   label: 'Rim',   color: pipingRimColor,   size: pipingRimSize,   hasZone: t => t.topPiping?.id    === pipingPopupEl.id },
+                { zone: 'board', label: 'Board', color: pipingBoardColor, size: pipingBoardSize, hasZone: t => t.bottomPiping?.id === pipingPopupEl.id },
+              ].map(({ zone, label, color, size, hasZone }) => {
+                const pct = ((size - 0.5) / 1.5) * 100;
+                return (
+                  <div key={zone} style={{ borderTop: '1px solid #f5eaed', paddingTop: 8, paddingBottom: 4 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#9b5268', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</span>
+                    {/* Per-tier checkboxes */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 5 }}>
+                      {design.tiers.map((tier, i) => (
+                        <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#444', fontFamily: "'Quicksand',sans-serif", fontWeight: 600 }}>
+                          <input type="checkbox" checked={hasZone(tier)} onChange={() => togglePipingZone(i, zone, hasZone(tier))}
+                            style={{ accentColor: '#9b5268', width: 13, height: 13, cursor: 'pointer' }} />
+                          {TIER_LABELS[i]}
+                        </label>
+                      ))}
                     </div>
-                    <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
-                  </>); })()}
-                </div>
-              </div>
-
-              {/* Per-tier Rim / Board toggles */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 2 }}>
-                {design.tiers.map((tier, i) => {
-                  const hasRim   = tier.topPiping?.id    === pipingPopupEl.id;
-                  const hasBoard = tier.bottomPiping?.id === pipingPopupEl.id;
-                  return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: '#555', flex: 1, fontFamily: "'Quicksand',sans-serif" }}>{TIER_LABELS[i]}</span>
-                      <button
-                        onClick={() => togglePipingZone(i, 'rim', hasRim)}
-                        style={{ ...s.zoneToggle, ...(hasRim ? s.zoneToggleOn : {}) }}>
-                        Rim
-                      </button>
-                      <button
-                        onClick={() => togglePipingZone(i, 'board', hasBoard)}
-                        style={{ ...s.zoneToggle, ...(hasBoard ? s.zoneToggleOn : {}) }}>
-                        Board
-                      </button>
+                    {/* Color row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}>
+                      <span style={{ fontSize: 10, color: '#888', fontFamily: "'Quicksand',sans-serif", fontWeight: 600, width: 32, flexShrink: 0 }}>Color</span>
+                      <div style={{ position: 'relative', width: 28, height: 28, flexShrink: 0, cursor: 'pointer' }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 4, pointerEvents: 'none' }}>
+                          <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: color }} />
+                        </div>
+                        <input type="color" value={color}
+                          onChange={e => handlePipingColorChange(zone, e.target.value)}
+                          style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', border: 'none', padding: 0 }} />
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
+                    {/* Size row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 10, color: '#888', fontFamily: "'Quicksand',sans-serif", fontWeight: 600, width: 32, flexShrink: 0 }}>Size</span>
+                      <div
+                        style={{ flex: 1, position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
+                        onPointerDown={e => {
+                          e.stopPropagation();
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                          handlePipingSizeChange(zone, +(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
+                        }}
+                        onPointerMove={e => {
+                          if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                          e.stopPropagation();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                          handlePipingSizeChange(zone, +(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
+                        }}
+                        onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
+                        onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
+                      >
+                        <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
+                          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                        </div>
+                        <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
