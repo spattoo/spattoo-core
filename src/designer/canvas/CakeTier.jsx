@@ -63,33 +63,58 @@ function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 
 }
 
 // ── Bottom piping ring — GLB shells hugging the cake base ─────────────────────
-function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, rotationOffset = [0,0,0], selected = false, onClick }) {
+function BottomPipingRing({
+  yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1,
+  bottomRotation    = [0, 0, 0],
+  extraRadialOffset = 0,
+  yOffset           = 0,
+  flipBottom = true,
+  selected = false, onClick,
+}) {
   const { scene } = useGLTF(glbPath);
 
-  const { geometry, shellScale, positions } = useMemo(() => {
+  const { geometry, shellScale, bbDepth, bbWidth } = useMemo(() => {
     const result = extractGeo(scene);
-    if (!result) return { geometry: null, shellScale: 1, positions: [] };
+    if (!result) return { geometry: null, shellScale: 1, bbDepth: 0, bbWidth: 0 };
+    const geo = result.geo;
+    if (flipBottom) {
+      geo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI));
+      geo.computeBoundingBox();
+      geo.translate(0, -geo.boundingBox.min.y, 0);
+    }
     const sc = (radius * 0.24) / result.sizeY * sizeFactor;
-    const step  = radius * 0.28 * sizeFactor;
+    geo.computeBoundingBox();
+    const bbSize = new THREE.Vector3(); geo.boundingBox.getSize(bbSize);
+    return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x };
+  }, [scene, radius, sizeFactor, flipBottom]);
+
+  const positions = useMemo(() => {
+    if (!geometry) return [];
+    const r    = radius + (bbDepth / 2) * shellScale + extraRadialOffset;
+    const step = shellScale * bbWidth * 0.9 * sizeFactor;
     const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
-    const r = radius * 1.02;                 // 2% outside cake radius — tight hug without penetration
-    const y = yBase + sc * 0.5;             // lifted so element stands at base
-    const pts = Array.from({ length: count }, (_, i) => {
+    return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
-      return { pos: [Math.cos(angle) * r, y, Math.sin(angle) * r], rotY: angle };
+      return {
+        pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r],
+        rotY: angle,
+      };
     });
-    return { geometry: result.geo, shellScale: sc, positions: pts };
-  }, [scene, radius, yBase, sizeFactor]);
+  }, [geometry, radius, yBase, yOffset, sizeFactor, shellScale, bbDepth, bbWidth, extraRadialOffset]);
 
   if (!geometry) return null;
+
+  // Y rotation belongs on the group (rotY already makes piece face outward; ry offsets
+  // the facing direction consistently for all positions around the ring).
+  // X and Z are tilt/roll applied in the final local frame — same for every piece.
+  const ryGroup = bottomRotation[1] * DEG;
+  const meshRot = [bottomRotation[0] * DEG, 0, bottomRotation[2] * DEG];
 
   return (
     <group onClick={onClick}>
       {positions.map((u, i) => (
-        <group key={i} position={u.pos} rotation={[0, u.rotY, 0]}>
-          <mesh geometry={geometry}
-            rotation={[rotationOffset[0] * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
-            scale={shellScale} castShadow>
+        <group key={i} position={u.pos} rotation={[0, -u.rotY + Math.PI / 2 + ryGroup, 0]}>
+          <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
             <meshPhysicalMaterial
               color={color} roughness={0.85}
               sheen={0.4} sheenRoughness={0.9} sheenColor={color}
@@ -249,7 +274,10 @@ export default function CakeTier({
         {bottomPiping && (
           <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
             sizeFactor={bottomPiping.size ?? 1}
-            rotationOffset={bottomPiping.rotation ?? [0,0,0]}
+            bottomRotation={bottomPiping.bottomRotation ?? [0,0,0]}
+            extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
+            yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
+            flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
             selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
         )}
       </group>
@@ -270,11 +298,16 @@ export default function CakeTier({
       {topPiping && (
         <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
           sizeFactor={topPiping.size ?? 1}
+          rotationOffset={topPiping.rotation ?? [0,0,0]}
           selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
       )}
       {bottomPiping && (
         <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
           sizeFactor={bottomPiping.size ?? 1}
+          bottomRotation={bottomPiping.bottomRotation ?? [0,0,0]}
+          extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
+          yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
+          flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
           selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
       )}
     </group>

@@ -600,6 +600,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [pipingRimSize,     setPipingRimSize]     = useState(1.0);
   const [pipingBoardColor,  setPipingBoardColor]  = useState('#f5e6c8');
   const [pipingBoardSize,   setPipingBoardSize]   = useState(1.0);
+  const [pipingBoardYOffset,    setPipingBoardYOffset]    = useState(0);
+  const [pipingBoardFlipBottom, setPipingBoardFlipBottom] = useState(null); // null = use element default
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -941,16 +943,18 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   async function openPipingPopup(el) {
-    let rimColor = '#f5e6c8', rimSize = 1.0, boardColor = '#f5e6c8', boardSize = 1.0;
+    let rimColor = '#f5e6c8', rimSize = 1.0, boardColor = '#f5e6c8', boardSize = 1.0, boardYOffset = 0, boardFlip = null;
     for (const tier of design.tiers) {
       if (tier.topPiping?.id    === el.id) { rimColor   = tier.topPiping.color    ?? rimColor;   rimSize   = tier.topPiping.size    ?? rimSize;   }
-      if (tier.bottomPiping?.id === el.id) { boardColor = tier.bottomPiping.color ?? boardColor; boardSize = tier.bottomPiping.size ?? boardSize; }
+      if (tier.bottomPiping?.id === el.id) { boardColor = tier.bottomPiping.color ?? boardColor; boardSize = tier.bottomPiping.size ?? boardSize; boardYOffset = tier.bottomPiping.userYOffset ?? 0; boardFlip = tier.bottomPiping.userFlipBottom ?? null; }
     }
     setPipingPopupEl(el);
     setPipingRimColor(rimColor);
     setPipingRimSize(rimSize);
     setPipingBoardColor(boardColor);
     setPipingBoardSize(boardSize);
+    setPipingBoardYOffset(boardYOffset);
+    setPipingBoardFlipBottom(boardFlip);
     closeAllPopups();
     setPipingPopupOpen(true);
     setElementsOpen(false);
@@ -985,6 +989,26 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
   }
 
+  function handlePipingBoardYOffsetChange(v) {
+    const clamped = Math.max(0, v);
+    setPipingBoardYOffset(clamped);
+    design.tiers.forEach((tier, i) => {
+      if (tier.bottomPiping?.id === pipingPopupEl?.id)
+        setBottomPiping(i, { ...tier.bottomPiping, userYOffset: clamped });
+    });
+  }
+
+  function handlePipingBoardFlipChange() {
+    const defaultFlip = pipingPopupEl?.placement_config?.bottom_flip ?? true;
+    const current = pipingBoardFlipBottom !== null ? pipingBoardFlipBottom : defaultFlip;
+    const next = !current;
+    setPipingBoardFlipBottom(next);
+    design.tiers.forEach((tier, i) => {
+      if (tier.bottomPiping?.id === pipingPopupEl?.id)
+        setBottomPiping(i, { ...tier.bottomPiping, userFlipBottom: next });
+    });
+  }
+
   function togglePipingZone(tierIndex, zone, isOn) {
     if (isOn) {
       if (zone === 'rim') setTopPiping(tierIndex, null);
@@ -992,8 +1016,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     } else {
       const color = zone === 'rim' ? pipingRimColor : pipingBoardColor;
       const size  = zone === 'rim' ? pipingRimSize  : pipingBoardSize;
-      const rotation = pipingPopupEl.placement_config?.rotation ?? null;
-      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color, size, ...(rotation ? { rotation } : {}) };
+      const rotation         = pipingPopupEl.placement_config?.rotation         ?? null;
+      const flipBottom       = pipingPopupEl.placement_config?.bottom_flip      ?? true;
+      const bottomRotation   = pipingPopupEl.placement_config?.bottom_rotation  ?? null;
+      const extraRadialOffset = pipingPopupEl.placement_config?.bottom_radial_offset ?? null;
+      const yOffset          = pipingPopupEl.placement_config?.bottom_y_offset  ?? null;
+      const piping = {
+        id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name,
+        color, size, flipBottom,
+        ...(rotation ? { rotation } : {}),
+        ...(bottomRotation ? { bottomRotation } : {}),
+        ...(extraRadialOffset != null ? { extraRadialOffset } : {}),
+        ...(yOffset != null ? { yOffset } : {}),
+      };
       if (zone === 'rim') setTopPiping(tierIndex, piping);
       else                setBottomPiping(tierIndex, piping);
     }
@@ -1234,7 +1269,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handlePipingStyleSelect(element) {
     if (!pipingTarget) return;
     const { tierIndex, zone } = pipingTarget;
-    const piping = { id: element.id, glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8' };
+    const flipBottom        = element.placement_config?.bottom_flip         ?? true;
+    const bottomRotation    = element.placement_config?.bottom_rotation    ?? null;
+    const extraRadialOffset = element.placement_config?.bottom_radial_offset ?? null;
+    const yOffset           = element.placement_config?.bottom_y_offset    ?? null;
+    const piping = {
+      id: element.id, glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8', flipBottom,
+      ...(bottomRotation ? { bottomRotation } : {}),
+      ...(extraRadialOffset != null ? { extraRadialOffset } : {}),
+      ...(yOffset != null ? { yOffset } : {}),
+    };
     if (zone === 'top') setTopPiping(tierIndex, piping);
     else setBottomPiping(tierIndex, piping);
     setPipingTarget(null);
@@ -1324,22 +1368,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const creamPipingType = elementTypes.find(et => et.slug === 'cream_piping');
   const creamPipingEls  = otherElementsDb[creamPipingType?.id] ?? [];
 
-  // Sync placement_config.rotation from DB into any already-applied piping
+  // Sync placement_config-derived fields from DB into any already-applied piping
   useEffect(() => {
     if (!creamPipingEls.length) return;
-    const rotationById = Object.fromEntries(
-      creamPipingEls.map(e => [e.id, e.placement_config?.rotation ?? null])
+    const configById = Object.fromEntries(
+      creamPipingEls.map(e => [e.id, {
+        rotation:           e.placement_config?.rotation             ?? null,
+        flipBottom:         e.placement_config?.bottom_flip          ?? true,
+        bottomRotation:     e.placement_config?.bottom_rotation      ?? null,
+        extraRadialOffset:  e.placement_config?.bottom_radial_offset ?? null,
+        yOffset:            e.placement_config?.bottom_y_offset      ?? null,
+      }])
     );
     design.tiers.forEach((tier, i) => {
-      if (tier.topPiping && rotationById[tier.topPiping.id] !== undefined) {
-        const rot = rotationById[tier.topPiping.id];
+      if (tier.topPiping && configById[tier.topPiping.id] !== undefined) {
+        const { rotation: rot } = configById[tier.topPiping.id];
         if (JSON.stringify(rot) !== JSON.stringify(tier.topPiping.rotation ?? null))
           setTopPiping(i, { ...tier.topPiping, rotation: rot });
       }
-      if (tier.bottomPiping && rotationById[tier.bottomPiping.id] !== undefined) {
-        const rot = rotationById[tier.bottomPiping.id];
-        if (JSON.stringify(rot) !== JSON.stringify(tier.bottomPiping.rotation ?? null))
-          setBottomPiping(i, { ...tier.bottomPiping, rotation: rot });
+      if (tier.bottomPiping && configById[tier.bottomPiping.id] !== undefined) {
+        const { rotation: rot, flipBottom, bottomRotation, extraRadialOffset, yOffset } = configById[tier.bottomPiping.id];
+        const changed =
+          JSON.stringify(rot) !== JSON.stringify(tier.bottomPiping.rotation ?? null) ||
+          flipBottom !== (tier.bottomPiping.flipBottom ?? true) ||
+          JSON.stringify(bottomRotation) !== JSON.stringify(tier.bottomPiping.bottomRotation ?? null) ||
+          extraRadialOffset !== (tier.bottomPiping.extraRadialOffset ?? null) ||
+          yOffset !== (tier.bottomPiping.yOffset ?? null);
+        if (changed)
+          setBottomPiping(i, {
+            ...tier.bottomPiping, rotation: rot, flipBottom,
+            ...(bottomRotation ? { bottomRotation } : {}),
+            ...(extraRadialOffset != null ? { extraRadialOffset } : {}),
+            ...(yOffset != null ? { yOffset } : {}),
+          });
       }
     });
   }, [creamPipingEls]);
@@ -2299,6 +2360,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
                       </div>
                     </div>
+                    {/* Flip row — board zone only, when placement_config enables it */}
+                    {zone === 'board' && pipingPopupEl.placement_config?.bottom_flip_adjustable && (() => {
+                      const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
+                      const active = pipingBoardFlipBottom !== null ? pipingBoardFlipBottom : defaultFlip;
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                          <span style={{ fontSize: 10, color: '#888', fontFamily: "'Quicksand',sans-serif", fontWeight: 600, width: 32, flexShrink: 0 }}>Flip</span>
+                          <button
+                            onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(); }}
+                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: `1.5px solid ${active ? '#9b5268' : '#e0d0d5'}`, background: active ? '#9b5268' : '#fff', color: active ? '#fff' : '#9b5268', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>
+                            {active ? '↕ On' : '↕ Off'}
+                          </button>
+                        </div>
+                      );
+                    })()}
+                    {/* Height row — board zone only, when placement_config enables it */}
+                    {zone === 'board' && pipingPopupEl.placement_config?.bottom_y_adjustable && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                        <span style={{ fontSize: 10, color: '#888', fontFamily: "'Quicksand',sans-serif", fontWeight: 600, width: 32, flexShrink: 0 }}>Height</span>
+                        <button
+                          style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                          onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(Math.max(0, +(pipingBoardYOffset - 0.05).toFixed(2))); }}>−</button>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 36, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
+                          {pipingBoardYOffset > 0 ? `+${pipingBoardYOffset.toFixed(2)}` : pipingBoardYOffset.toFixed(2)}
+                        </span>
+                        <button
+                          style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                          onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(+(pipingBoardYOffset + 0.05).toFixed(2)); }}>+</button>
+                        {pipingBoardYOffset !== 0 && (
+                          <button
+                            style={{ fontSize: 9, color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: "'Quicksand',sans-serif" }}
+                            onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(0); }}>Reset</button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
