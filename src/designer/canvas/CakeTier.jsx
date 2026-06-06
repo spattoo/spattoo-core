@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { useGLTF } from '@react-three/drei';
+import { useGLTF, RoundedBox } from '@react-three/drei';
+import { tierShape, pipingPerimeter, rectEdgeRing } from '../geometry/surface.js';
+import { PIPING_FRONT_ANGLE } from '../constants.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 function extractGeo(scene) {
@@ -81,6 +83,15 @@ function buildSwagRing({ r, baseY, step, swagCount, swagDepth, swagTilt = 0.5 })
   return out;
 }
 
+// Place ONE single-mode shell on a perimeter. The instance `angle` is read as a fraction
+// of the way round (relative to the cake front), so the existing front-relative angle
+// sliders keep working on rectangles.
+function perimeterSinglePos({ perim, off, baseY, angle }) {
+  const f = ((((angle - PIPING_FRONT_ANGLE) / (2 * Math.PI)) % 1) + 1) % 1;
+  const p = perim.at(f * perim.length);
+  return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
+}
+
 // One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
 function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, selected }) {
   return (
@@ -146,6 +157,7 @@ function TopPipingRingImpl({
   arrangement = 'ring', instances = null,
   altEnabled = false, altGlbUrl = null, altFlip = false, altRotation = [0, 0, 0],
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
+  shape = null,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -162,14 +174,21 @@ function TopPipingRingImpl({
     if (!A) return [];
     // Rim sits ON the top surface: pull shells inward so their outer face is flush
     // with the edge rather than overhanging the side like the board does.
-    const r    = radius - (A.bbDepth / 2) * A.shellScale + extraRadialOffset;
+    const off  = -(A.bbDepth / 2) * A.shellScale + extraRadialOffset;
+    const r    = radius + off;
     const step = A.shellScale * A.bbWidth * 0.9 * sizeFactor * spacing;
+    // Rectangular (sheet) cakes walk a rounded-rect perimeter; round cakes keep the circle.
+    const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
     if (arrangement === 'single') {
       const list = instances?.length ? instances : [{ angle: 0 }];
       return list.map(inst => {
         const angle = inst.angle ?? 0;
+        if (perim) return { ...perimeterSinglePos({ perim, off, baseY: topY + yOffset, angle }), key: inst.id };
         return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
       });
+    }
+    if (perim) {
+      return rectEdgeRing(shape, off, step, topY + yOffset);
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
@@ -181,7 +200,7 @@ function TopPipingRingImpl({
       const angle = (i / count) * Math.PI * 2;
       return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
     });
-  }, [A, radius, topY, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern]);
+  }, [A, radius, topY, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
 
   if (!A) return null;
 
@@ -215,6 +234,7 @@ function BottomPipingRingImpl({
   arrangement = 'ring', instances = null,
   altEnabled = false, altGlbUrl = null, altFlip = false, altRotation = [0, 0, 0],
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
+  shape = null,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -229,14 +249,20 @@ function BottomPipingRingImpl({
 
   const positions = useMemo(() => {
     if (!A) return [];
-    const r    = radius + (A.bbDepth / 2) * A.shellScale + extraRadialOffset;
+    const off  = (A.bbDepth / 2) * A.shellScale + extraRadialOffset;   // board: push outward
+    const r    = radius + off;
     const step = A.shellScale * A.bbWidth * 0.9 * sizeFactor * spacing;
+    const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
     if (arrangement === 'single') {
       const list = instances?.length ? instances : [{ angle: 0 }];
       return list.map(inst => {
         const angle = inst.angle ?? 0;
+        if (perim) return { ...perimeterSinglePos({ perim, off, baseY: yBase + yOffset, angle }), key: inst.id };
         return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
       });
+    }
+    if (perim) {
+      return rectEdgeRing(shape, off, step, yBase + yOffset);
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });
@@ -248,7 +274,7 @@ function BottomPipingRingImpl({
       const angle = (i / count) * Math.PI * 2;
       return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
     });
-  }, [A, radius, yBase, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern]);
+  }, [A, radius, yBase, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
 
   if (!A) return null;
 
@@ -314,11 +340,12 @@ const SPONGE_COLORS = {
   butterscotch: '#c8860a',
 };
 
-function NakedLayers({ radius, yBase, height, flavour }) {
+function NakedLayers({ shp, yBase, height, flavour }) {
   const spongeColor = SPONGE_COLORS[flavour] || '#f0d98a';
   const layers  = 3;
   const spongeH = (height * 0.62) / layers;
   const creamH  = (height * 0.38) / (layers - 1);
+  const isRect = shp.kind === 'rect';
 
   const stack = [];
   let y = yBase;
@@ -335,7 +362,9 @@ function NakedLayers({ radius, yBase, height, flavour }) {
     <group>
       {stack.map((layer, i) => (
         <mesh key={i} position={[0, layer.y + layer.h / 2, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[radius, radius, layer.h, 64]} />
+          {isRect
+            ? <boxGeometry args={[shp.halfW * 2, layer.h, shp.halfD * 2]} />
+            : <cylinderGeometry args={[shp.radius, shp.radius, layer.h, 64]} />}
           <meshStandardMaterial color={layer.color} roughness={layer.rough} />
         </mesh>
       ))}
@@ -350,11 +379,13 @@ const FROSTING_MAT = {
 };
 
 // ── Selection outline ─────────────────────────────────────────────────────────
-function SelectionOutline({ radius, yBase, height }) {
+function SelectionOutline({ shp, yBase, height }) {
   const geometry = useMemo(() => {
-    const cyl = new THREE.CylinderGeometry(radius + 0.05, radius + 0.05, height + 0.05, 20);
-    return new THREE.EdgesGeometry(cyl);
-  }, [radius, height]);
+    const base = shp.kind === 'rect'
+      ? new THREE.BoxGeometry(shp.halfW * 2 + 0.05, height + 0.05, shp.halfD * 2 + 0.05)
+      : new THREE.CylinderGeometry(shp.radius + 0.05, shp.radius + 0.05, height + 0.05, 20);
+    return new THREE.EdgesGeometry(base);
+  }, [shp, height]);
 
   return (
     <lineSegments position={[0, yBase + height / 2, 0]} geometry={geometry}>
@@ -365,6 +396,7 @@ function SelectionOutline({ radius, yBase, height }) {
 
 export default function CakeTier({
   radius, height, color, yBase,
+  shape = 'round', width, depth,
   frostingType = 'buttercream',
   flavour = 'vanilla',
   selected = false,
@@ -379,6 +411,8 @@ export default function CakeTier({
   const topY    = yBase + height;
   const centerY = yBase + height / 2;
   const mat = FROSTING_MAT[frostingType] ?? FROSTING_MAT.buttercream;
+  const shp = useMemo(() => tierShape({ shape, width, depth, radius }), [shape, width, depth, radius]);
+  const isRect = shp.kind === 'rect';
 
   function handleClick(e) {
     e.stopPropagation();
@@ -394,12 +428,14 @@ export default function CakeTier({
   if (frostingType === 'naked') {
     return (
       <group onClick={handleClick}>
-        {selected && <SelectionOutline radius={radius} yBase={yBase} height={height} />}
-        <NakedLayers radius={radius} yBase={yBase} height={height} flavour={flavour} />
-        <mesh position={[0, topY + 0.01, 0]}>
-          <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
-          <meshStandardMaterial color="#fffdf5" roughness={0.5} />
-        </mesh>
+        {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
+        <NakedLayers shp={shp} yBase={yBase} height={height} flavour={flavour} />
+        {!isRect && (
+          <mesh position={[0, topY + 0.01, 0]}>
+            <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
+            <meshStandardMaterial color="#fffdf5" roughness={0.5} />
+          </mesh>
+        )}
         {topPiping && (
           <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
             sizeFactor={topPiping.size ?? 1}
@@ -413,7 +449,7 @@ export default function CakeTier({
             altEnabled={topPiping.altEnabled ?? false} altGlbUrl={topPiping.altGlbUrl ?? null}
             altFlip={topPiping.altFlip ?? false} altRotation={topPiping.altRotation ?? [0,0,0]}
             altRadialOffset={topPiping.altRadialOffset ?? 0} altYOffset={(topPiping.altYOffset ?? 0) + (topPiping.userYOffset ?? 0)}
-            pattern={topPiping.pattern ?? 'AB'}
+            pattern={topPiping.pattern ?? 'AB'} shape={shp}
             selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
         )}
         {bottomPiping && (
@@ -429,7 +465,7 @@ export default function CakeTier({
             altEnabled={bottomPiping.altEnabled ?? false} altGlbUrl={bottomPiping.altGlbUrl ?? null}
             altFlip={bottomPiping.altFlip ?? false} altRotation={bottomPiping.altRotation ?? [0,0,0]}
             altRadialOffset={bottomPiping.altRadialOffset ?? 0} altYOffset={(bottomPiping.altYOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
-            pattern={bottomPiping.pattern ?? 'AB'}
+            pattern={bottomPiping.pattern ?? 'AB'} shape={shp}
             selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
         )}
       </group>
@@ -438,15 +474,32 @@ export default function CakeTier({
 
   return (
     <group onClick={handleClick}>
-      {selected && <SelectionOutline radius={radius} yBase={yBase} height={height} />}
-      <mesh position={[0, centerY, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[radius, radius, height, 64]} />
-        <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
-      </mesh>
-      <mesh position={[0, topY + 0.01, 0]} castShadow>
-        <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
-        <meshStandardMaterial color={color} roughness={mat.roughness - 0.08} />
-      </mesh>
+      {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
+      {isRect ? (
+        // Sharp corners → plain box; a small fillet → RoundedBox. No separate top cap
+        // (a cap reads as a stray "board" on a rectangular cake).
+        shp.cornerR > 0.02 ? (
+          <RoundedBox position={[0, centerY, 0]} args={[shp.halfW * 2, height, shp.halfD * 2]} radius={shp.cornerR} smoothness={4} castShadow receiveShadow>
+            <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
+          </RoundedBox>
+        ) : (
+          <mesh position={[0, centerY, 0]} castShadow receiveShadow>
+            <boxGeometry args={[shp.halfW * 2, height, shp.halfD * 2]} />
+            <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
+          </mesh>
+        )
+      ) : (
+        <>
+          <mesh position={[0, centerY, 0]} castShadow receiveShadow>
+            <cylinderGeometry args={[radius, radius, height, 64]} />
+            <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
+          </mesh>
+          <mesh position={[0, topY + 0.01, 0]} castShadow>
+            <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
+            <meshStandardMaterial color={color} roughness={mat.roughness - 0.08} />
+          </mesh>
+        </>
+      )}
       {topPiping && (
         <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
           sizeFactor={topPiping.size ?? 1}
@@ -460,7 +513,7 @@ export default function CakeTier({
           altEnabled={topPiping.altEnabled ?? false} altGlbUrl={topPiping.altGlbUrl ?? null}
           altFlip={topPiping.altFlip ?? false} altRotation={topPiping.altRotation ?? [0,0,0]}
           altRadialOffset={topPiping.altRadialOffset ?? 0} altYOffset={(topPiping.altYOffset ?? 0) + (topPiping.userYOffset ?? 0)}
-          pattern={topPiping.pattern ?? 'AB'}
+          pattern={topPiping.pattern ?? 'AB'} shape={shp}
           selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
       )}
       {bottomPiping && (
@@ -476,7 +529,7 @@ export default function CakeTier({
           altEnabled={bottomPiping.altEnabled ?? false} altGlbUrl={bottomPiping.altGlbUrl ?? null}
           altFlip={bottomPiping.altFlip ?? false} altRotation={bottomPiping.altRotation ?? [0,0,0]}
           altRadialOffset={bottomPiping.altRadialOffset ?? 0} altYOffset={(bottomPiping.altYOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
-          pattern={bottomPiping.pattern ?? 'AB'}
+          pattern={bottomPiping.pattern ?? 'AB'} shape={shp}
           selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
       )}
     </group>

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE } from '../constants.js';
+import { tierShape, topClamp } from '../geometry/surface.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 
@@ -30,6 +31,13 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, color } : t),
+    }));
+  }
+
+  function setTierCornerR(index, cornerR) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, cornerR } : t),
     }));
   }
 
@@ -87,9 +95,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       const original = prev.texts.find(t => t.id === id);
       if (!original) return prev;
+      const offset = original.u != null ? { u: (((original.u + 0.04) % 1) + 1) % 1 } : { theta: original.theta + 0.3 };
       return {
         ...prev,
-        texts: [...prev.texts, { ...original, id: Date.now(), theta: original.theta + 0.3 }],
+        texts: [...prev.texts, { ...original, id: Date.now(), ...offset }],
       };
     });
   }
@@ -108,7 +117,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         // Nudge by a fixed STICKER_SIZE gap so both toppers have different centres
         // and are separately selectable. Scale is intentionally ignored — the user
         // will drag to the final position; drag-time collision handles visual overlap.
-        const tierRadius = TIER_RADII[tierIndex ?? 0] ?? TIER_RADII[0];
+        const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
         const siblings = prev.stickers.filter(
           s => s.zone === 'top_surface' && s.tierIndex === (tierIndex ?? 0) && s.placementMode === 'stand'
         );
@@ -121,15 +130,17 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             pz = (sib.z ?? 0) + dir.z * STICKER_SIZE;
           }
         }
-        const r = Math.sqrt(px * px + pz * pz);
-        if (r > tierRadius * 0.88) { px = px * tierRadius * 0.88 / r; pz = pz * tierRadius * 0.88 / r; }
+        ({ x: px, z: pz } = topClamp(shp, px, pz, 0.88));
       }
       if (placementMode === 'faux_ball_single') {
         const isSide = zone === 'side' || zone === 'middle_tier';
         const siblings = prev.stickers.filter(
           s => s.placementMode === 'faux_ball_single' && s.tierIndex === (tierIndex ?? 0)
         );
-        if (isSide) {
+        if (isSide && position.u != null) {
+          // Rect wall: position is a perimeter fraction u (stored below) + height.
+          px = 0; pz = position.y ?? 0;   // theta unused on rect
+        } else if (isSide) {
           let pt = position.theta ?? 0, py2 = position.y ?? 0;
           for (const sib of siblings) {
             const minDist = defaultScale + (sib.scale ?? 0.12);
@@ -169,6 +180,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           zone,
           tierIndex:     tierIndex ?? 0,
           placementMode: placementMode ?? 'hug',
+          u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? px : (position.theta ?? 0),
           y:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? pz : (position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45)),
           x:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? 0 : px,
@@ -242,7 +254,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       if (!original) return prev;
       const offset = original.zone === 'top_surface'
         ? { x: original.x + 0.15 }
-        : { theta: original.theta + 0.3 };
+        : (original.u != null ? { u: (((original.u + 0.04) % 1) + 1) % 1 } : { theta: original.theta + 0.3 });
       return {
         ...prev,
         stickers: [...prev.stickers, { ...original, id: Date.now(), ...offset }],
@@ -295,6 +307,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           bottomPiping,
           ...(t.radius != null  && { radius: t.radius }),
           ...(t.height != null  && { height: t.height }),
+          ...(t.shape   != null  && { shape: t.shape }),
+          ...(t.width   != null  && { width: t.width }),
+          ...(t.depth   != null  && { depth: t.depth }),
+          ...(t.cornerR != null  && { cornerR: t.cornerR }),
         };
       }),
       texts:    templateDesign.texts    ?? [],
@@ -304,14 +320,22 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   }
 
   const canvasConfig = useMemo(() => ({
-    tiers: design.tiers.map((t, i) => ({
-      radius:       t.radius  ?? TIER_RADII[i] ?? 0.35,
-      height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
-      color:        t.color,
-      frostingType: t.frostingType ?? 'buttercream',
-      topPiping:    t.topPiping ?? null,
-      bottomPiping: t.bottomPiping ?? null,
-    })),
+    tiers: design.tiers.map((t, i) => {
+      const isRect = t.shape === 'rect';
+      const width  = t.width ?? 2.16;   // default half-sheet footprint
+      const depth  = t.depth ?? 1.56;
+      return {
+        // For rect, radius is the bounding half-extent so radius-based incidental
+        // placement (board, toolbar offsets, topper scale) keeps working.
+        radius:       isRect ? Math.max(width, depth) / 2 : (t.radius ?? TIER_RADII[i] ?? 0.35),
+        height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
+        color:        t.color,
+        frostingType: t.frostingType ?? 'buttercream',
+        topPiping:    t.topPiping ?? null,
+        bottomPiping: t.bottomPiping ?? null,
+        ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
+      };
+    }),
     texts:    design.texts,
     stickers: design.stickers,
     topper:   design.topper ?? null,
@@ -319,7 +343,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTopPiping, setBottomPiping,
+    setTierColor, setTierCornerR, setTopPiping, setBottomPiping,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
     addSticker, updateSticker, removeSticker, duplicateSticker,

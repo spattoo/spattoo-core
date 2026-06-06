@@ -674,7 +674,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -864,9 +864,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       }
     });
 
-    // Build design JSON
+    // Derive the cake shape from the design (bottom tier): rect with equal sides = square.
+    const t0 = design.tiers[0];
+    const cakeShape = t0?.shape === 'rect'
+      ? (Math.abs((t0.width ?? 0) - (t0.depth ?? 0)) < 1e-3 ? 'square' : 'rectangle')
+      : 'round';
+
+    // Build design JSON (tiers carry shape/width/depth so a sheet round-trips on reload)
     const designJson = {
-      shape: 'round',
+      shape: cakeShape,
       tiers: design.tiers.map(t => ({
         color:        t.color,
         topPiping:    t.topPiping    ?? null,
@@ -875,6 +881,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         texts:        [],
         ...(t.radius != null && { radius: t.radius }),
         ...(t.height != null && { height: t.height }),
+        ...(t.shape   != null && { shape: t.shape }),
+        ...(t.width   != null && { width: t.width }),
+        ...(t.depth   != null && { depth: t.depth }),
+        ...(t.cornerR != null && { cornerR: t.cornerR }),
       })),
       texts:    design.texts,
       stickers: design.stickers,
@@ -921,7 +931,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
     const { data: newTpl, error } = await supabase.from('cake_templates').insert({
       name: templateName.trim(),
-      shape: 'round',
+      shape: cakeShape,
       tier_count: design.tiers.length,
       offering: templateOffering,
       design: designJson,
@@ -1552,8 +1562,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       } catch (_) { /* thumbnail upload failure is non-fatal */ }
     }
 
+    const ot0 = design.tiers[0];
+    const orderShape = ot0?.shape === 'rect'
+      ? (Math.abs((ot0.width ?? 0) - (ot0.depth ?? 0)) < 1e-3 ? 'square' : 'rectangle')
+      : 'round';
     const designSnapshot = {
-      shape: 'round',
+      shape: orderShape,
       tiers: design.tiers.map(t => ({
         color:        t.color,
         topPiping:    t.topPiping    ?? null,
@@ -1562,6 +1576,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         texts:        [],
         ...(t.radius != null && { radius: t.radius }),
         ...(t.height != null && { height: t.height }),
+        ...(t.shape   != null && { shape: t.shape }),
+        ...(t.width   != null && { width: t.width }),
+        ...(t.depth   != null && { depth: t.depth }),
+        ...(t.cornerR != null && { cornerR: t.cornerR }),
       })),
       texts:    design.texts,
       stickers: design.stickers,
@@ -2099,6 +2117,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     otherElements={filterEl(otherElementsDb[et.id] ?? [])}
                     onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
                     onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
+                    onSetTopper={(t) => {
+                      if (t) {
+                        if (t.image_url) preloadTopper(t.image_url);
+                        setTopper(t);
+                        setSelectedEl({ type: 'topper' });
+                        setElementsOpen(false);
+                      } else {
+                        setTopper(null);
+                      }
+                    }}
                     cfAssetsBase={cfAssetsBase}
                   />
               ));
@@ -2358,6 +2386,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   onChange={handleColorChange}
                 />
               )}
+
+              {/* Corner radius — only for sheet (rectangular) tiers */}
+              {selectedEl?.type === 'tier' && design.tiers[selectedEl.index]?.shape === 'rect' && (() => {
+                const tier = design.tiers[selectedEl.index];
+                const w = tier.width ?? 2.16, d = tier.depth ?? 1.56, h = tier.height ?? 0.85;
+                const maxR = +(Math.min(w, d, h) / 2 * 0.9).toFixed(2);
+                const val  = Math.min(tier.cornerR ?? 0, maxR);
+                const pct  = maxR > 0 ? (val / maxR) * 100 : 0;
+                const setFromEvent = e => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                  setTierCornerR(selectedEl.index, +(ratio * maxR).toFixed(3));
+                };
+                return (
+                  <div style={{ width: '100%', paddingTop: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#555', letterSpacing: 0.5 }}>Corner radius</span>
+                      <span style={{ fontSize: 10, color: '#888' }}>{val < 0.02 ? 'Sharp' : val.toFixed(2)}</span>
+                    </div>
+                    <div
+                      style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
+                      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFromEvent(e); }}
+                      onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); setFromEvent(e); }}
+                      onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
+                      onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
+                    >
+                      <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
+                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                      </div>
+                      <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#9b5268', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Faux ball single controls */}
               {selectedEl?.type === 'sticker' && (() => {

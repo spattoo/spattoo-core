@@ -6,6 +6,25 @@ export const TIER_RADII = [1.2, 0.9, 0.65, 0.45];
 export const BOTTOM_BASE = 0.1;
 export const BOTTOM_H    = 1.45;
 
+// ── Sheet (rectangular) cakes ─────────────────────────────────────────────────
+// Standard US bakery sheet/square sizes, full width × depth in inches, scaled to
+// world units so a half sheet's long side (~2.16) reads at roughly the round bottom
+// tier's footprint (diameter 2.4). `w` is the long side (world X), `d` the short (Z).
+export const SHEET_INCH_TO_WORLD = 0.12;
+const inToW = (n) => +(n * SHEET_INCH_TO_WORLD).toFixed(3);
+export const SHEET_SIZES = {
+  quarter:  { label: 'Quarter sheet', inches: '9×13',  w: inToW(13), d: inToW(9)  },
+  half:     { label: 'Half sheet',    inches: '13×18', w: inToW(18), d: inToW(13) },
+  full:     { label: 'Full sheet',    inches: '18×26', w: inToW(26), d: inToW(18) },
+  square_s: { label: 'Square (8")',   inches: '8×8',   w: inToW(8),  d: inToW(8)  },
+  square_l: { label: 'Square (12")',  inches: '12×12', w: inToW(12), d: inToW(12) },
+};
+export const SHEET_DEFAULT_KEY   = 'half';
+export const SHEET_CORNER_RADIUS = 0;      // 0 = sharp vertical corners on the cake body
+// Corner radius the piping uses. 0 → each side runs full length and the two rows meet at the
+// sharp corner (no diagonal bridging shell). >0 → rows inset and a corner shell bridges them.
+export const SHEET_PIPING_CORNER_RADIUS = 0;
+
 // ── Sticker ───────────────────────────────────────────────────────────────────
 export const STICKER_SIZE = 0.28;       // world-space side length of the hit plane
 
