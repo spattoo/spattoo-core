@@ -22,6 +22,11 @@ export const TIER_HEIGHT_STEP = 0.08;   // each upper tier is this shorter than 
 export const GOLD_COLOR       = '#D4AF37';
 export const SELECTION_COLOR  = '#6c47ff';   // emissive highlight on selected elements
 
+// ── Piping ────────────────────────────────────────────────────────────────────
+// Cake front faces the camera (+Z). In the ring math pos=[cos·r, y, sin·r] that's
+// angle π/2, so single piping pieces seed here to land dead-center front.
+export const PIPING_FRONT_ANGLE = Math.PI / 2;
+
 // ── Camera ────────────────────────────────────────────────────────────────────
 export const CAMERA_POSITION        = [0, 5.5, 7.9];
 export const CAMERA_POSITION_MOBILE = [0, 7, 10.8];

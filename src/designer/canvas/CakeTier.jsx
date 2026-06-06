@@ -18,6 +18,24 @@ function extractGeo(scene) {
   return { geo, sizeY: size.y };
 }
 
+// Bake a shell geometry from a GLB scene: optional flip (180° X + re-anchor to the base)
+// and normalise size to ~24% of the tier radius. Returns the geometry plus the scale and
+// bounding extents the ring uses for radius/spacing. Shared by version A and the alternate.
+function buildShellGeo(scene, flip, radius, sizeFactor) {
+  const result = extractGeo(scene);
+  if (!result) return null;
+  const geo = result.geo;
+  if (flip) {
+    geo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI));
+    geo.computeBoundingBox();
+    geo.translate(0, -geo.boundingBox.min.y, 0);
+  }
+  const sc = (radius * 0.24) / result.sizeY * sizeFactor;
+  geo.computeBoundingBox();
+  const bbSize = new THREE.Vector3(); geo.boundingBox.getSize(bbSize);
+  return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x };
+}
+
 const DEG = Math.PI / 180;
 
 // Bend a flat piping ring into `swagCount` scalloped drapes (garland/swag look).
@@ -63,146 +81,184 @@ function buildSwagRing({ r, baseY, step, swagCount, swagDepth, swagTilt = 0.5 })
   return out;
 }
 
+// One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
+function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, selected }) {
+  return (
+    <group position={pos} quaternion={tq}>
+      <group rotation={[0, -rotY + Math.PI / 2 + ryGroup, 0]}>
+        <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
+          <meshPhysicalMaterial
+            color={color} roughness={0.85}
+            sheen={0.4} sheenRoughness={0.9} sheenColor={color}
+            emissive={selected ? '#6c47ff' : '#000000'}
+            emissiveIntensity={selected ? 0.15 : 0}
+          />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+// Render every position, alternating between version A and the alternate B per `pattern`
+// (a repeating cycle like "AB" or "AAB"). B uses its own geometry, rotation, and a radial/
+// height shift relative to A. When B is absent / not active, every shell is A (unchanged).
+function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, selected }) {
+  const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
+  const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
+  const L = pattern.length || 1;
+  return positions.map((u, i) => {
+    const isB = altActive && B && pattern[i % L] === 'B';
+    const ver = isB ? B : A;
+    let pos = u.pos;
+    if (isB && (dRadialB || dYB)) {
+      const [px, , pz] = u.pos;
+      const len = Math.hypot(px, pz) || 1;
+      pos = [px + (px / len) * dRadialB, u.pos[1] + dYB, pz + (pz / len) * dRadialB];
+    }
+    return (
+      <Shell key={u.key ?? i} pos={pos} rotY={u.rotY} tq={u.tq}
+        ryGroup={isB ? ryB : ryA} meshRot={isB ? meshB : meshA}
+        geometry={ver.geometry} shellScale={ver.shellScale} color={color} selected={selected} />
+    );
+  });
+}
+
 // ── Top piping ring — GLB shells hugging the top edge ─────────────────────────
 // Mirrors BottomPipingRing's placement model so the rim is driven entirely by
 // placement_config (top_rotation / top_radial_offset / top_y_offset / top_flip),
 // just anchored at the top edge instead of the base.
-function TopPipingRing({
+//
+// Thin wrapper that bails out BEFORE any hooks run when there's no GLB to load
+// (e.g. the "piping pattern" style carries no image/model URL). useGLTF(null)
+// throws deep in the loader, so the guard has to live above the hook-bearing Impl.
+export function TopPipingRing(props) {
+  if (!props.glbPath) return null;
+  return <TopPipingRingImpl {...props} />;
+}
+function TopPipingRingImpl({
   topY, radius, glbPath, color = '#ffffff', sizeFactor = 1,
   topRotation       = [0, 0, 0],
   extraRadialOffset = 0,
   yOffset           = 0,
   flipTop = false,
+  spacing = 1,
   swagCount = 0, swagDepth = 0, swagTilt = 0.5,
+  arrangement = 'ring', instances = null,
+  altEnabled = false, altGlbUrl = null, altFlip = false, altRotation = [0, 0, 0],
+  altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   selected = false, onClick,
 }) {
-  const { scene } = useGLTF(glbPath);
+  const { scene }          = useGLTF(glbPath);
+  const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
-  const { geometry, shellScale, bbDepth, bbWidth } = useMemo(() => {
-    const result = extractGeo(scene);
-    if (!result) return { geometry: null, shellScale: 1, bbDepth: 0, bbWidth: 0 };
-    const geo = result.geo;
-    if (flipTop) {
-      geo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI));
-      geo.computeBoundingBox();
-      geo.translate(0, -geo.boundingBox.min.y, 0);
-    }
-    const sc = (radius * 0.24) / result.sizeY * sizeFactor;
-    geo.computeBoundingBox();
-    const bbSize = new THREE.Vector3(); geo.boundingBox.getSize(bbSize);
-    return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x };
-  }, [scene, radius, sizeFactor, flipTop]);
+  const A = useMemo(() => buildShellGeo(scene, flipTop, radius, sizeFactor),
+    [scene, flipTop, radius, sizeFactor]);
+  const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
+    [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
+
+  const altActive = altEnabled && arrangement !== 'single';
 
   const positions = useMemo(() => {
-    if (!geometry) return [];
+    if (!A) return [];
     // Rim sits ON the top surface: pull shells inward so their outer face is flush
     // with the edge rather than overhanging the side like the board does.
-    const r    = radius - (bbDepth / 2) * shellScale + extraRadialOffset;
-    const step = shellScale * bbWidth * 0.9 * sizeFactor;
+    const r    = radius - (A.bbDepth / 2) * A.shellScale + extraRadialOffset;
+    const step = A.shellScale * A.bbWidth * 0.9 * sizeFactor * spacing;
+    if (arrangement === 'single') {
+      const list = instances?.length ? instances : [{ angle: 0 }];
+      return list.map(inst => {
+        const angle = inst.angle ?? 0;
+        return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
+      });
+    }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
     }
-    const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
+    let count = Math.max(6, Math.round((2 * Math.PI * r) / step));
+    // Round up to a whole number of pattern cycles so the alternation closes cleanly.
+    if (altActive) { const L = pattern.length || 1; count = Math.max(L, Math.ceil(count / L) * L); }
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
       return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
     });
-  }, [geometry, radius, topY, yOffset, sizeFactor, shellScale, bbDepth, bbWidth, extraRadialOffset, swagCount, swagDepth, swagTilt]);
+  }, [A, radius, topY, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern]);
 
-  if (!geometry) return null;
-
-  const ryGroup = topRotation[1] * DEG;
-  const meshRot = [topRotation[0] * DEG, 0, topRotation[2] * DEG];
+  if (!A) return null;
 
   return (
     <group onClick={onClick}>
-      {positions.map((u, i) => (
-        <group key={i} position={u.pos} quaternion={u.tq}>
-          <group rotation={[0, -u.rotY + Math.PI / 2 + ryGroup, 0]}>
-            <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
-              <meshPhysicalMaterial
-                color={color} roughness={0.85}
-                sheen={0.4} sheenRoughness={0.9} sheenColor={color}
-                emissive={selected ? '#6c47ff' : '#000000'}
-                emissiveIntensity={selected ? 0.15 : 0}
-              />
-            </mesh>
-          </group>
-        </group>
-      ))}
+      {renderShells({
+        positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
+        dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
+        color, selected,
+      })}
     </group>
   );
 }
 
 // ── Bottom piping ring — GLB shells hugging the cake base ─────────────────────
-function BottomPipingRing({
+// Thin wrapper that bails out BEFORE any hooks run when there's no GLB to load
+// (e.g. the "piping pattern" style carries no image/model URL). useGLTF(null)
+// throws deep in the loader, so the guard has to live above the hook-bearing Impl.
+export function BottomPipingRing(props) {
+  if (!props.glbPath) return null;
+  return <BottomPipingRingImpl {...props} />;
+}
+function BottomPipingRingImpl({
   yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1,
   bottomRotation    = [0, 0, 0],
   extraRadialOffset = 0,
   yOffset           = 0,
   flipBottom = true,
+  spacing = 1,
   swagCount = 0, swagDepth = 0, swagTilt = 0.5,
+  arrangement = 'ring', instances = null,
+  altEnabled = false, altGlbUrl = null, altFlip = false, altRotation = [0, 0, 0],
+  altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   selected = false, onClick,
 }) {
-  const { scene } = useGLTF(glbPath);
+  const { scene }          = useGLTF(glbPath);
+  const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
-  const { geometry, shellScale, bbDepth, bbWidth } = useMemo(() => {
-    const result = extractGeo(scene);
-    if (!result) return { geometry: null, shellScale: 1, bbDepth: 0, bbWidth: 0 };
-    const geo = result.geo;
-    if (flipBottom) {
-      geo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI));
-      geo.computeBoundingBox();
-      geo.translate(0, -geo.boundingBox.min.y, 0);
-    }
-    const sc = (radius * 0.24) / result.sizeY * sizeFactor;
-    geo.computeBoundingBox();
-    const bbSize = new THREE.Vector3(); geo.boundingBox.getSize(bbSize);
-    return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x };
-  }, [scene, radius, sizeFactor, flipBottom]);
+  const A = useMemo(() => buildShellGeo(scene, flipBottom, radius, sizeFactor),
+    [scene, flipBottom, radius, sizeFactor]);
+  const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
+    [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
+
+  const altActive = altEnabled && arrangement !== 'single';
 
   const positions = useMemo(() => {
-    if (!geometry) return [];
-    const r    = radius + (bbDepth / 2) * shellScale + extraRadialOffset;
-    const step = shellScale * bbWidth * 0.9 * sizeFactor;
+    if (!A) return [];
+    const r    = radius + (A.bbDepth / 2) * A.shellScale + extraRadialOffset;
+    const step = A.shellScale * A.bbWidth * 0.9 * sizeFactor * spacing;
+    if (arrangement === 'single') {
+      const list = instances?.length ? instances : [{ angle: 0 }];
+      return list.map(inst => {
+        const angle = inst.angle ?? 0;
+        return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
+      });
+    }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });
     }
-    const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
+    let count = Math.max(6, Math.round((2 * Math.PI * r) / step));
+    // Round up to a whole number of pattern cycles so the alternation closes cleanly.
+    if (altActive) { const L = pattern.length || 1; count = Math.max(L, Math.ceil(count / L) * L); }
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
-      return {
-        pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r],
-        rotY: angle,
-        tq: [0, 0, 0, 1],
-      };
+      return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
     });
-  }, [geometry, radius, yBase, yOffset, sizeFactor, shellScale, bbDepth, bbWidth, extraRadialOffset, swagCount, swagDepth, swagTilt]);
+  }, [A, radius, yBase, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern]);
 
-  if (!geometry) return null;
-
-  // Y rotation belongs on the group (rotY already makes piece face outward; ry offsets
-  // the facing direction consistently for all positions around the ring).
-  // X and Z are tilt/roll applied in the final local frame — same for every piece.
-  const ryGroup = bottomRotation[1] * DEG;
-  const meshRot = [bottomRotation[0] * DEG, 0, bottomRotation[2] * DEG];
+  if (!A) return null;
 
   return (
     <group onClick={onClick}>
-      {positions.map((u, i) => (
-        <group key={i} position={u.pos} quaternion={u.tq}>
-          <group rotation={[0, -u.rotY + Math.PI / 2 + ryGroup, 0]}>
-            <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
-              <meshPhysicalMaterial
-                color={color} roughness={0.85}
-                sheen={0.4} sheenRoughness={0.9} sheenColor={color}
-                emissive={selected ? '#6c47ff' : '#000000'}
-                emissiveIntensity={selected ? 0.15 : 0}
-              />
-            </mesh>
-          </group>
-        </group>
-      ))}
+      {renderShells({
+        positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
+        dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
+        color, selected,
+      })}
     </group>
   );
 }
@@ -351,7 +407,13 @@ export default function CakeTier({
             extraRadialOffset={topPiping.extraRadialOffset ?? 0}
             yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
             flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
+            spacing={topPiping.spacing ?? 1}
             swagCount={topPiping.swagCount ?? 0} swagDepth={topPiping.swagDepth ?? 0} swagTilt={topPiping.swagTilt ?? 0.5}
+            arrangement={topPiping.arrangement ?? 'ring'} instances={topPiping.instances ?? null}
+            altEnabled={topPiping.altEnabled ?? false} altGlbUrl={topPiping.altGlbUrl ?? null}
+            altFlip={topPiping.altFlip ?? false} altRotation={topPiping.altRotation ?? [0,0,0]}
+            altRadialOffset={topPiping.altRadialOffset ?? 0} altYOffset={(topPiping.altYOffset ?? 0) + (topPiping.userYOffset ?? 0)}
+            pattern={topPiping.pattern ?? 'AB'}
             selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
         )}
         {bottomPiping && (
@@ -361,7 +423,13 @@ export default function CakeTier({
             extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
             yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
             flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
+            spacing={bottomPiping.spacing ?? 1}
             swagCount={bottomPiping.swagCount ?? 0} swagDepth={bottomPiping.swagDepth ?? 0} swagTilt={bottomPiping.swagTilt ?? 0.5}
+            arrangement={bottomPiping.arrangement ?? 'ring'} instances={bottomPiping.instances ?? null}
+            altEnabled={bottomPiping.altEnabled ?? false} altGlbUrl={bottomPiping.altGlbUrl ?? null}
+            altFlip={bottomPiping.altFlip ?? false} altRotation={bottomPiping.altRotation ?? [0,0,0]}
+            altRadialOffset={bottomPiping.altRadialOffset ?? 0} altYOffset={(bottomPiping.altYOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
+            pattern={bottomPiping.pattern ?? 'AB'}
             selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
         )}
       </group>
@@ -386,7 +454,13 @@ export default function CakeTier({
           extraRadialOffset={topPiping.extraRadialOffset ?? 0}
           yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
           flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
+          spacing={topPiping.spacing ?? 1}
           swagCount={topPiping.swagCount ?? 0} swagDepth={topPiping.swagDepth ?? 0} swagTilt={topPiping.swagTilt ?? 0.5}
+          arrangement={topPiping.arrangement ?? 'ring'} instances={topPiping.instances ?? null}
+          altEnabled={topPiping.altEnabled ?? false} altGlbUrl={topPiping.altGlbUrl ?? null}
+          altFlip={topPiping.altFlip ?? false} altRotation={topPiping.altRotation ?? [0,0,0]}
+          altRadialOffset={topPiping.altRadialOffset ?? 0} altYOffset={(topPiping.altYOffset ?? 0) + (topPiping.userYOffset ?? 0)}
+          pattern={topPiping.pattern ?? 'AB'}
           selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
       )}
       {bottomPiping && (
@@ -396,7 +470,13 @@ export default function CakeTier({
           extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
           yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
           flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
+          spacing={bottomPiping.spacing ?? 1}
           swagCount={bottomPiping.swagCount ?? 0} swagDepth={bottomPiping.swagDepth ?? 0} swagTilt={bottomPiping.swagTilt ?? 0.5}
+          arrangement={bottomPiping.arrangement ?? 'ring'} instances={bottomPiping.instances ?? null}
+          altEnabled={bottomPiping.altEnabled ?? false} altGlbUrl={bottomPiping.altGlbUrl ?? null}
+          altFlip={bottomPiping.altFlip ?? false} altRotation={bottomPiping.altRotation ?? [0,0,0]}
+          altRadialOffset={bottomPiping.altRadialOffset ?? 0} altYOffset={(bottomPiping.altYOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
+          pattern={bottomPiping.pattern ?? 'AB'}
           selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
       )}
     </group>
