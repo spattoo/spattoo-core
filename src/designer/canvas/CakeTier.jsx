@@ -32,13 +32,34 @@ function buildShellGeo(scene, flip, radius, sizeFactor) {
     geo.computeBoundingBox();
     geo.translate(0, -geo.boundingBox.min.y, 0);
   }
-  const sc = (radius * 0.24) / result.sizeY * sizeFactor;
   geo.computeBoundingBox();
   const bbSize = new THREE.Vector3(); geo.boundingBox.getSize(bbSize);
+  // Height-normalised base scale (shell ≈ 24% of the tier radius tall) × the user's size.
+  const sc1 = (radius * 0.24) / result.sizeY;
+  const sc  = capShellScale(sc1, sizeFactor, bbSize.z, radius);
   return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x };
 }
 
 const DEG = Math.PI / 180;
+
+// Cream piping must hug the cake, not float off it. The shell's radial depth (how far it
+// reaches off the wall) is limited dynamically to a fraction of the tier radius — so a
+// smaller tier gets a tighter limit. Past the limit, raising the size slider no longer
+// enlarges the shell, which is what keeps the cream from leaving the cake.
+const PIPING_MAX_DEPTH_FRAC = 0.16;
+
+// How far (as a fraction of the tier radius) the radial control may push the BOARD border
+// OUTWARD past its default (inner face on the wall) before it's capped — keeps it attached to
+// the cake rather than drifting onto the board. Inward travel is unrestricted.
+const PIPING_RADIAL_PLAY = 0.4;
+
+// Cap the user-scaled shell scale so its rendered radial depth (bbDepthZ × scale) never
+// exceeds PIPING_MAX_DEPTH_FRAC of the tier radius. The max() floor keeps a little growth
+// headroom even when the size-1.0 shell is already deep, so the slider is never fully dead.
+function capShellScale(sc1, sizeFactor, bbDepthZ, radius) {
+  const maxSc = Math.max(sc1 * 1.15, (radius * PIPING_MAX_DEPTH_FRAC) / bbDepthZ);
+  return Math.min(sc1 * sizeFactor, maxSc);
+}
 
 // Bend a flat piping ring into `swagCount` scalloped drapes (garland/swag look).
 // Returns one entry per shell { pos, rotY, tq }:
@@ -173,10 +194,12 @@ function TopPipingRingImpl({
   const positions = useMemo(() => {
     if (!A) return [];
     // Rim sits ON the top surface: pull shells inward so their outer face is flush
-    // with the edge rather than overhanging the side like the board does.
-    const off  = -(A.bbDepth / 2) * A.shellScale + extraRadialOffset;
+    // with the edge. extraRadialOffset (incl. the user's radial control) may pull the
+    // cream inward, but never push it past the edge — clamp the outer face to the rim.
+    const half = (A.bbDepth / 2) * A.shellScale;
+    const off  = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
     const r    = radius + off;
-    const step = A.shellScale * A.bbWidth * 0.9 * sizeFactor * spacing;
+    const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
     // Rectangular (sheet) cakes walk a rounded-rect perimeter; round cakes keep the circle.
     const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
     if (arrangement === 'single') {
@@ -249,9 +272,14 @@ function BottomPipingRingImpl({
 
   const positions = useMemo(() => {
     if (!A) return [];
-    const off  = (A.bbDepth / 2) * A.shellScale + extraRadialOffset;   // board: push outward
+    // Board: inner face sits on the wall by default, so growing the size pushes the cream
+    // OUTWARD (and up), never into the cake. The radial control (extraRadialOffset) shifts it
+    // in/out; outward travel is capped at PIPING_RADIAL_PLAY of the radius so the border stays
+    // attached rather than drifting onto the board. Inward travel is unrestricted.
+    const half = (A.bbDepth / 2) * A.shellScale;
+    const off  = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
     const r    = radius + off;
-    const step = A.shellScale * A.bbWidth * 0.9 * sizeFactor * spacing;
+    const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
     const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
     if (arrangement === 'single') {
       const list = instances?.length ? instances : [{ angle: 0 }];
@@ -465,7 +493,7 @@ export default function CakeTier({
           <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
             sizeFactor={topPiping.size ?? 1}
             topRotation={topPiping.rotation ?? [0,0,0]}
-            extraRadialOffset={topPiping.extraRadialOffset ?? 0}
+            extraRadialOffset={(topPiping.extraRadialOffset ?? 0) + (topPiping.userRadialOffset ?? 0)}
             yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
             flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
             spacing={topPiping.spacing ?? 1}
@@ -481,7 +509,7 @@ export default function CakeTier({
           <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
             sizeFactor={bottomPiping.size ?? 1}
             bottomRotation={bottomPiping.bottomRotation ?? [0,0,0]}
-            extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
+            extraRadialOffset={(bottomPiping.extraRadialOffset ?? 0) + (bottomPiping.userRadialOffset ?? 0)}
             yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
             flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
             spacing={bottomPiping.spacing ?? 1}
@@ -522,7 +550,7 @@ export default function CakeTier({
         <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
           sizeFactor={topPiping.size ?? 1}
           topRotation={topPiping.rotation ?? [0,0,0]}
-          extraRadialOffset={topPiping.extraRadialOffset ?? 0}
+          extraRadialOffset={(topPiping.extraRadialOffset ?? 0) + (topPiping.userRadialOffset ?? 0)}
           yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
           flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
           spacing={topPiping.spacing ?? 1}
@@ -538,7 +566,7 @@ export default function CakeTier({
         <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
           sizeFactor={bottomPiping.size ?? 1}
           bottomRotation={bottomPiping.bottomRotation ?? [0,0,0]}
-          extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
+          extraRadialOffset={(bottomPiping.extraRadialOffset ?? 0) + (bottomPiping.userRadialOffset ?? 0)}
           yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
           flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
           spacing={bottomPiping.spacing ?? 1}

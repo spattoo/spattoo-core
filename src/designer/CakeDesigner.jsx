@@ -1167,6 +1167,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     updateRing(tierIndex, zone, p => ({ ...p, size: v }));
   }
 
+  // Manual radial position (cake units): + pushes the ring outward, − pulls it inward.
+  // Lets the baker decouple radial distance from size (size also shifts the ring radially).
+  function handlePipingRadialOffsetChange(tierIndex, zone, v) {
+    updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: v }));
+  }
+
   function handlePipingBoardYOffsetChange(tierIndex, v) {
     const cur = design.tiers[tierIndex]?.bottomPiping;
     if (!cur || cur.id !== pipingPopupEl?.id) return;
@@ -2606,6 +2612,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 // flip override applied so the preview matches what's on the cake.
                 const previewPlacement = pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone);
                 if (!isTopZone && p.userFlipBottom != null) previewPlacement.flipBottom = p.userFlipBottom;
+                // Reflect the manual radial nudge in the popup preview so it matches the cake.
+                previewPlacement.extraRadialOffset = (previewPlacement.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0);
                 // A "piping pattern" element carries no image_url of its own — its A/B GLBs
                 // live in the cream_piping blocks it references. Resolve them the same way
                 // the real cake-apply path does (resolvePipingGlbs) so the preview matches.
@@ -2620,6 +2628,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const flipAdj  = zone === 'board' && pipingPopupEl.placement_config?.bottom_flip_adjustable;
                 const yAdj     = zone === 'board' && pipingPopupEl.placement_config?.bottom_y_adjustable;
                 const boardY   = p.userYOffset ?? 0;
+                const radial   = p.userRadialOffset ?? 0;
                 return (
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #f5eaed', paddingTop: 10, paddingBottom: 4 }}>
                     {/* ── Full-width preview with the checkbox floating in its corner ── */}
@@ -2720,11 +2729,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </>
                     )}
 
-                    {/* ── Adjust: flip + height on one row (board zone) ── */}
-                    {(flipAdj || yAdj) && (
-                      <>
+                    {/* ── Adjust: radial distance + flip + height on one row ── */}
+                    <>
                         <div style={secRow}><span style={secTitle}>Adjust</span><div style={hair} /></div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+                          {/* Radial distance — available for every ring. + out, − in. */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={lbl}>Radial</span>
+                            <button
+                              title="Move inward"
+                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial - 0.05).toFixed(2)); }}>−</button>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 36, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
+                              {radial > 0 ? `+${radial.toFixed(2)}` : radial.toFixed(2)}
+                            </span>
+                            <button
+                              title="Move outward"
+                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial + 0.05).toFixed(2)); }}>+</button>
+                            {radial !== 0 && (
+                              <button
+                                style={{ fontSize: 9, color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: "'Quicksand',sans-serif" }}
+                                onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, 0); }}>Reset</button>
+                            )}
+                          </div>
                           {flipAdj && (() => {
                             const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
                             const active = p.userFlipBottom != null ? p.userFlipBottom : defaultFlip;
@@ -2760,7 +2788,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           )}
                         </div>
                       </>
-                    )}
                   </div>
                 );
               })}
