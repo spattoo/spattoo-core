@@ -1139,13 +1139,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setSelectedEl(null);
   }
 
-  // Remove a whole card: delete all of this element's piping from every ring, then drop
-  // the card from the stack. If it was expanded, expand the previous card (if any).
-  function removePipingCard(elId) {
-    design.tiers.forEach((t, i) => {
-      (t.topPipings ?? []).forEach(p => { if (p.id === elId) removePipingLayer(i, 'rim', p.layerId); });
-      (t.bottomPipings ?? []).forEach(p => { if (p.id === elId) removePipingLayer(i, 'board', p.layerId); });
-    });
+  // Drop a card from the accordion stack (UI only). Used when a card's last ring is
+  // unchecked — the cake no longer carries that element, so its card goes away too.
+  function dropPipingCard(elId) {
     const remaining = pipingCards.filter(c => c.id !== elId);
     setPipingCards(remaining);
     if (expandedPipingId === elId) setExpandedPipingId(remaining[remaining.length - 1]?.id ?? null);
@@ -1303,7 +1299,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   function togglePipingZone(tierIndex, zone, isOn) {
     if (isOn) {
       const existing = ringPiping(tierIndex, zone);
-      if (existing) removePipingLayer(tierIndex, zone, existing.layerId);
+      if (!existing) return;
+      removePipingLayer(tierIndex, zone, existing.layerId);
+      // If that was this element's last piping anywhere, drop its card from the stack too.
+      const elId = pipingPopupEl?.id;
+      const stillOn = design.tiers.some((t, i) =>
+        (t.topPipings ?? []).some(p => p.id === elId && !(zone === 'rim' && i === tierIndex && p.layerId === existing.layerId)) ||
+        (t.bottomPipings ?? []).some(p => p.id === elId && !(zone === 'board' && i === tierIndex && p.layerId === existing.layerId))
+      );
+      if (!stillOn) dropPipingCard(elId);
     } else {
       addPipingLayer(tierIndex, zone, buildRingPiping(zone, tierIndex));
     }
@@ -2646,7 +2650,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const expanded = card.id === expandedPipingId;
                 return (
                 <div key={card.id} style={{ border: `1.5px solid ${expanded ? '#9b5268' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
-                  {/* Card header: thumbnail + element name + expand arrow + remove (✕) */}
+                  {/* Card header: thumbnail + element name + expand/collapse arrow.
+                      No close button — a layer leaves the cake by unchecking its rings. */}
                   <div role="button"
                     onClick={() => setExpandedPipingId(prev => prev === card.id ? null : card.id)}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#fbf3f6' : '#fff' }}>
@@ -2655,7 +2660,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     </div>
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
                     <span style={{ fontSize: 9, color: '#9b5268', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
-                    <button style={{ ...s.iconBtn, width: 22, height: 22, flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); removePipingCard(card.id); }}>✕</button>
                   </div>
                   {expanded && (
                   <div style={{ padding: '0 9px 9px' }}>
@@ -3520,8 +3524,10 @@ const s = {
   // blankets the cake; the canvas is padded right by the same amount so the cake sits clear.
   pipingPopup: {
     position: 'absolute',
-    right: 10, top: '50%', transform: 'translateY(-50%)',
-    width: 152, maxHeight: '94%',
+    // Anchored to the top (not vertically centred) so collapsing/expanding a card grows
+    // the strip downward without shifting its position.
+    right: 10, top: 12,
+    width: 152, maxHeight: 'calc(100% - 24px)',
     background: 'rgba(255,255,255,0.95)',
     backdropFilter: 'blur(18px)',
     WebkitBackdropFilter: 'blur(18px)',
