@@ -455,7 +455,9 @@ export default function CakeTier({
   bottomPipings = null,
   topPiping = null,
   bottomPiping = null,
-  selectedLayerId = null,
+  // Element id of the piping whose card is expanded — every ring of that element is
+  // highlighted on the cake. Legacy single-piping callers fall back to the booleans.
+  highlightPipingId = null,
   topPipingSelected = false,
   bottomPipingSelected = false,
   onTopPipingClick,
@@ -502,7 +504,7 @@ export default function CakeTier({
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
       pattern={p.pattern ?? 'AB'} shape={shp}
-      selected={p.layerId != null ? selectedLayerId === p.layerId : topPipingSelected}
+      selected={highlightPipingId != null ? p.id === highlightPipingId : topPipingSelected}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
 
@@ -520,7 +522,7 @@ export default function CakeTier({
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
       pattern={p.pattern ?? 'AB'} shape={shp}
-      selected={p.layerId != null ? selectedLayerId === p.layerId : bottomPipingSelected}
+      selected={highlightPipingId != null ? p.id === highlightPipingId : bottomPipingSelected}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
 

@@ -2317,6 +2317,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onTierClick={handleTierClick}
               onDeselect={handleDeselect}
               selectedPiping={selectedPiping}
+              highlightPipingId={pipingPopupOpen ? expandedPipingId : null}
               onTopPipingSelect={handleTopPipingSelect}
               onBottomPipingSelect={handleBottomPipingSelect}
               pipingTarget={pipingTarget}

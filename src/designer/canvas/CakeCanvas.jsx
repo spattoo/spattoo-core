@@ -1282,7 +1282,7 @@ function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   orbitRef,
-  selectedPiping, onTopPipingSelect, onBottomPipingSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   onTopperClick, topperSelected, topperToolbar,
@@ -1368,7 +1368,7 @@ function CakeScene({
             selected={selectedTier === i}
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
-            selectedLayerId={selectedPiping?.tierIndex === i ? selectedPiping?.layerId : null}
+            highlightPipingId={highlightPipingId}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); onTierClick(i); }}
@@ -1565,7 +1565,6 @@ function CakeThumbnailScene({ config }) {
           selected={false}
           topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
           bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
-          selectedLayerId={null}
           onTopPipingClick={() => {}}
           onBottomPipingClick={() => {}}
           onClick={() => {}}
@@ -1661,7 +1660,7 @@ export default function CakeCanvas({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   autoRotate = false,
-  selectedPiping, onTopPipingSelect, onBottomPipingSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onTopperClick, topperSelected = false, topperToolbar,
@@ -1757,6 +1756,7 @@ export default function CakeCanvas({
         onTierClick={i  => { if (!pointerRef.current.dragged) onTierClick(i); }}
         onDeselect={()  => { if (!pointerRef.current.dragged) onDeselect(); }}
         selectedPiping={selectedPiping}
+        highlightPipingId={highlightPipingId}
         onTopPipingSelect={i => { if (!pointerRef.current.dragged) onTopPipingSelect(i); }}
         onBottomPipingSelect={i => { if (!pointerRef.current.dragged) onBottomPipingSelect(i); }}
         pipingTarget={pipingTarget}
