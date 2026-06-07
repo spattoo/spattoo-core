@@ -26,8 +26,12 @@ export function setShellExtents(glbUrl, flip, size, extents) {
 }
 
 // Read back measured extents, or fall back to the upright normalisation (no tilt,
-// base-anchored) scaled by size when this shell hasn't rendered/been measured yet.
+// base-anchored) scaled by size when this shell hasn't rendered/been measured yet. All values
+// are fractions of the tier radius:
+//   topFrac / botFrac       — vertical reach above / below the anchor (Height clamp)
+//   radialOutFrac / radialInFrac — radial reach of the outer / inner edge, measured from the
+//                             rim edge (so outerEdge = radius + offset + radius·radialOutFrac).
 export function getShellExtents(glbUrl, flip, size) {
   return measured.get(keyFor(glbUrl, flip, size))
-    ?? { topFrac: SHELL_HEIGHT_FRAC * (size ?? 1), botFrac: 0 };
+    ?? { topFrac: SHELL_HEIGHT_FRAC * (size ?? 1), botFrac: 0, radialOutFrac: 0, radialInFrac: -SHELL_HEIGHT_FRAC * (size ?? 1) };
 }

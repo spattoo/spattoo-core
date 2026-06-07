@@ -1231,6 +1231,16 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const upper     = canvasConfig.tiers[tierIndex + 1];   // tier resting on this rim, if any
     return innerEdge >= (upper ? upper.radius : 0);
   }
+  // EXACT radial band [innerEdge, outerEdge] (distance from the tier centre) a rim ring's VISIBLE
+  // shell occupies, from its MEASURED post-tilt radial reach. outerEdge = radius + E + reachOut,
+  // innerEdge = radius + E + reachIn (E = combined offset ≤ 0, matching the renderer's clamp).
+  function rimRadialBand(p, tierIndex) {
+    const radius = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
+    const flip   = p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false);
+    const { radialOutFrac, radialInFrac } = getShellExtents(p.glbUrl, flip, p.size ?? 1);
+    const E = Math.min((p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0), 0);
+    return [radius + E + radius * radialInFrac, radius + E + radius * radialOutFrac];
+  }
 
   // A fresh piping object for the open element in a zone, at config defaults.
   function buildRingPiping(zone, tierIndex = 0, overrides = {}) {
@@ -1273,8 +1283,40 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   // Manual radial position (cake units): + pushes the ring outward, − pulls it inward.
   // Lets the baker decouple radial distance from size (size also shifts the ring radially).
+  // For a rim ring this is collision-clamped (like the side Height): moving OUTWARD stops the
+  // instant its outer edge touches the next ring out (else the rim edge); moving INWARD stops
+  // when its inner edge touches the next ring in (else the cake centre, or the cylinder of the
+  // tier resting on this rim). Bands use each shell's measured radial width — exact, no guesses.
   function handlePipingRadialOffsetChange(tierIndex, zone, v) {
-    updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: v }));
+    const cur = ringPiping(tierIndex, zone);
+    if (zone !== 'rim' || !cur) { updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: v })); return; }
+    const radius  = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
+    const base    = cur.extraRadialOffset ?? 0;
+    const flip    = cur.userFlipTop !== undefined ? cur.userFlipTop : (cur.flipTop ?? false);
+    const reachOut = radius * getShellExtents(cur.glbUrl, flip, cur.size ?? 1).radialOutFrac;
+    const [curIn, curOut] = rimRadialBand(cur, tierIndex);
+    const depth   = curOut - curIn;   // our radial width
+    const EPS = 1e-4;
+    // Work in outer-edge space (distance from centre), then convert back. The outer edge stops
+    // at the rim or the next ring out; the inner edge (outer − depth) stops at the centre, the
+    // cylinder of the tier above, or the next ring in.
+    let outerMax = radius;            // rim edge
+    let outerMin = depth;             // inner edge ≥ cake centre (0)
+    const upper = canvasConfig.tiers[tierIndex + 1];
+    if (upper) outerMin = Math.max(outerMin, upper.radius + depth);   // inner edge ≥ upper cylinder
+    const curCenter = (curIn + curOut) / 2;
+    (design.tiers[tierIndex]?.topPipings ?? []).forEach(p => {
+      if (p.layerId === cur.layerId) return;
+      const [nin, nout] = rimRadialBand(p, tierIndex);
+      // Classify by which side the neighbour's centre sits — robust even if the bands currently
+      // overlap (so we can never push further INTO a neighbour, only separate from it).
+      if ((nin + nout) / 2 < curCenter) outerMin = Math.max(outerMin, nout + depth);  // inside  → our inner edge rests on its outer edge
+      else                              outerMax = Math.min(outerMax, nin);           // outside → our outer edge stops at its inner edge
+    });
+    const desiredOuter = radius + (base + v) + reachOut;
+    const clampedOuter = Math.min(Math.max(outerMin, desiredOuter), Math.max(outerMin, outerMax));
+    const clampedE     = clampedOuter - radius - reachOut;   // back to combined offset
+    updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: +(clampedE - base).toFixed(4) }));
   }
 
   function handlePipingBoardYOffsetChange(tierIndex, v) {

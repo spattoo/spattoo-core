@@ -47,7 +47,13 @@ function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 0]) {
     .makeRotationFromEuler(new THREE.Euler(tiltDeg[0] * DEG, 0, tiltDeg[2] * DEG))
     .multiply(new THREE.Matrix4().makeScale(sc, sc, sc));
   const wbox = geo.boundingBox.clone().applyMatrix4(m);
-  return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x, worldTopY: wbox.max.y, worldBotY: wbox.min.y };
+  // worldTopY/BotY → vertical reach; worldMaxZ/MinZ → radial reach (local z = the radial axis
+  // the renderer places along), both AFTER the tilt, so the editor's clamps match the pixels.
+  return {
+    geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x,
+    worldTopY: wbox.max.y, worldBotY: wbox.min.y,
+    worldMaxZ: wbox.max.z, worldMinZ: wbox.min.z,
+  };
 }
 
 const DEG = Math.PI / 180;
@@ -194,10 +200,25 @@ function TopPipingRingImpl({
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
-  const A = useMemo(() => buildShellGeo(scene, flipTop, radius, sizeFactor),
-    [scene, flipTop, radius, sizeFactor]);
+  const tr0 = topRotation?.[0] ?? 0, tr2 = topRotation?.[2] ?? 0;
+  const A = useMemo(() => buildShellGeo(scene, flipTop, radius, sizeFactor, [tr0, 0, tr2]),
+    [scene, flipTop, radius, sizeFactor, tr0, tr2]);
   const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
     [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
+
+  // Publish this rim shell's exact post-tilt radial reach (relative to the rim edge, as radius
+  // fractions) so the editor's radial control stops the ring precisely when its outer/inner edge
+  // touches a neighbouring ring or the rim — matching the rendered pixels, not the raw bbox.
+  useEffect(() => {
+    if (A && glbPath && radius) {
+      const halfRaw = (A.bbDepth * A.shellScale) / 2;   // the render's positioning `half`
+      setShellExtents(glbPath, flipTop, sizeFactor, {
+        topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
+        radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
+        radialInFrac:  (A.worldMinZ - halfRaw) / radius,
+      });
+    }
+  }, [A, glbPath, flipTop, sizeFactor, radius]);
 
   const altActive = altEnabled && arrangement !== 'single';
 
@@ -279,10 +300,18 @@ function BottomPipingRingImpl({
   const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
     [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
 
-  // Publish this shell's exact rendered vertical reach (as radius fractions) for the editor's
-  // Height clamp, so it can test rim/board contact precisely instead of guessing a height.
+  // Publish this shell's exact rendered extents (as radius fractions) for the editor's clamps:
+  // vertical reach for the Height clamp, post-tilt radial reach for the radial clamp — so the
+  // contact tests are precise instead of guessed.
   useEffect(() => {
-    if (A && glbPath && radius) setShellExtents(glbPath, flipBottom, sizeFactor, { topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius });
+    if (A && glbPath && radius) {
+      const halfRaw = (A.bbDepth * A.shellScale) / 2;
+      setShellExtents(glbPath, flipBottom, sizeFactor, {
+        topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
+        radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
+        radialInFrac:  (A.worldMinZ - halfRaw) / radius,
+      });
+    }
   }, [A, glbPath, flipBottom, sizeFactor, radius]);
 
   const altActive = altEnabled && arrangement !== 'single';
