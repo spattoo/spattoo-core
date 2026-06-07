@@ -449,8 +449,13 @@ export default function CakeTier({
   frostingType = 'buttercream',
   flavour = 'vanilla',
   selected = false,
+  // New: arrays of stacked piping layers per zone. Legacy single topPiping/bottomPiping
+  // props are still accepted (admin/template tools) and normalised into the arrays below.
+  topPipings = null,
+  bottomPipings = null,
   topPiping = null,
   bottomPiping = null,
+  selectedLayerId = null,
   topPipingSelected = false,
   bottomPipingSelected = false,
   onTopPipingClick,
@@ -467,16 +472,57 @@ export default function CakeTier({
     [isRect, shp, height],
   );
 
+  const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
+  const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
+
   function handleClick(e) {
     e.stopPropagation();
-    if (topPiping && e.point.y > topY - height * 0.25) {
-      onTopPipingClick?.(e);
-    } else if (bottomPiping && e.point.y < yBase + height * 0.25) {
-      onBottomPipingClick?.(e);
+    if (tops.length && e.point.y > topY - height * 0.25) {
+      onTopPipingClick?.(e, tops[0].layerId);
+    } else if (bottoms.length && e.point.y < yBase + height * 0.25) {
+      onBottomPipingClick?.(e, bottoms[0].layerId);
     } else {
       onClick?.(e);
     }
   }
+
+  // One <TopPipingRing>/<BottomPipingRing> per stacked layer. A layer is "selected"
+  // by its layerId; legacy single-piping callers fall back to the boolean flags.
+  const renderTops = () => tops.map((p, idx) => (
+    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={radius} glbPath={p.glbUrl} color={p.color}
+      sizeFactor={p.size ?? 1}
+      topRotation={p.rotation ?? [0,0,0]}
+      extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
+      yOffset={(p.yOffset ?? 0) + (p.userYOffset ?? 0)}
+      flipTop={p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false)}
+      spacing={p.spacing ?? 1}
+      swagCount={p.swagCount ?? 0} swagDepth={p.swagDepth ?? 0} swagTilt={p.swagTilt ?? 0.5}
+      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null}
+      altEnabled={p.altEnabled ?? false} altGlbUrl={p.altGlbUrl ?? null}
+      altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
+      altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
+      pattern={p.pattern ?? 'AB'} shape={shp}
+      selected={p.layerId != null ? selectedLayerId === p.layerId : topPipingSelected}
+      onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
+  ));
+
+  const renderBottoms = () => bottoms.map((p, idx) => (
+    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={radius} glbPath={p.glbUrl} color={p.color}
+      sizeFactor={p.size ?? 1}
+      bottomRotation={p.bottomRotation ?? [0,0,0]}
+      extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
+      yOffset={(p.yOffset ?? 0) + (p.userYOffset ?? 0)}
+      flipBottom={p.userFlipBottom !== undefined ? p.userFlipBottom : (p.flipBottom ?? true)}
+      spacing={p.spacing ?? 1}
+      swagCount={p.swagCount ?? 0} swagDepth={p.swagDepth ?? 0} swagTilt={p.swagTilt ?? 0.5}
+      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null}
+      altEnabled={p.altEnabled ?? false} altGlbUrl={p.altGlbUrl ?? null}
+      altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
+      altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
+      pattern={p.pattern ?? 'AB'} shape={shp}
+      selected={p.layerId != null ? selectedLayerId === p.layerId : bottomPipingSelected}
+      onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
+  ));
 
   if (frostingType === 'naked') {
     return (
@@ -489,38 +535,8 @@ export default function CakeTier({
             <meshStandardMaterial color="#fffdf5" roughness={0.5} />
           </mesh>
         )}
-        {topPiping && (
-          <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
-            sizeFactor={topPiping.size ?? 1}
-            topRotation={topPiping.rotation ?? [0,0,0]}
-            extraRadialOffset={(topPiping.extraRadialOffset ?? 0) + (topPiping.userRadialOffset ?? 0)}
-            yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
-            flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
-            spacing={topPiping.spacing ?? 1}
-            swagCount={topPiping.swagCount ?? 0} swagDepth={topPiping.swagDepth ?? 0} swagTilt={topPiping.swagTilt ?? 0.5}
-            arrangement={topPiping.arrangement ?? 'ring'} instances={topPiping.instances ?? null}
-            altEnabled={topPiping.altEnabled ?? false} altGlbUrl={topPiping.altGlbUrl ?? null}
-            altFlip={topPiping.altFlip ?? false} altRotation={topPiping.altRotation ?? [0,0,0]}
-            altRadialOffset={topPiping.altRadialOffset ?? 0} altYOffset={(topPiping.altYOffset ?? 0) + (topPiping.userYOffset ?? 0)}
-            pattern={topPiping.pattern ?? 'AB'} shape={shp}
-            selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
-        )}
-        {bottomPiping && (
-          <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
-            sizeFactor={bottomPiping.size ?? 1}
-            bottomRotation={bottomPiping.bottomRotation ?? [0,0,0]}
-            extraRadialOffset={(bottomPiping.extraRadialOffset ?? 0) + (bottomPiping.userRadialOffset ?? 0)}
-            yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
-            flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
-            spacing={bottomPiping.spacing ?? 1}
-            swagCount={bottomPiping.swagCount ?? 0} swagDepth={bottomPiping.swagDepth ?? 0} swagTilt={bottomPiping.swagTilt ?? 0.5}
-            arrangement={bottomPiping.arrangement ?? 'ring'} instances={bottomPiping.instances ?? null}
-            altEnabled={bottomPiping.altEnabled ?? false} altGlbUrl={bottomPiping.altGlbUrl ?? null}
-            altFlip={bottomPiping.altFlip ?? false} altRotation={bottomPiping.altRotation ?? [0,0,0]}
-            altRadialOffset={bottomPiping.altRadialOffset ?? 0} altYOffset={(bottomPiping.altYOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
-            pattern={bottomPiping.pattern ?? 'AB'} shape={shp}
-            selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
-        )}
+        {renderTops()}
+        {renderBottoms()}
       </group>
     );
   }
@@ -546,38 +562,8 @@ export default function CakeTier({
           </mesh>
         </>
       )}
-      {topPiping && (
-        <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
-          sizeFactor={topPiping.size ?? 1}
-          topRotation={topPiping.rotation ?? [0,0,0]}
-          extraRadialOffset={(topPiping.extraRadialOffset ?? 0) + (topPiping.userRadialOffset ?? 0)}
-          yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
-          flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
-          spacing={topPiping.spacing ?? 1}
-          swagCount={topPiping.swagCount ?? 0} swagDepth={topPiping.swagDepth ?? 0} swagTilt={topPiping.swagTilt ?? 0.5}
-          arrangement={topPiping.arrangement ?? 'ring'} instances={topPiping.instances ?? null}
-          altEnabled={topPiping.altEnabled ?? false} altGlbUrl={topPiping.altGlbUrl ?? null}
-          altFlip={topPiping.altFlip ?? false} altRotation={topPiping.altRotation ?? [0,0,0]}
-          altRadialOffset={topPiping.altRadialOffset ?? 0} altYOffset={(topPiping.altYOffset ?? 0) + (topPiping.userYOffset ?? 0)}
-          pattern={topPiping.pattern ?? 'AB'} shape={shp}
-          selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
-      )}
-      {bottomPiping && (
-        <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
-          sizeFactor={bottomPiping.size ?? 1}
-          bottomRotation={bottomPiping.bottomRotation ?? [0,0,0]}
-          extraRadialOffset={(bottomPiping.extraRadialOffset ?? 0) + (bottomPiping.userRadialOffset ?? 0)}
-          yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
-          flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
-          spacing={bottomPiping.spacing ?? 1}
-          swagCount={bottomPiping.swagCount ?? 0} swagDepth={bottomPiping.swagDepth ?? 0} swagTilt={bottomPiping.swagTilt ?? 0.5}
-          arrangement={bottomPiping.arrangement ?? 'ring'} instances={bottomPiping.instances ?? null}
-          altEnabled={bottomPiping.altEnabled ?? false} altGlbUrl={bottomPiping.altGlbUrl ?? null}
-          altFlip={bottomPiping.altFlip ?? false} altRotation={bottomPiping.altRotation ?? [0,0,0]}
-          altRadialOffset={bottomPiping.altRadialOffset ?? 0} altYOffset={(bottomPiping.altYOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
-          pattern={bottomPiping.pattern ?? 'AB'} shape={shp}
-          selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
-      )}
+      {renderTops()}
+      {renderBottoms()}
     </group>
   );
 }

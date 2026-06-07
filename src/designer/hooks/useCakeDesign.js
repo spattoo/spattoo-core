@@ -6,12 +6,18 @@ export { TIER_RADII };   // re-export so existing imports from this file keep wo
 
 const DEFAULT_DESIGN = {
   tiers: [
-    { color: '#f5b8c8', topPiping: null, bottomPiping: null },
+    { color: '#f5b8c8', topPipings: [], bottomPipings: [] },
   ],
   texts: [],
   stickers: [],
   topper: null,
 };
+
+// Each piping carries a stable layerId so a tier can hold multiple stacked piping
+// layers per zone and every layer stays addressable across edits/renders.
+const newLayerId = () => crypto.randomUUID();
+const withLayerId = (piping) => (piping.layerId ? piping : { ...piping, layerId: newLayerId() });
+const zoneKey = (zone) => (zone === 'rim' || zone === 'top' ? 'topPipings' : 'bottomPipings');
 
 export const FROSTING_TYPES = [
   { value: 'buttercream', label: 'Buttercream' },
@@ -41,24 +47,55 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // Back-compat single-piping setters: replace the whole zone with [piping] (or clear it).
+  // Preserve an existing layerId so repeated edits don't remount the GLB ring.
   function setTopPiping(index, piping) {
     setDesign(prev => ({
       ...prev,
-      tiers: prev.tiers.map((t, i) => i === index ? { ...t, topPiping: piping } : t),
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, topPipings: piping ? [withLayerId(piping)] : [] } : t),
     }));
   }
 
   function setBottomPiping(index, piping) {
     setDesign(prev => ({
       ...prev,
-      tiers: prev.tiers.map((t, i) => i === index ? { ...t, bottomPiping: piping } : t),
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, bottomPipings: piping ? [withLayerId(piping)] : [] } : t),
+    }));
+  }
+
+  // ── Layer-aware piping ops (multiple piping styles stacked per zone) ──────────
+  function addPipingLayer(index, zone, piping) {
+    const key = zoneKey(zone);
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, [key]: [...(t[key] ?? []), withLayerId(piping)] } : t),
+    }));
+  }
+
+  function updatePipingLayer(index, zone, layerId, mutate) {
+    const key = zoneKey(zone);
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, [key]: (t[key] ?? []).map(p => p.layerId === layerId ? { ...mutate(p), layerId } : p) }
+        : t),
+    }));
+  }
+
+  function removePipingLayer(index, zone, layerId) {
+    const key = zoneKey(zone);
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, [key]: (t[key] ?? []).filter(p => p.layerId !== layerId) }
+        : t),
     }));
   }
 
   function addTier() {
     setDesign(prev => {
       if (prev.tiers.length >= 4) return prev;
-      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', topPiping: null, bottomPiping: null }] };
+      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', topPipings: [], bottomPipings: [] }] };
     });
   }
 
@@ -291,20 +328,22 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
     setDesign({
       tiers: templateDesign.tiers.map(t => {
-        let topPiping = t.topPiping ?? null;
-        let bottomPiping = t.bottomPiping ?? null;
-        if (!topPiping && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'swirl_ring')) {
+        // New format stores arrays; old format a single object. Normalise to arrays and
+        // tag each with a layerId so stacked layers stay addressable.
+        let topPipings = t.topPipings ?? (t.topPiping ? [t.topPiping] : []);
+        let bottomPipings = t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []);
+        if (!topPipings.length && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'swirl_ring')) {
           const d = t.decorations.find(d => d.type === 'swirl_ring');
-          topPiping = { glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' };
+          topPipings = [{ glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' }];
         }
-        if (!bottomPiping && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'base_border')) {
+        if (!bottomPipings.length && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'base_border')) {
           const d = t.decorations.find(d => d.type === 'base_border');
-          bottomPiping = { glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' };
+          bottomPipings = [{ glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' }];
         }
         return {
           color:        t.color ?? '#ffffff',
-          topPiping,
-          bottomPiping,
+          topPipings:    topPipings.map(withLayerId),
+          bottomPipings: bottomPipings.map(withLayerId),
           ...(t.radius != null  && { radius: t.radius }),
           ...(t.height != null  && { height: t.height }),
           ...(t.shape   != null  && { shape: t.shape }),
@@ -331,8 +370,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
         color:        t.color,
         frostingType: t.frostingType ?? 'buttercream',
-        topPiping:    t.topPiping ?? null,
-        bottomPiping: t.bottomPiping ?? null,
+        topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
+        bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -344,6 +383,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   return {
     design,
     setTierColor, setTierCornerR, setTopPiping, setBottomPiping,
+    addPipingLayer, updatePipingLayer, removePipingLayer,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
     addSticker, updateSticker, removeSticker, duplicateSticker,

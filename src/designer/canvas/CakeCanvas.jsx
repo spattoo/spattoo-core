@@ -1366,12 +1366,11 @@ function CakeScene({
             cornerR={tier.cornerR}
             frostingType={tier.frostingType}
             selected={selectedTier === i}
-            topPiping={tier.topPiping}
-            bottomPiping={tier.bottomPiping}
-            topPipingSelected={selectedPiping?.tierIndex === i && selectedPiping?.zone === 'top'}
-            bottomPipingSelected={selectedPiping?.tierIndex === i && selectedPiping?.zone === 'bottom'}
-            onTopPipingClick={e => { e.stopPropagation(); onTopPipingSelect(i); }}
-            onBottomPipingClick={e => { e.stopPropagation(); onBottomPipingSelect(i); }}
+            topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
+            bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
+            selectedLayerId={selectedPiping?.tierIndex === i ? selectedPiping?.layerId : null}
+            onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
+            onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); onTierClick(i); }}
           />
           {selectedPiping?.tierIndex === i && pipingToolbar && (
@@ -1564,10 +1563,9 @@ function CakeThumbnailScene({ config }) {
           cornerR={tier.cornerR}
           frostingType={tier.frostingType}
           selected={false}
-          topPiping={tier.topPiping}
-          bottomPiping={tier.bottomPiping}
-          topPipingSelected={false}
-          bottomPipingSelected={false}
+          topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
+          bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
+          selectedLayerId={null}
           onTopPipingClick={() => {}}
           onBottomPipingClick={() => {}}
           onClick={() => {}}

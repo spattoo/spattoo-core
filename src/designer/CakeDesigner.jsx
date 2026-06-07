@@ -724,7 +724,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, setTopPiping, setBottomPiping, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -916,8 +916,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       shape: cakeShape,
       tiers: design.tiers.map(t => ({
         color:        t.color,
-        topPiping:    t.topPiping    ?? null,
-        bottomPiping: t.bottomPiping ?? null,
+        topPipings:    t.topPipings    ?? [],
+        bottomPipings: t.bottomPipings ?? [],
         decorations:  [],
         texts:        [],
         ...(t.radius != null && { radius: t.radius }),
@@ -1016,7 +1016,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // Eager load piping elements if any tier already has piping applied —
   // ensures placement_config.rotation syncs without opening the elements panel.
   useEffect(() => {
-    const hasPiping = design.tiers.some(t => t.topPiping || t.bottomPiping);
+    const hasPiping = design.tiers.some(t => t.topPipings?.length || t.bottomPipings?.length);
     if (hasPiping) loadElementsIfNeeded();
   }, []);
 
@@ -1108,7 +1108,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const zones = (el.allowed_zones ?? []).filter(z => z === 'rim' || z === 'board');
     if (zones.length === 1) {
       const isTop   = zones[0] === 'rim';
-      const already = (isTop ? design.tiers[0]?.topPiping : design.tiers[0]?.bottomPiping)?.id === el.id;
+      const already = (isTop ? design.tiers[0]?.topPipings : design.tiers[0]?.bottomPipings)?.some(p => p.id === el.id);
       if (!already) {
         const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
         const piping = {
@@ -1132,8 +1132,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   // The applied piping for a ring, or null when it isn't on the cake yet.
   function ringPiping(tierIndex, zone) {
-    const p = zone === 'rim' ? design.tiers[tierIndex]?.topPiping : design.tiers[tierIndex]?.bottomPiping;
-    return p?.id === pipingPopupEl?.id ? p : null;
+    const arr = zone === 'rim' ? design.tiers[tierIndex]?.topPipings : design.tiers[tierIndex]?.bottomPipings;
+    return arr?.find(p => p.id === pipingPopupEl?.id) ?? null;
   }
 
   // A fresh piping object for the open element in a zone, at config defaults.
@@ -1174,8 +1174,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function handlePipingBoardYOffsetChange(tierIndex, v) {
-    const cur = design.tiers[tierIndex]?.bottomPiping;
-    if (!cur || cur.id !== pipingPopupEl?.id) return;
+    const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.id === pipingPopupEl?.id);
+    if (!cur) return;
     // Cap the rise so the cream top stops at the cake top. The shell sits at
     // yBase + baseYOffset + userYOffset and, after size-normalisation, its scaled
     // height is radius * 0.24 * size (see BottomPipingRing).
@@ -1189,8 +1189,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function handlePipingBoardFlipChange(tierIndex) {
-    const cur = design.tiers[tierIndex]?.bottomPiping;
-    if (!cur || cur.id !== pipingPopupEl?.id) return;
+    const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.id === pipingPopupEl?.id);
+    if (!cur) return;
     const defaultFlip = pipingPopupEl?.placement_config?.bottom_flip ?? true;
     const current = cur.userFlipBottom != null ? cur.userFlipBottom : defaultFlip;
     setBottomPiping(tierIndex, { ...cur, userFlipBottom: !current });
@@ -1280,7 +1280,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (selectedEl.type === 'tier') return design.tiers[selectedEl.index]?.color ?? '#f5b8c8';
     if (selectedEl.type === 'piping') {
       const t = design.tiers[selectedEl.tierIndex];
-      return (selectedEl.zone === 'top' ? t?.topPiping?.color : t?.bottomPiping?.color) ?? '#f5e6c8';
+      const arr = selectedEl.zone === 'top' ? t?.topPipings : t?.bottomPipings;
+      return (arr?.find(p => p.layerId === selectedEl.layerId) ?? arr?.[0])?.color ?? '#f5e6c8';
     }
     if (selectedEl.type === 'text') return selectedText?.color ?? '#ffffff';
     if (selectedEl.type === 'sticker') return design.stickers.find(s => s.id === selectedEl.id)?.color ?? '#ffffff';
@@ -1292,8 +1293,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (selectedEl.type === 'tier') { setTierColor(selectedEl.index, c); return; }
     if (selectedEl.type === 'piping') {
       const { tierIndex, zone } = selectedEl;
-      if (zone === 'top') { const p = design.tiers[tierIndex]?.topPiping; if (p) setTopPiping(tierIndex, { ...p, color: c }); }
-      else { const p = design.tiers[tierIndex]?.bottomPiping; if (p) setBottomPiping(tierIndex, { ...p, color: c }); }
+      const z = zone === 'top' ? 'rim' : 'board';
+      if (selectedEl.layerId != null) updatePipingLayer(tierIndex, z, selectedEl.layerId, p => ({ ...p, color: c }));
       return;
     }
     if (selectedEl.type === 'text') updateText(selectedEl.id, { color: c });
@@ -1343,15 +1344,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setColorOpen(false);
   }
 
-  function handleTopPipingSelect(tierIndex) {
-    const piping = design.tiers[tierIndex]?.topPiping;
+  function handleTopPipingSelect(tierIndex, layerId) {
+    const arr = design.tiers[tierIndex]?.topPipings ?? [];
+    const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
     if (!piping) return;
     const el = pipingElementById[piping.id] ?? { id: piping.id, name: piping.name, image_url: piping.glbUrl, thumbnail_url: null };
     openPipingPopup(el);
   }
 
-  function handleBottomPipingSelect(tierIndex) {
-    const piping = design.tiers[tierIndex]?.bottomPiping;
+  function handleBottomPipingSelect(tierIndex, layerId) {
+    const arr = design.tiers[tierIndex]?.bottomPipings ?? [];
+    const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
     if (!piping) return;
     const el = pipingElementById[piping.id] ?? { id: piping.id, name: piping.name, image_url: piping.glbUrl, thumbnail_url: null };
     openPipingPopup(el);
@@ -1550,8 +1553,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       shape: orderShape,
       tiers: design.tiers.map(t => ({
         color:        t.color,
-        topPiping:    t.topPiping    ?? null,
-        bottomPiping: t.bottomPiping ?? null,
+        topPipings:    t.topPipings    ?? [],
+        bottomPipings: t.bottomPipings ?? [],
         decorations:  [],
         texts:        [],
         ...(t.radius != null && { radius: t.radius }),
@@ -1628,13 +1631,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       };
     };
     design.tiers.forEach((tier, i) => {
-      const top = tier.topPiping && placementById[tier.topPiping.id]?.top;
-      if (top && pipingPlacementChanged(tier.topPiping, top, true))
-        setTopPiping(i, mergePlacement(tier.topPiping, top));
-
-      const bottom = tier.bottomPiping && placementById[tier.bottomPiping.id]?.bottom;
-      if (bottom && pipingPlacementChanged(tier.bottomPiping, bottom, false))
-        setBottomPiping(i, mergePlacement(tier.bottomPiping, bottom));
+      (tier.topPipings ?? []).forEach(p => {
+        const top = placementById[p.id]?.top;
+        if (top && pipingPlacementChanged(p, top, true))
+          updatePipingLayer(i, 'rim', p.layerId, cur => mergePlacement(cur, top));
+      });
+      (tier.bottomPipings ?? []).forEach(p => {
+        const bottom = placementById[p.id]?.bottom;
+        if (bottom && pipingPlacementChanged(p, bottom, false))
+          updatePipingLayer(i, 'board', p.layerId, cur => mergePlacement(cur, bottom));
+      });
     });
   }, [creamPipingEls, pipingPatternEls]);
 
@@ -2055,7 +2061,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {visiblePipingEls.map(el => {
-                    const isActive = design.tiers.some(t => t.topPiping?.id === el.id || t.bottomPiping?.id === el.id);
+                    const isActive = design.tiers.some(t => (t.topPipings ?? []).some(p => p.id === el.id) || (t.bottomPipings ?? []).some(p => p.id === el.id));
                     return (
                       <div key={el.id} onClick={() => openPipingPopup(el)}
                         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
