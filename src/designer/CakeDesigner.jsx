@@ -724,7 +724,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, setTopPiping, setBottomPiping, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -740,7 +740,14 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [elemSearch,      setElemSearch]      = useState('');
   const [tmplSearch,      setTmplSearch]      = useState('');
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
-  const [pipingPopupEl,     setPipingPopupEl]     = useState(null);
+  // Accordion stack of opened piping elements. Each card edits one element (across
+  // its rings); multiple cards coexist so several piping styles stack on the cake.
+  // Keyed by element id; only one card is expanded at a time. pipingPopupEl mirrors
+  // the expanded card's element so the existing card-body + handlers work unchanged.
+  const [pipingCards,        setPipingCards]        = useState([]);
+  const [expandedPipingId,   setExpandedPipingId]   = useState(null);
+  // The element of the currently expanded card — drives the card body + edit handlers.
+  const pipingPopupEl = pipingCards.find(c => c.id === expandedPipingId) ?? null;
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -1097,12 +1104,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const opening = !elementsOpen;
     setElementsOpen(opening);
     setTemplatesOpen(false);
-    if (opening) setPipingPopupOpen(false);
+    // Note: do NOT close the piping stack here — picking another element should add a
+    // card to the existing stack, not wipe it.
     if (opening) await loadElementsIfNeeded();
   }
 
+  // Open (or focus) a card for this element in the accordion stack. Picking a new
+  // element appends a card and expands it, collapsing the others — without closing
+  // the stack or disturbing the other layers already on the cake.
   async function openPipingPopup(el) {
-    setPipingPopupEl(el);
     // If the element supports exactly one zone there's nothing to choose — add it to the
     // bottom tier by default. Multi-zone elements stay manual via each ring's toggle.
     const zones = (el.allowed_zones ?? []).filter(z => z === 'rim' || z === 'board');
@@ -1117,13 +1127,27 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           ...pipingPlacementFromConfig(el.placement_config, isTop),
           ...(altGlbUrl ? { altGlbUrl } : {}),
         };
-        (isTop ? setTopPiping : setBottomPiping)(0, piping);
+        addPipingLayer(0, zones[0], piping);
       }
     }
-    closeAllPopups();
+    setPipingCards(prev => prev.some(c => c.id === el.id) ? prev : [...prev, el]);
+    setExpandedPipingId(el.id);
+    setColorOpen(false);
     setPipingPopupOpen(true);
     setElementsOpen(false);
     setSelectedEl(null);
+  }
+
+  // Remove a whole card: delete all of this element's piping from every ring, then drop
+  // the card from the stack. If it was expanded, expand the previous card (if any).
+  function removePipingCard(elId) {
+    design.tiers.forEach((t, i) => {
+      (t.topPipings ?? []).forEach(p => { if (p.id === elId) removePipingLayer(i, 'rim', p.layerId); });
+      (t.bottomPipings ?? []).forEach(p => { if (p.id === elId) removePipingLayer(i, 'board', p.layerId); });
+    });
+    const remaining = pipingCards.filter(c => c.id !== elId);
+    setPipingCards(remaining);
+    if (expandedPipingId === elId) setExpandedPipingId(remaining[remaining.length - 1]?.id ?? null);
   }
 
   // ── Ring-scoped edits ──────────────────────────────────────────────────────
@@ -1150,13 +1174,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     return piping;
   }
 
-  // Mutate a ring, auto-applying it (at defaults) first if it isn't on the cake yet —
-  // so color / size / arrangement are live even before the ring is explicitly added.
+  // Mutate the current card's piping on a ring, auto-applying it (at defaults) first if
+  // it isn't on the cake yet — so color / size / arrangement are live even before the ring
+  // is explicitly added. Edits the matching layer in place (leaving other layers intact).
   function updateRing(tierIndex, zone, mutate) {
-    const setFn = zone === 'rim' ? setTopPiping : setBottomPiping;
-    const base = ringPiping(tierIndex, zone) ?? buildRingPiping(zone);
-    const next = mutate(base);
-    if (next) setFn(tierIndex, next);
+    const existing = ringPiping(tierIndex, zone);
+    if (existing) {
+      updatePipingLayer(tierIndex, zone, existing.layerId, mutate);
+    } else {
+      const next = mutate(buildRingPiping(zone));
+      if (next) addPipingLayer(tierIndex, zone, next);
+    }
   }
 
   function handlePipingColorChange(tierIndex, zone, c) {
@@ -1185,7 +1213,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const shellHeight = radius * 0.24 * size;
     const maxOffset   = height - baseYOffset - shellHeight;
     const clamped = Math.min(Math.max(0, v), Math.max(0, maxOffset));
-    setBottomPiping(tierIndex, { ...cur, userYOffset: clamped });
+    updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: clamped }));
   }
 
   function handlePipingBoardFlipChange(tierIndex) {
@@ -1193,7 +1221,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     if (!cur) return;
     const defaultFlip = pipingPopupEl?.placement_config?.bottom_flip ?? true;
     const current = cur.userFlipBottom != null ? cur.userFlipBottom : defaultFlip;
-    setBottomPiping(tierIndex, { ...cur, userFlipBottom: !current });
+    updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userFlipBottom: !current }));
   }
 
   function handlePipingArrangementChange(tierIndex, zone, mode) {
@@ -1238,10 +1266,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     });
   }
 
-  // Add (at config defaults) or remove a ring from the cake.
+  // Add (at config defaults) or remove the current card's piping on a ring. isOn = the
+  // ring currently has this element's layer (so the toggle removes it); else add it.
   function togglePipingZone(tierIndex, zone, isOn) {
-    const setFn = zone === 'rim' ? setTopPiping : setBottomPiping;
-    setFn(tierIndex, isOn ? null : buildRingPiping(zone));
+    if (isOn) {
+      const existing = ringPiping(tierIndex, zone);
+      if (existing) removePipingLayer(tierIndex, zone, existing.layerId);
+    } else {
+      addPipingLayer(tierIndex, zone, buildRingPiping(zone));
+    }
   }
 
   async function openTemplates() {
@@ -1304,8 +1337,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleDelete() {
     if (!selectedEl && selectedStickerIds.size === 0) return;
     if (selectedEl?.type === 'piping') {
-      if (selectedEl.zone === 'top') setTopPiping(selectedEl.tierIndex, null);
-      else setBottomPiping(selectedEl.tierIndex, null);
+      const z = selectedEl.zone === 'top' ? 'rim' : 'board';
+      if (selectedEl.layerId != null) removePipingLayer(selectedEl.tierIndex, z, selectedEl.layerId);
     } else if (selectedEl?.type === 'text') {
       removeText(selectedEl.id);
     } else if (selectedStickerIds.size > 0) {
@@ -1487,8 +1520,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       id: element.id, glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8',
       ...pipingPlacementFromConfig(element.placement_config, isTop),
     };
-    if (isTop) setTopPiping(tierIndex, piping);
-    else       setBottomPiping(tierIndex, piping);
+    addPipingLayer(tierIndex, isTop ? 'rim' : 'board', piping);
     setPipingTarget(null);
   }
 
@@ -2573,18 +2605,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           )}
 
           {/* ── Cream Piping popup ── */}
-          {pipingPopupOpen && pipingPopupEl && (
+          {pipingPopupOpen && pipingCards.length > 0 && (
             <div style={s.pipingPopup}>
-              {/* Header: thumbnail + style name + close (compact for the narrow strip) */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 7, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
-                  {pipingPopupEl.thumbnail_url && <img src={cfImg(pipingPopupEl.thumbnail_url, 28, 28, cfAssetsBase)} alt={pipingPopupEl.name} width={28} height={28} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                </div>
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif" }}>{pipingPopupEl.name}</span>
-                <button style={{ ...s.iconBtn, width: 24, height: 24, flexShrink: 0 }} onClick={() => setPipingPopupOpen(false)}>✕</button>
-              </div>
-
-              {(() => {
+              {/* Accordion stack: one collapsible card per added piping element. Picking a
+                  new element from the left appends a card here; the cake renders all of
+                  them stacked. Only the expanded card shows its rim/board controls. */}
+              {pipingCards.map((card) => {
+                const expanded = card.id === expandedPipingId;
+                return (
+                <div key={card.id} style={{ border: `1.5px solid ${expanded ? '#9b5268' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                  {/* Card header: thumbnail + element name + expand arrow + remove (✕) */}
+                  <div role="button"
+                    onClick={() => setExpandedPipingId(prev => prev === card.id ? null : card.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#fbf3f6' : '#fff' }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
+                      {card.thumbnail_url && <img src={cfImg(card.thumbnail_url, 26, 26, cfAssetsBase)} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                    </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
+                    <span style={{ fontSize: 9, color: '#9b5268', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+                    <button style={{ ...s.iconBtn, width: 22, height: 22, flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); removePipingCard(card.id); }}>✕</button>
+                  </div>
+                  {expanded && (
+                  <div style={{ padding: '0 9px 9px' }}>
+                  {(() => {
               const allowed = pipingPopupEl.allowed_zones?.length ? pipingPopupEl.allowed_zones : ['rim', 'board'];
               const multi   = design.tiers.length > 1;
               // One card per candidate ring, ordered to mirror the cake top → bottom: each
@@ -2799,6 +2842,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               })}
               </>);
               })()}
+                  </div>
+                  )}
+                </div>
+                );
+              })}
             </div>
           )}
         </div>
