@@ -1145,8 +1145,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         ...(altGlbUrl ? { altGlbUrl } : {}),
       };
       if (isTop) { const ro = nextRimRadialOffset(0); if (ro) piping.userRadialOffset = ro; }
-      else piping.userYOffset = nextBoardYOffset(0);
-      addPipingLayer(0, zones[0], piping);
+      else {
+        piping.yAdjustable = !!el.placement_config?.bottom_y_adjustable;
+        piping.userYOffset = piping.yAdjustable ? nextBoardYOffset(0) : 0;
+      }
+      addRingLayer(0, zones[0], piping);
     }
     setPipingCards(prev => [...prev, { ...el, cardId: newCardId }]);
     setExpandedPipingId(newCardId);
@@ -1251,13 +1254,40 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       color: '#f5e6c8', size: 1,
       ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
     };
-    // New side/board layers stack above any existing board piping; new rim layers nest
-    // concentrically inside any existing rim rings — both avoid overlapping what's there.
-    if (!isTop) piping.userYOffset = nextBoardYOffset(tierIndex);
-    else { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
+    // New rim layers nest concentrically inside any existing rim rings. On the board, a
+    // y-adjustable SIDE border rides up the wall and stacks above existing side layers; a
+    // non-adjustable PLATE ring is singular (one per board) and sits flush on the board (0).
+    if (!isTop) {
+      piping.yAdjustable = !!pipingPopupEl.placement_config?.bottom_y_adjustable;
+      piping.userYOffset = piping.yAdjustable ? nextBoardYOffset(tierIndex) : 0;
+    } else { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
     Object.assign(piping, overrides);
     if (altGlbUrl) piping.altGlbUrl = altGlbUrl;   // patterns resolve B from a referenced block
     return piping;
+  }
+
+  // The board holds at most ONE plate ring (a non-y-adjustable board border). Before adding a
+  // new plate ring, evict any existing one (from another card) so it's replaced rather than
+  // stacked — y-adjustable SIDE borders are exempt and keep stacking. Drops the evicted ring's
+  // card too when that was its only piping anywhere (same as unchecking its last ring).
+  function evictBoardPlateRing(tierIndex) {
+    (design.tiers[tierIndex]?.bottomPipings ?? [])
+      .filter(p => !p.yAdjustable)
+      .forEach(p => {
+        removePipingLayer(tierIndex, 'board', p.layerId);
+        const stillOn = design.tiers.some((t, i) =>
+          (t.topPipings ?? []).some(q => q.cardId === p.cardId) ||
+          (t.bottomPipings ?? []).some(q => q.cardId === p.cardId && !(i === tierIndex && q.layerId === p.layerId))
+        );
+        if (!stillOn) dropPipingCard(p.cardId);
+      });
+  }
+
+  // Add a piping layer, first enforcing the board's single-plate-ring rule for non-adjustable
+  // board borders (rim rings and y-adjustable side borders pass straight through and stack).
+  function addRingLayer(tierIndex, zone, piping) {
+    if (zone === 'board' && !piping.yAdjustable) evictBoardPlateRing(tierIndex);
+    addPipingLayer(tierIndex, zone, piping);
   }
 
   // Mutate the current card's piping on a ring, auto-applying it (at defaults) first if
@@ -1269,7 +1299,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       updatePipingLayer(tierIndex, zone, existing.layerId, mutate);
     } else {
       const next = mutate(buildRingPiping(zone, tierIndex));
-      if (next) addPipingLayer(tierIndex, zone, next);
+      if (next) addRingLayer(tierIndex, zone, next);
     }
   }
 
@@ -1412,7 +1442,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       );
       if (!stillOn) dropPipingCard(cardId);
     } else {
-      addPipingLayer(tierIndex, zone, buildRingPiping(zone, tierIndex));
+      addRingLayer(tierIndex, zone, buildRingPiping(zone, tierIndex));
     }
   }
 
@@ -2858,6 +2888,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const yAdj     = zone === 'board' && pipingPopupEl.placement_config?.bottom_y_adjustable;
                 const boardY   = p.userYOffset ?? 0;
                 const radial   = p.userRadialOffset ?? 0;
+                // "Radial" reads as a circle term; on a sheet (rect) cake the control insets the
+                // border perpendicularly from each straight edge, so label it "Inset" instead.
+                const isRectTier = canvasConfig.tiers[tierIndex]?.shape === 'rect';
                 return (
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #f5eaed', paddingTop: 10, paddingBottom: 4 }}>
                     {/* ── Full-width preview with the checkbox floating in its corner ── */}
@@ -2964,9 +2997,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         {/* Each control is its OWN full-width row (label left, stepper right) and
                             wraps internally, so nothing — including Reset — can clip off the edge. */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>
-                          {/* Radial distance — available for every ring. + out, − in. */}
+                          {/* Radial/inset distance — available for every ring. + out, − in. */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
-                            <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Radial</span>
+                            <span style={{ ...lbl, flex: 1, minWidth: 0 }}>{isRectTier ? 'Inset' : 'Radial'}</span>
                             <button
                               title="Move inward"
                               style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}

@@ -130,29 +130,39 @@ export function topContains(shape, x, z, k = 1) {
 // { pos, rotY, tq } entries the round ring produces. `off` pushes shells out (board) or
 // in (rim) along the local outward normal; rotY uses atan2(nz,nx) like the round ring.
 export function rectEdgeRing(shape, off, step, baseY) {
-  const cr = shape.pipingCornerR ?? shape.cornerR;
-  const sx = Math.max(0, shape.halfW - cr), sz = Math.max(0, shape.halfD - cr);
+  // `off` insets (off<0, rim pulled in) or outsets (off>0, board pushed out) the rounded
+  // rectangle along every edge's outward normal. We bake it into a SHRUNK/GROWN rectangle —
+  // pulling the corner radius and the straight runs in together — rather than just sliding
+  // each edge line while leaving its endpoints at the original corner tangents. The latter
+  // makes the straight rows overshoot past the (now-closer) perpendicular edges when pulled
+  // deep inward, piling shells up at the corners. Insetting keeps a clean, smaller rectangle.
+  const cr0 = shape.pipingCornerR ?? shape.cornerR;
+  const halfW = Math.max(0, shape.halfW + off);
+  const halfD = Math.max(0, shape.halfD + off);
+  const cr = Math.max(0, Math.min(cr0 + off, halfW, halfD));
+  const sx = Math.max(0, halfW - cr), sz = Math.max(0, halfD - cr);
   const out = [];
   const edge = (ax, az, bx, bz, nx, nz) => {
     const len = Math.hypot(bx - ax, bz - az);
+    if (len < 1e-4) return;                               // collapsed side (deep inset): skip
     const N = Math.max(1, Math.round(len / step));        // whole shells, spaced to fit
     const yaw = Math.atan2(nz, nx);
     for (let i = 0; i < N; i++) {
       const t = (i + 0.5) / N;
       const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
-      out.push({ pos: [x + off * nx, baseY, z + off * nz], rotY: yaw, tq: [0, 0, 0, 1] });
+      out.push({ pos: [x, baseY, z], rotY: yaw, tq: [0, 0, 0, 1] });
     }
   };
   const corner = (cx, cz, dx, dz) => {                    // one shell on the bisector
     if (cr < 0.02) return;                                // (near-)sharp corner: rows meet directly, no bridge
     const L = Math.hypot(dx, dz) || 1, nx = dx / L, nz = dz / L;
-    out.push({ pos: [cx + (cr + off) * nx, baseY, cz + (cr + off) * nz], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
+    out.push({ pos: [cx + cr * nx, baseY, cz + cr * nz], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
   };
   // Walk the four sides + corners, in perimeter order (front, FR, right, BR, back, BL, left, FL).
-  edge(-sx, shape.halfD,  sx, shape.halfD,  0,  1); corner( sx,  sz,  1,  1);
-  edge(shape.halfW,  sz, shape.halfW, -sz,  1,  0); corner( sx, -sz,  1, -1);
-  edge( sx, -shape.halfD, -sx, -shape.halfD, 0, -1); corner(-sx, -sz, -1, -1);
-  edge(-shape.halfW, -sz, -shape.halfW,  sz, -1, 0); corner(-sx,  sz, -1,  1);
+  edge(-sx, halfD,  sx, halfD,  0,  1); corner( sx,  sz,  1,  1);
+  edge(halfW,  sz, halfW, -sz,  1,  0); corner( sx, -sz,  1, -1);
+  edge( sx, -halfD, -sx, -halfD, 0, -1); corner(-sx, -sz, -1, -1);
+  edge(-halfW, -sz, -halfW,  sz, -1, 0); corner(-sx,  sz, -1,  1);
   return out;
 }
 

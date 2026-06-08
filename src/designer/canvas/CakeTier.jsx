@@ -456,7 +456,7 @@ const FROSTING_MAT = {
 // Only the 4 vertical corners are rounded (radius r); the top and bottom stay flat and the
 // footprint keeps its full width×depth — unlike drei RoundedBox, which rounds every edge
 // (pillowing the top and shrinking the faces). Spans y ∈ [0, height]. cr=0 → sharp box.
-function buildRoundedPrism(halfW, halfD, height, r) {
+export function buildRoundedPrism(halfW, halfD, height, r) {
   const cr = Math.max(0, Math.min(r, halfW, halfD));
   const s = new THREE.Shape();
   s.moveTo(-halfW + cr, -halfD);

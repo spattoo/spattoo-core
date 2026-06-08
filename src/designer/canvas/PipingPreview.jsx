@@ -1,7 +1,8 @@
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
-import { TopPipingRing, BottomPipingRing } from './CakeTier.jsx';
+import { TopPipingRing, BottomPipingRing, buildRoundedPrism } from './CakeTier.jsx';
+import { tierShape } from '../geometry/surface.js';
 import { TIER_RADII, BOTTOM_H, PIPING_FRONT_ANGLE } from '../constants.js';
 
 // Small live 3D preview of how a piping element renders on one cake zone (rim/board),
@@ -28,12 +29,26 @@ export default function PipingPreview({
   // Stack the real tier geometry when provided, so a 2-tier cake previews AS a 2-tier
   // cake with the ring on its actual tier (e.g. the bottom-tier rim sits at the seam the
   // upper tier rests on). Falls back to a single bottom tier when no geometry is passed.
-  const geo = (tiers?.length ? tiers : [{ radius: TIER_RADII[0], height: BOTTOM_H }])
-    .map(t => ({ radius: t?.radius ?? TIER_RADII[0], height: t?.height ?? BOTTOM_H }));
-  let acc = 0;
-  const placed = geo.map(t => { const baseY = acc; acc += t.height; return { ...t, baseY, topY: baseY + t.height }; });
-  const totalH = acc;
+  // Build the stacked tier geometry, keeping each tier's shape so a rectangular cake
+  // previews AS a rectangle (rounded-rect prism) instead of always falling back to a
+  // cylinder. `shp` is the same descriptor CakeTier feeds its piping rings, so placement
+  // along a rect perimeter matches the real cake. Round tiers leave `shp.kind === 'round'`.
+  const { placed, totalH } = useMemo(() => {
+    const geo = (tiers?.length ? tiers : [{ radius: TIER_RADII[0], height: BOTTOM_H }])
+      .map(t => {
+        const radius = t?.radius ?? TIER_RADII[0];
+        const height = t?.height ?? BOTTOM_H;
+        const shp = tierShape({ shape: t?.shape, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
+        const prismGeo = shp.kind === 'rect' ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null;
+        return { radius, height, shp, prismGeo };
+      });
+    let acc = 0;
+    const placed = geo.map(t => { const baseY = acc; acc += t.height; return { ...t, baseY, topY: baseY + t.height }; });
+    return { placed, totalH: acc };
+  }, [tiers]);
   const target = placed[Math.min(tierIndex, placed.length - 1)] ?? placed[0];
+  const targetShape = target.shp;
+  const bottomShape = placed[0].shp;
   const R      = target.radius;     // ring radius = its own tier's radius
   const R0     = placed[0].radius;  // bottom radius drives the board + framing
   const yBase  = target.baseY;
@@ -76,22 +91,39 @@ export default function PipingPreview({
       <directionalLight position={[-3, 3, -3]} intensity={0.4} />
       <Suspense fallback={null}>
         <Environment preset="apartment" />
-        {/* cake board / drum the cake sits on (top flush with the cake base at y=0) */}
-        <mesh position={[0, -0.04, 0]}>
-          <cylinderGeometry args={[R0 * 1.32, R0 * 1.32, 0.08, 56]} />
-          <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
-        </mesh>
-        {/* stacked tier bodies, each with a thin top cap */}
+        {/* cake board / drum the cake sits on (top flush with the cake base at y=0).
+            Matches the bottom tier's footprint: a rect board under a rect cake, else round. */}
+        {bottomShape.kind === 'rect' ? (
+          <mesh position={[0, -0.04, 0]}>
+            <boxGeometry args={[bottomShape.halfW * 2 * 1.28, 0.08, bottomShape.halfD * 2 * 1.28]} />
+            <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
+          </mesh>
+        ) : (
+          <mesh position={[0, -0.04, 0]}>
+            <cylinderGeometry args={[R0 * 1.32, R0 * 1.32, 0.08, 56]} />
+            <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
+          </mesh>
+        )}
+        {/* stacked tier bodies. Rect tiers use the rounded-rect prism (flat top, no cap —
+            a cap reads as a stray board on a rectangular cake); round tiers keep a thin cap. */}
         {placed.map((t, i) => (
           <group key={i}>
-            <mesh position={[0, t.baseY + t.height / 2, 0]}>
-              <cylinderGeometry args={[t.radius, t.radius, t.height, 48]} />
-              <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
-            </mesh>
-            <mesh position={[0, t.topY + 0.005, 0]}>
-              <cylinderGeometry args={[t.radius - 0.01, t.radius - 0.01, 0.01, 48]} />
-              <meshStandardMaterial color={PREVIEW_CAP_COLOR} roughness={0.7} />
-            </mesh>
+            {t.shp.kind === 'rect' ? (
+              <mesh geometry={t.prismGeo} position={[0, t.baseY, 0]}>
+                <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
+              </mesh>
+            ) : (
+              <>
+                <mesh position={[0, t.baseY + t.height / 2, 0]}>
+                  <cylinderGeometry args={[t.radius, t.radius, t.height, 48]} />
+                  <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
+                </mesh>
+                <mesh position={[0, t.topY + 0.005, 0]}>
+                  <cylinderGeometry args={[t.radius - 0.01, t.radius - 0.01, 0.01, 48]} />
+                  <meshStandardMaterial color={PREVIEW_CAP_COLOR} roughness={0.7} />
+                </mesh>
+              </>
+            )}
           </group>
         ))}
         {isTop ? (
@@ -101,7 +133,7 @@ export default function PipingPreview({
             extraRadialOffset={radial} yOffset={yOff}
             flipTop={placement.flipTop ?? false} spacing={spacing}
             swagCount={swag[0]} swagDepth={swag[1]} swagTilt={swag[2]}
-            arrangement={arrangement} instances={inst} {...alt}
+            arrangement={arrangement} instances={inst} shape={targetShape} {...alt}
           />
         ) : (
           <BottomPipingRing
@@ -110,7 +142,7 @@ export default function PipingPreview({
             extraRadialOffset={radial} yOffset={yOff}
             flipBottom={placement.flipBottom ?? true} spacing={spacing}
             swagCount={swag[0]} swagDepth={swag[1]} swagTilt={swag[2]}
-            arrangement={arrangement} instances={inst} {...alt}
+            arrangement={arrangement} instances={inst} shape={targetShape} {...alt}
           />
         )}
       </Suspense>
