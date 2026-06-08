@@ -6,6 +6,12 @@ export const TIER_RADII = [1.2, 0.9, 0.65, 0.45];
 export const BOTTOM_BASE = 0.1;
 export const BOTTOM_H    = 1.45;
 
+// Default vertical anchor for a bend (festoon) swag, as a FRACTION of the tier wall height —
+// where the festoon's high ends sit; the belly drapes below by the (scaled) bend depth. Using
+// a fraction instead of the absolute bottom_y_offset makes the swag land proportionally on any
+// tier size (no hard-coded height). The Height control nudges from here.
+export const BEND_ANCHOR_FRAC = 0.55;
+
 // ── Sheet (rectangular) cakes ─────────────────────────────────────────────────
 // Standard US bakery sheet/square sizes, full width × depth in inches, scaled to
 // world units so a half sheet's long side (~2.16) reads at roughly the round bottom

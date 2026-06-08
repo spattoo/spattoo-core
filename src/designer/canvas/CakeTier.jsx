@@ -2,7 +2,8 @@ import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 import { tierShape, pipingPerimeter, rectEdgeRing } from '../geometry/surface.js';
-import { PIPING_FRONT_ANGLE } from '../constants.js';
+import { buildFestoons } from '../geometry/festoon.js';
+import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents } from './pipingMetrics.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
@@ -171,6 +172,21 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
   });
 }
 
+// Render the bent-strip festoons (U-shaped swags). Each entry is a pre-bent BufferGeometry
+// from buildFestoons(); we just paint them in the ring's colour with the same cream material.
+function renderFestoons({ festoonGeos, color, selected }) {
+  return festoonGeos.map((g, i) => (
+    <mesh key={i} geometry={g} castShadow>
+      <meshPhysicalMaterial
+        color={color} roughness={0.85}
+        sheen={0.4} sheenRoughness={0.9} sheenColor={color}
+        emissive={selected ? '#6c47ff' : '#000000'}
+        emissiveIntensity={selected ? 0.15 : 0}
+      />
+    </mesh>
+  ));
+}
+
 // ── Top piping ring — GLB shells hugging the top edge ─────────────────────────
 // Mirrors BottomPipingRing's placement model so the rim is driven entirely by
 // placement_config (top_rotation / top_radial_offset / top_y_offset / top_flip),
@@ -195,6 +211,7 @@ function TopPipingRingImpl({
   altEnabled = false, altGlbUrl = null, altFlip = false, altRotation = [0, 0, 0],
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   shape = null,
+  bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -256,15 +273,33 @@ function TopPipingRingImpl({
     });
   }, [A, radius, topY, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
 
-  if (!A) return null;
+  // U-shaped (bend) elements: bend the whole strip into festoons draped from the rim edge,
+  // instead of repeating a discrete shell. Round cakes only (rect falls through to shells).
+  const festoonGeos = useMemo(() => {
+    if (!bend || !scene || shape?.kind === 'rect') return null;
+    // flip:false to match the calibrator's bend preview, which always bends the un-flipped
+    // strip (the flip toggle/bottom_flip applies to discrete shells, not festoons).
+    // The cross-section scales with radius automatically (uscale); scale the absolute drop
+    // (bendDepth, tuned at the standard tier radius) by the same ratio so the whole swag
+    // shrinks to fit a smaller tier instead of dropping a fixed amount.
+    return buildFestoons(scene, {
+      flip: false, festoons, depth: bendDepth * (radius / TIER_RADII[0]), tilt: bendTilt * DEG,
+      attachY: topY + yOffset, radius: radius + extraRadialOffset,
+      spread: bendRing ? 1.0 : 0.96, sizeFactor,
+    });
+  }, [bend, scene, shape, festoons, bendDepth, bendTilt, topY, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
+
+  if (!A && !festoonGeos) return null;
 
   return (
     <group onClick={onClick}>
-      {renderShells({
-        positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
-        dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-        color, selected,
-      })}
+      {festoonGeos
+        ? renderFestoons({ festoonGeos, color, selected })
+        : renderShells({
+            positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
+            dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
+            color, selected,
+          })}
     </group>
   );
 }
@@ -289,6 +324,7 @@ function BottomPipingRingImpl({
   altEnabled = false, altGlbUrl = null, altFlip = false, altRotation = [0, 0, 0],
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   shape = null,
+  bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -350,15 +386,33 @@ function BottomPipingRingImpl({
     });
   }, [A, radius, yBase, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
 
-  if (!A) return null;
+  // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
+  // base, instead of repeating a discrete shell. Round cakes only (rect falls through).
+  const festoonGeos = useMemo(() => {
+    if (!bend || !scene || shape?.kind === 'rect') return null;
+    // flip:false to match the calibrator's bend preview, which always bends the un-flipped
+    // strip (the flip toggle/bottom_flip applies to discrete shells, not festoons).
+    // The cross-section scales with radius automatically (uscale); scale the absolute drop
+    // (bendDepth, tuned at the standard tier radius) by the same ratio so the whole swag
+    // shrinks to fit a smaller tier instead of dropping a fixed amount.
+    return buildFestoons(scene, {
+      flip: false, festoons, depth: bendDepth * (radius / TIER_RADII[0]), tilt: bendTilt * DEG,
+      attachY: yBase + yOffset, radius: radius + extraRadialOffset,
+      spread: bendRing ? 1.0 : 0.96, sizeFactor,
+    });
+  }, [bend, scene, shape, festoons, bendDepth, bendTilt, yBase, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
+
+  if (!A && !festoonGeos) return null;
 
   return (
     <group onClick={onClick}>
-      {renderShells({
-        positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
-        dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-        color, selected,
-      })}
+      {festoonGeos
+        ? renderFestoons({ festoonGeos, color, selected })
+        : renderShells({
+            positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
+            dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
+            color, selected,
+          })}
     </group>
   );
 }
@@ -550,16 +604,23 @@ export default function CakeTier({
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
       pattern={p.pattern ?? 'AB'} shape={shp}
+      bend={p.bend ?? false} bendRing={p.bendRing ?? false}
+      festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
 
+  // Festoon anchor = a fraction of the wall + the offset committed when it was added (which
+  // already cleared the borders that existed then). It does NOT react to layers added later, so
+  // an existing swag never jumps when something new is placed — new layers stack around IT.
   const renderBottoms = () => bottoms.map((p, idx) => (
     <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={radius} glbPath={p.glbUrl} color={p.color}
       sizeFactor={p.size ?? 1}
       bottomRotation={p.bottomRotation ?? [0,0,0]}
       extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
-      yOffset={(p.yOffset ?? 0) + (p.userYOffset ?? 0)}
+      yOffset={p.bend
+        ? height * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0)   // festoon: wall anchor + committed nudge
+        : (p.yOffset ?? 0) + (p.userYOffset ?? 0)}
       flipBottom={p.userFlipBottom !== undefined ? p.userFlipBottom : (p.flipBottom ?? true)}
       spacing={p.spacing ?? 1}
       swagCount={p.swagCount ?? 0} swagDepth={p.swagDepth ?? 0} swagTilt={p.swagTilt ?? 0.5}
@@ -568,6 +629,8 @@ export default function CakeTier({
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
       pattern={p.pattern ?? 'AB'} shape={shp}
+      bend={p.bend ?? false} bendRing={p.bendRing ?? false}
+      festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));

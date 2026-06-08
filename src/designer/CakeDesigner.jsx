@@ -2,7 +2,7 @@ import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'rea
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
-import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE } from './constants';
+import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BEND_ANCHOR_FRAC } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import { SHELL_HEIGHT_FRAC, getShellExtents } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
@@ -71,6 +71,10 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
         altYOffset:      pc.bottom_alt_y_offset      ?? null,
         pattern:         pc.bottom_pattern           || 'AB',
       };
+  // U-shaped (bend/festoon) fields — present only on strip elements tuned with "Bend" on.
+  const bend = isTop
+    ? { bend: pc.top_bend ?? false, bendRing: pc.top_bend_ring ?? false, festoons: pc.top_festoons ?? null, bendDepth: pc.top_bend_depth ?? null, bendTilt: pc.top_bend_tilt ?? null }
+    : { bend: pc.bottom_bend ?? false, bendRing: pc.bottom_bend_ring ?? false, festoons: pc.bottom_festoons ?? null, bendDepth: pc.bottom_bend_depth ?? null, bendTilt: pc.bottom_bend_tilt ?? null };
   if (isTop) {
     return {
       flipTop:           pc.top_flip          ?? false,
@@ -83,6 +87,7 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
       swagTilt:          pc.top_swag_tilt       ?? null,
       arrangement,
       ...alt,
+      ...bend,
       ...seed,
     };
   }
@@ -97,6 +102,7 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
     swagTilt:          pc.bottom_swag_tilt     ?? null,
     arrangement,
     ...alt,
+    ...bend,
     ...seed,
   };
 }
@@ -1147,7 +1153,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       if (isTop) { const ro = nextRimRadialOffset(0); if (ro) piping.userRadialOffset = ro; }
       else {
         piping.yAdjustable = !!el.placement_config?.bottom_y_adjustable;
-        piping.userYOffset = piping.yAdjustable ? nextBoardYOffset(0) : 0;
+        // Festoon swags start at their dynamic wall anchor (0); other side borders stack.
+        piping.userYOffset = (piping.bend || !piping.yAdjustable) ? 0 : nextBoardYOffset(0);
       }
       addRingLayer(0, zones[0], piping);
     }
@@ -1183,9 +1190,18 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
   // Tier-local vertical band [lo, hi] (0 = base, height = top edge) a layer occupies.
   function pipingBand(p, tierIndex, zone) {
+    const tierHeight = canvasConfig.tiers[tierIndex]?.height ?? 0;
+    // A festoon swag spans from its belly (anchor − scaled depth) up to its ends (anchor + a
+    // little proud) — report that real band so new layers stack around the swag, not over it.
+    if (zone === 'board' && p.bend) {
+      const radius = canvasConfig.tiers[tierIndex]?.radius ?? TIER_RADII[0];
+      const depthScaled = (p.bendDepth ?? 0.4) * (radius / TIER_RADII[0]);
+      const anchor = tierHeight * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0);
+      return [anchor - depthScaled, anchor + radius * 0.1];
+    }
     const h  = pipingShellHeight(tierIndex, p.size ?? 1);
     const yo = (p.yOffset ?? 0) + (p.userYOffset ?? 0);
-    if (zone === 'rim') { const top = (canvasConfig.tiers[tierIndex]?.height ?? 0) + yo; return [top - h, top]; }
+    if (zone === 'rim') { const top = tierHeight + yo; return [top - h, top]; }
     return [yo, yo + h];
   }
   // EXACT tier-local band [lo, hi] of a side/board layer, from the shell extents the canvas
@@ -1259,7 +1275,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     // non-adjustable PLATE ring is singular (one per board) and sits flush on the board (0).
     if (!isTop) {
       piping.yAdjustable = !!pipingPopupEl.placement_config?.bottom_y_adjustable;
-      piping.userYOffset = piping.yAdjustable ? nextBoardYOffset(tierIndex) : 0;
+      // Festoon swags start at their dynamic wall anchor (userYOffset 0); other side borders
+      // stack above what's already on the board.
+      piping.userYOffset = (piping.bend || !piping.yAdjustable) ? 0 : nextBoardYOffset(tierIndex);
     } else { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
     Object.assign(piping, overrides);
     if (altGlbUrl) piping.altGlbUrl = altGlbUrl;   // patterns resolve B from a referenced block
@@ -1359,6 +1377,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     // (sideBand) so the test is precise for tilted shells and any cake size — no guessed heights.
     const baseYOffset = cur.yOffset ?? 0;
     const tierHeight  = canvasConfig.tiers[tierIndex]?.height ?? 0;
+    // Bend (festoon) elements aren't discrete shells, so the shell-band clamp below doesn't
+    // apply — their real vertical reach is anchor↑ to (anchor − scaled depth)↓. Clamp the
+    // anchor so the belly stays on the cake and the top stays under the rim, and allow the
+    // anchor to go BELOW the config height (negative userYOffset) so it can be lowered too.
+    if (cur.bend) {
+      // The renderer fits the festoon between the borders above/below (measured) so it never
+      // overlaps; here we just keep the manual nudge within the tier wall. Anchor base matches
+      // the renderer (a fraction of the wall); userYOffset is the delta from it.
+      const anchorBase = tierHeight * BEND_ANCHOR_FRAC;
+      const clampedYo  = Math.min(Math.max(0, anchorBase + v), tierHeight);
+      updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: +(clampedYo - anchorBase).toFixed(4) }));
+      return;
+    }
     const [curLo, curHi] = sideBand(cur, tierIndex);
     const curYo  = baseYOffset + (cur.userYOffset ?? 0);
     const topExt = curHi - curYo;   // how far the shell reaches ABOVE its anchor (measured)
@@ -2801,7 +2832,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const sameEl = pipingCards.filter(c => c.id === card.id);
                 const title  = sameEl.length > 1 ? `${card.name} ${sameEl.indexOf(card) + 1}` : card.name;
                 return (
-                <div key={card.cardId} style={{ border: `1.5px solid ${expanded ? '#9b5268' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                <div key={card.cardId} style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#9b5268' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                   {/* Card header: thumbnail + element name + expand/collapse arrow.
                       No close button — a layer leaves the cake by unchecking its rings. */}
                   <div role="button"
@@ -2816,7 +2847,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {expanded && (
                   <div style={{ padding: '0 9px 9px' }}>
                   {(() => {
-              const allowed = pipingPopupEl.allowed_zones?.length ? pipingPopupEl.allowed_zones : ['rim', 'board'];
+              // Only rim/board drive piping candidates. The admin's "Side" zone is the cake
+              // wall — the same place board piping rides (y-adjustable) — so treat it as 'board'
+              // here, otherwise a side-zoned piping element yields no candidates (blank card).
+              const allowed = (pipingPopupEl.allowed_zones?.length ? pipingPopupEl.allowed_zones : ['rim', 'board'])
+                .map(z => z === 'side' ? 'board' : z);
               const multi   = design.tiers.length > 1;
               // One card per candidate ring, ordered to mirror the cake top → bottom.
               // Each is independently editable; the checkbox beside its preview adds/removes
@@ -2873,6 +2908,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 if (!isTopZone && p.userFlipBottom != null) previewPlacement.flipBottom = p.userFlipBottom;
                 // Reflect the manual radial nudge in the popup preview so it matches the cake.
                 previewPlacement.extraRadialOffset = (previewPlacement.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0);
+                // Festoon swags anchor at a fraction of the tier wall (dynamic), not the absolute
+                // bottom_y_offset — mirror the cake renderer so the preview matches the placement.
+                if (!isTopZone && previewPlacement.bend) {
+                  const th = canvasConfig.tiers[tierIndex]?.height ?? BOTTOM_H;
+                  previewPlacement.yOffset = th * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0);
+                }
                 // A "piping pattern" element carries no image_url of its own — its A/B GLBs
                 // live in the cream_piping blocks it references. Resolve them the same way
                 // the real cake-apply path does (resolvePipingGlbs) so the preview matches.
@@ -3036,7 +3077,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                               <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Height</span>
                               <button
                                 style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, Math.max(0, +(boardY - 0.05).toFixed(2))); }}>−</button>
+                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY - 0.05).toFixed(2)); }}>−</button>
                               <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 32, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
                                 {boardY > 0 ? `+${boardY.toFixed(2)}` : boardY.toFixed(2)}
                               </span>
@@ -3534,7 +3575,9 @@ const s = {
   // Canvas
   canvasArea: {
     flex:1, position:'relative', minHeight:0,
-    background:'transparent',
+    // Match the 3D canvas's clear colour so the strip exposed when the piping popup shrinks
+    // the canvas (right:184) blends in seamlessly instead of showing a hard "cut" edge.
+    background:'#f4f4f5',
   },
   loading: {
     position:'absolute', inset:0, display:'flex',
@@ -3694,7 +3737,11 @@ const s = {
     // Anchored to the top (not vertically centred) so collapsing/expanding a card grows
     // the strip downward without shifting its position.
     right: 10, top: 12,
-    width: 164, maxHeight: 'calc(100% - 24px)',
+    // Cap to the SMALLER of the parent's height and the actual viewport, so the strip never
+    // extends below the screen (which would leave its bottom controls unscrollable). `vh` (not
+    // `dvh`) so an older webview doesn't reject the whole min() and drop the cap entirely. The
+    // 96px allows for the header above the canvas + the 12px top/bottom margins.
+    width: 164, maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
     background: 'rgba(255,255,255,0.95)',
     backdropFilter: 'blur(18px)',
     WebkitBackdropFilter: 'blur(18px)',

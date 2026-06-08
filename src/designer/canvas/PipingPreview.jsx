@@ -69,6 +69,14 @@ export default function PipingPreview({
     altYOffset:      placement.altYOffset ?? 0,
     pattern:         placement.pattern ?? 'AB',
   };
+  // U-shaped (bend/festoon) fields, forwarded so the popup preview matches the cake.
+  const bendProps = {
+    bend:      placement.bend ?? false,
+    bendRing:  placement.bendRing ?? false,
+    festoons:  placement.festoons ?? 6,
+    bendDepth: placement.bendDepth ?? 0.4,
+    bendTilt:  placement.bendTilt ?? 0,
+  };
   // Frame the whole stack and look down on it at ~27° so the ring reads as a ring (not
   // edge-on). camY/camZ ratio sets the tilt — 0.5 ≈ a 63° polar angle, within the clamp
   // below. A small azimuth (≈18°) gives a static 3/4 view; horizontal distance stays camZ
@@ -133,7 +141,7 @@ export default function PipingPreview({
             extraRadialOffset={radial} yOffset={yOff}
             flipTop={placement.flipTop ?? false} spacing={spacing}
             swagCount={swag[0]} swagDepth={swag[1]} swagTilt={swag[2]}
-            arrangement={arrangement} instances={inst} shape={targetShape} {...alt}
+            arrangement={arrangement} instances={inst} shape={targetShape} {...alt} {...bendProps}
           />
         ) : (
           <BottomPipingRing
@@ -142,7 +150,7 @@ export default function PipingPreview({
             extraRadialOffset={radial} yOffset={yOff}
             flipBottom={placement.flipBottom ?? true} spacing={spacing}
             swagCount={swag[0]} swagDepth={swag[1]} swagTilt={swag[2]}
-            arrangement={arrangement} instances={inst} shape={targetShape} {...alt}
+            arrangement={arrangement} instances={inst} shape={targetShape} {...alt} {...bendProps}
           />
         )}
       </Suspense>
