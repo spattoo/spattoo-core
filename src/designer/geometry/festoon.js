@@ -8,11 +8,30 @@ import * as THREE from 'three';
 
 // Bake the node transform into the geometry so we work in real (small) world units, not the
 // GLB's raw local coords (which can be ~70× scaled & offset). Optional 180° X flip.
+//
+// We build a FRESH, plain (non-interleaved, de-normalized) Float32 position buffer in WORLD
+// space rather than cloning the mesh geometry. meshopt-compressed / quantized GLBs deliver
+// INTERLEAVED + NORMALISED attributes: cloning them and mutating the clone can share or
+// corrupt the cached (useGLTF) InterleavedBuffer, and downstream per-vertex writes then
+// scramble the geometry. Reading every vertex through a Vector3 de-normalises it and applies
+// the world matrix, fully isolating us from how the GLB encodes its attributes — so a meshopt
+// ring wraps exactly like an uncompressed one. Index is preserved; normals are recomputed by
+// callers after they deform the positions.
 function bakeStrip(scene, flip) {
   scene.updateMatrixWorld(true);
-  let src = null;
-  scene.traverse(o => { if (o.isMesh && !src) { src = o.geometry.clone(); src.applyMatrix4(o.matrixWorld); } });
-  if (!src) return null;
+  let mesh = null;
+  scene.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
+  if (!mesh) return null;
+  const pos = mesh.geometry.attributes.position;
+  const arr = new Float32Array(pos.count * 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+    arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z;
+  }
+  const src = new THREE.BufferGeometry();
+  src.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  if (mesh.geometry.index) src.setIndex(mesh.geometry.index.clone());
   if (flip) src.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI));
   src.computeBoundingBox();
   return src;
@@ -72,4 +91,50 @@ export function buildFestoons(scene, { flip = false, festoons = 6, depth = 0.4, 
   const span = (2 * Math.PI / n) * spread;
   return Array.from({ length: n }, (_, k) =>
     bendOneFestoon(src, { th0: Math.PI / 2 + k * (2 * Math.PI / n), span, depth, attachY, radius, tilt, sizeFactor }));
+}
+
+// ── Wrap a pre-formed RING GLB around the tier wall (round OR rounded-rect) ────
+// Some piping GLBs are already a full closed ring (a base/side band), not a repeatable
+// shell — normalising + repeating them just shrinks the whole ring to a sliver. Instead we
+// re-route the ring's vertices onto the tier PERIMETER: a vertex at angle θ around the ring
+// maps to the same fraction f = θ/2π of the perimeter, displaced OUTWARD by its radial
+// profile (inner face on the wall) and lifted by its height. Because the perimeter abstracts
+// shape, a circle ring becomes a circular band on a round cake and follows the rounded-rect
+// on a sheet cake — auto-hugging the wall at any size. The seam closes naturally (f=0≡f=1 map
+// to the same perimeter point). `perim` is from surface.js; `anchorY` is the band's base up
+// the wall; `heightFrac` sets band height as a fraction of the tier radius (sizeFactor tunes);
+// `outset` nudges it proud of the wall to avoid z-fighting. Returns one BufferGeometry.
+export function buildWrapBand(scene, { perim, anchorY = 0, heightFrac = 0.33, sizeFactor = 1, radius = 1.2, outset = 0.01 }) {
+  const g = bakeStrip(scene, false);
+  if (!g || !perim) return null;
+  // Orient the ring flat: its hole axis (thinnest bbox axis) must be vertical (Y).
+  g.computeBoundingBox();
+  let size = new THREE.Vector3(); g.boundingBox.getSize(size);
+  const thin = (size.x <= size.y && size.x <= size.z) ? 'x' : (size.z <= size.y ? 'z' : 'y');
+  if (thin === 'x') g.applyMatrix4(new THREE.Matrix4().makeRotationZ(Math.PI / 2));
+  else if (thin === 'z') g.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+  // Centre the hole on the Y axis (X,Z → 0); measure base height + inner radius.
+  g.computeBoundingBox();
+  const c = new THREE.Vector3(); g.boundingBox.getCenter(c);
+  g.translate(-c.x, 0, -c.z);
+  g.computeBoundingBox();
+  const yMin = g.boundingBox.min.y;
+  size = new THREE.Vector3(); g.boundingBox.getSize(size);
+  const ringH = size.y || 1e-3;
+  const pos = g.attributes.position;
+  let rInner = Infinity;
+  for (let i = 0; i < pos.count; i++) { const rho = Math.hypot(pos.getX(i), pos.getZ(i)); if (rho < rInner) rInner = rho; }
+  const cs = (radius * heightFrac / ringH) * Math.max(0.05, sizeFactor);   // uniform cross-section scale
+  const L = perim.length, v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const f = (((Math.atan2(z, x) / (2 * Math.PI)) % 1) + 1) % 1;          // ring angle → perimeter fraction
+    const P = perim.at(f * L);                                             // {x,z,nx,nz} on the wall
+    const out = (Math.hypot(x, z) - rInner) * cs + outset;                 // inner face on wall, protrude out
+    v.set(P.x + P.nx * out, anchorY + (y - yMin) * cs, P.z + P.nz * out);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  pos.needsUpdate = true;
+  g.computeVertexNormals(); g.computeBoundingBox(); g.computeBoundingSphere();
+  return g;
 }

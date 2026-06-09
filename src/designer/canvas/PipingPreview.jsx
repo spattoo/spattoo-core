@@ -77,6 +77,7 @@ export default function PipingPreview({
     festoons:  placement.festoons ?? 6,
     bendDepth: placement.bendDepth ?? 0.4,
     bendTilt:  placement.bendTilt ?? 0,
+    wrap:      placement.wrap ?? false,
   };
   // Frame the whole stack and look down on it at ~27° so the ring reads as a ring (not
   // edge-on). camY/camZ ratio sets the tilt — 0.5 ≈ a 63° polar angle, within the clamp

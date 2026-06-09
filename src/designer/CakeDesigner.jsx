@@ -76,6 +76,8 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
   const bend = isTop
     ? { bend: pc.top_bend ?? false, bendRing: pc.top_bend_ring ?? false, festoons: pc.top_festoons ?? null, bendDepth: pc.top_bend_depth ?? null, bendTilt: pc.top_bend_tilt ?? null }
     : { bend: pc.bottom_bend ?? false, bendRing: pc.bottom_bend_ring ?? false, festoons: pc.bottom_festoons ?? null, bendDepth: pc.bottom_bend_depth ?? null, bendTilt: pc.bottom_bend_tilt ?? null };
+  // Wrap: a pre-formed ring GLB wrapped round the wall as one band (round or sheet). Flag-only.
+  const wrap = { wrap: (isTop ? pc.top_wrap : pc.bottom_wrap) ?? false };
   if (isTop) {
     return {
       flipTop:           pc.top_flip          ?? false,
@@ -90,6 +92,7 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
       arrangement,
       ...alt,
       ...bend,
+      ...wrap,
       ...seed,
     };
   }
@@ -106,6 +109,7 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
     arrangement,
     ...alt,
     ...bend,
+    ...wrap,
     ...seed,
   };
 }
@@ -3160,7 +3164,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         {/* Each control is its OWN full-width row (label left, stepper right) and
                             wraps internally, so nothing — including Reset — can clip off the edge. */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>
-                          {/* Radial/inset distance — available for every ring. + out, − in. */}
+                          {/* Radial/inset — every ring except a wrap band, which auto-hugs the wall. */}
+                          {!p.wrap && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
                             <span style={{ ...lbl, flex: 1, minWidth: 0 }}>{isRectTier ? 'Inset' : 'Radial'}</span>
                             <button
@@ -3180,6 +3185,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, 0); }}>Reset</button>
                             )}
                           </div>
+                          )}
                           {flipAdj && (() => {
                             const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
                             const active = p.userFlipBottom != null ? p.userFlipBottom : defaultFlip;

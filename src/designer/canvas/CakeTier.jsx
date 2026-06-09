@@ -1,8 +1,8 @@
 import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
-import { tierShape, pipingPerimeter, rectEdgeRing } from '../geometry/surface.js';
-import { buildFestoons } from '../geometry/festoon.js';
+import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
+import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
 
@@ -87,6 +87,11 @@ const PIPING_MAX_DEPTH_FRAC = 0.16;
 // OUTWARD past its default (inner face on the wall) before it's capped — keeps it attached to
 // the cake rather than drifting onto the board. Inward travel is unrestricted.
 const PIPING_RADIAL_PLAY = 0.4;
+
+// Default height of a WRAP band (a pre-formed ring wrapped round the wall), as a fraction of
+// the tier radius. The band's thickness follows from the ring's own cross-section aspect; the
+// size control scales both. Tuned so a size-1 band reads like a proper cream band on the wall.
+const PIPING_WRAP_HEIGHT_FRAC = 0.4;
 
 // Cap the user-scaled shell scale so its rendered radial depth (bbDepthZ × scale) never
 // exceeds PIPING_MAX_DEPTH_FRAC of the tier radius. The max() floor keeps a little growth
@@ -203,6 +208,25 @@ function renderFestoons({ festoonGeos, color, softness, selected }) {
   ));
 }
 
+// The tier WALL perimeter a wrap band follows: a circle for round, the rounded-rect for sheet.
+// `shape` is the tierShape descriptor (null → round). The band hugs this, lifted by yOffset.
+function wallPerimeter(shape, radius) {
+  return shape?.kind === 'rect' ? perimeter(shape) : circlePerimeter(radius);
+}
+
+// Render a single pre-formed RING GLB as ONE band wrapping the wall (no repetition).
+function renderWrap({ wrapGeo, color, softness, selected }) {
+  return (
+    <mesh geometry={wrapGeo} castShadow>
+      <meshPhysicalMaterial
+        {...creamMaterialProps(softness, color)}
+        emissive={selected ? color : '#000000'}
+        emissiveIntensity={selected ? 0.15 : 0}
+      />
+    </mesh>
+  );
+}
+
 // ── Top piping ring — GLB shells hugging the top edge ─────────────────────────
 // Mirrors BottomPipingRing's placement model so the rim is driven entirely by
 // placement_config (top_rotation / top_radial_offset / top_y_offset / top_flip),
@@ -229,6 +253,7 @@ function TopPipingRingImpl({
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   shape = null,
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
+  wrap = false,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -306,11 +331,22 @@ function TopPipingRingImpl({
     });
   }, [bend, scene, shape, festoons, bendDepth, bendTilt, topY, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
 
-  if (!A && !festoonGeos) return null;
+  // Wrap elements: a pre-formed ring re-routed onto the tier wall as ONE band (round or rect).
+  const wrapGeo = useMemo(() => {
+    if (!wrap || !scene) return null;
+    return buildWrapBand(scene, {
+      perim: wallPerimeter(shape, radius), anchorY: topY + yOffset,
+      heightFrac: PIPING_WRAP_HEIGHT_FRAC, sizeFactor, radius, outset: 0.01 + Math.max(0, extraRadialOffset),
+    });
+  }, [wrap, scene, shape, radius, topY, yOffset, sizeFactor, extraRadialOffset]);
+
+  if (!A && !festoonGeos && !wrapGeo) return null;
 
   return (
     <group onClick={onClick}>
-      {festoonGeos
+      {wrapGeo
+        ? renderWrap({ wrapGeo, color, softness, selected })
+        : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, selected })
         : renderShells({
             positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
@@ -343,6 +379,7 @@ function BottomPipingRingImpl({
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   shape = null,
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
+  wrap = false,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -436,11 +473,23 @@ function BottomPipingRingImpl({
     });
   }, [festoonGeos, yBase, yOffset, radius, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
 
-  if (!A && !festoonGeos) return null;
+  // Wrap elements: a pre-formed ring re-routed onto the tier wall as ONE band (round or rect),
+  // riding up the wall by yOffset. Hugs the wall whatever the cake size or shape.
+  const wrapGeo = useMemo(() => {
+    if (!wrap || !scene) return null;
+    return buildWrapBand(scene, {
+      perim: wallPerimeter(shape, radius), anchorY: yBase + yOffset,
+      heightFrac: PIPING_WRAP_HEIGHT_FRAC, sizeFactor, radius, outset: 0.01 + Math.max(0, extraRadialOffset),
+    });
+  }, [wrap, scene, shape, radius, yBase, yOffset, sizeFactor, extraRadialOffset]);
+
+  if (!A && !festoonGeos && !wrapGeo) return null;
 
   return (
     <group onClick={onClick}>
-      {festoonGeos
+      {wrapGeo
+        ? renderWrap({ wrapGeo, color, softness, selected })
+        : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, selected })
         : renderShells({
             positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
@@ -640,6 +689,7 @@ export default function CakeTier({
       pattern={p.pattern ?? 'AB'} shape={shp}
       bend={p.bend ?? false} bendRing={p.bendRing ?? false}
       festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
+      wrap={p.wrap ?? false}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
@@ -666,6 +716,7 @@ export default function CakeTier({
       pattern={p.pattern ?? 'AB'} shape={shp}
       bend={p.bend ?? false} bendRing={p.bendRing ?? false}
       festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
+      wrap={p.wrap ?? false}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
