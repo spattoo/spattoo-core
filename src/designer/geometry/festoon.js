@@ -104,7 +104,9 @@ export function buildFestoons(scene, { flip = false, festoons = 6, depth = 0.4, 
 // to the same perimeter point). `perim` is from surface.js; `anchorY` is the band's base up
 // the wall; `heightFrac` sets band height as a fraction of the tier radius (sizeFactor tunes);
 // `outset` nudges it proud of the wall to avoid z-fighting. Returns one BufferGeometry.
-export function buildWrapBand(scene, { perim, anchorY = 0, heightFrac = 0.33, sizeFactor = 1, radius = 1.2, outset = 0.01 }) {
+// `tilt` (radians) pitches the band's cross-section about the wall tangent: positive flares the
+// top edge OUTWARD (away from the cake), negative tucks it in — the ribbon "leans" round the wall.
+export function buildWrapBand(scene, { perim, anchorY = 0, heightFrac = 0.33, sizeFactor = 1, radius = 1.2, outset = 0.01, tilt = 0 }) {
   const g = bakeStrip(scene, false);
   if (!g || !perim) return null;
   // Orient the ring flat: its hole axis (thinnest bbox axis) must be vertical (Y).
@@ -126,12 +128,16 @@ export function buildWrapBand(scene, { perim, anchorY = 0, heightFrac = 0.33, si
   for (let i = 0; i < pos.count; i++) { const rho = Math.hypot(pos.getX(i), pos.getZ(i)); if (rho < rInner) rInner = rho; }
   const cs = (radius * heightFrac / ringH) * Math.max(0.05, sizeFactor);   // uniform cross-section scale
   const L = perim.length, v = new THREE.Vector3();
+  const cb = Math.cos(tilt), sb = Math.sin(tilt);                          // tilt about the wall tangent
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     const f = (((Math.atan2(z, x) / (2 * Math.PI)) % 1) + 1) % 1;          // ring angle → perimeter fraction
     const P = perim.at(f * L);                                             // {x,z,nx,nz} on the wall
-    const out = (Math.hypot(x, z) - rInner) * cs + outset;                 // inner face on wall, protrude out
-    v.set(P.x + P.nx * out, anchorY + (y - yMin) * cs, P.z + P.nz * out);
+    const rRel = (Math.hypot(x, z) - rInner) * cs;                         // radial dist from inner face
+    const h    = (y - yMin) * cs;                                          // height above the band base
+    const out  = rRel * cb + h * sb + outset;                             // tilt rotates the cross-section
+    const hT   = h * cb - rRel * sb;                                      //   about the inner-bottom edge
+    v.set(P.x + P.nx * out, anchorY + hT, P.z + P.nz * out);
     pos.setXYZ(i, v.x, v.y, v.z);
   }
   pos.needsUpdate = true;

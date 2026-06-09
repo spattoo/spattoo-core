@@ -7,6 +7,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
+import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
 import OrdersPanel from '../orders/OrdersPanel';
@@ -77,7 +78,11 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
     ? { bend: pc.top_bend ?? false, bendRing: pc.top_bend_ring ?? false, festoons: pc.top_festoons ?? null, bendDepth: pc.top_bend_depth ?? null, bendTilt: pc.top_bend_tilt ?? null }
     : { bend: pc.bottom_bend ?? false, bendRing: pc.bottom_bend_ring ?? false, festoons: pc.bottom_festoons ?? null, bendDepth: pc.bottom_bend_depth ?? null, bendTilt: pc.bottom_bend_tilt ?? null };
   // Wrap: a pre-formed ring GLB wrapped round the wall as one band (round or sheet). Flag-only.
-  const wrap = { wrap: (isTop ? pc.top_wrap : pc.bottom_wrap) ?? false };
+  const wrap = {
+    wrap:     (isTop ? pc.top_wrap      : pc.bottom_wrap)      ?? false,
+    wrapTilt: (isTop ? pc.top_wrap_tilt : pc.bottom_wrap_tilt) ?? null,
+    wrapSize: (isTop ? pc.top_wrap_size : pc.bottom_wrap_size) ?? null,
+  };
   if (isTop) {
     return {
       flipTop:           pc.top_flip          ?? false,
@@ -218,6 +223,19 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Compact labelled range row — used by the Cream Pen tool panel.
+function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#555', minWidth: 64 }}>{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{ flex: 1, accentColor: '#9b5f72' }} />
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#9b5f72', minWidth: 34, textAlign: 'right' }}>{fmt(value)}</span>
     </div>
   );
 }
@@ -562,6 +580,20 @@ function TextIcon({ size = 20 }) {
   );
 }
 
+function ToolsIcon({ size = 20 }) {
+  // Crossed wrench + screwdriver — the generic "tools" mark.
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      {/* wrench: handle bottom-left, open jaw top-right */}
+      <path strokeWidth="1.7" d="M13.2 7.1a1 1 0 0 0 0 1.3l1.4 1.4a1 1 0 0 0 1.3 0l3.3-3.3a5.2 5.2 0 0 1-6.9 6.9l-6 6a1.85 1.85 0 0 1-2.6-2.6l6-6a5.2 5.2 0 0 1 6.9-6.9l-3.3 3.3z" />
+      {/* screwdriver: handle top-left, tip bottom-right */}
+      <path strokeWidth="3.2" d="M3.2 3.2l2.4 2.4" />
+      <path strokeWidth="1.7" d="M5.6 5.6l9.6 9.6" />
+      <path strokeWidth="2.4" d="M16 16l3.5 3.5" />
+    </svg>
+  );
+}
+
 function NewCakeIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -772,8 +804,10 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, setWriting, clearWriting, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen]   = useState(false);
+  const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen'
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [toppersDb, setToppersDb] = useState([]);
@@ -994,6 +1028,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       texts:    design.texts,
       stickers: design.stickers,
       topper:   design.topper ?? null,
+      writing:  design.writing ?? null,
     };
 
     try {
@@ -1161,9 +1196,20 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const opening = !elementsOpen;
     setElementsOpen(opening);
     setTemplatesOpen(false);
+    setToolsOpen(false);
     // Note: do NOT close the piping stack here — picking another element should add a
     // card to the existing stack, not wipe it.
     if (opening) await loadElementsIfNeeded();
+  }
+
+  // Tools flyout (Cream Pen, …). Opening jumps straight to the cream-pen editor when a
+  // message already exists, otherwise shows the tool list.
+  function openTools() {
+    const opening = !toolsOpen;
+    setToolsOpen(opening);
+    setElementsOpen(false);
+    setTemplatesOpen(false);
+    if (opening) setActiveTool(design.writing?.text ? 'cream-pen' : null);
   }
 
   // Open (or focus) a card for this element in the accordion stack. Picking a new
@@ -2251,31 +2297,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} /> },
               { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} /> },
               { id: 'elements',   label: 'Elements',  icon: <ElementsIcon size={20} /> },
+              { id: 'tools',      label: 'Tools',     icon: <ToolsIcon size={20} /> },
               { id: 'text',       label: 'Text',      icon: <TextIcon size={20} /> },
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} /> },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} /> },
             ].map(({ id, label, icon }) => {
-              const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
+              const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
               const isNew  = id === 'new';
               return (
-                <SidebarTooltip key={id} label={label}>
-                  <button
-                    style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}
-                    onClick={() => {
-                      if (id === 'new')       handleNewCake();
-                      if (id === 'elements')  openElements();
-                      if (id === 'templates') openTemplates();
-                      if (id === 'dashboard') setDashboardOpen(true);
-                      if (id === 'orders')    setOrdersPanelOpen(true);
-                      if (id === 'customers') setCustomersPanelOpen(true);
-                    }}>
+                <button key={id} style={s.navItem}
+                  onClick={() => {
+                    if (id === 'new')       handleNewCake();
+                    if (id === 'elements')  openElements();
+                    if (id === 'tools')     openTools();
+                    if (id === 'templates') openTemplates();
+                    if (id === 'dashboard') setDashboardOpen(true);
+                    if (id === 'orders')    setOrdersPanelOpen(true);
+                    if (id === 'customers') setCustomersPanelOpen(true);
+                  }}>
+                  <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
                       ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                           <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                         </svg>
                       : icon}
-                  </button>
-                </SidebarTooltip>
+                  </span>
+                  <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>{label}</span>
+                </button>
               );
             })}
           </nav>
@@ -2447,6 +2495,85 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
 
+        {/* ── Tools flyout ── */}
+        {toolsOpen && (
+          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : { width: 268 }) }}>
+            {isMobile && (
+              <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
+                <div style={s.panelHandlePill} />
+              </div>
+            )}
+            <div style={s.flyoutHeader}>
+              <span style={s.flyoutTitle}>
+                {activeTool === 'cream-pen'
+                  ? <button style={{ ...s.iconBtn, marginRight: 6 }} onClick={() => setActiveTool(null)}>‹</button>
+                  : null}
+                {activeTool === 'cream-pen' ? 'Cream Pen' : 'Tools'}
+              </span>
+              <button style={s.iconBtn} onClick={() => setToolsOpen(false)}>✕</button>
+            </div>
+
+            <div style={s.flyoutScroll}>
+              {/* Tool list */}
+              {activeTool === null && (
+                <button
+                  onClick={() => { setActiveTool('cream-pen'); if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fbeef2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9b5f72', flexShrink: 0 }}>
+                    <ToolsIcon size={22} />
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Cream Pen</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Write a name on the cake top</div>
+                  </div>
+                </button>
+              )}
+
+              {/* Cream Pen editor */}
+              {activeTool === 'cream-pen' && (() => {
+                const w = design.writing ?? {};
+                return (
+                  <>
+                    <input
+                      value={w.text ?? ''}
+                      onChange={e => setWriting({ text: e.target.value })}
+                      placeholder="Type a message…"
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', fontSize: 14, fontWeight: 700, color: '#444',
+                        border: '1.5px solid #f0dce3', borderRadius: 8, outline: 'none', background: '#fdf9fa', fontFamily: "'Quicksand', sans-serif", flexShrink: 0 }}
+                    />
+
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {CREAM_FONTS.map(f => (
+                        <button key={f.key} onClick={() => setWriting({ font: f.key })}
+                          style={{ fontSize: 11, padding: '4px 9px', borderRadius: 7, cursor: 'pointer', fontWeight: 700,
+                            border: `1.5px solid ${w.font === f.key ? '#9b5f72' : '#f0dce3'}`,
+                            background: w.font === f.key ? '#9b5f72' : '#fff', color: w.font === f.key ? '#fff' : '#666' }}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Cream colour</div>
+                    <ColorWheel color={w.color ?? '#ffffff'} onChange={c => setWriting({ color: c })}
+                      cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? '#ffffff').toLowerCase())} width={208} />
+
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
+                    <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
+                    <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
+                    <PenSlider label="Rotate"    value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
+
+                    <button onClick={() => { clearWriting(); setActiveTool(null); }}
+                      style={{ marginTop: 10, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                      Remove writing
+                    </button>
+                  </>
+                );
+              })()}
+            </div>{/* end flyoutScroll */}
+          </div>
+        )}
+
         {/* ── Templates flyout ── */}
         {templatesOpen && (
           <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : {}) }}>
@@ -2591,6 +2718,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onTopperClick={handleTopperClick}
               topperSelected={selectedEl?.type === 'topper'}
               topperToolbar={null}
+              onWritingClick={() => { setToolsOpen(true); setActiveTool('cream-pen'); setElementsOpen(false); setTemplatesOpen(false); }}
+              writingSelected={toolsOpen && activeTool === 'cream-pen'}
               selectedStickerIds={selectedStickerIds}
               onStickerSelect={handleStickerSelect}
               onStickerLongPress={handleStickerLongPress}
@@ -3267,16 +3396,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'dashboard',  icon: <DashboardIcon size={20} /> },
             { id: 'templates',  icon: <TemplatesIcon size={20} /> },
             { id: 'elements',   icon: <ElementsIcon size={20} /> },
+            { id: 'tools',      icon: <ToolsIcon size={20} /> },
             { id: 'text',       icon: <TextIcon size={20} /> },
             { id: 'orders',     icon: <OrdersIcon size={20} /> },
             { id: 'customers',  icon: <CustomersIcon size={20} /> },
           ].map(({ id, icon }) => {
-            const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
+            const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
             return (
               <button key={id}
                 style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
                 onClick={() => {
                   if (id === 'elements')  openElements();
+                  if (id === 'tools')     openTools();
                   if (id === 'templates') openTemplates();
                   if (id === 'dashboard') setDashboardOpen(true);
                   if (id === 'orders')    setOrdersPanelOpen(true);
@@ -3569,9 +3700,22 @@ const s = {
     display: 'flex', flexDirection: 'column',
     alignItems: 'center', padding: '4px 0', gap: 2,
   },
+  // Stacked nav item: icon box on top, label below.
+  navItem: {
+    background: 'none', border: 'none', outline: 'none', cursor: 'pointer', padding: 0,
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+    width: 60, flexShrink: 0,
+    WebkitTapHighlightColor: 'transparent',
+    fontFamily: "'Quicksand',sans-serif",
+  },
+  navLabel: {
+    fontSize: 9, fontWeight: 700, lineHeight: 1,
+    color: 'rgba(255,255,255,0.5)', letterSpacing: 0.2,
+    transition: 'color 0.15s',
+  },
   sidebarBtn: {
     background: 'none', border: 'none', cursor: 'pointer',
-    width: 44, height: 44, borderRadius: 12,
+    width: 40, height: 40, borderRadius: 12,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     color: 'rgba(255,255,255,0.45)',
     transition: 'background 0.15s, color 0.15s',

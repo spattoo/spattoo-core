@@ -4,6 +4,7 @@ import { OrbitControls, Text3D, Text, Center, Html, Environment, useGLTF, useTex
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
+import CreamWriting from './CreamWriting.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
   STICKER_SIZE, GOLD_COLOR, SELECTION_COLOR,
@@ -1287,9 +1288,10 @@ function CakeScene({
   pipingToolbar,
   onTopperClick, topperSelected, topperToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
+  onWritingClick, writingSelected = false,
   tierDataRef,
 }) {
-  const { tiers, texts = [], stickers = [], topper = null } = config;
+  const { tiers, texts = [], stickers = [], topper = null, writing = null } = config;
   const orbitBlockSet = useRef(new Set());
   const { gl, camera, scene } = useThree();
 
@@ -1396,6 +1398,19 @@ function CakeScene({
             toolbar={topperToolbar}
           />
         </Suspense>
+      )}
+
+      {writing?.text?.trim() && (
+        <CreamWriting
+          writing={writing}
+          topY={stackY}
+          topRadius={tierData[tierData.length - 1].radius}
+          shape={tierData[tierData.length - 1].shape ?? 'round'}
+          width={tierData[tierData.length - 1].width}
+          depth={tierData[tierData.length - 1].depth}
+          onClick={onWritingClick}
+          selected={writingSelected}
+        />
       )}
 
       {pipingTarget && (

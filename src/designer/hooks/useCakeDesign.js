@@ -11,6 +11,14 @@ const DEFAULT_DESIGN = {
   texts: [],
   stickers: [],
   topper: null,
+  writing: null,   // one cream-pen message piped on the cake top (see CreamWriting)
+};
+
+// Cream-pen writing defaults — created the first time the user types a message.
+const DEFAULT_WRITING = {
+  text: '', font: 'ems_allure', color: '#ffffff',
+  thickness: 0.03, fit: 0.8, softness: 0.7,
+  yaw: 0, offsetX: 0, offsetZ: 0, lift: 0.02,
 };
 
 // Each piping carries a stable layerId so a tier can hold multiple stacked piping
@@ -313,6 +321,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // Cream-pen writing — a single message on the cake top. Merges changes onto the
+  // existing writing (seeding defaults on first edit); pass null/'' text to clear.
+  function setWriting(changes) {
+    setDesign(prev => ({ ...prev, writing: { ...DEFAULT_WRITING, ...prev.writing, ...changes } }));
+  }
+  function clearWriting() {
+    setDesign(prev => ({ ...prev, writing: null }));
+  }
+
   function resetDesign() {
     setDesign(DEFAULT_DESIGN);
   }
@@ -355,6 +372,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       texts:    templateDesign.texts    ?? [],
       stickers: templateDesign.stickers ?? [],
       topper: templateDesign.topper ? { ...templateDesign.topper, scale: templateDesign.topper.scale ?? 1 } : null,
+      writing: templateDesign.writing ?? null,
     });
   }
 
@@ -378,6 +396,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     texts:    design.texts,
     stickers: design.stickers,
     topper:   design.topper ?? null,
+    writing:  design.writing ?? null,
   }), [design]);
 
   return {
@@ -389,6 +408,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers,
     setTopper, setTopperScale,
+    setWriting, clearWriting,
     resetDesign,
     addStickerBatch,
     loadDesign,

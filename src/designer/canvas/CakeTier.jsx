@@ -253,7 +253,7 @@ function TopPipingRingImpl({
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   shape = null,
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
-  wrap = false,
+  wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -336,9 +336,10 @@ function TopPipingRingImpl({
     if (!wrap || !scene) return null;
     return buildWrapBand(scene, {
       perim: wallPerimeter(shape, radius), anchorY: topY + yOffset,
-      heightFrac: PIPING_WRAP_HEIGHT_FRAC, sizeFactor, radius, outset: 0.01 + Math.max(0, extraRadialOffset),
+      heightFrac: PIPING_WRAP_HEIGHT_FRAC, sizeFactor: sizeFactor * wrapSize, radius,
+      outset: 0.01 + extraRadialOffset, tilt: wrapTilt * DEG,
     });
-  }, [wrap, scene, shape, radius, topY, yOffset, sizeFactor, extraRadialOffset]);
+  }, [wrap, scene, shape, radius, topY, yOffset, sizeFactor, wrapSize, extraRadialOffset, wrapTilt]);
 
   if (!A && !festoonGeos && !wrapGeo) return null;
 
@@ -379,7 +380,7 @@ function BottomPipingRingImpl({
   altRadialOffset = 0, altYOffset = 0, pattern = 'AB',
   shape = null,
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
-  wrap = false,
+  wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
 }) {
   const { scene }          = useGLTF(glbPath);
@@ -479,9 +480,10 @@ function BottomPipingRingImpl({
     if (!wrap || !scene) return null;
     return buildWrapBand(scene, {
       perim: wallPerimeter(shape, radius), anchorY: yBase + yOffset,
-      heightFrac: PIPING_WRAP_HEIGHT_FRAC, sizeFactor, radius, outset: 0.01 + Math.max(0, extraRadialOffset),
+      heightFrac: PIPING_WRAP_HEIGHT_FRAC, sizeFactor: sizeFactor * wrapSize, radius,
+      outset: 0.01 + extraRadialOffset, tilt: wrapTilt * DEG,
     });
-  }, [wrap, scene, shape, radius, yBase, yOffset, sizeFactor, extraRadialOffset]);
+  }, [wrap, scene, shape, radius, yBase, yOffset, sizeFactor, wrapSize, extraRadialOffset, wrapTilt]);
 
   if (!A && !festoonGeos && !wrapGeo) return null;
 
@@ -689,7 +691,7 @@ export default function CakeTier({
       pattern={p.pattern ?? 'AB'} shape={shp}
       bend={p.bend ?? false} bendRing={p.bendRing ?? false}
       festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
-      wrap={p.wrap ?? false}
+      wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
@@ -716,7 +718,7 @@ export default function CakeTier({
       pattern={p.pattern ?? 'AB'} shape={shp}
       bend={p.bend ?? false} bendRing={p.bendRing ?? false}
       festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
-      wrap={p.wrap ?? false}
+      wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
