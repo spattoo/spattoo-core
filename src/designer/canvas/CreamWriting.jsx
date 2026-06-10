@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildCreamWriting } from '../geometry/creamText.js';
 import { topClamp } from '../geometry/surface.js';
 import { pointerRay, planeHit, cylinderHit } from '../utils/raycasting.js';
-import { creamMaterialProps, goldMaterialProps, GOLD_FINISH_COLOR, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
+import { creamMaterialProps, goldMaterialProps, silverMaterialProps, metallicCreamProps, GOLD_FINISH_COLOR, SILVER_FINISH_COLOR, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
 
 const DEG = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -50,18 +50,21 @@ export default function CreamWriting({
     const text = writing.uppercase ? writing.text.toUpperCase() : writing.text;
     return buildCreamWriting({
       text, font: writing.font, thickness, maxW, maxH,
-      lineGap: writing.lineSpacing ?? 1.4, curve: writing.curve ?? 0, wrapRadius,
+      lineGap: writing.lineSpacing ?? 1.4, letterSpacing: writing.letterSpacing ?? 0,
+      curve: writing.curve ?? 0, wrapRadius,
     });
-  }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.curve, wrapRadius]);
+  }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.letterSpacing, writing?.curve, wrapRadius]);
 
   const pressedRef = useRef(false);
   if (!geo) return null;
 
-  const isGold = writing.finish === 'gold';
+  const isGold       = writing.finish === 'gold';
+  const isSilver     = writing.finish === 'silver';
   const color = writing.color ?? '#ffffff';
-  // Gold uses the picked colour as a metallic tint (rose-gold, etc.); a still-default
-  // white falls back to the warm gold tone so "Gold" reads as gold out of the box.
-  const goldTint = (!writing.color || color.toLowerCase() === '#ffffff') ? GOLD_FINISH_COLOR : color;
+  // Metallic cream: a shiny, shimmery version of the picked cream colour (only when
+  // on the plain "Colour" finish — gold/silver are their own metals).
+  const isMetalCream = !isGold && !isSilver && !!writing.metallic;
+  const isMetal      = isGold || isSilver || isMetalCream;
   const lift  = writing.lift ?? 0.02;
   const yaw   = (writing.yaw ?? 0) * DEG;
 
@@ -119,13 +122,24 @@ export default function CreamWriting({
     canvas.addEventListener('pointerup', up);
   };
 
-  // Emissive: cream lights up purple only when selected; gold carries a constant warm
-  // glow (so it reads as gold without a strong env map) and brightens a touch when selected.
-  const emissive = isGold ? '#3a2a05' : (selected ? '#6c47ff' : '#000000');
-  const emissiveIntensity = isGold ? (selected ? 0.6 : 0.4) : (selected ? 0.35 : 0);
+  // Emissive: cream lights up purple only when selected; metal finishes carry a constant
+  // glow (so they read as metal without a strong env map) and brighten a touch when selected.
+  // Selection highlight glows in the writing's OWN colour (never a fixed purple) — a
+  // tinted emissive would shift saturated hues (green→teal, red→pink), so the picked
+  // hex always renders true whether selected or not. (Same fix as the cream piping.)
+  const emissive = isGold ? '#3a2a05' : isSilver ? '#23272d'
+    : isMetalCream ? color
+    : (selected ? color : '#000000');
+  const emissiveIntensity = isGold || isSilver ? (selected ? 0.6 : 0.4)
+    : isMetalCream ? (selected ? 0.22 : 0.12)   // a faint self-lit shimmer in its own colour
+    : (selected ? 0.15 : 0);
+  const metalProps = isGold ? goldMaterialProps(GOLD_FINISH_COLOR)
+    : isSilver ? silverMaterialProps(SILVER_FINISH_COLOR)
+    : isMetalCream ? metallicCreamProps(color)
+    : null;
   const material = (
     <meshPhysicalMaterial
-      {...(isGold ? goldMaterialProps(goldTint) : creamMaterialProps(writing.softness ?? PIPING_SOFTNESS_DEFAULT, color))}
+      {...(metalProps ?? creamMaterialProps(writing.softness ?? PIPING_SOFTNESS_DEFAULT, color))}
       emissive={emissive}
       emissiveIntensity={emissiveIntensity}
     />

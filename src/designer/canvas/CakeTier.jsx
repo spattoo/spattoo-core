@@ -96,6 +96,40 @@ export function goldMaterialProps(color = GOLD_FINISH_COLOR) {
   };
 }
 
+// ── Metallic cream finish ─────────────────────────────────────────────────────
+// A shiny, pearlescent take on a chosen cream colour — half-metal with a clearcoat
+// and a bright sheen so it shimmers like glossy buttercream/lustre dust rather than
+// reading as raw metal. Keeps the picked colour as its tint.
+export function metallicCreamProps(color) {
+  return {
+    color,
+    metalness:          0.55,
+    roughness:          0.18,   // glossy, but softer than the gold/silver metals
+    clearcoat:          1.0,
+    clearcoatRoughness: 0.08,
+    reflectivity:       1.0,
+    sheen:              0.6,
+    sheenColor:         '#ffffff',
+    sheenRoughness:     0.55,
+  };
+}
+
+// ── Acrylic silver finish ─────────────────────────────────────────────────────
+// Same lacquered-metal treatment as gold, in a cool silver. The neutral albedo
+// reads as silver even without a strong env map; emissive is handled by the caller.
+export const SILVER_FINISH_COLOR = '#cdd2d8';
+export function silverMaterialProps(color = SILVER_FINISH_COLOR) {
+  return {
+    color,
+    metalness:          0.9,
+    roughness:          0.22,
+    clearcoat:          1.0,
+    clearcoatRoughness: 0.06,
+    reflectivity:       1.0,
+    sheen:              0,
+  };
+}
+
 // Cream piping must hug the cake, not float off it. The shell's radial depth (how far it
 // reaches off the wall) is limited dynamically to a fraction of the tier radius — so a
 // smaller tier gets a tighter limit. Past the limit, raising the size slider no longer

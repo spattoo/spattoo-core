@@ -228,6 +228,33 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
   );
 }
 
+// Texts colour picker — the wheel plus a "Metallic" toggle that turns the chosen
+// cream colour into a shiny, shimmery metallic finish. Used both inline (mobile) and
+// in the desktop left-side flyout.
+function WritingColourPicker({ writing, design, setWriting, width = 208 }) {
+  const w = writing ?? {};
+  const metallic = !!w.metallic;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <ColorWheel color={w.color ?? '#ffffff'} onChange={c => setWriting({ color: c })}
+        cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? '#ffffff').toLowerCase())} width={width} />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', width, justifyContent: 'center' }}>
+        <button type="button" role="switch" aria-checked={metallic}
+          onClick={() => setWriting({ metallic: !metallic })}
+          style={{ width: 38, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0, position: 'relative',
+            background: metallic ? '#caa12f' : '#e3d4da', transition: 'background .15s' }}>
+          <span style={{ position: 'absolute', top: 2, left: metallic ? 18 : 2, width: 18, height: 18, borderRadius: '50%',
+            background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+        </button>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: metallic ? '#7a5a12' : '#666' }}>
+          <span style={{ width: 14, height: 14, borderRadius: '50%', background: 'linear-gradient(135deg,#fff 0%,#d9c47a 45%,#a8842a 100%)', border: '1px solid #c9b88a' }} />
+          Metallic
+        </span>
+      </label>
+    </div>
+  );
+}
+
 // Compact labelled range row — used by the Cream Pen tool panel.
 function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
   return (
@@ -2552,7 +2579,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ── Cream Pen / Texts editor — a RIGHT-side popup (desktop) like the cream-piping
               popup, so the Decorations panel stays open on the left and the pen can be used
               alongside other cream elements. On mobile it stays a bottom sheet. ── */}
-        {toolsOpen && (
+        {toolsOpen && (<>
           <div style={{ ...s.flyout, ...(isMobile
             ? { ...s.flyoutMobile, height: mobilePanelHeight }
             : { left: 'auto', right: 10, top: 12, bottom: 'auto', width: 256, margin: 0, borderRadius: 16,
@@ -2651,44 +2678,45 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       ))}
                     </div>
 
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour &amp; finish</div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      {/* Colour wheel — tap to expand the full picker */}
-                      <button onClick={() => setWritingColorOpen(o => !o)} title="Pick a colour"
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 9,
-                          cursor: 'pointer', fontSize: 12, fontWeight: 800, color: writingColorOpen ? '#9b5f72' : '#777',
-                          background: '#fff', border: `2px solid ${writingColorOpen ? '#9b5f72' : '#f0dce3'}` }}>
-                        <span style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, background: w.color ?? '#ffffff',
-                          border: '1.5px solid #d9c4cc', boxShadow: 'inset 0 0 0 2px #fff, 0 0 0 1.5px #d9c4cc' }} />
-                        Colour
-                      </button>
-                      {/* Cream / Gold finish */}
-                      {[{ k: 'cream', label: 'Cream' }, { k: 'gold', label: 'Gold' }].map(f => {
-                        const on = (w.finish ?? 'cream') === f.k;
-                        const gold = f.k === 'gold';
-                        return (
-                          <button key={f.k} onClick={() => setWriting({ finish: f.k })}
-                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 9,
-                              cursor: 'pointer', fontSize: 12, fontWeight: 800, color: on ? (gold ? '#7a5a12' : '#9b5f72') : '#999',
-                              background: on ? (gold ? '#fbf2d6' : '#fbeef2') : '#fff', border: `2px solid ${on ? (gold ? '#caa12f' : '#9b5f72') : '#f0dce3'}` }}>
-                            <span style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
-                              background: gold ? 'linear-gradient(135deg,#f7e29a 0%,#caa12f 45%,#8a6b14 100%)' : '#fff',
-                              border: gold ? '1px solid #b8902a' : '1.5px solid #d9c4cc',
-                              boxShadow: gold ? 'inset 0 1px 1px rgba(255,255,255,0.7)' : 'none' }} />
-                            {f.label}
-                          </button>
-                        );
-                      })}
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
+                    <div style={{ display: 'flex', gap: 18, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>
+                      {[
+                        // Colour — a rainbow wheel that opens the full picker (cream finish, custom colour).
+                        { k: 'colour', label: 'Colour',
+                          ring: (w.finish ?? 'cream') === 'cream',
+                          swatch: 'conic-gradient(from 90deg,#ff5b5b,#ffd24d,#5bff8a,#4dd2ff,#9b6bff,#ff5bd2,#ff5b5b)',
+                          onClick: () => { setWriting({ finish: 'cream' }); setWritingColorOpen(o => !o); } },
+                        // Gold — direct metallic gold, no picker.
+                        { k: 'gold', label: 'Gold',
+                          ring: w.finish === 'gold',
+                          swatch: 'linear-gradient(135deg,#f7e29a 0%,#caa12f 45%,#8a6b14 100%)',
+                          onClick: () => { setWriting({ finish: 'gold' }); setWritingColorOpen(false); } },
+                        // Silver — direct metallic silver, no picker.
+                        { k: 'silver', label: 'Silver',
+                          ring: w.finish === 'silver',
+                          swatch: 'linear-gradient(135deg,#fbfcfd 0%,#c2c8cf 45%,#8b9097 100%)',
+                          onClick: () => { setWriting({ finish: 'silver' }); setWritingColorOpen(false); } },
+                      ].map(c => (
+                        <button key={c.k} onClick={c.onClick} title={c.label}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                          <span style={{ width: 40, height: 40, borderRadius: '50%', background: c.swatch,
+                            border: c.ring ? '3px solid #9b5f72' : '2px solid #e7d6dc',
+                            boxShadow: c.ring ? '0 0 0 2px #fff inset, 0 1px 3px rgba(0,0,0,0.18)' : '0 1px 2px rgba(0,0,0,0.12)' }} />
+                          <span style={{ fontSize: 11, fontWeight: 800, color: c.ring ? '#9b5f72' : '#999' }}>{c.label}</span>
+                        </button>
+                      ))}
                     </div>
 
-                    {writingColorOpen && (
-                      <ColorWheel color={w.color ?? '#ffffff'} onChange={c => setWriting({ color: c })}
-                        cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? '#ffffff').toLowerCase())} width={208} />
+                    {/* Mobile: picker drops in inline. Desktop: it flies out to the LEFT
+                        of this popup (rendered as a sibling below). */}
+                    {isMobile && writingColorOpen && (
+                      <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={208} />
                     )}
 
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
                     <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
                     <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
+                    <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
                     {surface !== 'side' && (
                       <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
                     )}
@@ -2723,7 +2751,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               })()}
             </div>{/* end flyoutScroll */}
           </div>
-        )}
+
+          {/* Desktop: colour picker flies out to the LEFT of the Texts popup. */}
+          {!isMobile && activeTool === 'cream-pen' && writingColorOpen && (
+            <div style={{ position: 'absolute', right: 276, top: 12, zIndex: 21,
+              width: 250, background: '#fff', borderRadius: 16, padding: '12px 12px 14px',
+              boxShadow: '-6px 0 24px rgba(0,0,0,0.13)', overflowY: 'auto',
+              maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
+              display: 'flex', flexDirection: 'column', gap: 10,
+              animation: 'spattooColourFlyout .22s cubic-bezier(.2,.8,.2,1)' }}>
+              <style>{`@keyframes spattooColourFlyout{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}`}</style>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1.5, textTransform: 'uppercase' }}>Colour</span>
+                <button style={s.iconBtn} onClick={() => setWritingColorOpen(false)}>✕</button>
+              </div>
+              <WritingColourPicker writing={design.writing ?? {}} design={design} setWriting={setWriting} width={224} />
+            </div>
+          )}
+        </>)}
 
         {/* ── Templates flyout ── */}
         {templatesOpen && (

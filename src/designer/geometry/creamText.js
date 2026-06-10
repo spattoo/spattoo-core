@@ -17,22 +17,26 @@ export const DEFAULT_CREAM_FONT = 'ems_allure';
 // (Vector3, z=0) in the font's own units (y-up). Lines split on '\n'; each line is centred
 // on x=0 and stacked top-to-bottom, `lineGap` em units apart. Missing lowercase falls back
 // to uppercase so every name renders.
-function strokesFromText(fontKey, text, lineGap = 1.4) {
+function strokesFromText(fontKey, text, lineGap = 1.4, letterSpacing = 0) {
   const font = creamFonts[fontKey] || creamFonts[DEFAULT_CREAM_FONT];
   if (!font || !text) return [];
   const lines = String(text).split('\n');
   const lineH = font.em * lineGap;
+  // Extra gap inserted after every character (in font units, scaled to the em) so the
+  // control reads the same across faces of different native sizes. 0 = native spacing.
+  const track = (letterSpacing || 0) * font.em;
   const out = [];
   lines.forEach((line, li) => {
     const lineStrokes = [];
     let penX = 0;
     for (const ch of line) {
-      if (ch === ' ') { penX += font.space; continue; }
+      if (ch === ' ') { penX += font.space + track; continue; }
       const g = font.glyphs[ch] || font.glyphs[ch.toUpperCase()] || font.glyphs[ch.toLowerCase()];
-      if (!g) { penX += font.space; continue; }
+      if (!g) { penX += font.space + track; continue; }
       for (const s of g.s) lineStrokes.push(s.map(([x, y]) => new THREE.Vector3(x + penX, y, 0)));
-      penX += g.a;
+      penX += g.a + track;
     }
+    if (line.length) penX -= track;   // no trailing gap, so the line stays centred
     // Centre this line on x=0, drop it to its row (line 0 sits highest).
     const halfW = penX / 2, yOff = -li * lineH;
     for (const s of lineStrokes) for (const p of s) { p.x -= halfW; p.y += yOff; }
@@ -142,8 +146,8 @@ export function wrapOnCylinder(geo, radius) {
   return geo;
 }
 
-export function buildCreamWriting({ text, font, thickness, maxW, maxH, lineGap, curve, wrapRadius }) {
-  const strokes = strokesFromText(font, text, lineGap);
+export function buildCreamWriting({ text, font, thickness, maxW, maxH, lineGap, letterSpacing, curve, wrapRadius }) {
+  const strokes = strokesFromText(font, text, lineGap, letterSpacing);
   warpArc(strokes, curve);
   fitStrokes(strokes, maxW, maxH);
   const geo = buildPipedFromStrokes(strokes, thickness);
