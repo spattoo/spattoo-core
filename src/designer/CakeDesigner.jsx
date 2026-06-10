@@ -8,8 +8,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
-import { NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
-import CreamPenCalibrator from './canvas/CreamPenCalibrator.jsx';
+import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
 import OrdersPanel from '../orders/OrdersPanel';
@@ -830,7 +829,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
-  const [penStyle, setPenStyle] = useState({ nozzle: DEFAULT_NOZZLE, color: '#ffffff', thickness: 0.03, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
+  const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: 0.03, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [toppersDb, setToppersDb] = useState([]);
@@ -1987,13 +1986,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const creamPipingEls    = otherElementsDb[creamPipingType?.id] ?? [];
   const pipingPatternEls  = otherElementsDb[pipingPatternType?.id] ?? [];
 
-  // Cream-pen GLB stamps: prefer elements typed `piping_stamp`; until those exist, fall back
-  // to any GLB-bearing elements (picks/toppers) so the stamp pen is testable now.
-  const pipingStamps = useMemo(() => {
-    const src = stampsDb.length ? stampsDb : [...picksDb, ...toppersDb];
-    return src.filter(e => e.image_url).map(e => ({ id: e.id, name: e.name, url: e.image_url, thumb: e.thumbnail_url || e.image_url }));
-  }, [stampsDb, picksDb, toppersDb]);
-
   // Resolve a building-block element id → its element (image_url already full from the API).
   const pipingBlockById = Object.fromEntries(creamPipingEls.map(e => [e.id, e]));
   // Any piping element the baker can pick (for re-opening from a 3D click).
@@ -2585,63 +2577,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.
                   </div>
 
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Nozzle</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {NOZZLES.map(n => {
-                      const on = penStyle.nozzle === n.key, r = 13, c = 15;
-                      const d = n.profile.map((p, i) => `${i ? 'L' : 'M'}${(c + p[0] * r).toFixed(1)} ${(c - p[1] * r).toFixed(1)}`).join(' ') + ' Z';
-                      return (
-                        <button key={n.key} onClick={() => setPenStyle(ps => ({ ...ps, nozzle: n.key, ...(n.thickness != null ? { thickness: n.thickness } : {}) }))} title={n.hint}
-                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 4px', borderRadius: 8,
-                            cursor: 'pointer', background: on ? '#fbeef2' : '#fff', border: `2px solid ${on ? '#9b5f72' : '#f0dce3'}`, minWidth: 52 }}>
-                          <svg width={30} height={30} viewBox="0 0 30 30">
-                            <circle cx={c} cy={c} r={r + 1.5} fill="none" stroke="#e8d5dc" strokeWidth="1.2" />
-                            <path d={d} fill={penStyle.color} stroke="#9b5f72" strokeWidth="1" strokeLinejoin="round" />
-                          </svg>
-                          <span style={{ fontSize: 9, fontWeight: 800, color: on ? '#9b5f72' : '#888' }}>{n.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {pipingStamps.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Stamp (3D piece)</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                        {[{ id: null, url: null, name: 'Nozzle', thumb: null }, ...pipingStamps].map(st => {
-                          const on = penStyle.stampId === st.id;
-                          return (
-                            <button key={st.id ?? 'none'} title={st.id ? st.name : 'Use the swept nozzle'}
-                              onClick={() => setPenStyle(ps => ({ ...ps, stampId: st.id, stampUrl: st.url }))}
-                              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 4px', borderRadius: 8,
-                                cursor: 'pointer', background: on ? '#fbeef2' : '#fff', border: `2px solid ${on ? '#9b5f72' : '#f0dce3'}`, minWidth: 52 }}>
-                              {st.thumb
-                                ? <img src={st.thumb} alt={st.name} width={30} height={30} style={{ objectFit: 'contain' }} />
-                                : <div style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>✎</div>}
-                              <span style={{ fontSize: 9, fontWeight: 800, color: on ? '#9b5f72' : '#888', maxWidth: 48, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{st.id ? st.name : 'Nozzle'}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>
-                    {penStyle.stampId ? 'Preview · tap = stamp, drag = row' : 'Preview · tap = heap, drag = rope'}
-                  </div>
-                  <CreamPenCalibrator nozzle={penStyle.nozzle} thickness={penStyle.thickness} softness={penStyle.softness}
-                    color={penStyle.color} heapHeight={penStyle.heapHeight} stampUrl={penStyle.stampUrl} spacing={penStyle.spacing} />
-
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Cream colour</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Cream colour</div>
                   <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
                     cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={208} />
 
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
                   <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
                   <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
-                  {penStyle.stampId
-                    ? <PenSlider label="Spacing" value={penStyle.spacing} min={0.5} max={2.0} step={0.05} onChange={v => setPenStyle(ps => ({ ...ps, spacing: v }))} fmt={v => `${v.toFixed(2)}×`} />
-                    : <PenSlider label="Heap height" value={penStyle.heapHeight} min={0.3} max={2.5} step={0.1} onChange={v => setPenStyle(ps => ({ ...ps, heapHeight: v }))} fmt={v => `${v.toFixed(1)}×`} />}
 
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
                     {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
