@@ -77,6 +77,25 @@ export function creamMaterialProps(softness, color) {
   };
 }
 
+// ── Acrylic gold finish ───────────────────────────────────────────────────────
+// A shiny, lacquered gold for writing/toppers — fully metallic with a clearcoat
+// layer on top so it reads as a glossy acrylic/resin gold rather than raw metal.
+export const GOLD_FINISH_COLOR = '#d4a824';
+export function goldMaterialProps(color = GOLD_FINISH_COLOR) {
+  return {
+    color,
+    // Slightly under full-metal so the gold albedo always reads as gold even
+    // without a strong environment map (full metalness mirrors the scene and
+    // can pick up the cake's pink). A warm emissive base keeps the glow gold.
+    metalness:          0.85,
+    roughness:          0.25,   // tight, bright highlights
+    clearcoat:          1.0,    // the acrylic/lacquer coat
+    clearcoatRoughness: 0.06,
+    reflectivity:       1.0,
+    sheen:              0,
+  };
+}
+
 // Cream piping must hug the cake, not float off it. The shell's radial depth (how far it
 // reaches off the wall) is limited dynamically to a fraction of the tier radius — so a
 // smaller tier gets a tighter limit. Past the limit, raising the size slider no longer

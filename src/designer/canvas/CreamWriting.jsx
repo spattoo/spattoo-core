@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildCreamWriting } from '../geometry/creamText.js';
 import { topClamp } from '../geometry/surface.js';
 import { pointerRay, planeHit, cylinderHit } from '../utils/raycasting.js';
-import { creamMaterialProps, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
+import { creamMaterialProps, goldMaterialProps, GOLD_FINISH_COLOR, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
 
 const DEG = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -47,16 +47,21 @@ export default function CreamWriting({
 
   const geo = useMemo(() => {
     if (!writing?.text?.trim()) return null;
+    const text = writing.uppercase ? writing.text.toUpperCase() : writing.text;
     return buildCreamWriting({
-      text: writing.text, font: writing.font, thickness, maxW, maxH,
+      text, font: writing.font, thickness, maxW, maxH,
       lineGap: writing.lineSpacing ?? 1.4, curve: writing.curve ?? 0, wrapRadius,
     });
-  }, [writing?.text, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.curve, wrapRadius]);
+  }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.curve, wrapRadius]);
 
   const pressedRef = useRef(false);
   if (!geo) return null;
 
+  const isGold = writing.finish === 'gold';
   const color = writing.color ?? '#ffffff';
+  // Gold uses the picked colour as a metallic tint (rose-gold, etc.); a still-default
+  // white falls back to the warm gold tone so "Gold" reads as gold out of the box.
+  const goldTint = (!writing.color || color.toLowerCase() === '#ffffff') ? GOLD_FINISH_COLOR : color;
   const lift  = writing.lift ?? 0.02;
   const yaw   = (writing.yaw ?? 0) * DEG;
 
@@ -114,11 +119,15 @@ export default function CreamWriting({
     canvas.addEventListener('pointerup', up);
   };
 
+  // Emissive: cream lights up purple only when selected; gold carries a constant warm
+  // glow (so it reads as gold without a strong env map) and brightens a touch when selected.
+  const emissive = isGold ? '#3a2a05' : (selected ? '#6c47ff' : '#000000');
+  const emissiveIntensity = isGold ? (selected ? 0.6 : 0.4) : (selected ? 0.35 : 0);
   const material = (
     <meshPhysicalMaterial
-      {...creamMaterialProps(writing.softness ?? PIPING_SOFTNESS_DEFAULT, color)}
-      emissive={selected ? '#6c47ff' : '#000000'}
-      emissiveIntensity={selected ? 0.35 : 0}
+      {...(isGold ? goldMaterialProps(goldTint) : creamMaterialProps(writing.softness ?? PIPING_SOFTNESS_DEFAULT, color))}
+      emissive={emissive}
+      emissiveIntensity={emissiveIntensity}
     />
   );
   const grabProps = {

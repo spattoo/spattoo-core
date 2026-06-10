@@ -830,6 +830,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
   const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: 0.03, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
+  const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [toppersDb, setToppersDb] = useState([]);
@@ -2325,7 +2326,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} /> },
               { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} /> },
               { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} /> },
-              { id: 'text',       label: 'Text',      icon: <TextIcon size={20} /> },
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} /> },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} /> },
             ].map(({ id, label, icon }) => {
@@ -2625,11 +2625,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       value={w.text ?? ''}
                       onChange={e => setWriting({ text: e.target.value })}
                       placeholder={'Type a message…\n(Enter for a new line)'}
-                      rows={2}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', fontSize: 14, fontWeight: 700, color: '#444',
-                        border: '1.5px solid #f0dce3', borderRadius: 8, outline: 'none', background: '#fdf9fa', fontFamily: "'Quicksand', sans-serif",
-                        flexShrink: 0, resize: 'vertical', lineHeight: 1.35 }}
+                      rows={4}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '12px 13px', fontSize: 17, fontWeight: 700, color: '#444',
+                        border: '1.5px solid #f0dce3', borderRadius: 10, outline: 'none', background: '#fdf9fa', fontFamily: "'Quicksand', sans-serif",
+                        flexShrink: 0, resize: 'vertical', lineHeight: 1.4, minHeight: 96,
+                        textTransform: w.uppercase ? 'uppercase' : 'none' }}
                     />
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
+                      <button type="button" role="switch" aria-checked={!!w.uppercase}
+                        onClick={() => setWriting({ uppercase: !w.uppercase })}
+                        style={{ width: 38, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0, position: 'relative',
+                          background: w.uppercase ? '#9b5f72' : '#e3d4da', transition: 'background .15s' }}>
+                        <span style={{ position: 'absolute', top: 2, left: w.uppercase ? 18 : 2, width: 18, height: 18, borderRadius: '50%',
+                          background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+                      </button>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#666' }}>CAPITAL LETTERS</span>
+                    </label>
 
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
@@ -2639,9 +2651,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       ))}
                     </div>
 
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Cream colour</div>
-                    <ColorWheel color={w.color ?? '#ffffff'} onChange={c => setWriting({ color: c })}
-                      cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? '#ffffff').toLowerCase())} width={208} />
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour &amp; finish</div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {/* Colour wheel — tap to expand the full picker */}
+                      <button onClick={() => setWritingColorOpen(o => !o)} title="Pick a colour"
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 9,
+                          cursor: 'pointer', fontSize: 12, fontWeight: 800, color: writingColorOpen ? '#9b5f72' : '#777',
+                          background: '#fff', border: `2px solid ${writingColorOpen ? '#9b5f72' : '#f0dce3'}` }}>
+                        <span style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, background: w.color ?? '#ffffff',
+                          border: '1.5px solid #d9c4cc', boxShadow: 'inset 0 0 0 2px #fff, 0 0 0 1.5px #d9c4cc' }} />
+                        Colour
+                      </button>
+                      {/* Cream / Gold finish */}
+                      {[{ k: 'cream', label: 'Cream' }, { k: 'gold', label: 'Gold' }].map(f => {
+                        const on = (w.finish ?? 'cream') === f.k;
+                        const gold = f.k === 'gold';
+                        return (
+                          <button key={f.k} onClick={() => setWriting({ finish: f.k })}
+                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 9,
+                              cursor: 'pointer', fontSize: 12, fontWeight: 800, color: on ? (gold ? '#7a5a12' : '#9b5f72') : '#999',
+                              background: on ? (gold ? '#fbf2d6' : '#fbeef2') : '#fff', border: `2px solid ${on ? (gold ? '#caa12f' : '#9b5f72') : '#f0dce3'}` }}>
+                            <span style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
+                              background: gold ? 'linear-gradient(135deg,#f7e29a 0%,#caa12f 45%,#8a6b14 100%)' : '#fff',
+                              border: gold ? '1px solid #b8902a' : '1.5px solid #d9c4cc',
+                              boxShadow: gold ? 'inset 0 1px 1px rgba(255,255,255,0.7)' : 'none' }} />
+                            {f.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {writingColorOpen && (
+                      <ColorWheel color={w.color ?? '#ffffff'} onChange={c => setWriting({ color: c })}
+                        cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? '#ffffff').toLowerCase())} width={208} />
+                    )}
 
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
                     <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
@@ -3508,7 +3551,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'dashboard',  icon: <DashboardIcon size={20} /> },
             { id: 'templates',  icon: <TemplatesIcon size={20} /> },
             { id: 'elements',   icon: <ElementsIcon size={20} /> },
-            { id: 'text',       icon: <TextIcon size={20} /> },
             { id: 'orders',     icon: <OrdersIcon size={20} /> },
             { id: 'customers',  icon: <CustomersIcon size={20} /> },
           ].map(({ id, icon }) => {
