@@ -1,9 +1,10 @@
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useRef, useMemo, useEffect, Suspense } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { buildPipingStroke } from '../geometry/creamPen.js';
+import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { buildRay } from '../utils/raycasting.js';
 import { creamMaterialProps } from './CakeTier.jsx';
+import StampStroke from './StampStroke.jsx';
 
 // ── Cream Pen (freehand piping) ──────────────────────────────────────────────
 // Renders the committed freehand strokes (design.piping) and, while drawMode is on,
@@ -21,8 +22,13 @@ import { creamMaterialProps } from './CakeTier.jsx';
 // handler reads that tag and disables rotate when you press on the cake (so you draw) and
 // leaves it on for empty space (so you rotate). The pen itself doesn't touch orbit.
 
-function StrokeMesh({ points, nozzle, color, thickness, softness }) {
-  const geo = useMemo(() => buildPipingStroke(points, nozzle, thickness), [points, nozzle, thickness]);
+function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, softness, heapHeight }) {
+  const geo = useMemo(
+    () => (kind === 'heap'
+      ? buildPipingHeap(point, normal, nozzle, thickness, heapHeight)
+      : buildPipingStroke(points, nozzle, thickness)),
+    [kind, points, point, normal, nozzle, thickness, heapHeight],
+  );
   if (!geo) return null;
   return (
     <mesh geometry={geo} castShadow>
@@ -43,7 +49,8 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
   const rc = useRef(new THREE.Raycaster());
 
   // Raycast a screen point against the catcher meshes; return the surface hit lifted along
-  // its normal by the rope radius (so the cream rests on the surface), or null if off-cake.
+  // its normal by the rope radius (so the cream rests on the surface) plus that normal (for
+  // star heaps, which extrude up it), or null if off-cake.
   const seatAt = (clientX, clientY) => {
     const ray = buildRay(clientX, clientY, gl.domElement, camera);
     rc.current.set(ray.origin, ray.direction);
@@ -53,16 +60,17 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
     const n = hit.face
       ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
       : new THREE.Vector3(0, 1, 0);
-    return hit.point.clone().addScaledVector(n, styleRef.current?.thickness ?? 0.03);
+    return { p: hit.point.clone().addScaledVector(n, styleRef.current?.thickness ?? 0.03), n };
   };
 
-  // R3F pointerdown on a catcher starts the stroke (and gives us the tier it began on).
+  // R3F pointerdown on a catcher starts the stroke (and gives us the tier + surface normal it
+  // began on — the normal is the heap's extrusion axis if this turns out to be a tap).
   const start = (e, tierIndex) => {
     e.stopPropagation();
     try { gl.domElement.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
-    activeRef.current = { tierIndex };
-    const p = seatAt(e.clientX, e.clientY);
-    setLive(p ? [p] : []);
+    const s = seatAt(e.clientX, e.clientY);
+    activeRef.current = { tierIndex, normal: s ? s.n : null };
+    setLive(s ? [s.p] : []);
   };
 
   // Raw-DOM move + commit. Coalesced events give every intermediate position, so fast
@@ -79,9 +87,10 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
       setLive(prev => {
         const next = prev.slice();
         for (const pe of evs) {
-          const p = seatAt(pe.clientX, pe.clientY);
-          if (!p) continue;
-          if (!next.length || p.distanceTo(next[next.length - 1]) >= minGap) next.push(p);
+          const s = seatAt(pe.clientX, pe.clientY);
+          if (!s) continue;
+          if (!activeRef.current.normal) activeRef.current.normal = s.n;  // capture normal if start missed
+          if (!next.length || s.p.distanceTo(next[next.length - 1]) >= minGap) next.push(s.p);
         }
         return next;
       });
@@ -89,15 +98,30 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
 
     const onUp = () => {
       if (!activeRef.current) return;
-      const { tierIndex } = activeRef.current;
+      const { tierIndex, normal } = activeRef.current;
       activeRef.current = null;
       setLive(pts => {
         if (pts.length) {
           const s = styleRef.current;
-          onAddStroke?.({
-            nozzle: s.nozzle, color: s.color, thickness: s.thickness, softness: s.softness, tierIndex,
-            points: pts.map(p => [+p.x.toFixed(4), +p.y.toFixed(4), +p.z.toFixed(4)]),
-          });
+          const round = p => [+p.x.toFixed(4), +p.y.toFixed(4), +p.z.toFixed(4)];
+          const nrm = normal ? [+normal.x.toFixed(4), +normal.y.toFixed(4), +normal.z.toFixed(4)] : null;
+          // Path length: a near-stationary press is a pipe-and-lift tap (one heap/stamp); an
+          // actual drag is a rope (swept) or a tiled row of stamps.
+          let len = 0;
+          for (let i = 1; i < pts.length; i++) len += pts[i].distanceTo(pts[i - 1]);
+          const isTap = len < (s.thickness ?? 0.03) * 1.2;
+          const base = { nozzle: s.nozzle, color: s.color, thickness: s.thickness, softness: s.softness, tierIndex };
+          if (s.stampId && s.stampUrl && (nrm || !isTap)) {
+            // GLB stamp mode: tap → one stamp, drag → a row of stamps along the path.
+            const seed = Math.floor(Math.random() * 1e6);
+            const stamp = { ...base, stampId: s.stampId, glbUrl: s.stampUrl, seed };
+            if (isTap) onAddStroke?.({ kind: 'stamp', ...stamp, point: round(pts[0]), normal: nrm });
+            else onAddStroke?.({ kind: 'stamprope', ...stamp, points: pts.map(round), normal: nrm || [0, 1, 0], spacing: s.spacing ?? 0.85 });
+          } else if (isTap && nrm) {
+            onAddStroke?.({ kind: 'heap', ...base, heapHeight: s.heapHeight, point: round(pts[0]), normal: nrm });
+          } else {
+            onAddStroke?.({ ...base, points: pts.map(round) });
+          }
         }
         return [];
       });
@@ -118,9 +142,13 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
 
   return (
     <>
-      {piping.map((s, i) => <StrokeMesh key={s.id ?? i} {...s} />)}
+      {piping.map((s, i) => ((s.kind === 'stamp' || s.kind === 'stamprope')
+        ? <Suspense key={s.id ?? i} fallback={null}><StampStroke stroke={s} /></Suspense>
+        : <StrokeMesh key={s.id ?? i} {...s} />))}
 
-      {drawMode && live.length > 0 && penStyle && (
+      {/* Live preview: swept rope/heap only. In stamp mode the stamps appear on release
+          (loading + tiling a GLB every pointermove would stutter the drag). */}
+      {drawMode && live.length > 0 && penStyle && !penStyle.stampId && (
         <StrokeMesh points={live} nozzle={penStyle.nozzle} color={penStyle.color}
           thickness={penStyle.thickness} softness={penStyle.softness} />
       )}
