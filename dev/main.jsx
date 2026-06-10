@@ -59,6 +59,12 @@ function createApiClient(supabaseClient) {
       authFetch(`/api/orders/${orderId}/design`, { method: 'PATCH', body: JSON.stringify(payload) }),
     fetchOrderAudit: (orderId) =>
       authFetch(`/api/orders/${orderId}/audit`),
+    // X-Ray: batch craft-guide lookup for the piping elements in an order's design.
+    fetchCraftGuides: (elementIds = []) =>
+      elementIds.length
+        ? authFetch(`/api/craft-guide?element_ids=${elementIds.map(encodeURIComponent).join(',')}`)
+        : Promise.resolve([]),
+    fetchNozzles: () => authFetch('/api/nozzles'),
     fetchCustomers: ({ includeInactive = false, from } = {}) => {
       const p = new URLSearchParams();
       if (includeInactive) p.set('include_inactive', 'true');

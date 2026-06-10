@@ -1,4 +1,40 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
+import XrayReport from './xray/XrayReport.jsx';
+
+function XrayGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+      <circle cx="11" cy="11" r="7" />
+      <line x1="16.5" y1="16.5" x2="21" y2="21" />
+    </svg>
+  );
+}
+
+// "X-Ray" launcher — a prominent on-brand pill that opens the full-screen report
+// (how to make the order's cake). Positioned by the parent via `style`.
+function XrayLauncher({ order, apiClient, primaryColor = '#1a1a1a', style }) {
+  const [open, setOpen] = useState(false);
+  if (!order?.design_snapshot) return null;
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="X-Ray — how to make this cake"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 7,
+          padding: '10px 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+          border: 'none', background: primaryColor, color: '#fff',
+          fontSize: 13, fontWeight: 800, letterSpacing: 0.2, whiteSpace: 'nowrap',
+          boxShadow: '0 3px 10px rgba(0,0,0,0.20)',
+          ...style,
+        }}
+      >
+        <XrayGlyph /> X-Ray report
+      </button>
+      {open && <XrayReport order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
@@ -341,6 +377,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               </div>
           }
         </div>
+        <XrayLauncher order={order} apiClient={apiClient} primaryColor={primaryColor} style={{ display: 'flex', width: '100%', justifyContent: 'center', marginBottom: 12 }} />
         <div style={{ marginBottom: 20 }}>{editBtn}</div>
         {editing
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} />
@@ -389,6 +426,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               </div>
           }
         </div>
+        <XrayLauncher order={order} apiClient={apiClient} primaryColor={primaryColor} style={{ display: 'flex', width: '100%', justifyContent: 'center' }} />
         {editBtn}
       </div>
 
