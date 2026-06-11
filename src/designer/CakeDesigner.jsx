@@ -1263,7 +1263,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setToolsOpen(opening);
     setElementsOpen(false);
     setTemplatesOpen(false);
-    if (opening) setActiveTool(design.writing?.text ? 'cream-pen' : null);
+    if (opening) { focusEditor('tools'); setActiveTool(design.writing?.text ? 'cream-pen' : null); }
   }
 
   // Open (or focus) a card for this element in the accordion stack. Picking a new
@@ -1274,7 +1274,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // nested rings. From click-to-edit (cardId given) it focuses the card owning that ring.
   async function openPipingPopup(el, { cardId } = {}) {
     const focusOnly = () => {
-      setColorOpen(false); setPipingPopupOpen(true); setElementsOpen(false); setSelectedEl(null);
+      focusEditor('piping'); setPipingPopupOpen(true); setElementsOpen(false);
     };
     if (cardId) {
       setPipingCards(prev => prev.some(c => c.cardId === cardId) ? prev : [...prev, { ...el, cardId }]);
@@ -1744,6 +1744,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setColorOpen(false);
   }
 
+  // One right-side editor active at a time. Opening any of the three editors —
+  // the decoration accordion, the piping stack, or the tools composer — collapses
+  // the other two, so a newly opened element is the sole expanded popup (the rule
+  // piping already followed, now common to all). Pass which editor is being opened.
+  function focusEditor(which) {
+    // Decoration and piping share ONE stack — opening one only collapses the OTHER
+    // group's expanded card (single expansion), it does not hide the stack. Tools and
+    // tier are separate editors that replace the stack entirely.
+    if (which !== 'decoration') { setSelectedEl(null); setSelectedStickerIds(new Set()); setMultiSelectMode(false); }
+    if (which !== 'piping')     setExpandedPipingId(null);
+    if (which !== 'tools')      setToolsOpen(false);
+    setColorOpen(false);
+  }
+
   // ── Selection handlers ────────────────────────────────────────────────────
   function clearAllSelections() {
     setSelectedEl(null);
@@ -1760,8 +1774,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleTextSelect(id) {
+    focusEditor('decoration');
     setSelectedEl({ type: 'text', id });
-    setColorOpen(false);
   }
 
   // Clicking a ring on the cake opens the card that owns it (matched by cardId). Layers from
@@ -1787,12 +1801,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function handleTopperClick() {
     if (!design.topper) return;
+    focusEditor('decoration');
     setSelectedEl(prev => prev?.type === 'topper' ? prev : { type: 'topper' });
-    setColorOpen(false);
   }
 
   function handleStickerSelect(id, ctrlKey = false) {
     const sticker = design.stickers.find(s => s.id === id);
+    focusEditor('decoration');
 
     if (ctrlKey || multiSelectMode) {
       setMultiSelectMode(true);
@@ -1824,10 +1839,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleStickerLongPress(id) {
+    focusEditor('decoration');
     setMultiSelectMode(true);
     setSelectedStickerIds(new Set([id]));
     setSelectedEl({ type: 'sticker', id });
-    setColorOpen(false);
   }
 
   function handleGroupMove(groupId, startPositions, delta) {
@@ -1854,8 +1869,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ? { ...hit, x: 0, z: 0 }
       : hit;
 
-    addSticker(element, effectiveHit.zone, effectiveHit.tierIndex, placementMode ?? 'hug', effectiveHit);
+    const newId = addSticker(element, effectiveHit.zone, effectiveHit.tierIndex, placementMode ?? 'hug', effectiveHit);
     setElementsOpen(false);
+    // Make the just-added decoration the active card — collapsing any other open
+    // card — so a second element added stacks below and only the newest is expanded
+    // (the same rule piping already follows). Faux balls edit via the colour wheel.
+    if (placementMode !== 'faux_ball_single') {
+      focusEditor('decoration');
+      setSelectedEl({ type: 'sticker', id: newId });
+      setSelectedStickerIds(new Set([newId]));
+    }
 
     if (isImageTopper && hit.zone === 'top_surface') {
       snapCameraRef.current?.([0, 5.5, 8.7]);
@@ -2081,44 +2104,101 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     || (caps?.color && colorOpen)
     || selectedStickerIsFauxBall;
 
+  // ── Decoration edit stack ────────────────────────────────────────────────
+  // Every editable decoration (sticker + topper + text) is a card in a right-side
+  // accordion, mirroring the cream-piping popup: the selected one expands to its
+  // full controls, the rest collapse to clickable headers, so adding/selecting a
+  // second element stacks beneath the first instead of replacing it. Faux-ball
+  // stickers are excluded — they edit through the colour wheel, not this popup.
+  const decorationCards = [
+    ...design.stickers
+      .filter(st => st.placementMode !== 'faux_ball_single')
+      .map(st => ({
+        key: `sticker-${st.id}`, type: 'sticker', id: st.id,
+        name: st.name ?? 'Decoration',
+        thumb: /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl,
+      })),
+    ...(design.topper ? [{
+      key: 'topper', type: 'topper', id: null,
+      name: design.topper.name ?? 'Topper',
+      thumb: design.topper.thumbnail_url ?? null,
+    }] : []),
+    ...design.texts.map(t => ({
+      key: `text-${t.id}`, type: 'text', id: t.id,
+      name: (t.content && t.content.trim()) || 'Text', thumb: null, glyph: 'T',
+    })),
+  ];
+  // The element stack is ONE persistent right-side editor holding every editable
+  // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
+  // single accordion. It stays open as long as the cake carries any of them and no
+  // OTHER editor (tools composer or tier panel) is active. Only ONE card is expanded
+  // at a time across both groups; collapsing/minimising a card never closes the
+  // stack — only removing an element drops its card, and the stack closes when none
+  // remain. Adding a piping does not hide the decoration cards (and vice versa).
+  const hasWriting = !!design.writing;
+  const elementStackOpen = (decorationCards.length > 0 || pipingCards.length > 0 || hasWriting)
+    && !toolsOpen
+    && selectedEl?.type !== 'tier'
+    && !selectedStickerIsFauxBall;
+  const isCardSelected = (card) => selectedEl?.type === card.type &&
+    (card.type === 'topper' ? true : selectedEl?.id === card.id);
+  function selectDecorationCard(card) {
+    setColorOpen(false);
+    setExpandedPipingId(null);   // collapse any expanded piping card — single expansion
+    if (card.type === 'sticker') {
+      setSelectedEl({ type: 'sticker', id: card.id });
+      setSelectedStickerIds(new Set([card.id]));
+      setMultiSelectMode(false);
+    } else if (card.type === 'topper') {
+      setSelectedEl({ type: 'topper' });
+    } else if (card.type === 'text') {
+      setSelectedEl({ type: 'text', id: card.id });
+    }
+  }
+
   // ── Caps-driven floating toolbar (text + piping) ──────────────────────────
-  function buildToolbar(el) {
+  // Builds the per-element edit controls. `layout` decides the chrome:
+  //   'strip' → the horizontal floating toolbar (mobile sheet, text, piping)
+  //   'panel' → a vertical right-side popup (desktop sticker/topper), mirroring
+  //             the cream-piping popup so element editing feels consistent.
+  // Both layouts share one source of truth: a list of control `groups`. Each
+  // group is `{ controls, divider, panelLabel, footer }` — the strip flattens
+  // them with vertical dividers (identical to the original output); the panel
+  // stacks them as labelled rows.
+  function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
     const c = el.type === 'tier'    ? TIER_CAPS
             : el.type === 'topper'  ? TOPPER_CAPS
             : el.type === 'sticker' ? (design.stickers.find(s => s.id === el.id)?.allowedActions ?? STICKER_CAPS)
             : (allowedActionsBySlug[el.type] ?? null);
     if (!c) return null;
-    const items = [];
+    const groups = [];
 
     if (c.color) {
-      items.push(
+      groups.push({ key: 'color', divider: true, panelLabel: 'Colour', controls: [
         <button key="color"
           style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
           onClick={() => { const opening = !colorOpen; closeAllPopups(); if (opening) setColorOpen(true); }}>
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
-        </button>,
-        <div key="d1" style={s.tbDivider} />
-      );
+        </button>
+      ] });
     }
 
     if (c.fontSize && el.type === 'text') {
       const fs = selectedText?.fontSize ?? 0.2;
-      items.push(
+      groups.push({ key: 'fs', divider: true, panelLabel: 'Size', controls: [
         <button key="fs-" style={s.tbIconBtn} onClick={() => updateText(el.id, { fontSize: Math.max(0.10, +((fs) - 0.03).toFixed(2)) })}>−</button>,
         <span key="fs-val" style={s.tbSizeLabel}>{Math.round(fs * 100)}</span>,
         <button key="fs+" style={s.tbIconBtn} onClick={() => updateText(el.id, { fontSize: Math.min(0.45, +((fs) + 0.03).toFixed(2)) })}>+</button>,
-        <div key="d3" style={s.tbDivider} />
-      );
+      ] });
     }
 
     if (c.resize && el.type === 'topper') {
       const sc = design.topper?.scale ?? 1;
-      items.push(
+      groups.push({ key: 'tp', divider: true, panelLabel: 'Size', controls: [
         <button key="tp-" style={s.tbIconBtn} onClick={() => setTopperScale(Math.max(0.25, +(sc - 0.15).toFixed(2)))}>−</button>,
         <button key="tp+" style={s.tbIconBtn} onClick={() => setTopperScale(Math.min(4, +(sc + 0.15).toFixed(2)))}>+</button>,
-        <div key="d-tp" style={s.tbDivider} />
-      );
+      ] });
     }
 
     if (c.resize && el.type === 'sticker') {
@@ -2131,7 +2211,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         return (SC_MIN + Math.round(ratio * (SC_MAX - SC_MIN) / 5) * 5) / 100;
       }
-      items.push(
+      groups.push({ key: 'sc', divider: true, controls: [
         <div key="sc-slider" style={{ display:'flex', alignItems:'center', gap:6 }}>
           <span style={{ fontSize:9, fontWeight:700, color:'#888', letterSpacing:0.3 }}>Size</span>
           <div
@@ -2147,131 +2227,229 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ position:'absolute', left:`${scPct}%`, transform:'translateX(-50%)', width:14, height:14, borderRadius:'50%', background:'#1a1a1a', pointerEvents:'none' }} />
           </div>
           <span style={{ fontSize:11, fontWeight:700, color:'#333', minWidth:30 }}>{Math.round(sc * 100)}%</span>
-        </div>,
-        <div key="d4" style={s.tbDivider} />
-      );
+        </div>
+      ] });
       const isGlbTop = sticker?.zone === 'top_surface' && /\.(glb|gltf)(\?|$)/i.test(sticker?.imageUrl ?? '');
       if (isGlbTop) {
         const yo = sticker?.yOffset ?? 0;
-        items.push(
+        groups.push({ key: 'ht', divider: true, panelLabel: 'Height', controls: [
           <button key="ht-dn" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { yOffset: Math.max(0, +(yo - 0.1).toFixed(2)) })}>↓</button>,
           <button key="ht-up" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { yOffset: Math.min(1.2, +(yo + 0.1).toFixed(2)) })}>↑</button>,
-          <div key="d-ht" style={s.tbDivider} />
-        );
+        ] });
       }
       // Depth (radialOffset) — side stickers only
       const isSide = sticker?.zone === 'side' || sticker?.zone === 'middle_tier';
       if (isSide) {
         const ro = sticker?.radialOffset ?? 0;
-        items.push(
+        groups.push({ key: 'ro', divider: true, controls: [
           <span key="ro-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Depth</span>,
           <button key="ro-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.max(0, +(ro - 0.05).toFixed(2)) })}>−</button>,
           <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
-          <div key="d-ro" style={s.tbDivider} />
-        );
+        ] });
       }
       // (Tilt moved out below — now gated by the `tilt` capability)
       // Spin (rotation) — top_surface stand stickers only
       if (sticker?.zone === 'top_surface' && sticker?.placementMode === 'stand') {
         const rot = sticker?.rotation ?? 0;
-        items.push(
+        groups.push({ key: 'sp', divider: true, controls: [
           <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Spin</span>,
           <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
           <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
-          <div key="d-sp" style={s.tbDivider} />
-        );
+        ] });
       }
       // Group / Ungroup
       const isGrouped = !!sticker?.groupId;
       if (isGrouped) {
-        items.push(
+        groups.push({ key: 'ug', divider: true, controls: [
           <button key="ungroup" style={{ ...s.tbIconBtn, fontSize: 11, color: '#1a1a1a' }}
             onClick={() => { ungroupStickers(sticker.groupId); clearAllSelections(); }}>
             Ungroup
-          </button>,
-          <div key="d-ug" style={s.tbDivider} />
-        );
+          </button>
+        ] });
       }
     }
 
-    // Move (nudge position on the cake) — gated by the `move` capability.
-    // Zone-aware: top/board nudge x/z; side wraps around the wall (theta or rect
-    // perimeter u) + height (y).
-    if (c.move && el.type === 'sticker') {
-      const sticker = design.stickers.find(stkr => stkr.id === el.id);
-      const isSide = sticker?.zone === 'side' || sticker?.zone === 'middle_tier';
-      const mv = (key, glyph, changes) => (
-        <button key={key} style={s.tbIconBtn} onClick={() => updateSticker(el.id, changes)}>{glyph}</button>
-      );
-      items.push(<span key="mv-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Move</span>);
-      if (isSide) {
-        let left, right;
-        if (sticker?.u != null) { // rectangular cake — perimeter fraction
-          const u = sticker.u, w = v => +(((v % 1) + 1) % 1).toFixed(4);
-          left  = mv('mv-l', '◀', { u: w(u - 0.02) });
-          right = mv('mv-r', '▶', { u: w(u + 0.02) });
-        } else {
-          const th = sticker?.theta ?? 0;
-          left  = mv('mv-l', '◀', { theta: +(th - 0.08).toFixed(3) });
-          right = mv('mv-r', '▶', { theta: +(th + 0.08).toFixed(3) });
-        }
-        const y = sticker?.y ?? 0;
-        items.push(left, right,
-          mv('mv-u', '▲', { y: +(y + 0.08).toFixed(3) }),
-          mv('mv-d', '▼', { y: +(y - 0.08).toFixed(3) }),
-          <div key="d-mv" style={s.tbDivider} />);
-      } else {
-        const x = sticker?.x ?? 0, z = sticker?.z ?? 0;
-        items.push(
-          mv('mv-l', '◀', { x: +(x - 0.06).toFixed(3) }),
-          mv('mv-r', '▶', { x: +(x + 0.06).toFixed(3) }),
-          mv('mv-u', '▲', { z: +(z - 0.06).toFixed(3) }),
-          mv('mv-d', '▼', { z: +(z + 0.06).toFixed(3) }),
-          <div key="d-mv" style={s.tbDivider} />);
-      }
-    }
+    // Move arrows were removed — elements are repositioned by dragging them
+    // directly with the pointer, so the nudge buttons were redundant.
 
     // Tilt (lean) — gated by the `tilt` capability.
     if (c.tilt && el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       const ta = sticker?.tiltAngle ?? 0;
-      items.push(
+      groups.push({ key: 'ta', divider: true, controls: [
         <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
         <button key="ta-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.max(-1.2, +((ta) - 0.1).toFixed(3)) })}>−</button>,
         <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(ta * 180 / Math.PI)}°</span>,
         <button key="ta+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.min(1.2, +((ta) + 0.1).toFixed(3)) })}>+</button>,
-        <div key="d-ta" style={s.tbDivider} />
-      );
+      ] });
     }
 
+    // Trailing actions (duplicate / remove / done) — no dividers between them in
+    // the strip; rendered as a footer row in the panel.
+    const actions = [];
     if (c.duplicate && el.type === 'text') {
-      items.push(
+      actions.push(
         <button key="dup" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>Duplicate</button>
       );
     }
-
     if (c.duplicate && el.type === 'sticker') {
       const sticker = design.stickers.find(s => s.id === el.id);
       if (!sticker?.groupId) {
-        items.push(
+        actions.push(
           <button key="dup-sticker" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateSticker(el.id); clearAllSelections(); }}>Duplicate</button>
         );
       }
     }
-
     if (c.delete) {
       const label = selectedStickerIds.size > 1 ? 'Remove all' : 'Remove';
-      items.push(
+      actions.push(
         <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>{label}</button>
       );
     }
-
-    items.push(
+    actions.push(
       <button key="ok" style={{ ...s.tbIconBtn, color: '#6c47ff', fontWeight: 700, fontSize: 11 }}
         onClick={() => { clearAllSelections(); }}>Done</button>
     );
+    groups.push({ key: 'actions', divider: false, footer: true, controls: actions });
 
+    // Vertical right-side popup — consistent with the cream-piping popup.
+    if (layout === 'panel') {
+      return (
+        <div style={s.editPanelGroups}>
+          {groups.map(g => (
+            <div key={g.key} style={g.footer ? s.editPanelFooter : s.editPanelRow}>
+              {g.panelLabel && <span style={s.editPanelLabel}>{g.panelLabel}</span>}
+              <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap', flex:1 }}>{g.controls}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Horizontal floating strip — flatten groups, dividing the editing groups.
+    const items = [];
+    groups.forEach(g => {
+      items.push(...g.controls);
+      if (g.divider) items.push(<div key={`gd-${g.key}`} style={s.tbDivider} />);
+    });
     return <div style={s.textToolbar}>{items}</div>;
+  }
+
+  // The typed-cream "Texts" editor, rendered as the expanded body of the writing card
+  // in the unified element stack (it used to live in the tools drawer). The colour
+  // picker drops in inline; "Remove writing" deletes the element and closes its card.
+  function renderWritingEditor() {
+    const w = design.writing ?? {};
+    const isMultiline = (w.text ?? '').includes('\n');
+    const surface = w.surface ?? 'top';
+    const SURFACES = [{ k: 'top', label: 'Top' }, { k: 'side', label: 'Side' }, { k: 'board', label: 'Board' }];
+    return (
+      <>
+        <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
+          {SURFACES.map(sf => (
+            <button key={sf.k} onClick={() => setWriting({ surface: sf.k })}
+              style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
+                background: surface === sf.k ? '#1a1a1a' : 'transparent', color: surface === sf.k ? '#fff' : '#1a1a1a' }}>
+              {sf.label}
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          value={w.text ?? ''}
+          onChange={e => setWriting({ text: e.target.value })}
+          placeholder={'Type a message…\n(Enter for a new line)'}
+          rows={4}
+          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', fontSize: 15, fontWeight: 700, color: '#444',
+            border: '1.5px solid #999999', borderRadius: 10, outline: 'none', background: '#ffffff', fontFamily: "'Quicksand', sans-serif",
+            flexShrink: 0, resize: 'vertical', lineHeight: 1.4, minHeight: 80,
+            textTransform: w.uppercase ? 'uppercase' : 'none' }}
+        />
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
+          <button type="button" role="switch" aria-checked={!!w.uppercase}
+            onClick={() => setWriting({ uppercase: !w.uppercase })}
+            style={{ width: 38, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0, position: 'relative',
+              background: w.uppercase ? '#1a1a1a' : '#e3d4da', transition: 'background .15s' }}>
+            <span style={{ position: 'absolute', top: 2, left: w.uppercase ? 18 : 2, width: 18, height: 18, borderRadius: '50%',
+              background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+          </button>
+          <span style={{ fontSize: 12, fontWeight: 800, color: '#666' }}>CAPITAL LETTERS</span>
+        </label>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {CREAM_FONTS.map(f => (
+            <CreamFontButton key={f.key} fontKey={f.key} label={f.label}
+              selected={w.font === f.key} onClick={() => setWriting({ font: f.key })} />
+          ))}
+        </div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>
+          {[
+            { k: 'colour', label: 'Colour',
+              ring: (w.finish ?? 'cream') === 'cream',
+              swatch: 'conic-gradient(from 90deg,#ff5b5b,#ffd24d,#5bff8a,#4dd2ff,#9b6bff,#ff5bd2,#ff5b5b)',
+              onClick: () => { setWriting({ finish: 'cream' }); setWritingColorOpen(o => !o); } },
+            { k: 'gold', label: 'Gold',
+              ring: w.finish === 'gold',
+              swatch: 'linear-gradient(135deg,#f7e29a 0%,#caa12f 45%,#8a6b14 100%)',
+              onClick: () => { setWriting({ finish: 'gold' }); setWritingColorOpen(false); } },
+            { k: 'silver', label: 'Silver',
+              ring: w.finish === 'silver',
+              swatch: 'linear-gradient(135deg,#fbfcfd 0%,#c2c8cf 45%,#8b9097 100%)',
+              onClick: () => { setWriting({ finish: 'silver' }); setWritingColorOpen(false); } },
+          ].map(c => (
+            <button key={c.k} onClick={c.onClick} title={c.label}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              <span style={{ width: 36, height: 36, borderRadius: '50%', background: c.swatch,
+                border: c.ring ? '3px solid #1a1a1a' : '2px solid #e7d6dc',
+                boxShadow: c.ring ? '0 0 0 2px #fff inset, 0 1px 3px rgba(0,0,0,0.18)' : '0 1px 2px rgba(0,0,0,0.12)' }} />
+              <span style={{ fontSize: 11, fontWeight: 800, color: c.ring ? '#1a1a1a' : '#999' }}>{c.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {writingColorOpen && (
+          <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={152} />
+        )}
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
+        <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
+        <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
+        <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
+        {surface !== 'side' && (
+          <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
+        )}
+        {surface !== 'side' && (
+          <PenSlider label="Rotate"  value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
+        )}
+        {isMultiline && (
+          <PenSlider label="Line gap" value={w.lineSpacing ?? 1.4} min={1}   max={2.2}  step={0.05}  onChange={v => setWriting({ lineSpacing: v })} fmt={v => `${v.toFixed(2)}×`} />
+        )}
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
+          {surface === 'side' ? 'Drag the writing around and up the cake side.'
+            : surface === 'board' ? 'Drag the writing around the cake board.'
+            : 'Drag the writing anywhere on the cake top.'}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
+              : surface === 'board' ? { boardX: undefined, boardZ: undefined }
+              : { offsetX: 0, offsetZ: 0 })}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff',
+              color: '#1a1a1a', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+            Recentre
+          </button>
+          <button onClick={() => { clearWriting(); clearAllSelections(); }}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+            Remove
+          </button>
+        </div>
+      </>
+    );
   }
 
   if (!bakerReady) {
@@ -2591,7 +2769,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!elemSearch.trim() && (
               <>
                 <button
-                  onClick={() => { setToolsOpen(true); setActiveTool('pen'); }}
+                  onClick={() => { focusEditor('tools'); setToolsOpen(true); setActiveTool('pen'); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0 }} />
                   <div style={{ textAlign: 'left' }}>
@@ -2600,7 +2778,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
-                  onClick={() => { setToolsOpen(true); setActiveTool('cream-pen'); if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); }}
+                  onClick={() => { if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
                     <TextIcon size={22} />
@@ -2620,19 +2798,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               popup, so the Decorations panel stays open on the left and the pen can be used
               alongside other cream elements. On mobile it stays a bottom sheet. ── */}
         {toolsOpen && (<>
-          <div style={{ ...s.flyout, ...(isMobile
-            ? { ...s.flyoutMobile, height: mobilePanelHeight }
-            : { left: 'auto', right: 10, top: 12, bottom: 'auto', width: 256, margin: 0, borderRadius: 16,
-                maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))' }) }}>
-            {isMobile && (
-              <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
-                <div style={s.panelHandlePill} />
-              </div>
-            )}
+          {/* Right-side popup on every viewport (was a bottom sheet on mobile). A bottom
+              sheet grew upward over the cake as its controls expanded; a right popup scrolls
+              within a fixed column, consistent with the piping/edit popups. */}
+          <div style={{ ...s.flyout, left: 'auto', right: 10, top: 12, bottom: 'auto',
+            width: isMobile ? 236 : 256, margin: 0, borderRadius: 16,
+            maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))' }}>
             <div style={s.flyoutHeader}>
-              <span style={s.flyoutTitle}>
-                {activeTool === 'pen' ? 'Cream Pen' : 'Texts'}
-              </span>
+              <span style={s.flyoutTitle}>Cream Pen</span>
               <button style={s.iconBtn} onClick={() => { setToolsOpen(false); setActiveTool(null); }}>✕</button>
             </div>
 
@@ -2670,144 +2843,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </>
               )}
 
-              {/* Texts editor (typed cream writing) */}
-              {activeTool === 'cream-pen' && (() => {
-                const w = design.writing ?? {};
-                const isMultiline = (w.text ?? '').includes('\n');
-                const surface = w.surface ?? 'top';
-                const SURFACES = [{ k: 'top', label: 'Top' }, { k: 'side', label: 'Side' }, { k: 'board', label: 'Board' }];
-                return (
-                  <>
-                    <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
-                      {SURFACES.map(s => (
-                        <button key={s.k} onClick={() => setWriting({ surface: s.k })}
-                          style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
-                            background: surface === s.k ? '#1a1a1a' : 'transparent', color: surface === s.k ? '#fff' : '#1a1a1a' }}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <textarea
-                      value={w.text ?? ''}
-                      onChange={e => setWriting({ text: e.target.value })}
-                      placeholder={'Type a message…\n(Enter for a new line)'}
-                      rows={4}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '12px 13px', fontSize: 17, fontWeight: 700, color: '#444',
-                        border: '1.5px solid #999999', borderRadius: 10, outline: 'none', background: '#ffffff', fontFamily: "'Quicksand', sans-serif",
-                        flexShrink: 0, resize: 'vertical', lineHeight: 1.4, minHeight: 96,
-                        textTransform: w.uppercase ? 'uppercase' : 'none' }}
-                    />
-
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
-                      <button type="button" role="switch" aria-checked={!!w.uppercase}
-                        onClick={() => setWriting({ uppercase: !w.uppercase })}
-                        style={{ width: 38, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0, position: 'relative',
-                          background: w.uppercase ? '#1a1a1a' : '#e3d4da', transition: 'background .15s' }}>
-                        <span style={{ position: 'absolute', top: 2, left: w.uppercase ? 18 : 2, width: 18, height: 18, borderRadius: '50%',
-                          background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
-                      </button>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#666' }}>CAPITAL LETTERS</span>
-                    </label>
-
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {CREAM_FONTS.map(f => (
-                        <CreamFontButton key={f.key} fontKey={f.key} label={f.label}
-                          selected={w.font === f.key} onClick={() => setWriting({ font: f.key })} />
-                      ))}
-                    </div>
-
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
-                    <div style={{ display: 'flex', gap: 18, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>
-                      {[
-                        // Colour — a rainbow wheel that opens the full picker (cream finish, custom colour).
-                        { k: 'colour', label: 'Colour',
-                          ring: (w.finish ?? 'cream') === 'cream',
-                          swatch: 'conic-gradient(from 90deg,#ff5b5b,#ffd24d,#5bff8a,#4dd2ff,#9b6bff,#ff5bd2,#ff5b5b)',
-                          onClick: () => { setWriting({ finish: 'cream' }); setWritingColorOpen(o => !o); } },
-                        // Gold — direct metallic gold, no picker.
-                        { k: 'gold', label: 'Gold',
-                          ring: w.finish === 'gold',
-                          swatch: 'linear-gradient(135deg,#f7e29a 0%,#caa12f 45%,#8a6b14 100%)',
-                          onClick: () => { setWriting({ finish: 'gold' }); setWritingColorOpen(false); } },
-                        // Silver — direct metallic silver, no picker.
-                        { k: 'silver', label: 'Silver',
-                          ring: w.finish === 'silver',
-                          swatch: 'linear-gradient(135deg,#fbfcfd 0%,#c2c8cf 45%,#8b9097 100%)',
-                          onClick: () => { setWriting({ finish: 'silver' }); setWritingColorOpen(false); } },
-                      ].map(c => (
-                        <button key={c.k} onClick={c.onClick} title={c.label}
-                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                          <span style={{ width: 40, height: 40, borderRadius: '50%', background: c.swatch,
-                            border: c.ring ? '3px solid #1a1a1a' : '2px solid #e7d6dc',
-                            boxShadow: c.ring ? '0 0 0 2px #fff inset, 0 1px 3px rgba(0,0,0,0.18)' : '0 1px 2px rgba(0,0,0,0.12)' }} />
-                          <span style={{ fontSize: 11, fontWeight: 800, color: c.ring ? '#1a1a1a' : '#999' }}>{c.label}</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Mobile: picker drops in inline. Desktop: it flies out to the LEFT
-                        of this popup (rendered as a sibling below). */}
-                    {isMobile && writingColorOpen && (
-                      <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={208} />
-                    )}
-
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
-                    <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
-                    <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
-                    <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
-                    {surface !== 'side' && (
-                      <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
-                    )}
-                    {surface !== 'side' && (
-                      <PenSlider label="Rotate"  value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
-                    )}
-                    {isMultiline && (
-                      <PenSlider label="Line gap" value={w.lineSpacing ?? 1.4} min={1}   max={2.2}  step={0.05}  onChange={v => setWriting({ lineSpacing: v })} fmt={v => `${v.toFixed(2)}×`} />
-                    )}
-
-                    <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
-                      {surface === 'side' ? 'Drag the writing around and up the cake side.'
-                        : surface === 'board' ? 'Drag the writing around the cake board.'
-                        : 'Drag the writing anywhere on the cake top.'}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
-                          : surface === 'board' ? { boardX: undefined, boardZ: undefined }
-                          : { offsetX: 0, offsetZ: 0 })}
-                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff',
-                          color: '#1a1a1a', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                        Recentre
-                      </button>
-                      <button onClick={() => { clearWriting(); setActiveTool(null); }}
-                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                        Remove writing
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
+              {/* The Texts (typed-cream) editor now lives in the unified element stack as
+                  the writing card — see renderWritingEditor(). The tools drawer is freehand
+                  Cream Pen only. */}
             </div>{/* end flyoutScroll */}
           </div>
-
-          {/* Desktop: colour picker flies out to the LEFT of the Texts popup. */}
-          {!isMobile && activeTool === 'cream-pen' && writingColorOpen && (
-            <div style={{ position: 'absolute', right: 276, top: 12, zIndex: 21,
-              width: 250, background: '#fff', borderRadius: 16, padding: '12px 12px 14px',
-              boxShadow: '-6px 0 24px rgba(0,0,0,0.13)', overflowY: 'auto',
-              maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
-              display: 'flex', flexDirection: 'column', gap: 10,
-              animation: 'spattooColourFlyout .22s cubic-bezier(.2,.8,.2,1)' }}>
-              <style>{`@keyframes spattooColourFlyout{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}`}</style>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1.5, textTransform: 'uppercase' }}>Colour</span>
-                <button style={s.iconBtn} onClick={() => setWritingColorOpen(false)}>✕</button>
-              </div>
-              <WritingColourPicker writing={design.writing ?? {}} design={design} setWriting={setWriting} width={224} />
-            </div>
-          )}
         </>)}
 
         {/* ── Templates flyout ── */}
@@ -2930,7 +2970,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* Shrink the live canvas to the left when the piping strip is open, so the
               cake stays fully visible beside it (the Canvas is absolute inset:0 of this div). */}
-          <div style={{ position: 'absolute', inset: 0, right: (!isMobile && toolsOpen) ? 276 : (pipingPopupOpen ? 184 : 0), transition: 'right 0.18s ease' }}>
+          <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 248 : 276) : (elementStackOpen ? 220 : 0), transition: 'right 0.18s ease' }}>
           <Suspense fallback={<div style={s.loading}>Loading 3D cake...</div>}>
             <CakeCanvas
               config={canvasConfig}
@@ -2938,7 +2978,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onTierClick={handleTierClick}
               onDeselect={handleDeselect}
               selectedPiping={selectedPiping}
-              highlightPipingId={pipingPopupOpen ? expandedPipingId : null}
+              highlightPipingId={elementStackOpen ? expandedPipingId : null}
               onTopPipingSelect={handleTopPipingSelect}
               onBottomPipingSelect={handleBottomPipingSelect}
               pipingTarget={pipingTarget}
@@ -2950,13 +2990,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onTextSelect={handleTextSelect}
               onTextMove={(id, pos) => updateText(id, pos)}
               onTextContentChange={(id, content) => updateText(id, { content })}
-              textToolbar={selectedText ? buildToolbar(selectedEl) : null}
+              textToolbar={null /* text now edits via the right-side popup, not a floating strip */}
               onTopperClick={handleTopperClick}
               topperSelected={selectedEl?.type === 'topper'}
               topperToolbar={null}
-              onWritingClick={() => { setToolsOpen(true); setActiveTool('cream-pen'); setElementsOpen(false); setTemplatesOpen(false); }}
+              onWritingClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); setElementsOpen(false); }}
               onWritingMove={moves => setWriting(moves)}
-              writingSelected={toolsOpen && activeTool === 'cream-pen'}
+              writingSelected={selectedEl?.type === 'writing'}
               penDrawMode={toolsOpen && activeTool === 'pen'}
               penStyle={penStyle}
               onAddStroke={addStroke}
@@ -2973,35 +3013,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </Suspense>
           </div>
 
-          {/* ── Sticker & topper toolbars (DOM overlays — desktop only) ── */}
-          {!isMobile && selectedEl?.type === 'sticker' && !selectedStickerIsFauxBall && (
-            <div style={{ position:'absolute', top:16, left:'50%', transform:'translateX(-50%)', zIndex:200, pointerEvents:'auto' }}>
-              {buildToolbar(selectedEl)}
-            </div>
-          )}
-          {!isMobile && selectedEl?.type === 'topper' && (
-            <div style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', zIndex: 200, pointerEvents: 'auto' }}>
-              {buildToolbar(selectedEl)}
-            </div>
-          )}
-
-          {/* ── Mobile edit sheet — stickers & toppers ── */}
-          {isMobile && selectedEl && (selectedEl.type === 'sticker' || selectedEl.type === 'topper') && !selectedStickerIsFauxBall && (
-            <div style={s.editSheetMobile}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                <span style={s.wheelTitle}>
-                  {selectedEl.type === 'topper'
-                    ? (design.topper?.name ?? 'Topper')
-                    : (design.stickers.find(sk => sk.id === selectedEl.id)?.name ?? 'Sticker')}
-                </span>
-                <button style={s.iconBtn} onClick={clearAllSelections}>✕</button>
-              </div>
-              <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch', paddingBottom:4 }}>
-                {buildToolbar(selectedEl)}
-              </div>
-            </div>
-          )}
-
+          {/* ── Sticker & topper edit popup (DOM overlay — desktop only) ──
+              A right-side vertical popup, matching the cream-piping popup so element
+              editing is consistent across the designer. */}
+          {/* Right-side accordion stack on every viewport — same chrome as the cream-piping
+              popup. A bottom sheet was rejected: as the controls grow it expands upward and
+              hides the cake, whereas a right-side popup scrolls within a fixed column. */}
           {/* ── Multi-select group bar ── */}
           {(multiSelectMode || selectedStickerIds.size > 1) && (() => {
             const ids = [...selectedStickerIds];
@@ -3277,16 +3294,73 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </div>
           )}
 
-          {/* ── Cream Piping popup ── */}
-          {pipingPopupOpen && pipingCards.length > 0 && (
-            <div ref={pipingPopupRef} className="piping-popup-scroll" style={s.pipingPopup}>
+          {/* ── Unified element stack: decorations + piping in one accordion ── */}
+          {elementStackOpen && (
+            <div ref={pipingPopupRef} className="piping-popup-scroll" style={s.editPopup}>
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
-              {/* Accordion stack: one collapsible card per added piping element. Picking a
+
+              {/* Decoration cards (sticker / topper / text) — expanded one pinned to the top
+                  of this group. Clicking the expanded card collapses it; clicking a collapsed
+                  card opens it (and collapses any open piping card). */}
+              {[...decorationCards]
+                .sort((a, b) => (isCardSelected(b) ? 1 : 0) - (isCardSelected(a) ? 1 : 0))
+                .map(card => {
+                  const expanded = isCardSelected(card);
+                  return (
+                    <div key={card.key} style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                      <div role="button"
+                        onClick={() => expanded ? clearAllSelections() : selectDecorationCard(card)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#F2F1EE' : '#fff' }}>
+                        <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {card.thumb
+                            ? <img src={card.thumb} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>{card.glyph ?? card.name?.[0]?.toUpperCase() ?? '•'}</span>}
+                        </div>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
+                        <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+                      </div>
+                      {expanded && (
+                        <div style={{ padding: '0 9px 9px' }}>
+                          {buildToolbar(selectedEl, 'panel')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+              {/* Writing card (typed cream "Texts") — one card; its expanded body is the
+                  full composer. Like the others it stays until "Remove" deletes the writing. */}
+              {hasWriting && (() => {
+                const expanded = selectedEl?.type === 'writing';
+                const name = (design.writing?.text && design.writing.text.trim()) || 'Texts';
+                return (
+                  <div key="writing" style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                    <div role="button"
+                      onClick={() => {
+                        if (expanded) { clearAllSelections(); }
+                        else { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); }
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#F2F1EE' : '#fff' }}>
+                      <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>T</span>
+                      </div>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+                      <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+                    </div>
+                    {expanded && (
+                      <div style={{ padding: '0 9px 9px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        {renderWritingEditor()}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Piping cards — one collapsible card per added piping element. Picking a
                   new element from the left appends a card here; the cake renders all of them
-                  stacked. Only the expanded card shows its rim/board controls — and it's pinned
-                  to the top of the stack so its (often tall) controls open from the top, with
-                  the other cards collapsed to compact headers below. */}
+                  stacked. Only the expanded card shows its rim/board controls — pinned to the
+                  top of this group, the rest collapse to compact headers below. */}
               {(expandedPipingId
                 ? [pipingCards.find(c => c.cardId === expandedPipingId), ...pipingCards.filter(c => c.cardId !== expandedPipingId)].filter(Boolean)
                 : pipingCards
@@ -3301,7 +3375,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {/* Card header: thumbnail + element name + expand/collapse arrow.
                       No close button — a layer leaves the cake by unchecking its rings. */}
                   <div role="button"
-                    onClick={() => setExpandedPipingId(prev => prev === card.cardId ? null : card.cardId)}
+                    onClick={() => {
+                      const opening = expandedPipingId !== card.cardId;
+                      setExpandedPipingId(opening ? card.cardId : null);
+                      if (opening) { setSelectedEl(null); setSelectedStickerIds(new Set()); setMultiSelectMode(false); }
+                    }}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#F2F1EE' : '#fff' }}>
                     <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0 }}>
                       {card.thumbnail_url && <img src={cfImg(card.thumbnail_url, 26, 26, cfAssetsBase)} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
@@ -4271,6 +4349,44 @@ const s = {
     zIndex: 20,
   },
 
+  // Right-side per-element edit popup (desktop sticker/topper) — same chrome as
+  // the piping popup so element editing feels consistent.
+  editPopup: {
+    position: 'absolute',
+    right: 10, top: 12,
+    width: 200, maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
+    background: 'rgba(255,255,255,0.97)',
+    backdropFilter: 'blur(18px)',
+    WebkitBackdropFilter: 'blur(18px)',
+    borderRadius: 16,
+    padding: '8px 8px 10px',
+    boxShadow: '0 4px 24px rgba(107,45,66,0.18)',
+    display: 'flex', flexDirection: 'column', gap: 7,
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    overscrollBehavior: 'contain',
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
+    zIndex: 20,
+    pointerEvents: 'auto',
+  },
+  editPanelGroups: {
+    display: 'flex', flexDirection: 'column',
+  },
+  editPanelRow: {
+    display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+    padding: '7px 0',
+    borderBottom: '1px solid #f4eef0',
+  },
+  editPanelFooter: {
+    display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
+    padding: '10px 0 2px',
+  },
+  editPanelLabel: {
+    fontSize: 9, fontWeight: 700, color: '#888', letterSpacing: 0.3,
+    minWidth: 34,
+  },
+
   // Mobile-specific
   mobileHeader: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -4308,17 +4424,5 @@ const s = {
     padding: '14px 16px 24px',
     boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
     zIndex: 20,
-  },
-  editSheetMobile: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    background: 'rgba(255,255,255,0.97)',
-    backdropFilter: 'blur(18px)',
-    WebkitBackdropFilter: 'blur(18px)',
-    borderRadius: '20px 20px 0 0',
-    padding: '14px 16px 24px',
-    boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
-    zIndex: 25,
-    display: 'flex', flexDirection: 'column',
   },
 };

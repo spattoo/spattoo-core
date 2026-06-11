@@ -264,7 +264,41 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius }) {
   );
 }
 
-function StickerModel({ imageUrl, selected, color, clipY }) {
+// Bend a GLB sticker around the tier wall so it hugs the curved side. Bakes the
+// bbox-fit (scale + center) into fresh geometry, then wraps it on a cylinder of
+// local radius `bendR` (axis at local z = -bendR, +Z = radially outward):
+//   x → arc angle (a = x / bendR), z → radial offset, y → height.
+// Edges curve inward following the convex wall; the back recedes into the cake
+// (occluded by the opaque tier) so it reads as a relief emerging from the side.
+// Convention: the GLB faces +Z (profile in X-Y, width along X, up along Y).
+function bendStickerScene(scene, fitScale, center, bendR) {
+  scene.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(scene.matrixWorld).invert();
+  const out = new THREE.Group();
+  const v = new THREE.Vector3(), m = new THREE.Matrix4();
+  scene.traverse(o => {
+    if (!o.isMesh) return;
+    const geo = o.geometry.clone();
+    const pos = geo.attributes.position;
+    m.multiplyMatrices(inv, o.matrixWorld); // mesh → scene-local
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m);
+      const fx = (v.x - center.x) * fitScale; // fit transform StickerModel applies
+      const fy = (v.y - center.y) * fitScale;
+      const fz = (v.z - center.z) * fitScale;
+      const a = fx / bendR, rho = bendR + fz;
+      pos.setXYZ(i, rho * Math.sin(a), fy, rho * Math.cos(a) - bendR);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, o.material);
+    mesh.raycast = () => {};
+    out.add(mesh);
+  });
+  return out;
+}
+
+function StickerModel({ imageUrl, selected, color, clipY, bendRadius }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -303,16 +337,22 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position } = useMemo(() => {
+  const { scale, position, center } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
+    const ctr = new THREE.Vector3();
+    box.getCenter(ctr);
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
     glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
-    return { scale: sc, position: [-center.x * sc, -center.y * sc, -center.z * sc] };
+    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr };
   }, [clonedScene, imageUrl]);
+
+  // On the side wall, bend the model around the tier so it hugs the curve.
+  const bentScene = useMemo(
+    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius) : null),
+    [clonedScene, scale, center, bendRadius],
+  );
 
   useEffect(() => {
     clonedScene.traverse(obj => {
@@ -329,17 +369,18 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
     });
   }, [clonedScene, selected, color]);
 
+  if (bentScene) return <primitive object={bentScene} />;
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius }) {
+function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   return (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} bendRadius={bendRadius} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
@@ -374,6 +415,12 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     yaw = sticker.theta; curveRadius = surfaceR;
   }
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
+  // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
+  // Local radius = surfaceR / group scale, so after the group's scale it wraps at
+  // the true wall radius (bigger stickers span more arc → curve more).
+  const bendRadius = (isGlb && !isRect && curveRadius)
+    ? curveRadius / (sticker.scale || 1)
+    : undefined;
 
   return (
     <group
@@ -383,7 +430,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb && !isRect} curveRadius={curveRadius} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}

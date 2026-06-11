@@ -168,6 +168,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function addSticker(element, zone, tierIndex, placementMode, position = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
     const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : 1);
+    const newId = Date.now();   // returned so callers can select the just-added sticker
     setDesign(prev => {
       let px = position.x ?? 0;
       let pz = position.z ?? 0;
@@ -231,7 +232,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       return {
         ...prev,
         stickers: [...prev.stickers, {
-          id:            Date.now(),
+          id:            newId,
           elementId:     element.id,
           imageUrl:      element.image_url,
           name:          element.name,
@@ -261,6 +262,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         }],
       };
     });
+    return newId;
   }
 
   function updateSticker(id, changes) {
