@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
-import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BEND_ANCHOR_FRAC } from './constants';
+import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BEND_ANCHOR_FRAC, ELEMENT_SLUGS } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
@@ -458,7 +458,7 @@ function ElementTypeCard({
   }
 
   // ── scattered_decor — PNG stickers placeable on any zone ──────────────────
-  if (slug === 'scattered_decor') {
+  if (slug === ELEMENT_SLUGS.SCATTERED_DECOR) {
     return (
       <div style={{ ...s.elementCard, cursor: 'default' }}>
         <div style={s.elementCardLabel}>{name}</div>
@@ -492,7 +492,7 @@ function ElementTypeCard({
   }
 
   // ── picks — draggable GLB elements inserted into cake ─────────────────────
-  if (slug === 'picks') {
+  if (slug === ELEMENT_SLUGS.PICKS) {
     return (
       <div style={{ ...s.elementCard, cursor: 'default' }}>
         <div style={s.elementCardLabel}>{name}</div>
@@ -519,7 +519,7 @@ function ElementTypeCard({
   }
 
   // ── image_topper — draggable 2D images placed upright on top surface ────────
-  if (slug === 'image_topper') {
+  if (slug === ELEMENT_SLUGS.IMAGE_TOPPER) {
     return (
       <div style={{ ...s.elementCard, cursor: 'default' }}>
         <div style={s.elementCardLabel}>{name}</div>
@@ -1228,9 +1228,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
     setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
     const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
-    const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
-    const picksTypeId          = elementTypes.find(et => et.slug === 'picks')?.id;
-    const imageTopperTypeId    = elementTypes.find(et => et.slug === 'image_topper')?.id;
+    const scatteredDecorTypeId = elementTypes.find(et => et.slug === ELEMENT_SLUGS.SCATTERED_DECOR)?.id;
+    const picksTypeId          = elementTypes.find(et => et.slug === ELEMENT_SLUGS.PICKS)?.id;
+    const imageTopperTypeId    = elementTypes.find(et => et.slug === ELEMENT_SLUGS.IMAGE_TOPPER)?.id;
     const pipingStampTypeId    = elementTypes.find(et => et.slug === 'piping_stamp')?.id;
     const knownTypeIds         = new Set([topperTypeId, scatteredDecorTypeId, picksTypeId, imageTopperTypeId, pipingStampTypeId].filter(Boolean));
     setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
@@ -1844,7 +1844,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       placementMode = 'faux_ball_single';
     }
 
-    const imageTopperTypeId = elementTypes.find(et => et.slug === 'image_topper')?.id;
+    const imageTopperTypeId = elementTypes.find(et => et.slug === ELEMENT_SLUGS.IMAGE_TOPPER)?.id;
     const isImageTopper = element.element_type_id === imageTopperTypeId;
 
     // First image topper on an empty top surface → center it; subsequent ones → drop at cursor.
@@ -2170,17 +2170,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div key="d-ro" style={s.tbDivider} />
         );
       }
-      // Tilt — all stickers
-      {
-        const ta = sticker?.tiltAngle ?? 0;
-        items.push(
-          <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
-          <button key="ta-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.max(-1.2, +((ta) - 0.1).toFixed(3)) })}>−</button>,
-          <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(ta * 180 / Math.PI)}°</span>,
-          <button key="ta+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.min(1.2, +((ta) + 0.1).toFixed(3)) })}>+</button>,
-          <div key="d-ta" style={s.tbDivider} />
-        );
-      }
+      // (Tilt moved out below — now gated by the `tilt` capability)
       // Spin (rotation) — top_surface stand stickers only
       if (sticker?.zone === 'top_surface' && sticker?.placementMode === 'stand') {
         const rot = sticker?.rotation ?? 0;
@@ -2202,6 +2192,56 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div key="d-ug" style={s.tbDivider} />
         );
       }
+    }
+
+    // Move (nudge position on the cake) — gated by the `move` capability.
+    // Zone-aware: top/board nudge x/z; side wraps around the wall (theta or rect
+    // perimeter u) + height (y).
+    if (c.move && el.type === 'sticker') {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const isSide = sticker?.zone === 'side' || sticker?.zone === 'middle_tier';
+      const mv = (key, glyph, changes) => (
+        <button key={key} style={s.tbIconBtn} onClick={() => updateSticker(el.id, changes)}>{glyph}</button>
+      );
+      items.push(<span key="mv-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Move</span>);
+      if (isSide) {
+        let left, right;
+        if (sticker?.u != null) { // rectangular cake — perimeter fraction
+          const u = sticker.u, w = v => +(((v % 1) + 1) % 1).toFixed(4);
+          left  = mv('mv-l', '◀', { u: w(u - 0.02) });
+          right = mv('mv-r', '▶', { u: w(u + 0.02) });
+        } else {
+          const th = sticker?.theta ?? 0;
+          left  = mv('mv-l', '◀', { theta: +(th - 0.08).toFixed(3) });
+          right = mv('mv-r', '▶', { theta: +(th + 0.08).toFixed(3) });
+        }
+        const y = sticker?.y ?? 0;
+        items.push(left, right,
+          mv('mv-u', '▲', { y: +(y + 0.08).toFixed(3) }),
+          mv('mv-d', '▼', { y: +(y - 0.08).toFixed(3) }),
+          <div key="d-mv" style={s.tbDivider} />);
+      } else {
+        const x = sticker?.x ?? 0, z = sticker?.z ?? 0;
+        items.push(
+          mv('mv-l', '◀', { x: +(x - 0.06).toFixed(3) }),
+          mv('mv-r', '▶', { x: +(x + 0.06).toFixed(3) }),
+          mv('mv-u', '▲', { z: +(z - 0.06).toFixed(3) }),
+          mv('mv-d', '▼', { z: +(z + 0.06).toFixed(3) }),
+          <div key="d-mv" style={s.tbDivider} />);
+      }
+    }
+
+    // Tilt (lean) — gated by the `tilt` capability.
+    if (c.tilt && el.type === 'sticker') {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const ta = sticker?.tiltAngle ?? 0;
+      items.push(
+        <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
+        <button key="ta-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.max(-1.2, +((ta) - 0.1).toFixed(3)) })}>−</button>,
+        <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(ta * 180 / Math.PI)}°</span>,
+        <button key="ta+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.min(1.2, +((ta) + 0.1).toFixed(3)) })}>+</button>,
+        <div key="d-ta" style={s.tbDivider} />
+      );
     }
 
     if (c.duplicate && el.type === 'text') {

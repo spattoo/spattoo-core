@@ -66,3 +66,42 @@ export const CAKE_TOP_CAP_H = 0.02;
 // ── Sticker surface offsets ───────────────────────────────────────────────────
 export const SIDE_STICKER_SURFACE_OFFSET = 0.025;  // gap between cake wall and sticker face
 export const FLAT_STICKER_Y_OFFSET       = 0.025;  // lift above cake top surface
+
+// ── Domain enums ──────────────────────────────────────────────────────────────
+// Single source of truth for the string identifiers used across the designer and
+// admin. The VALUES are persisted (DB / saved designs), so they must never change
+// — but referencing them by name means a slug rename never needs a code change.
+
+// Cake surfaces an element can be placed on.
+export const ZONES = Object.freeze({
+  TOP_SURFACE: 'top_surface',
+  SIDE:        'side',
+  MIDDLE_TIER: 'middle_tier',
+  BOARD:       'board',
+  RIM:         'rim',
+  TOP:         'top',
+});
+
+// How a placed element orients on its surface.
+export const PLACEMENT_MODES = Object.freeze({
+  STAND:            'stand',
+  HUG:              'hug',
+  FAUX_BALL_SINGLE: 'faux_ball_single',
+});
+
+// Internal element kinds the designer branches on (NOT the admin element-type slug).
+export const ELEMENT_KINDS = Object.freeze({
+  TIER:    'tier',
+  TOPPER:  'topper',
+  STICKER: 'sticker',
+  TEXT:    'text',
+  IMAGE:   'image',
+});
+
+// Element-type SLUGS that have bespoke placement logic. Anything special-cased in
+// code must be referenced from here, never as a bare string literal.
+export const ELEMENT_SLUGS = Object.freeze({
+  SCATTERED_DECOR: 'scattered_decor',
+  PICKS:           'picks',
+  IMAGE_TOPPER:    'image_topper',
+});

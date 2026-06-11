@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE } from '../constants.js';
+import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape, topClamp } from '../geometry/surface.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
@@ -38,7 +38,7 @@ const DEFAULT_WRITING = {
 // layers per zone and every layer stays addressable across edits/renders.
 const newLayerId = () => crypto.randomUUID();
 const withLayerId = (piping) => (piping.layerId ? piping : { ...piping, layerId: newLayerId() });
-const zoneKey = (zone) => (zone === 'rim' || zone === 'top' ? 'topPipings' : 'bottomPipings');
+const zoneKey = (zone) => (zone === ZONES.RIM || zone === ZONES.TOP ? 'topPipings' : 'bottomPipings');
 
 export const FROSTING_TYPES = [
   { value: 'buttercream', label: 'Buttercream' },
@@ -171,13 +171,13 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       let px = position.x ?? 0;
       let pz = position.z ?? 0;
-      if (placementMode === 'stand' && zone === 'top_surface') {
+      if (placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
         // Nudge by a fixed STICKER_SIZE gap so both toppers have different centres
         // and are separately selectable. Scale is intentionally ignored — the user
         // will drag to the final position; drag-time collision handles visual overlap.
         const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
         const siblings = prev.stickers.filter(
-          s => s.zone === 'top_surface' && s.tierIndex === (tierIndex ?? 0) && s.placementMode === 'stand'
+          s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && s.placementMode === PLACEMENT_MODES.STAND
         );
         for (const sib of siblings) {
           const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
@@ -190,10 +190,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         }
         ({ x: px, z: pz } = topClamp(shp, px, pz, 0.88));
       }
-      if (placementMode === 'faux_ball_single') {
-        const isSide = zone === 'side' || zone === 'middle_tier';
+      if (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE) {
+        const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
         const siblings = prev.stickers.filter(
-          s => s.placementMode === 'faux_ball_single' && s.tierIndex === (tierIndex ?? 0)
+          s => s.placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && s.tierIndex === (tierIndex ?? 0)
         );
         if (isSide && position.u != null) {
           // Rect wall: position is a perimeter fraction u (stored below) + height.
@@ -239,10 +239,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           tierIndex:     tierIndex ?? 0,
           placementMode: placementMode ?? 'hug',
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
-          theta:         (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? px : (position.theta ?? 0),
-          y:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? pz : (position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45)),
-          x:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? 0 : px,
-          z:             (placementMode === 'faux_ball_single' && (zone === 'side' || zone === 'middle_tier')) ? 0 : pz,
+          theta:         (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? px : (position.theta ?? 0),
+          y:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? pz : (position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45)),
+          x:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : px,
+          z:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : pz,
           scale:         defaultScale,
           yOffset:       0,
           rotation:      0,
@@ -255,6 +255,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             duplicate: element.allowed_actions?.duplicate ?? true,
             color:     element.allowed_actions?.color     ?? false,
             delete:    true,
+            move:      element.allowed_actions?.move      ?? false,
+            tilt:      element.allowed_actions?.tilt      ?? true,
           },
         }],
       };
@@ -310,7 +312,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       const original = prev.stickers.find(s => s.id === id);
       if (!original) return prev;
-      const offset = original.zone === 'top_surface'
+      const offset = original.zone === ZONES.TOP_SURFACE
         ? { x: original.x + 0.15 }
         : (original.u != null ? { u: (((original.u + 0.04) % 1) + 1) % 1 } : { theta: original.theta + 0.3 });
       return {
