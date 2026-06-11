@@ -65,6 +65,8 @@ function useIsMobile() {
   return mobile;
 }
 
+const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
+
 const STATUS_META = {
   pending:     { label: 'Pending',     bg: '#FEF9C3', color: '#92400E' },
   approved:    { label: 'Approved',    bg: '#D1FAE5', color: '#065F46' },
@@ -75,13 +77,26 @@ const STATUS_META = {
 };
 const ALL_STATUSES = Object.keys(STATUS_META);
 
+// Neutral, monochrome badge tones — no hues. In-progress states read as soft grey,
+// "Delivered" is a solid black (complete), "Cancelled" a muted outline.
+const STATUS_TONE = {
+  pending:     { bg: '#F2F1EE', color: '#777', border: 'transparent' },
+  approved:    { bg: '#ECEBE6', color: '#5e5e5e', border: 'transparent' },
+  in_progress: { bg: '#E4E2DC', color: '#4a4a4a', border: 'transparent' },
+  ready:       { bg: '#D9D6CF', color: '#3a3a3a', border: 'transparent' },
+  delivered:   { bg: '#1a1a1a', color: '#fff', border: 'transparent' },
+  cancelled:   { bg: '#fff', color: '#999', border: '#E0DDD8' },
+};
+
 function StatusBadge({ status }) {
-  const m = STATUS_META[status] ?? { label: status, bg: '#f3f4f6', color: '#374151' };
+  const label = STATUS_META[status]?.label ?? status;
+  const t = STATUS_TONE[status] ?? { bg: '#F2F1EE', color: '#555', border: 'transparent' };
   return (
     <span style={{
       padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-      letterSpacing: 0.3, background: m.bg, color: m.color, whiteSpace: 'nowrap',
-    }}>{m.label}</span>
+      letterSpacing: 0.3, background: t.bg, color: t.color,
+      border: `1px solid ${t.border}`, whiteSpace: 'nowrap',
+    }}>{label}</span>
   );
 }
 
@@ -102,7 +117,19 @@ function InfoRow({ label, value }) {
 
 // ── Edit form ─────────────────────────────────────────────────────────────────
 
-function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEnabled = false }) {
+// Normalise an order's stored flavours into editable rows. Entries may come back
+// as { name | flavour, flavourId | flavour_id, tier, source }.
+function normaliseFlavours(order) {
+  const rows = (order.flavours ?? []).map((f, i) => ({
+    tier:      f.tier ?? i,
+    name:      f.name ?? f.flavour ?? '',
+    flavourId: f.flavourId ?? f.flavour_id ?? null,
+    source:    f.source ?? null,
+  }));
+  return rows.length ? rows : [{ tier: 0, name: '', flavourId: null, source: null }];
+}
+
+function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEnabled = false, availableFlavours = [] }) {
   const [form, setForm] = useState({
     weight_kg:            order.weight_kg ?? '',
     delivery_date:        order.delivery_date ?? '',
@@ -110,11 +137,33 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
     delivery_mode:        (!homeDeliveryEnabled && order.delivery_mode === 'home_delivery') ? 'pickup' : (order.delivery_mode ?? 'pickup'),
     delivery_address:     order.delivery_address ?? '',
     special_instructions: order.special_instructions ?? '',
+    flavours:             normaliseFlavours(order),
     comment:              '',
   });
   const [errors, setErrors] = useState({});
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: null })); }
+
+  function setFlavour(tierIdx, flavourId) {
+    const picked = availableFlavours.find(f => f.id === flavourId) ?? null;
+    setForm(f => ({
+      ...f,
+      flavours: f.flavours.map((row, i) => i === tierIdx
+        ? { ...row, name: picked?.name ?? '', flavourId: picked?.id ?? null, source: picked?.source ?? null }
+        : row),
+    }));
+  }
+
+  function setFlavourName(tierIdx, name) {
+    setForm(f => ({
+      ...f,
+      flavours: f.flavours.map((row, i) => i === tierIdx
+        ? { ...row, name, flavourId: null, source: null }
+        : row),
+    }));
+  }
+
+  const multiTier = form.flavours.length > 1;
 
   function validate() {
     const e = {};
@@ -138,6 +187,40 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
             value={form.weight_kg} onChange={e => set('weight_kg', e.target.value)} />
         </Field>
       </div>
+
+      <Field label={multiTier ? 'Flavour per tier' : 'Flavour'}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {form.flavours.map((row, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {multiTier && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#bbb' }}>
+                  {TIER_LABELS[i] ?? `Tier ${i + 1}`}
+                </span>
+              )}
+              {availableFlavours.length > 0 ? (
+                <select
+                  style={{ ...inp, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer' }}
+                  value={row.flavourId ?? ''}
+                  onChange={e => setFlavour(i, e.target.value || null)}
+                >
+                  <option value="">— Select flavour —</option>
+                  {/* Keep a free-text legacy flavour selectable even if not in the list */}
+                  {row.name && !row.flavourId && !availableFlavours.some(f => f.name === row.name) && (
+                    <option value="">{row.name}</option>
+                  )}
+                  {availableFlavours.map(f => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input style={inp} placeholder="e.g. Vanilla"
+                  value={row.name}
+                  onChange={e => setFlavourName(i, e.target.value)} />
+              )}
+            </div>
+          ))}
+        </div>
+      </Field>
 
       <div style={{ display: 'flex', gap: 12 }}>
         <Field label="Delivery date">
@@ -231,6 +314,16 @@ const inp = {
 
 // ── Audit trail ───────────────────────────────────────────────────────────────
 
+// Render an audit value; flavours come through as an array of objects.
+function fmtAuditValue(v) {
+  if (v == null || v === '') return '—';
+  if (Array.isArray(v)) {
+    const names = v.map(f => f?.name ?? f?.flavour).filter(Boolean);
+    return names.length ? names.join(', ') : '—';
+  }
+  return String(v);
+}
+
 function AuditTrail({ orderId, apiClient, refresh }) {
   const [log, setLog]       = useState([]);
   const [loading, setLoading] = useState(false);
@@ -286,9 +379,9 @@ function AuditTrail({ orderId, apiClient, refresh }) {
                     return (
                       <div key={f} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <span style={{ color: '#bbb' }}>{f.replace(/_/g, ' ')}:</span>
-                        <span style={{ textDecoration: 'line-through', color: '#ccc' }}>{String(from ?? '—')}</span>
+                        <span style={{ textDecoration: 'line-through', color: '#ccc' }}>{fmtAuditValue(from)}</span>
                         <span>→</span>
-                        <span style={{ color: '#444', fontWeight: 600 }}>{String(to ?? '—')}</span>
+                        <span style={{ color: '#444', fontWeight: 600 }}>{fmtAuditValue(to)}</span>
                       </div>
                     );
                   })}
@@ -314,11 +407,19 @@ function AuditTrail({ orderId, apiClient, refresh }) {
 
 // ── Detail pane ───────────────────────────────────────────────────────────────
 
-function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false }) {
+function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [editing, setEditing]               = useState(false);
   const [saving, setSaving]                 = useState(false);
   const [auditRefresh, setAuditRefresh]     = useState(0);
+  const [availableFlavours, setAvailableFlavours] = useState([]);
+
+  useEffect(() => {
+    if (!bakerSlug || !apiClient?.fetchFlavours) return;
+    apiClient.fetchFlavours(bakerSlug)
+      .then(data => { if (Array.isArray(data)) setAvailableFlavours(data); })
+      .catch(() => {});
+  }, [bakerSlug]);
 
   const customer  = order.customers;
   const name      = customer ? `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim() : 'Unknown';
@@ -388,7 +489,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         </div>
         <div style={{ marginBottom: 20 }}>{cakeActions}</div>
         {editing
-          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} />
+          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
@@ -431,7 +532,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
       {/* Right: details */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '28px' }}>
         {editing
-          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} />
+          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
@@ -574,7 +675,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null }) {
   const isMobile = useIsMobile();
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -702,6 +803,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
                     primaryColor={primaryColor}
                     isMobile={isMobile}
                     homeDeliveryEnabled={homeDeliveryEnabled}
+                    bakerSlug={bakerSlug}
                   />
                 : <Empty>Select an order to view details.</Empty>
               }
@@ -727,6 +829,10 @@ const FLOW_STEPS = [
   { key: 'delivered',   label: 'Delivered', short: 'Done'      },
 ];
 
+// Reached steps render ink-black, unreached stay white/grey — a clean monochrome
+// stepper (no per-status colours, no red).
+const INK = '#1a1a1a';
+
 function StatusProgress({ status, onChange, disabled, readOnly = false }) {
   const isMobile    = useIsMobile();
   const isCancelled = status === 'cancelled';
@@ -735,16 +841,16 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
   const cancelledBanner = (
     <div style={{
       marginBottom: 20, padding: '12px 16px', borderRadius: 12,
-      background: '#FEE2E2', border: '1.5px solid #FECACA',
+      background: '#F3F2EF', border: '1.5px solid #E0DDD8',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#991B1B' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: INK }}>
         <span style={{ fontSize: 18 }}>✕</span> Order Cancelled
       </div>
       {!readOnly && (
         <button onClick={() => onChange('pending')} disabled={disabled} style={{
-          fontSize: 11, fontWeight: 700, color: '#991B1B', background: 'none',
-          border: '1.5px solid #FECACA', borderRadius: 8, padding: '4px 10px',
+          fontSize: 11, fontWeight: 700, color: INK, background: 'none',
+          border: '1.5px solid #E0DDD8', borderRadius: 8, padding: '4px 10px',
           cursor: 'pointer', fontFamily: 'inherit', opacity: disabled ? 0.5 : 1,
         }}>Reopen</button>
       )}
@@ -761,8 +867,8 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
           const done     = i < currentIdx;
           const active   = i === currentIdx;
           const isLast   = i === FLOW_STEPS.length - 1;
-          const m        = STATUS_META[step.key];
-          const dotColor = done ? '#10b981' : active ? m.color : '#d1d5db';
+          const reached  = done || active;
+          const dotColor = reached ? INK : '#d1d5db';
           const canClick = !readOnly && !disabled && !active;
 
           return (
@@ -779,13 +885,13 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 32, flexShrink: 0 }}>
                 <div style={{
                   width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                  background: done ? '#10b981' : active ? m.color : '#fff',
+                  background: reached ? INK : '#fff',
                   border: `2.5px solid ${dotColor}`,
-                  color: done || active ? '#fff' : '#bbb',
+                  color: reached ? '#fff' : '#bbb',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 12, fontWeight: 700,
                   transition: 'all 0.2s',
-                  boxShadow: active ? `0 0 0 4px ${m.color}25` : 'none',
+                  boxShadow: active ? '0 0 0 4px rgba(26,26,26,0.12)' : 'none',
                 }}>
                   {done
                     ? <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>
@@ -794,7 +900,7 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
                 {!isLast && (
                   <div style={{
                     width: 2, flex: 1, minHeight: 20,
-                    background: done ? '#10b981' : '#E8E4DC',
+                    background: done ? INK : '#E8E4DC',
                     margin: '3px 0', transition: 'background 0.3s',
                   }} />
                 )}
@@ -807,7 +913,7 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
               }}>
                 <span style={{
                   fontSize: 15, fontWeight: active ? 700 : 500,
-                  color: done ? '#10b981' : active ? m.color : '#bbb',
+                  color: reached ? INK : '#bbb',
                   transition: 'color 0.2s',
                 }}>{step.label}</span>
               </div>
@@ -818,7 +924,8 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
         {!readOnly && status !== 'delivered' && (
           <button onClick={e => { e.stopPropagation(); onChange('cancelled'); }} disabled={disabled} style={{
             marginTop: 8, background: 'none', border: 'none', padding: 0,
-            fontSize: 12, color: '#ef4444', fontFamily: 'inherit', fontWeight: 600,
+            fontSize: 12, color: '#888', fontFamily: 'inherit', fontWeight: 600,
+            textDecoration: 'underline', textUnderlineOffset: 2,
             cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1,
           }}>Cancel order</button>
         )}
@@ -836,7 +943,8 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
         {FLOW_STEPS.map((step, i) => {
           const done     = i < currentIdx;
           const active   = i === currentIdx;
-          const dotColor = done ? '#10b981' : active ? STATUS_META[step.key].color : '#d1d5db';
+          const reached  = done || active;
+          const dotColor = reached ? INK : '#d1d5db';
           const canClick = !readOnly && !disabled && !active;
 
           return (
@@ -845,7 +953,7 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
                 <div style={{
                   flex: 1, height: 3, borderRadius: 2,
                   marginTop: connectorMarginTop,
-                  background: done || active ? '#10b981' : '#E8E4DC',
+                  background: reached ? INK : '#E8E4DC',
                   transition: 'background 0.3s',
                 }} />
               )}
@@ -856,14 +964,14 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
                   title={step.label}
                   style={{
                     width: dotSize, height: dotSize, borderRadius: '50%', flexShrink: 0,
-                    background: done ? '#10b981' : active ? STATUS_META[step.key].color : '#fff',
+                    background: reached ? INK : '#fff',
                     border: `2.5px solid ${dotColor}`,
-                    color: done || active ? '#fff' : '#bbb',
+                    color: reached ? '#fff' : '#bbb',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: canClick ? 'pointer' : 'default',
                     fontFamily: 'inherit', fontSize: 11, fontWeight: 700,
                     transition: 'all 0.2s',
-                    boxShadow: active ? `0 0 0 4px ${STATUS_META[step.key].color}25` : 'none',
+                    boxShadow: active ? '0 0 0 4px rgba(26,26,26,0.12)' : 'none',
                     outline: 'none',
                   }}
                 >
@@ -873,7 +981,7 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
                 </button>
                 <span style={{
                   fontSize: 9, fontWeight: 700, textAlign: 'center',
-                  color: done ? '#10b981' : active ? STATUS_META[step.key].color : '#aaa',
+                  color: reached ? INK : '#aaa',
                   lineHeight: 1.2, whiteSpace: 'nowrap',
                 }}>{step.short}</span>
               </div>
@@ -886,7 +994,8 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
           <button onClick={() => onChange('cancelled')} disabled={disabled} style={{
             background: 'none', border: 'none', padding: 0,
-            fontSize: 11, color: '#ef4444', fontFamily: 'inherit', fontWeight: 600,
+            fontSize: 11, color: '#888', fontFamily: 'inherit', fontWeight: 600,
+            textDecoration: 'underline', textUnderlineOffset: 2,
             cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1,
           }}>Cancel order</button>
         </div>

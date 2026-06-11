@@ -24,7 +24,7 @@ const TOPPER_CAPS = { resize: true, delete: true };
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
-  if (h.length !== 6) return `rgba(155,95,114,${alpha})`;
+  if (h.length !== 6) return `rgba(26,26,26,${alpha})`;
   return `rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${alpha})`;
 }
 
@@ -180,10 +180,10 @@ function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
       onPointerCancel={e => e.currentTarget.releasePointerCapture(e.pointerId)}>
       <svg viewBox="0 0 48 48" width={46} height={46} style={{ display: 'block', pointerEvents: 'none' }}>
         <path d={band(0, 1)} fill="#e6e0e3" />
-        {t > 0.001 && <path d={band(0, t)} fill="#9b5268" />}
-        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke="#9b5268" strokeWidth={2} />
+        {t > 0.001 && <path d={band(0, t)} fill="#1a1a1a" />}
+        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke="#1a1a1a" strokeWidth={2} />
       </svg>
-      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#9b5268', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
+      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
         {size.toFixed(1)}
       </span>
     </div>
@@ -202,7 +202,7 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
   const swatch = (c, key) => (
     <div key={key} onClick={() => onChange(c)} style={{
       width: dot, height: dot, borderRadius: '50%', background: c, cursor: 'pointer',
-      border: color.toLowerCase() === c.toLowerCase() ? '2.5px solid #9b5f72' : '1.5px solid #e0d0d5',
+      border: color.toLowerCase() === c.toLowerCase() ? '2.5px solid #1a1a1a' : '1.5px solid #999999',
       boxSizing: 'border-box', flexShrink: 0,
       boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
     }} />
@@ -217,7 +217,7 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
         <div style={{ width }}>
           <div style={{
             fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
-            color: '#9b5f72', textTransform: 'uppercase', marginBottom: 7, textAlign: 'center',
+            color: '#1a1a1a', textTransform: 'uppercase', marginBottom: 7, textAlign: 'center',
           }}>Colors from cake</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
             {cakeColors.map((c, i) => swatch(c, `cake-${i}`))}
@@ -262,8 +262,8 @@ function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
       <span style={{ fontSize: 11, fontWeight: 700, color: '#555', minWidth: 64 }}>{label}</span>
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
-        style={{ flex: 1, accentColor: '#9b5f72' }} />
-      <span style={{ fontSize: 11, fontWeight: 700, color: '#9b5f72', minWidth: 34, textAlign: 'right' }}>{fmt(value)}</span>
+        style={{ flex: 1, accentColor: '#1a1a1a' }} />
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', minWidth: 34, textAlign: 'right' }}>{fmt(value)}</span>
     </div>
   );
 }
@@ -273,15 +273,15 @@ function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
 function CreamFontButton({ fontKey, label, selected, onClick }) {
   const { d, width, height } = useMemo(() => creamFontPreview(fontKey, 'Abc'), [fontKey]);
   const sw = Math.max(width, height) * 0.05;   // bead ≈ 5% of glyph extent
-  const active = selected ? '#9b5f72' : '#f0dce3';
+  const active = selected ? '#1a1a1a' : '#999999';
   return (
     <button key={fontKey} onClick={onClick} title={label}
       style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer',
-        border: `1.5px solid ${active}`, background: selected ? '#fbf3f6' : '#fff',
+        border: `1.5px solid ${active}`, background: selected ? '#F2F1EE' : '#fff',
         display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: 34 }}>
       <svg viewBox={`${-sw} ${-sw} ${width + sw * 2} ${height + sw * 2}`} height={22}
         style={{ display: 'block', maxWidth: 96 }} preserveAspectRatio="xMidYMid meet">
-        <path d={d} fill="none" stroke={selected ? '#9b5f72' : '#777'}
+        <path d={d} fill="none" stroke={selected ? '#1a1a1a' : '#777'}
           strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
@@ -324,7 +324,7 @@ const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', materi
 const TMPL_CATS = ['occasion', 'style', 'color', 'age_group', 'gender'];
 
 function FunnelIcon({ size = 15, active }) {
-  const c = active ? '#9b5f72' : '#888';
+  const c = active ? '#1a1a1a' : '#888';
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1.5 2.5L14.5 2.5L9.5 8.5L9.5 13.5L6.5 13.5L6.5 8.5Z" />
@@ -343,7 +343,7 @@ function FilterPanel({ allTags, active, onChange, categories, children }) {
   }, {});
 
   return (
-    <div style={{ borderBottom: '1px solid #f0dce3', marginBottom: 6 }}>
+    <div style={{ borderBottom: '1px solid #999999', marginBottom: 6 }}>
       {/* Toggle row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 6px' }}>
         <button
@@ -352,11 +352,11 @@ function FilterPanel({ allTags, active, onChange, categories, children }) {
         >
           <FunnelIcon active={activeCount > 0 || open} />
           {activeCount > 0 && (
-            <span style={{ fontSize: 9, fontWeight: 800, color: '#9b5f72', fontFamily: "'Quicksand', sans-serif" }}>{activeCount}</span>
+            <span style={{ fontSize: 9, fontWeight: 800, color: '#1a1a1a', fontFamily: "'Quicksand', sans-serif" }}>{activeCount}</span>
           )}
         </button>
         {activeCount > 0 && (
-          <button onClick={() => onChange({})} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 9, color: '#9b5f72', fontWeight: 700, fontFamily: "'Quicksand', sans-serif" }}>
+          <button onClick={() => onChange({})} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 9, color: '#1a1a1a', fontWeight: 700, fontFamily: "'Quicksand', sans-serif" }}>
             clear
           </button>
         )}
@@ -377,7 +377,7 @@ function FilterPanel({ allTags, active, onChange, categories, children }) {
                       return (
                         <button key={tag.slug}
                           onClick={() => onChange({ ...active, [cat]: on ? null : tag.slug })}
-                          style={{ padding: '3px 8px', borderRadius: 20, border: `1.5px solid ${on ? '#9b5f72' : '#f0dce3'}`, background: on ? '#9b5f72' : '#fff', color: on ? '#fff' : '#666', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand', sans-serif", lineHeight: 1.4 }}
+                          style={{ padding: '3px 8px', borderRadius: 20, border: `1.5px solid ${on ? '#1a1a1a' : '#999999'}`, background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#666', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand', sans-serif", lineHeight: 1.4 }}
                         >
                           {tag.name}
                         </button>
@@ -422,16 +422,16 @@ function ElementTypeCard({
         {toppersDb.map(t => {
           const isActive = design.topper?.id === t.id;
           return (
-            <div key={t.id} style={{ width: '100%', borderTop: '1px solid #f0dce3', paddingTop: 8, paddingBottom: 2 }}>
+            <div key={t.id} style={{ width: '100%', borderTop: '1px solid #999999', paddingTop: 8, paddingBottom: 2 }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
                 {/* Thumbnail */}
                 <div style={{
                   width: 80, height: 80, borderRadius: 10,
                   background: '#fff',
-                  border: `2px solid ${isActive ? '#9b5f72' : '#f0dce3'}`,
+                  border: `2px solid ${isActive ? '#1a1a1a' : '#999999'}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   overflow: 'hidden', cursor: 'grab', touchAction: 'none',
-                  boxShadow: isActive ? '0 0 0 2px rgba(155,95,114,0.2)' : 'none',
+                  boxShadow: isActive ? '0 0 0 2px rgba(26,26,26,0.2)' : 'none',
                 }}
                   onClick={() => onSetTopper(isActive ? null : t)}
                   onPointerDown={e => { e.preventDefault(); onDragStartTopper?.(t, e.clientX, e.clientY); }}
@@ -479,7 +479,7 @@ function ElementTypeCard({
               <div style={{
                 width: 64, height: 64, borderRadius: 10, overflow: 'hidden',
                 background: '#fff',
-                border: '1.5px solid #f0dce3',
+                border: '1.5px solid #999999',
               }}>
                 {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
               </div>
@@ -507,7 +507,7 @@ function ElementTypeCard({
               onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
             >
-              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
+              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
                 {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
               </div>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
@@ -534,7 +534,7 @@ function ElementTypeCard({
               onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
             >
-              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
+              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
                 {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} crossOrigin="anonymous" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
               </div>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
@@ -559,7 +559,7 @@ function ElementTypeCard({
                 onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
               >
-                <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
+                <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
                   {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
                 </div>
                 <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
@@ -2142,9 +2142,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
           >
             <div style={{ width:'100%', height:4, borderRadius:2, background:'#e0e0e0', position:'relative' }}>
-              <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${scPct}%`, background:'#9b5268', borderRadius:2 }} />
+              <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${scPct}%`, background:'#1a1a1a', borderRadius:2 }} />
             </div>
-            <div style={{ position:'absolute', left:`${scPct}%`, transform:'translateX(-50%)', width:14, height:14, borderRadius:'50%', background:'#9b5268', pointerEvents:'none' }} />
+            <div style={{ position:'absolute', left:`${scPct}%`, transform:'translateX(-50%)', width:14, height:14, borderRadius:'50%', background:'#1a1a1a', pointerEvents:'none' }} />
           </div>
           <span style={{ fontSize:11, fontWeight:700, color:'#333', minWidth:30 }}>{Math.round(sc * 100)}%</span>
         </div>,
@@ -2195,7 +2195,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const isGrouped = !!sticker?.groupId;
       if (isGrouped) {
         items.push(
-          <button key="ungroup" style={{ ...s.tbIconBtn, fontSize: 11, color: '#9b5f72' }}
+          <button key="ungroup" style={{ ...s.tbIconBtn, fontSize: 11, color: '#1a1a1a' }}
             onClick={() => { ungroupStickers(sticker.groupId); clearAllSelections(); }}>
             Ungroup
           </button>,
@@ -2468,7 +2468,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               value={elemSearch}
               onChange={e => setElemSearch(e.target.value)}
               placeholder="Search elements…"
-              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #f0dce3', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#fdf9fa', flexShrink: 0 }}
+              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff', flexShrink: 0 }}
             />
 
             <div style={s.flyoutScroll}>
@@ -2496,12 +2496,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <div style={{
                           width: 64, height: 64, borderRadius: 10, overflow: 'hidden',
                           background: '#fff',
-                          border: `1.5px solid ${isActive ? '#9b5f72' : '#f0dce3'}`,
-                          boxShadow: isActive ? '0 0 0 2px rgba(155,95,114,0.18)' : 'none',
+                          border: `1.5px solid ${isActive ? '#1a1a1a' : '#999999'}`,
+                          boxShadow: isActive ? '0 0 0 2px rgba(26,26,26,0.18)' : 'none',
                         }}>
                           {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
                         </div>
-                        <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#9b5f72' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#1a1a1a' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
                       </div>
                     );
                   })}
@@ -2553,7 +2553,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button
                   onClick={() => { setToolsOpen(true); setActiveTool('pen'); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fbeef2', flexShrink: 0 }} />
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0 }} />
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Cream Pen</div>
                     <div style={{ fontSize: 10, color: '#888' }}>Draw cream freehand on the cake</div>
@@ -2562,7 +2562,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button
                   onClick={() => { setToolsOpen(true); setActiveTool('cream-pen'); if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fbeef2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9b5f72', flexShrink: 0 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
                     <TextIcon size={22} />
                   </div>
                   <div style={{ textAlign: 'left' }}>
@@ -2617,12 +2617,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                     <button onClick={removeStroke} disabled={!design.piping.length}
-                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', fontWeight: 700, fontSize: 12,
-                        color: design.piping.length ? '#9b5f72' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
+                        color: design.piping.length ? '#1a1a1a' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
                       ↶ Undo
                     </button>
                     <button onClick={clearPiping} disabled={!design.piping.length}
-                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', fontWeight: 700, fontSize: 12,
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
                         color: design.piping.length ? '#b56' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
                       Clear all
                     </button>
@@ -2642,7 +2642,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       {SURFACES.map(s => (
                         <button key={s.k} onClick={() => setWriting({ surface: s.k })}
                           style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
-                            background: surface === s.k ? '#9b5f72' : 'transparent', color: surface === s.k ? '#fff' : '#9b5f72' }}>
+                            background: surface === s.k ? '#1a1a1a' : 'transparent', color: surface === s.k ? '#fff' : '#1a1a1a' }}>
                           {s.label}
                         </button>
                       ))}
@@ -2654,7 +2654,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       placeholder={'Type a message…\n(Enter for a new line)'}
                       rows={4}
                       style={{ width: '100%', boxSizing: 'border-box', padding: '12px 13px', fontSize: 17, fontWeight: 700, color: '#444',
-                        border: '1.5px solid #f0dce3', borderRadius: 10, outline: 'none', background: '#fdf9fa', fontFamily: "'Quicksand', sans-serif",
+                        border: '1.5px solid #999999', borderRadius: 10, outline: 'none', background: '#ffffff', fontFamily: "'Quicksand', sans-serif",
                         flexShrink: 0, resize: 'vertical', lineHeight: 1.4, minHeight: 96,
                         textTransform: w.uppercase ? 'uppercase' : 'none' }}
                     />
@@ -2663,7 +2663,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <button type="button" role="switch" aria-checked={!!w.uppercase}
                         onClick={() => setWriting({ uppercase: !w.uppercase })}
                         style={{ width: 38, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0, position: 'relative',
-                          background: w.uppercase ? '#9b5f72' : '#e3d4da', transition: 'background .15s' }}>
+                          background: w.uppercase ? '#1a1a1a' : '#e3d4da', transition: 'background .15s' }}>
                         <span style={{ position: 'absolute', top: 2, left: w.uppercase ? 18 : 2, width: 18, height: 18, borderRadius: '50%',
                           background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
                       </button>
@@ -2700,9 +2700,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <button key={c.k} onClick={c.onClick} title={c.label}
                           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                           <span style={{ width: 40, height: 40, borderRadius: '50%', background: c.swatch,
-                            border: c.ring ? '3px solid #9b5f72' : '2px solid #e7d6dc',
+                            border: c.ring ? '3px solid #1a1a1a' : '2px solid #e7d6dc',
                             boxShadow: c.ring ? '0 0 0 2px #fff inset, 0 1px 3px rgba(0,0,0,0.18)' : '0 1px 2px rgba(0,0,0,0.12)' }} />
-                          <span style={{ fontSize: 11, fontWeight: 800, color: c.ring ? '#9b5f72' : '#999' }}>{c.label}</span>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: c.ring ? '#1a1a1a' : '#999' }}>{c.label}</span>
                         </button>
                       ))}
                     </div>
@@ -2737,12 +2737,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
                           : surface === 'board' ? { boardX: undefined, boardZ: undefined }
                           : { offsetX: 0, offsetZ: 0 })}
-                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff',
-                          color: '#9b5f72', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff',
+                          color: '#1a1a1a', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
                         Recentre
                       </button>
                       <button onClick={() => { clearWriting(); setActiveTool(null); }}
-                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
                         Remove writing
                       </button>
                     </div>
@@ -2788,7 +2788,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               value={tmplSearch}
               onChange={e => setTmplSearch(e.target.value)}
               placeholder="Search templates…"
-              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #f0dce3', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#fdf9fa', flexShrink: 0 }}
+              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff', flexShrink: 0 }}
             />
 
             <div style={s.flyoutScroll}>
@@ -2803,13 +2803,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Weight</span>
                   <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={filterWeight} onChange={e => setFilterWeight(e.target.value)}
-                    style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #f0dce3', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
+                    style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #999999', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
                   <span style={{ fontSize: 10, color: '#aaa' }}>kg+</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Age</span>
                   <input type="number" min="0" max="120" step="1" placeholder="e.g. 8" value={filterAge} onChange={e => setFilterAge(e.target.value)}
-                    style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #f0dce3', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
+                    style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #999999', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
                   <span style={{ fontSize: 10, color: '#aaa' }}>yrs</span>
                 </div>
               </div>
@@ -2865,7 +2865,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 }}
               >
                 {t.thumbnail_url
-                  ? <img src={cfImg(t.thumbnail_url, 180, 120, cfAssetsBase)} alt={t.name} width={180} height={120} decoding="async" style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#faf7f5' }} />
+                  ? <img src={cfImg(t.thumbnail_url, 180, 120, cfAssetsBase)} alt={t.name} width={180} height={120} decoding="async" style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#FAFAF8' }} />
                   : <div style={s.templateThumbPlaceholder} />
                 }
                 <div style={s.templateCardFooter}>
@@ -2975,13 +2975,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {ids.length === 0 ? 'Tap to select' : ids.length === 1 ? '1 selected — tap more' : `${ids.length} selected`}
                 </span>
                 {ids.length > 1 && !allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }}
+                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }}
                     onClick={() => { groupStickers(ids); clearAllSelections(); }}>
                     Group
                   </button>
                 )}
                 {ids.length > 1 && allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }}
+                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }}
                     onClick={() => {
                       const gid = design.stickers.find(x => x.id === ids[0])?.groupId;
                       if (gid) ungroupStickers(gid);
@@ -3068,9 +3068,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
                     >
                       <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
                       </div>
-                      <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#9b5268', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
+                      <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
                     </div>
                   </div>
                 );
@@ -3162,9 +3162,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
                       >
                         <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
                         </div>
-                        <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#9b5268', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
+                        <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
                       </div>
                     </div>
                   );
@@ -3223,9 +3223,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
                         >
                           <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                            <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+                            <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
                           </div>
-                          <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#1a1a1a', pointerEvents: 'none' }} />
                         </div>
                       );
                     })()}
@@ -3257,17 +3257,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const sameEl = pipingCards.filter(c => c.id === card.id);
                 const title  = sameEl.length > 1 ? `${card.name} ${sameEl.indexOf(card) + 1}` : card.name;
                 return (
-                <div key={card.cardId} style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#9b5268' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                <div key={card.cardId} style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                   {/* Card header: thumbnail + element name + expand/collapse arrow.
                       No close button — a layer leaves the cake by unchecking its rings. */}
                   <div role="button"
                     onClick={() => setExpandedPipingId(prev => prev === card.cardId ? null : card.cardId)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#fbf3f6' : '#fff' }}>
-                    <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#F2F1EE' : '#fff' }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0 }}>
                       {card.thumbnail_url && <img src={cfImg(card.thumbnail_url, 26, 26, cfAssetsBase)} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     </div>
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
-                    <span style={{ fontSize: 9, color: '#9b5268', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+                    <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
                   </div>
                   {expanded && (
                   <div style={{ padding: '0 9px 9px' }}>
@@ -3304,12 +3304,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               if (allowsBoard) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
               return (<>
               {rimFull && (
-                <div style={{ borderTop: '1px solid #f5eaed', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
                   A rim is fully packed with nested rings — this style is offered on the side instead so they don't overlap.
                 </div>
               )}
               {multi && allowsBoard && !yAdjustable && (
-                <div style={{ borderTop: '1px solid #f5eaed', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
                   Board is on the bottom tier only — upper tiers rest on the rim of the tier below.
                 </div>
               )}
@@ -3358,9 +3358,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 // border perpendicularly from each straight edge, so label it "Inset" instead.
                 const isRectTier = canvasConfig.tiers[tierIndex]?.shape === 'rect';
                 return (
-                  <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #f5eaed', paddingTop: 10, paddingBottom: 4 }}>
+                  <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
                     {/* ── Full-width preview with the checkbox floating in its corner ── */}
-                    <div style={{ position: 'relative', width: '100%', height: 104, borderRadius: 10, overflow: 'hidden', border: `1.5px solid ${applied ? '#9b5268' : '#cdccd3'}`, background: '#cfcdd6' }}>
+                    <div style={{ position: 'relative', width: '100%', height: 104, borderRadius: 10, overflow: 'hidden', border: `1.5px solid ${applied ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
                       <PipingPreview zone={zone} glbUrl={previewGlb} color={color} size={size}
                         tiers={canvasConfig.tiers} tierIndex={tierIndex}
                         placement={previewPlacement} arrangement={arrangement} instances={zoneInstances} />
@@ -3369,11 +3369,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         style={{ position: 'absolute', top: 5, left: 5, width: 22, height: 22, borderRadius: 6, background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                         <input type="checkbox" checked={!!applied}
                           onChange={() => togglePipingZone(tierIndex, zone, !!applied)}
-                          style={{ accentColor: '#9b5268', width: 15, height: 15, cursor: 'pointer', margin: 0 }} />
+                          style={{ accentColor: '#1a1a1a', width: 15, height: 15, cursor: 'pointer', margin: 0 }} />
                       </label>
                     </div>
                     {/* ring name */}
-                    <span style={{ display: 'block', marginTop: 7, fontSize: 11, fontWeight: 700, color: '#9b5268', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.25, textAlign: 'center' }}>{label}</span>
+                    <span style={{ display: 'block', marginTop: 7, fontSize: 11, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.25, textAlign: 'center' }}>{label}</span>
                     {/* Color + Size */}
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -3409,7 +3409,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             borderRadius: 16, padding: PAD, boxShadow: '0 12px 44px rgba(0,0,0,0.24)',
                             border: '1px solid #eadde2' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#9b5268', textTransform: 'uppercase' }}>{label}</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#1a1a1a', textTransform: 'uppercase' }}>{label}</span>
                               <button style={s.iconBtn} onClick={() => setPipingColorKey(null)}>✕</button>
                             </div>
                             <ColorWheel
@@ -3431,7 +3431,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           return (
                             <button key={mode}
                               onPointerDown={e => { e.stopPropagation(); handlePipingArrangementChange(tierIndex, zone, mode); }}
-                              style={{ flex: 1, fontSize: 11, padding: '5px 0', borderRadius: 6, border: `1.5px solid ${on ? '#9b5268' : '#e0d0d5'}`, background: on ? '#9b5268' : '#fff', color: on ? '#fff' : '#9b5268', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", textTransform: 'capitalize' }}>
+                              style={{ flex: 1, fontSize: 11, padding: '5px 0', borderRadius: 6, border: `1.5px solid ${on ? '#1a1a1a' : '#999999'}`, background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", textTransform: 'capitalize' }}>
                               {mode}
                             </button>
                           );
@@ -3448,7 +3448,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           <button
                             disabled={zoneInstances.length >= maxInstances}
                             onPointerDown={e => { e.stopPropagation(); if (zoneInstances.length < maxInstances) handlePipingAddInstance(tierIndex, zone); }}
-                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #9b5268', background: zoneInstances.length >= maxInstances ? '#f0e0e5' : '#9b5268', color: zoneInstances.length >= maxInstances ? '#c9a9b3' : '#fff', cursor: zoneInstances.length >= maxInstances ? 'default' : 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", flexShrink: 0 }}>
+                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #1a1a1a', background: zoneInstances.length >= maxInstances ? '#f0e0e5' : '#1a1a1a', color: zoneInstances.length >= maxInstances ? '#c9a9b3' : '#fff', cursor: zoneInstances.length >= maxInstances ? 'default' : 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", flexShrink: 0 }}>
                             + Duplicate
                           </button>
                         </div>
@@ -3473,9 +3473,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
                               >
                                 <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                                  <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${rotPct}%`, background: '#9b5268', borderRadius: 2 }} />
+                                  <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${rotPct}%`, background: '#1a1a1a', borderRadius: 2 }} />
                                 </div>
-                                <div style={{ position: 'absolute', left: `${rotPct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
+                                <div style={{ position: 'absolute', left: `${rotPct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#1a1a1a', pointerEvents: 'none' }} />
                               </div>
                               <span style={{ fontSize: 10, fontWeight: 700, color: '#444', minWidth: 30, textAlign: 'right', fontFamily: "'Quicksand',sans-serif" }}>{angleDeg}°</span>
                               <button
@@ -3499,14 +3499,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             <span style={{ ...lbl, flex: 1, minWidth: 0 }}>{isRectTier ? 'Inset' : 'Radial'}</span>
                             <button
                               title="Move inward"
-                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                               onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial - 0.05).toFixed(2)); }}>−</button>
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 32, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
                               {radial > 0 ? `+${radial.toFixed(2)}` : radial.toFixed(2)}
                             </span>
                             <button
                               title="Move outward"
-                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                               onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial + 0.05).toFixed(2)); }}>+</button>
                             {radial !== 0 && (
                               <button
@@ -3523,7 +3523,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Flip</span>
                                 <button
                                   onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(tierIndex); }}
-                                  style={{ fontSize: 11, padding: '3px 11px', borderRadius: 6, border: `1.5px solid ${active ? '#9b5268' : '#e0d0d5'}`, background: active ? '#9b5268' : '#fff', color: active ? '#fff' : '#9b5268', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>
+                                  style={{ fontSize: 11, padding: '3px 11px', borderRadius: 6, border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`, background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>
                                   {active ? '↕ On' : '↕ Off'}
                                 </button>
                               </div>
@@ -3533,13 +3533,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
                               <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Height</span>
                               <button
-                                style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                                 onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY - 0.05).toFixed(2)); }}>−</button>
                               <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 32, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
                                 {boardY > 0 ? `+${boardY.toFixed(2)}` : boardY.toFixed(2)}
                               </span>
                               <button
-                                style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                                style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                                 onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY + 0.05).toFixed(2)); }}>+</button>
                               {boardY !== 0 && (
                                 <button
@@ -3637,7 +3637,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {['standard', 'premium'].map(o => (
                 <button
                   key={o}
-                  style={{ ...s.offeringBtn, borderColor: templateOffering === o ? primaryColor : '#f0dce3', background: templateOffering === o ? hexToRgba(primaryColor, 0.08) : '#fff', color: templateOffering === o ? primaryColor : '#666' }}
+                  style={{ ...s.offeringBtn, borderColor: templateOffering === o ? primaryColor : '#999999', background: templateOffering === o ? hexToRgba(primaryColor, 0.08) : '#fff', color: templateOffering === o ? primaryColor : '#666' }}
                   onClick={() => setTemplateOffering(o)}
                 >
                   {o.charAt(0).toUpperCase() + o.slice(1)}
@@ -3760,6 +3760,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         apiClient={apiClient}
         primaryColor={primaryColor}
         homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
+        bakerSlug={bakerData?.slug}
       />
 
       {/* ── Dashboard panel ── */}
@@ -3834,7 +3835,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           width: 56, height: 56,
           borderRadius: 12,
           background: 'transparent',
-          border: dragGhost.canDrop ? '2.5px solid #22c55e' : '2px solid #9b5f72',
+          border: dragGhost.canDrop ? '2.5px solid #22c55e' : '2px solid #1a1a1a',
           overflow: 'hidden',
           pointerEvents: 'none',
           zIndex: 9999,
@@ -3936,7 +3937,7 @@ const s = {
   dropdown: {
     position: 'absolute', top: 0, left: 'calc(100% + 8px)',
     background: '#fff', borderRadius: 10,
-    border: '1px solid #f0dce3',
+    border: '1px solid #999999',
     boxShadow: '0 4px 20px rgba(107,45,66,0.14)',
     minWidth: 160, zIndex: 50,
     display: 'flex', flexDirection: 'column',
@@ -3956,7 +3957,7 @@ const s = {
   dropdownUserInfo: { padding: '10px 14px 8px' },
   dropdownName: { fontSize: 13, fontWeight: 700, color: '#1a1a1a' },
   dropdownEmail: { fontSize: 11, color: '#666', marginTop: 2 },
-  dropdownDivider: { height: 1, background: '#f0dce3', margin: '4px 0' },
+  dropdownDivider: { height: 1, background: '#999999', margin: '4px 0' },
 
   // Main + flyout panels
   main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
@@ -3990,7 +3991,7 @@ const s = {
   },
   elementCard: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-    background: '#fff', border: '1.5px solid #f0dce3', borderRadius: 12,
+    background: '#fff', border: '1.5px solid #999999', borderRadius: 12,
     padding: '10px 8px', cursor: 'pointer', position: 'relative',
     transition: 'all 0.15s',
     flexShrink: 0,
@@ -4007,7 +4008,7 @@ const s = {
     display: 'flex', flexWrap: 'wrap', gap: 10,
   },
   templateCard: {
-    border: '1.5px solid #f0dce3', borderRadius: 12,
+    border: '1.5px solid #999999', borderRadius: 12,
     overflow: 'hidden', cursor: 'pointer',
     display: 'flex', flexDirection: 'column', gap: 6,
     padding: '0 0 8px',
@@ -4016,7 +4017,7 @@ const s = {
   },
   templateThumbPlaceholder: {
     width: '100%', height: 120,
-    background: '#faf7f5', display: 'flex',
+    background: '#FAFAF8', display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     fontSize: 32,
   },
@@ -4029,7 +4030,7 @@ const s = {
   },
   templateBadge: {
     fontSize: 9, color: '#333', fontWeight: 700,
-    background: '#fdf0f5', border: '1px solid #f0dce3',
+    background: '#FAFAF8', border: '1px solid #999999',
     borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
   },
 
@@ -4092,7 +4093,7 @@ const s = {
     fontFamily: "'Quicksand',sans-serif",
   },
   iconBtn: {
-    background:'#f5eaed', border:'none', width:28, height:28, borderRadius:'50%',
+    background:'#f3f4f6', border:'none', width:28, height:28, borderRadius:'50%',
     fontSize:12, color:'#333', cursor:'pointer',
     display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700,
   },
@@ -4109,7 +4110,7 @@ const s = {
     pointerEvents:'auto',
   },
   swatchBtn: {
-    width:26, height:26, borderRadius:'50%', border:'2.5px solid #e0d0d5',
+    width:26, height:26, borderRadius:'50%', border:'2.5px solid #999999',
     cursor:'pointer', flexShrink:0, padding:0,
     boxShadow:'0 1px 4px rgba(0,0,0,0.15)',
   },
@@ -4126,7 +4127,7 @@ const s = {
     fontSize:13, fontWeight:700, color:'#222', minWidth:26, textAlign:'center',
   },
   toolbarBtn: {
-    background:'#f5eaed', border:'none', borderRadius:10,
+    background:'#f3f4f6', border:'none', borderRadius:10,
     padding:'5px 10px', fontSize:13, cursor:'pointer', color:'#333', fontWeight:700,
     flexShrink:0,
   },
@@ -4154,7 +4155,7 @@ const s = {
     outline: 'none', width: '100%', boxSizing: 'border-box',
   },
   offeringBtn: {
-    flex: 1, padding: '7px 0', borderRadius: 10, border: '1.5px solid #f0dce3',
+    flex: 1, padding: '7px 0', borderRadius: 10, border: '1.5px solid #999999',
     fontSize: 11, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.3,
     fontFamily: "'Quicksand',sans-serif", transition: 'all 0.15s',
   },
@@ -4183,21 +4184,21 @@ const s = {
     zIndex:30, pointerEvents:'auto',
   },
   groupBarBtn: {
-    background:'none', border:'1.5px solid #e0d0d5', borderRadius:8,
+    background:'none', border:'1.5px solid #999999', borderRadius:8,
     padding:'4px 10px', fontSize:11, cursor:'pointer',
     fontWeight:700, fontFamily:"'Quicksand',sans-serif",
   },
 
   zoneToggle: {
     padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700,
-    border: '1.5px solid #e0d0d5', background: 'transparent',
+    border: '1.5px solid #999999', background: 'transparent',
     color: '#888', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif",
     transition: 'all 0.12s',
   },
   zoneToggleOn: {
-    background: 'rgba(155,95,114,0.12)',
-    border: '1.5px solid #9b5f72',
-    color: '#9b5f72',
+    background: 'rgba(26,26,26,0.12)',
+    border: '1.5px solid #1a1a1a',
+    color: '#1a1a1a',
   },
 
   // Narrow vertical strip docked to the right — same on desktop and mobile, so it never

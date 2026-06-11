@@ -165,13 +165,13 @@ function SliderControl({ label, value, min, max, step = 0.001, onChange, display
       >
         {/* track */}
         <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
+          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
         </div>
         {/* thumb */}
         <div style={{
           position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)',
           width: 16, height: 16, borderRadius: '50%',
-          background: '#9b5268', boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+          background: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
           pointerEvents: 'none',
         }} />
       </div>

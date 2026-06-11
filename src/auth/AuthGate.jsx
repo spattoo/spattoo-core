@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const BRAND = '#9b5f72';
+const BRAND = '#1a1a1a';
 const BRAND_LIGHT = '#f5e6ec';
 const FONT = "'Quicksand', sans-serif";
 
@@ -23,7 +23,7 @@ function Input({ label, type = 'text', value, onChange, disabled, placeholder })
           fontSize: 14,
           fontFamily: FONT,
           outline: 'none',
-          background: disabled ? '#f9f4f6' : '#fff',
+          background: disabled ? '#FAFAF8' : '#fff',
           color: '#3e2010',
         }}
       />
@@ -65,7 +65,7 @@ function Card({ title, subtitle, children }) {
       <div style={{
         background: '#fff', borderRadius: 16, padding: '36px 32px',
         width: '100%', maxWidth: 380,
-        boxShadow: '0 4px 24px rgba(155,95,114,0.12)',
+        boxShadow: '0 4px 24px rgba(26,26,26,0.12)',
         display: 'flex', flexDirection: 'column', gap: 20,
       }}>
         <div style={{ textAlign: 'center' }}>
@@ -80,7 +80,7 @@ function Card({ title, subtitle, children }) {
 
 function Alert({ message, type }) {
   const styles = {
-    error: { color: '#c0392b', background: '#fdf0ee' },
+    error: { color: '#c0392b', background: '#FAFAF8' },
     info:  { color: '#2e7d52', background: '#edf7f1' },
   };
   return (

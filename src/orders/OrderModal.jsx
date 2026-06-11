@@ -15,7 +15,7 @@ const TIME_SLOTS = Array.from({ length: 36 }, (_, i) => {
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
-  if (h.length !== 6) return `rgba(155,95,114,${alpha})`;
+  if (h.length !== 6) return `rgba(26,26,26,${alpha})`;
   return `rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${alpha})`;
 }
 
@@ -156,7 +156,7 @@ function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onS
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, borderTop: '1px solid #f0dce3', paddingTop: 12 }}>
+      <div style={{ display: 'flex', gap: 10, borderTop: '1px solid #999999', paddingTop: 12 }}>
         <button
           style={{ ...btn(isMobile), ...brandBtn, flex: 1, opacity: canSubmit ? 1 : 0.45 }}
           disabled={!canSubmit}
@@ -443,7 +443,7 @@ export default function OrderModal({
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink: 0 }}>
               <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>Update Design</span>
-              <button style={{ background: '#f5eaed', border: 'none', cursor: 'pointer', borderRadius: '50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize: 13, color: '#333', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>✕</button>
+              <button style={{ background: '#f3f4f6', border: 'none', cursor: 'pointer', borderRadius: '50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize: 13, color: '#333', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>✕</button>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', padding: isMobile ? '20px 20px' : '16px 0', display: 'flex', flexDirection: 'column', gap: isMobile ? 16 : 12 }}>
@@ -522,16 +522,16 @@ export default function OrderModal({
           {/* Header */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink:0 }}>
             <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>Order This Cake</span>
-            <button style={{ background:'#f5eaed', border:'none', cursor:'pointer', borderRadius:'50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize:13, color:'#333', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>✕</button>
+            <button style={{ background:'#f3f4f6', border:'none', cursor:'pointer', borderRadius:'50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize:13, color:'#333', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>✕</button>
           </div>
 
           {/* Step dots */}
-          <div style={{ display:'flex', padding: isMobile ? '0 20px 14px' : '0 0 14px', borderBottom:'1px solid #f0dce3', flexShrink:0 }}>
+          <div style={{ display:'flex', padding: isMobile ? '0 20px 14px' : '0 0 14px', borderBottom:'1px solid #999999', flexShrink:0 }}>
             {STEPS.map((label, i) => {
               const done = i < step, active = i === step;
               return (
                 <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-                  <div style={{ width: isMobile?30:24, height: isMobile?30:24, borderRadius:'50%', background:(done||active)?primaryColor:'#e0d0d5', color:'#fff', fontWeight:700, fontSize: isMobile?13:11, display:'flex', alignItems:'center', justifyContent:'center', transition:'background 0.2s' }}>
+                  <div style={{ width: isMobile?30:24, height: isMobile?30:24, borderRadius:'50%', background:(done||active)?primaryColor:'#d8d4cf', color:'#fff', fontWeight:700, fontSize: isMobile?13:11, display:'flex', alignItems:'center', justifyContent:'center', transition:'background 0.2s' }}>
                     {done ? <CheckIcon /> : i+1}
                   </div>
                   <span style={{ fontSize: isMobile?10:9, fontWeight:700, letterSpacing:0.5, textTransform:'uppercase', color:(done||active)?primaryColor:'#bbb' }}>{label}</span>
@@ -732,7 +732,7 @@ export default function OrderModal({
                           onClick={() => !disabled && setDeliveryMode(val)}
                           style={{
                             flex:1, padding: isMobile?'14px 0':'10px 0', borderRadius:12,
-                            border: `1.5px solid ${active ? primaryColor : '#e0d0d5'}`,
+                            border: `1.5px solid ${active ? primaryColor : '#999999'}`,
                             fontSize: isMobile?14:11, fontWeight:700,
                             cursor: disabled ? 'not-allowed' : 'pointer',
                             background: disabled ? '#f5f5f5' : active ? hexToRgba(primaryColor, 0.1) : 'transparent',
@@ -773,9 +773,9 @@ export default function OrderModal({
           </div>
 
           {/* Sticky footer */}
-          <div style={{ display:'flex', gap:10, flexShrink:0, padding: isMobile ? '12px 20px 0' : '12px 0 0', borderTop:'1px solid #f0dce3' }}>
+          <div style={{ display:'flex', gap:10, flexShrink:0, padding: isMobile ? '12px 20px 0' : '12px 0 0', borderTop:'1px solid #999999' }}>
             {showBackInFooter && (
-              <button style={{ padding: isMobile?'15px 20px':'12px 18px', borderRadius:14, border:'1.5px solid #e0d0d5', fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer', background:'#fff', color:'#333', fontFamily:"'Quicksand',sans-serif", flexShrink:0 }}
+              <button style={{ padding: isMobile?'15px 20px':'12px 18px', borderRadius:14, border:'1.5px solid #999999', fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer', background:'#fff', color:'#333', fontFamily:"'Quicksand',sans-serif", flexShrink:0 }}
                 onClick={handleBack}>
                 Back
               </button>
@@ -830,7 +830,7 @@ function sheetStyle(isMobile) {
 }
 
 const handle = {
-  width:36, height:4, borderRadius:2, background:'#e0d0d5',
+  width:36, height:4, borderRadius:2, background:'#d8d4cf',
   margin:'0 auto 12px', flexShrink:0,
 };
 

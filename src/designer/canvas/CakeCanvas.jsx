@@ -1183,7 +1183,7 @@ function StyleTile({ id, label, glbPath, position, onSelect }) {
       </mesh>
       <Html position={[0, -0.28, 0]} center zIndexRange={[300, 0]}>
         <div onClick={() => onSelect({ id, glbUrl: glbPath, name: label })} style={{
-          fontSize: 9, fontWeight: 700, color: '#9b5f72',
+          fontSize: 9, fontWeight: 700, color: '#1a1a1a',
           cursor: 'pointer', letterSpacing: 0.5,
           textTransform: 'uppercase', fontFamily: "'Quicksand',sans-serif",
           whiteSpace: 'nowrap',
@@ -1212,7 +1212,7 @@ function CreamStylePicker({ styles = [], onSelect, onCancel }) {
       <Html position={[midX, -0.5, midZ]} center zIndexRange={[300, 0]}>
         <button onClick={onCancel} style={{
           fontSize: 11, fontWeight: 700, padding: '6px 22px', borderRadius: 20,
-          border: '1.5px solid #e0d0d5', background: '#fff', color: '#9b5f72',
+          border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a',
           cursor: 'pointer', fontFamily: "'Quicksand',sans-serif",
           boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
         }}>

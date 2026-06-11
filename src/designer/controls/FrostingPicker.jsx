@@ -32,8 +32,8 @@ export default function FrostingPicker({ frosting, onChange }) {
               ...styles.swatch,
               background: fc.value,
               border: frosting.color === fc.value
-                ? '3px solid #9b5f72'
-                : '2px solid #e0d0d5',
+                ? '3px solid #1a1a1a'
+                : '2px solid #999999',
               transform: frosting.color === fc.value ? 'scale(1.2)' : 'scale(1)',
             }}
           />
@@ -51,7 +51,7 @@ const styles = {
     display: 'block',
     fontSize: 13,
     fontWeight: 600,
-    color: '#9b5f72',
+    color: '#1a1a1a',
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 10,

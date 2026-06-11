@@ -16,13 +16,13 @@ const s = {
   },
   sidebar: {
     width: 300, minWidth: 300, background: '#fff',
-    borderRight: '1px solid #f0dce3',
+    borderRight: '1px solid #999999',
     display: 'flex', flexDirection: 'column',
     overflow: 'hidden',
   },
   sidebarHeader: {
     padding: '20px 20px 16px',
-    borderBottom: '1px solid #f0dce3',
+    borderBottom: '1px solid #999999',
     flexShrink: 0,
   },
   sidebarTitle: {
@@ -33,37 +33,37 @@ const s = {
     flex: 1, overflowY: 'auto', padding: '16px 20px',
   },
   sidebarFooter: {
-    padding: '14px 20px', borderTop: '1px solid #f0dce3', flexShrink: 0,
+    padding: '14px 20px', borderTop: '1px solid #999999', flexShrink: 0,
     display: 'flex', flexDirection: 'column', gap: 8,
   },
   canvasWrap: {
-    flex: 1, position: 'relative', background: '#fdf0f5',
+    flex: 1, position: 'relative', background: '#FAFAF8',
   },
   label: {
-    display: 'block', fontSize: 11, fontWeight: 700, color: '#9b5f72',
+    display: 'block', fontSize: 11, fontWeight: 700, color: '#1a1a1a',
     letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6,
   },
   input: {
-    width: '100%', padding: '9px 12px', border: '1.5px solid #f0dce3',
+    width: '100%', padding: '9px 12px', border: '1.5px solid #999999',
     borderRadius: 8, fontSize: 13, fontFamily: "'Quicksand', sans-serif",
     color: '#2d1b0e', outline: 'none', boxSizing: 'border-box',
   },
   select: {
-    width: '100%', padding: '8px 10px', border: '1.5px solid #f0dce3',
+    width: '100%', padding: '8px 10px', border: '1.5px solid #999999',
     borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif",
     color: '#2d1b0e', background: '#fff', outline: 'none',
     boxSizing: 'border-box',
   },
   tierCard: {
-    border: '1.5px solid #f0dce3', borderRadius: 10,
-    padding: '12px', marginBottom: 10, background: '#fdf9fb',
+    border: '1.5px solid #999999', borderRadius: 10,
+    padding: '12px', marginBottom: 10, background: '#ffffff',
   },
   tierHeader: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 10,
   },
   tierLabel: {
-    fontSize: 11, fontWeight: 700, color: '#9b5f72',
+    fontSize: 11, fontWeight: 700, color: '#1a1a1a',
     letterSpacing: 1, textTransform: 'uppercase',
   },
   row: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 },
@@ -73,8 +73,8 @@ const s = {
   },
   tierCountBtn: (active) => ({
     flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
-    border: `1.5px solid ${active ? '#9b5f72' : '#f0dce3'}`,
-    background: active ? '#fdf0f5' : '#fff',
+    border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`,
+    background: active ? '#FAFAF8' : '#fff',
     color: active ? '#6b2d42' : '#b07a8a',
     fontSize: 13, fontWeight: 700,
     fontFamily: "'Quicksand', sans-serif",
@@ -89,17 +89,17 @@ const s = {
   },
   pipingLabel: { fontSize: 10, color: '#b07a8a', width: 36, flexShrink: 0, fontWeight: 600 },
   thumbnailBox: {
-    width: '100%', aspectRatio: '1 / 1', border: '1.5px dashed #e0d0d5',
+    width: '100%', aspectRatio: '1 / 1', border: '1.5px dashed #999999',
     borderRadius: 10, display: 'flex', alignItems: 'center',
-    justifyContent: 'center', overflow: 'hidden', background: '#fdf9fb',
+    justifyContent: 'center', overflow: 'hidden', background: '#ffffff',
     marginBottom: 8,
   },
   btn: (variant = 'primary') => ({
     width: '100%', padding: '10px 0', borderRadius: 10, cursor: 'pointer',
     border: 'none', fontSize: 13, fontWeight: 700,
     fontFamily: "'Quicksand', sans-serif",
-    background: variant === 'primary' ? '#9b5f72' : '#f5eaed',
-    color: variant === 'primary' ? '#fff' : '#9b5f72',
+    background: variant === 'primary' ? '#1a1a1a' : '#f3f4f6',
+    color: variant === 'primary' ? '#fff' : '#1a1a1a',
   }),
   // Element panel
   typeScrollRow: {
@@ -108,8 +108,8 @@ const s = {
   },
   typePill: (active) => ({
     flexShrink: 0, padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-    border: `1.5px solid ${active ? '#9b5f72' : '#f0dce3'}`,
-    background: active ? '#fdf0f5' : '#fff',
+    border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`,
+    background: active ? '#FAFAF8' : '#fff',
     color: active ? '#6b2d42' : '#b07a8a',
     fontSize: 11, fontWeight: 700,
     fontFamily: "'Quicksand', sans-serif",
@@ -118,8 +118,8 @@ const s = {
     display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6,
   },
   elCard: {
-    border: '1.5px solid #f0dce3', borderRadius: 8, overflow: 'hidden',
-    cursor: 'pointer', background: '#fdf9fb', display: 'flex',
+    border: '1.5px solid #999999', borderRadius: 8, overflow: 'hidden',
+    cursor: 'pointer', background: '#ffffff', display: 'flex',
     flexDirection: 'column', alignItems: 'center',
     padding: '6px 4px',
     transition: 'border-color 0.15s',
@@ -129,7 +129,7 @@ const s = {
     borderRadius: 6, background: '#fff',
   },
   elName: {
-    fontSize: 9, color: '#9b5f72', fontWeight: 600, marginTop: 4,
+    fontSize: 9, color: '#1a1a1a', fontWeight: 600, marginTop: 4,
     textAlign: 'center', lineHeight: 1.2, wordBreak: 'break-word',
   },
   // Group bar overlay
@@ -143,7 +143,7 @@ const s = {
     zIndex: 30, pointerEvents: 'auto',
   },
   groupBarBtn: {
-    background: 'none', border: '1.5px solid #e0d0d5', borderRadius: 8,
+    background: 'none', border: '1.5px solid #999999', borderRadius: 8,
     padding: '4px 10px', fontSize: 11, cursor: 'pointer',
     fontWeight: 700, fontFamily: "'Quicksand', sans-serif",
   },
@@ -680,7 +680,7 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
             <div style={{
               position: 'fixed', left: dragGhost.x - 28, top: dragGhost.y - 28,
               width: 56, height: 56, borderRadius: 12, overflow: 'hidden',
-              background: 'rgba(255,255,255,0.9)', border: '2px solid #9b5f72',
+              background: 'rgba(255,255,255,0.9)', border: '2px solid #1a1a1a',
               boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
             }}>
@@ -705,33 +705,33 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
               </span>
 
               {/* Height */}
-              <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700 }}>Height</span>
+              <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700 }}>Height</span>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { yOffset: +(((selectedSticker.yOffset ?? 0) - 0.05).toFixed(3)) })}>−</button>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { yOffset: +(((selectedSticker.yOffset ?? 0) + 0.05).toFixed(3)) })}>+</button>
 
               {/* Scale */}
-              <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Size</span>
+              <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Size</span>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: Math.max(0.3, +((selectedSticker.scale - 0.2).toFixed(2))) })}>−</button>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: +((selectedSticker.scale + 0.2).toFixed(2)) })}>+</button>
 
               {/* Tilt — not applicable for faux_balls */}
               {selectedSticker.placementMode !== 'faux_balls' && <>
-                <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Tilt</span>
+                <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Tilt</span>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.max(-1.2, +((selectedSticker.tiltAngle ?? 0) - 0.1).toFixed(3)) })}>−</button>
-                <span style={{ fontSize: 10, color: '#9b5f72', minWidth: 28, textAlign: 'center' }}>{Math.round(((selectedSticker.tiltAngle ?? 0) * 180) / Math.PI)}°</span>
+                <span style={{ fontSize: 10, color: '#1a1a1a', minWidth: 28, textAlign: 'center' }}>{Math.round(((selectedSticker.tiltAngle ?? 0) * 180) / Math.PI)}°</span>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.min(1.2, +((selectedSticker.tiltAngle ?? 0) + 0.1).toFixed(3)) })}>+</button>
               </>}
 
               {/* Spin (top surface stand stickers only) */}
               {selectedSticker.zone === 'top_surface' && selectedSticker.placementMode === 'stand' && <>
-                <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Spin</span>
+                <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Spin</span>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { rotation: +((selectedSticker.rotation ?? 0) - 0.2).toFixed(3) })}>↺</button>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { rotation: +((selectedSticker.rotation ?? 0) + 0.2).toFixed(3) })}>↻</button>
               </>}
 
               {/* Depth (side stickers only) */}
               {selectedSticker.zone === 'side' && <>
-                <span style={{ fontSize: 10, color: '#9b5f72', fontWeight: 700, marginLeft: 4 }}>Depth</span>
+                <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Depth</span>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { radialOffset: Math.max(0, +((selectedSticker.radialOffset ?? 0) - 0.05).toFixed(3)) })}>−</button>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { radialOffset: Math.min(0.6, +((selectedSticker.radialOffset ?? 0) + 0.05).toFixed(3)) })}>+</button>
               </>}
@@ -760,12 +760,12 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
                   {ids.length === 0 ? 'Tap to select' : ids.length === 1 ? '1 selected — tap more' : `${ids.length} selected`}
                 </span>
                 {ids.length > 1 && !allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }} onClick={groupSelected}>
+                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }} onClick={groupSelected}>
                     Group
                   </button>
                 )}
                 {ids.length > 1 && allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#9b5f72', borderColor: '#f0dce3' }} onClick={ungroupSelected}>
+                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }} onClick={ungroupSelected}>
                     Ungroup
                   </button>
                 )}

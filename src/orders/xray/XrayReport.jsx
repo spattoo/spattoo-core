@@ -12,7 +12,7 @@ import XrayTinDiagram from './XrayTinDiagram.jsx';
 // data via apiClient.fetchCraftGuides.
 
 const s = {
-  overlay: { position: 'fixed', inset: 0, zIndex: 4000, background: '#FBFAF7', overflowY: 'auto', fontFamily: 'inherit' },
+  overlay: { position: 'fixed', inset: 0, zIndex: 4000, background: '#FAFAF8', overflowY: 'auto', fontFamily: 'inherit' },
   header: { position: 'sticky', top: 0, zIndex: 2, background: '#fff', borderBottom: '1.5px solid #EFEAE3', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 15, fontWeight: 800, color: '#2C2A26' },
   close: { padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0DDD8', background: '#fff', fontSize: 13, fontWeight: 700, color: '#555', cursor: 'pointer', fontFamily: 'inherit' },

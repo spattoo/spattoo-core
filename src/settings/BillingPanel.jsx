@@ -11,7 +11,7 @@ function useIsMobile() {
 }
 
 const STATUS_META = {
-  trial:     { label: 'Trial',     color: '#9B5F72', bg: '#FDF5F7' },
+  trial:     { label: 'Trial',     color: '#1a1a1a', bg: '#FDF5F7' },
   pending:   { label: 'Pending',   color: '#92400E', bg: '#FEF9C3' },
   active:    { label: 'Active',    color: '#065F46', bg: '#D1FAE5' },
   expired:   { label: 'Expired',   color: '#991B1B', bg: '#FEE2E2' },

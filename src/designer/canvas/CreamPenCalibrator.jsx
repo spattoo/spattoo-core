@@ -90,7 +90,7 @@ export default function CreamPenCalibrator({ nozzle, thickness, softness, color,
   const targetY = dia * 0.45;
   const boardR = Math.max(dia * 3.4, 0.16);
   return (
-    <div style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', background: '#faf6f2', border: '1px solid #f0dce3' }}>
+    <div style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', background: '#FAFAF8', border: '1px solid #999999' }}>
       <Canvas dpr={[1, 2]} camera={{ fov: 32, position: [0, 1, 1] }} style={{ width: '100%', height: '100%' }}>
         <CamRig dist={dist} targetY={targetY} />
         <ambientLight intensity={0.85} />
