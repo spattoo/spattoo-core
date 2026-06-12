@@ -1,0 +1,129 @@
+import { Suspense, useMemo } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Environment, useGLTF, useTexture } from '@react-three/drei';
+import * as THREE from 'three';
+import { rectSidePlacement } from '../geometry/surface.js';
+import { SIDE_STICKER_SURFACE_OFFSET } from '../constants.js';
+import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
+
+const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
+
+// Small live 3D preview of how a GLB hero element renders in one placement mode ('top' | 'side'),
+// using the same bounding-box scale + side-wall math the real sticker renderer uses, so the
+// preview matches. Mini-cake scaffold is shared with PipingPreview via previewCake.jsx.
+
+// One GLB element mounted on the preview cake, scaled like the real side/top sticker.
+function PreviewTopper({ glbUrl, placement, target, bottom, baseRotation }) {
+  const { scene } = useGLTF(glbUrl);
+  const { clonedScene, box } = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.updateMatrixWorld(true);
+    return { clonedScene: clone, box: new THREE.Box3().setFromObject(clone) };
+  }, [scene]);
+
+  const node = useMemo(() => {
+    if (box.isEmpty()) return null;
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = box.getCenter(new THREE.Vector3());
+    const scale = (bottom.radius * 1.15) / Math.max(size.x, size.y, size.z, 0.01);
+    // Model centred at origin, with the config facing offset applied (matches the real render).
+    const model = (
+      <group rotation={baseRotation ?? [0, 0, 0]}>
+        <primitive object={clonedScene} scale={scale} position={[-center.x * scale, -center.y * scale, -center.z * scale]} />
+      </group>
+    );
+
+    if (placement === 'side') {
+      const off = SIDE_STICKER_SURFACE_OFFSET;
+      const yMid = bottom.baseY + bottom.height / 2;
+      let x = 0, z = bottom.radius + off, yaw = 0;
+      if (bottom.shp.kind === 'rect') {
+        const pl = rectSidePlacement(bottom.shp, 0, off);
+        x = pl.x; z = pl.z; yaw = pl.yaw;
+      }
+      return <group position={[x, yMid, z]} rotation={[0, yaw, 0]}>{model}</group>;
+    }
+    // 'top' — stand on the top surface; centred model lifted so its base rests on the surface.
+    return <group position={[0, target.topY + (size.y / 2) * scale + 0.02, 0]}>{model}</group>;
+  }, [box, clonedScene, placement, target, bottom, baseRotation]);
+
+  return node;
+}
+
+// 2D-image decor preview — a textured plane standing on the top surface or mounted flat on
+// the side wall (for elements whose asset is a PNG rather than a GLB, e.g. some top&side decor).
+function PreviewImage({ url, placement, target, bottom }) {
+  const tex = useTexture(url);
+  const aspect = tex.image ? tex.image.width / tex.image.height : 1;
+  const w = bottom.radius * 1.15;
+  const h = w / (aspect || 1);
+
+  if (placement === 'side') {
+    const off = SIDE_STICKER_SURFACE_OFFSET;
+    const yMid = bottom.baseY + bottom.height / 2;
+    let x = 0, z = bottom.radius + off, yaw = 0;
+    if (bottom.shp.kind === 'rect') {
+      const pl = rectSidePlacement(bottom.shp, 0, off);
+      x = pl.x; z = pl.z; yaw = pl.yaw;
+    }
+    return (
+      <mesh position={[x, yMid, z]} rotation={[0, yaw, 0]}>
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial map={tex} transparent alphaTest={0.05} side={THREE.DoubleSide} />
+      </mesh>
+    );
+  }
+  // 'top' — standing upright, centred on the top surface.
+  return (
+    <mesh position={[0, target.topY + h / 2, 0]}>
+      <planeGeometry args={[w, h]} />
+      <meshBasicMaterial map={tex} transparent alphaTest={0.05} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+function PreviewDecor(props) {
+  return isGlbUrl(props.glbUrl) ? <PreviewTopper {...props} /> : <PreviewImage url={props.glbUrl} {...props} />;
+}
+
+export default function TopperPreview({ glbUrl, placement = 'top', tiers = null, tierIndex = 0, baseRotation = null }) {
+  const { placed, totalH } = useMemo(() => buildPreviewTiers(tiers), [tiers]);
+
+  const target = placed[Math.min(tierIndex, placed.length - 1)] ?? placed[0];
+  const bottom = placed[0];
+  const R0 = bottom.radius;
+
+  // Frame the WHOLE cake plus headroom for a topper standing on top, so neither the
+  // top- nor side-mounted topper clips, and both tiles share identical framing (matched
+  // pair). FRONT-ON (camX = 0) guarantees the cake is horizontally centred — an azimuth
+  // angle shifts it sideways in a narrow tile. Aim above the cake centre, look down ~24°.
+  const compTop  = totalH * 1.9;            // board (y=0) → above a top-standing topper
+  const targetY  = compTop * 0.5;
+  const camZ     = Math.max(R0 * 6.2, compTop * 3.0);
+  const camY     = targetY + camZ * 0.45;
+  const camX     = 0;
+  const camZView = camZ;
+
+  return (
+    <Canvas
+      dpr={[1, 2]}
+      gl={{ alpha: true }}
+      camera={{ position: [camX, camY, camZView], fov: 32 }}
+      style={{ width: '100%', height: '100%' }}
+    >
+      <ambientLight intensity={0.85} />
+      <directionalLight position={[4, 9, 6]} intensity={1.3} />
+      <directionalLight position={[-3, 3, -3]} intensity={0.4} />
+      <Suspense fallback={null}>
+        <Environment preset="apartment" />
+        <PreviewCakeMeshes placed={placed} />
+        {glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} target={target} bottom={bottom} baseRotation={baseRotation} />}
+      </Suspense>
+      <OrbitControls
+        enableZoom={false} enablePan={false}
+        target={[0, targetY, 0]} minPolarAngle={Math.PI / 3} maxPolarAngle={Math.PI / 2.1}
+      />
+    </Canvas>
+  );
+}

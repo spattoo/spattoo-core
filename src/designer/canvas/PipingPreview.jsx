@@ -1,23 +1,18 @@
 import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
-import { TopPipingRing, BottomPipingRing, buildRoundedPrism } from './CakeTier.jsx';
-import { tierShape } from '../geometry/surface.js';
-import { TIER_RADII, BOTTOM_H, PIPING_FRONT_ANGLE } from '../constants.js';
+import { TopPipingRing, BottomPipingRing } from './CakeTier.jsx';
+import { PIPING_FRONT_ANGLE } from '../constants.js';
+import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
 
 // Small live 3D preview of how a piping element renders on one cake zone (rim/board),
 // in the currently-chosen layout (ring vs single). Reuses the real ring components so
-// the preview matches the actual render exactly. Uses the real bottom-tier dimensions
-// (radius 1.2 × height 1.45) so placement_config offsets look identical to the cake.
+// the preview matches the actual render exactly. The mini-cake scaffold (tier geometry,
+// board, bodies, palette) is shared with TopperPreview via previewCake.jsx.
 //
 // `placement` is the object returned by pipingPlacementFromConfig() for this zone; its
 // fields may be null (unset), so we apply the same `??` defaults CakeTier uses.
-// Preview-only palette: a dark-chocolate cake so the cream piping reads with strong
-// contrast (the real cake uses the user's chosen colors — this is just a legible stand-in).
-const PREVIEW_CAKE_COLOR  = '#3A2418';   // dark chocolate brown body
-const PREVIEW_CAP_COLOR   = '#46301F';   // slightly lighter chocolate top
-const PREVIEW_CREAM_COLOR = '#F5E6C8';   // cream — pops against the dark chocolate
-const PREVIEW_BOARD_COLOR = '#E8E4DD';   // light board/drum the cake sits on
+const PREVIEW_CREAM_COLOR = '#F5E6C8';   // cream — pops against the dark chocolate stand-in
 
 export default function PipingPreview({
   zone, glbUrl, color = PREVIEW_CREAM_COLOR, size = 1,
@@ -26,29 +21,11 @@ export default function PipingPreview({
   autoRotate = false,
 }) {
   const isTop  = zone === 'rim';
-  // Stack the real tier geometry when provided, so a 2-tier cake previews AS a 2-tier
-  // cake with the ring on its actual tier (e.g. the bottom-tier rim sits at the seam the
-  // upper tier rests on). Falls back to a single bottom tier when no geometry is passed.
-  // Build the stacked tier geometry, keeping each tier's shape so a rectangular cake
-  // previews AS a rectangle (rounded-rect prism) instead of always falling back to a
-  // cylinder. `shp` is the same descriptor CakeTier feeds its piping rings, so placement
-  // along a rect perimeter matches the real cake. Round tiers leave `shp.kind === 'round'`.
-  const { placed, totalH } = useMemo(() => {
-    const geo = (tiers?.length ? tiers : [{ radius: TIER_RADII[0], height: BOTTOM_H }])
-      .map(t => {
-        const radius = t?.radius ?? TIER_RADII[0];
-        const height = t?.height ?? BOTTOM_H;
-        const shp = tierShape({ shape: t?.shape, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
-        const prismGeo = shp.kind === 'rect' ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null;
-        return { radius, height, shp, prismGeo };
-      });
-    let acc = 0;
-    const placed = geo.map(t => { const baseY = acc; acc += t.height; return { ...t, baseY, topY: baseY + t.height }; });
-    return { placed, totalH: acc };
-  }, [tiers]);
+  // Stack the real tier geometry when provided, so a 2-tier cake previews AS a 2-tier cake
+  // with the ring on its actual tier. Shared with TopperPreview (see previewCake.jsx).
+  const { placed, totalH } = useMemo(() => buildPreviewTiers(tiers), [tiers]);
   const target = placed[Math.min(tierIndex, placed.length - 1)] ?? placed[0];
   const targetShape = target.shp;
-  const bottomShape = placed[0].shp;
   const R      = target.radius;     // ring radius = its own tier's radius
   const R0     = placed[0].radius;  // bottom radius drives the board + framing
   const yBase  = target.baseY;
@@ -101,41 +78,7 @@ export default function PipingPreview({
       <directionalLight position={[-3, 3, -3]} intensity={0.4} />
       <Suspense fallback={null}>
         <Environment preset="apartment" />
-        {/* cake board / drum the cake sits on (top flush with the cake base at y=0).
-            Matches the bottom tier's footprint: a rect board under a rect cake, else round. */}
-        {bottomShape.kind === 'rect' ? (
-          <mesh position={[0, -0.04, 0]}>
-            <boxGeometry args={[bottomShape.halfW * 2 * 1.28, 0.08, bottomShape.halfD * 2 * 1.28]} />
-            <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
-          </mesh>
-        ) : (
-          <mesh position={[0, -0.04, 0]}>
-            <cylinderGeometry args={[R0 * 1.32, R0 * 1.32, 0.08, 56]} />
-            <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
-          </mesh>
-        )}
-        {/* stacked tier bodies. Rect tiers use the rounded-rect prism (flat top, no cap —
-            a cap reads as a stray board on a rectangular cake); round tiers keep a thin cap. */}
-        {placed.map((t, i) => (
-          <group key={i}>
-            {t.shp.kind === 'rect' ? (
-              <mesh geometry={t.prismGeo} position={[0, t.baseY, 0]}>
-                <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
-              </mesh>
-            ) : (
-              <>
-                <mesh position={[0, t.baseY + t.height / 2, 0]}>
-                  <cylinderGeometry args={[t.radius, t.radius, t.height, 48]} />
-                  <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
-                </mesh>
-                <mesh position={[0, t.topY + 0.005, 0]}>
-                  <cylinderGeometry args={[t.radius - 0.01, t.radius - 0.01, 0.01, 48]} />
-                  <meshStandardMaterial color={PREVIEW_CAP_COLOR} roughness={0.7} />
-                </mesh>
-              </>
-            )}
-          </group>
-        ))}
+        <PreviewCakeMeshes placed={placed} />
         {isTop ? (
           <TopPipingRing
             topY={topY} radius={R} glbPath={glbUrl} color={color} sizeFactor={size} softness={softness}

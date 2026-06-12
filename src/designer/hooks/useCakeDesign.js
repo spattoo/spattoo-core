@@ -10,10 +10,39 @@ const DEFAULT_DESIGN = {
   ],
   texts: [],
   stickers: [],
-  topper: null,
   writing: null,   // one cream-pen message piped on the cake top (see CreamWriting)
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
 };
+
+// Back-compat: convert a legacy `design.topper` (single hero slot) into a sticker appended to
+// the stickers list. Topper === a GLB element on the top surface (placement 'stand') or side
+// ('hug'). Old topper.scale was a multiplier on CakeTopper's tier-relative base (~5× the
+// sticker base), so multiply by ~5 to preserve the rendered size.
+function migrateTopperToSticker(templateDesign) {
+  const base = templateDesign.stickers ?? [];
+  const tp = templateDesign.topper;
+  if (!tp?.image_url) return base;
+  const isSide = tp.placement === 'side';
+  return [...base, {
+    id: tp.id ?? Date.now(),
+    elementId: tp.elementId ?? tp.id ?? null,
+    imageUrl: tp.image_url,
+    name: tp.name ?? 'Topper',
+    zone: isSide ? 'side' : 'top_surface',
+    tierIndex: tp.tierIndex ?? Math.max(0, (templateDesign.tiers?.length ?? 1) - 1),
+    placementMode: isSide ? 'hug' : 'stand',
+    u: tp.u ?? null,
+    theta: tp.theta ?? 0,
+    y: tp.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45),
+    x: tp.x ?? 0,
+    z: tp.z ?? 0,
+    scale: (tp.scale ?? 1) * 5,
+    baseRotation: [0, -Math.PI / 2, 0],   // legacy CakeTopper faced toppers with this offset
+    yOffset: 0, rotation: 0, radialOffset: 0, tiltAngle: 0, groupId: null,
+    color: tp.color ?? null,
+    allowedActions: { resize: true, duplicate: true, color: false, delete: true, move: true, tilt: true },
+  }];
+}
 
 // One freehand stroke. `points` are the SEATED centerline in cake/world space
 // ([[x,y,z]…]) — the draw layer already offset each hit along the surface normal, so
@@ -245,6 +274,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           x:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : px,
           z:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : pz,
           scale:         defaultScale,
+          // The GLB's authored facing offset (e.g. toppers need [0,-π/2,0] to face front).
+          // Config-driven, applied by the renderer; null = the GLB already faces +z.
+          baseRotation:  element.placement_config?.rotation ?? null,
           yOffset:       0,
           rotation:      0,
           radialOffset:  0,
@@ -324,20 +356,6 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     });
   }
 
-  function setTopper(topper) {
-    setDesign(prev => ({
-      ...prev,
-      topper: topper ? { ...topper, scale: prev.topper?.scale ?? 1 } : null,
-    }));
-  }
-
-  function setTopperScale(scale) {
-    setDesign(prev => ({
-      ...prev,
-      topper: prev.topper ? { ...prev.topper, scale } : prev.topper,
-    }));
-  }
-
   // Cream-pen writing — a single message on the cake top. Merges changes onto the
   // existing writing (seeding defaults on first edit); pass null/'' text to clear.
   function setWriting(changes) {
@@ -399,8 +417,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         };
       }),
       texts:    templateDesign.texts    ?? [],
-      stickers: templateDesign.stickers ?? [],
-      topper: templateDesign.topper ? { ...templateDesign.topper, scale: templateDesign.topper.scale ?? 1 } : null,
+      // Migrate a legacy single `topper` into the unified sticker list: a topper is just a
+      // GLB element standing on the top surface (or hugging the side). Placement is now fully
+      // config-driven, so there is no separate topper slot or renderer.
+      stickers: migrateTopperToSticker(templateDesign),
       writing: templateDesign.writing ?? null,
       piping: templateDesign.piping ?? [],
     });
@@ -425,7 +445,6 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }),
     texts:    design.texts,
     stickers: design.stickers,
-    topper:   design.topper ?? null,
     writing:  design.writing ?? null,
     piping:   design.piping ?? [],
   }), [design]);
@@ -438,7 +457,6 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addText, updateText, duplicateText, removeText,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers,
-    setTopper, setTopperScale,
     setWriting, clearWriting,
     addStroke, removeStroke, clearPiping,
     resetDesign,

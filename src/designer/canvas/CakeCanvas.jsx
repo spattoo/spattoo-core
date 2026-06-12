@@ -271,7 +271,7 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius }) {
 // Edges curve inward following the convex wall; the back recedes into the cake
 // (occluded by the opaque tier) so it reads as a relief emerging from the side.
 // Convention: the GLB faces +Z (profile in X-Y, width along X, up along Y).
-function bendStickerScene(scene, fitScale, center, bendR) {
+function bendStickerScene(scene, fitScale, center, bendR, seatOffset = 0) {
   scene.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(scene.matrixWorld).invert();
   const out = new THREE.Group();
@@ -286,7 +286,7 @@ function bendStickerScene(scene, fitScale, center, bendR) {
       const fx = (v.x - center.x) * fitScale; // fit transform StickerModel applies
       const fy = (v.y - center.y) * fitScale;
       const fz = (v.z - center.z) * fitScale;
-      const a = fx / bendR, rho = bendR + fz;
+      const a = fx / bendR, rho = bendR + fz + seatOffset;
       pos.setXYZ(i, rho * Math.sin(a), fy, rho * Math.cos(a) - bendR);
     }
     pos.needsUpdate = true;
@@ -298,13 +298,66 @@ function bendStickerScene(scene, fitScale, center, bendR) {
   return out;
 }
 
-function StickerModel({ imageUrl, selected, color, clipY, bendRadius }) {
+// Strip degenerate / noise triangles from a cloned GLB scene (mutates in place): drops tris
+// that are near-zero area, far larger than the mesh average, or extreme slivers. Improves
+// render quality for auto-generated meshes — applied to every GLB element (was topper-only).
+function cleanGlbScene(clone) {
+  clone.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry?.index) return;
+    const geo = obj.geometry.clone();
+    obj.geometry = geo;
+    const pos = geo.attributes.position;
+    const idx = geo.index.array;
+    const triCount = idx.length / 3;
+    const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
+    const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _e3 = new THREE.Vector3();
+    let totalArea = 0;
+    for (let i = 0; i < idx.length; i += 3) {
+      _a.fromBufferAttribute(pos, idx[i]); _b.fromBufferAttribute(pos, idx[i + 1]); _c.fromBufferAttribute(pos, idx[i + 2]);
+      _e1.subVectors(_b, _a); _e2.subVectors(_c, _a);
+      totalArea += _e1.clone().cross(_e2).length() * 0.5;
+    }
+    const avgArea = totalArea / triCount;
+    const maxArea = avgArea * 50;
+    const minArea = 1e-7;
+    const newIdx = [];
+    for (let i = 0; i < idx.length; i += 3) {
+      _a.fromBufferAttribute(pos, idx[i]); _b.fromBufferAttribute(pos, idx[i + 1]); _c.fromBufferAttribute(pos, idx[i + 2]);
+      _e1.subVectors(_b, _a); _e2.subVectors(_c, _a); _e3.subVectors(_c, _b);
+      const area = _e1.clone().cross(_e2).length() * 0.5;
+      const maxEdge = Math.max(_e1.length(), _e2.length(), _e3.length());
+      const minEdge = Math.min(_e1.length(), _e2.length(), _e3.length());
+      const aspectRatio = maxEdge / (minEdge + 1e-10);
+      if (area >= minArea && area <= maxArea && aspectRatio <= 150) newIdx.push(idx[i], idx[i + 1], idx[i + 2]);
+    }
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(newIdx), 1));
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+  });
+  return clone;
+}
+
+function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotation }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
   const clonedScene = useMemo(() => {
-    const clone = scene.clone(true);
+    const clone = cleanGlbScene(scene.clone(true));
     clone.updateMatrixWorld(true);
+    // Bake the config facing offset (placement_config.rotation, e.g. toppers' [0,-π/2,0]) into
+    // the geometry so EVERY downstream consumer — bounding-box fit, side-wall bend, and the flat
+    // render — sees a model that already faces +z. (The bend path assumes +z, so a group-level
+    // rotation wouldn't fix it; baking does.)
+    if (baseRotation && (baseRotation[0] || baseRotation[1] || baseRotation[2])) {
+      const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...baseRotation));
+      clone.traverse(obj => {
+        if (!obj.isMesh || !obj.geometry) return;
+        obj.geometry = obj.geometry.clone();
+        obj.geometry.applyMatrix4(m);
+        obj.geometry.computeBoundingBox();
+        obj.geometry.computeBoundingSphere();
+      });
+    }
     clone.traverse(obj => {
       if (!obj.isMesh) return;
       obj.raycast = () => {};
@@ -312,7 +365,7 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius }) {
       mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
     });
     return clone;
-  }, [scene]);
+  }, [scene, baseRotation]);
 
   // Sync clip plane: set, update constant, or clear when clipY becomes undefined.
   useEffect(() => {
@@ -337,7 +390,7 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius }) {
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position, center } = useMemo(() => {
+  const { scale, position, center, depthScaled } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -345,13 +398,15 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius }) {
     box.getCenter(ctr);
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
     glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
-    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr };
+    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc };
   }, [clonedScene, imageUrl]);
 
-  // On the side wall, bend the model around the tier so it hugs the curve.
+  // On the side wall, bend the model around the tier so it hugs the curve. Seat its BACK on
+  // the wall (push out by half its depth) so a deep model — e.g. a topper head — sits proud
+  // instead of half-buried in the tier.
   const bentScene = useMemo(
-    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius) : null),
-    [clonedScene, scale, center, bendRadius],
+    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, depthScaled / 2) : null),
+    [clonedScene, scale, center, bendRadius, depthScaled],
   );
 
   useEffect(() => {
@@ -373,14 +428,14 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius }) {
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius }) {
+function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius, baseRotation }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   return (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} bendRadius={bendRadius} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
@@ -415,22 +470,23 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     yaw = sticker.theta; curveRadius = surfaceR;
   }
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
+  const effScale = sticker.scale ?? 1;   // user-controlled; not clamped (like piping size)
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
   // the true wall radius (bigger stickers span more arc → curve more).
   const bendRadius = (isGlb && !isRect && curveRadius)
-    ? curveRadius / (sticker.scale || 1)
+    ? curveRadius / (effScale || 1)
     : undefined;
 
   return (
     <group
       position={[cx, sticker.y, cz]}
       rotation={[0, yaw, 0]}
-      scale={sticker.scale}
+      scale={effScale}
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -977,7 +1033,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} />
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -1107,101 +1163,6 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
 
 export function preloadTopper(url) {
   if (url) useGLTF.preload(url);
-}
-
-function CakeTopper({ glbPath, topY, topRadius, scaleMultiplier = 1, onClick, selected, toolbar }) {
-  const { scene } = useGLTF(glbPath);
-  const groupRef = useRef(); // kept for Html anchor
-
-  // Bounding box is captured once right after cloning, before R3F ever
-  // mutates the object's scale/position properties. Re-running setFromObject
-  // after R3F has applied a scale prop would inflate the box and break the
-  // scale calculation on every subsequent scaleMultiplier change.
-  const { clonedScene, originalBox } = useMemo(() => {
-    const clone = scene.clone(true);
-    clone.updateMatrixWorld(true);
-
-    clone.traverse(obj => {
-      if (!obj.isMesh || !obj.geometry?.index) return;
-
-      const geo = obj.geometry.clone();
-      obj.geometry = geo;
-
-      const pos = geo.attributes.position;
-      const idx = geo.index.array;
-      const triCount = idx.length / 3;
-
-      const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
-      const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _e3 = new THREE.Vector3();
-
-      let totalArea = 0;
-      for (let i = 0; i < idx.length; i += 3) {
-        _a.fromBufferAttribute(pos, idx[i]);
-        _b.fromBufferAttribute(pos, idx[i + 1]);
-        _c.fromBufferAttribute(pos, idx[i + 2]);
-        _e1.subVectors(_b, _a); _e2.subVectors(_c, _a);
-        totalArea += _e1.clone().cross(_e2).length() * 0.5;
-      }
-      const avgArea = totalArea / triCount;
-      const maxArea = avgArea * 50;
-      const minArea = 1e-7;
-
-      const newIdx = [];
-      for (let i = 0; i < idx.length; i += 3) {
-        _a.fromBufferAttribute(pos, idx[i]);
-        _b.fromBufferAttribute(pos, idx[i + 1]);
-        _c.fromBufferAttribute(pos, idx[i + 2]);
-        _e1.subVectors(_b, _a);
-        _e2.subVectors(_c, _a);
-        _e3.subVectors(_c, _b);
-        const area = _e1.clone().cross(_e2).length() * 0.5;
-        const maxEdge = Math.max(_e1.length(), _e2.length(), _e3.length());
-        const minEdge = Math.min(_e1.length(), _e2.length(), _e3.length());
-        const aspectRatio = maxEdge / (minEdge + 1e-10);
-        if (area >= minArea && area <= maxArea && aspectRatio <= 150) {
-          newIdx.push(idx[i], idx[i + 1], idx[i + 2]);
-        }
-      }
-
-      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(newIdx), 1));
-      geo.computeBoundingBox();
-      geo.computeBoundingSphere();
-    });
-
-    const box = new THREE.Box3().setFromObject(clone);
-    return { clonedScene: clone, originalBox: box };
-  }, [scene]);
-
-  const { scale, yPos, topHeight } = useMemo(() => {
-    if (originalBox.isEmpty()) return { scale: 1, yPos: topY, topHeight: 0 };
-    const size = new THREE.Vector3();
-    originalBox.getSize(size);
-    const sc = (topRadius * 1.2) / Math.max(size.x, size.z, 0.01);
-    const appliedScale = sc * scaleMultiplier;
-    return {
-      scale: sc,
-      yPos: topY - originalBox.min.y * appliedScale + 0.02,
-      topHeight: size.y * appliedScale,
-    };
-  }, [originalBox, topRadius, topY, scaleMultiplier]);
-
-  return (
-    <group ref={groupRef}>
-      <group rotation={[0, -Math.PI / 2, 0]}>
-      <primitive
-        object={clonedScene}
-        position={[0, yPos, 0]}
-        scale={scale * scaleMultiplier}
-        onClick={e => { e.stopPropagation(); onClick?.(); }}
-      />
-      </group>
-      {selected && toolbar && (
-        <Html position={[topRadius + 0.25, topY + 0.2, 0]} center zIndexRange={[200, 0]}>
-          {toolbar}
-        </Html>
-      )}
-    </group>
-  );
 }
 
 function StyleTile({ id, label, glbPath, position, onSelect }) {
@@ -1334,13 +1295,12 @@ function CakeScene({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
-  onTopperClick, topperSelected, topperToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
   tierDataRef,
 }) {
-  const { tiers, texts = [], stickers = [], topper = null, writing = null, piping = [] } = config;
+  const { tiers, texts = [], stickers = [], writing = null, piping = [] } = config;
   const orbitBlockSet = useRef(new Set());
   const { gl, camera, scene } = useThree();
 
@@ -1438,19 +1398,6 @@ function CakeScene({
         </group>
       ))}
 
-      {topper?.image_url && (
-        <Suspense fallback={null}>
-          <CakeTopper
-            glbPath={topper.image_url}
-            topY={stackY}
-            topRadius={tierData[tierData.length - 1].radius}
-            scaleMultiplier={topper.scale ?? 1}
-            onClick={onTopperClick}
-            selected={topperSelected}
-            toolbar={topperToolbar}
-          />
-        </Suspense>
-      )}
 
       {writing?.text?.trim() && (() => {
         const topTier = tierData[tierData.length - 1];
@@ -1640,7 +1587,7 @@ function CakeScene({
 }
 
 function CakeThumbnailScene({ config }) {
-  const { tiers, stickers = [], topper = null, writing = null, piping = [] } = config;
+  const { tiers, stickers = [], writing = null, piping = [] } = config;
 
   let stackY = 0.1;
   const tierData = tiers.map(tier => {
@@ -1674,16 +1621,6 @@ function CakeThumbnailScene({ config }) {
           onClick={() => {}}
         />
       ))}
-      {topper?.image_url && (
-        <Suspense fallback={null}>
-          <CakeTopper
-            glbPath={topper.image_url}
-            topY={stackY}
-            topRadius={tierData[tierData.length - 1].radius}
-            scaleMultiplier={topper.scale ?? 1}
-          />
-        </Suspense>
-      )}
       {stickers.map(sticker => {
         const tier = tierData[sticker.tierIndex] ?? tierData[0];
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
@@ -1702,7 +1639,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} />
+                <StickerFace imageUrl={sticker.imageUrl} selected={false} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} baseRotation={sticker.baseRotation} />
               </group>
             </group>
           );
@@ -1728,7 +1665,7 @@ function CakeThumbnailScene({ config }) {
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
               <group rotation={[0, sticker.rotation ?? 0, 0]}>
                 <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-                  <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={undefined} />
+                  <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={undefined} baseRotation={sticker.baseRotation} />
                 </group>
               </group>
             </group>
@@ -1736,7 +1673,7 @@ function CakeThumbnailScene({ config }) {
         }
         return (
           <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={py} />
+            <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={py} baseRotation={sticker.baseRotation} />
           </group>
         );
       })}
@@ -1797,7 +1734,6 @@ export default function CakeCanvas({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
-  onTopperClick, topperSelected = false, topperToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
   hitTestRef,
   snapCameraRef,
@@ -1906,9 +1842,6 @@ export default function CakeCanvas({
         onTextContentChange={onTextContentChange}
         textToolbar={textToolbar}
         orbitRef={orbitRef}
-        onTopperClick={() => { if (!pointerRef.current.dragged) onTopperClick?.(); }}
-        topperSelected={topperSelected}
-        topperToolbar={topperToolbar}
         selectedStickerIds={selectedStickerIds}
         onStickerSelect={(id, ctrlKey) => onStickerSelect?.(id, ctrlKey)}
         onStickerLongPress={(id) => onStickerLongPress?.(id)}
@@ -1928,7 +1861,7 @@ export default function CakeCanvas({
         ref={orbitRef}
         enableZoom={false}
         enablePan={false}
-        autoRotate={autoRotate && selectedTier === null && selectedTextId === null && !pipingTarget && !topperSelected}
+        autoRotate={autoRotate && selectedTier === null && selectedTextId === null && !pipingTarget}
         autoRotateSpeed={0.8}
         maxPolarAngle={Math.PI / 2.05}
         target={[0, 2, 0]}

@@ -1,10 +1,12 @@
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { HexColorPicker } from 'react-colorful';
-import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
+import CakeCanvas, { CakeThumbnailCanvas } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
-import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BEND_ANCHOR_FRAC, ELEMENT_SLUGS } from './constants';
+import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
+import TopperPreview from './canvas/TopperPreview.jsx';
+import { isSinglePerSlot, placementSlots } from './placement.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
@@ -20,7 +22,6 @@ import BillingPanel from '../settings/BillingPanel';
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
-const TOPPER_CAPS = { resize: true, delete: true };
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
@@ -405,162 +406,129 @@ function matchesFilters(item, filters) {
 // TOPPERS + PIPING STYLES are loaded from Supabase cake_elements table
 
 // ── Per-element-type card in the elements panel ───────────────────────────────
+// A "top & side" decor element can be placed on BOTH the top surface and the side wall.
+// Support is declared via allowed_zones (canonical) and/or placement_config keys.
+function supportsTopAndSide(el) {
+  const zones = el?.allowed_zones ?? [];
+  const pc = el?.placement_config ?? {};
+  const hasTop  = zones.includes('top_surface') || !!pc.top_surface;
+  const hasSide = zones.includes('side') || !!pc.side;
+  return hasTop && hasSide;
+}
+
+// ONE preview tile shared by the cream-piping popup AND the placement chooser: a full-width
+// 3D preview (passed as children) with a corner add/remove checkbox and a centred name label
+// BELOW it (no overlay strip). Keeps both popups visually identical and on one implementation.
+function PreviewTile({ checked, onToggle, label, height = 104, children }) {
+  return (
+    <div>
+      <div style={{ position: 'relative', width: '100%', height, borderRadius: 10, overflow: 'hidden', border: `1.5px solid ${checked ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
+        {children}
+        <label title={checked ? 'Remove from cake' : 'Add to cake'} onPointerDown={e => e.stopPropagation()}
+          style={{ position: 'absolute', top: 5, left: 5, width: 22, height: 22, borderRadius: 6, background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <input type="checkbox" checked={checked} onChange={onToggle} style={{ accentColor: '#1a1a1a', width: 15, height: 15, cursor: 'pointer', margin: 0 }} />
+        </label>
+      </div>
+      {label && (
+        <span style={{ display: 'block', marginTop: 7, fontSize: 11, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.25, textAlign: 'center' }}>{label}</span>
+      )}
+    </div>
+  );
+}
+
+// Tilt stepper (−/°/+) — decor-specific (piping has no tilt); paired with the shared SizeDial.
+function TiltRow({ tiltAngle, onChange }) {
+  const ta = tiltAngle ?? 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tilt</span>
+      <button style={s.tbIconBtn} onClick={() => onChange(Math.max(-1.2, +(ta - 0.1).toFixed(3)))}>−</button>
+      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 28, textAlign: 'center' }}>{Math.round(ta * 180 / Math.PI)}°</span>
+      <button style={s.tbIconBtn} onClick={() => onChange(Math.min(1.2, +(ta + 0.1).toFixed(3)))}>+</button>
+    </div>
+  );
+}
+
+// Placement chooser — one PreviewTile per valid (tier × surface) SLOT the element allows, each
+// an INDEPENDENT add/remove checkbox (check = place, uncheck = remove). A placed slot gets its own
+// Size dial + Tilt — the SAME SizeDial the cream-piping popup uses (no clamp; sizes freely).
+// `slots` = [{ key, placement, tierIndex, label, checked, sticker }]; `onUpdate(id, changes)` edits.
+function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], onToggle, onUpdate }) {
+  const cap = { fontSize: 8.5, fontWeight: 700, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 };
+  return (
+    <div style={{ width: '100%' }}>
+      <div style={{ fontSize: 9, fontWeight: 700, color: '#888', letterSpacing: 0.3, marginBottom: 6 }}>PLACEMENT</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {slots.map(slot => (
+          <div key={slot.key}>
+            <PreviewTile checked={slot.checked} onToggle={() => onToggle(slot)} label={slot.label} height={116}>
+              <TopperPreview glbUrl={previewUrl} placement={slot.placement} tiers={tiers} tierIndex={slot.tierIndex} baseRotation={baseRotation} />
+            </PreviewTile>
+            {slot.sticker && (
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                  <SizeDial size={slot.sticker.scale ?? 1} min={0.5} max={8} step={0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />
+                  <span style={cap}>Size</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
+                  <TiltRow tiltAngle={slot.sticker.tiltAngle} onChange={v => onUpdate(slot.sticker.id, { tiltAngle: v })} />
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ElementTypeCard({
-  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], imageTopperElements = [], otherElements = [],
-  onSetTopper, onDragStartSticker, onDragStartTopper, cfAssetsBase,
+  elementType, design, scatteredDecorElements = [], picksElements = [], imageTopperElements = [], otherElements = [],
+  onElementTap, onDragStartSticker, cfAssetsBase,
 }) {
   const { slug, name } = elementType;
 
-  // ── topper — pick from DB-driven GLB toppers ──────────────────────────────
-  if (slug === 'topper') {
-    return (
-      <div style={{ ...s.elementCard, cursor: 'default' }}>
-        <div style={s.elementCardLabel}>{name}</div>
-        {toppersDb.length === 0 && (
-          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No toppers yet</div>
-        )}
-        {toppersDb.map(t => {
-          const isActive = design.topper?.id === t.id;
-          return (
-            <div key={t.id} style={{ width: '100%', borderTop: '1px solid #999999', paddingTop: 8, paddingBottom: 2 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
-                {/* Thumbnail */}
-                <div style={{
-                  width: 80, height: 80, borderRadius: 10,
-                  background: '#fff',
-                  border: `2px solid ${isActive ? '#1a1a1a' : '#999999'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  overflow: 'hidden', cursor: 'grab', touchAction: 'none',
-                  boxShadow: isActive ? '0 0 0 2px rgba(26,26,26,0.2)' : 'none',
-                }}
-                  onClick={() => onSetTopper(isActive ? null : t)}
-                  onPointerDown={e => { e.preventDefault(); onDragStartTopper?.(t, e.clientX, e.clientY); }}
-                >
-                  {t.thumbnail_url
-                    ? <img src={cfImg(t.thumbnail_url, 80, 80, cfAssetsBase)} alt={t.name} width={80} height={80} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
-                    : null
-                  }
-                </div>
-                {/* Label + action */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
-                  <span style={{ ...s.tierCheckLabel, flex: 1, textAlign: 'center' }}>{t.name}</span>
-                  {isActive && (
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935', fontWeight: 700 }}
-                      onClick={() => onSetTopper(null)}>×</button>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
+  // Grid-item pointer handler shared by every decor grid, disambiguating tap vs drag — purely
+  // config-driven, no element-type branches. Drag always places at the drop point. A tap on a
+  // single-per-slot "hero" element (placement_config.single_per_slot) places it and opens the
+  // placement chooser; scatter elements (scattered/picks/…) stay drag-only (tap does nothing).
+  const gridPointerDown = (el, e) => {
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY;
+    const tappable = el.placement_config?.single_per_slot === true;
+    let dragging = false;
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    const move = ev => {
+      if (dragging) return;
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) {
+        dragging = true;
+        cleanup();
+        onDragStartSticker?.(el, ev.clientX, ev.clientY);
+      }
+    };
+    const up = () => { cleanup(); if (!dragging && tappable) onElementTap?.(el); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
 
-  // ── scattered_decor — PNG stickers placeable on any zone ──────────────────
-  if (slug === ELEMENT_SLUGS.SCATTERED_DECOR) {
-    return (
-      <div style={{ ...s.elementCard, cursor: 'default' }}>
-        <div style={s.elementCardLabel}>{name}</div>
-        <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto cake to place</div>
-        {scatteredDecorElements.length === 0 && (
-          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No elements yet</div>
-        )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {scatteredDecorElements.map(el => (
-            <div
-              key={el.id}
-              onPointerDown={e => {
-                e.preventDefault();
-                onDragStartSticker?.(el, e.clientX, e.clientY);
-              }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
-            >
-              <div style={{
-                width: 64, height: 64, borderRadius: 10, overflow: 'hidden',
-                background: '#fff',
-                border: '1.5px solid #999999',
-              }}>
-                {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
-              </div>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── picks — draggable GLB elements inserted into cake ─────────────────────
-  if (slug === ELEMENT_SLUGS.PICKS) {
-    return (
-      <div style={{ ...s.elementCard, cursor: 'default' }}>
-        <div style={s.elementCardLabel}>{name}</div>
-        <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto cake to place</div>
-        {picksElements.length === 0 && (
-          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No picks yet</div>
-        )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {picksElements.map(el => (
-            <div
-              key={el.id}
-              onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
-            >
-              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
-                {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
-              </div>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── image_topper — draggable 2D images placed upright on top surface ────────
-  if (slug === ELEMENT_SLUGS.IMAGE_TOPPER) {
-    return (
-      <div style={{ ...s.elementCard, cursor: 'default' }}>
-        <div style={s.elementCardLabel}>{name}</div>
-        <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto top of cake to place</div>
-        {imageTopperElements.length === 0 && (
-          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No image toppers yet</div>
-        )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {imageTopperElements.map(el => (
-            <div
-              key={el.id}
-              onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
-            >
-              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
-                {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} crossOrigin="anonymous" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
-              </div>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── All other types — generic draggable grid ──────────────────────────────
-  return (
+  // ONE draggable thumbnail grid shared by every "drag (or tap) onto the cake" element type
+  // (scattered decor, picks, image toppers, and any other generic type). Only the hint text,
+  // empty-state text, and image fit differ — passed in as options.
+  const renderDraggableGrid = (elements, { hint, emptyText, objectFit = 'cover', crossOrigin = false }) => (
     <div style={{ ...s.elementCard, cursor: 'default' }}>
       <div style={s.elementCardLabel}>{name}</div>
-      {otherElements.length > 0 ? (
+      {elements.length > 0 ? (
         <>
-          <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto cake to place</div>
+          <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>{hint}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {otherElements.map(el => (
-              <div
-                key={el.id}
-                onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
-              >
+            {elements.map(el => (
+              <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}>
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
-                  {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                  {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
                 </div>
                 <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
               </div>
@@ -568,10 +536,28 @@ function ElementTypeCard({
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No elements yet</div>
+        <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>{emptyText}</div>
       )}
     </div>
   );
+
+  // ── scattered_decor — PNG stickers placeable on any zone ──────────────────
+  if (slug === ELEMENT_SLUGS.SCATTERED_DECOR) {
+    return renderDraggableGrid(scatteredDecorElements, { hint: 'Drag onto cake to place', emptyText: 'No elements yet' });
+  }
+
+  // ── picks — draggable GLB elements inserted into cake ─────────────────────
+  if (slug === ELEMENT_SLUGS.PICKS) {
+    return renderDraggableGrid(picksElements, { hint: 'Drag onto cake to place', emptyText: 'No picks yet' });
+  }
+
+  // ── image_topper — draggable 2D images placed upright on top surface ────────
+  if (slug === ELEMENT_SLUGS.IMAGE_TOPPER) {
+    return renderDraggableGrid(imageTopperElements, { hint: 'Drag onto top of cake to place', emptyText: 'No image toppers yet', objectFit: 'contain', crossOrigin: true });
+  }
+
+  // ── All other types — generic draggable grid ──────────────────────────────
+  return renderDraggableGrid(otherElements, { hint: 'Drag onto cake to place', emptyText: 'No elements yet' });
 }
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
@@ -852,7 +838,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
@@ -860,7 +846,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
-  const [toppersDb, setToppersDb] = useState([]);
+  const [elementById, setElementById] = useState(() => new Map()); // id → element row, for placed-sticker config lookups
   const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
   const [picksDb, setPicksDb] = useState([]);
   const [stampsDb, setStampsDb] = useState([]);
@@ -904,8 +890,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // type 'tier':   { index }
   // type 'piping': { tierIndex, zone: 'top'|'bottom' }
   // type 'text':   { id }
-  // type 'topper': {}
-  // type 'sticker': { id }  ← primary sticker (toolbar anchor)
+  // type 'sticker': { id }  ← primary sticker (toolbar anchor); toppers are stickers too
   const [selectedEl, setSelectedEl] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
   // Full sticker selection set (drives canvas highlight + group ops)
@@ -921,7 +906,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const STICKER_CAPS = { resize: true, delete: true, color: false, duplicate: true };
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
-     : selectedEl.type === 'topper'  ? TOPPER_CAPS
      : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
      : (allowedActionsBySlug[selectedEl.type] ?? null))
     : null;
@@ -1078,7 +1062,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       })),
       texts:    design.texts,
       stickers: design.stickers,
-      topper:   design.topper ?? null,
       writing:  design.writing ?? null,
       piping:   design.piping ?? [],
     };
@@ -1164,11 +1147,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
   }
 
-  // Eager load piping elements if any tier already has piping applied —
-  // ensures placement_config.rotation syncs without opening the elements panel.
+  // Eager load elements if the design already has piping or placed decor — piping needs
+  // placement_config.rotation synced, and placed stickers need their source element resolvable
+  // (so the placement chooser can read allowed_zones/placement_config) before the panel opens.
   useEffect(() => {
     const hasPiping = design.tiers.some(t => t.topPipings?.length || t.bottomPipings?.length);
-    if (hasPiping) loadElementsIfNeeded();
+    if (hasPiping || design.stickers.length) loadElementsIfNeeded();
   }, []);
 
   // Eager load element_types (with allowed_actions) on mount so edit controls
@@ -1195,7 +1179,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }, []);
 
   async function loadElementsIfNeeded() {
-    if (toppersDb.length > 0 || scatteredDecorDb.length > 0 || picksDb.length > 0 || imageTopperDb.length > 0 || Object.keys(otherElementsDb).length > 0) return;
+    if (elementById.size > 0) return;
     setElementTypesLoading(true);
     let rows = [];
     if (apiClient) {
@@ -1227,13 +1211,31 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     });
 
     setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
-    const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
+    const topperTypeId   = elementTypes.find(et => et.slug === 'topper')?.id;
+    const topSideTypeId  = elementTypes.find(et => et.slug === 'top_side_decors')?.id;
+    // Placement STYLE is config, not an allowed_zones guess. "Hero" elements (topper, top&side
+    // decor) are single-per-slot: ONE instance per (tier×surface), chosen via the checkbox
+    // chooser. Everything else (scattered, picks, image toppers) scatters freely as many
+    // dragged stickers. We backfill `single_per_slot` (+ the topper's stand/hug/facing) for the
+    // hero types so the generic engine reads it; existing config always wins via the spread.
+    rows = rows.map(r => {
+      if (r.element_type_id === topperTypeId) {
+        return { ...r,
+          allowed_zones: r.allowed_zones?.length ? r.allowed_zones : ['top_surface'],
+          placement_config: { single_per_slot: true, top_surface: 'stand', side: 'hug', rotation: [0, -Math.PI / 2, 0], ...(r.placement_config ?? {}) } };
+      }
+      if (r.element_type_id === topSideTypeId) {
+        return { ...r, placement_config: { single_per_slot: true, ...(r.placement_config ?? {}) } };
+      }
+      return r;
+    });
     const scatteredDecorTypeId = elementTypes.find(et => et.slug === ELEMENT_SLUGS.SCATTERED_DECOR)?.id;
     const picksTypeId          = elementTypes.find(et => et.slug === ELEMENT_SLUGS.PICKS)?.id;
     const imageTopperTypeId    = elementTypes.find(et => et.slug === ELEMENT_SLUGS.IMAGE_TOPPER)?.id;
     const pipingStampTypeId    = elementTypes.find(et => et.slug === 'piping_stamp')?.id;
-    const knownTypeIds         = new Set([topperTypeId, scatteredDecorTypeId, picksTypeId, imageTopperTypeId, pipingStampTypeId].filter(Boolean));
-    setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
+    // Note: topperTypeId is intentionally NOT in knownTypeIds — topper elements fall into the
+    // generic `others` bucket and render via the same draggable grid as every other type.
+    const knownTypeIds         = new Set([scatteredDecorTypeId, picksTypeId, imageTopperTypeId, pipingStampTypeId].filter(Boolean));
     setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
     setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
     setStampsDb(rows.filter(r => r.element_type_id === pipingStampTypeId));
@@ -1243,6 +1245,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       (others[r.element_type_id] ??= []).push(r);
     });
     setOtherElementsDb(others);
+    setElementById(new Map(rows.map(r => [r.id, r])));
     setElementTypesLoading(false);
   }
 
@@ -1731,8 +1734,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     } else if (selectedStickerIds.size > 0) {
       selectedStickerIds.forEach(id => removeSticker(id));
       setSelectedStickerIds(new Set());
-    } else if (selectedEl?.type === 'topper') {
-      setTopper(null);
     }
     setSelectedEl(null);
     setColorOpen(false);
@@ -1799,15 +1800,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (piping) openCardForLayer(tierIndex, 'board', piping);
   }
 
-  function handleTopperClick() {
-    if (!design.topper) return;
-    focusEditor('decoration');
-    setSelectedEl(prev => prev?.type === 'topper' ? prev : { type: 'topper' });
+  // Tap an element in the Decorations menu → place it on its first allowed zone (config decides
+  // hug vs stand) and select it, which opens its card with the placement chooser. Fully
+  // config-driven; works for any element whose allowed_zones has more than one surface.
+  function tapPlaceElement(element) {
+    const zones = element.allowed_zones ?? [];
+    // Prefer the top surface; a hero decoration belongs on the cake's actual top (the LAST/
+    // topmost tier), not tier 0 (which is hidden under upper tiers on a multi-tier cake).
+    const zone = zones.includes(ZONES.TOP_SURFACE) ? ZONES.TOP_SURFACE : (zones[0] ?? ZONES.TOP_SURFACE);
+    const tierIndex = zone === ZONES.TOP_SURFACE ? design.tiers.length - 1 : 0;
+    handleElementDrop(element, { zone, tierIndex, x: 0, z: 0 });
   }
 
   function handleStickerSelect(id, ctrlKey = false) {
     const sticker = design.stickers.find(s => s.id === id);
     focusEditor('decoration');
+
+    // A multi-slot decor instance opens its element's single card (manages all placements),
+    // not a per-instance selection — keeps one uniform card per element.
+    if (!ctrlKey && !multiSelectMode && sticker && isMultiSlotEl(sticker.elementId)) {
+      setColorOpen(false);
+      setSelectedEl({ type: 'decorEl', elementId: sticker.elementId });
+      setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === sticker.elementId).map(s => s.id)));
+      return;
+    }
 
     if (ctrlKey || multiSelectMode) {
       setMultiSelectMode(true);
@@ -1876,35 +1892,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // (the same rule piping already follows). Faux balls edit via the colour wheel.
     if (placementMode !== 'faux_ball_single') {
       focusEditor('decoration');
-      setSelectedEl({ type: 'sticker', id: newId });
-      setSelectedStickerIds(new Set([newId]));
+      // Multi-slot decor opens its single element card (manages all placements); others select
+      // the just-placed instance.
+      if (isMultiSlotEl(element.id)) {
+        setSelectedEl({ type: 'decorEl', elementId: element.id });
+        setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === element.id).map(s => s.id).concat(newId)));
+      } else {
+        setSelectedEl({ type: 'sticker', id: newId });
+        setSelectedStickerIds(new Set([newId]));
+      }
     }
 
     if (isImageTopper && hit.zone === 'top_surface') {
       snapCameraRef.current?.([0, 5.5, 8.7]);
     }
-  }
-
-  function startTopperDrag(topper, startX, startY) {
-    setDragGhost({ x: startX, y: startY, el: topper, canDrop: false });
-    function onMove(e) {
-      const hit = hitTestRef.current?.(e.clientX, e.clientY);
-      setDragGhost({ x: e.clientX, y: e.clientY, el: topper, canDrop: !!hit });
-    }
-    function onUp(e) {
-      setDragGhost(null);
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      const hit = hitTestRef.current?.(e.clientX, e.clientY);
-      if (hit) {
-        if (topper.image_url) preloadTopper(topper.image_url);
-        setTopper(topper);
-        setSelectedEl({ type: 'topper' });
-        setElementsOpen(false);
-      }
-    }
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
   }
 
   function startStickerDrag(el, startX, startY) {
@@ -2015,7 +2016,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       })),
       texts:    design.texts,
       stickers: design.stickers,
-      topper:   design.topper ?? null,
       writing:  design.writing ?? null,   // typed cream lettering — was being dropped on order
       piping:   design.piping ?? [],       // freehand cream-pen strokes
     };
@@ -2110,24 +2110,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // full controls, the rest collapse to clickable headers, so adding/selecting a
   // second element stacks beneath the first instead of replacing it. Faux-ball
   // stickers are excluded — they edit through the colour wheel, not this popup.
-  const decorationCards = [
-    ...design.stickers
-      .filter(st => st.placementMode !== 'faux_ball_single')
-      .map(st => ({
-        key: `sticker-${st.id}`, type: 'sticker', id: st.id,
-        name: st.name ?? 'Decoration',
-        thumb: /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl,
-      })),
-    ...(design.topper ? [{
-      key: 'topper', type: 'topper', id: null,
-      name: design.topper.name ?? 'Topper',
-      thumb: design.topper.thumbnail_url ?? null,
-    }] : []),
-    ...design.texts.map(t => ({
-      key: `text-${t.id}`, type: 'text', id: t.id,
-      name: (t.content && t.content.trim()) || 'Text', thumb: null, glyph: 'T',
-    })),
-  ];
+  // "Single-per-slot" hero elements (topper, top&side decor — flagged in placement_config)
+  // collapse to ONE card per element (type 'decorEl'); everything else scatters freely. Pure
+  // classifier lives in placement.js (shared with the contract test).
+  const isMultiSlotEl = elId => isSinglePerSlot(elementById.get(elId));
+  const decorationCards = [];
+  const seenDecorEl = new Set();
+  design.stickers
+    .filter(st => st.placementMode !== 'faux_ball_single')
+    .forEach(st => {
+      const thumb = /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl;
+      if (isMultiSlotEl(st.elementId)) {
+        if (seenDecorEl.has(st.elementId)) return;
+        seenDecorEl.add(st.elementId);
+        decorationCards.push({ key: `el-${st.elementId}`, type: 'decorEl', elementId: st.elementId, name: st.name ?? 'Decoration', thumb });
+      } else {
+        decorationCards.push({ key: `sticker-${st.id}`, type: 'sticker', id: st.id, name: st.name ?? 'Decoration', thumb });
+      }
+    });
+  decorationCards.push(...design.texts.map(t => ({
+    key: `text-${t.id}`, type: 'text', id: t.id,
+    name: (t.content && t.content.trim()) || 'Text', thumb: null, glyph: 'T',
+  })));
   // The element stack is ONE persistent right-side editor holding every editable
   // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
   // single accordion. It stays open as long as the cake carries any of them and no
@@ -2141,16 +2145,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     && selectedEl?.type !== 'tier'
     && !selectedStickerIsFauxBall;
   const isCardSelected = (card) => selectedEl?.type === card.type &&
-    (card.type === 'topper' ? true : selectedEl?.id === card.id);
+    (card.type === 'decorEl' ? selectedEl.elementId === card.elementId : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
     setColorOpen(false);
     setExpandedPipingId(null);   // collapse any expanded piping card — single expansion
-    if (card.type === 'sticker') {
+    if (card.type === 'decorEl') {
+      setSelectedEl({ type: 'decorEl', elementId: card.elementId });
+      setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === card.elementId).map(s => s.id)));
+      setMultiSelectMode(false);
+    } else if (card.type === 'sticker') {
       setSelectedEl({ type: 'sticker', id: card.id });
       setSelectedStickerIds(new Set([card.id]));
       setMultiSelectMode(false);
-    } else if (card.type === 'topper') {
-      setSelectedEl({ type: 'topper' });
     } else if (card.type === 'text') {
       setSelectedEl({ type: 'text', id: card.id });
     }
@@ -2168,7 +2174,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
     const c = el.type === 'tier'    ? TIER_CAPS
-            : el.type === 'topper'  ? TOPPER_CAPS
+            : el.type === 'decorEl' ? {}   // one card per multi-slot element; controls built below
             : el.type === 'sticker' ? (design.stickers.find(s => s.id === el.id)?.allowedActions ?? STICKER_CAPS)
             : (allowedActionsBySlug[el.type] ?? null);
     if (!c) return null;
@@ -2193,41 +2199,59 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ] });
     }
 
-    if (c.resize && el.type === 'topper') {
-      const sc = design.topper?.scale ?? 1;
-      groups.push({ key: 'tp', divider: true, panelLabel: 'Size', controls: [
-        <button key="tp-" style={s.tbIconBtn} onClick={() => setTopperScale(Math.max(0.25, +(sc - 0.15).toFixed(2)))}>−</button>,
-        <button key="tp+" style={s.tbIconBtn} onClick={() => setTopperScale(Math.min(4, +(sc + 0.15).toFixed(2)))}>+</button>,
+    // ── Multi-slot decor element — ONE card per element (like a cream-piping card), whose
+    // chooser manages every (tier × surface) placement of it via independent add/remove
+    // checkboxes; each placed slot carries its own Size + Tilt. Config-driven; no per-type code.
+    if (el.type === 'decorEl') {
+      const srcEl = elementById.get(el.elementId);
+      const pc = srcEl?.placement_config ?? {};
+      const elId = el.elementId;
+      const isSideZone = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
+      const multiTier = design.tiers.length > 1;
+      // Pure slot enumeration (placement.js); layer on label + current instance per slot.
+      const slots = placementSlots(srcEl, design.tiers.length).map(slot => {
+        const inst = slot.zone === ZONES.TOP_SURFACE
+          ? design.stickers.find(s => s.elementId === elId && s.zone === ZONES.TOP_SURFACE)
+          : design.stickers.find(s => s.elementId === elId && isSideZone(s.zone) && s.tierIndex === slot.tierIndex);
+        const label = slot.placement === 'top'
+          ? 'Top'
+          : (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} side` : 'Side');
+        return { ...slot, label, checked: !!inst, sticker: inst };
+      });
+      const onToggle = slot => {
+        if (slot.checked) {
+          // Remove this slot's instance; keep the element's card alive while others remain.
+          design.stickers
+            .filter(s => s.elementId === elId && (slot.zone === ZONES.TOP_SURFACE ? s.zone === ZONES.TOP_SURFACE : isSideZone(s.zone) && s.tierIndex === slot.tierIndex))
+            .forEach(s => removeSticker(s.id));
+        } else {
+          let baseY = 0.1;
+          for (let i = 0; i < slot.tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
+          const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
+          const mode = pc[slot.zone] ?? (slot.zone === ZONES.TOP_SURFACE ? PLACEMENT_MODES.STAND : PLACEMENT_MODES.HUG);
+          const pos = slot.zone === ZONES.TOP_SURFACE ? { x: 0, z: 0 } : { theta: 0, y: baseY + tierH * 0.45 };
+          addSticker(srcEl, slot.zone, slot.tierIndex, mode, pos);   // stay on this element's card
+        }
+      };
+      groups.push({ key: 'place', divider: true, controls: [
+        <PlacementChooser key="place" previewUrl={srcEl?.image_url}
+          tiers={canvasConfig.tiers} baseRotation={pc.rotation ?? null}
+          slots={slots} onToggle={onToggle} onUpdate={updateSticker} />
+      ] });
+      groups.push({ key: 'actions', divider: false, footer: true, controls: [
+        <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }}
+          onClick={() => { design.stickers.filter(s => s.elementId === elId).forEach(s => removeSticker(s.id)); clearAllSelections(); }}>
+          Remove
+        </button>,
       ] });
     }
 
     if (c.resize && el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
-      const sc = sticker?.scale ?? 1;
-      const SC_MIN = 25, SC_MAX = 600;
-      const scPct = Math.min(100, Math.max(0, ((Math.round(sc * 100) - SC_MIN) / (SC_MAX - SC_MIN)) * 100));
-      function scFromEvent(e) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        return (SC_MIN + Math.round(ratio * (SC_MAX - SC_MIN) / 5) * 5) / 100;
-      }
-      groups.push({ key: 'sc', divider: true, controls: [
-        <div key="sc-slider" style={{ display:'flex', alignItems:'center', gap:6 }}>
-          <span style={{ fontSize:9, fontWeight:700, color:'#888', letterSpacing:0.3 }}>Size</span>
-          <div
-            style={{ width:80, position:'relative', height:20, display:'flex', alignItems:'center', cursor:'pointer', touchAction:'none', userSelect:'none' }}
-            onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); updateSticker(el.id, { scale: scFromEvent(e) }); }}
-            onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); updateSticker(el.id, { scale: scFromEvent(e) }); }}
-            onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-            onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
-          >
-            <div style={{ width:'100%', height:4, borderRadius:2, background:'#e0e0e0', position:'relative' }}>
-              <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${scPct}%`, background:'#1a1a1a', borderRadius:2 }} />
-            </div>
-            <div style={{ position:'absolute', left:`${scPct}%`, transform:'translateX(-50%)', width:14, height:14, borderRadius:'50%', background:'#1a1a1a', pointerEvents:'none' }} />
-          </div>
-          <span style={{ fontSize:11, fontWeight:700, color:'#333', minWidth:30 }}>{Math.round(sc * 100)}%</span>
-        </div>
+      // Same SizeDial as piping + the hero chooser — one Size control everywhere.
+      groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
+        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={0.25} max={8} step={0.05}
+          onChange={v => updateSticker(el.id, { scale: v })} />,
       ] });
       const isGlbTop = sticker?.zone === 'top_surface' && /\.(glb|gltf)(\?|$)/i.test(sticker?.imageUrl ?? '');
       if (isGlbTop) {
@@ -2306,11 +2330,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>{label}</button>
       );
     }
-    actions.push(
-      <button key="ok" style={{ ...s.tbIconBtn, color: '#6c47ff', fontWeight: 700, fontSize: 11 }}
-        onClick={() => { clearAllSelections(); }}>Done</button>
-    );
-    groups.push({ key: 'actions', divider: false, footer: true, controls: actions });
+    if (actions.length) groups.push({ key: 'actions', divider: false, footer: true, controls: actions });
 
     // Vertical right-side popup — consistent with the cream-piping popup.
     if (layout === 'panel') {
@@ -2319,7 +2339,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {groups.map(g => (
             <div key={g.key} style={g.footer ? s.editPanelFooter : s.editPanelRow}>
               {g.panelLabel && <span style={s.editPanelLabel}>{g.panelLabel}</span>}
-              <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap', flex:1 }}>{g.controls}</div>
+              {/* minWidth:0 lets wide children (e.g. a <canvas>, whose intrinsic width is
+                  300px) shrink to the column instead of overflowing the popup. */}
+              <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap', flex:1, minWidth: 0 }}>{g.controls}</div>
             </div>
           ))}
         </div>
@@ -2742,23 +2764,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     key={et.id}
                     elementType={et}
                     design={design}
-                    toppersDb={filterEl(toppersDb)}
                     scatteredDecorElements={filterEl(scatteredDecorDb)}
                     picksElements={filterEl(picksDb)}
                     imageTopperElements={filterEl(imageTopperDb)}
                     otherElements={filterEl(otherElementsDb[et.id] ?? [])}
                     onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
-                    onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
-                    onSetTopper={(t) => {
-                      if (t) {
-                        if (t.image_url) preloadTopper(t.image_url);
-                        setTopper(t);
-                        setSelectedEl({ type: 'topper' });
-                        setElementsOpen(false);
-                      } else {
-                        setTopper(null);
-                      }
-                    }}
+                    onElementTap={(el) => tapPlaceElement(el)}
                     cfAssetsBase={cfAssetsBase}
                   />
               ));
@@ -2991,9 +3002,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onTextMove={(id, pos) => updateText(id, pos)}
               onTextContentChange={(id, content) => updateText(id, { content })}
               textToolbar={null /* text now edits via the right-side popup, not a floating strip */}
-              onTopperClick={handleTopperClick}
-              topperSelected={selectedEl?.type === 'topper'}
-              topperToolbar={null}
               onWritingClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); setElementsOpen(false); }}
               onWritingMove={moves => setWriting(moves)}
               writingSelected={selectedEl?.type === 'writing'}
@@ -3071,13 +3079,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
                   : selectedEl?.type === 'piping'  ? `${TIER_LABELS[selectedEl.tierIndex]} ${selectedEl.zone === 'top' ? 'Top' : 'Base'}`
                   : selectedEl?.type === 'text'    ? 'Text Color'
-                  : selectedEl?.type === 'topper'  ? (design.topper?.name ?? 'Topper')
                   : selectedEl?.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker')
                   : ''}
                 </span>
                 <button style={s.iconBtn} onClick={() => {
                   if (tierPanelVisible) setSelectedEl(null);
-                  else { setColorOpen(false); if (selectedEl?.type === 'topper') setSelectedEl(null); }
+                  else { setColorOpen(false); }
                 }}>✕</button>
               </div>
 
@@ -3477,21 +3484,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const isRectTier = canvasConfig.tiers[tierIndex]?.shape === 'rect';
                 return (
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
-                    {/* ── Full-width preview with the checkbox floating in its corner ── */}
-                    <div style={{ position: 'relative', width: '100%', height: 104, borderRadius: 10, overflow: 'hidden', border: `1.5px solid ${applied ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
+                    {/* Shared preview tile (same component as the placement chooser). */}
+                    <PreviewTile checked={!!applied} label={label}
+                      onToggle={() => togglePipingZone(tierIndex, zone, !!applied)}>
                       <PipingPreview zone={zone} glbUrl={previewGlb} color={color} size={size}
                         tiers={canvasConfig.tiers} tierIndex={tierIndex}
                         placement={previewPlacement} arrangement={arrangement} instances={zoneInstances} />
-                      <label title={applied ? 'Remove from cake' : 'Add to cake'}
-                        onPointerDown={e => e.stopPropagation()}
-                        style={{ position: 'absolute', top: 5, left: 5, width: 22, height: 22, borderRadius: 6, background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={!!applied}
-                          onChange={() => togglePipingZone(tierIndex, zone, !!applied)}
-                          style={{ accentColor: '#1a1a1a', width: 15, height: 15, cursor: 'pointer', margin: 0 }} />
-                      </label>
-                    </div>
-                    {/* ring name */}
-                    <span style={{ display: 'block', marginTop: 7, fontSize: 11, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.25, textAlign: 'center' }}>{label}</span>
+                    </PreviewTile>
                     {/* Color + Size */}
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
