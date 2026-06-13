@@ -429,10 +429,10 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius, baseRotation }) {
+function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius, baseRotation, flipX = false }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
-  return (
+  const inner = (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
@@ -442,12 +442,14 @@ function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, be
       </Suspense>
     </TextureErrorBoundary>
   );
+  // Mirror across the vertical axis about the model's own centre (StickerModel/StickerTexture
+  // both centre their content at the origin). THREE flips winding for the negative determinant,
+  // so faces/lighting stay correct. Selection box is a sibling, so it isn't mirrored.
+  return flipX ? <group scale={[-1, 1, 1]}>{inner}</group> : inner;
 }
 
-const OUTLINE_GEOM = new THREE.EdgesGeometry(new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE));
-const HANDLE_R = 0.06;
 
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, selected, onSelect, onLongPress, onMove, onGroupMove, allStickers, onOrbitEnable, toolbar }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -499,7 +501,8 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} flipX={sticker.flipX} />
+      {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -523,7 +526,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
             : cylinderHit(pointerRay(e, gl.domElement, camera), radius + off);
           startSticker.current = { theta: sticker.theta, y: sticker.y };
 
-          if (!isRect && sticker.groupId) {
+          if (!isRect && moveSet && moveSet.length > 1) {
+            const setIds = new Set(moveSet);
+            groupStart.current = {};
+            allStickers.forEach(s => { if (setIds.has(s.id)) groupStart.current[s.id] = { theta: s.theta, y: s.y }; });
+          } else if (!isRect && sticker.groupId) {
             groupStart.current = {};
             allStickers.forEach(s => {
               if (s.groupId === sticker.groupId)
@@ -551,7 +558,9 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
             if (!hit) return;
             const deltaTheta = hit.theta - startHit.current.theta;
             const deltaY     = hit.y     - startHit.current.y;
-            if (sticker.groupId && groupStart.current && onGroupMove) {
+            if (moveSet && moveSet.length > 1 && groupStart.current && onMoveMany) {
+              onMoveMany(moveSet, groupStart.current, { deltaTheta, deltaY });
+            } else if (sticker.groupId && groupStart.current && onGroupMove) {
               onGroupMove(sticker.groupId, groupStart.current, { deltaTheta, deltaY });
             } else {
               onMove(sticker.id, {
@@ -1026,7 +1035,7 @@ function FauxBallCluster({ sticker, topY, radius, baseY, shp = { kind: 'round', 
   );
 }
 
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, allStickers, onOrbitEnable, toolbar }) {
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -1046,7 +1055,8 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} />
+      {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -1075,7 +1085,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     lastHitRef.current      = null;
     lastValidPos.current    = { x: sticker.x, z: sticker.z };
 
-    if (sticker.groupId) {
+    if (moveSet && moveSet.length > 1) {
+      const setIds = new Set(moveSet);
+      groupStart.current = {};
+      allStickers.forEach(s => { if (setIds.has(s.id)) groupStart.current[s.id] = { x: s.x, z: s.z }; });
+    } else if (sticker.groupId) {
       groupStart.current = {};
       allStickers.forEach(s => {
         if (s.groupId === sticker.groupId)
@@ -1093,7 +1107,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       if (didDrag.current && startHit.current) {
         const hit = planeHit(pointerRay(ev, gl.domElement, camera), plane);
         if (!hit) return;
-        if (sticker.groupId && groupStart.current && onGroupMove) {
+        if (moveSet && moveSet.length > 1 && groupStart.current && onMoveMany) {
+          const rawDx = hit.x - startHit.current.x;
+          const rawDz = hit.z - startHit.current.z;
+          onMoveMany(moveSet, groupStart.current, { dx: rawDx, dz: rawDz });
+        } else if (sticker.groupId && groupStart.current && onGroupMove) {
           const rawDx = hit.x - startHit.current.x;
           const rawDz = hit.z - startHit.current.z;
           onGroupMove(sticker.groupId, groupStart.current, { dx: rawDx, dz: rawDz });
@@ -1308,7 +1326,7 @@ function CakeScene({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
-  selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
+  selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
   tierDataRef,
@@ -1500,6 +1518,11 @@ function CakeScene({
         };
 
         const isSelected = selectedStickerIds?.has(sticker.id) ?? false;
+        // When this sticker is part of a multi-selection, dragging it moves the whole
+        // selection together (selection-driven). Otherwise the draggable falls back to its
+        // groupId path (manual groups) or a plain single move.
+        const moveSet = (isSelected && (selectedStickerIds?.size ?? 0) > 1)
+          ? [...selectedStickerIds] : null;
         if (isSide) {
           if (sticker.placementMode === 'faux_ball_single') {
             return (
@@ -1533,6 +1556,8 @@ function CakeScene({
               onLongPress={onStickerLongPress}
               onMove={onStickerMove}
               onGroupMove={onGroupMove}
+              onMoveMany={onMoveMany}
+              moveSet={moveSet}
               allStickers={stickers}
               onOrbitEnable={orbitEnable}
               toolbar={isSelected ? stickerToolbar : null}
@@ -1589,6 +1614,8 @@ function CakeScene({
             onLongPress={onStickerLongPress}
             onMove={onStickerMove}
             onGroupMove={onGroupMove}
+            onMoveMany={onMoveMany}
+            moveSet={moveSet}
             allStickers={stickers}
             onOrbitEnable={orbitEnable}
             toolbar={isSelected ? stickerToolbar : null}
@@ -1747,7 +1774,7 @@ export default function CakeCanvas({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
-  selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
+  selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   hitTestRef,
   snapCameraRef,
   cameraPosition = CAMERA_POSITION,
@@ -1860,6 +1887,7 @@ export default function CakeCanvas({
         onStickerLongPress={(id) => onStickerLongPress?.(id)}
         onStickerMove={onStickerMove}
         onGroupMove={onGroupMove}
+        onMoveMany={onMoveMany}
         stickerToolbar={stickerToolbar}
         onWritingClick={onWritingClick}
         onWritingMove={onWritingMove}

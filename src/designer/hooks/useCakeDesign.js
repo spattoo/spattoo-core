@@ -194,10 +194,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, texts: prev.texts.filter(t => t.id !== id) }));
   }
 
-  function addSticker(element, zone, tierIndex, placementMode, position = {}) {
+  // `extra` carries identity that isn't derived from the element: an explicit `id`
+  // (so a caller spawning several parts in one tick avoids Date.now() collisions) and
+  // pattern membership (`patternId` ties a decor_pattern's parts together for the orphan
+  // guard; `patternDeletable` mirrors the pattern's placement_config.parts_deletable).
+  function addSticker(element, zone, tierIndex, placementMode, position = {}, extra = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
     const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : 1);
-    const newId = Date.now();   // returned so callers can select the just-added sticker
+    const newId = extra.id ?? Date.now();   // returned so callers can select the just-added sticker
     setDesign(prev => {
       let px = position.x ?? 0;
       let pz = position.z ?? 0;
@@ -287,6 +291,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           radialOffset:  0,
           tiltAngle:     0,
           groupId:       null,
+          // Pattern membership: parts of one decor_pattern share a patternId. Unlike groupId
+          // it does NOT auto-select the whole set on tap (that's the drill-in default) — it only
+          // marks the pair so the delete path can keep them whole (patternDeletable).
+          patternId:        extra.patternId ?? null,
+          patternDeletable: extra.patternDeletable ?? false,
+          // Mirror this instance across its own vertical axis (a pattern's symmetric second
+          // part — e.g. the right unicorn eye from the same GLB). Applied as a -X scale in render.
+          flipX:            extra.flipX ?? false,
           color:         element.default_color ?? null,
           allowedActions: {
             resize:    element.allowed_actions?.resize    ?? true,
@@ -344,6 +356,37 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         if (delta.dz        !== undefined) updated.z     = start.z     + delta.dz;
         return updated;
       }),
+    }));
+  }
+
+  // Move an explicit set of stickers by one delta — the selection-driven counterpart to
+  // moveGroupStickers (which keys off groupId). Used when a multi-selection is dragged so
+  // every selected sticker tracks the pointer together. delta is {dx,dz} (top) or
+  // {deltaTheta,deltaY} (side), same convention as moveGroupStickers.
+  function moveStickersBy(ids, startPositions, delta) {
+    const idSet = new Set(ids);
+    setDesign(prev => ({
+      ...prev,
+      stickers: prev.stickers.map(s => {
+        if (!idSet.has(s.id)) return s;
+        const start = startPositions[s.id];
+        if (!start) return s;
+        const updated = { ...s };
+        if (delta.deltaTheta !== undefined) updated.theta = start.theta + delta.deltaTheta;
+        if (delta.deltaY    !== undefined) updated.y     = start.y     + delta.deltaY;
+        if (delta.dx        !== undefined) updated.x     = start.x     + delta.dx;
+        if (delta.dz        !== undefined) updated.z     = start.z     + delta.dz;
+        return updated;
+      }),
+    }));
+  }
+
+  // Set the same scale on every sticker in a set — "select both, resize, both match".
+  function scaleStickers(ids, value) {
+    const idSet = new Set(ids);
+    setDesign(prev => ({
+      ...prev,
+      stickers: prev.stickers.map(s => idSet.has(s.id) ? { ...s, scale: value } : s),
     }));
   }
 
@@ -461,7 +504,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
     addSticker, updateSticker, removeSticker, duplicateSticker,
-    groupStickers, ungroupStickers, moveGroupStickers,
+    groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers,
     setWriting, clearWriting,
     addStroke, removeStroke, clearPiping,
     resetDesign,

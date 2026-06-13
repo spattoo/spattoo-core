@@ -842,7 +842,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
@@ -1736,7 +1736,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     } else if (selectedEl?.type === 'text') {
       removeText(selectedEl.id);
     } else if (selectedStickerIds.size > 0) {
-      selectedStickerIds.forEach(id => removeSticker(id));
+      // Orphan guard: a decor_pattern part whose pattern is not parts_deletable takes its
+      // whole pattern with it — you can't leave a lone eye. Deletable patterns drop singly.
+      const toRemove = new Set(selectedStickerIds);
+      selectedStickerIds.forEach(id => {
+        const s = design.stickers.find(x => x.id === id);
+        if (s?.patternId && s.patternDeletable === false) {
+          design.stickers.forEach(x => { if (x.patternId === s.patternId) toRemove.add(x.id); });
+        }
+      });
+      toRemove.forEach(id => removeSticker(id));
       setSelectedStickerIds(new Set());
     }
     setSelectedEl(null);
@@ -1869,11 +1878,97 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     moveGroupStickers(groupId, startPositions, delta);
   }
 
+  // Drag any sticker that's part of a multi-selection → move the whole selection together.
+  function handleMoveMany(ids, startPositions, delta) {
+    moveStickersBy(ids, startPositions, delta);
+  }
+
   function handleStickerMove(id, changes) {
     updateSticker(id, changes);
   }
 
+  // A decor_pattern element places several real stickers at once — one per
+  // placement_config.parts entry, offset by the part's dx/dz and tied by a shared patternId.
+  // Each part is an ordinary sticker, so independent move/resize/select come for free; the
+  // pattern is selected as a unit on drop so the pair can be positioned, then a single tap
+  // drills into one part. Config-driven (reads `parts`), no element-type branch.
+  function placePattern(pattern, parts, hit) {
+    const patternId = crypto.randomUUID();
+    const deletable = pattern.placement_config?.parts_deletable === true;
+    const baseId = Date.now();
+    const ids = [];
+    parts.forEach((part, i) => {
+      const partEl = elementById.get(part.element_id);
+      if (!partEl) { console.warn(`[decor_pattern] part element_id not found: "${part.element_id}" — check the parts JSON`); return; }
+      let mode = partEl.placement_config?.[hit.zone];
+      if (!mode && Object.values(partEl.placement_config ?? {}).includes('faux_ball_single')) mode = 'faux_ball_single';
+      // Part offset is interpreted in the surface's own coordinates: on the TOP it's (x, z) in
+      // cake units; on a WALL (side / middle tier) `dx` becomes an angular offset in radians so
+      // the parts sit side-by-side around the wall (e.g. two unicorn eyes on the front face),
+      // height left at the default so they stay level.
+      const isWall = hit.zone === ZONES.SIDE || hit.zone === ZONES.MIDDLE_TIER;
+      const partHit = isWall
+        ? { ...hit, theta: (hit.theta ?? 0) + (part.dx ?? 0) }
+        : { ...hit, x: (hit.x ?? 0) + (part.dx ?? 0), z: (hit.z ?? 0) + (part.dz ?? 0) };
+      ids.push(addSticker(partEl, partHit.zone, partHit.tierIndex, mode ?? 'stand', partHit,
+        { id: baseId + i, patternId, patternDeletable: deletable, flipX: part.mirror === true }));
+    });
+    if (!ids.length) return;
+    setElementsOpen(false);
+    focusEditor('decoration');
+    // Select the pair as a multi-selection (drag positions both); a later single tap drills in.
+    setMultiSelectMode(true);
+    setSelectedStickerIds(new Set(ids));
+    setSelectedEl({ type: 'sticker', id: ids[0] });
+  }
+
+  // ─── DEV-ONLY temp fixture (remove once real decor_pattern rows exist) ───
+  // Builds a throwaway decor_pattern from an existing top-surface element (same element used
+  // for both parts → an obvious pair) and runs it through the real placePattern path. Drive it
+  // from Playwright via window.__placeTestPattern() AFTER opening Decorations (so elements load).
+  function placeTestPattern() {
+    const pool = [...elementById.values()].filter(e =>
+      (e.allowed_zones ?? []).includes('top_surface') && e.placement_config?.pattern_only !== true);
+    if (!pool.length) { console.warn('[test-pattern] open Decorations first to load elements'); return false; }
+    // Prefer a GLB that stands on the top (like the eyes will) so it renders via DraggableTopSticker.
+    const isGlb = e => /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? '');
+    const a = pool.find(e => isGlb(e) && e.placement_config?.top_surface === 'stand')
+      ?? pool.find(e => isGlb(e) && e.placement_config?.single_per_slot)
+      ?? pool.find(isGlb) ?? pool[0];
+    const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)', allowed_zones: ['top_surface'],
+      placement_config: { parts_deletable: false, parts: [
+        { element_id: a.id, dx: -0.8, dz: 0 }, { element_id: a.id, dx: 0.8, dz: 0, mirror: true } ] } };
+    handleElementDrop(pattern, { zone: 'top_surface', tierIndex: design.tiers.length - 1, x: 0, z: 0 });
+    return true;
+  }
+  if (import.meta.env?.DEV && typeof window !== 'undefined') {
+    window.__placeTestPattern = placeTestPattern;
+    window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
+    window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    window.__getSelection = () => [...selectedStickerIds];
+    window.__listElements = () => [...elementById.values()].map(e => ({
+      id: e.id, name: e.name, mode: e.placement_config?.top_surface,
+      glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
+      top: (e.allowed_zones ?? []).includes('top_surface'),
+    }));
+    window.__dumpElement = (id) => { const e = elementById.get(id); return e ? { id: e.id, name: e.name, allowed_zones: e.allowed_zones, placement_config: e.placement_config, image_url: e.image_url } : null; };
+    window.__findPatterns = () => [...elementById.values()].filter(e => Array.isArray(e.placement_config?.parts)).map(e => ({ id: e.id, name: e.name, parts: e.placement_config.parts, pc: e.placement_config }));
+    window.__placeElementById = (id) => { const e = elementById.get(id); if (!e) return false; const zones = e.allowed_zones ?? ['top_surface']; const zone = zones.includes('top_surface') ? 'top_surface' : zones[0]; handleElementDrop(e, { zone, tierIndex: design.tiers.length - 1, x: 0, z: 0 }); return true; };
+    window.__placeElementByIdZone = (id, zone) => { const e = elementById.get(id); if (!e) return false; handleElementDrop(e, { zone, tierIndex: 0, x: 0, z: 0 }); return true; };
+    window.__placeTestPatternWith = (id) => {   // place a pattern using a chosen element id (mirrored 2nd part)
+      const partEl = elementById.get(id); if (!partEl) return false;
+      const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)', allowed_zones: ['top_surface'],
+        placement_config: { parts_deletable: false, parts: [
+          { element_id: id, dx: -0.8, dz: 0 }, { element_id: id, dx: 0.8, dz: 0, mirror: true } ] } };
+      handleElementDrop(pattern, { zone: 'top_surface', tierIndex: design.tiers.length - 1, x: 0, z: 0 });
+      return true;
+    };
+  }
+
   function handleElementDrop(element, hit) {
+    const parts = element.placement_config?.parts;
+    if (Array.isArray(parts) && parts.length) { placePattern(element, parts, hit); return; }
+
     let placementMode = element.placement_config?.[hit.zone];
     if (!placementMode && Object.values(element.placement_config ?? {}).includes('faux_ball_single')) {
       placementMode = 'faux_ball_single';
@@ -2255,7 +2350,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Same SizeDial as piping + the hero chooser — one Size control everywhere.
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
         <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={0.25} max={8} step={0.05}
-          onChange={v => updateSticker(el.id, { scale: v })} />,
+          onChange={v => {
+            // Multi-selection → set the same size on all selected (so a pattern's parts stay equal);
+            // otherwise just this sticker.
+            if (selectedStickerIds.size > 1 && selectedStickerIds.has(el.id)) scaleStickers([...selectedStickerIds], v);
+            else updateSticker(el.id, { scale: v });
+          }} />,
       ] });
       const isGlbTop = sticker?.zone === 'top_surface' && /\.(glb|gltf)(\?|$)/i.test(sticker?.imageUrl ?? '');
       if (isGlbTop) {
@@ -2757,7 +2857,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* All other element types */}
             {(() => {
               const q = elemSearch.trim().toLowerCase();
-              const filterEl = els => !q ? els : els.filter(el => {
+              // Hide pattern_only building blocks (e.g. a decor_pattern's individual parts) from
+              // every decor grid — they're placed via their parent pattern, never on their own.
+              const filterEl = els => (els ?? []).filter(el => {
+                if (el.placement_config?.pattern_only === true) return false;
+                if (!q) return true;
                 const hay = `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase();
                 return hay.includes(q);
               });
@@ -3017,6 +3121,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onStickerLongPress={handleStickerLongPress}
               onStickerMove={handleStickerMove}
               onGroupMove={handleGroupMove}
+              onMoveMany={handleMoveMany}
               stickerToolbar={null}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
