@@ -16,7 +16,7 @@ const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
 // (optional) positions it as a decor_pattern PART — dx/dz (top: x/z, wall: dx is angular), `mirror`
 // flips it across X (matches placePattern + StickerFace), and `r` sizes it to the real part size
 // instead of the cake-filling hero scale.
-function PreviewTopper({ glbUrl, placement, target, bottom, baseRotation, offset }) {
+function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, offset }) {
   const { scene } = useGLTF(glbUrl);
   const { clonedScene, box } = useMemo(() => {
     const clone = scene.clone(true);
@@ -55,9 +55,18 @@ function PreviewTopper({ glbUrl, placement, target, bottom, baseRotation, offset
       }
       return <group position={[x, yMid, z]} rotation={[0, yaw, 0]}>{model}</group>;
     }
-    // 'top' — laid/standing on the top surface; centred model lifted so its base rests on the surface.
-    return <group position={[offset?.dx ?? 0, target.topY + (size.y / 2) * scale + 0.02, offset?.dz ?? 0]}>{model}</group>;
-  }, [box, clonedScene, placement, target, bottom, baseRotation, offset]);
+    // 'top' — mode-driven, matching the real renderer: 'stand' = upright (base on the surface);
+    // anything else (hug, the default) = laid FLAT on the surface (the cake's flat mode rotates the
+    // group -90° about X), so the preview hugs instead of always standing.
+    if (mode === 'stand') {
+      return <group position={[offset?.dx ?? 0, target.topY + (size.y / 2) * scale + 0.02, offset?.dz ?? 0]}>{model}</group>;
+    }
+    return (
+      <group position={[offset?.dx ?? 0, target.topY + (size.z / 2) * scale + 0.02, offset?.dz ?? 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        {model}
+      </group>
+    );
+  }, [box, clonedScene, placement, mode, target, bottom, baseRotation, offset]);
 
   return node;
 }
@@ -98,7 +107,7 @@ function PreviewDecor(props) {
   return isGlbUrl(props.glbUrl) ? <PreviewTopper {...props} /> : <PreviewImage url={props.glbUrl} {...props} />;
 }
 
-export default function TopperPreview({ glbUrl, parts = null, placement = 'top', tiers = null, tierIndex = 0, baseRotation = null }) {
+export default function TopperPreview({ glbUrl, parts = null, placement = 'top', mode = null, tiers = null, tierIndex = 0, baseRotation = null }) {
   const { placed, totalH } = useMemo(() => buildPreviewTiers(tiers), [tiers]);
 
   const target = placed[Math.min(tierIndex, placed.length - 1)] ?? placed[0];
@@ -131,9 +140,9 @@ export default function TopperPreview({ glbUrl, parts = null, placement = 'top',
         <PreviewCakeMeshes placed={placed} />
         {parts && parts.length
           ? parts.map((pt, i) => (
-              <PreviewDecor key={i} glbUrl={pt.glbUrl} placement={placement} target={target} bottom={bottom} baseRotation={pt.baseRotation} offset={pt} />
+              <PreviewDecor key={i} glbUrl={pt.glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={pt.baseRotation} offset={pt} />
             ))
-          : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} target={target} bottom={bottom} baseRotation={baseRotation} />)}
+          : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={baseRotation} />)}
       </Suspense>
       <OrbitControls
         enableZoom={false} enablePan={false}

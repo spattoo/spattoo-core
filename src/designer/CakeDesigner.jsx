@@ -503,7 +503,7 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
         {slots.map(slot => (
           <div key={slot.key}>
             <PreviewTile checked={slot.checked} onToggle={() => onToggle(slot)} label={slot.label} height={116}>
-              <TopperPreview glbUrl={previewUrl} placement={slot.placement} tiers={tiers} tierIndex={slot.tierIndex} baseRotation={baseRotation} />
+              <TopperPreview glbUrl={previewUrl} placement={slot.placement} mode={slot.mode} tiers={tiers} tierIndex={slot.tierIndex} baseRotation={baseRotation} />
             </PreviewTile>
             {slot.sticker && (
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
@@ -533,20 +533,13 @@ function ElementTypeCard({
 }) {
   const { slug, name } = elementType;
 
-  // Tap-to-add applies to discrete composed units: a single-per-slot "hero" element OR a
-  // decor_pattern (placement_config.parts — placed as one set via placePattern). Free-scatter
-  // elements (scattered/picks/…) stay drag-only so each is positioned where you drop it.
-  // Config-driven (reads placement_config), no element-type/slug branch.
-  const isTapAddable = el =>
-    el.placement_config?.single_per_slot === true || Array.isArray(el.placement_config?.parts);
-
-  // Grid-item pointer handler shared by every decor grid, disambiguating tap vs drag. Drag always
-  // places at the drop point; a tap on a tap-addable element places it (hero → opens the placement
-  // chooser; pattern → drops the set at the cake top). Non-tappable elements stay drag-only.
+  // Grid-item pointer handler shared by every decor grid, disambiguating tap vs drag. Per
+  // INVARIANTS #6 EVERY element is click-to-place: a tap calls tapPlaceElement (drops it on its
+  // default surface and opens its edit popup); drag is the alternative for precise positioning.
+  // No tappable/type/zone gate — the panel treats every element identically.
   const gridPointerDown = (el, e) => {
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY;
-    const tappable = isTapAddable(el);
     let dragging = false;
     const cleanup = () => {
       window.removeEventListener('pointermove', move);
@@ -560,7 +553,7 @@ function ElementTypeCard({
         onDragStartSticker?.(el, ev.clientX, ev.clientY);
       }
     };
-    const up = () => { cleanup(); if (!dragging && tappable) onElementTap?.(el); };
+    const up = () => { cleanup(); if (!dragging) onElementTap?.(el); };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
@@ -577,7 +570,7 @@ function ElementTypeCard({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {elements.map(el => (
               <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: isTapAddable(el) ? 'pointer' : 'grab', userSelect: 'none', touchAction: 'none' }}>
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}>
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
                   {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
                 </div>
@@ -2026,7 +2019,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
       top: (e.allowed_zones ?? []).includes('top_surface'),
     }));
-    window.__dumpElement = (id) => { const e = elementById.get(id); return e ? { id: e.id, name: e.name, allowed_zones: e.allowed_zones, placement_config: e.placement_config, image_url: e.image_url, allowed_actions: e.allowed_actions } : null; };
+    window.__dumpElement = (id) => { const e = elementById.get(id); if (!e) return null; const et = elementTypes.find(t => t.id === e.element_type_id); return { id: e.id, name: e.name, element_type_id: e.element_type_id, element_type_slug: et?.slug ?? null, allowed_zones: e.allowed_zones, placement_config: e.placement_config, image_url: e.image_url, allowed_actions: e.allowed_actions }; };
     window.__findPatterns = () => [...elementById.values()].filter(e => Array.isArray(e.placement_config?.parts)).map(e => ({ id: e.id, name: e.name, parts: e.placement_config.parts, pc: e.placement_config }));
     window.__placeElementById = (id) => { const e = elementById.get(id); if (!e) return false; const zones = e.allowed_zones ?? ['top_surface']; const zone = zones.includes('top_surface') ? 'top_surface' : zones[0]; handleElementDrop(e, { zone, tierIndex: design.tiers.length - 1, x: 0, z: 0 }); return true; };
     window.__placeElementByIdZone = (id, zone) => { const e = elementById.get(id); if (!e) return false; handleElementDrop(e, { zone, tierIndex: 0, x: 0, z: 0 }); return true; };
@@ -2465,6 +2458,67 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // group is `{ controls, divider, panelLabel, footer }` — the strip flattens
   // them with vertical dividers (identical to the original output); the panel
   // stacks them as labelled rows.
+  // Shared per-surface placement chooser — the ONE live-preview UI (INVARIANTS #3/#6), reused two
+  // ways via `instance`:
+  //   • instance = null  (hero / decorEl card): ONE card per element; each surface checkbox
+  //     ADDS/REMOVES one instance on that (tier×surface) slot. Per-slot Size/Tilt shown.
+  //   • instance = the sticker (scatter card): ONE card per placed instance; the chooser MOVES
+  //     that single instance between surfaces (single-select). Adding the element again is a
+  //     separate click in the panel (→ its own card). No add/remove here.
+  // Surfaces come from placementSlots (config-driven, allowed_zones); preview via TopperPreview.
+  function elementPlacementChooser(srcEl, { instance = null } = {}) {
+    if (!srcEl) return null;
+    const pc = srcEl.placement_config ?? {};
+    const elId = srcEl.id;
+    const multiTier = design.tiers.length > 1;
+    const isSideZone = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
+    const onSlot = (sk, slot) => slot.zone === ZONES.TOP_SURFACE
+      ? sk.zone === ZONES.TOP_SURFACE
+      : isSideZone(sk.zone) && sk.tierIndex === slot.tierIndex;
+    // How the element sits on a slot comes ENTIRELY from config (placement_config[zone]) — never a
+    // hardcoded per-zone default (INVARIANTS #1). Position is just the seat point on that surface.
+    const seatOnSlot = slot => {
+      let baseY = 0.1;
+      for (let i = 0; i < slot.tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
+      const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
+      const mode = pc[slot.zone];
+      const pos = slot.zone === ZONES.TOP_SURFACE ? { x: 0, z: 0 } : { theta: 0, y: baseY + tierH * 0.45 };
+      return { mode, pos };
+    };
+    const slots = placementSlots(srcEl, design.tiers.length).map(slot => {
+      const label = slot.placement === 'top'
+        ? 'Top'
+        : (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} side` : 'Side');
+      const checked = instance
+        ? onSlot(instance, slot)
+        : !!design.stickers.find(s => s.elementId === elId && onSlot(s, slot));
+      // Per-slot Size/Tilt only in hero mode (scatter keeps its own controls below the chooser).
+      const sticker = !instance ? design.stickers.find(s => s.elementId === elId && onSlot(s, slot)) : null;
+      // Drives the preview's orientation (stand vs hug), straight from config — matches the renderer.
+      return { ...slot, label, checked, sticker, mode: pc[slot.zone] };
+    });
+    const onToggle = slot => {
+      if (instance) {
+        // Scatter: move THIS instance to the picked surface (single-select; can't unplace here).
+        if (onSlot(instance, slot)) return;
+        const { mode, pos } = seatOnSlot(slot);
+        updateSticker(instance.id, { zone: slot.zone, tierIndex: slot.tierIndex, placementMode: mode, ...pos });
+        return;
+      }
+      // Hero: add/remove one instance on the slot.
+      if (slot.checked) {
+        design.stickers.filter(s => s.elementId === elId && onSlot(s, slot)).forEach(s => removeSticker(s.id));
+      } else {
+        const { mode, pos } = seatOnSlot(slot);
+        addSticker(srcEl, slot.zone, slot.tierIndex, mode, pos);
+      }
+    };
+    return (
+      <PlacementChooser key="place" previewUrl={srcEl.image_url} tiers={canvasConfig.tiers}
+        baseRotation={facingOffsetRadians(pc)} slots={slots} onToggle={onToggle} onUpdate={updateSticker} />
+    );
+  }
+
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
     const c = el.type === 'tier'    ? TIER_CAPS
@@ -2497,40 +2551,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // chooser manages every (tier × surface) placement of it via independent add/remove
     // checkboxes; each placed slot carries its own Size + Tilt. Config-driven; no per-type code.
     if (el.type === 'decorEl') {
-      const srcEl = elementById.get(el.elementId);
-      const pc = srcEl?.placement_config ?? {};
       const elId = el.elementId;
-      const isSideZone = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
-      const multiTier = design.tiers.length > 1;
-      // Pure slot enumeration (placement.js); layer on label + current instance per slot.
-      const slots = placementSlots(srcEl, design.tiers.length).map(slot => {
-        const inst = slot.zone === ZONES.TOP_SURFACE
-          ? design.stickers.find(s => s.elementId === elId && s.zone === ZONES.TOP_SURFACE)
-          : design.stickers.find(s => s.elementId === elId && isSideZone(s.zone) && s.tierIndex === slot.tierIndex);
-        const label = slot.placement === 'top'
-          ? 'Top'
-          : (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} side` : 'Side');
-        return { ...slot, label, checked: !!inst, sticker: inst };
-      });
-      const onToggle = slot => {
-        if (slot.checked) {
-          // Remove this slot's instance; keep the element's card alive while others remain.
-          design.stickers
-            .filter(s => s.elementId === elId && (slot.zone === ZONES.TOP_SURFACE ? s.zone === ZONES.TOP_SURFACE : isSideZone(s.zone) && s.tierIndex === slot.tierIndex))
-            .forEach(s => removeSticker(s.id));
-        } else {
-          let baseY = 0.1;
-          for (let i = 0; i < slot.tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
-          const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
-          const mode = pc[slot.zone] ?? (slot.zone === ZONES.TOP_SURFACE ? PLACEMENT_MODES.STAND : PLACEMENT_MODES.HUG);
-          const pos = slot.zone === ZONES.TOP_SURFACE ? { x: 0, z: 0 } : { theta: 0, y: baseY + tierH * 0.45 };
-          addSticker(srcEl, slot.zone, slot.tierIndex, mode, pos);   // stay on this element's card
-        }
-      };
       groups.push({ key: 'place', divider: true, controls: [
-        <PlacementChooser key="place" previewUrl={srcEl?.image_url}
-          tiers={canvasConfig.tiers} baseRotation={facingOffsetRadians(pc)}
-          slots={slots} onToggle={onToggle} onUpdate={updateSticker} />
+        elementPlacementChooser(elementById.get(elId)),
       ] });
       groups.push({ key: 'actions', divider: false, footer: true, controls: [
         <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }}
@@ -2538,6 +2561,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Remove
         </button>,
       ] });
+    }
+
+    // Per-surface live preview for THIS instance — one card per placed instance (scatter), each
+    // showing top/side previews and letting you MOVE this instance between them (INVARIANTS #6/#3).
+    // Reuses the shared chooser in single-instance mode; instance controls stay below.
+    if (el.type === 'sticker') {
+      const inst = design.stickers.find(s => s.id === el.id);
+      const chooser = elementPlacementChooser(elementById.get(inst?.elementId), { instance: inst });
+      if (chooser) groups.push({ key: 'place', divider: true, controls: [chooser] });
     }
 
     if (c.resize && el.type === 'sticker') {
@@ -3377,7 +3409,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* ── Right edit panel — driven by element caps ── */}
           {showRightPanel && (
-            <div style={isMobile ? s.wheelPanelMobile : s.wheelPanel}>
+            <div style={isMobile ? s.wheelPanelMobile
+              // When the element edit stack is open on the right, sit the colour wheel to its LEFT
+              // (and above it) instead of overlapping behind it. editPopup is right:10 width:200.
+              : { ...s.wheelPanel, ...(elementStackOpen ? { right: 230, zIndex: 30 } : {}) }}>
               <div style={s.wheelHeader}>
                 <span style={s.wheelTitle}>
                   {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]

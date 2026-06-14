@@ -6,7 +6,12 @@ These rules exist because they were each violated and cost painful rework. Keep 
 ## 1. Placement & behavior are CONFIG‑driven, never element‑type‑driven
 An element's behavior comes entirely from its data:
 - `allowed_zones` — where it can go (`top_surface`, `side`, `middle_tier`, `board`, `rim`).
-- `placement_config[zone]` — how it sits there: `stand` | `hug` | `faux_balls` | `faux_ball_single`.
+- `placement_config[zone]` — how it sits there, written EXPLICITLY by admin: `'hug'` | `'stand'`
+  | `'faux_balls'` | `'faux_ball_single'`. Admin persists the mode for every applicable zone (default
+  `'hug'`), so the renderer never guesses. (Legacy rows may omit it → treat absent as `'hug'`, the
+  data-layer default in `addSticker`; the load-time backfill still seeds hero defaults, and an
+  element's explicit config always wins via the spread.) NEVER hardcode a different per-zone default
+  in render/popup code — read the value.
 - `placement_config.r` — default scale (never hard‑coded; never force a value).
 - `placement_config.rotation` — the GLB's authored facing offset, in **degrees** (e.g. toppers
   `[0,-90,0]`), gated by `rotation_unit: 'deg'`. Read ONLY via `facingOffsetRadians()` — one unit
@@ -54,8 +59,26 @@ rim/board. Never a throwaway "place" modal, and never one card per part.
 state machine — that's a legitimate switch. It is NOT the same as branching on an element's
 DB type/slug. Don't conflate the two when reading rule #1.
 
+## 6. The Decorations panel is type‑agnostic — ONE way onto the cake
+The element picker (Decorations panel) has exactly one job: bring **any** element onto the cake
+through its right‑side popup (#3a). It MUST NOT branch on element type, slug, or zone.
+- **One uniform interaction:** a single click/tap on an element opens its placement popup, for every
+  element. No drag‑only elements, no separate "Cream Piping" (or any per‑type) section with its own
+  interaction, and **never** gate clickability / which popup opens on a zone (`rim`/`board`) or a
+  type (piping). The panel surfaces elements and hands off to the popup — nothing more.
+- **Placement lives in config, shown in the popup:** which surfaces an element offers
+  (`top_surface`, `side`, `rim`, `board`, `middle_tier`) and how it sits on each (`stand` | `hug` |
+  …) come entirely from its config (#1) and are chosen *inside* that one popup.
+- **"Hug" is a per‑zone placement mode, available on ANY allowed surface** — top, side, rim, board.
+  It is NOT a rim/board‑only or "piping" behavior. An element hugs the side because its config says
+  `placement_config.side === 'hug'`, not because of its zone name or element type.
+- **"Piping" is not a panel category** — it's just an element whose config places it as a hugging
+  ring. Do not group, label, or special‑case the picker by piping vs decor.
+
 ## Definition of Done (run through this before saying "done")
 - [ ] No new `=== '<slug>'` / type branch in render or popup code (config instead).
+- [ ] No branch on zone (`rim`/`board`/…) to decide picker interaction, clickability, or which popup
+      opens — the panel treats every element identically (#6).
 - [ ] Reused the existing shared component rather than a new parallel one.
 - [ ] All element kinds still behave: topper, top&side, scattered, picks, image‑topper, piping.
 - [ ] **Verified visually** in the real app, not by reading code — see below.
