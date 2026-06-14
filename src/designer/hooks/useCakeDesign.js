@@ -293,10 +293,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           radialOffset:  0,
           tiltAngle:     0,
           groupId:       null,
-          // Pattern membership: parts of one decor_pattern share a patternId. Unlike groupId
-          // it does NOT auto-select the whole set on tap (that's the drill-in default) — it only
-          // marks the pair so the delete path can keep them whole (patternDeletable).
+          // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
+          // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
+          // with a persistent zone chooser — like a piping element. `patternDeletable` keeps the
+          // delete path whole.
           patternId:        extra.patternId ?? null,
+          patternElementId: extra.patternElementId ?? null,
           patternDeletable: extra.patternDeletable ?? false,
           // Mirror this instance across its own vertical axis (a pattern's symmetric second
           // part — e.g. the right unicorn eye from the same GLB). Applied as a -X scale in render.

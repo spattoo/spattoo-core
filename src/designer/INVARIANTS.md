@@ -33,6 +33,14 @@ All placed decor — scattered, picks, image‑topper, faux‑ball, topper, top&
 When asked to do something "like the piping popup," **open the piping code and reuse it** — never
 approximate from memory or build a parallel version.
 
+### 3a. ALL popups are RIGHT‑SIDE panels — never centre‑screen modals
+Every chooser/editor/placement popup is a right‑side panel using `s.editPopup` (`position:absolute;
+right:10; top:12`), exactly like the piping popup and the decoration edit stack. **Never** build a
+centred/`position:fixed` modal overlay, and never invent a new popup container — reuse `s.editPopup`.
+A `decor_pattern` is ONE persistent card in that right‑side stack (keyed by `patternId`, the parts
+abstracted away), with its surface chooser *inside the card* — exactly like a piping element's
+rim/board. Never a throwaway "place" modal, and never one card per part.
+
 ## 4. Two placement STYLES, both flag‑driven (not type‑driven)
 - `single_per_slot: true` (topper, top&side decor) → ONE card per element (`type: 'decorEl'`); its
   chooser manages one instance per (tier×surface) slot via independent add/remove checkboxes.

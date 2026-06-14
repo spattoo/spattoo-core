@@ -492,14 +492,20 @@ function ElementTypeCard({
 }) {
   const { slug, name } = elementType;
 
-  // Grid-item pointer handler shared by every decor grid, disambiguating tap vs drag — purely
-  // config-driven, no element-type branches. Drag always places at the drop point. A tap on a
-  // single-per-slot "hero" element (placement_config.single_per_slot) places it and opens the
-  // placement chooser; scatter elements (scattered/picks/…) stay drag-only (tap does nothing).
+  // Tap-to-add applies to discrete composed units: a single-per-slot "hero" element OR a
+  // decor_pattern (placement_config.parts — placed as one set via placePattern). Free-scatter
+  // elements (scattered/picks/…) stay drag-only so each is positioned where you drop it.
+  // Config-driven (reads placement_config), no element-type/slug branch.
+  const isTapAddable = el =>
+    el.placement_config?.single_per_slot === true || Array.isArray(el.placement_config?.parts);
+
+  // Grid-item pointer handler shared by every decor grid, disambiguating tap vs drag. Drag always
+  // places at the drop point; a tap on a tap-addable element places it (hero → opens the placement
+  // chooser; pattern → drops the set at the cake top). Non-tappable elements stay drag-only.
   const gridPointerDown = (el, e) => {
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY;
-    const tappable = el.placement_config?.single_per_slot === true;
+    const tappable = isTapAddable(el);
     let dragging = false;
     const cleanup = () => {
       window.removeEventListener('pointermove', move);
@@ -530,7 +536,7 @@ function ElementTypeCard({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {elements.map(el => (
               <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}>
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: isTapAddable(el) ? 'pointer' : 'grab', userSelect: 'none', touchAction: 'none' }}>
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
                   {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
                 </div>
@@ -1834,6 +1840,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const sticker = design.stickers.find(s => s.id === id);
     focusEditor('decoration');
 
+    // A decor_pattern part belongs to ONE pattern card (the parts are abstracted away). Tapping any
+    // part selects that pattern card; parts still drag individually (moveSet excludes patternId).
+    if (!ctrlKey && !multiSelectMode && sticker?.patternId) {
+      setColorOpen(false);
+      setSelectedEl({ type: 'pattern', patternId: sticker.patternId, patternElementId: sticker.patternElementId });
+      setSelectedStickerIds(new Set(design.stickers.filter(s => s.patternId === sticker.patternId).map(s => s.id)));
+      return;
+    }
+
     // A multi-slot decor instance opens its element's single card (manages all placements),
     // not a per-instance selection — keeps one uniform card per element.
     if (!ctrlKey && !multiSelectMode && sticker && isMultiSlotEl(sticker.elementId)) {
@@ -1897,8 +1912,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Each part is an ordinary sticker, so independent move/resize/select come for free; the
   // pattern is selected as a unit on drop so the pair can be positioned, then a single tap
   // drills into one part. Config-driven (reads `parts`), no element-type branch.
-  function placePattern(pattern, parts, hit) {
-    const patternId = crypto.randomUUID();
+  function placePattern(pattern, parts, hit, keepId = null) {
+    const patternId = keepId ?? crypto.randomUUID();
     const deletable = pattern.placement_config?.parts_deletable === true;
     const baseId = Date.now();
     const ids = [];
@@ -1916,15 +1931,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         ? { ...hit, theta: (hit.theta ?? 0) + (part.dx ?? 0) }
         : { ...hit, x: (hit.x ?? 0) + (part.dx ?? 0), z: (hit.z ?? 0) + (part.dz ?? 0) };
       ids.push(addSticker(partEl, partHit.zone, partHit.tierIndex, mode ?? 'stand', partHit,
-        { id: baseId + i, patternId, patternDeletable: deletable, flipX: part.mirror === true }));
+        { id: baseId + i, patternId, patternElementId: pattern.id, patternDeletable: deletable, flipX: part.mirror === true }));
     });
     if (!ids.length) return;
     setElementsOpen(false);
     focusEditor('decoration');
-    // Select the pair as a multi-selection (drag positions both); a later single tap drills in.
-    setMultiSelectMode(true);
+    // Select the pattern as ONE entity (its card carries the zone chooser); parts still drag
+    // individually on the canvas (moveSet excludes patternId). No multi-select bar.
+    setMultiSelectMode(false);
     setSelectedStickerIds(new Set(ids));
-    setSelectedEl({ type: 'sticker', id: ids[0] });
+    setSelectedEl({ type: 'pattern', patternId, patternElementId: pattern.id });
   }
 
   // ─── DEV-ONLY temp fixture (remove once real decor_pattern rows exist) ───
@@ -2220,11 +2236,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const isMultiSlotEl = elId => isSinglePerSlot(elementById.get(elId));
   const decorationCards = [];
   const seenDecorEl = new Set();
+  const seenPattern = new Set();
   design.stickers
     .filter(st => st.placementMode !== 'faux_ball_single')
     .forEach(st => {
       const thumb = /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl;
-      if (isMultiSlotEl(st.elementId)) {
+      // A decor_pattern's parts collapse into ONE card (the user never sees the individual pieces).
+      if (st.patternId) {
+        if (seenPattern.has(st.patternId)) return;
+        seenPattern.add(st.patternId);
+        const patEl = elementById.get(st.patternElementId);
+        decorationCards.push({ key: `pattern-${st.patternId}`, type: 'pattern', patternId: st.patternId, patternElementId: st.patternElementId, name: patEl?.name ?? st.name ?? 'Decoration', currentZone: st.zone, thumb: patEl?.thumbnail_url ?? null });
+      } else if (isMultiSlotEl(st.elementId)) {
         if (seenDecorEl.has(st.elementId)) return;
         seenDecorEl.add(st.elementId);
         decorationCards.push({ key: `el-${st.elementId}`, type: 'decorEl', elementId: st.elementId, name: st.name ?? 'Decoration', thumb });
@@ -2249,7 +2272,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     && selectedEl?.type !== 'tier'
     && !selectedStickerIsFauxBall;
   const isCardSelected = (card) => selectedEl?.type === card.type &&
-    (card.type === 'decorEl' ? selectedEl.elementId === card.elementId : selectedEl?.id === card.id);
+    (card.type === 'decorEl' ? selectedEl.elementId === card.elementId
+     : card.type === 'pattern' ? selectedEl.patternId === card.patternId
+     : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
     setColorOpen(false);
     setExpandedPipingId(null);   // collapse any expanded piping card — single expansion
@@ -2261,9 +2286,57 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setSelectedEl({ type: 'sticker', id: card.id });
       setSelectedStickerIds(new Set([card.id]));
       setMultiSelectMode(false);
+    } else if (card.type === 'pattern') {
+      setSelectedEl({ type: 'pattern', patternId: card.patternId, patternElementId: card.patternElementId });
+      setSelectedStickerIds(new Set(design.stickers.filter(s => s.patternId === card.patternId).map(s => s.id)));
+      setMultiSelectMode(false);
     } else if (card.type === 'text') {
       setSelectedEl({ type: 'text', id: card.id });
     }
+  }
+
+  // Move a whole decor_pattern to another surface: drop its current parts, re-place on the new zone
+  // keeping the SAME patternId so the card (and its selection) stays put. Reuses placePattern.
+  function changePatternZone(card, zone, tierIndex) {
+    const patEl = elementById.get(card.patternElementId);
+    if (!patEl) return;
+    const parts = patEl.placement_config?.parts ?? [];
+    design.stickers.filter(s => s.patternId === card.patternId).forEach(s => removeSticker(s.id));
+    placePattern(patEl, parts, { zone, tierIndex, x: 0, z: 0 }, card.patternId);
+  }
+  function removePattern(card) {
+    design.stickers.filter(s => s.patternId === card.patternId).forEach(s => removeSticker(s.id));
+    clearAllSelections();
+  }
+  // The pattern card body: a persistent zone chooser (Top/Side preview tiles, current one ticked),
+  // like piping's rim/board. Reuses the pattern-aware TopperPreview. Parts move on the canvas.
+  function renderPatternBody(card) {
+    const patEl = elementById.get(card.patternElementId);
+    const parts = (patEl?.placement_config?.parts ?? []).map(p => {
+      const pe = elementById.get(p.element_id);
+      return pe ? { glbUrl: pe.image_url, baseRotation: facingOffsetRadians(pe.placement_config), r: pe.placement_config?.r ?? 2.5, dx: p.dx ?? 0, dz: p.dz ?? 0, mirror: p.mirror === true } : null;
+    }).filter(Boolean);
+    const zones = patEl?.allowed_zones ?? [];
+    const tiles = [];
+    if (zones.includes(ZONES.TOP_SURFACE)) tiles.push({ zone: ZONES.TOP_SURFACE, placement: 'top', label: 'Top', tierIndex: (canvasConfig.tiers?.length ?? 1) - 1 });
+    if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) tiles.push({ zone: ZONES.SIDE, placement: 'side', label: 'Side', tierIndex: 0 });
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Surface — drag each piece on the cake to fine-tune.</div>
+        {tiles.map(t => {
+          const active = card.currentZone === t.zone || (t.zone === ZONES.SIDE && card.currentZone === ZONES.MIDDLE_TIER);
+          return (
+            <div key={t.zone} role="button" onClick={() => { if (!active) changePatternZone(card, t.zone, t.tierIndex); }} style={{ cursor: active ? 'default' : 'pointer' }}>
+              <div style={{ width: '100%', height: 110, borderRadius: 10, overflow: 'hidden', border: `2px solid ${active ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
+                <TopperPreview parts={parts} placement={t.placement} tiers={canvasConfig.tiers} tierIndex={t.tierIndex} />
+              </div>
+              <span style={{ display: 'block', marginTop: 4, fontSize: 10, fontWeight: 700, color: active ? '#1a1a1a' : '#8a7a80', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: "'Quicksand',sans-serif" }}>{t.label}{active ? ' ✓' : ''}</span>
+            </div>
+          );
+        })}
+        <button onClick={() => removePattern(card)} style={{ marginTop: 2, fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", textAlign: 'left', padding: 0 }}>Remove</button>
+      </div>
+    );
   }
 
   // ── Caps-driven floating toolbar (text + piping) ──────────────────────────
@@ -3142,7 +3215,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               popup. A bottom sheet was rejected: as the controls grow it expands upward and
               hides the cake, whereas a right-side popup scrolls within a fixed column. */}
           {/* ── Multi-select group bar ── */}
-          {(multiSelectMode || selectedStickerIds.size > 1) && (() => {
+          {(multiSelectMode || selectedStickerIds.size > 1) && selectedEl?.type !== 'pattern' && (() => {
             const ids = [...selectedStickerIds];
             const allGrouped = ids.length > 1 && ids.every(id => {
               const s = design.stickers.find(x => x.id === id);
@@ -3443,7 +3516,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </div>
                       {expanded && (
                         <div style={{ padding: '0 9px 9px' }}>
-                          {buildToolbar(selectedEl, 'panel')}
+                          {card.type === 'pattern' ? renderPatternBody(card) : buildToolbar(selectedEl, 'panel')}
                         </div>
                       )}
                     </div>
@@ -4081,6 +4154,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           )}
         </div>
       )}
+
     </div>
   );
 }

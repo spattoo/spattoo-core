@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, Suspense, Component } from 'react';
+import { useRef, useMemo, useEffect, useState, Suspense, Component } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, Environment, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
@@ -338,7 +338,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotation }) {
+function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotation, onSeat }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -391,7 +391,7 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position, center, depthScaled } = useMemo(() => {
+  const { scale, position, center, depthScaled, seatHalf } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -399,8 +399,14 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
     box.getCenter(ctr);
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
     glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
-    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc };
+    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc, seatHalf: (size.y * sc) / 2 };
   }, [clonedScene, imageUrl]);
+
+  // Report this model's true half-height (normalized, before the instance scale) so the parent can
+  // seat its BOTTOM on the surface instead of lifting by a fixed STICKER_SIZE/2. Default = no float;
+  // any lift is explicit (yOffset / config). For an upright model size.y is the max dim, so seatHalf
+  // ≈ STICKER_SIZE/2 and nothing changes; a flat model reports a small value and stops floating.
+  useEffect(() => { onSeat?.(seatHalf); }, [seatHalf]);
 
   // On the side wall, bend the model around the tier so it hugs the curve. Seat its BACK on
   // the wall (push out by half its depth) so a deep model — e.g. a topper head — sits proud
@@ -429,14 +435,14 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius, baseRotation, flipX = false }) {
+function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius, baseRotation, flipX = false, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} onSeat={onSeat} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
@@ -1050,12 +1056,16 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
 
   const isStand = sticker.placementMode === 'stand';
   const isGlb2d = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
-  const py = topY + (sticker.yOffset ?? 0) + (isStand ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : FLAT_STICKER_Y_OFFSET);
+  // Seat the model's actual BOTTOM on the surface: lift by its measured half-height (reported by
+  // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
+  // float is opt-in via yOffset (the Height control) / config. Fallback to the constant pre-measure.
+  const [seatHalf, setSeatHalf] = useState(null);
+  const py = topY + (sticker.yOffset ?? 0) + (isStand ? (seatHalf ?? STICKER_SIZE / 2) * (sticker.scale ?? 1) + FLAT_STICKER_Y_OFFSET : FLAT_STICKER_Y_OFFSET);
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1521,7 +1531,9 @@ function CakeScene({
         // When this sticker is part of a multi-selection, dragging it moves the whole
         // selection together (selection-driven). Otherwise the draggable falls back to its
         // groupId path (manual groups) or a plain single move.
-        const moveSet = (isSelected && (selectedStickerIds?.size ?? 0) > 1)
+        // Pattern parts (patternId) always move individually even when the whole pattern is selected,
+        // so each piece can be fine-tuned; genuine multi-selects still drag as a group.
+        const moveSet = (isSelected && (selectedStickerIds?.size ?? 0) > 1 && !sticker.patternId)
           ? [...selectedStickerIds] : null;
         if (isSide) {
           if (sticker.placementMode === 'faux_ball_single') {
