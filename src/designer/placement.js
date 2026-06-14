@@ -30,6 +30,36 @@ export function isDynamicHug(sticker) {
   return sticker?.singlePerSlot === true && sticker?.placementMode === PLACEMENT_MODES.HUG;
 }
 
+// ── Facing-offset unit normalization ─────────────────────────────────────────
+// A GLB's authored facing offset (placement_config.rotation) is AUTHORED in degrees — the same
+// convention the calibrator and piping (top_/bottom_rotation) already use — but consumed by THREE
+// (and stored on placed stickers as baseRotation) in RADIANS. Convert at the element→instance read
+// boundary so there is exactly ONE unit on each side: degrees in the DB, radians at runtime.
+//
+// Rollout is gated per element by placement_config.rotation_unit:
+//   'deg'           → rotation is degrees (the new standard); convert ×π/180.
+//   'rad' / absent  → legacy radians, passed through unchanged (back-compat until migrated).
+// Once every row is migrated to 'deg', drop the legacy branch and this flag.
+const DEG_TO_RAD = Math.PI / 180;
+
+export function degToRad3(v) {
+  return Array.isArray(v) ? [v[0] * DEG_TO_RAD, v[1] * DEG_TO_RAD, v[2] * DEG_TO_RAD] : null;
+}
+
+export function radToDeg3(v) {
+  return Array.isArray(v) ? [v[0] / DEG_TO_RAD, v[1] / DEG_TO_RAD, v[2] / DEG_TO_RAD] : null;
+}
+
+// The GLB facing offset as a RADIANS triple (or null), resolving the unit from the element's
+// placement_config. The single source of truth for reading placement_config.rotation — every
+// element→instance boundary (addSticker, the chooser preview) must go through here, never read
+// placement_config.rotation raw, so the unit can't silently diverge per type again.
+export function facingOffsetRadians(placementConfig) {
+  const rot = placementConfig?.rotation ?? null;
+  if (!Array.isArray(rot)) return null;
+  return placementConfig?.rotation_unit === 'deg' ? degToRad3(rot) : rot;
+}
+
 // A "hero" element places exactly ONE instance per (tier × surface) slot, chosen via the
 // placement chooser's checkboxes. Everything else scatters freely as many dragged stickers.
 // Style is config (placement_config.single_per_slot) — NEVER inferred from allowed_zones.

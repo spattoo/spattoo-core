@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape, topClamp } from '../geometry/surface.js';
+import { facingOffsetRadians } from '../placement.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 
@@ -283,9 +284,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           x:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : px,
           z:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : pz,
           scale:         defaultScale,
-          // The GLB's authored facing offset (e.g. toppers need [0,-π/2,0] to face front).
-          // Config-driven, applied by the renderer; null = the GLB already faces +z.
-          baseRotation:  element.placement_config?.rotation ?? null,
+          // The GLB's authored facing offset (e.g. toppers need [0,-90,0]° to face front).
+          // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
+          // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
+          baseRotation:  facingOffsetRadians(element.placement_config),
           yOffset:       0,
           rotation:      0,
           radialOffset:  0,

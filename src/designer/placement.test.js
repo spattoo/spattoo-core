@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3 } from './placement.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
 // for the real types; if a type ever diverges, a shared assertion here breaks. Guards the exact
@@ -62,6 +62,41 @@ describe('isDynamicHug — only HERO hugs auto-fit; scattered decor keeps its ow
   });
   it('a hero STANDING (not hugging) uses r, not the dynamic size', () => {
     expect(isDynamicHug({ singlePerSlot: true, placementMode: 'stand' })).toBe(false);
+  });
+});
+
+describe('facingOffsetRadians — one unit on each side: degrees in DB, radians at runtime', () => {
+  it('the deg→rad equivalence that makes migration pixel-identical', () => {
+    // The whole staged rollout rests on this: a topper authored as [0,-90,0]° with the flag must
+    // produce the SAME radians baseRotation the legacy [0,-π/2,0] row did — so the render can't move.
+    const deg    = { rotation: [0, -90, 0], rotation_unit: 'deg' };
+    const legacy = { rotation: [0, -Math.PI / 2, 0] };
+    const fromDeg = facingOffsetRadians(deg);
+    const fromLegacy = facingOffsetRadians(legacy);
+    expect(fromDeg[1]).toBeCloseTo(fromLegacy[1]);
+    expect(fromDeg).toEqual(legacy.rotation.map((_, i) => expect.closeTo(legacy.rotation[i])));
+  });
+  it('flagless rows are read as legacy RADIANS, unchanged (back-compat during rollout)', () => {
+    const legacy = { rotation: [0, -Math.PI / 2, 0] };
+    expect(facingOffsetRadians(legacy)).toBe(legacy.rotation);   // passthrough, no conversion
+    expect(facingOffsetRadians({ rotation: [0, -Math.PI / 2, 0], rotation_unit: 'rad' })[1])
+      .toBeCloseTo(-Math.PI / 2);
+  });
+  it('degrees only convert when the flag opts in (a 90 value is NOT silently treated as radians)', () => {
+    expect(facingOffsetRadians({ rotation: [0, -90, 0], rotation_unit: 'deg' })[1]).toBeCloseTo(-Math.PI / 2);
+    // Same numbers WITHOUT the flag stay radians (legacy) — proves the flag, not a heuristic, decides.
+    expect(facingOffsetRadians({ rotation: [0, -90, 0] })[1]).toBe(-90);
+  });
+  it('null/empty/missing rotation → null (GLB already faces +z)', () => {
+    expect(facingOffsetRadians(null)).toBe(null);
+    expect(facingOffsetRadians({})).toBe(null);
+    expect(facingOffsetRadians({ rotation_unit: 'deg' })).toBe(null);
+  });
+  it('degToRad3 / radToDeg3 round-trip and reject non-arrays', () => {
+    const deg = [0, -90, 45];
+    expect(radToDeg3(degToRad3(deg)).map(Math.round)).toEqual(deg);
+    expect(degToRad3(null)).toBe(null);
+    expect(radToDeg3(undefined)).toBe(null);
   });
 });
 

@@ -17,7 +17,8 @@ slug, it only reads these fields (see `INVARIANTS.md`). This file lists every ke
 | `single_per_slot` | bool | `false` | Placement **style**, not mode. `true` = one instance per (tier×surface) slot, chosen via the checkbox chooser (topper, top&side decor). `false` = scatter freely (many independent stickers). Read by `isMultiSlotEl`. **Must not be inferred from `allowed_zones.length`.** |
 | `r` | number | GLB `2.5` / 2D `1` | Default scale for a freshly placed sticker (`stand`). Never hard-code a scale elsewhere. |
 | `hug_fill` | number (0–1) | `0.7` | For `hug` mode: fraction of the tier wall height the element fills. Derived at render time (dynamic hug). |
-| `rotation` | `[x,y,z]` **radians** | `null` | The GLB's authored facing offset, baked into geometry before render (e.g. toppers `[0, -π/2, 0]` to face front). ⚠️ **radians** for stickers/toppers (THREE.Euler) — admin's front-view tool writes **degrees**; don't blind-migrate. |
+| `rotation` | `[x,y,z]` **degrees** | `null` | The GLB's authored facing offset, baked into geometry before render (e.g. toppers `[0, -90, 0]` to face front). **Authored in degrees** — the calibrator's convention, unified with piping's `top_/bottom_rotation`. Read ONLY via `facingOffsetRadians()` (`placement.js`), which converts to the radians THREE uses. |
+| `rotation_unit` | `'deg' \| 'rad'` | `'rad'` | Unit of `rotation`. `'deg'` = degrees (the standard). Absent/`'rad'` = legacy radians, passed through unchanged. **Rollout flag**: admin now always writes `'deg'`; DB rows migrated by `spattoo-api/migrations/008_rotation_unit_degrees.sql` (radians→deg, render-neutral). The absent/`'rad'` legacy branch in `facingOffsetRadians` is retained as a safety fallback **until that migration is confirmed applied in production**, then it (and this flag) can be dropped. |
 
 ## 2. Placement modes (the value of a `<zone>` key)
 
@@ -56,7 +57,7 @@ Piping has a **top** (rim) and **bottom** (board) set with identical shapes — 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `top_flip` / `bottom_flip` | bool | top `false`, bottom `true` | Flip the ring's facing. |
-| `top_rotation` / `bottom_rotation` | `[x,y,z]` **degrees** | `null` | Facing rotation. ⚠️ piping rotations are **degrees** (separate convention from the radians `rotation` above). |
+| `top_rotation` / `bottom_rotation` | `[x,y,z]` **degrees** | `null` | Facing rotation. **Degrees** — the canonical convention the decor `rotation` field is being unified onto (piping was already degrees; converted to radians at render in `renderShells`, `CakeTier.jsx`). |
 | `top_radial_offset` / `bottom_…` | number | `null` | Push the ring out from / into the wall. |
 | `top_y_offset` / `bottom_…` | number | `null` | Raise/lower the ring. |
 | `top_spacing` / `bottom_…` | number | `null` | Gap between repeats. |

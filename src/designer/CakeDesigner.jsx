@@ -6,7 +6,7 @@ import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians } from './placement.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
@@ -1224,9 +1224,14 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     // hero types so the generic engine reads it; existing config always wins via the spread.
     rows = rows.map(r => {
       if (r.element_type_id === topperTypeId) {
+        const rPc = r.placement_config ?? {};
+        // Default topper facing, authored in DEGREES (unified convention; [0,270,0]° ≡ [0,-π/2,0] rad).
+        // Inject it ONLY when the row carries no rotation of its own — otherwise the 'deg' unit would
+        // pair with that row's (possibly legacy-radians) rotation and be misread. The row always wins.
+        const facing = rPc.rotation != null ? {} : { rotation: [0, 270, 0], rotation_unit: 'deg' };
         return { ...r,
           allowed_zones: r.allowed_zones?.length ? r.allowed_zones : ['top_surface'],
-          placement_config: { single_per_slot: true, top_surface: 'stand', side: 'hug', rotation: [0, -Math.PI / 2, 0], ...(r.placement_config ?? {}) } };
+          placement_config: { single_per_slot: true, top_surface: 'stand', side: 'hug', ...facing, ...rPc } };
       }
       if (r.element_type_id === topSideTypeId) {
         return { ...r, placement_config: { single_per_slot: true, ...(r.placement_config ?? {}) } };
@@ -2334,7 +2339,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       };
       groups.push({ key: 'place', divider: true, controls: [
         <PlacementChooser key="place" previewUrl={srcEl?.image_url}
-          tiers={canvasConfig.tiers} baseRotation={pc.rotation ?? null}
+          tiers={canvasConfig.tiers} baseRotation={facingOffsetRadians(pc)}
           slots={slots} onToggle={onToggle} onUpdate={updateSticker} />
       ] });
       groups.push({ key: 'actions', divider: false, footer: true, controls: [

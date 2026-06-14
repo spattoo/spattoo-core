@@ -8,7 +8,9 @@ An element's behavior comes entirely from its data:
 - `allowed_zones` — where it can go (`top_surface`, `side`, `middle_tier`, `board`, `rim`).
 - `placement_config[zone]` — how it sits there: `stand` | `hug` | `faux_balls` | `faux_ball_single`.
 - `placement_config.r` — default scale (never hard‑coded; never force a value).
-- `placement_config.rotation` — the GLB's authored facing offset (e.g. toppers `[0,-π/2,0]`).
+- `placement_config.rotation` — the GLB's authored facing offset, in **degrees** (e.g. toppers
+  `[0,-90,0]`), gated by `rotation_unit: 'deg'`. Read ONLY via `facingOffsetRadians()` — one unit
+  on each side (degrees in the DB, radians at runtime); never read `placement_config.rotation` raw.
 - `placement_config.single_per_slot` — placement STYLE (see #4).
 
 **Do NOT branch on element type/slug in rendering or popup code** (`=== 'topper'`,
