@@ -16,6 +16,7 @@ import {
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 import { tierShape, topClamp, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL } from '../placement.js';
+import { applyGradient } from './gradientMaterial.js';
 
 function darkenHex(hex, amount) {
   if (!hex || !hex.startsWith('#')) return '#888';
@@ -338,7 +339,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotation, onSeat }) {
+function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, baseRotation, onSeat }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -391,7 +392,7 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position, center, depthScaled, seatHalf } = useMemo(() => {
+  const { scale, position, center, depthScaled, seatHalf, gradBBox } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -399,7 +400,10 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
     box.getCenter(ctr);
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
     glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
-    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc, seatHalf: (size.y * sc) / 2 };
+    // The gradient blends in the model's local frame (same baked geometry the vertex shader reads),
+    // so it stays put regardless of placement/instance scale.
+    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc, seatHalf: (size.y * sc) / 2,
+      gradBBox: { min: box.min.clone(), size: size.clone(), center: ctr.clone() } };
   }, [clonedScene, imageUrl]);
 
   // Report this model's true half-height (normalized, before the instance scale) so the parent can
@@ -422,6 +426,9 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
       mats.forEach(mat => {
         if (!mat.map && color) mat.color = new THREE.Color(color);
+        // User-chosen multi-colour blend (config-gated via allowed_actions.gradient). Overrides the
+        // solid colour per-pixel in the shader; no-op / restores solid when fewer than 2 stops.
+        applyGradient(mat, gradient, gradBBox);
         if (mat.emissive !== undefined) {
           mat.emissive = new THREE.Color(selected ? SELECTION_COLOR : '#000000');
           mat.emissiveIntensity = selected ? 0.2 : 0;
@@ -429,20 +436,20 @@ function StickerModel({ imageUrl, selected, color, clipY, bendRadius, baseRotati
         mat.needsUpdate = true;
       });
     });
-  }, [clonedScene, selected, color]);
+  }, [clonedScene, selected, color, gradient, gradBBox]);
 
   if (bentScene) return <primitive object={bentScene} />;
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, clipY, curved, curveRadius, bendRadius, baseRotation, flipX = false, onSeat }) {
+function StickerFace({ imageUrl, selected, color, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, flipX = false, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} onSeat={onSeat} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} onSeat={onSeat} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
@@ -507,7 +514,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} flipX={sticker.flipX} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} flipX={sticker.flipX} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1065,7 +1072,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} gradient={sticker.gradient} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>

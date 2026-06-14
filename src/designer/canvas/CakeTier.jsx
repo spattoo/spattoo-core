@@ -1,6 +1,7 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
+import { applyGradient } from './gradientMaterial.js';
 import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
@@ -206,18 +207,45 @@ function perimeterSinglePos({ perim, off, baseY, angle }) {
   return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
 }
 
+// Local-space bbox of a geometry, in the frame the gradient shader reads (the `position`
+// attribute). Null when there's no gradient so non-gradient piping skips the work.
+function geomBBox(geometry, gradient) {
+  if (!gradient || !geometry) return null;
+  geometry.computeBoundingBox?.();
+  const bb = geometry.boundingBox;
+  if (!bb) return null;
+  const size = new THREE.Vector3(); bb.getSize(size);
+  const center = new THREE.Vector3(); bb.getCenter(center);
+  return { min: bb.min.clone(), size, center };
+}
+
+// One cream mesh (a shell, festoon, or wrap band). The cream material is config-driven: a single
+// solid colour by default, or a multi-colour blend when the ring carries a `gradient` — applied via
+// the SHARED gradientMaterial helper (same one stickers use), so there is no piping-specific
+// gradient code. Gradient blends per-mesh in the geometry's local frame (each dollop is two-tone,
+// like a two-colour piping bag).
+function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selected, castShadow = true }) {
+  const matRef = useRef(null);
+  const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
+  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox); }, [gradient, bbox]);
+  return (
+    <mesh geometry={geometry} rotation={rotation} scale={scale} castShadow={castShadow}>
+      <meshPhysicalMaterial ref={matRef}
+        {...creamMaterialProps(softness, color)}
+        emissive={selected ? color : '#000000'}
+        emissiveIntensity={selected ? 0.15 : 0}
+      />
+    </mesh>
+  );
+}
+
 // One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
-function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, selected }) {
+function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, gradient, selected }) {
   return (
     <group position={pos} quaternion={tq}>
       <group rotation={[0, -rotY + Math.PI / 2 + ryGroup, 0]}>
-        <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
-          <meshPhysicalMaterial
-            {...creamMaterialProps(softness, color)}
-            emissive={selected ? color : '#000000'}
-            emissiveIntensity={selected ? 0.15 : 0}
-          />
-        </mesh>
+        <CreamMesh geometry={geometry} rotation={meshRot} scale={shellScale}
+          color={color} softness={softness} gradient={gradient} selected={selected} />
       </group>
     </group>
   );
@@ -226,7 +254,7 @@ function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, s
 // Render every position, alternating between version A and the alternate B per `pattern`
 // (a repeating cycle like "AB" or "AAB"). B uses its own geometry, rotation, and a radial/
 // height shift relative to A. When B is absent / not active, every shell is A (unchanged).
-function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, selected }) {
+function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected }) {
   const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
@@ -242,22 +270,16 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
     return (
       <Shell key={u.key ?? i} pos={pos} rotY={u.rotY} tq={u.tq}
         ryGroup={isB ? ryB : ryA} meshRot={isB ? meshB : meshA}
-        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} selected={selected} />
+        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected} />
     );
   });
 }
 
 // Render the bent-strip festoons (U-shaped swags). Each entry is a pre-bent BufferGeometry
 // from buildFestoons(); we just paint them in the ring's colour with the same cream material.
-function renderFestoons({ festoonGeos, color, softness, selected }) {
+function renderFestoons({ festoonGeos, color, softness, gradient, selected }) {
   return festoonGeos.map((g, i) => (
-    <mesh key={i} geometry={g} castShadow>
-      <meshPhysicalMaterial
-        {...creamMaterialProps(softness, color)}
-        emissive={selected ? color : '#000000'}
-        emissiveIntensity={selected ? 0.15 : 0}
-      />
-    </mesh>
+    <CreamMesh key={i} geometry={g} color={color} softness={softness} gradient={gradient} selected={selected} />
   ));
 }
 
@@ -268,15 +290,9 @@ function wallPerimeter(shape, radius) {
 }
 
 // Render a single pre-formed RING GLB as ONE band wrapping the wall (no repetition).
-function renderWrap({ wrapGeo, color, softness, selected }) {
+function renderWrap({ wrapGeo, color, softness, gradient, selected }) {
   return (
-    <mesh geometry={wrapGeo} castShadow>
-      <meshPhysicalMaterial
-        {...creamMaterialProps(softness, color)}
-        emissive={selected ? color : '#000000'}
-        emissiveIntensity={selected ? 0.15 : 0}
-      />
-    </mesh>
+    <CreamMesh geometry={wrapGeo} color={color} softness={softness} gradient={gradient} selected={selected} />
   );
 }
 
@@ -294,7 +310,7 @@ export function TopPipingRing(props) {
 }
 function TopPipingRingImpl({
   topY, radius, glbPath, color = '#ffffff', sizeFactor = 1,
-  softness = PIPING_SOFTNESS_DEFAULT,
+  softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   topRotation       = [0, 0, 0],
   extraRadialOffset = 0,
   yOffset           = 0,
@@ -399,13 +415,13 @@ function TopPipingRingImpl({
   return (
     <group onClick={onClick}>
       {wrapGeo
-        ? renderWrap({ wrapGeo, color, softness, selected })
+        ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
-        ? renderFestoons({ festoonGeos, color, softness, selected })
+        ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
         : renderShells({
             positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-            color, softness, selected,
+            color, softness, gradient, selected,
           })}
     </group>
   );
@@ -421,7 +437,7 @@ export function BottomPipingRing(props) {
 }
 function BottomPipingRingImpl({
   yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1,
-  softness = PIPING_SOFTNESS_DEFAULT,
+  softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   bottomRotation    = [0, 0, 0],
   extraRadialOffset = 0,
   yOffset           = 0,
@@ -543,13 +559,13 @@ function BottomPipingRingImpl({
   return (
     <group onClick={onClick}>
       {wrapGeo
-        ? renderWrap({ wrapGeo, color, softness, selected })
+        ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
-        ? renderFestoons({ festoonGeos, color, softness, selected })
+        ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
         : renderShells({
             positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-            color, softness, selected,
+            color, softness, gradient, selected,
           })}
     </group>
   );
@@ -730,6 +746,7 @@ export default function CakeTier({
   // by its layerId; legacy single-piping callers fall back to the boolean flags.
   const renderTops = () => tops.map((p, idx) => (
     <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={radius} glbPath={p.glbUrl} color={p.color}
+      gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       topRotation={p.rotation ?? [0,0,0]}
       extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
@@ -755,6 +772,7 @@ export default function CakeTier({
   // placed; instead the new layer stacks around the swag's reported band.
   const renderBottoms = () => bottoms.map((p, idx) => (
     <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={radius} glbPath={p.glbUrl} color={p.color}
+      gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       bottomRotation={p.bottomRotation ?? [0,0,0]}
       extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}

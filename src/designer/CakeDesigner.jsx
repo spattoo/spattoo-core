@@ -229,6 +229,47 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
   );
 }
 
+// Gradient (multi-colour) controls — the swatch chips + direction toggle that sit under the
+// colour wheel. Purely presentational and SHARED by every colour popup (sticker, piping, …): the
+// caller owns the stops/mode (read off whatever instance it edits) and the write callbacks. This is
+// the one place the gradient editor UI lives — there is no per-element-type copy.
+//   stops      : array of hex strings (1 = solid, 2–3 = a gradient)
+//   activeStop : index the wheel is currently editing
+//   mode       : 'swirl' | 'vertical' | 'linear'
+function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange }) {
+  return (
+    <div style={s.gradientBlock}>
+      <div style={s.gradientLabel}>Gradient colors</div>
+      <div style={s.gradientStops}>
+        {stops.map((c, i) => (
+          <div key={i} style={s.gradientStopWrap}>
+            <div onClick={() => onSelectStop(i)} title={`Stop ${i + 1}`}
+              style={{ ...s.gradientStop, background: c,
+                border: i === activeStop ? '2.5px solid #1a1a1a' : '1.5px solid #999999' }} />
+            {stops.length > 1 && (
+              <button style={s.gradientStopRemove} title="Remove color"
+                onClick={() => onRemoveStop(i)}>×</button>
+            )}
+          </div>
+        ))}
+        {stops.length < 3 && (
+          <button style={s.gradientStopAdd} title="Add color" onClick={onAddStop}>+</button>
+        )}
+      </div>
+      {stops.length >= 2 && (
+        <div style={s.gradientModes}>
+          {[['swirl', 'Swirl'], ['vertical', 'Vertical'], ['linear', 'Linear']].map(([m, label]) => (
+            <button key={m} onClick={() => onModeChange(m)}
+              style={{ ...s.gradientMode, ...(mode === m ? s.gradientModeOn : null) }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Texts colour picker — the wheel plus a "Metallic" toggle that turns the chosen
 // cream colour into a shiny, shimmery metallic finish. Used both inline (mobile) and
 // in the desktop left-side flyout.
@@ -903,6 +944,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // type 'sticker': { id }  ← primary sticker (toolbar anchor); toppers are stickers too
   const [selectedEl, setSelectedEl] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
+  // Which gradient stop the colour wheel is currently editing (0-based). Only meaningful when the
+  // selected element is gradient-eligible (caps.gradient) and has ≥2 stops.
+  const [gradStop, setGradStop] = useState(0);
   // Full sticker selection set (drives canvas highlight + group ops)
   const [selectedStickerIds, setSelectedStickerIds] = useState(new Set());
   // True when user entered multi-select via long-press (mobile) or Ctrl+click (desktop)
@@ -1530,6 +1574,16 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     updateRing(tierIndex, zone, p => ({ ...p, color: c }));
   }
 
+  // Gradient on a piping ring layer — same instance-level model as stickers (config gates
+  // eligibility via the piping element's allowed_actions.gradient; the stops + mode live on the
+  // ring layer's `gradient`). `color` stays the solid/stop-0 fallback. ≥2 stops = a gradient.
+  function writePipingGradient(tierIndex, zone, colors, mode) {
+    const clean = colors.filter(Boolean);
+    updateRing(tierIndex, zone, p => clean.length >= 2
+      ? ({ ...p, gradient: { mode, colors: clean }, color: clean[0] })
+      : ({ ...p, gradient: undefined, color: clean[0] ?? p.color }));
+  }
+
   function handlePipingSizeChange(tierIndex, zone, v) {
     updateRing(tierIndex, zone, p => ({ ...p, size: v }));
   }
@@ -1972,7 +2026,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
       top: (e.allowed_zones ?? []).includes('top_surface'),
     }));
-    window.__dumpElement = (id) => { const e = elementById.get(id); return e ? { id: e.id, name: e.name, allowed_zones: e.allowed_zones, placement_config: e.placement_config, image_url: e.image_url } : null; };
+    window.__dumpElement = (id) => { const e = elementById.get(id); return e ? { id: e.id, name: e.name, allowed_zones: e.allowed_zones, placement_config: e.placement_config, image_url: e.image_url, allowed_actions: e.allowed_actions } : null; };
     window.__findPatterns = () => [...elementById.values()].filter(e => Array.isArray(e.placement_config?.parts)).map(e => ({ id: e.id, name: e.name, parts: e.placement_config.parts, pc: e.placement_config }));
     window.__placeElementById = (id) => { const e = elementById.get(id); if (!e) return false; const zones = e.allowed_zones ?? ['top_surface']; const zone = zones.includes('top_surface') ? 'top_surface' : zones[0]; handleElementDrop(e, { zone, tierIndex: design.tiers.length - 1, x: 0, z: 0 }); return true; };
     window.__placeElementByIdZone = (id, zone) => { const e = elementById.get(id); if (!e) return false; handleElementDrop(e, { zone, tierIndex: 0, x: 0, z: 0 }); return true; };
@@ -1984,6 +2038,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       handleElementDrop(pattern, { zone: 'top_surface', tierIndex: design.tiers.length - 1, x: 0, z: 0 });
       return true;
     };
+    // Gradient visual check (TEMP): place a GLB on the top surface and apply a multi-colour
+    // gradient instance. mode = 'swirl'|'vertical'|'linear', colors = ['#…', …].
+    window.__placeGradientTest = (id, mode, colors) => {
+      const e = elementById.get(id); if (!e) return null;
+      const zones = e.allowed_zones ?? ['top_surface'];
+      const zone = zones.includes('top_surface') ? 'top_surface' : zones[0];
+      const ti = design.tiers.length - 1;
+      const newId = addSticker(e, zone, ti, e.placement_config?.[zone] ?? 'stand', { zone, tierIndex: ti, x: 0, z: 0 });
+      updateSticker(newId, {
+        gradient: { mode, colors },
+        // force gradient (and colour) caps on so the popup controls show in dev verification
+        allowedActions: { resize: true, duplicate: true, color: true, gradient: true, delete: true, move: false, tilt: true },
+      });
+      return newId;
+    };
+    window.__setStickerGradient = (sid, mode, colors) => { updateSticker(sid, { gradient: { mode, colors } }); return true; };
   }
 
   function handleElementDrop(element, hit) {
@@ -2217,11 +2287,58 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   const tierPanelVisible = selectedEl?.type === 'tier';
   const currentColor = getCurrentColor();
+
+  // ── Gradient (multi-colour) controls ──────────────────────────────────────
+  // Eligibility is config-driven (allowed_actions.gradient); the stops + direction live on the
+  // design instance as sticker.gradient = { mode, colors:[…] }. `color` stays the solid/stop-0
+  // fallback so an element with one colour behaves exactly as before. Stops drive the shader in
+  // canvas/gradientMaterial.js. Up to 3 stops.
+  const selectedSticker = selectedEl?.type === 'sticker'
+    ? design.stickers.find(s => s.id === selectedEl.id) : null;
+  const gradientEligible = !!caps?.gradient && !!selectedSticker;
+  // The stops to show: the saved gradient if any, else a single chip = the solid colour.
+  const gradStops = gradientEligible
+    ? (selectedSticker.gradient?.colors?.length
+        ? selectedSticker.gradient.colors
+        : [selectedSticker.color ?? '#ffffff'])
+    : [];
+  const gradMode = selectedSticker?.gradient?.mode ?? 'swirl';
+  const activeStop = Math.min(gradStop, Math.max(0, gradStops.length - 1));
+  // The colour the wheel edits: the active stop when eligible, else the normal single colour.
+  const wheelColor = gradientEligible ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
+
+  function writeGradient(colors, mode = gradMode) {
+    const clean = colors.filter(Boolean);
+    if (clean.length >= 2) {
+      updateSticker(selectedEl.id, { gradient: { mode, colors: clean }, color: clean[0] });
+    } else {
+      // Back to solid — drop the gradient, keep the remaining colour.
+      updateSticker(selectedEl.id, { gradient: null, color: clean[0] ?? selectedSticker.color });
+    }
+  }
+  function handleWheelChange(c) {
+    if (!gradientEligible) { handleColorChange(c); return; }
+    const next = gradStops.slice();
+    next[activeStop] = c;
+    // 1 stop is just the solid colour; ≥2 stops form the gradient.
+    if (next.length < 2) { updateSticker(selectedEl.id, { color: c }); return; }
+    writeGradient(next);
+  }
+  function addGradStop() {
+    if (gradStops.length >= 3) return;
+    const next = [...gradStops, gradStops[gradStops.length - 1]];  // seed from the last stop
+    writeGradient(next);
+    setGradStop(next.length - 1);
+  }
+  function removeGradStop(i) {
+    writeGradient(gradStops.filter((_, idx) => idx !== i));
+    setGradStop(0);
+  }
   // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
   const selectedStickerIsFauxBall = selectedEl?.type === 'sticker' &&
     (design.stickers.find(s => s.id === selectedEl.id)?.placementMode === 'faux_ball_single');
   const showRightPanel = tierPanelVisible
-    || (caps?.color && colorOpen)
+    || ((caps?.color || caps?.gradient) && colorOpen)
     || selectedStickerIsFauxBall;
 
   // ── Decoration edit stack ────────────────────────────────────────────────
@@ -2357,7 +2474,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!c) return null;
     const groups = [];
 
-    if (c.color) {
+    if (c.color || c.gradient) {
       groups.push({ key: 'color', divider: true, panelLabel: 'Colour', controls: [
         <button key="color"
           style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
@@ -3276,7 +3393,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
 
               {/* Color wheel — tier (always), piping/text (when colorOpen) */}
-              {caps?.color && (tierPanelVisible || colorOpen) && (() => {
+              {(caps?.color || caps?.gradient) && (tierPanelVisible || colorOpen) && (() => {
                 // Offer same-material colors so a reused hue renders exactly: tier → other
                 // tier colors (matte), any element → other element colors (sheened). The
                 // current selection's own color is dropped (no point reoffering it).
@@ -3286,12 +3403,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 return (
                   <ColorWheel
                     key={`${selectedEl.type}-${selectedEl.index ?? selectedEl.tierIndex ?? selectedEl.id ?? 'x'}-${selectedEl.zone ?? ''}`}
-                    color={currentColor}
-                    onChange={handleColorChange}
+                    color={wheelColor}
+                    onChange={handleWheelChange}
                     cakeColors={cakeColors}
                   />
                 );
               })()}
+
+              {/* Gradient controls — config-gated (allowed_actions.gradient). Reuses the shared
+                  GradientControls component (also used by the piping popup). */}
+              {gradientEligible && colorOpen && (
+                <GradientControls
+                  stops={gradStops} activeStop={activeStop} mode={gradMode}
+                  onSelectStop={setGradStop}
+                  onAddStop={addGradStop}
+                  onRemoveStop={removeGradStop}
+                  onModeChange={m => writeGradient(gradStops, m)}
+                />
+              )}
 
               {/* Corner radius — only for sheet (rectangular) tiers */}
               {selectedEl?.type === 'tier' && design.tiers[selectedEl.index]?.shape === 'rect' && (() => {
@@ -3708,6 +3837,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         const PW = 216, EST_H = 400, PAD = 14;
                         const left = Math.max(8, pipingColorAnchor.left - PW - 2 * PAD - 18);
                         const top  = Math.max(8, Math.min(pipingColorAnchor.top - 48, window.innerHeight - EST_H));
+                        // Gradient eligibility is CONFIG only — the piping element's allowed_actions.gradient.
+                        // Stops/mode live on the ring layer (p.gradient); `color` is the solid/stop-0 fallback.
+                        const gradEligible = !!pipingPopupEl?.allowed_actions?.gradient;
+                        const gStops  = p.gradient?.colors?.length ? p.gradient.colors : [color];
+                        const gMode   = p.gradient?.mode ?? 'swirl';
+                        const gActive = Math.min(gradStop, Math.max(0, gStops.length - 1));
+                        const wheelColor = gradEligible ? (gStops[gActive] ?? color) : color;
+                        const onWheel = c => {
+                          if (!gradEligible) { handlePipingColorChange(tierIndex, zone, c); return; }
+                          const next = gStops.slice(); next[gActive] = c;
+                          if (next.length < 2) handlePipingColorChange(tierIndex, zone, c);
+                          else writePipingGradient(tierIndex, zone, next, gMode);
+                        };
                         return (
                           <div style={{ position: 'fixed', top, left, zIndex: 4000, background: '#fff',
                             borderRadius: 16, padding: PAD, boxShadow: '0 12px 44px rgba(0,0,0,0.24)',
@@ -3717,10 +3859,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                               <button style={s.iconBtn} onClick={() => setPipingColorKey(null)}>✕</button>
                             </div>
                             <ColorWheel
-                              color={color}
-                              onChange={c => handlePipingColorChange(tierIndex, zone, c)}
+                              color={wheelColor}
+                              onChange={onWheel}
                               cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== color.toLowerCase())}
                             />
+                            {gradEligible && (
+                              <GradientControls
+                                stops={gStops} activeStop={gActive} mode={gMode}
+                                onSelectStop={setGradStop}
+                                onAddStop={() => { if (gStops.length >= 3) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
+                                onRemoveStop={i => { writePipingGradient(tierIndex, zone, gStops.filter((_, idx) => idx !== i), gMode); setGradStop(0); }}
+                                onModeChange={m => writePipingGradient(tierIndex, zone, gStops, m)}
+                              />
+                            )}
                           </div>
                         );
                       })(),
@@ -4294,6 +4445,40 @@ const s = {
   fieldLabel: {
     fontSize: 11, fontWeight: 700, color: '#444', letterSpacing: 0.3,
   },
+
+  // Gradient (multi-colour) controls — sits under the colour wheel in the right edit panel
+  gradientBlock: {
+    width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
+    gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e5e5',
+  },
+  gradientLabel: {
+    fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
+    color: '#1a1a1a', textTransform: 'uppercase',
+  },
+  gradientStops: {
+    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center',
+  },
+  gradientStopWrap: { position: 'relative', width: 30, height: 30 },
+  gradientStop: {
+    width: 30, height: 30, borderRadius: '50%', cursor: 'pointer',
+    boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+  },
+  gradientStopRemove: {
+    position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%',
+    border: '1px solid #999', background: '#fff', color: '#444', fontSize: 11, lineHeight: '14px',
+    padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  gradientStopAdd: {
+    width: 30, height: 30, borderRadius: '50%', border: '1.5px dashed #999', background: '#fff',
+    color: '#666', fontSize: 18, lineHeight: '26px', padding: 0, cursor: 'pointer',
+  },
+  gradientModes: { display: 'flex', gap: 6, width: '100%', justifyContent: 'center' },
+  gradientMode: {
+    flex: 1, fontSize: 10, fontWeight: 700, letterSpacing: 0.3, padding: '6px 4px',
+    borderRadius: 8, border: '1.5px solid #999999', background: '#fff', color: '#444',
+    cursor: 'pointer', textTransform: 'uppercase',
+  },
+  gradientModeOn: { background: '#1a1a1a', color: '#fff', borderColor: '#1a1a1a' },
   elementCard: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
     background: '#fff', border: '1.5px solid #999999', borderRadius: 12,

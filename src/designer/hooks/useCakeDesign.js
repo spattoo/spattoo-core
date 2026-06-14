@@ -308,6 +308,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             resize:    element.allowed_actions?.resize    ?? true,
             duplicate: element.allowed_actions?.duplicate ?? true,
             color:     element.allowed_actions?.color     ?? false,
+            gradient:  element.allowed_actions?.gradient  ?? false,
             delete:    true,
             move:      element.allowed_actions?.move      ?? false,
             tilt:      element.allowed_actions?.tilt      ?? true,
