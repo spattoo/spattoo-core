@@ -339,7 +339,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, baseRotation, onSeat }) {
+function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, baseRotation, seatProud = false, onSeat }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -415,10 +415,34 @@ function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, 
   // On the side wall, bend the model around the tier so it hugs the curve. Seat its BACK on
   // the wall (push out by half its depth) so a deep model — e.g. a topper head — sits proud
   // instead of half-buried in the tier.
+  // seatOffset positions the model's depth radially: proud → back on the wall (pokes out a full
+  // depth, for deep toppers); flush hug (default) → centred on the wall (back half tucks into the
+  // opaque wall, front half against it) so it doesn't stand off the silhouette. Config, not type.
   const bentScene = useMemo(
-    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, depthScaled / 2) : null),
-    [clonedScene, scale, center, bendRadius, depthScaled],
+    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, seatProud ? depthScaled / 2 : 0) : null),
+    [clonedScene, scale, center, bendRadius, depthScaled, seatProud],
   );
+
+  // Selection = a white outline (inverted hull), NOT a colour tint — a tint reads as "recoloured".
+  // A clone of the rendered scene with white BACK-side material, scaled slightly larger, peeks out
+  // around the silhouette. Built lazily; only mounted while selected.
+  const outlineScene = useMemo(() => {
+    const src = bentScene ?? clonedScene;
+    const o = src.clone(true);
+    o.traverse(obj => {
+      if (!obj.isMesh) return;
+      obj.material = new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide, toneMapped: false });
+      obj.raycast = () => {};
+    });
+    return o;
+  }, [clonedScene, bentScene]);
+  const bentCenter = useMemo(() => {
+    if (!bentScene) return null;
+    const c = new THREE.Vector3();
+    new THREE.Box3().setFromObject(bentScene).getCenter(c);
+    return c;
+  }, [bentScene]);
+  const OUTLINE_K = 1.07;   // hull enlargement → outline thickness
 
   useEffect(() => {
     clonedScene.traverse(obj => {
@@ -429,27 +453,47 @@ function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, 
         // User-chosen multi-colour blend (config-gated via allowed_actions.gradient). Overrides the
         // solid colour per-pixel in the shader; no-op / restores solid when fewer than 2 stops.
         applyGradient(mat, gradient, gradBBox);
-        if (mat.emissive !== undefined) {
-          mat.emissive = new THREE.Color(selected ? SELECTION_COLOR : '#000000');
-          mat.emissiveIntensity = selected ? 0.2 : 0;
-        }
+        if (mat.emissive !== undefined) { mat.emissive = new THREE.Color('#000000'); mat.emissiveIntensity = 0; }
         mat.needsUpdate = true;
       });
     });
-  }, [clonedScene, selected, color, gradient, gradBBox]);
+  }, [clonedScene, color, gradient, gradBBox]);
 
-  if (bentScene) return <primitive object={bentScene} />;
-  return <primitive object={clonedScene} scale={scale} position={position} />;
+  if (bentScene) {
+    return (
+      <group>
+        <primitive object={bentScene} />
+        {selected && bentCenter && (
+          <group position={[bentCenter.x, bentCenter.y, bentCenter.z]}>
+            <group scale={OUTLINE_K}>
+              <group position={[-bentCenter.x, -bentCenter.y, -bentCenter.z]}>
+                <primitive object={outlineScene} />
+              </group>
+            </group>
+          </group>
+        )}
+      </group>
+    );
+  }
+  return (
+    <group>
+      <primitive object={clonedScene} scale={scale} position={position} />
+      {selected && (
+        <primitive object={outlineScene} scale={scale * OUTLINE_K}
+          position={[-center.x * scale * OUTLINE_K, -center.y * scale * OUTLINE_K, -center.z * scale * OUTLINE_K]} />
+      )}
+    </group>
+  );
 }
 
-function StickerFace({ imageUrl, selected, color, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, flipX = false, onSeat }) {
+function StickerFace({ imageUrl, selected, color, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, flipX = false, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} onSeat={onSeat} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} onSeat={onSeat} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
@@ -514,7 +558,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} flipX={sticker.flipX} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} flipX={sticker.flipX} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>

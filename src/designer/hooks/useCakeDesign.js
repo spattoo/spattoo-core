@@ -317,13 +317,20 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // A hero hug derives its size from the tier wall at render time (isDynamicHug);
           // hugFill tunes that fraction. Scattered decor leaves singlePerSlot falsy → keeps r.
           singlePerSlot: element.placement_config?.single_per_slot === true,
+          // Density-scatter unit (sprinkles): packed instances managed by a density control. The
+          // flag rides on each instance so the card can collapse them and the colour-wheel path can
+          // tell scatter from a plain faux_ball. Config-driven (placement_config.scatter).
+          scatter:       element.placement_config?.scatter === true,
+          // Side seating: default flush (true hug, centred on the wall); proud = back-on-wall so a
+          // deep model stands off the wall (toppers). Config-driven; applied in the side bend path.
+          sideProud:     element.placement_config?.side_proud === true,
           hugFill:       element.placement_config?.hug_fill ?? null,
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? px : seatTheta,
           y:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? pz : seatY,
           x:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : px,
           z:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : pz,
-          scale:         defaultScale,
+          scale:         extra.scale ?? defaultScale,   // scatter passes a small per-instance radius
           // The GLB's authored facing offset (e.g. toppers need [0,-90,0]° to face front).
           // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.

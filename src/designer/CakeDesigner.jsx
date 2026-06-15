@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
-import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES } from './constants';
+import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians } from './placement.js';
@@ -954,6 +954,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
      : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
+     : selectedEl.type === 'scatter' ? (design.stickers.find(s => s.elementId === selectedEl.elementId)?.allowedActions ?? STICKER_CAPS)
      : (allowedActionsBySlug[selectedEl.type] ?? null))
     : null;
 
@@ -1770,6 +1771,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
     if (selectedEl.type === 'text') return selectedText?.color ?? '#ffffff';
     if (selectedEl.type === 'sticker') return design.stickers.find(s => s.id === selectedEl.id)?.color ?? '#ffffff';
+    if (selectedEl.type === 'scatter') return design.stickers.find(s => s.elementId === selectedEl.elementId)?.color ?? '#ffffff';
     return '#f5b8c8';
   }
 
@@ -1784,6 +1786,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
     if (selectedEl.type === 'text') updateText(selectedEl.id, { color: c });
     if (selectedEl.type === 'sticker') updateSticker(selectedEl.id, { color: c });
+    // Scatter shares ONE colour across all its packed instances.
+    if (selectedEl.type === 'scatter') design.stickers.filter(s => s.elementId === selectedEl.elementId).forEach(s => updateSticker(s.id, { color: c }));
   }
 
   function handleDelete() {
@@ -1896,6 +1900,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return;
     }
 
+    // A scatter instance belongs to ONE scatter card (density-managed set); tapping any selects the
+    // card. We DON'T mark the instances selected — painting 41 sprinkles purple reads as a recolour
+    // and would trip the grouping bar; the open card is the selection feedback. Ops run by elementId.
+    if (!ctrlKey && !multiSelectMode && sticker?.scatter) {
+      setColorOpen(false);
+      setSelectedEl({ type: 'scatter', elementId: sticker.elementId });
+      setSelectedStickerIds(new Set());
+      return;
+    }
+
     // A multi-slot decor instance opens its element's single card (manages all placements),
     // not a per-instance selection — keeps one uniform card per element.
     if (!ctrlKey && !multiSelectMode && sticker && isMultiSlotEl(sticker.elementId)) {
@@ -1991,6 +2005,141 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setSelectedEl({ type: 'pattern', patternId, patternElementId: pattern.id });
   }
 
+  // A scatter element drops a BATCH of instances spread randomly across the zone, rendered through
+  // the NORMAL sticker path (so they look like the element — NOT faux_ball_single, which draws a
+  // generic sphere). They're spaced so they touch but don't overlap (min-centre distance ≈ one
+  // tile, STICKER_SIZE × scale). One scatter card with a density + surface chooser manages the set.
+  const SCATTER_DEFAULT_COUNT = 12;
+  // Per-instance size for scatter: the element's own configured r (admin-controlled), default 0.5
+  // when unset. No element-type branch — just the config value. Tunable on the card afterwards.
+  function scatterScaleFor(element) {
+    return element?.placement_config?.r ?? 0.5;
+  }
+  const isSideZoneName = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
+  // The cake's actual top tier (top decor belongs there); side defaults to the bottom tier.
+  function scatterTierForZone(zone) {
+    return isSideZoneName(zone) ? 0 : Math.max(0, (canvasConfig.tiers?.length ?? 1) - 1);
+  }
+  // Sensible max instances for a (zone × tier × size): surface area ÷ sprinkle footprint, packed
+  // ~70%. So the cap fills the cake and scales with size, instead of an arbitrary number.
+  function scatterMaxCount(zone, tierIndex, scale) {
+    const tier = canvasConfig.tiers[tierIndex] ?? canvasConfig.tiers[0];
+    const R = tier?.radius ?? 1.2;
+    const tierH = tier?.height ?? BOTTOM_H;
+    const area = isSideZoneName(zone) ? (2 * Math.PI * R * tierH) : (Math.PI * (R * 0.82) ** 2);
+    const footprint = (STICKER_SIZE * scale) ** 2;
+    return Math.max(12, Math.min(400, Math.floor((area / footprint) * 0.7)));
+  }
+  // Deterministic scatter for the card's preview tile — a handful of the element spread on the
+  // surface (golden-angle disk on top; an angular spread on the wall) so the tile shows a SCATTER,
+  // not one piece. Same TopperPreview parts shape decor_pattern uses (glbUrl/baseRotation/r/dx/dz).
+  const PREVIEW_SCATTER_N = 6;
+  function scatterPreviewParts(el, zone, scale) {
+    if (!el) return [];
+    const glbUrl = el.image_url;
+    const baseRotation = facingOffsetRadians(el.placement_config);
+    const isSide = isSideZoneName(zone);
+    const GA = Math.PI * (3 - Math.sqrt(5));
+    const parts = [];
+    for (let i = 0; i < PREVIEW_SCATTER_N; i++) {
+      if (isSide) {
+        parts.push({ glbUrl, baseRotation, r: scale, dx: (i / (PREVIEW_SCATTER_N - 1) - 0.5) * 1.4 });
+      } else {
+        const rad = Math.sqrt((i + 0.5) / PREVIEW_SCATTER_N) * 0.62, ang = i * GA;
+        parts.push({ glbUrl, baseRotation, r: scale, dx: rad * Math.cos(ang), dz: rad * Math.sin(ang) });
+      }
+    }
+    return parts;
+  }
+  // A random seat within (zone × tier), best-effort ≥ minDist from already-taken seats. Top =
+  // a point in the top disk; side = a (theta, y) on the wall. Returns a position for addSticker.
+  function randomScatterSeat(zone, tierIndex, taken, minDist) {
+    const tier = canvasConfig.tiers[tierIndex] ?? canvasConfig.tiers[0];
+    const R = tier?.radius ?? 1.2;
+    const tierH = tier?.height ?? BOTTOM_H;
+    let baseY = 0.1; for (let i = 0; i < tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
+    const isSide = isSideZoneName(zone);
+    let seat = null;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const cand = isSide
+        ? { theta: Math.random() * 2 * Math.PI - Math.PI, y: baseY + 0.08 + Math.random() * Math.max(0.02, tierH - 0.16) }
+        : (() => { const rad = Math.sqrt(Math.random()) * R * 0.82, ang = Math.random() * 2 * Math.PI; return { x: rad * Math.sin(ang), z: rad * Math.cos(ang) }; })();
+      const clear = taken.every(t => {
+        if (isSide) {
+          const dth = Math.abs(Math.atan2(Math.sin(cand.theta - t.theta), Math.cos(cand.theta - t.theta)));
+          return dth * R >= minDist || Math.abs(cand.y - t.y) >= minDist;   // arc OR height apart
+        }
+        const dx = cand.x - t.x, dz = cand.z - t.z; return Math.sqrt(dx * dx + dz * dz) >= minDist;
+      });
+      seat = cand;
+      if (clear) break;
+    }
+    return seat;
+  }
+  // Place `count` instances of `el` scattered on (zone × tier), spaced from `taken` seats, all at
+  // `scale` (and `color` if given). The ONE generator used by initial drop, density +, and zone
+  // change. Mode comes from the element's config for the zone (renders its art).
+  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], color) {
+    const mode = el.placement_config?.[zone] ?? 'hug';
+    const minDist = STICKER_SIZE * scale;
+    const baseId = Date.now();
+    const ids = [];
+    for (let i = 0; i < count; i++) {
+      const seat = randomScatterSeat(zone, tierIndex, taken, minDist);
+      taken.push(seat);
+      const id = addSticker(el, zone, tierIndex, mode, seat, { id: baseId + i, scale });
+      if (color != null) updateSticker(id, { color });
+      ids.push(id);
+    }
+    return ids;
+  }
+  function takenSeatsOf(instances) {
+    return instances.map(s => isSideZoneName(s.zone) ? { theta: s.theta, y: s.y } : { x: s.x, z: s.z });
+  }
+  function placeScatter(element, hit, count = SCATTER_DEFAULT_COUNT) {
+    const scale = scatterScaleFor(element);
+    scatterInstances(element, hit.zone, hit.tierIndex, count, scale, []);
+    setElementsOpen(false);
+    focusEditor('decoration');
+    setMultiSelectMode(false);
+    setSelectedStickerIds(new Set());   // card is the selection feedback; no per-instance highlight
+    setSelectedEl({ type: 'scatter', elementId: element.id });
+  }
+
+  // Reconcile a scatter element to a target instance count: add randomly-seated instances (spaced
+  // from the existing ones, matching their mode/scale) or remove the newest — never regenerate, so
+  // dragged positions survive (the decor_pattern/group "edit as a set" rule).
+  function setScatterDensity(elementId, target) {
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter);
+    const cur = instances.length;
+    if (target === cur || !instances.length) return;
+    if (target > cur) {
+      const el = elementById.get(elementId);
+      const ref = instances[0];
+      if (!el) return;
+      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, ref.scale ?? scatterScaleFor(el), takenSeatsOf(instances), ref.color ?? undefined);
+    } else {
+      // Drop the newest (highest id) instances first.
+      const remove = [...instances].sort((a, b) => b.id - a.id).slice(0, cur - target).map(s => s.id);
+      const removeSet = new Set(remove);
+      remove.forEach(id => removeSticker(id));
+    }
+  }
+
+  // Move the whole scatter set to another surface: drop the current instances and re-scatter the
+  // same count/size/colour on the new (zone × tier). Config-driven (allowed_zones), like a pattern.
+  function changeScatterZone(elementId, zone) {
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter);
+    if (!instances.length) return;
+    const el = elementById.get(elementId);
+    if (!el) return;
+    const count = instances.length, scale = instances[0].scale, color = instances[0].color ?? undefined;
+    instances.forEach(s => removeSticker(s.id));
+    scatterInstances(el, zone, scatterTierForZone(zone), count, scale, [], color);
+    setSelectedStickerIds(new Set());
+    setSelectedEl({ type: 'scatter', elementId });
+  }
+
   // ─── DEV-ONLY temp fixture (remove once real decor_pattern rows exist) ───
   // Builds a throwaway decor_pattern from an existing top-surface element (same element used
   // for both parts → an obvious pair) and runs it through the real placePattern path. Drive it
@@ -2053,6 +2202,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleElementDrop(element, hit) {
     const parts = element.placement_config?.parts;
     if (Array.isArray(parts) && parts.length) { placePattern(element, parts, hit); return; }
+    // Density-scatter element (sprinkles): drop a packed batch as ONE scatter card. Config-driven.
+    if (element.placement_config?.scatter === true) { placeScatter(element, hit); return; }
 
     let placementMode = element.placement_config?.[hit.zone];
     if (!placementMode && Object.values(element.placement_config ?? {}).includes('faux_ball_single')) {
@@ -2349,13 +2500,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const seenDecorEl = new Set();
   const seenPattern = new Set();
   const seenGroup = new Set();
+  const seenScatter = new Set();
   design.stickers
-    .filter(st => st.placementMode !== 'faux_ball_single')
+    // Plain faux balls edit via the colour wheel (no card); SCATTER faux balls collapse to a card.
+    .filter(st => st.placementMode !== 'faux_ball_single' || st.scatter === true)
     .forEach(st => {
       const thumb = /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl;
+      // A density-scatter element's instances collapse into ONE card (managed by a density slider).
+      if (st.scatter) {
+        if (seenScatter.has(st.elementId)) return;
+        seenScatter.add(st.elementId);
+        decorationCards.push({ key: `scatter-${st.elementId}`, type: 'scatter', elementId: st.elementId, name: st.name ?? 'Scatter', thumb });
+      } else if (st.groupId) {
       // A user group's members collapse into ONE card (members abstracted away), exactly like a
       // decor_pattern. groupId rides along through save/load, so the card reappears on reload.
-      if (st.groupId) {
         if (seenGroup.has(st.groupId)) return;
         seenGroup.add(st.groupId);
         decorationCards.push({ key: `group-${st.groupId}`, type: 'group', groupId: st.groupId, name: 'Group', thumb });
@@ -2397,7 +2555,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ? (selectedEl?.type === 'group' && selectedEl.groupId === card.groupId)
         || (selectedEl?.type === 'sticker' && memberGroupId(selectedEl.id) === card.groupId)
       : selectedEl?.type === card.type &&
-        (card.type === 'decorEl' ? selectedEl.elementId === card.elementId
+        (card.type === 'decorEl' || card.type === 'scatter' ? selectedEl.elementId === card.elementId
          : card.type === 'pattern' ? selectedEl.patternId === card.patternId
          : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
@@ -2406,6 +2564,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (card.type === 'decorEl') {
       setSelectedEl({ type: 'decorEl', elementId: card.elementId });
       setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === card.elementId).map(s => s.id)));
+      setMultiSelectMode(false);
+    } else if (card.type === 'scatter') {
+      setSelectedEl({ type: 'scatter', elementId: card.elementId });
+      setSelectedStickerIds(new Set());   // no per-instance highlight; ops run by elementId
       setMultiSelectMode(false);
     } else if (card.type === 'sticker') {
       setSelectedEl({ type: 'sticker', id: card.id });
@@ -2520,6 +2682,88 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button onClick={handleDelete}
             style={{ fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove group</button>
         </div>
+      </div>
+    );
+  }
+
+  // The scatter card body: a density-managed set of packed instances (sprinkles). Density slider
+  // (add/remove instances, never regenerate), one shared Size, one shared Colour (if the element
+  // allows it), and Remove all. Reuses SizeDial + the colour wheel; no parallel renderer.
+  function renderScatterBody(card) {
+    const instances = design.stickers.filter(s => s.elementId === card.elementId && s.scatter);
+    if (!instances.length) return null;
+    const count = instances.length;
+    const size = instances[0]?.scale ?? 1;
+    const ref = instances[0];
+    const canColor = !!caps?.color;
+    // Surfaces this element allows (config-driven). Each is a live preview tile (the element rendered
+    // on that surface), like the decor_pattern card — reuses TopperPreview. Click to move the set.
+    const el = elementById.get(card.elementId);
+    const zones = el?.allowed_zones ?? [];
+    const surfaces = [];
+    if (zones.includes(ZONES.TOP_SURFACE)) surfaces.push({ zone: ZONES.TOP_SURFACE, label: 'Top', placement: 'top', tierIndex: scatterTierForZone(ZONES.TOP_SURFACE) });
+    if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) surfaces.push({ zone: ZONES.SIDE, label: 'Side', placement: 'side', tierIndex: scatterTierForZone(ZONES.SIDE) });
+    const activeZone = isSideZoneName(ref.zone) ? ZONES.SIDE : ZONES.TOP_SURFACE;
+    // Max is based on the element's CONFIGURED size, not the live (resized) size — otherwise
+    // resizing would move the count slider even though the count never changed.
+    const maxCount = scatterMaxCount(ref.zone, ref.tierIndex, scatterScaleFor(el));
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>They pack together without overlapping. Drag any one on the cake to nudge it.</div>
+        {/* Surface previews — one stacked tile per allowed zone (vertical, full width — like the
+            decor_pattern card; a row let the 300px TopperPreview canvas overflow). Each shows the
+            scattered element on that surface; the active one is ticked. Click to move the set. */}
+        {surfaces.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={s.editPanelLabel}>Surface</span>
+            {surfaces.map(su => {
+              const on = su.zone === activeZone;
+              return (
+                <div key={su.zone} role="button"
+                  onClick={() => { if (!on) changeScatterZone(card.elementId, su.zone); }}
+                  style={{ cursor: on ? 'default' : 'pointer' }}>
+                  <div style={{ width: '100%', height: 96, borderRadius: 10, overflow: 'hidden', border: `2px solid ${on ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
+                    {/* mode read by zone (no literal/default) so the preview matches the renderer */}
+                    <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={el?.placement_config?.[su.zone]} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
+                  </div>
+                  <span style={{ display: 'block', marginTop: 3, fontSize: 10, fontWeight: 700, color: on ? '#1a1a1a' : '#8a7a80', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: "'Quicksand',sans-serif" }}>{su.label}{on ? ' ✓' : ''}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={s.editPanelLabel}>Count</span>
+          <input type="range" min={1} max={maxCount} step={1} value={Math.min(count, maxCount)}
+            onChange={e => setScatterDensity(card.elementId, parseInt(e.target.value, 10))}
+            style={{ flex: 1, accentColor: '#6c47ff', minWidth: 0 }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#333', minWidth: 22, textAlign: 'right' }}>{count}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={s.editPanelLabel}>Size</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+            <SizeDial size={size} min={0.1} max={4} step={0.05}
+              onChange={v => scaleStickers(instances.map(s => s.id), v)} />
+          </div>
+        </div>
+        {canColor && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={s.editPanelLabel}>Colour</span>
+            <button
+              style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
+              onClick={() => {
+                const opening = !colorOpen;
+                closeAllPopups();
+                setSelectedEl({ type: 'scatter', elementId: card.elementId });
+                setSelectedStickerIds(new Set());
+                if (opening) setColorOpen(true);
+              }}>
+              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: instances[0]?.color ?? '#ffffff' }} />
+            </button>
+          </div>
+        )}
+        <button onClick={() => { instances.forEach(s => removeSticker(s.id)); clearAllSelections(); }}
+          style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove all</button>
       </div>
     );
   }
@@ -3433,9 +3677,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* Right-side accordion stack on every viewport — same chrome as the cream-piping
               popup. A bottom sheet was rejected: as the controls grow it expands upward and
               hides the cake, whereas a right-side popup scrolls within a fixed column. */}
-          {/* ── Multi-select group bar (transient, pre-group). Hidden once a group is selected —
-                that's the group card's job (renderGroupBody). ── */}
-          {(multiSelectMode || selectedStickerIds.size > 1) && selectedEl?.type !== 'pattern' && selectedEl?.type !== 'group' && (() => {
+          {/* ── Multi-select group bar — shows ONLY in the explicit multi-select gesture
+                (ctrl/long-press). A multi-instance card selection (scatter/decorEl/group/pattern)
+                sets selectedStickerIds too, but must NOT trip grouping — grouping is opt-in. ── */}
+          {multiSelectMode && selectedEl?.type !== 'pattern' && selectedEl?.type !== 'group' && (() => {
             const ids = [...selectedStickerIds];
             const allGrouped = ids.length > 1 && ids.every(id => {
               const s = design.stickers.find(x => x.id === id);
@@ -3760,6 +4005,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <div style={{ padding: '0 9px 9px' }}>
                           {card.type === 'pattern' ? renderPatternBody(card)
                            : card.type === 'group' ? renderGroupBody(card)
+                           : card.type === 'scatter' ? renderScatterBody(card)
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
                       )}
