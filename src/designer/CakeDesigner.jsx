@@ -882,7 +882,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
@@ -1919,12 +1919,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
 
     if (sticker?.groupId) {
-      // Auto-select all stickers in this group
+      // A grouped member belongs to ONE group card (members abstracted away, like a decor_pattern).
+      // Tapping any member selects the group as a unit; drill into a single member from the card.
       const groupIds = new Set(
         design.stickers.filter(s => s.groupId === sticker.groupId).map(s => s.id)
       );
       setSelectedStickerIds(groupIds);
-      setSelectedEl({ type: 'sticker', id });
+      setSelectedEl({ type: 'group', groupId: sticker.groupId });
     } else {
       // Toggle single selection
       const isOnly = selectedStickerIds.size === 1 && selectedStickerIds.has(id);
@@ -2347,12 +2348,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const decorationCards = [];
   const seenDecorEl = new Set();
   const seenPattern = new Set();
+  const seenGroup = new Set();
   design.stickers
     .filter(st => st.placementMode !== 'faux_ball_single')
     .forEach(st => {
       const thumb = /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl;
-      // A decor_pattern's parts collapse into ONE card (the user never sees the individual pieces).
-      if (st.patternId) {
+      // A user group's members collapse into ONE card (members abstracted away), exactly like a
+      // decor_pattern. groupId rides along through save/load, so the card reappears on reload.
+      if (st.groupId) {
+        if (seenGroup.has(st.groupId)) return;
+        seenGroup.add(st.groupId);
+        decorationCards.push({ key: `group-${st.groupId}`, type: 'group', groupId: st.groupId, name: 'Group', thumb });
+      } else if (st.patternId) {
         if (seenPattern.has(st.patternId)) return;
         seenPattern.add(st.patternId);
         const patEl = elementById.get(st.patternElementId);
@@ -2381,10 +2388,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     && !toolsOpen
     && selectedEl?.type !== 'tier'
     && !selectedStickerIsFauxBall;
-  const isCardSelected = (card) => selectedEl?.type === card.type &&
-    (card.type === 'decorEl' ? selectedEl.elementId === card.elementId
-     : card.type === 'pattern' ? selectedEl.patternId === card.patternId
-     : selectedEl?.id === card.id);
+  // A group card stays expanded both when the group itself is selected AND when the user has
+  // drilled into one of its members (selectedEl is that member's sticker) — the member has no
+  // card of its own, so its controls render inside the group card.
+  const memberGroupId = (id) => design.stickers.find(s => s.id === id)?.groupId ?? null;
+  const isCardSelected = (card) =>
+    card.type === 'group'
+      ? (selectedEl?.type === 'group' && selectedEl.groupId === card.groupId)
+        || (selectedEl?.type === 'sticker' && memberGroupId(selectedEl.id) === card.groupId)
+      : selectedEl?.type === card.type &&
+        (card.type === 'decorEl' ? selectedEl.elementId === card.elementId
+         : card.type === 'pattern' ? selectedEl.patternId === card.patternId
+         : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
     setColorOpen(false);
     setExpandedPipingId(null);   // collapse any expanded piping card — single expansion
@@ -2399,6 +2414,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     } else if (card.type === 'pattern') {
       setSelectedEl({ type: 'pattern', patternId: card.patternId, patternElementId: card.patternElementId });
       setSelectedStickerIds(new Set(design.stickers.filter(s => s.patternId === card.patternId).map(s => s.id)));
+      setMultiSelectMode(false);
+    } else if (card.type === 'group') {
+      setSelectedEl({ type: 'group', groupId: card.groupId });
+      setSelectedStickerIds(new Set(design.stickers.filter(s => s.groupId === card.groupId).map(s => s.id)));
       setMultiSelectMode(false);
     } else if (card.type === 'text') {
       setSelectedEl({ type: 'text', id: card.id });
@@ -2445,6 +2464,62 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           );
         })}
         <button onClick={() => removePattern(card)} style={{ marginTop: 2, fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", textAlign: 'left', padding: 0 }}>Remove</button>
+      </div>
+    );
+  }
+
+  // The group card body: a user-locked group presented as ONE unit (members abstracted away).
+  // Group view = member chips (tap to drill into one) + proportional Size + Ungroup + Remove-all.
+  // Drill-in view = that member's normal controls (reusing buildToolbar) with a "← Group" back.
+  // A member carries no card of its own, so its editing lives here. Per-member delete/duplicate
+  // are suppressed in buildToolbar while grouped — ungroup to delete a single piece.
+  function renderGroupBody(card) {
+    const members = design.stickers.filter(s => s.groupId === card.groupId);
+    if (!members.length) return null;
+    const drilled = selectedEl?.type === 'sticker' && members.some(m => m.id === selectedEl.id);
+    if (drilled) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            onClick={() => { setSelectedEl({ type: 'group', groupId: card.groupId }); setSelectedStickerIds(new Set(members.map(m => m.id))); setColorOpen(false); }}
+            style={{ alignSelf: 'flex-start', fontSize: 10.5, fontWeight: 700, color: '#6c47ff', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>
+            ← Group
+          </button>
+          {buildToolbar(selectedEl, 'panel')}
+        </div>
+      );
+    }
+    const meanScale = members.reduce((a, m) => a + (m.scale ?? 1), 0) / members.length;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Drag on the cake to move the group · tap a piece to edit it.</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {members.map(m => {
+            const t = /\.(glb|gltf)(\?|$)/i.test(m.imageUrl ?? '') ? null : m.imageUrl;
+            return (
+              <div key={m.id} role="button"
+                onClick={() => { setSelectedEl({ type: 'sticker', id: m.id }); setSelectedStickerIds(new Set([m.id])); setColorOpen(false); }}
+                title={m.name ?? 'Piece'}
+                style={{ width: 34, height: 34, borderRadius: 7, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {t ? <img src={t} alt={m.name ?? ''} width={34} height={34} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                   : <span style={{ fontSize: 14, fontWeight: 800, color: '#bbb' }}>{m.name?.[0]?.toUpperCase() ?? '•'}</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={s.editPanelLabel}>Size</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+            <SizeDial size={meanScale} min={0.25} max={8} step={0.05}
+              onChange={v => { if (meanScale > 0) scaleGroupBy(members.map(m => m.id), v / meanScale); }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 14 }}>
+          <button onClick={() => { ungroupStickers(card.groupId); clearAllSelections(); }}
+            style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Ungroup</button>
+          <button onClick={handleDelete}
+            style={{ fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove group</button>
+        </div>
       </div>
     );
   }
@@ -2612,16 +2687,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
         ] });
       }
-      // Group / Ungroup
-      const isGrouped = !!sticker?.groupId;
-      if (isGrouped) {
-        groups.push({ key: 'ug', divider: true, controls: [
-          <button key="ungroup" style={{ ...s.tbIconBtn, fontSize: 11, color: '#1a1a1a' }}
-            onClick={() => { ungroupStickers(sticker.groupId); clearAllSelections(); }}>
-            Ungroup
-          </button>
-        ] });
-      }
+      // Ungroup lives on the group card (renderGroupBody), not here — a grouped member only
+      // reaches buildToolbar via drill-in, where the group-level action would be out of place.
     }
 
     // Move arrows were removed — elements are repositioned by dragging them
@@ -2655,7 +2722,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         );
       }
     }
-    if (c.delete) {
+    // A grouped member can't be deleted on its own — the group is a lock. Ungroup (on the group
+    // card) to delete a single piece; the group card's own "Remove group" deletes them all.
+    const groupedMember = el.type === 'sticker' && !!design.stickers.find(s => s.id === el.id)?.groupId;
+    if (c.delete && !groupedMember) {
       const label = selectedStickerIds.size > 1 ? 'Remove all' : 'Remove';
       actions.push(
         <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>{label}</button>
@@ -3363,8 +3433,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* Right-side accordion stack on every viewport — same chrome as the cream-piping
               popup. A bottom sheet was rejected: as the controls grow it expands upward and
               hides the cake, whereas a right-side popup scrolls within a fixed column. */}
-          {/* ── Multi-select group bar ── */}
-          {(multiSelectMode || selectedStickerIds.size > 1) && selectedEl?.type !== 'pattern' && (() => {
+          {/* ── Multi-select group bar (transient, pre-group). Hidden once a group is selected —
+                that's the group card's job (renderGroupBody). ── */}
+          {(multiSelectMode || selectedStickerIds.size > 1) && selectedEl?.type !== 'pattern' && selectedEl?.type !== 'group' && (() => {
             const ids = [...selectedStickerIds];
             const allGrouped = ids.length > 1 && ids.every(id => {
               const s = design.stickers.find(x => x.id === id);
@@ -3377,7 +3448,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </span>
                 {ids.length > 1 && !allGrouped && (
                   <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }}
-                    onClick={() => { groupStickers(ids); clearAllSelections(); }}>
+                    onClick={() => {
+                      // Group, then open the new group's card so size/ungroup/remove are right there.
+                      const gid = groupStickers(ids);
+                      setColorOpen(false);
+                      setMultiSelectMode(false);
+                      setSelectedStickerIds(new Set(ids));
+                      setSelectedEl({ type: 'group', groupId: gid });
+                    }}>
                     Group
                   </button>
                 )}
@@ -3680,7 +3758,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </div>
                       {expanded && (
                         <div style={{ padding: '0 9px 9px' }}>
-                          {card.type === 'pattern' ? renderPatternBody(card) : buildToolbar(selectedEl, 'panel')}
+                          {card.type === 'pattern' ? renderPatternBody(card)
+                           : card.type === 'group' ? renderGroupBody(card)
+                           : buildToolbar(selectedEl, 'panel')}
                         </div>
                       )}
                     </div>

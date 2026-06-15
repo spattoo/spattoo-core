@@ -206,6 +206,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       let px = position.x ?? 0;
       let pz = position.z ?? 0;
+      // Seat angle/height for round side placements (hug/default). Resolved below so a re-added
+      // instance never lands exactly on a coincident sibling. (faux_ball repurposes px/pz instead.)
+      let seatTheta = position.theta ?? 0;
+      let seatY = position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45);
       if (placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
         // Nudge by a fixed STICKER_SIZE gap so both toppers have different centres
         // and are separately selectable. Scale is intentionally ignored — the user
@@ -263,6 +267,42 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           }
         }
       }
+      // De-overlap every OTHER scatter placement (hug / default mode): a re-added instance must
+      // not stack exactly on a coincident sibling (they'd look like one). Geometry-driven by zone,
+      // never by element type/slug (INVARIANTS #1/#2). stand & faux_ball handle their own above.
+      if (placementMode !== PLACEMENT_MODES.STAND && placementMode !== PLACEMENT_MODES.FAUX_BALL_SINGLE) {
+        const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
+        const isScatterSib = s => s.placementMode !== PLACEMENT_MODES.STAND && s.placementMode !== PLACEMENT_MODES.FAUX_BALL_SINGLE;
+        if (isSide && position.u == null) {
+          // Round wall: step the seat angle around the tier until clear of any coincident sibling
+          // (same tier, near-equal theta+y). ~29° per step; guard caps the walk.
+          const angDist = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+          const siblings = prev.stickers.filter(
+            s => (s.zone === ZONES.SIDE || s.zone === ZONES.MIDDLE_TIER) && s.tierIndex === (tierIndex ?? 0) && isScatterSib(s)
+          );
+          let guard = 0;
+          while (guard++ < 64 && siblings.some(s => angDist(seatTheta, s.theta ?? 0) < 0.15 && Math.abs(seatY - (s.y ?? 0)) < 0.2)) {
+            seatTheta += 0.5;
+          }
+          seatTheta = ((seatTheta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        } else if (zone === ZONES.TOP_SURFACE) {
+          // Flat-on-top decals: same x/z nudge the stand path uses, kept inside the tier.
+          const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+          const siblings = prev.stickers.filter(
+            s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && isScatterSib(s)
+          );
+          for (const sib of siblings) {
+            const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
+            const d = Math.sqrt(ex * ex + ez * ez);
+            if (d < STICKER_SIZE) {
+              const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
+              px = (sib.x ?? 0) + dir.x * STICKER_SIZE;
+              pz = (sib.z ?? 0) + dir.z * STICKER_SIZE;
+            }
+          }
+          ({ x: px, z: pz } = topClamp(shp, px, pz, 0.88));
+        }
+      }
       return {
         ...prev,
         stickers: [...prev.stickers, {
@@ -279,8 +319,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           singlePerSlot: element.placement_config?.single_per_slot === true,
           hugFill:       element.placement_config?.hug_fill ?? null,
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
-          theta:         (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? px : (position.theta ?? 0),
-          y:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? pz : (position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45)),
+          theta:         (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? px : seatTheta,
+          y:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? pz : seatY,
           x:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : px,
           z:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : pz,
           scale:         defaultScale,
@@ -393,6 +433,40 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       stickers: prev.stickers.map(s => idSet.has(s.id) ? { ...s, scale: value } : s),
     }));
+  }
+
+  // Proportionally resize a group: multiply every member's scale by `factor`, and scale each
+  // member's offset from the group centroid so the whole arrangement (sizes + spacing) grows or
+  // shrinks together — unlike scaleStickers, which flattens everything to one absolute size.
+  // The centroid and spread are computed in each member's own surface coordinates: top-surface
+  // members in (x, z); side / middle-tier members in y (theta is angular and left as-is).
+  // Member scales clamp to the SizeDial range [0.25, 8].
+  function scaleGroupBy(ids, factor) {
+    const idSet = new Set(ids);
+    if (!(factor > 0)) return;
+    setDesign(prev => {
+      const members = prev.stickers.filter(s => idSet.has(s.id));
+      if (!members.length) return prev;
+      const top  = members.filter(s => s.zone === ZONES.TOP_SURFACE);
+      const side = members.filter(s => s.zone !== ZONES.TOP_SURFACE);
+      const mean = (arr, sel) => arr.length ? arr.reduce((a, s) => a + (sel(s) ?? 0), 0) / arr.length : 0;
+      const cx = mean(top, s => s.x), cz = mean(top, s => s.z);
+      const cy = mean(side, s => s.y);
+      return {
+        ...prev,
+        stickers: prev.stickers.map(s => {
+          if (!idSet.has(s.id)) return s;
+          const updated = { ...s, scale: Math.min(8, Math.max(0.25, (s.scale ?? 1) * factor)) };
+          if (s.zone === ZONES.TOP_SURFACE) {
+            updated.x = cx + ((s.x ?? 0) - cx) * factor;
+            updated.z = cz + ((s.z ?? 0) - cz) * factor;
+          } else {
+            updated.y = cy + ((s.y ?? 0) - cy) * factor;
+          }
+          return updated;
+        }),
+      };
+    });
   }
 
   function duplicateSticker(id) {
@@ -509,7 +583,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
     addSticker, updateSticker, removeSticker, duplicateSticker,
-    groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers,
+    groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
     setWriting, clearWriting,
     addStroke, removeStroke, clearPiping,
     resetDesign,

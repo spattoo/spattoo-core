@@ -44,7 +44,10 @@ right:10; top:12`), exactly like the piping popup and the decoration edit stack.
 centred/`position:fixed` modal overlay, and never invent a new popup container — reuse `s.editPopup`.
 A `decor_pattern` is ONE persistent card in that right‑side stack (keyed by `patternId`, the parts
 abstracted away), with its surface chooser *inside the card* — exactly like a piping element's
-rim/board. Never a throwaway "place" modal, and never one card per part.
+rim/board. Never a throwaway "place" modal, and never one card per part. A user‑created **group**
+(shared `groupId`) follows the SAME rule: ONE collapsed card keyed by `groupId`, members abstracted
+away, with its group controls (proportional Size, Ungroup, Remove) and a drill‑in to edit one
+member *inside the card* — reuse the `decor_pattern` card path, never build a parallel group panel.
 
 ## 4. Two placement STYLES, both flag‑driven (not type‑driven)
 - `single_per_slot: true` (topper, top&side decor) → ONE card per element (`type: 'decorEl'`); its
