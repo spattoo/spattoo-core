@@ -86,6 +86,7 @@ export const ZONES = Object.freeze({
 export const PLACEMENT_MODES = Object.freeze({
   STAND:            'stand',
   HUG:              'hug',
+  PERCH:            'perch',   // figure seated on the rim/top edge — straddles the edge, legs over
   FAUX_BALL_SINGLE: 'faux_ball_single',
 });
 

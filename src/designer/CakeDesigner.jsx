@@ -937,6 +937,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // type 'sticker': { id }  ← primary sticker (toolbar anchor); toppers are stickers too
   const [selectedEl, setSelectedEl] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
+  // GLB Recompose: which editable part-group the colour wheel is currently editing (group key), or
+  // null when editing the element's single colour. Set when a per-group swatch / on-canvas dot is
+  // tapped; the wheel then reads/writes sticker.groupColors[activeGroupKey] instead of sticker.color.
+  const [activeGroupKey, setActiveGroupKey] = useState(null);
   // Which gradient stop the colour wheel is currently editing (0-based). Only meaningful when the
   // selected element is gradient-eligible (caps.gradient) and has ≥2 stops.
   const [gradStop, setGradStop] = useState(0);
@@ -1770,8 +1774,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return (arr?.find(p => p.layerId === selectedEl.layerId) ?? arr?.[0])?.color ?? '#f5e6c8';
     }
     if (selectedEl.type === 'text') return selectedText?.color ?? '#ffffff';
-    if (selectedEl.type === 'sticker') return design.stickers.find(s => s.id === selectedEl.id)?.color ?? '#ffffff';
+    if (selectedEl.type === 'sticker') {
+      const st = design.stickers.find(s => s.id === selectedEl.id);
+      // Editing a recompose part-group → that group's colour; else the element's single colour.
+      if (activeGroupKey && st?.groupColors?.[activeGroupKey]) return st.groupColors[activeGroupKey];
+      return st?.color ?? '#ffffff';
+    }
     if (selectedEl.type === 'scatter') return design.stickers.find(s => s.elementId === selectedEl.elementId)?.color ?? '#ffffff';
+    // Single-per-slot topper (decorEl card): read the recompose group colour off any instance.
+    if (selectedEl.type === 'decorEl') {
+      const st = design.stickers.find(s => s.elementId === selectedEl.elementId);
+      if (activeGroupKey && st?.groupColors?.[activeGroupKey]) return st.groupColors[activeGroupKey];
+      return st?.color ?? '#ffffff';
+    }
     return '#f5b8c8';
   }
 
@@ -1785,7 +1800,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return;
     }
     if (selectedEl.type === 'text') updateText(selectedEl.id, { color: c });
-    if (selectedEl.type === 'sticker') updateSticker(selectedEl.id, { color: c });
+    if (selectedEl.type === 'sticker') {
+      if (activeGroupKey) {
+        // Recolour one recompose part-group on this instance; render matches every mesh whose
+        // userData.group === activeGroupKey (both shoes, both eyes, …). Leaves sticker.color alone.
+        const st = design.stickers.find(s => s.id === selectedEl.id);
+        updateSticker(selectedEl.id, { groupColors: { ...(st?.groupColors ?? {}), [activeGroupKey]: c } });
+      } else {
+        updateSticker(selectedEl.id, { color: c });
+      }
+    }
+    // Single-per-slot topper: apply the group recolour to every placed instance of this element.
+    if (selectedEl.type === 'decorEl') {
+      const insts = design.stickers.filter(s => s.elementId === selectedEl.elementId);
+      if (activeGroupKey) insts.forEach(st => updateSticker(st.id, { groupColors: { ...(st.groupColors ?? {}), [activeGroupKey]: c } }));
+      else insts.forEach(st => updateSticker(st.id, { color: c }));
+    }
     // Scatter shares ONE colour across all its packed instances.
     if (selectedEl.type === 'scatter') design.stickers.filter(s => s.elementId === selectedEl.elementId).forEach(s => updateSticker(s.id, { color: c }));
   }
@@ -1818,6 +1848,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function closeAllPopups() {
     setPipingPopupOpen(false);
     setColorOpen(false);
+    setActiveGroupKey(null);
   }
 
   // One right-side editor active at a time. Opening any of the three editors —
@@ -1838,6 +1869,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function clearAllSelections() {
     setSelectedEl(null);
     setColorOpen(false);
+    setActiveGroupKey(null);
     setSelectedStickerIds(new Set());
     setMultiSelectMode(false);
   }
@@ -2197,6 +2229,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return newId;
     };
     window.__setStickerGradient = (sid, mode, colors) => { updateSticker(sid, { gradient: { mode, colors } }); return true; };
+    window.__updateSticker = (sid, changes) => { updateSticker(sid, changes); return true; };  // test hook: scale / groupColors
   }
 
   function handleElementDrop(element, hit) {
@@ -2450,7 +2483,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const gradMode = selectedSticker?.gradient?.mode ?? 'swirl';
   const activeStop = Math.min(gradStop, Math.max(0, gradStops.length - 1));
   // The colour the wheel edits: the active stop when eligible, else the normal single colour.
-  const wheelColor = gradientEligible ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
+  const wheelColor = (gradientEligible && !activeGroupKey) ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
 
   function writeGradient(colors, mode = gradMode) {
     const clean = colors.filter(Boolean);
@@ -2462,6 +2495,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
   }
   function handleWheelChange(c) {
+    // Editing a recompose part-group is always a solid per-group colour, never a gradient.
+    if (activeGroupKey) { handleColorChange(c); return; }
     if (!gradientEligible) { handleColorChange(c); return; }
     const next = gradStops.slice();
     next[activeStop] = c;
@@ -2484,6 +2519,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     (design.stickers.find(s => s.id === selectedEl.id)?.placementMode === 'faux_ball_single');
   const showRightPanel = tierPanelVisible
     || ((caps?.color || caps?.gradient) && colorOpen)
+    // Recompose per-group editing is gated on the group's `editable` flag, not allowed_actions.color.
+    || (activeGroupKey && colorOpen)
     || selectedStickerIsFauxBall;
 
   // ── Decoration edit stack ────────────────────────────────────────────────
@@ -2791,8 +2828,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const elId = srcEl.id;
     const multiTier = design.tiers.length > 1;
     const isSideZone = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
-    const onSlot = (sk, slot) => slot.zone === ZONES.TOP_SURFACE
-      ? sk.zone === ZONES.TOP_SURFACE
+    const onSlot = (sk, slot) =>
+      slot.zone === ZONES.TOP_SURFACE ? sk.zone === ZONES.TOP_SURFACE
+      : slot.zone === ZONES.RIM       ? sk.zone === ZONES.RIM && sk.tierIndex === slot.tierIndex
       : isSideZone(sk.zone) && sk.tierIndex === slot.tierIndex;
     // How the element sits on a slot comes ENTIRELY from config (placement_config[zone]) — never a
     // hardcoded per-zone default (INVARIANTS #1). Position is just the seat point on that surface.
@@ -2801,12 +2839,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       for (let i = 0; i < slot.tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
       const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
       const mode = pc[slot.zone];
-      const pos = slot.zone === ZONES.TOP_SURFACE ? { x: 0, z: 0 } : { theta: 0, y: baseY + tierH * 0.45 };
+      const pos = slot.zone === ZONES.TOP_SURFACE ? { x: 0, z: 0 }
+        : slot.zone === ZONES.RIM ? {}   // addSticker seeds the front-edge seat for perch
+        : { theta: 0, y: baseY + tierH * 0.45 };
       return { mode, pos };
     };
     const slots = placementSlots(srcEl, design.tiers.length).map(slot => {
-      const label = slot.placement === 'top'
-        ? 'Top'
+      const label = slot.zone === ZONES.RIM
+          ? (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} edge` : 'Edge')
+        : slot.placement === 'top' ? 'Top'
         : (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} side` : 'Side');
       const checked = instance
         ? onSlot(instance, slot)
@@ -2850,11 +2891,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (c.color || c.gradient) {
       groups.push({ key: 'color', divider: true, panelLabel: 'Colour', controls: [
         <button key="color"
-          style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-          onClick={() => { const opening = !colorOpen; closeAllPopups(); if (opening) setColorOpen(true); }}>
+          style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: (colorOpen && !activeGroupKey) ? '2.5px solid #6c47ff' : 'none' }}
+          onClick={() => { const opening = !(colorOpen && !activeGroupKey); closeAllPopups(); if (opening) setColorOpen(true); }}>
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>
       ] });
+    }
+
+    // GLB Recompose — per-group colour pickers. Self-explaining: each editable part-group gets a
+    // named, filled swatch ("Shoes", "Eyes", …) so the customer sees exactly which parts recolour.
+    // Config-driven off the instance's `groups` (admin's `_model.groups` where editable); absent →
+    // nothing renders. No element-type/slug branch. Tapping a swatch opens the shared ColorWheel for
+    // that group (activeGroupKey); the render recolours every mesh whose userData.group matches.
+    // Resolve the representative instance: a plain sticker is itself; a single-per-slot topper is a
+    // decorEl card, so use any one of its placed instances (recolour applies to all of them).
+    if (el.type === 'sticker' || el.type === 'decorEl') {
+      const inst = el.type === 'sticker'
+        ? design.stickers.find(s => s.id === el.id)
+        : design.stickers.find(s => s.elementId === el.elementId);
+      const editGroups = inst?.groups ?? [];
+      if (editGroups.length) {
+        groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
+          <div key="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
+            {editGroups.map(g => {
+              const cur = inst?.groupColors?.[g.key] ?? g.default ?? '#ffffff';
+              const on = colorOpen && activeGroupKey === g.key;
+              return (
+                <div key={g.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: 54 }}>
+                  <button
+                    style={{ ...s.swatchBtn, padding: 3, border: on ? '2.5px solid #6c47ff' : '1px solid #cdccd3' }}
+                    onClick={() => { const opening = !on; closeAllPopups(); if (opening) { setActiveGroupKey(g.key); setColorOpen(true); } }}>
+                    <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: cur }} />
+                  </button>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: on ? '#1a1a1a' : '#8a7a80', textAlign: 'center', lineHeight: 1.1, fontFamily: "'Quicksand',sans-serif" }}>{g.label ?? g.key}</span>
+                </div>
+              );
+            })}
+          </div>,
+          <div key="hint" style={{ fontSize: 9, color: '#8a7a80', marginTop: 4, fontFamily: "'Quicksand',sans-serif" }}>Tap a colour to change it</div>,
+        ] });
+      }
     }
 
     if (c.fontSize && el.type === 'text') {
@@ -3741,7 +3817,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
                   : selectedEl?.type === 'piping'  ? `${TIER_LABELS[selectedEl.tierIndex]} ${selectedEl.zone === 'top' ? 'Top' : 'Base'}`
                   : selectedEl?.type === 'text'    ? 'Text Color'
-                  : selectedEl?.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker')
+                  : selectedEl?.type === 'sticker' ? (
+                      activeGroupKey
+                        ? (design.stickers.find(s => s.id === selectedEl.id)?.groups?.find(g => g.key === activeGroupKey)?.label ?? activeGroupKey)
+                        : (design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker'))
+                  : selectedEl?.type === 'decorEl' && activeGroupKey ? activeGroupKey
                   : ''}
                 </span>
                 <button style={s.iconBtn} onClick={() => {
@@ -3751,7 +3831,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
 
               {/* Color wheel — tier (always), piping/text (when colorOpen) */}
-              {(caps?.color || caps?.gradient) && (tierPanelVisible || colorOpen) && (() => {
+              {((caps?.color || caps?.gradient) || activeGroupKey) && (tierPanelVisible || colorOpen) && (() => {
                 // Offer same-material colors so a reused hue renders exactly: tier → other
                 // tier colors (matte), any element → other element colors (sheened). The
                 // current selection's own color is dropped (no point reoffering it).
@@ -3770,7 +3850,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
               {/* Gradient controls — config-gated (allowed_actions.gradient). Reuses the shared
                   GradientControls component (also used by the piping popup). */}
-              {gradientEligible && colorOpen && (
+              {gradientEligible && colorOpen && !activeGroupKey && (
                 <GradientControls
                   stops={gradStops} activeStop={activeStop} mode={gradMode}
                   onSelectStop={setGradStop}

@@ -339,7 +339,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, baseRotation, seatProud = false, onSeat }) {
+function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, onSeat }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -442,14 +442,25 @@ function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, 
     new THREE.Box3().setFromObject(bentScene).getCenter(c);
     return c;
   }, [bentScene]);
-  const OUTLINE_K = 1.07;   // hull enlargement → outline thickness
+  const OUTLINE_K = 1.025;   // hull enlargement → outline thickness (thin: detailed figurines look haloed at 1.07)
 
+  // GLB Recompose: when the instance carries per-group colours, recolour each mesh by its authored
+  // userData.group (set in admin), leaving untagged meshes at their baked colour. The single `color`
+  // path applies only when there are NO groups (ordinary one-colour elements) — so a multi-part
+  // recompose model is never flattened to one colour. Config-driven, no element-type branch.
+  const hasGroups = !!groupColors && Object.keys(groupColors).length > 0;
   useEffect(() => {
     clonedScene.traverse(obj => {
       if (!obj.isMesh) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const grp = obj.userData?.group;
+      const groupColor = hasGroups && grp ? groupColors[grp] : undefined;
       mats.forEach(mat => {
-        if (!mat.map && color) mat.color = new THREE.Color(color);
+        if (groupColor) {
+          if (!mat.map) mat.color = new THREE.Color(groupColor);
+        } else if (!hasGroups && !mat.map && color) {
+          mat.color = new THREE.Color(color);
+        }
         // User-chosen multi-colour blend (config-gated via allowed_actions.gradient). Overrides the
         // solid colour per-pixel in the shader; no-op / restores solid when fewer than 2 stops.
         applyGradient(mat, gradient, gradBBox);
@@ -457,7 +468,7 @@ function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, 
         mat.needsUpdate = true;
       });
     });
-  }, [clonedScene, color, gradient, gradBBox]);
+  }, [clonedScene, color, gradient, gradBBox, groupColors, hasGroups]);
 
   if (bentScene) {
     return (
@@ -486,14 +497,14 @@ function StickerModel({ imageUrl, selected, color, gradient, clipY, bendRadius, 
   );
 }
 
-function StickerFace({ imageUrl, selected, color, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, flipX = false, onSeat }) {
+function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, flipX = false, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} onSeat={onSeat} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} onSeat={onSeat} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
@@ -558,7 +569,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} flipX={sticker.flipX} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} flipX={sticker.flipX} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1106,17 +1117,23 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   const plane        = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
 
   const isStand = sticker.placementMode === 'stand';
+  // Perch: a figure seated on the top edge. Its centre sits AT the edge height (legs hang over the
+  // side, upper body above) — no auto seat-lift, and no clip plane (clipping would slice the figure).
+  const isPerch = sticker.placementMode === 'perch';
   const isGlb2d = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
   // Seat the model's actual BOTTOM on the surface: lift by its measured half-height (reported by
   // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
   // float is opt-in via yOffset (the Height control) / config. Fallback to the constant pre-measure.
   const [seatHalf, setSeatHalf] = useState(null);
-  const py = topY + (sticker.yOffset ?? 0) + (isStand ? (seatHalf ?? STICKER_SIZE / 2) * (sticker.scale ?? 1) + FLAT_STICKER_Y_OFFSET : FLAT_STICKER_Y_OFFSET);
+  const py = topY + (sticker.yOffset ?? 0) + (
+    isStand ? (seatHalf ?? STICKER_SIZE / 2) * (sticker.scale ?? 1) + FLAT_STICKER_Y_OFFSET
+    : isPerch ? 0   // centre straddles the top edge — legs below, body above
+    : FLAT_STICKER_Y_OFFSET);
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} gradient={sticker.gradient} clipY={isStand ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1222,9 +1239,10 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     canvas.addEventListener('pointerup', onUp);
   };
 
-  // Stand mode: outer=position+scale, middle=Y-spin, inner=X-tilt
-  // 2D images use Billboard so they always face the camera instead of leaning back.
-  if (isStand) {
+  // Stand & perch: upright render — outer=position+scale, middle=Y-spin (facing), inner=X-tilt (lean).
+  // Same orientation pipeline; they differ only in py (perch straddles the edge, no seat-lift) and
+  // clip (perch isn't clipped). 2D images use Billboard so they always face the camera.
+  if (isStand || isPerch) {
     // Billboard must be INSIDE the world-positioned group, not wrapping it.
     // If Billboard wraps the position group, it sits at origin and rotates its
     // local frame — so any x/z offset becomes wrong world-space position.
@@ -1762,13 +1780,14 @@ function CakeThumbnailScene({ config }) {
             </group>
           );
         }
-        const py   = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : FLAT_STICKER_Y_OFFSET);
-        if (sticker.placementMode === 'stand') {
+        const isPerchPv = sticker.placementMode === 'perch';
+        const py   = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : isPerchPv ? 0 : FLAT_STICKER_Y_OFFSET);
+        if (sticker.placementMode === 'stand' || isPerchPv) {
           return (
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
               <group rotation={[0, sticker.rotation ?? 0, 0]}>
                 <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-                  <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={undefined} baseRotation={sticker.baseRotation} />
+                  <StickerFace imageUrl={sticker.imageUrl} selected={false} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} />
                 </group>
               </group>
             </group>

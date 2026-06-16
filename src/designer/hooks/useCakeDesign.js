@@ -202,6 +202,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function addSticker(element, zone, tierIndex, placementMode, position = {}, extra = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
     const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : 1);
+    // Perch calibration (tier-relative): the figurine calibrator writes these into placement_config.perch;
+    // we seed them onto the instance so the figure is seated/leaning correctly the moment it's placed.
+    const perchCfg = element.placement_config?.perch ?? {};
+    const isPerchMode = placementMode === PLACEMENT_MODES.PERCH;
+    const perchTilt = isPerchMode ? ((perchCfg.tilt_deg ?? 0) * Math.PI / 180) : 0;
+    const perchYOffset = isPerchMode ? (perchCfg.y_offset ?? 0) : 0;
     const newId = extra.id ?? Date.now();   // returned so callers can select the just-added sticker
     setDesign(prev => {
       let px = position.x ?? 0;
@@ -228,6 +234,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           }
         }
         ({ x: px, z: pz } = topClamp(shp, px, pz, 0.88));
+      }
+      if (placementMode === PLACEMENT_MODES.PERCH) {
+        // A perch ALWAYS starts on the FRONT edge (toward the camera, +z) — a perch in the centre
+        // would bury the figure inside the cake. The renderer straddles it across the top edge; the
+        // customer drags it around the rim afterwards. Nudge off a coincident perch sibling.
+        const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+        const edge = shp.kind === 'rect' ? shp.halfD : shp.radius;
+        px = 0;
+        pz = edge - (perchCfg.edge_inset ?? 0);   // inset from the rim, from calibration
+        for (const sib of prev.stickers.filter(s => s.placementMode === PLACEMENT_MODES.PERCH && s.tierIndex === (tierIndex ?? 0))) {
+          if (Math.abs(px - (sib.x ?? 0)) < STICKER_SIZE && Math.abs(pz - (sib.z ?? 0)) < STICKER_SIZE) px += STICKER_SIZE;
+        }
       }
       if (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE) {
         const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
@@ -335,10 +353,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
-          yOffset:       0,
+          yOffset:       perchYOffset,   // perch: seat-height offset from the tier top (calibrated)
           rotation:      0,
           radialOffset:  0,
-          tiltAngle:     0,
+          tiltAngle:     perchTilt,      // perch: seated lean (calibrated)
           groupId:       null,
           // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
           // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
@@ -351,6 +369,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // part — e.g. the right unicorn eye from the same GLB). Applied as a -X scale in render.
           flipX:            extra.flipX ?? false,
           color:         element.default_color ?? null,
+          // GLB Recompose: customer-recolourable part groups. `placement_config._model.groups` (the
+          // editable controls) is the source of truth; copy the editable ones onto the instance and
+          // seed each group's current colour from its default. Render recolours meshes by
+          // userData.group; absent/empty → the single-colour `color` path is used (unchanged).
+          groups:        (element.placement_config?._model?.groups ?? []).filter(g => g.editable),
+          groupColors:   Object.fromEntries(
+                           (element.placement_config?._model?.groups ?? [])
+                             .filter(g => g.editable)
+                             .map(g => [g.key, g.default ?? '#ffffff'])),
           allowedActions: {
             resize:    element.allowed_actions?.resize    ?? true,
             duplicate: element.allowed_actions?.duplicate ?? true,

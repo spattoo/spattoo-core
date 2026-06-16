@@ -79,6 +79,13 @@ export function placementSlots(element, tierCount) {
   if (zones.includes(ZONES.TOP_SURFACE)) {
     slots.push({ key: 'top', placement: 'top', zone: ZONES.TOP_SURFACE, tierIndex: n - 1 });
   }
+  if (zones.includes(ZONES.RIM)) {
+    // The top EDGE of each tier (e.g. a perched figure) — one slot per tier, like side placement,
+    // so a figure can perch on a lower tier's ledge too. Renders via the top path at that tier's edge.
+    for (let i = n - 1; i >= 0; i--) {
+      slots.push({ key: `rim-${i}`, placement: 'top', zone: ZONES.RIM, tierIndex: i });
+    }
+  }
   if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) {
     for (let i = n - 1; i >= 0; i--) {
       slots.push({ key: `side-${i}`, placement: 'side', zone: ZONES.SIDE, tierIndex: i });
