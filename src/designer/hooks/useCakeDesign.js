@@ -378,6 +378,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
                            (element.placement_config?._model?.groups ?? [])
                              .filter(g => g.editable)
                              .map(g => [g.key, g.default ?? '#ffffff'])),
+          // Shared fondant surface: opt-in per element (absent → use the GLB's own texture/material).
+          useSharedFondantTexture: element.placement_config?.useSharedFondantTexture === true,
           allowedActions: {
             resize:    element.allowed_actions?.resize    ?? true,
             duplicate: element.allowed_actions?.duplicate ?? true,

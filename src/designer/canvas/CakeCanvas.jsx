@@ -14,6 +14,7 @@ import {
   SIDE_STICKER_SURFACE_OFFSET, FLAT_STICKER_Y_OFFSET,
 } from '../constants.js';
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
+import { getFondantNormalMap, applyBoxUVs } from './fondantTexture.js';
 import { tierShape, topClamp, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL } from '../placement.js';
 import { applyGradient } from './gradientMaterial.js';
@@ -339,7 +340,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, onSeat }) {
+function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, onSeat }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -366,8 +367,30 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
       mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
     });
+    // Shared fondant surface (config: useSharedFondantTexture): overlay the one shared grain normal
+    // map so any flat recolourable part reads as matte fondant under ANY colour. Clone geometry +
+    // material per instance (never mutate the cached GLB); box-UV the UV-less parts; keep metalness
+    // so metallic accents survive. Colour itself is still set later by the recolour effect.
+    if (fondant) {
+      const normal = getFondantNormalMap();
+      clone.traverse(obj => {
+        if (!obj.isMesh || !obj.geometry) return;
+        obj.geometry = obj.geometry.clone();
+        applyBoxUVs(obj.geometry, 0.18);   // grain size: world units per texture repeat (larger = coarser)
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        const next = mats.map(m => {
+          const nm = m.clone();
+          nm.normalMap = normal;
+          nm.normalScale = new THREE.Vector2(1.5, 1.5);   // grain strength (tune; was 0.5, too faint to see)
+          nm.roughness = Math.max(nm.roughness ?? 0.5, 0.88);  // matte; metalness untouched
+          nm.needsUpdate = true;
+          return nm;
+        });
+        obj.material = Array.isArray(obj.material) ? next : next[0];
+      });
+    }
     return clone;
-  }, [scene, baseRotation]);
+  }, [scene, baseRotation, fondant]);
 
   // Sync clip plane: set, update constant, or clear when clipY becomes undefined.
   useEffect(() => {
@@ -497,14 +520,14 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
   );
 }
 
-function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, flipX = false, onSeat }) {
+function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, flipX = false, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
     <TextureErrorBoundary>
       <Suspense fallback={null}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} onSeat={onSeat} />
+          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} onSeat={onSeat} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
         }
       </Suspense>
@@ -569,7 +592,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} flipX={sticker.flipX} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1133,7 +1156,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} flipX={sticker.flipX} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1760,7 +1783,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} baseRotation={sticker.baseRotation} />
+                <StickerFace imageUrl={sticker.imageUrl} selected={false} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} />
               </group>
             </group>
           );
@@ -1787,7 +1810,7 @@ function CakeThumbnailScene({ config }) {
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
               <group rotation={[0, sticker.rotation ?? 0, 0]}>
                 <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-                  <StickerFace imageUrl={sticker.imageUrl} selected={false} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} />
+                  <StickerFace imageUrl={sticker.imageUrl} selected={false} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} />
                 </group>
               </group>
             </group>
