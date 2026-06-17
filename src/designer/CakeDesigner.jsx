@@ -15,6 +15,7 @@ import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
 import OrdersPanel from '../orders/OrdersPanel';
 import CustomersPanel from '../customers/CustomersPanel';
+import InvitePanel from '../customers/InvitePanel';
 import DashboardPanel from '../dashboard/DashboardPanel';
 import SettingsPanel from '../settings/SettingsPanel';
 import BillingPanel from '../settings/BillingPanel';
@@ -747,6 +748,15 @@ function CustomersIcon({ size = 20 }) {
   );
 }
 
+function InviteIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 2 11 13" />
+      <path d="M22 2 15 22l-4-9-9-4Z" />
+    </svg>
+  );
+}
+
 // ── Sidebar tooltip ───────────────────────────────────────────────────────────
 function SidebarTooltip({ label, children }) {
   const [visible, setVisible] = useState(false);
@@ -1024,6 +1034,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [editingOrder,        setEditingOrder]        = useState(null);
   const [ordersPanelOpen,     setOrdersPanelOpen]     = useState(false);
   const [customersPanelOpen,  setCustomersPanelOpen]  = useState(false);
+  const [invitePanelOpen,     setInvitePanelOpen]     = useState(false);
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
@@ -1033,6 +1044,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [bakerData,    setBakerData]    = useState(null);
   const [userData,     setUserData]     = useState(null);
   const [bakerSettings, setBakerSettings] = useState({});
+  // Server-resolved capabilities (from /api/me). null = not loaded / host app
+  // doesn't expose it → default to full access so existing baker apps are unchanged.
+  const [capabilities, setCapabilities] = useState(null);
   const [windowWidth, setWindowWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
   const [mobilePanelHeight, setMobilePanelHeight] = useState(260);
   const settingsRef      = useRef(null);
@@ -1056,10 +1070,21 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
     : '?';
   const isMobile = windowWidth <= 640;
+  // Capability gate for nav/chrome. Unknown caps (not loaded / no /me) → show all,
+  // preserving existing baker apps. '*' = super admin. Enforcement is server-side;
+  // this only hides controls a principal can't use.
+  const hasCap = (cap) => !capabilities || !cap || capabilities.includes('*') || capabilities.includes(cap);
+  const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
   useEffect(() => {
     if (apiClient?.fetchBakerSettings) {
       apiClient.fetchBakerSettings().then(s => setBakerSettings(s ?? {})).catch(() => {});
+    }
+  }, [apiClient]);
+
+  useEffect(() => {
+    if (apiClient?.fetchMe) {
+      apiClient.fetchMe().then(me => setCapabilities(me?.capabilities ?? null)).catch(() => {});
     }
   }, [apiClient]);
 
@@ -3330,7 +3355,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             }
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div style={{ position: 'relative' }} ref={settingsRef}>
+            {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
               <button
                 style={{ ...s.sidebarBtn, color: settingsOpen ? '#1a1a1a' : '#555', background: settingsOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
                 onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
@@ -3339,13 +3364,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {settingsOpen && (
                 <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
                   <div style={s.dropdownSection}>Settings</div>
-                  <button style={s.dropdownItem} onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>Store Settings</button>
-                  <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>
+                  {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>Store Settings</button>}
+                  {hasCap('billing:manage') && <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>}
                   <button style={s.dropdownItem} onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>Color Guide</button>
-                  <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add User</button>
+                  {hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add User</button>}
                 </div>
               )}
-            </div>
+            </div>}
             <div style={{ position: 'relative' }} ref={profileRef}>
               <button style={{ ...s.sidebarProfileBtn, background: primaryColor }}
                 onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
@@ -3384,13 +3409,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={s.sidebar}>
           <nav style={s.sidebarNav}>
             {[
-              { id: 'new',        label: 'New Cake',  icon: null },
-              { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} /> },
-              { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} /> },
-              { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} /> },
-              { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} /> },
-              { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} /> },
-            ].map(({ id, label, icon }) => {
+              { id: 'new',        label: 'New Cake',  icon: null,                         requires: 'design:create' },
+              { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} />,  requires: 'order:view' },
+              { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} />,  requires: 'design:create' },
+              { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />, requires: 'design:create' },
+              { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view' },
+              { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
+              { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
+            ].filter(item => hasCap(item.requires)).map(({ id, label, icon }) => {
               const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
               const isNew  = id === 'new';
               return (
@@ -3403,6 +3429,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     if (id === 'dashboard') setDashboardOpen(true);
                     if (id === 'orders')    setOrdersPanelOpen(true);
                     if (id === 'customers') setCustomersPanelOpen(true);
+                    if (id === 'invite')    setInvitePanelOpen(true);
                   }}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
@@ -3422,7 +3449,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={s.sidebarDivider} />
 
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            <div style={{ position: 'relative' }} ref={settingsRef}>
+            {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
               <SidebarTooltip label="Settings">
                 <button
                   style={{ ...s.sidebarBtn, ...(settingsOpen ? s.sidebarBtnActive : {}) }}
@@ -3433,25 +3460,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {settingsOpen && (
                 <div style={s.dropdown}>
                   <div style={s.dropdownSection}>Settings</div>
-                  <button style={s.dropdownItem}
+                  {hasCap('store:manage') && <button style={s.dropdownItem}
                     onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>
                     Store Settings
-                  </button>
-                  <button style={s.dropdownItem}
+                  </button>}
+                  {hasCap('billing:manage') && <button style={s.dropdownItem}
                     onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>
                     Billing
-                  </button>
+                  </button>}
                   <button style={s.dropdownItem}
                     onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>
                     Color Guide
                   </button>
-                  <button style={s.dropdownItem}
+                  {hasCap('staff:manage') && <button style={s.dropdownItem}
                     onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
                     Add User
-                  </button>
+                  </button>}
                 </div>
               )}
-            </div>
+            </div>}
 
             <div style={{ position: 'relative' }} ref={profileRef}>
               <SidebarTooltip label={userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'Profile'}>
@@ -4568,12 +4595,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </button>
 
           {[
-            { id: 'dashboard',  icon: <DashboardIcon size={20} /> },
-            { id: 'templates',  icon: <TemplatesIcon size={20} /> },
-            { id: 'elements',   icon: <ElementsIcon size={20} /> },
-            { id: 'orders',     icon: <OrdersIcon size={20} /> },
-            { id: 'customers',  icon: <CustomersIcon size={20} /> },
-          ].map(({ id, icon }) => {
+            { id: 'dashboard',  icon: <DashboardIcon size={20} />, requires: 'order:view' },
+            { id: 'templates',  icon: <TemplatesIcon size={20} />, requires: 'design:create' },
+            { id: 'elements',   icon: <ElementsIcon size={20} />,  requires: 'design:create' },
+            { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view' },
+            { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
+            { id: 'invite',     icon: <InviteIcon size={20} />,    requires: 'customer:manage' },
+          ].filter(item => hasCap(item.requires)).map(({ id, icon }) => {
             const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
             return (
               <button key={id}
@@ -4585,6 +4613,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   if (id === 'dashboard') setDashboardOpen(true);
                   if (id === 'orders')    setOrdersPanelOpen(true);
                   if (id === 'customers') setCustomersPanelOpen(true);
+                  if (id === 'invite')    setInvitePanelOpen(true);
                 }}>
                 {icon}
               </button>
@@ -4772,6 +4801,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           setNewOrderId(orderId);
           setOrdersPanelOpen(true);
         }}
+      />
+
+      {/* ── Invite panel ── */}
+      <InvitePanel
+        open={invitePanelOpen}
+        onClose={() => setInvitePanelOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
       />
 
       {/* ── Order modal ── */}

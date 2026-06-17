@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { CakeDesigner, CreateTemplate, AuthGate } from '../src/index.js';
+import { CakeDesigner, CreateTemplate, AuthGate, CustomerStorefront } from '../src/index.js';
 
 const supabase = createClient(
   'https://lsvmnycehfopxsgruwmk.supabase.co',
@@ -80,6 +80,9 @@ function createApiClient(supabaseClient) {
       authFetch(`/api/baker/customers/${id}/deactivate`, { method: 'PATCH' }),
     reactivateCustomer: (id) =>
       authFetch(`/api/baker/customers/${id}/reactivate`, { method: 'PATCH' }),
+    inviteCustomer: (form) =>
+      authFetch('/api/baker/customers/invite', { method: 'POST', body: JSON.stringify(form) }),
+    fetchMe: () => authFetch('/api/me'),
     fetchFlavours: (bakerSlug) =>
       fetch(`${API_URL}/api/flavours?bakerSlug=${bakerSlug}`).then(r => r.json()),
     placeOrder: async (payload) => {
@@ -110,6 +113,27 @@ function createApiClient(supabaseClient) {
 const apiClient = createApiClient(supabase);
 const path = window.location.pathname;
 
+// Public storefront demo — no auth. /storefront?slug=feelings-flavours
+if (path === '/storefront') {
+  const params = new URLSearchParams(window.location.search);
+  const slug = params.get('slug') || 'feelings-flavours';
+  const inviteId = params.get('invite');
+  const container = document.getElementById('root');
+  if (!container._reactRoot) container._reactRoot = ReactDOM.createRoot(container);
+  container._reactRoot.render(
+    <React.StrictMode>
+      <CustomerStorefront
+        slug={slug}
+        inviteId={inviteId}
+        apiBaseUrl={API_URL}
+        supabase={supabase}
+        onStartDesign={(b) => console.log('Start design for', b.slug)}
+        onAuthenticated={(s) => console.log('Authenticated! session:', s)}
+      />
+    </React.StrictMode>
+  );
+}
+
 function Root() {
   if (path === '/create-template') {
     return (
@@ -128,14 +152,16 @@ function Root() {
   );
 }
 
-const container = document.getElementById('root');
-if (!container._reactRoot) {
-  container._reactRoot = ReactDOM.createRoot(container);
+if (path !== '/storefront') {
+  const container = document.getElementById('root');
+  if (!container._reactRoot) {
+    container._reactRoot = ReactDOM.createRoot(container);
+  }
+  container._reactRoot.render(
+    <React.StrictMode>
+      <AuthGate supabase={supabase}>
+        <Root />
+      </AuthGate>
+    </React.StrictMode>
+  );
 }
-container._reactRoot.render(
-  <React.StrictMode>
-    <AuthGate supabase={supabase}>
-      <Root />
-    </AuthGate>
-  </React.StrictMode>
-);
