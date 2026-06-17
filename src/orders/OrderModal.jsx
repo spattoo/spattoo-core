@@ -249,25 +249,14 @@ export default function OrderModal({
     }
   }, []);
 
-  // Load available flavours on mount
+  // Load available flavours on mount. The API resolves the customer-facing list (global
+  // flavours minus this baker's exclusions, plus the baker's custom flavours) — core never
+  // touches the flavour tables or that business rule (it's spattoo-api's job).
   useEffect(() => {
-    if (apiClient?.fetchFlavours && bakerSlug) {
-      apiClient.fetchFlavours(bakerSlug)
-        .then(data => Array.isArray(data) ? setAvailableFlavours(data) : null)
-        .catch(() => {});
-    } else if (supabase && bakerId) {
-      Promise.all([
-        supabase.from('baker_flavour_exclusions').select('flavour_id').eq('baker_id', bakerId),
-        supabase.from('flavours').select('id, name, description, sort_order').eq('is_active', true).order('sort_order').order('name'),
-        supabase.from('baker_flavours').select('id, name, description, sort_order').eq('baker_id', bakerId).eq('is_active', true).order('sort_order').order('name'),
-      ]).then(([excl, globals, custom]) => {
-        const excluded = new Set((excl.data ?? []).map(e => e.flavour_id));
-        setAvailableFlavours([
-          ...(globals.data ?? []).filter(f => !excluded.has(f.id)).map(f => ({ ...f, source: 'global' })),
-          ...(custom.data  ?? []).map(f => ({ ...f, source: 'baker' })),
-        ]);
-      }).catch(() => {});
-    }
+    if (!apiClient?.fetchFlavours || !bakerSlug) return;
+    apiClient.fetchFlavours(bakerSlug)
+      .then(data => Array.isArray(data) ? setAvailableFlavours(data) : null)
+      .catch(() => {});
   }, []);
 
   // ── Customer search ─────────────────────────────────────────────────────────

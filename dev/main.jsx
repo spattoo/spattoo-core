@@ -95,6 +95,14 @@ function createApiClient(supabaseClient) {
     fetchBakerSettings: () => authFetch('/api/baker/settings'),
     updateBakerSettings: (settings) =>
       authFetch('/api/baker/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+    // Global flavour master list with this baker's on/off state → [{ id, name, description, excluded }].
+    // The API owns the schema (flavours / baker_flavour_exclusions) and resolution; core only sees flags.
+    fetchBakerFlavours: () => authFetch('/api/baker/flavours'),
+    updateBakerFlavourExclusions: (excludedFlavourIds) =>
+      authFetch('/api/baker/flavours/exclusions', {
+        method: 'PUT',
+        body: JSON.stringify({ excluded_flavour_ids: excludedFlavourIds }),
+      }),
     updateBakerProfile: (fields) =>
       authFetch('/api/baker/profile', { method: 'PATCH', body: JSON.stringify(fields) }),
     fetchBillingStatus:       () => authFetch('/api/billing/status'),
