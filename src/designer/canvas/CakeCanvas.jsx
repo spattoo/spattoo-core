@@ -1506,6 +1506,7 @@ function CakeScene({
             radius={tier.radius}
             height={tier.height}
             color={tier.color}
+            gradient={tier.gradient ?? null}
             yBase={tier.baseY}
             shape={tier.shape ?? 'round'}
             width={tier.width}
@@ -1751,6 +1752,7 @@ function CakeThumbnailScene({ config }) {
           radius={tier.radius}
           height={tier.height}
           color={tier.color}
+          gradient={tier.gradient ?? null}
           yBase={tier.baseY}
           shape={tier.shape ?? 'round'}
           width={tier.width}

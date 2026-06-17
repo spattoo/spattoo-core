@@ -91,6 +91,23 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // Tier gradient — same instance-level model as piping/stickers (eligibility is gated in the UI by
+  // TIER_CAPS.gradient; the stops + balance live on the tier as tier.gradient = { mode, colors,
+  // balance }). `color` stays the solid/stop-0 fallback. ≥2 stops = a gradient; fewer drops it back
+  // to the solid colour. Rendered via the shared applyGradient helper (canvas/gradientMaterial.js).
+  function setTierGradient(index, colors, mode = 'vertical', balance = 0.5) {
+    const clean = (colors ?? []).filter(Boolean);
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index) return t;
+        return clean.length >= 2
+          ? { ...t, gradient: { mode, colors: clean, balance }, color: clean[0] }
+          : { ...t, gradient: undefined, color: clean[0] ?? t.color };
+      }),
+    }));
+  }
+
   function setTierCornerR(index, cornerR) {
     setDesign(prev => ({
       ...prev,
@@ -569,6 +586,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         }
         return {
           color:        t.color ?? '#ffffff',
+          ...(t.gradient && { gradient: t.gradient }),
           topPipings:    topPipings.map(withLayerId),
           bottomPipings: bottomPipings.map(withLayerId),
           ...(t.radius != null  && { radius: t.radius }),
@@ -600,6 +618,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         radius:       isRect ? Math.max(width, depth) / 2 : (t.radius ?? TIER_RADII[i] ?? 0.35),
         height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
         color:        t.color,
+        gradient:     t.gradient ?? null,
         frostingType: t.frostingType ?? 'buttercream',
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
@@ -614,7 +633,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierCornerR, setTopPiping, setBottomPiping,
+    setTierColor, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

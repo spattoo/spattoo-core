@@ -697,8 +697,37 @@ function SelectionOutline({ shp, yBase, height }) {
   );
 }
 
+// Cake-body mesh whose material carries the optional tier gradient. Mirrors CreamMesh: a ref'd
+// MeshStandardMaterial driven through the ONE shared `applyGradient` helper off the geometry's
+// LOCAL bounding box, so the ombre blends in the body's own frame (bottom→top for vertical) and
+// there is no tier-specific shader. `gradient` null ⇒ plain solid colour, exactly as before.
+// `geoSig` changes whenever the geometry's size changes (tier resize) so the bbox is recomputed.
+function TierBody({ position, color, roughness, metalness, gradient, geoSig, children, castShadow = true, receiveShadow = false }) {
+  const meshRef = useRef();
+  const matRef  = useRef();
+  useEffect(() => {
+    if (!matRef.current) return;
+    let bb = null;
+    const geo = meshRef.current?.geometry;
+    if (gradient && geo) {
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      const size = new THREE.Vector3();   geo.boundingBox.getSize(size);
+      const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
+      bb = { min: geo.boundingBox.min.clone(), size, center };
+    }
+    applyGradient(matRef.current, gradient, bb);
+  }, [gradient, geoSig]);
+  return (
+    <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
+      {children}
+      <meshStandardMaterial ref={matRef} color={color} roughness={roughness} metalness={metalness} />
+    </mesh>
+  );
+}
+
 export default function CakeTier({
   radius, height, color, yBase,
+  gradient = null,
   shape = 'round', width, depth, cornerR,
   frostingType = 'buttercream',
   flavour = 'vanilla',
@@ -721,6 +750,10 @@ export default function CakeTier({
   const topY    = yBase + height;
   const centerY = yBase + height / 2;
   const mat = FROSTING_MAT[frostingType] ?? FROSTING_MAT.buttercream;
+  // Vertical gradient runs bottom→top, so the top lid takes the last (top-most) stop; solid colour
+  // otherwise. Mirrors the shader, which maps gt=1 (the cake top) to the final stop.
+  const gradColors = gradient?.colors?.filter(Boolean) ?? [];
+  const capColor   = gradColors.length >= 2 ? gradColors[gradColors.length - 1] : color;
   const shp = useMemo(() => tierShape({ shape, width, depth, radius, cornerR }), [shape, width, depth, radius, cornerR]);
   const isRect = shp.kind === 'rect';
   const prismGeo = useMemo(
@@ -817,18 +850,21 @@ export default function CakeTier({
       {isRect ? (
         // Rounded-rect prism: flat top, only the vertical corners rounded, full footprint.
         // No separate top cap (a cap reads as a stray "board" on a rectangular cake).
-        <mesh geometry={prismGeo} position={[0, yBase, 0]} castShadow receiveShadow>
-          <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
-        </mesh>
+        <TierBody position={[0, yBase, 0]} color={color} roughness={mat.roughness} metalness={mat.metalness}
+          gradient={gradient} geoSig={prismGeo?.uuid} castShadow receiveShadow>
+          <primitive object={prismGeo} attach="geometry" />
+        </TierBody>
       ) : (
         <>
-          <mesh position={[0, centerY, 0]} castShadow receiveShadow>
+          <TierBody position={[0, centerY, 0]} color={color} roughness={mat.roughness} metalness={mat.metalness}
+            gradient={gradient} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
             <cylinderGeometry args={[radius, radius, height, 64]} />
-            <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
-          </mesh>
+          </TierBody>
+          {/* Top lid: a thin disk that reads as the cake's flat top. Under a vertical gradient its
+              own 0.02-tall frame can't show the blend, so it takes the top (last) stop's colour. */}
           <mesh position={[0, topY + 0.01, 0]} castShadow>
             <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
-            <meshStandardMaterial color={color} roughness={mat.roughness - 0.08} />
+            <meshStandardMaterial color={capColor} roughness={mat.roughness - 0.08} />
           </mesh>
         </>
       )}

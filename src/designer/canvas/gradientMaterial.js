@@ -9,8 +9,12 @@ import * as THREE from 'three';
 // untouched. We only swap the per-pixel base (diffuse) colour for a blend across 2–3 stops.
 //
 // Eligibility is config-driven (`allowed_actions.gradient`); the actual stops + mode are chosen by
-// the user on the design instance (`sticker.gradient = { mode, colors }`). This module is the ONE
-// place the gradient is expressed — the sticker and piping render paths both call into it.
+// the user on the design instance (`sticker.gradient = { mode, colors, balance }`). This module is
+// the ONE place the gradient is expressed — the sticker and piping render paths both call into it.
+//
+// `balance` (0..1, default 0.5) biases which stop dominates: 0.5 is the even blend (unchanged
+// behaviour for callers that never set it), <0.5 gives stop 0 more of the surface, >0.5 the later
+// stops. It only reshapes the blend parameter, so it updates live with no recompile.
 
 export const GRADIENT_MODES = ['swirl', 'vertical', 'linear'];
 const MODE_INDEX = { swirl: 0, vertical: 1, linear: 2 };
@@ -37,6 +41,7 @@ const FRAG_COMMON = [
   'uniform vec3 uGMin;',
   'uniform vec3 uGSize;',
   'uniform vec3 uGCenter;',
+  'uniform float uGBalance;',
 ].join('\n');
 
 const FRAG_COLOR = `#include <color_fragment>
@@ -50,7 +55,13 @@ const FRAG_COLOR = `#include <color_fragment>
     float ang = atan(vGradLocal.z - uGCenter.z, vGradLocal.x - uGCenter.x); // -PI..PI
     gt = 1.0 - abs(ang / 3.14159265359);  // mirror so ±PI meet (no hard seam): 0 .. 1 .. 0
   }
-  gt = smoothstep(0.0, 1.0, clamp(gt, 0.0, 1.0));
+  gt = clamp(gt, 0.0, 1.0);
+  // Balance bias: remap gt by gt^k where k = log(balance)/log(0.5). balance 0.5 → k=1 (identity,
+  // the original even blend); <0.5 → k>1 pulls gt toward 0 so stop 0 dominates; >0.5 → k<1 so the
+  // later stops dominate. Clamp keeps k finite at the extremes.
+  float gk = log(clamp(uGBalance, 0.001, 0.999)) / log(0.5);
+  gt = pow(gt, gk);
+  gt = smoothstep(0.0, 1.0, gt);
   vec3 gcol;
   if (uGCount <= 1) {
     gcol = uGColors[0];
@@ -75,13 +86,14 @@ function ensureUniforms(mat) {
       uGMin:    { value: new THREE.Vector3() },
       uGSize:   { value: new THREE.Vector3(1, 1, 1) },
       uGCenter: { value: new THREE.Vector3() },
+      uGBalance:{ value: 0.5 },
     };
   }
   return mat.userData.__gradUniforms;
 }
 
 // Apply (or remove) a gradient on one material.
-//   gradient : { mode, colors:[hex,…] } | null
+//   gradient : { mode, colors:[hex,…], balance? } | null  (balance 0..1, default 0.5)
 //   bbox     : { min:THREE.Vector3, size:THREE.Vector3, center:THREE.Vector3 } in the mesh's local
 //              space — used to normalise the vertical/linear blend and to find the swirl axis.
 export function applyGradient(mat, gradient, bbox) {
@@ -106,6 +118,7 @@ export function applyGradient(mat, gradient, bbox) {
   for (let i = 0; i < 3; i++) u.uGColors.value[i].set(colors[Math.min(i, count - 1)]);
   u.uGCount.value = count;
   u.uGMode.value = MODE_INDEX[gradient.mode] ?? 0;
+  u.uGBalance.value = typeof gradient.balance === 'number' ? gradient.balance : 0.5;
   if (bbox) {
     u.uGMin.value.copy(bbox.min);
     u.uGSize.value.copy(bbox.size);

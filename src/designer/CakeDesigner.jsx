@@ -21,7 +21,7 @@ import BillingPanel from '../settings/BillingPanel';
 
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
-const TIER_CAPS   = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
+const TIER_CAPS   = { color: true, gradient: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
@@ -233,10 +233,15 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
 // colour wheel. Purely presentational and SHARED by every colour popup (sticker, piping, …): the
 // caller owns the stops/mode (read off whatever instance it edits) and the write callbacks. This is
 // the one place the gradient editor UI lives — there is no per-element-type copy.
-//   stops      : array of hex strings (1 = solid, 2–3 = a gradient)
+//   stops      : array of hex strings (1 = solid, 2–3 a gradient)
 //   activeStop : index the wheel is currently editing
 //   mode       : 'swirl' | 'vertical' | 'linear'
-function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange }) {
+//   modes      : which directions to offer (default all three); a single entry fixes the direction
+//                and hides the toggle (the cake base is vertical-only).
+//   balance    : 0..1 blend bias (0.5 = even). Omit to hide the balance slider (sticker/piping today).
+const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear' };
+function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
+                            modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange }) {
   return (
     <div style={s.gradientBlock}>
       <div style={s.gradientLabel}>Gradient colors</div>
@@ -256,14 +261,25 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
           <button style={s.gradientStopAdd} title="Add color" onClick={onAddStop}>+</button>
         )}
       </div>
-      {stops.length >= 2 && (
+      {stops.length >= 2 && modes.length > 1 && (
         <div style={s.gradientModes}>
-          {[['swirl', 'Swirl'], ['vertical', 'Vertical'], ['linear', 'Linear']].map(([m, label]) => (
+          {modes.map(m => (
             <button key={m} onClick={() => onModeChange(m)}
               style={{ ...s.gradientMode, ...(mode === m ? s.gradientModeOn : null) }}>
-              {label}
+              {MODE_LABELS[m] ?? m}
             </button>
           ))}
+        </div>
+      )}
+      {stops.length >= 2 && balance != null && (
+        <div style={{ marginTop: 10 }}>
+          <div style={s.gradientLabel}>Balance</div>
+          <input type="range" min={0.2} max={0.8} step={0.01} value={balance}
+            onChange={e => onBalanceChange(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#888' }}>
+            <span>Primary</span><span>Secondary</span>
+          </div>
         </div>
       )}
     </div>
@@ -882,7 +898,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
@@ -2467,30 +2483,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const currentColor = getCurrentColor();
 
   // ── Gradient (multi-colour) controls ──────────────────────────────────────
-  // Eligibility is config-driven (allowed_actions.gradient); the stops + direction live on the
-  // design instance as sticker.gradient = { mode, colors:[…] }. `color` stays the solid/stop-0
-  // fallback so an element with one colour behaves exactly as before. Stops drive the shader in
-  // canvas/gradientMaterial.js. Up to 3 stops.
+  // Eligibility is config-driven: allowed_actions.gradient for elements, TIER_CAPS.gradient for the
+  // cake base. The stops + direction + balance live on the design instance as
+  // instance.gradient = { mode, colors:[…], balance }. `color` stays the solid/stop-0 fallback so a
+  // single-colour instance behaves exactly as before. Stops drive the shared shader in
+  // canvas/gradientMaterial.js (up to 3 stops). A tier and a sticker are the two gradient targets;
+  // both use the identical stops/mode/balance model — no per-type gradient code.
   const selectedSticker = selectedEl?.type === 'sticker'
     ? design.stickers.find(s => s.id === selectedEl.id) : null;
-  const gradientEligible = !!caps?.gradient && !!selectedSticker;
+  const selectedTierObj = selectedEl?.type === 'tier'
+    ? (design.tiers[selectedEl.index] ?? null) : null;
+  const isTierGradient = selectedEl?.type === 'tier';
+  const gradTarget = selectedSticker ?? selectedTierObj;
+  const gradientEligible = !!caps?.gradient && !!gradTarget;
   // The stops to show: the saved gradient if any, else a single chip = the solid colour.
   const gradStops = gradientEligible
-    ? (selectedSticker.gradient?.colors?.length
-        ? selectedSticker.gradient.colors
-        : [selectedSticker.color ?? '#ffffff'])
+    ? (gradTarget.gradient?.colors?.length
+        ? gradTarget.gradient.colors
+        : [gradTarget.color ?? '#ffffff'])
     : [];
-  const gradMode = selectedSticker?.gradient?.mode ?? 'swirl';
+  // Tiers blend vertically (ombre up the wall); elements default to swirl. A saved mode always wins.
+  const gradMode = gradTarget?.gradient?.mode ?? (isTierGradient ? 'vertical' : 'swirl');
+  const gradBalance = gradTarget?.gradient?.balance ?? 0.5;
   const activeStop = Math.min(gradStop, Math.max(0, gradStops.length - 1));
   // The colour the wheel edits: the active stop when eligible, else the normal single colour.
   const wheelColor = (gradientEligible && !activeGroupKey) ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
 
-  function writeGradient(colors, mode = gradMode) {
+  function writeGradient(colors, mode = gradMode, balance = gradBalance) {
     const clean = colors.filter(Boolean);
+    // Tier and sticker share the model; route to the matching setter. Both drop the gradient and
+    // keep the solid colour when fewer than 2 stops remain.
+    if (isTierGradient) { setTierGradient(selectedEl.index, clean, mode, balance); return; }
     if (clean.length >= 2) {
-      updateSticker(selectedEl.id, { gradient: { mode, colors: clean }, color: clean[0] });
+      updateSticker(selectedEl.id, { gradient: { mode, colors: clean, balance }, color: clean[0] });
     } else {
-      // Back to solid — drop the gradient, keep the remaining colour.
       updateSticker(selectedEl.id, { gradient: null, color: clean[0] ?? selectedSticker.color });
     }
   }
@@ -2500,8 +2526,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!gradientEligible) { handleColorChange(c); return; }
     const next = gradStops.slice();
     next[activeStop] = c;
-    // 1 stop is just the solid colour; ≥2 stops form the gradient.
-    if (next.length < 2) { updateSticker(selectedEl.id, { color: c }); return; }
+    // 1 stop is just the solid colour; route through the normal colour path (tier or sticker).
+    if (next.length < 2) {
+      if (isTierGradient) handleColorChange(c);
+      else updateSticker(selectedEl.id, { color: c });
+      return;
+    }
     writeGradient(next);
   }
   function addGradStop() {
@@ -3850,13 +3880,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
               {/* Gradient controls — config-gated (allowed_actions.gradient). Reuses the shared
                   GradientControls component (also used by the piping popup). */}
-              {gradientEligible && colorOpen && !activeGroupKey && (
+              {gradientEligible && (colorOpen || tierPanelVisible) && !activeGroupKey && (
                 <GradientControls
                   stops={gradStops} activeStop={activeStop} mode={gradMode}
                   onSelectStop={setGradStop}
                   onAddStop={addGradStop}
                   onRemoveStop={removeGradStop}
                   onModeChange={m => writeGradient(gradStops, m)}
+                  // Cake base blends vertically (bottom→top ombre); offer the balance slider so the
+                  // customer chooses which colour dominates.
+                  modes={isTierGradient ? ['vertical'] : undefined}
+                  balance={isTierGradient ? gradBalance : undefined}
+                  onBalanceChange={b => writeGradient(gradStops, gradMode, b)}
                 />
               )}
 
