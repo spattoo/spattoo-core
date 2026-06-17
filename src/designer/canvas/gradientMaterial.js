@@ -135,8 +135,13 @@ export function applyGradient(mat, gradient, bbox) {
         .replace('#include <common>', FRAG_COMMON)
         .replace('#include <color_fragment>', FRAG_COLOR);
     };
-    // Distinct key so the renderer compiles a gradient variant rather than reusing the stock cache.
-    mat.customProgramCacheKey = () => 'grad:on';
+    // Unique per-material key so each gradient material compiles its OWN program. A constant key
+    // ('grad:on') made every gradient material share one WebGLProgram; since onBeforeCompile binds
+    // the custom uniforms (uGColors/…) to whichever material compiled first, the others never upload
+    // their own values and render that first material's colours (GPU/draw-order dependent). Two cake
+    // tiers with different gradients hit exactly this. mat.uuid is stable per instance, so each tier
+    // gets its own program + its own uniforms — no cross-material contamination.
+    mat.customProgramCacheKey = () => 'grad:' + mat.uuid;
     mat.userData.__gradOn = true;
     mat.needsUpdate = true;
   }
