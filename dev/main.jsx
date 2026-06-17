@@ -113,11 +113,20 @@ function createApiClient(supabaseClient) {
 const apiClient = createApiClient(supabase);
 const path = window.location.pathname;
 
-// Public storefront demo — no auth. /storefront?slug=feelings-flavours
-if (path === '/storefront') {
-  const params = new URLSearchParams(window.location.search);
-  const slug = params.get('slug') || 'feelings-flavours';
+// Public storefront — no auth. Resolved from the SUBDOMAIN (yellow-baker.localhost,
+// mirroring prod yellow-baker.spattoo.com), falling back to /storefront?slug= for
+// plain-localhost dev.
+const host = window.location.hostname;
+const subdomainSlug = host.endsWith('.localhost') && host !== 'localhost'
+  ? host.slice(0, host.indexOf('.'))
+  : null;
+const params = new URLSearchParams(window.location.search);
+const storefrontSlug = subdomainSlug
+  || (path === '/storefront' ? (params.get('slug') || 'feelings-flavours') : null);
+
+if (storefrontSlug) {
   const inviteId = params.get('invite');
+  const slug = storefrontSlug;
   const container = document.getElementById('root');
   if (!container._reactRoot) container._reactRoot = ReactDOM.createRoot(container);
   container._reactRoot.render(
@@ -152,7 +161,7 @@ function Root() {
   );
 }
 
-if (path !== '/storefront') {
+if (!storefrontSlug) {
   const container = document.getElementById('root');
   if (!container._reactRoot) {
     container._reactRoot = ReactDOM.createRoot(container);

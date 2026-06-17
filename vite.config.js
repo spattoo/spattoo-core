@@ -6,7 +6,7 @@ const isDev = process.env.NODE_ENV !== 'production';
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173 },
+  server: { port: 5173, allowedHosts: ['.localhost'] },  // accept <slug>.localhost storefront subdomains
   root: isDev ? 'dev' : undefined,
   build: isDev ? undefined : {
     lib: {
