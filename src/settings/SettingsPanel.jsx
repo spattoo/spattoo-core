@@ -1,14 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-
-function useIsMobile() {
-  const [m, setM] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setM(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return m;
-}
+import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -95,49 +86,6 @@ function ColorField({ label, hint, value, onChange }) {
 
 // ── Layout helpers ─────────────────────────────────────────────────────────────
 
-function Toggle({ checked, onChange }) {
-  return (
-    <div onClick={() => onChange(!checked)} style={{
-      width: 44, height: 24, borderRadius: 12, cursor: 'pointer',
-      background: checked ? '#2C4433' : '#D1D5DB',
-      position: 'relative', flexShrink: 0, transition: 'background 0.2s',
-    }}>
-      <div style={{
-        position: 'absolute', top: 3, left: checked ? 23 : 3,
-        width: 18, height: 18, borderRadius: '50%',
-        background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-        transition: 'left 0.2s',
-      }} />
-    </div>
-  );
-}
-
-function Field({ label, hint, children }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{label}</span>
-      {hint && <span style={{ fontSize: 11, color: '#888' }}>{hint}</span>}
-      {children}
-    </div>
-  );
-}
-
-function Section({ title, children }) {
-  return (
-    <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-      <div style={{
-        padding: '12px 20px', borderBottom: '1px solid #F3F4F6',
-        fontSize: 11, fontWeight: 800, letterSpacing: 1,
-        textTransform: 'uppercase', color: '#9BB5A2', background: '#FAFCFB',
-        borderRadius: '16px 16px 0 0',
-      }}>{title}</div>
-      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 const inp = {
   padding: '9px 12px', borderRadius: 10,
   border: '1.5px solid #C5D4C8', fontSize: 13,
@@ -180,10 +128,6 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   const [error,    setError]    = useState(null);
   const [saved,    setSaved]    = useState(false);
   const [urlError, setUrlError] = useState(null);
-  // Global flavour master list ([{ id, name, description }]) + the ids this baker has switched
-  // off. `flavours === null` means the API doesn't expose flavours yet → hide the section.
-  const [flavours,         setFlavours]         = useState(null);
-  const [excludedFlavours, setExcludedFlavours] = useState(() => new Set());
 
   useEffect(() => {
     if (!open) return;
@@ -202,29 +146,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-
-    // Flavours load on their own — a missing endpoint just hides the section, it must never
-    // break the rest of Settings. The API returns the global list flagged with this baker's
-    // exclusions; core never resolves that itself.
-    setFlavours(null);
-    if (apiClient.fetchBakerFlavours) {
-      apiClient.fetchBakerFlavours()
-        .then(list => {
-          if (!Array.isArray(list)) return;
-          setFlavours(list);
-          setExcludedFlavours(new Set(list.filter(f => f.excluded).map(f => f.id)));
-        })
-        .catch(() => setFlavours(null));
-    }
   }, [open]);
-
-  function toggleFlavour(id) {
-    setExcludedFlavours(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
 
   function setSetting(path, value) {
     setSettings(prev => {
@@ -288,9 +210,6 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
       await Promise.all([
         apiClient.updateBakerSettings(settings),
         apiClient.updateBakerProfile(profilePayload),
-        ...(flavours && apiClient.updateBakerFlavourExclusions
-          ? [apiClient.updateBakerFlavourExclusions([...excludedFlavours])]
-          : []),
       ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -540,36 +459,6 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   </Field>
                 )}
               </Section>
-
-              {/* ── Flavours ── */}
-              {flavours && (
-                <Section title="Flavours">
-                  <Field label="Offered flavours" hint="Turn off any flavour you don't offer. Hidden flavours won't appear to customers placing an order.">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
-                      {flavours.length === 0 && (
-                        <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>No flavours available yet.</span>
-                      )}
-                      {flavours.map((f, i) => {
-                        const offered = !excludedFlavours.has(f.id);
-                        return (
-                          <div key={f.id} style={{
-                            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0',
-                            borderTop: i === 0 ? 'none' : '1px solid #F3F4F6',
-                          }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: offered ? '#2C4433' : '#9CA3AF' }}>{f.name}</div>
-                              {f.description && (
-                                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{f.description}</div>
-                              )}
-                            </div>
-                            <Toggle checked={offered} onChange={() => toggleFlavour(f.id)} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Field>
-                </Section>
-              )}
 
               {/* Save */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
