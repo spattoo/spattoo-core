@@ -4,6 +4,7 @@ import { OrbitControls, Environment } from '@react-three/drei';
 import { TopPipingRing, BottomPipingRing } from './CakeTier.jsx';
 import { PIPING_FRONT_ANGLE } from '../constants.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
+import { SceneLoader } from './CakeSpinner.jsx';
 
 // Small live 3D preview of how a piping element renders on one cake zone (rim/board),
 // in the currently-chosen layout (ring vs single). Reuses the real ring components so
@@ -76,7 +77,7 @@ export default function PipingPreview({
       <ambientLight intensity={0.85} />
       <directionalLight position={[4, 9, 6]} intensity={1.3} />
       <directionalLight position={[-3, 3, -3]} intensity={0.4} />
-      <Suspense fallback={null}>
+      <Suspense fallback={<SceneLoader size={20} />}>
         <Environment preset="apartment" />
         <PreviewCakeMeshes placed={placed} />
         {isTop ? (

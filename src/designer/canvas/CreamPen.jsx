@@ -5,6 +5,7 @@ import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { buildRay } from '../utils/raycasting.js';
 import { creamMaterialProps } from './CakeTier.jsx';
 import StampStroke from './StampStroke.jsx';
+import { LoadingPing } from './loadingRegistry.js';
 
 // ── Cream Pen (freehand piping) ──────────────────────────────────────────────
 // Renders the committed freehand strokes (design.piping) and, while drawMode is on,
@@ -143,7 +144,7 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
   return (
     <>
       {piping.map((s, i) => ((s.kind === 'stamp' || s.kind === 'stamprope')
-        ? <Suspense key={s.id ?? i} fallback={null}><StampStroke stroke={s} /></Suspense>
+        ? <Suspense key={s.id ?? i} fallback={<LoadingPing />}><StampStroke stroke={s} /></Suspense>
         : <StrokeMesh key={s.id ?? i} {...s} />))}
 
       {/* Live preview: swept rope/heap only. In stamp mode the stamps appear on release

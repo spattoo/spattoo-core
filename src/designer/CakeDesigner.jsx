@@ -6,6 +6,7 @@ import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
+import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians } from './placement.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
@@ -3298,7 +3299,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f4f4f5', fontFamily: "'Quicksand', sans-serif" }}>
         <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-        <div style={{ color: '#999', fontSize: 14, fontWeight: 600, letterSpacing: 0.5 }}>Loading…</div>
+        <CakeSpinner label="Loading…" />
       </div>
     );
   }
@@ -3535,7 +3536,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
             <div style={s.flyoutScroll}>
             {elementTypesLoading && (
-              <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}><CakeSpinner size={20} /></div>
             )}
 
             {/* Cream piping — thumbnail grid, tap a style to open popup */}
@@ -3733,7 +3734,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </FilterPanel>
 
             {templatesLoading && (
-              <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}><CakeSpinner size={20} /></div>
             )}
             {!templatesLoading && templates.length === 0 && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
@@ -3808,7 +3809,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* Shrink the live canvas to the left when the piping strip is open, so the
               cake stays fully visible beside it (the Canvas is absolute inset:0 of this div). */}
           <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 248 : 276) : (elementStackOpen ? 220 : 0), transition: 'right 0.18s ease' }}>
-          <Suspense fallback={<div style={s.loading}>Loading 3D cake...</div>}>
+          <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
               config={canvasConfig}
               selectedTier={selectedTier}
@@ -3847,6 +3848,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             />
           </Suspense>
           </div>
+
+          {/* ONE loader for the whole canvas while any decoration loads (e.g. opening a
+              template with many elements) — never one badge per element. */}
+          <DecorLoadingOverlay />
 
           {/* ── Sticker & topper edit popup (DOM overlay — desktop only) ──
               A right-side vertical popup, matching the cream-piping popup so element
@@ -5096,10 +5101,6 @@ const s = {
     // Match the 3D canvas's clear colour so the strip exposed when the piping popup shrinks
     // the canvas (right:184) blends in seamlessly instead of showing a hard "cut" edge.
     background:'#f4f4f5',
-  },
-  loading: {
-    position:'absolute', inset:0, display:'flex',
-    alignItems:'center', justifyContent:'center', color:'#666', fontSize:14,
   },
   hint: {
     position:'absolute', top:14, left:'50%', transform:'translateX(-50%)',

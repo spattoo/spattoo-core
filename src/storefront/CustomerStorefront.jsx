@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 
 // CustomerStorefront — the public, branded landing a customer sees before entering
 // the design space. Logo + story + brand colours + "Start designing" CTA, and the
@@ -54,7 +55,7 @@ export default function CustomerStorefront({
     return () => { alive = false; };
   }, [slug, bakerProp, inviteId, apiBaseUrl]);
 
-  if (loading) return <Centered>Loading…</Centered>;
+  if (loading) return <Centered><CakeSpinner label="Loading…" /></Centered>;
   if (error)   return <Centered>{error}</Centered>;
   if (!baker)  return <Centered>Storefront unavailable</Centered>;
 

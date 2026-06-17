@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { creamMaterialProps } from './CakeTier.jsx';
 import StampStroke from './StampStroke.jsx';
+import { SceneLoader } from './CakeSpinner.jsx';
 
 // ── Cream Pen calibrator ─────────────────────────────────────────────────────
 // A small live preview inside the pen popup so you can dial the nozzle / thickness /
@@ -44,7 +45,7 @@ function StampSamples({ url, thickness, softness, color, spacing }) {
     points: Array.from({ length: 9 }, (_, i) => [0, thickness, ((i / 8) - 0.5) * 2 * L]),
   }), [thickness, spacing, L]);
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<SceneLoader size={18} />}>
       <group position={[-spread, 0, 0]}><StampStroke stroke={tap} url={url} color={color} softness={softness} /></group>
       <group position={[spread, 0, 0]}><StampStroke stroke={rope} url={url} color={color} softness={softness} /></group>
     </Suspense>
@@ -96,7 +97,7 @@ export default function CreamPenCalibrator({ nozzle, thickness, softness, color,
         <ambientLight intensity={0.85} />
         <directionalLight position={[4, 9, 6]} intensity={1.3} />
         <directionalLight position={[-3, 3, -3]} intensity={0.4} />
-        <Suspense fallback={null}>
+        <Suspense fallback={<SceneLoader size={18} />}>
           <Environment preset="apartment" />
           <mesh position={[0, -0.002, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
             <circleGeometry args={[boardR, 48]} />

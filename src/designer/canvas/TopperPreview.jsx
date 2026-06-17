@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { rectSidePlacement } from '../geometry/surface.js';
 import { SIDE_STICKER_SURFACE_OFFSET, STICKER_SIZE } from '../constants.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
+import { SceneLoader } from './CakeSpinner.jsx';
 
 const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
 
@@ -135,7 +136,7 @@ export default function TopperPreview({ glbUrl, parts = null, placement = 'top',
       <ambientLight intensity={0.85} />
       <directionalLight position={[4, 9, 6]} intensity={1.3} />
       <directionalLight position={[-3, 3, -3]} intensity={0.4} />
-      <Suspense fallback={null}>
+      <Suspense fallback={<SceneLoader size={20} />}>
         <Environment preset="apartment" />
         <PreviewCakeMeshes placed={placed} />
         {parts && parts.length

@@ -4,6 +4,7 @@ import { OrbitControls, Text3D, Text, Center, Html, Environment, useGLTF, useTex
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
+import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
 import CreamPen from './CreamPen.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
@@ -524,8 +525,12 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
+    // While this element's GLB/texture loads, LoadingPing registers it with the shared
+    // loading count (it draws nothing); a single canvas overlay shows ONE spinner for the
+    // whole page (see loadingRegistry). Suspense clears the ping when the asset resolves
+    // (cached assets resolve synchronously → never counted). Type/zone-agnostic.
     <TextureErrorBoundary>
-      <Suspense fallback={null}>
+      <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} onSeat={onSeat} />
           : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
