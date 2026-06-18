@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import { CakeDesigner, CreateTemplate, AuthGate, CustomerStorefront } from '../src/index.js';
+import SettingsPanel from '../src/settings/SettingsPanel.jsx';
 
 const supabase = createClient(
   'https://lsvmnycehfopxsgruwmk.supabase.co',
@@ -40,6 +41,7 @@ function createApiClient(supabaseClient) {
     fetchTemplates: () => authFetch('/api/templates'),
     fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
     fetchBakerProfile: () => authFetch('/api/baker/profile'),
+    fetchStorefrontThemes: () => authFetch('/api/baker/storefront-themes'),
     getSignedUploadUrl: (folder, filename, contentType) =>
       authFetch('/api/storage/sign-upload', {
         method: 'POST',
@@ -145,6 +147,12 @@ function CustomerApp({ slug, inviteId }) {
     <CustomerStorefront
       slug={slug}
       inviteId={inviteId}
+      logoUrl="/feelings-flavours-logo.png"  /* preview: real baker has no logo yet */
+      gallery={params.get('gallery') === 'off' ? [] : [   /* ?gallery=off shows the fallback */
+        { url: '/sample-cake-1.png', caption: 'Mango cream, 3 tiers' },
+        { url: '/sample-cake-2.png', caption: 'Classic vanilla' },
+        { url: '/sample-cake-3.png', caption: 'Birthday special' },
+      ]}
       apiBaseUrl={API_URL}
       supabase={supabase}
       onStartDesign={(b) => console.log('Start design for', b.slug)}
@@ -181,7 +189,34 @@ function Root() {
   );
 }
 
-if (!storefrontSlug) {
+// Standalone Settings preview (no auth) — /settings-preview — with a mock apiClient so the
+// Storefront Theme picker can be reviewed without the backend deployed.
+const settingsPreview = path === '/settings-preview';
+if (settingsPreview) {
+  const mockApiClient = {
+    fetchBakerSettings: async () => ({ delivery: {} }),
+    fetchBakerProfile:  async () => ({ baker: {
+      name: 'Feelings & Flavours', slug: 'feelings-flavours',
+      primary_color: '#9b5f72', accent_color: '#f5b8c8',
+      logo_url: '/feelings-flavours-logo.png',
+      instagram_handle: '', website_url: '', tagline: '', storefront_theme_id: 1,
+    } }),
+    fetchStorefrontThemes: async () => ({ themes: [
+      { id: 1, key: 'spotlight',  name: 'Spotlight',  description: 'A dramatic dark hero with a spotlit, rotating 3D cake. Bold and modern.', is_active: true },
+      { id: 2, key: 'patisserie', name: 'Patisserie', description: 'A light, elegant editorial layout that lets your cakes lead.',           is_active: false },
+      { id: 3, key: 'aurora',     name: 'Aurora',     description: 'Soft, airy and colourful — a bright, welcoming storefront.',              is_active: false },
+    ] }),
+    updateBakerSettings: async () => ({ ok: true }),
+    updateBakerProfile:  async () => ({ ok: true }),
+  };
+  const container = document.getElementById('root');
+  if (!container._reactRoot) container._reactRoot = ReactDOM.createRoot(container);
+  container._reactRoot.render(
+    <SettingsPanel open onClose={() => {}} apiClient={mockApiClient} primaryColor="#9b5f72" accentColor="#f5b8c8" />
+  );
+}
+
+if (!storefrontSlug && !settingsPreview) {
   const container = document.getElementById('root');
   if (!container._reactRoot) {
     container._reactRoot = ReactDOM.createRoot(container);

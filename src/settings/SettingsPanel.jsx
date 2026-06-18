@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
+import ThemePreview from '../storefront/ThemePreview.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -128,6 +129,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   const [error,    setError]    = useState(null);
   const [saved,    setSaved]    = useState(false);
   const [urlError, setUrlError] = useState(null);
+  const [themes,   setThemes]   = useState([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -135,14 +138,16 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
     Promise.all([
       apiClient.fetchBakerSettings(),
       apiClient.fetchBakerProfile(),
+      apiClient.fetchStorefrontThemes?.().catch(() => ({ themes: [] })) ?? Promise.resolve({ themes: [] }),
     ])
-      .then(([s, { baker }]) => {
+      .then(([s, { baker }, themesRes]) => {
         const loaded = s ?? {};
         if (!loaded.store_hours) {
           loaded.store_hours = Object.fromEntries(DAYS.map(d => [d.key, { ...DEFAULT_DAY_HOURS }]));
         }
         setSettings(loaded);
         setProfile(baker ?? {});
+        setThemes(themesRes?.themes ?? []);
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
@@ -185,6 +190,16 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
     }
   }
 
+  // Publish from the theme preview/customiser — persists theme + brand colours immediately.
+  async function publishStorefront({ storefront_theme_id, primary_color, accent_color }) {
+    await apiClient.updateBakerProfile({
+      storefront_theme_id, primary_color, accent_color,
+      instagram_handle: profile.instagram_handle, website_url: profile.website_url, tagline: profile.tagline,
+    });
+    setProfile(p => ({ ...p, storefront_theme_id, primary_color, accent_color }));
+    onBrandingUpdate?.({ primary_color, accent_color, logo_url: profile.logo_url });
+  }
+
   async function handleSave() {
     const websiteVal = profile?.website_url ?? '';
     if (!isValidWebsite(websiteVal)) {
@@ -200,6 +215,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         website_url:      profile.website_url,
         tagline:          profile.tagline,
       };
+      if (profile.storefront_theme_id != null) profilePayload.storefront_theme_id = profile.storefront_theme_id;
       if (logoFile && apiClient.getSignedUploadUrl) {
         const ext = logoFile.name.split('.').pop();
         const filename = `${crypto.randomUUID()}.${ext}`;
@@ -336,6 +352,26 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   onChange={v => setProfileField('accent_color', v)}
                 />
               </Section>
+
+              {/* ── Storefront Theme ── */}
+              {themes.length > 0 && (
+                <Section title="Storefront Theme">
+                  <Field label="Theme" hint="See your storefront in each theme, tweak the colours, then publish.">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 6, padding: '12px 14px', borderRadius: 12, border: '1.5px solid #C5D4C8', background: '#fff' }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: '#2C4433' }}>
+                          {themes.find(t => t.id === profile.storefront_theme_id)?.name ?? 'Spotlight'}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#9BB5A2', marginTop: 2 }}>Current theme</div>
+                      </div>
+                      <button type="button" onClick={() => setPreviewOpen(true)}
+                        style={{ flexShrink: 0, padding: '10px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, color: '#fff', background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})` }}>
+                        Preview &amp; customise →
+                      </button>
+                    </div>
+                  </Field>
+                </Section>
+              )}
 
               {/* ── Store Info ── */}
               <Section title="Store Info">
@@ -483,6 +519,20 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
           )}
         </div>
       </div>
+
+      <ThemePreview
+        open={previewOpen}
+        themes={themes}
+        value={{
+          storefront_theme_id: profile?.storefront_theme_id,
+          primary_color: profile?.primary_color,
+          accent_color:  profile?.accent_color,
+        }}
+        baker={{ name: profile?.name, slug: profile?.slug, story: profile?.story, instagram_handle: profile?.instagram_handle, website_url: profile?.website_url }}
+        logoUrl={profile?.logo_url || null}
+        onPublish={publishStorefront}
+        onClose={() => setPreviewOpen(false)}
+      />
     </>
   );
 }
