@@ -43,8 +43,14 @@ function createApiClient(supabaseClient) {
     fetchBakerProfile: () => authFetch('/api/baker/profile'),
     fetchStorefrontThemes: () => authFetch('/api/baker/storefront-themes'),
     fetchStorefrontPhotos: () => authFetch('/api/baker/storefront-photos'),
+    addStorefrontPhoto: (storage_key, caption) =>
+      authFetch('/api/baker/storefront-photos', { method: 'POST', body: JSON.stringify({ storage_key, caption }) }),
+    deleteStorefrontPhoto: (id) =>
+      authFetch(`/api/baker/storefront-photos/${id}`, { method: 'DELETE' }),
     updateStorefrontPhotos: (photos) =>
       authFetch('/api/baker/storefront-photos', { method: 'PUT', body: JSON.stringify({ photos }) }),
+    publishStorefront:   () => authFetch('/api/baker/storefront/publish',   { method: 'POST' }),
+    unpublishStorefront: () => authFetch('/api/baker/storefront/unpublish', { method: 'POST' }),
     getSignedUploadUrl: (folder, filename, contentType) =>
       authFetch('/api/storage/sign-upload', {
         method: 'POST',
@@ -203,6 +209,7 @@ if (settingsPreview) {
       primary_color: '#9b5f72', accent_color: '#f5b8c8',
       logo_url: '/feelings-flavours-logo.png',
       instagram_handle: '', website_url: '', tagline: '', storefront_theme_id: 1,
+      storefront_published: false,
     } }),
     fetchStorefrontThemes: async () => ({ themes: [
       { id: 1, key: 'spotlight',  name: 'Spotlight',  description: 'A dramatic dark hero with a spotlit, rotating 3D cake. Bold and modern.', is_active: true },
@@ -216,7 +223,11 @@ if (settingsPreview) {
       { id: 'a', key: 'storefront/gallery/1', url: '/sample-cake-1.png', caption: 'Mango cream' },
       { id: 'b', key: 'storefront/gallery/2', url: '/sample-cake-2.png', caption: 'Classic vanilla' },
     ] }),
+    addStorefrontPhoto:    async (key, caption) => ({ id: 'mock-' + Math.random().toString(36).slice(2), key, url: key, caption }),
+    deleteStorefrontPhoto: async () => ({ ok: true }),
     updateStorefrontPhotos: async () => ({ ok: true }),
+    publishStorefront:   async () => ({ ok: true, storefront_published: true }),
+    unpublishStorefront: async () => ({ ok: true, storefront_published: false }),
   };
   const container = document.getElementById('root');
   if (!container._reactRoot) container._reactRoot = ReactDOM.createRoot(container);

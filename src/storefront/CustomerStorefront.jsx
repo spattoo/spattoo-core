@@ -139,7 +139,6 @@ export default function CustomerStorefront({
               ? <a key={n.label} href={n.href} style={s.drawerLink} onClick={() => setMenuOpen(false)}>{n.label}</a>
               : <button key={n.label} type="button" style={{ ...s.drawerLink, ...s.drawerLinkBtn }} onClick={() => { setMenuOpen(false); n.action(); }}>{n.label}</button>
             )}
-            <button type="button" style={s.drawerCta} onClick={() => { setMenuOpen(false); handleCta(); }}>{designLabel}</button>
           </nav>
         </div>
       )}

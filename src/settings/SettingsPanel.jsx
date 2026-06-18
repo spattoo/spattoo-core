@@ -198,8 +198,14 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
     };
     if (portrait_key !== undefined) payload.portrait_url = portrait_key;  // new portrait (R2 key) or null to clear
     await apiClient.updateBakerProfile(payload);
-    setProfile(p => ({ ...p, storefront_theme_id, primary_color, accent_color }));
+    if (apiClient.publishStorefront) await apiClient.publishStorefront();   // take it live
+    setProfile(p => ({ ...p, storefront_theme_id, primary_color, accent_color, storefront_published: true }));
     onBrandingUpdate?.({ primary_color, accent_color, logo_url: profile.logo_url });
+  }
+
+  async function unpublishStorefront() {
+    if (apiClient.unpublishStorefront) await apiClient.unpublishStorefront();
+    setProfile(p => ({ ...p, storefront_published: false }));
   }
 
   async function handleSave() {
@@ -531,10 +537,12 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
           primary_color: profile?.primary_color,
           accent_color:  profile?.accent_color,
           portrait_url:  profile?.portrait_url,
+          storefront_published: profile?.storefront_published,
         }}
         baker={{ name: profile?.name, slug: profile?.slug, story: profile?.story, instagram_handle: profile?.instagram_handle, website_url: profile?.website_url }}
         logoUrl={profile?.logo_url || null}
         onPublish={publishStorefront}
+        onUnpublish={unpublishStorefront}
         onClose={() => setPreviewOpen(false)}
       />
     </>

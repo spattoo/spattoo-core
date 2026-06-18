@@ -14,7 +14,7 @@ import CustomerStorefront from './CustomerStorefront.jsx';
 //   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
 //   onClose     () => void
-export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, onPublish, onClose }) {
+export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, onPublish, onUnpublish, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
   const [themeId, setThemeId] = useState(value?.storefront_theme_id ?? themes[0]?.id ?? 1);
@@ -29,6 +29,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [gallery, setGallery] = useState([]);
   const [galleryDirty, setGalleryDirty] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(0);
+  const [published, setPublished] = useState(!!value?.storefront_published);
   const [publishing, setPublishing] = useState(false);
   const isWide = useIsWide(900);
 
@@ -37,6 +38,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     setThemeId(value?.storefront_theme_id ?? themes[0]?.id ?? 1);
     setPrimary(value?.primary_color || '#2C4433');
     setAccent(value?.accent_color || '#6B8C74');
+    setPublished(!!value?.storefront_published);
     setPortraitUrl(value?.portrait_url || null);
     setPortraitKey(undefined);
     setGalleryDirty(false);
@@ -60,7 +62,13 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           const filename = `${baker.slug || 'baker'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
           const { url: signed, key } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type);
           await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-          setGallery(g => g.map(it => (it.id === id ? { ...it, key } : it)));
+          // Persist a DB row immediately so the photo is tracked + manageable (no orphans).
+          let dbId = id;
+          if (apiClient.addStorefrontPhoto) {
+            const row = await apiClient.addStorefrontPhoto(key, '');
+            dbId = row?.id ?? id;
+          }
+          setGallery(g => g.map(it => (it.id === id ? { ...it, id: dbId, key } : it)));
         } catch (err) {
           console.error('Gallery upload failed', err);
         } finally {
@@ -69,7 +77,15 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       })();
     }
   }
-  const removePhoto = id => { setGallery(g => g.filter(it => it.id !== id)); setGalleryDirty(true); };
+  const removePhoto = id => {
+    const item = gallery.find(it => it.id === id);
+    setGallery(g => g.filter(it => it.id !== id));
+    setGalleryDirty(true);
+    // Persisted rows (real DB id, not a temp 'n…') → delete the row + R2 file server-side.
+    if (item && item.key && !String(item.id).startsWith('n') && apiClient?.deleteStorefrontPhoto) {
+      apiClient.deleteStorefrontPhoto(item.id).catch(e => console.error('Delete photo failed', e));
+    }
+  };
   const setCaption  = (id, caption) => { setGallery(g => g.map(it => (it.id === id ? { ...it, caption } : it))); setGalleryDirty(true); };
 
   const galleryForPreview = useMemo(() => gallery.map(g => ({ url: g.url, caption: g.caption })), [gallery]);
@@ -115,28 +131,42 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     if (busy) return;   // wait for in-flight uploads to finish
     setPublishing(true);
     try {
+      // 1. appearance — theme / colours / portrait (PATCH /baker/profile via host)
       const payload = { storefront_theme_id: themeId, primary_color: primary, accent_color: accent };
       if (portraitKey !== undefined) payload.portrait_key = portraitKey;   // new portrait (or null to clear)
       await onPublish?.(payload);
-      if (galleryDirty && apiClient?.updateStorefrontPhotos) {
-        await apiClient.updateStorefrontPhotos(
-          gallery.filter(g => g.key).map(g => ({ storage_key: g.key, caption: g.caption || null }))
-        );
+      // 2. photo captions + order for persisted rows (metadata only; add/remove already saved)
+      const persisted = gallery.filter(g => g.key && !String(g.id).startsWith('n'));
+      if (apiClient?.updateStorefrontPhotos) {
+        await apiClient.updateStorefrontPhotos(persisted.map((g, i) => ({ id: g.id, caption: g.caption || null, sort_order: i })));
       }
+      // 3. take the storefront live (host flips the flag + tracks state)
+      setPublished(true);
       onClose?.();
     } finally {
       setPublishing(false);
     }
   }
 
+  async function unpublish() {
+    await onUnpublish?.();
+    setPublished(false);
+  }
+
   return (
     <div style={s.overlay}>
       <div style={s.topbar}>
         <button type="button" style={s.cancel} onClick={onClose}>← Back</button>
-        <div style={s.title}>Customise your storefront</div>
-        <button type="button" style={{ ...s.publish, background: primary, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy} onClick={publish}>
-          {publishing ? 'Publishing…' : busy ? 'Uploading…' : 'Publish'}
-        </button>
+        <div style={s.titleWrap}>
+          <span style={s.title}>Customise your storefront</span>
+          <span style={{ ...s.statusPill, ...(published ? s.pillLive : s.pillDraft) }}>{published ? '● Live' : 'Draft'}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
+          <button type="button" style={{ ...s.publish, background: primary, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy} onClick={publish}>
+            {publishing ? 'Publishing…' : busy ? 'Uploading…' : published ? 'Update' : 'Publish'}
+          </button>
+        </div>
       </div>
 
       <div style={{ ...s.body, flexDirection: isWide ? 'row' : 'column' }}>
@@ -241,7 +271,12 @@ const s = {
   overlay:  { position: 'fixed', inset: 0, zIndex: 400, background: '#EEF2EF', fontFamily: FONT, display: 'flex', flexDirection: 'column' },
   topbar:   { flexShrink: 0, height: 60, background: '#fff', borderBottom: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', gap: 12 },
   cancel:   { background: '#F0F4F1', border: '1px solid #D9DED9', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#2C4433' },
+  titleWrap:{ display: 'flex', alignItems: 'center', gap: 10 },
   title:    { fontSize: 15, fontWeight: 800, color: '#2C4433' },
+  statusPill:{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.5 },
+  pillLive: { color: '#1B7A4B', background: '#E4F4EA' },
+  pillDraft:{ color: '#9A6B16', background: '#FBF0DA' },
+  unpublish:{ border: '1px solid #E3D3D3', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#9A4040' },
   publish:  { border: 'none', borderRadius: 10, padding: '10px 22px', cursor: 'pointer', fontFamily: FONT, fontSize: 14, fontWeight: 800, color: '#fff', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' },
   body:     { flex: 1, display: 'flex', minHeight: 0 },
   controls: { flexShrink: 0, background: '#fff', padding: '20px 20px 24px', overflowY: 'auto', boxSizing: 'border-box' },
