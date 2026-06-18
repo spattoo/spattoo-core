@@ -3394,7 +3394,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>Flavours</button>}
                   {hasCap('billing:manage') && <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>}
                   <button style={s.dropdownItem} onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>Color Guide</button>
-                  {hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add User</button>}
+                  {hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add Staff</button>}
                 </div>
               )}
             </div>}
@@ -3485,7 +3485,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
               </SidebarTooltip>
               {settingsOpen && (
-                <div style={s.dropdown}>
+                <div style={{ ...s.dropdown, top: 'auto', bottom: 0 }}>
                   <div style={s.dropdownSection}>Settings</div>
                   {hasCap('store:manage') && <button style={s.dropdownItem}
                     onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>
@@ -3505,7 +3505,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </button>
                   {hasCap('staff:manage') && <button style={s.dropdownItem}
                     onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
-                    Add User
+                    Add Staff
                   </button>}
                 </div>
               )}
@@ -3520,7 +3520,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
               </SidebarTooltip>
               {profileOpen && (
-                <div style={s.dropdown}>
+                <div style={{ ...s.dropdown, top: 'auto', bottom: 0 }}>
                   <div style={s.dropdownUserInfo}>
                     <div style={s.dropdownName}>
                       {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
