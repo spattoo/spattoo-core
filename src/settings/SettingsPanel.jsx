@@ -191,11 +191,13 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   }
 
   // Publish from the theme preview/customiser — persists theme + brand colours immediately.
-  async function publishStorefront({ storefront_theme_id, primary_color, accent_color }) {
-    await apiClient.updateBakerProfile({
+  async function publishStorefront({ storefront_theme_id, primary_color, accent_color, portrait_key }) {
+    const payload = {
       storefront_theme_id, primary_color, accent_color,
       instagram_handle: profile.instagram_handle, website_url: profile.website_url, tagline: profile.tagline,
-    });
+    };
+    if (portrait_key !== undefined) payload.portrait_url = portrait_key;  // new portrait (R2 key) or null to clear
+    await apiClient.updateBakerProfile(payload);
     setProfile(p => ({ ...p, storefront_theme_id, primary_color, accent_color }));
     onBrandingUpdate?.({ primary_color, accent_color, logo_url: profile.logo_url });
   }
@@ -522,11 +524,13 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
 
       <ThemePreview
         open={previewOpen}
+        apiClient={apiClient}
         themes={themes}
         value={{
           storefront_theme_id: profile?.storefront_theme_id,
           primary_color: profile?.primary_color,
           accent_color:  profile?.accent_color,
+          portrait_url:  profile?.portrait_url,
         }}
         baker={{ name: profile?.name, slug: profile?.slug, story: profile?.story, instagram_handle: profile?.instagram_handle, website_url: profile?.website_url }}
         logoUrl={profile?.logo_url || null}

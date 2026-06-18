@@ -42,6 +42,9 @@ function createApiClient(supabaseClient) {
     fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
     fetchBakerProfile: () => authFetch('/api/baker/profile'),
     fetchStorefrontThemes: () => authFetch('/api/baker/storefront-themes'),
+    fetchStorefrontPhotos: () => authFetch('/api/baker/storefront-photos'),
+    updateStorefrontPhotos: (photos) =>
+      authFetch('/api/baker/storefront-photos', { method: 'PUT', body: JSON.stringify({ photos }) }),
     getSignedUploadUrl: (folder, filename, contentType) =>
       authFetch('/api/storage/sign-upload', {
         method: 'POST',
@@ -208,6 +211,12 @@ if (settingsPreview) {
     ] }),
     updateBakerSettings: async () => ({ ok: true }),
     updateBakerProfile:  async () => ({ ok: true }),
+    getSignedUploadUrl:  async (folder, filename) => ({ url: 'data:,', key: `${folder}/${filename}` }),
+    fetchStorefrontPhotos: async () => ({ photos: [
+      { id: 'a', key: 'storefront/gallery/1', url: '/sample-cake-1.png', caption: 'Mango cream' },
+      { id: 'b', key: 'storefront/gallery/2', url: '/sample-cake-2.png', caption: 'Classic vanilla' },
+    ] }),
+    updateStorefrontPhotos: async () => ({ ok: true }),
   };
   const container = document.getElementById('root');
   if (!container._reactRoot) container._reactRoot = ReactDOM.createRoot(container);

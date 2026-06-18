@@ -14,12 +14,21 @@ import CustomerStorefront from './CustomerStorefront.jsx';
 //   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
 //   onClose     () => void
-export default function ThemePreview({ open, themes = [], value, baker = {}, logoUrl = null, gallery = null, onPublish, onClose }) {
+export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, onPublish, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
   const [themeId, setThemeId] = useState(value?.storefront_theme_id ?? themes[0]?.id ?? 1);
   const [primary, setPrimary] = useState(value?.primary_color || '#2C4433');
   const [accent,  setAccent]  = useState(value?.accent_color  || '#6B8C74');
+  // Portrait: `portraitUrl` is what the preview shows (existing public URL, or a local object
+  // URL after picking); `portraitKey` is the R2 key to persist (undefined = unchanged).
+  const [portraitUrl, setPortraitUrl] = useState(value?.portrait_url || null);
+  const [portraitKey, setPortraitKey] = useState(undefined);
+  const [uploadingPortrait, setUploadingPortrait] = useState(false);
+  // Gallery: [{ id, key, url, caption }] — key is the R2 key to persist (null while uploading).
+  const [gallery, setGallery] = useState([]);
+  const [galleryDirty, setGalleryDirty] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(0);
   const [publishing, setPublishing] = useState(false);
   const isWide = useIsWide(900);
 
@@ -28,7 +37,61 @@ export default function ThemePreview({ open, themes = [], value, baker = {}, log
     setThemeId(value?.storefront_theme_id ?? themes[0]?.id ?? 1);
     setPrimary(value?.primary_color || '#2C4433');
     setAccent(value?.accent_color || '#6B8C74');
+    setPortraitUrl(value?.portrait_url || null);
+    setPortraitKey(undefined);
+    setGalleryDirty(false);
+    apiClient?.fetchStorefrontPhotos?.()
+      .then(r => setGallery((r?.photos || []).map((p, i) => ({ id: p.id || `e${i}`, key: p.key, url: p.url, caption: p.caption || '' }))))
+      .catch(() => setGallery([]));
   }, [open]);
+
+  async function addPhotos(e) {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    if (!files.length || !apiClient?.getSignedUploadUrl) return;
+    setGalleryDirty(true);
+    for (const file of files) {
+      const id = `n${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setGallery(g => [...g, { id, key: null, url: URL.createObjectURL(file), caption: '' }]);
+      setUploadingGallery(n => n + 1);
+      (async () => {
+        try {
+          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+          const filename = `${baker.slug || 'baker'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+          const { url: signed, key } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type);
+          await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+          setGallery(g => g.map(it => (it.id === id ? { ...it, key } : it)));
+        } catch (err) {
+          console.error('Gallery upload failed', err);
+        } finally {
+          setUploadingGallery(n => n - 1);
+        }
+      })();
+    }
+  }
+  const removePhoto = id => { setGallery(g => g.filter(it => it.id !== id)); setGalleryDirty(true); };
+  const setCaption  = (id, caption) => { setGallery(g => g.map(it => (it.id === id ? { ...it, caption } : it))); setGalleryDirty(true); };
+
+  const galleryForPreview = useMemo(() => gallery.map(g => ({ url: g.url, caption: g.caption })), [gallery]);
+
+  async function pickPortrait(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !apiClient?.getSignedUploadUrl) return;
+    setPortraitUrl(URL.createObjectURL(file));   // instant local preview
+    setUploadingPortrait(true);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const filename = `${baker.slug || 'baker'}-${Date.now()}.${ext}`;
+      const { url, key } = await apiClient.getSignedUploadUrl('portraits', filename, file.type);
+      await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      setPortraitKey(key);                        // persisted on Publish
+    } catch (err) {
+      console.error('Portrait upload failed', err);
+    } finally {
+      setUploadingPortrait(false);
+    }
+  }
 
   const themeKey = themes.find(t => t.id === themeId)?.key || 'spotlight';
 
@@ -37,19 +100,29 @@ export default function ThemePreview({ open, themes = [], value, baker = {}, log
   const previewBaker = useMemo(() => ({
     name: baker.name || 'Your Bakery', slug: baker.slug || 'preview',
     primary_color: primary, accent_color: accent,
-    story: baker.story || null,
+    story: baker.story || null, portrait_url: portraitUrl || null,
     instagram_handle: baker.instagram_handle || null, website_url: baker.website_url || null,
     storefront_theme: themeKey,
-  }), [primary, accent, themeKey, baker.name, baker.slug, baker.story, baker.instagram_handle, baker.website_url]);
+  }), [primary, accent, themeKey, portraitUrl, baker.name, baker.slug, baker.story, baker.instagram_handle, baker.website_url]);
 
   if (!open) return null;
 
-  const dirty = themeId !== value?.storefront_theme_id || primary !== value?.primary_color || accent !== value?.accent_color;
+  const busy = uploadingPortrait || uploadingGallery > 0;
+  const dirty = themeId !== value?.storefront_theme_id || primary !== value?.primary_color
+    || accent !== value?.accent_color || portraitKey !== undefined || galleryDirty;
 
   async function publish() {
+    if (busy) return;   // wait for in-flight uploads to finish
     setPublishing(true);
     try {
-      await onPublish?.({ storefront_theme_id: themeId, primary_color: primary, accent_color: accent });
+      const payload = { storefront_theme_id: themeId, primary_color: primary, accent_color: accent };
+      if (portraitKey !== undefined) payload.portrait_key = portraitKey;   // new portrait (or null to clear)
+      await onPublish?.(payload);
+      if (galleryDirty && apiClient?.updateStorefrontPhotos) {
+        await apiClient.updateStorefrontPhotos(
+          gallery.filter(g => g.key).map(g => ({ storage_key: g.key, caption: g.caption || null }))
+        );
+      }
       onClose?.();
     } finally {
       setPublishing(false);
@@ -61,8 +134,8 @@ export default function ThemePreview({ open, themes = [], value, baker = {}, log
       <div style={s.topbar}>
         <button type="button" style={s.cancel} onClick={onClose}>← Back</button>
         <div style={s.title}>Customise your storefront</div>
-        <button type="button" style={{ ...s.publish, background: primary, opacity: publishing ? 0.6 : 1 }} disabled={publishing} onClick={publish}>
-          {publishing ? 'Publishing…' : 'Publish'}
+        <button type="button" style={{ ...s.publish, background: primary, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy} onClick={publish}>
+          {publishing ? 'Publishing…' : busy ? 'Uploading…' : 'Publish'}
         </button>
       </div>
 
@@ -88,6 +161,38 @@ export default function ThemePreview({ open, themes = [], value, baker = {}, log
           <Swatch label="Primary" value={primary} onChange={setPrimary} />
           <Swatch label="Accent"  value={accent}  onChange={setAccent} />
 
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Your photo</div>
+          <label style={s.portraitRow}>
+            <div style={s.portraitThumb}>
+              {portraitUrl
+                ? <img src={portraitUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 700 }}>None</span>}
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>{uploadingPortrait ? 'Uploading…' : portraitUrl ? 'Change photo' : 'Upload photo'}</div>
+              <div style={{ fontSize: 11.5, color: '#9BB5A2', marginTop: 2 }}>Shows in “Our story”</div>
+            </div>
+            <input type="file" accept="image/*" onChange={pickPortrait} style={{ display: 'none' }} />
+          </label>
+
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Cake photos</div>
+          <div style={s.galleryList}>
+            {gallery.map(g => (
+              <div key={g.id} style={s.galleryItem}>
+                <div style={s.galleryThumb}>
+                  <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  {g.key === null && <div style={s.galleryUploading} />}
+                </div>
+                <input value={g.caption} onChange={e => setCaption(g.id, e.target.value)} placeholder="Caption (optional)" style={s.galleryCaption} />
+                <button type="button" aria-label="Remove" style={s.galleryRemove} onClick={() => removePhoto(g.id)}>×</button>
+              </div>
+            ))}
+          </div>
+          <label style={s.addPhotos}>
+            <input type="file" accept="image/*" multiple onChange={addPhotos} style={{ display: 'none' }} />
+            + Add photos
+          </label>
+
           <p style={s.hint}>Changes preview live. Hit <b>Publish</b> to make them go live on your storefront.</p>
         </div>
 
@@ -95,7 +200,7 @@ export default function ThemePreview({ open, themes = [], value, baker = {}, log
         <div style={s.stage}>
           <div style={s.phone}>
             <div style={s.phoneScroll}>
-              <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={gallery} apiBaseUrl="" onStartDesign={() => {}} />
+              <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} />
             </div>
           </div>
           {dirty && <div style={s.dirtyTag}>Unpublished changes</div>}
@@ -144,6 +249,15 @@ const s = {
   themeList:{ display: 'flex', flexDirection: 'column', gap: 8 },
   themeBtn: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', fontFamily: FONT },
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
+  portraitRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #D9DED9', background: '#fff', cursor: 'pointer' },
+  portraitThumb: { width: 46, height: 46, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  galleryList: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 },
+  galleryItem: { display: 'flex', alignItems: 'center', gap: 8 },
+  galleryThumb: { position: 'relative', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4' },
+  galleryUploading: { position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.55)', backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' },
+  galleryCaption: { flex: 1, minWidth: 0, padding: '7px 9px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12, fontFamily: FONT, color: '#2C4433', outline: 'none' },
+  galleryRemove: { flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: '1px solid #E3D3D3', background: '#fff', color: '#C0392B', fontSize: 16, lineHeight: 1, cursor: 'pointer' },
+  addPhotos: { display: 'block', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
   hint:     { fontSize: 12, fontWeight: 500, color: '#6B8C74', lineHeight: 1.55, marginTop: 22 },
   stage:    { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, position: 'relative', overflow: 'hidden' },
   phone:    { width: 392, maxWidth: '100%', height: 'min(86vh, 780px)', background: '#fff', borderRadius: 30, overflow: 'hidden', boxShadow: '0 24px 70px rgba(40,30,35,0.28)', border: '8px solid #1c1518' },
