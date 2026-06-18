@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Environment } from '@react-three/drei';
+import { Canvas } from '@react-three/fiber';
+import { Environment, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { SceneLoader } from '../designer/canvas/CakeSpinner.jsx';
 
@@ -58,14 +58,10 @@ function usePatchTexture(primary) {
   }, [primary]);
 }
 
-function Cake({ primary, reduced, spin }) {
-  const root = useRef();
+function Cake({ primary }) {
   const patch = usePatchTexture(primary);
-  useFrame(({ clock }) => {
-    if (root.current && !reduced) root.current.rotation.y = clock.getElapsedTime() * spin;
-  });
   return (
-    <group ref={root}>
+    <group>
       {/* gold metallic cake board */}
       <mesh position={[0, -0.65, 0]} receiveShadow>
         <cylinderGeometry args={[RADIUS + 0.5, RADIUS + 0.5, 0.05, 128]} />
@@ -102,7 +98,6 @@ export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', he
         dpr={[1, 2]}
         gl={{ alpha: true, antialias: true }}
         camera={{ position: [0, 3.8, 8.4], fov: 30 }}
-        onCreated={({ camera }) => camera.lookAt(0, targetY, 0)}
         style={{ width: '100%', height: '100%' }}
       >
         <ambientLight intensity={mood === 'dark' ? 1.4 : 1.1} />
@@ -111,8 +106,20 @@ export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', he
         <pointLight position={[3, 2, 4]} intensity={0.6} color="#ffffff" />
         <Suspense fallback={<SceneLoader size={22} />}>
           <Environment preset="apartment" />
-          <Cake primary={primary} reduced={reduced} spin={spin} />
+          <Cake primary={primary} />
         </Suspense>
+        {/* Drag to rotate; gentle auto-spin when idle. No zoom/pan — it's a hero, not a viewer. */}
+        <OrbitControls
+          enableZoom={false}
+          enablePan={false}
+          autoRotate={!reduced}
+          autoRotateSpeed={1.1}
+          target={[0, targetY, 0]}
+          minPolarAngle={Math.PI / 6}
+          maxPolarAngle={Math.PI / 2.05}
+          enableDamping
+          dampingFactor={0.12}
+        />
       </Canvas>
     </div>
   );

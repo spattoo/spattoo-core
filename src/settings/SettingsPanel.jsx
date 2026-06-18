@@ -191,15 +191,24 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   }
 
   // Publish from the theme preview/customiser — persists theme + brand colours immediately.
-  async function publishStorefront({ storefront_theme_id, primary_color, accent_color, portrait_key }) {
+  async function publishStorefront({ storefront_theme_id, primary_color, accent_color, portrait_key, storefront_customizations }) {
     const payload = {
       storefront_theme_id, primary_color, accent_color,
       instagram_handle: profile.instagram_handle, website_url: profile.website_url, tagline: profile.tagline,
     };
     if (portrait_key !== undefined) payload.portrait_url = portrait_key;  // new portrait (R2 key) or null to clear
+    if (storefront_customizations) payload.storefront_customizations = storefront_customizations;
     await apiClient.updateBakerProfile(payload);
     if (apiClient.publishStorefront) await apiClient.publishStorefront();   // take it live
-    setProfile(p => ({ ...p, storefront_theme_id, primary_color, accent_color, storefront_published: true }));
+    // Pull back the canonical portrait_url (the public URL the server builds from the key) so it
+    // shows when the customiser is reopened — the frontend only had the R2 key.
+    let fresh = null;
+    try { fresh = (await apiClient.fetchBakerProfile())?.baker; } catch { /* keep optimistic */ }
+    setProfile(p => ({
+      ...p, storefront_theme_id, primary_color, accent_color, storefront_published: true,
+      ...(storefront_customizations ? { storefront_customizations } : {}),
+      ...(fresh && 'portrait_url' in fresh ? { portrait_url: fresh.portrait_url } : {}),
+    }));
     onBrandingUpdate?.({ primary_color, accent_color, logo_url: profile.logo_url });
   }
 
@@ -538,6 +547,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
           accent_color:  profile?.accent_color,
           portrait_url:  profile?.portrait_url,
           storefront_published: profile?.storefront_published,
+          storefront_customizations: profile?.storefront_customizations,
         }}
         baker={{ name: profile?.name, slug: profile?.slug, story: profile?.story, instagram_handle: profile?.instagram_handle, website_url: profile?.website_url }}
         logoUrl={profile?.logo_url || null}

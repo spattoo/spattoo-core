@@ -25,6 +25,16 @@ export const onColor = hex => (lum(hex) > 0.6 ? '#241a1d' : '#ffffff');
 export const FONT  = "'Quicksand', sans-serif";              // soft sans for body / UI
 export const SERIF = "'Cormorant Garamond', Georgia, serif"; // elegant serif for headings
 
+// Baker-editable storefront text (bakers.storefront_customizations); empty/missing → these.
+export const STOREFRONT_TEXT = {
+  hero_tagline:      'You design, we bake it',
+  creations_heading: 'Our creations',
+  story_heading:     'Our story',
+  reviews_heading:   'Loved by our customers',
+};
+// Pick an override only when it's a non-empty string, else the default.
+export const storefrontText = (custom, key) => (custom?.[key]?.trim?.() || STOREFRONT_TEXT[key]);
+
 export function buildContent(baker) {
   return {
     steps: [

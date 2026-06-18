@@ -156,12 +156,6 @@ function CustomerApp({ slug, inviteId }) {
     <CustomerStorefront
       slug={slug}
       inviteId={inviteId}
-      logoUrl="/feelings-flavours-logo.png"  /* preview: real baker has no logo yet */
-      gallery={params.get('gallery') === 'off' ? [] : [   /* ?gallery=off shows the fallback */
-        { url: '/sample-cake-1.png', caption: 'Mango cream, 3 tiers' },
-        { url: '/sample-cake-2.png', caption: 'Classic vanilla' },
-        { url: '/sample-cake-3.png', caption: 'Birthday special' },
-      ]}
       apiBaseUrl={API_URL}
       supabase={supabase}
       onStartDesign={(b) => console.log('Start design for', b.slug)}
@@ -209,7 +203,7 @@ if (settingsPreview) {
       primary_color: '#9b5f72', accent_color: '#f5b8c8',
       logo_url: '/feelings-flavours-logo.png',
       instagram_handle: '', website_url: '', tagline: '', storefront_theme_id: 1,
-      storefront_published: false,
+      storefront_published: false, storefront_customizations: {},
     } }),
     fetchStorefrontThemes: async () => ({ themes: [
       { id: 1, key: 'spotlight',  name: 'Spotlight',  description: 'A dramatic dark hero with a spotlit, rotating 3D cake. Bold and modern.', is_active: true },

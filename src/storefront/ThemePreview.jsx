@@ -1,5 +1,13 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import CustomerStorefront from './CustomerStorefront.jsx';
+import { STOREFRONT_TEXT } from './storefrontKit.js';
+
+const TEXT_FIELDS = [
+  { key: 'hero_tagline',      label: 'Hero tagline' },
+  { key: 'creations_heading', label: 'Gallery heading' },
+  { key: 'story_heading',     label: 'Story heading' },
+  { key: 'reviews_heading',   label: 'Reviews heading' },
+];
 
 // ThemePreview — a full-screen "see it before you pick it" customiser. Renders the REAL
 // storefront live in a phone frame using a synthetic baker, lets the baker switch theme and
@@ -30,7 +38,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [galleryDirty, setGalleryDirty] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(0);
   const [published, setPublished] = useState(!!value?.storefront_published);
+  const [customizations, setCustomizations] = useState(value?.storefront_customizations || {});
   const [publishing, setPublishing] = useState(false);
+  const portraitInputRef = useRef(null);
   const isWide = useIsWide(900);
 
   useEffect(() => {
@@ -39,6 +49,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     setPrimary(value?.primary_color || '#2C4433');
     setAccent(value?.accent_color || '#6B8C74');
     setPublished(!!value?.storefront_published);
+    setCustomizations(value?.storefront_customizations || {});
     setPortraitUrl(value?.portrait_url || null);
     setPortraitKey(undefined);
     setGalleryDirty(false);
@@ -118,21 +129,24 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     primary_color: primary, accent_color: accent,
     story: baker.story || null, portrait_url: portraitUrl || null,
     instagram_handle: baker.instagram_handle || null, website_url: baker.website_url || null,
-    storefront_theme: themeKey,
-  }), [primary, accent, themeKey, portraitUrl, baker.name, baker.slug, baker.story, baker.instagram_handle, baker.website_url]);
+    storefront_theme: themeKey, storefront_customizations: customizations,
+  }), [primary, accent, themeKey, portraitUrl, customizations, baker.name, baker.slug, baker.story, baker.instagram_handle, baker.website_url]);
+
+  const setText = (k, v) => setCustomizations(c => ({ ...c, [k]: v }));
 
   if (!open) return null;
 
   const busy = uploadingPortrait || uploadingGallery > 0;
   const dirty = themeId !== value?.storefront_theme_id || primary !== value?.primary_color
-    || accent !== value?.accent_color || portraitKey !== undefined || galleryDirty;
+    || accent !== value?.accent_color || portraitKey !== undefined || galleryDirty
+    || JSON.stringify(customizations) !== JSON.stringify(value?.storefront_customizations || {});
 
   async function publish() {
     if (busy) return;   // wait for in-flight uploads to finish
     setPublishing(true);
     try {
       // 1. appearance — theme / colours / portrait (PATCH /baker/profile via host)
-      const payload = { storefront_theme_id: themeId, primary_color: primary, accent_color: accent };
+      const payload = { storefront_theme_id: themeId, primary_color: primary, accent_color: accent, storefront_customizations: customizations };
       if (portraitKey !== undefined) payload.portrait_key = portraitKey;   // new portrait (or null to clear)
       await onPublish?.(payload);
       // 2. photo captions + order for persisted rows (metadata only; add/remove already saved)
@@ -202,8 +216,21 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>{uploadingPortrait ? 'Uploading…' : portraitUrl ? 'Change photo' : 'Upload photo'}</div>
               <div style={{ fontSize: 11.5, color: '#9BB5A2', marginTop: 2 }}>Shows in “Our story”</div>
             </div>
-            <input type="file" accept="image/*" onChange={pickPortrait} style={{ display: 'none' }} />
+            <input ref={portraitInputRef} type="file" accept="image/*" onChange={pickPortrait} style={{ display: 'none' }} />
           </label>
+
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Text</div>
+          {TEXT_FIELDS.map(f => (
+            <div key={f.key} style={s.textRow}>
+              <label style={s.textLabel}>{f.label}</label>
+              <input
+                value={customizations[f.key] ?? ''}
+                placeholder={STOREFRONT_TEXT[f.key]}
+                onChange={e => setText(f.key, e.target.value)}
+                style={s.textInput}
+              />
+            </div>
+          ))}
 
           <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Cake photos</div>
           <div style={s.galleryList}>
@@ -230,7 +257,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         <div style={s.stage}>
           <div style={s.phone}>
             <div style={s.phoneScroll}>
-              <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} />
+              <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
             </div>
           </div>
           {dirty && <div style={s.dirtyTag}>Unpublished changes</div>}
@@ -286,6 +313,9 @@ const s = {
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   portraitRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #D9DED9', background: '#fff', cursor: 'pointer' },
   portraitThumb: { width: 46, height: 46, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  textRow:  { marginTop: 10 },
+  textLabel:{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#6B8C74', marginBottom: 4 },
+  textInput:{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 9, border: '1px solid #D9DED9', fontSize: 13, fontFamily: FONT, color: '#2C4433', outline: 'none', background: '#fff' },
   galleryList: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 },
   galleryItem: { display: 'flex', alignItems: 'center', gap: 8 },
   galleryThumb: { position: 'relative', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4' },

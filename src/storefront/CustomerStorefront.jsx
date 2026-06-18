@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
-import { FONT, SERIF, buildContent, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
+import { FONT, SERIF, buildContent, storefrontText, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -21,6 +21,7 @@ export default function CustomerStorefront({
   supabase = null,
   onAuthenticated,
   onStartDesign,
+  onEditPortrait = null,   // customiser only: makes the portrait an upload affordance
   designLabel = 'Start designing',
 }) {
   const [baker, setBaker]     = useState(bakerProp);
@@ -68,6 +69,7 @@ export default function CustomerStorefront({
   const ig      = baker.instagram_handle?.replace(/^@/, '');
   const phone   = baker.whatsapp || baker.whatsapp_number || baker.phone || null;
   const logo    = logoUrl || baker.logo_url;   // a full logo / wordmark; replaces the name lockup
+  const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback
 
   // Storefront template routing — the baker picks their theme in Settings → Storefront Theme,
   // and the public API returns its key as `storefront_theme`. Only 'spotlight' is implemented
@@ -150,7 +152,7 @@ export default function CustomerStorefront({
         <div style={s.heroFade} />
         <div style={s.heroContent}>
           <div>
-            <h1 style={s.heroEyebrow}>You design, we bake it</h1>
+            <h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1>
           </div>
           <div style={s.heroBottom}>
             {showWelcome && <p style={s.welcome}>Welcome, {firstName} — invited to design{occasion ? ` your ${occasion} cake` : ' your cake'}.</p>}
@@ -164,7 +166,7 @@ export default function CustomerStorefront({
       </section>
 
       <main style={s.main}>
-        <Section id="gallery" eyebrow="Our creations" title={`A taste of what ${baker.name} makes`} s={s}>
+        <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
           {hasPhotos ? (
             <>
               <div style={s.carousel}>
@@ -190,17 +192,25 @@ export default function CustomerStorefront({
         </Section>
 
         <section id="story" style={s.section}>
-          <div style={s.eyebrow}>Our story</div>
+          <div style={s.eyebrow}>{txt('story_heading')}</div>
           <div style={s.storyWrap}>
-            <div style={s.portrait}>
-              {portrait ? <img src={portrait} alt={baker.name} style={s.portraitImg} /> : <BakerIcon size={66} color={primary} />}
+            <div
+              style={{ ...s.portraitWrap, ...(onEditPortrait ? { cursor: 'pointer' } : {}) }}
+              onClick={onEditPortrait || undefined}
+              title={onEditPortrait ? 'Upload your photo' : undefined}
+            >
+              <div style={s.portrait}>
+                {portrait ? <img src={portrait} alt={baker.name} style={s.portraitImg} /> : <BakerIcon size={66} color={primary} />}
+              </div>
+              {onEditPortrait && <div style={s.portraitBadge}><CameraIcon size={16} color="#fff" /></div>}
             </div>
+            {onEditPortrait && <div style={s.portraitHint}>{portrait ? 'Click to change your photo' : 'Click to add your photo'}</div>}
             <p style={s.bio}>{story}</p>
             <div style={s.signature}>— {baker.name}</div>
           </div>
         </section>
 
-        <Section eyebrow="Loved by our customers" title="Designed by them, baked by us" s={s}>
+        <Section eyebrow={txt('reviews_heading')} s={s}>
           <div style={s.carousel}>
             <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>
             <figure style={s.testiCard}>
@@ -282,6 +292,14 @@ function CakeIcon({ size = 42, color = '#9b5f72', style }) {
     </svg>
   );
 }
+function CameraIcon({ size = 16, color = '#fff', style }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+      <path d="M3 8.5A2 2 0 0 1 5 6.5h2L8.4 4.5h7.2L17 6.5h2a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <circle cx="12" cy="13" r="3.3" />
+    </svg>
+  );
+}
 function PhoneIcon({ size = 14, color = '#9b5f72', style }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
@@ -294,7 +312,7 @@ function Section({ id, eyebrow, title, s, children }) {
   return (
     <section id={id} style={s.section}>
       <div style={s.eyebrow}>{eyebrow}</div>
-      <h2 style={s.sectionTitle}>{title}</h2>
+      {title && <h2 style={s.sectionTitle}>{title}</h2>}
       {children}
     </section>
   );
@@ -420,11 +438,12 @@ function styles(primary, accent) {
     heroScrim:   { position: 'absolute', inset: 0, background: `linear-gradient(180deg, ${alpha(ink, 0.82)} 0%, ${alpha(ink, 0.32)} 24%, transparent 44%, ${alpha(ink, 0.4)} 64%, transparent 84%)`, pointerEvents: 'none' },
     // Dissolve the dark hero into the page colour at the seam — no hard edge.
     heroFade:    { position: 'absolute', left: 0, right: 0, bottom: 0, height: '46%', background: `linear-gradient(180deg, transparent 0%, ${alpha('#FCFAF7', 0.0)} 8%, #FCFAF7 100%)`, zIndex: 1, pointerEvents: 'none' },
-    heroContent: { position: 'relative', zIndex: 2, height: '100%', maxWidth: cw, margin: '0 auto', padding: '54px 24px 30px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'center', alignItems: 'center', color: '#fff' },
+    // pointerEvents none so drags pass through to the 3D canvas; the CTA re-enables itself.
+    heroContent: { position: 'relative', zIndex: 2, height: '100%', maxWidth: cw, margin: '0 auto', padding: '54px 24px 30px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'center', alignItems: 'center', color: '#fff', pointerEvents: 'none' },
     heroEyebrow: { fontSize: 12.5, fontWeight: 600, letterSpacing: 2.4, textTransform: 'uppercase', color: lighten(accent, 0.1), margin: 0, lineHeight: 1.5, textShadow: '0 2px 14px rgba(0,0,0,0.3)' },
     heroBottom:  { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' },
     welcome:     { fontSize: 13.5, fontWeight: 700, color: '#fff', margin: '0 0 14px', background: alpha('#ffffff', 0.16), border: `1px solid ${alpha('#ffffff', 0.28)}`, padding: '9px 14px', borderRadius: 12, lineHeight: 1.5, backdropFilter: 'blur(4px)' },
-    heroCta:     { padding: '15px 34px', borderRadius: 14, border: `2px solid ${lighten(accent, 0.1)}`, background: alpha(ink, 0.4), color: lighten(accent, 0.1), fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, backdropFilter: 'blur(8px)' },
+    heroCta:     { padding: '15px 34px', borderRadius: 14, border: `2px solid ${lighten(accent, 0.1)}`, background: alpha(ink, 0.4), color: lighten(accent, 0.1), fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, backdropFilter: 'blur(8px)', pointerEvents: 'auto' },
     expired:     { fontSize: 14, fontWeight: 700, color: '#fff', background: 'rgba(192,57,43,0.9)', padding: '12px 18px', borderRadius: 12 },
     heroHint:    { fontSize: 12.5, fontWeight: 600, color: alpha('#ffffff', 0.82), marginTop: 14, maxWidth: 320 },
 
@@ -441,7 +460,10 @@ function styles(primary, accent) {
 
     // Our story
     storyWrap:   { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', maxWidth: 460, margin: '0 auto' },
-    portrait:    { width: 116, height: 116, borderRadius: '50%', background: `linear-gradient(135deg, ${lighten(primary, 0.35)}, ${lighten(accent, 0.1)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 22, boxShadow: shadow, border: '4px solid #fff' },
+    portraitWrap:{ position: 'relative', width: 116, height: 116, marginBottom: 20 },
+    portrait:    { width: 116, height: 116, borderRadius: '50%', background: `linear-gradient(135deg, ${lighten(primary, 0.35)}, ${lighten(accent, 0.1)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: shadow, border: '4px solid #fff', boxSizing: 'border-box' },
+    portraitBadge:{ position: 'absolute', bottom: 0, right: 0, width: 34, height: 34, borderRadius: '50%', background: primary, border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.2)' },
+    portraitHint:{ fontSize: 12.5, fontWeight: 700, color: primary, margin: '-8px 0 16px' },
     portraitImg: { width: '100%', height: '100%', objectFit: 'cover' },
     portraitGlyph:{ fontSize: 52 },
     bio:         { fontSize: 16, fontWeight: 500, lineHeight: 1.7, color: text, margin: 0, whiteSpace: 'pre-wrap' },
