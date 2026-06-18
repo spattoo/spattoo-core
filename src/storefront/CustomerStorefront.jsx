@@ -29,6 +29,7 @@ export default function CustomerStorefront({
   const [loading, setLoading] = useState(!bakerProp);
   const [error, setError]     = useState(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [menuOpen, setMenuOpen]   = useState(false);
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
@@ -59,6 +60,10 @@ export default function CustomerStorefront({
   // Adopt live updates to a pre-fetched baker (used by the theme preview/customiser, where
   // colours + theme change on the fly without re-fetching).
   useEffect(() => { if (bakerProp) setBaker(bakerProp); }, [bakerProp]);
+
+  // First thing an invited customer sees: a welcome that orients them to the path
+  // (design → confirm identity → bake). Only for a valid invite; browse visits skip it.
+  useEffect(() => { if (inviteId && invite?.valid) setWelcomeOpen(true); }, [inviteId, invite]);
 
   if (loading) return <Centered><CakeSpinner label="Loading…" /></Centered>;
   if (error)   return <Centered>{error}</Centered>;
@@ -242,6 +247,18 @@ export default function CustomerStorefront({
         <div style={s.madeWith}>Made with Spattoo</div>
       </footer>
 
+      {welcomeOpen && (
+        <WelcomeModal
+          bakerName={baker.name}
+          firstName={firstName}
+          occasion={occasion}
+          logo={logo}
+          primary={primary}
+          accent={accent}
+          onClose={() => setWelcomeOpen(false)}
+        />
+      )}
+
       {showLogin && (
         <LoginModal
           invite={invite}
@@ -320,6 +337,28 @@ function Section({ id, eyebrow, title, s, children }) {
       {title && <h2 style={s.sectionTitle}>{title}</h2>}
       {children}
     </section>
+  );
+}
+
+// ── Invite welcome ──────────────────────────────────────────────────────────────
+// The first thing an invited customer sees. Blurs the storefront and orients them,
+// then OK closes it so they can browse the baker's story + gallery before designing
+// (the sticky "Start designing" CTA is always there when they're ready).
+function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, onClose }) {
+  const m = welcomeStyles(primary, accent);
+  const cakePhrase = occasion ? `your ${occasion} cake` : 'your dream cake';
+  return (
+    <div style={m.overlay} role="dialog" aria-modal="true" aria-label={`Invitation from ${bakerName}`}>
+      <div style={m.card}>
+        <div style={m.eyebrow}>You’re invited</div>
+        {logo
+          ? <img src={logo} alt={bakerName} style={m.logo} />
+          : <div style={m.bakerName}>{bakerName}</div>}
+        <h2 style={m.title}>{firstName ? `${firstName}, design ` : 'Design '}{cakePhrase}</h2>
+        <p style={m.sub}>{bakerName} has invited you to design your own cake — watch it come together live in 3D, then they bake it for you.</p>
+        <button type="button" style={m.start} onClick={onClose}>OK</button>
+      </div>
+    </div>
   );
 }
 
@@ -507,6 +546,21 @@ function styles(primary, accent) {
     footerLinks: { display: 'flex', gap: 18, marginTop: 2 },
     footerLink:  { fontSize: 14, fontWeight: 700, color: lighten(accent, 0.1), textDecoration: 'none' },
     madeWith:    { fontSize: 12, fontWeight: 700, color: alpha('#ffffff', 0.5), letterSpacing: 0.4, marginTop: 10 },
+  };
+}
+
+function welcomeStyles(primary, accent) {
+  const heading = mix(primary, '#2b2228', 0.42);
+  const muted   = mix(primary, '#8d878a', 0.5);
+  return {
+    overlay:  { position: 'fixed', inset: 0, zIndex: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 22, background: 'rgba(28,20,24,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' },
+    card:     { width: '100%', maxWidth: 384, boxSizing: 'border-box', background: '#FFFDFB', borderRadius: 24, padding: '34px 26px 22px', textAlign: 'center', boxShadow: '0 24px 70px rgba(0,0,0,0.34)', fontFamily: FONT },
+    eyebrow:  { fontSize: 11.5, fontWeight: 700, letterSpacing: 2.5, textTransform: 'uppercase', color: primary, marginBottom: 12 },
+    logo:     { maxHeight: 38, maxWidth: 210, objectFit: 'contain', display: 'block', margin: '0 auto 8px' },
+    bakerName:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: heading, marginBottom: 6 },
+    title:    { fontFamily: SERIF, fontSize: 27, fontWeight: 600, color: heading, lineHeight: 1.18, margin: '4px 0 12px' },
+    sub:      { fontSize: 14.5, lineHeight: 1.55, color: muted, margin: '0 2px 24px' },
+    start:    { width: '100%', boxSizing: 'border-box', padding: '15px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontFamily: FONT, fontSize: 16, fontWeight: 800, cursor: 'pointer', boxShadow: `0 8px 22px ${alpha(primary, 0.38)}` },
   };
 }
 
