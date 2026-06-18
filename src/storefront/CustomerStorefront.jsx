@@ -88,7 +88,6 @@ export default function CustomerStorefront({
 
   const firstName = invite?.customer?.first_name || invite?.first_name || null;
   const occasion  = invite?.occasion || invite?.note || null;
-  const showWelcome = !!(invite?.valid && firstName);
   const expired = inviteId && invite && !invite.valid;
 
   function handleCta() {
@@ -161,7 +160,6 @@ export default function CustomerStorefront({
             <h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1>
           </div>
           <div style={s.heroBottom}>
-            {showWelcome && <p style={s.welcome}>Welcome, {firstName} — invited to design{occasion ? ` your ${occasion} cake` : ' your cake'}.</p>}
             {expired ? (
               <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
             ) : (
