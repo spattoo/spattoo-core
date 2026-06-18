@@ -37,6 +37,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [gallery, setGallery] = useState([]);
   const [galleryDirty, setGalleryDirty] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(0);
+  // Testimonials: [{ id, quote, author, occasion }]
+  const [testimonials, setTestimonials] = useState([]);
+  const [testimonialsDirty, setTestimonialsDirty] = useState(false);
   const [published, setPublished] = useState(!!value?.storefront_published);
   const [customizations, setCustomizations] = useState(value?.storefront_customizations || {});
   const [publishing, setPublishing] = useState(false);
@@ -56,7 +59,15 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     apiClient?.fetchStorefrontPhotos?.()
       .then(r => setGallery((r?.photos || []).map((p, i) => ({ id: p.id || `e${i}`, key: p.key, url: p.url, caption: p.caption || '' }))))
       .catch(() => setGallery([]));
+    setTestimonialsDirty(false);
+    apiClient?.fetchTestimonials?.()
+      .then(r => setTestimonials((r?.testimonials || []).map((t, i) => ({ id: t.id || `e${i}`, quote: t.quote || '', author: t.author || '', occasion: t.occasion || '' }))))
+      .catch(() => setTestimonials([]));
   }, [open]);
+
+  const addTestimonial = () => { setTestimonials(t => [...t, { id: `n${Date.now()}`, quote: '', author: '', occasion: '' }]); setTestimonialsDirty(true); };
+  const removeTestimonial = id => { setTestimonials(t => t.filter(it => it.id !== id)); setTestimonialsDirty(true); };
+  const setTestimonialField = (id, field, v) => { setTestimonials(t => t.map(it => (it.id === id ? { ...it, [field]: v } : it))); setTestimonialsDirty(true); };
 
   async function addPhotos(e) {
     const files = [...(e.target.files || [])];
@@ -130,7 +141,8 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     story: baker.story || null, portrait_url: portraitUrl || null,
     instagram_handle: baker.instagram_handle || null, website_url: baker.website_url || null,
     storefront_theme: themeKey, storefront_customizations: customizations,
-  }), [primary, accent, themeKey, portraitUrl, customizations, baker.name, baker.slug, baker.story, baker.instagram_handle, baker.website_url]);
+    testimonials: testimonials.filter(t => t.quote.trim()).map(t => ({ quote: t.quote, author: t.author, occasion: t.occasion })),
+  }), [primary, accent, themeKey, portraitUrl, customizations, testimonials, baker.name, baker.slug, baker.story, baker.instagram_handle, baker.website_url]);
 
   const setText = (k, v) => setCustomizations(c => ({ ...c, [k]: v }));
 
@@ -138,7 +150,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   const busy = uploadingPortrait || uploadingGallery > 0;
   const dirty = themeId !== value?.storefront_theme_id || primary !== value?.primary_color
-    || accent !== value?.accent_color || portraitKey !== undefined || galleryDirty
+    || accent !== value?.accent_color || portraitKey !== undefined || galleryDirty || testimonialsDirty
     || JSON.stringify(customizations) !== JSON.stringify(value?.storefront_customizations || {});
 
   async function publish() {
@@ -154,7 +166,11 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       if (apiClient?.updateStorefrontPhotos) {
         await apiClient.updateStorefrontPhotos(persisted.map((g, i) => ({ id: g.id, caption: g.caption || null, sort_order: i })));
       }
-      // 3. take the storefront live (host flips the flag + tracks state)
+      // 3. testimonials (replace the whole set; rows without a quote are dropped server-side)
+      if (testimonialsDirty && apiClient?.updateTestimonials) {
+        await apiClient.updateTestimonials(testimonials.map(t => ({ quote: t.quote, author: t.author, occasion: t.occasion })));
+      }
+      // 4. take the storefront live (host flips the flag + tracks state)
       setPublished(true);
       onClose?.();
     } finally {
@@ -250,6 +266,22 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
             + Add photos
           </label>
 
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Reviews</div>
+          <div style={s.reviewList}>
+            {testimonials.map(t => (
+              <div key={t.id} style={s.reviewItem}>
+                <textarea value={t.quote} placeholder="What the customer said…" rows={2}
+                  onChange={e => setTestimonialField(t.id, 'quote', e.target.value)} style={s.reviewQuote} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input value={t.author} placeholder="Name" onChange={e => setTestimonialField(t.id, 'author', e.target.value)} style={s.reviewMeta} />
+                  <input value={t.occasion} placeholder="Occasion" onChange={e => setTestimonialField(t.id, 'occasion', e.target.value)} style={s.reviewMeta} />
+                  <button type="button" aria-label="Remove" style={s.galleryRemove} onClick={() => removeTestimonial(t.id)}>×</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" style={s.addPhotos} onClick={addTestimonial}>+ Add review</button>
+
           <p style={s.hint}>Changes preview live. Hit <b>Publish</b> to make them go live on your storefront.</p>
         </div>
 
@@ -322,7 +354,11 @@ const s = {
   galleryUploading: { position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.55)', backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' },
   galleryCaption: { flex: 1, minWidth: 0, padding: '7px 9px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12, fontFamily: FONT, color: '#2C4433', outline: 'none' },
   galleryRemove: { flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: '1px solid #E3D3D3', background: '#fff', color: '#C0392B', fontSize: 16, lineHeight: 1, cursor: 'pointer' },
-  addPhotos: { display: 'block', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
+  addPhotos: { display: 'block', width: '100%', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
+  reviewList: { display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 },
+  reviewItem: { display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 10, border: '1px solid #E3E8E4', background: '#fff' },
+  reviewQuote:{ width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12.5, fontFamily: FONT, color: '#2C4433', outline: 'none', resize: 'vertical' },
+  reviewMeta: { flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '6px 8px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12, fontFamily: FONT, color: '#2C4433', outline: 'none' },
   hint:     { fontSize: 12, fontWeight: 500, color: '#6B8C74', lineHeight: 1.55, marginTop: 22 },
   stage:    { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, position: 'relative', overflow: 'hidden' },
   phone:    { width: 392, maxWidth: '100%', height: 'min(86vh, 780px)', background: '#fff', borderRadius: 30, overflow: 'hidden', boxShadow: '0 24px 70px rgba(40,30,35,0.28)', border: '8px solid #1c1518' },

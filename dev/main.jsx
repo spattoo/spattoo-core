@@ -51,6 +51,9 @@ function createApiClient(supabaseClient) {
       authFetch('/api/baker/storefront-photos', { method: 'PUT', body: JSON.stringify({ photos }) }),
     publishStorefront:   () => authFetch('/api/baker/storefront/publish',   { method: 'POST' }),
     unpublishStorefront: () => authFetch('/api/baker/storefront/unpublish', { method: 'POST' }),
+    fetchTestimonials:  () => authFetch('/api/baker/testimonials'),
+    updateTestimonials: (testimonials) =>
+      authFetch('/api/baker/testimonials', { method: 'PUT', body: JSON.stringify({ testimonials }) }),
     getSignedUploadUrl: (folder, filename, contentType) =>
       authFetch('/api/storage/sign-upload', {
         method: 'POST',
@@ -222,6 +225,10 @@ if (settingsPreview) {
     updateStorefrontPhotos: async () => ({ ok: true }),
     publishStorefront:   async () => ({ ok: true, storefront_published: true }),
     unpublishStorefront: async () => ({ ok: true, storefront_published: false }),
+    fetchTestimonials:  async () => ({ testimonials: [
+      { id: 'x', quote: 'The 3D designer let me get exactly the cake I pictured!', author: 'Priya S.', occasion: 'Birthday' },
+    ] }),
+    updateTestimonials: async () => ({ ok: true }),
   };
   const container = document.getElementById('root');
   if (!container._reactRoot) container._reactRoot = ReactDOM.createRoot(container);

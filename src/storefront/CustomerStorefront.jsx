@@ -78,7 +78,8 @@ export default function CustomerStorefront({
   const theme = BUILT_TEMPLATES.includes(baker.storefront_theme) ? baker.storefront_theme : 'spotlight';
   // (theme === 'spotlight' renders the layout below; future templates branch here.)
   const s = styles(primary, accent);
-  const { steps, testimonials } = buildContent(baker);
+  const { steps } = buildContent(baker);
+  const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
   const firstName = invite?.customer?.first_name || invite?.first_name || null;
   const occasion  = invite?.occasion || invite?.note || null;
@@ -104,7 +105,7 @@ export default function CustomerStorefront({
     { label: 'Contact', href: '#contact' },
   ];
 
-  const t = testimonials[tIdx];
+  const t = testimonials[tIdx % (testimonials.length || 1)];
   const move = d => setTIdx(i => (i + d + testimonials.length) % testimonials.length);
 
   // Gallery photos uploaded by the baker (baker.gallery); empty → graceful fallback below.
@@ -210,20 +211,24 @@ export default function CustomerStorefront({
           </div>
         </section>
 
-        <Section eyebrow={txt('reviews_heading')} s={s}>
-          <div style={s.carousel}>
-            <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>
-            <figure style={s.testiCard}>
-              <div style={s.stars}>★★★★★</div>
-              <blockquote style={s.quote}>“{t.quote}”</blockquote>
-              <figcaption style={s.author}>{t.author} <span style={s.authorOcc}>· {t.occasion}</span></figcaption>
-            </figure>
-            <button type="button" aria-label="Next" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>
-          </div>
-          <div style={s.dotsRow}>
-            {testimonials.map((_, i) => <span key={i} style={{ ...s.dot, ...(i === tIdx ? s.dotOn : {}) }} onClick={() => setTIdx(i)} />)}
-          </div>
-        </Section>
+        {testimonials.length > 0 && (
+          <Section eyebrow={txt('reviews_heading')} s={s}>
+            <div style={s.carousel}>
+              {testimonials.length > 1 && <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>}
+              <figure style={s.testiCard}>
+                <div style={s.stars}>★★★★★</div>
+                <blockquote style={s.quote}>“{t.quote}”</blockquote>
+                <figcaption style={s.author}>{t.author}{t.occasion && <span style={s.authorOcc}> · {t.occasion}</span>}</figcaption>
+              </figure>
+              {testimonials.length > 1 && <button type="button" aria-label="Next" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>}
+            </div>
+            {testimonials.length > 1 && (
+              <div style={s.dotsRow}>
+                {testimonials.map((_, i) => <span key={i} style={{ ...s.dot, ...(i === tIdx ? s.dotOn : {}) }} onClick={() => setTIdx(i)} />)}
+              </div>
+            )}
+          </Section>
+        )}
       </main>
 
       <footer id="contact" style={s.footer}>
