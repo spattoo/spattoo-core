@@ -48,7 +48,7 @@ position/rotation/scale/(optional colour). We lose nothing scatter actually uses
 Keep **one sticker record per instance** in `design.stickers`. Only change how a *group* of them is
 drawn — from N components to one `InstancedMesh` reading those records. This leaves all of
 `CakeDesigner.jsx` untouched: `placeScatter`, `scatterInstances`, `setScatterDensity`,
-`scaleStickers`, `removeSticker`, `changeScatterZone`, and the scatter card (`renderScatterBody`)
+`scaleStickers`, `removeSticker`, `toggleScatterSurface`, and the scatter card (`renderScatterBody`)
 keep mutating records; the renderer just reads them.
 
 ## What changes (file-by-file)
@@ -107,5 +107,5 @@ large and helps **every** scatter element, not just primitives.
 - Per-instance scene + geometry clone: `canvas/CakeCanvas.jsx:347–357`.
 - GLB side stickers yaw-oriented, not curved: `canvas/CakeCanvas.jsx:1745`.
 - Scatter data flow (`CakeDesigner.jsx`): `placeScatter`, `scatterInstances`, `setScatterDensity`,
-  `changeScatterZone`, `renderScatterBody`; instance `scatter` flag set in
+  `toggleScatterSurface`, `renderScatterBody`; instance `scatter` flag set in
   `hooks/useCakeDesign.js` `addSticker` (`placement_config.scatter === true`).

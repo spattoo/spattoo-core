@@ -130,6 +130,24 @@ describe('scaleRangeOf — placement_config.scale bounds the Size dial, with per
   });
 });
 
+describe('scaleRangeOf — optional step sets the dial increment', () => {
+  it('no step → falls back to the control default step', () => {
+    expect(scaleRangeOf({ placement_config: { scale: { min: 0.2, max: 0.5 } } }, 0.25, 8, 0.05).step).toBe(0.05);
+    expect(scaleRangeOf({ placement_config: {} }, 0.25, 8, 0.1).step).toBe(0.1);
+  });
+  it('a positive step overrides the default; min/max/step compose independently', () => {
+    expect(scaleRangeOf({ placement_config: { scale: { min: 0.2, max: 0.5, step: 0.1 } } }, 0.25, 8, 0.05))
+      .toEqual({ min: 0.2, max: 0.5, step: 0.1 });
+    expect(scaleRangeOf({ placement_config: { scale: { step: 0.5 } } }, 0.25, 8, 0.05))
+      .toEqual({ min: 0.25, max: 8, step: 0.5 });   // only step overridden
+  });
+  it('ignores a non-positive or non-numeric step', () => {
+    expect(scaleRangeOf({ placement_config: { scale: { step: 0 } } },  0.25, 8, 0.05).step).toBe(0.05);
+    expect(scaleRangeOf({ placement_config: { scale: { step: -1 } } }, 0.25, 8, 0.05).step).toBe(0.05);
+    expect(scaleRangeOf({ placement_config: { scale: { step: 'x' } } }, 0.25, 8, 0.05).step).toBe(0.05);
+  });
+});
+
 describe('wallClampY — a side decal never dips below the tier base into the board', () => {
   const baseY = 1.0, wall = 0.8;
   it('leaves a comfortably-sized decal where it is', () => {

@@ -31,17 +31,18 @@ export function isDynamicHug(sticker) {
 }
 
 // The SizeDial's absolute-scale range for an element, from config — never branched on type.
-// `placement_config.scale = { min, max }` bounds the dial; `placement_config.r` is just the
-// default position WITHIN that range (set at placement). Each key is optional and falls back to
-// the control's own default (`dMin`/`dMax`), so an element with no `scale` keeps its present
-// bounds — backward compatible. Applies ONLY to absolute-scale dials, never the hero-hug `hugMul`
-// (a wall-relative multiplier — a different unit). For a composite group, intersect the members'
-// ranges (max of mins, min of maxes) so the shared dial can't push any member past its own cap.
-export function scaleRangeOf(element, dMin, dMax) {
+// `placement_config.scale = { min, max, step }` bounds the dial and its increment; `placement_config.r`
+// is just the default position WITHIN that range (set at placement). Each key is optional and falls
+// back to the control's own default (`dMin`/`dMax`/`dStep`), so an element with no `scale` keeps its
+// present bounds — backward compatible. Applies ONLY to absolute-scale dials, never the hero-hug
+// `hugMul` (a wall-relative multiplier — a different unit). For a composite group, intersect the
+// members' ranges (max of mins, min of maxes) so the shared dial can't push any member past its cap.
+export function scaleRangeOf(element, dMin, dMax, dStep) {
   const sc = element?.placement_config?.scale;
   return {
-    min: typeof sc?.min === 'number'                 ? sc.min : dMin,
-    max: typeof sc?.max === 'number' && sc.max > 0   ? sc.max : dMax,
+    min:  typeof sc?.min  === 'number'                 ? sc.min  : dMin,
+    max:  typeof sc?.max  === 'number' && sc.max  > 0  ? sc.max  : dMax,
+    step: typeof sc?.step === 'number' && sc.step > 0  ? sc.step : dStep,
   };
 }
 

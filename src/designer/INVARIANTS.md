@@ -13,10 +13,11 @@ An element's behavior comes entirely from its data:
   element's explicit config always wins via the spread.) NEVER hardcode a different per-zone default
   in render/popup code — read the value.
 - `placement_config.r` — default scale (never hard‑coded; never force a value).
-- `placement_config.scale` — optional `{ min, max }` bounding the Size dial (absolute‑scale dials
-  only, never the hero‑hug `hugMul`). `r` is the default WITHIN this range. Read via
-  `scaleRangeOf(el, dMin, dMax)`; each key falls back to the control's own default, so an element
-  with no `scale` keeps its prior bounds (backward compatible). Never hard‑code per‑element bounds.
+- `placement_config.scale` — optional `{ min, max, step }` bounding the Size dial and its increment
+  (absolute‑scale dials only, never the hero‑hug `hugMul`). `r` is the default WITHIN this range.
+  Read via `scaleRangeOf(el, dMin, dMax, dStep)`; each key falls back to the control's own default,
+  so an element with no `scale` keeps its prior bounds (backward compatible). Never hard‑code
+  per‑element bounds. (`SizeDial` clamps its output to `[min,max]` so an odd step can't overshoot.)
 - `placement_config.rotation` — the GLB's authored facing offset, in **degrees** (e.g. toppers
   `[0,-90,0]`), gated by `rotation_unit: 'deg'`. Read ONLY via `facingOffsetRadians()` — one unit
   on each side (degrees in the DB, radians at runtime); never read `placement_config.rotation` raw.

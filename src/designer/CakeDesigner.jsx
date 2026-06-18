@@ -173,7 +173,8 @@ function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
     const py = (e.clientY - rect.top)  / rect.height * 48;
     const a  = Math.atan2(px - CX, CY - py);          // angle from top, clockwise
     const u  = Math.max(0, Math.min(1, (a - A_START) / A_SWEEP));
-    onChange?.(+(min + Math.round(u * (max - min) / step) * step).toFixed(2));
+    // Clamp to [min,max]: a step that doesn't evenly divide (max-min) can round the top notch past max.
+    onChange?.(+(Math.min(max, Math.max(min, min + Math.round(u * (max - min) / step) * step))).toFixed(2));
   };
 
   return (
@@ -547,7 +548,7 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
                       default 1×) rather than an absolute scale. Stand uses absolute scale (r). */}
                   {isDynamicHug(slot.sticker)
                     ? <SizeDial size={slot.sticker.hugMul ?? 1} min={0.3} max={3} step={0.05} onChange={v => onUpdate(slot.sticker.id, { hugMul: v })} />
-                    : <SizeDial size={slot.sticker.scale ?? 1} min={slot.scaleRange?.min ?? 0.5} max={slot.scaleRange?.max ?? 8} step={0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />}
+                    : <SizeDial size={slot.sticker.scale ?? 1} min={slot.scaleRange?.min ?? 0.5} max={slot.scaleRange?.max ?? 8} step={slot.scaleRange?.step ?? 0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />}
                   <span style={cap}>Size</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
@@ -2203,11 +2204,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setSelectedEl({ type: 'scatter', elementId: element.id });
   }
 
-  // Reconcile a scatter element to a target instance count: add randomly-seated instances (spaced
-  // from the existing ones, matching their mode/scale) or remove the newest — never regenerate, so
+  // Top vs side are INDEPENDENT scatter sets of the same element (sprinkles on both at once). Group
+  // an instance by surface so a count/toggle touches only that surface's instances.
+  const scatterGroupOf = s => isSideZoneName(s.zone) ? 'side' : 'top';
+
+  // Reconcile ONE surface's scatter count: add randomly-seated instances (spaced from that surface's
+  // existing ones, matching their mode/scale/colour) or remove its newest — never regenerate, so
   // dragged positions survive (the decor_pattern/group "edit as a set" rule).
-  function setScatterDensity(elementId, target) {
-    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter);
+  function setScatterDensity(elementId, zone, target) {
+    const grp = isSideZoneName(zone) ? 'side' : 'top';
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === grp);
     const cur = instances.length;
     if (target === cur || !instances.length) return;
     if (target > cur) {
@@ -2218,21 +2224,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     } else {
       // Drop the newest (highest id) instances first.
       const remove = [...instances].sort((a, b) => b.id - a.id).slice(0, cur - target).map(s => s.id);
-      const removeSet = new Set(remove);
       remove.forEach(id => removeSticker(id));
     }
   }
 
-  // Move the whole scatter set to another surface: drop the current instances and re-scatter the
-  // same count/size/colour on the new (zone × tier). Config-driven (allowed_zones), like a pattern.
-  function changeScatterZone(elementId, zone) {
-    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter);
-    if (!instances.length) return;
+  // Toggle a whole surface's scatter set on/off (the card's surface checkbox — like piping's rim/board,
+  // INVARIANTS #3a/#6). ON scatters a default batch on that (tier×surface), sharing the element's
+  // existing size/colour; OFF removes just that surface's instances. Surfaces come from allowed_zones.
+  function toggleScatterSurface(elementId, zone, on) {
     const el = elementById.get(elementId);
     if (!el) return;
-    const count = instances.length, scale = instances[0].scale, color = instances[0].color ?? undefined;
-    instances.forEach(s => removeSticker(s.id));
-    scatterInstances(el, zone, scatterTierForZone(zone), count, scale, [], color);
+    const grp = isSideZoneName(zone) ? 'side' : 'top';
+    const all = design.stickers.filter(s => s.elementId === elementId && s.scatter);
+    if (on) {
+      if (all.some(s => scatterGroupOf(s) === grp)) return;   // already present
+      const ref = all[0];                                     // share size/colour with the existing set
+      scatterInstances(el, zone, scatterTierForZone(zone), SCATTER_DEFAULT_COUNT, ref?.scale ?? scatterScaleFor(el), [], ref?.color ?? undefined);
+    } else {
+      all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
+    }
     setSelectedStickerIds(new Set());
     setSelectedEl({ type: 'scatter', elementId });
   }
@@ -2794,9 +2804,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const meanScale = members.reduce((a, m) => a + (m.scale ?? 1), 0) / members.length;
     // A group can span elements with different configured ranges — use their INTERSECTION so the
     // shared dial can't push any member past its own cap (tightest floor, tightest ceiling).
-    const memberRanges = members.map(m => scaleRangeOf(elementById.get(m.elementId), 0.25, 8));
+    const memberRanges = members.map(m => scaleRangeOf(elementById.get(m.elementId), 0.25, 8, 0.05));
     const grpMin = Math.max(...memberRanges.map(r => r.min));
     const grpMax = Math.min(...memberRanges.map(r => r.max));
+    const grpStep = Math.min(...memberRanges.map(r => r.step));   // finest increment any member wants
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Drag on the cake to move the group · tap a piece to edit it.</div>
@@ -2817,7 +2828,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={s.editPanelLabel}>Size</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
-            <SizeDial size={meanScale} min={grpMin} max={grpMax} step={0.05}
+            <SizeDial size={meanScale} min={grpMin} max={grpMax} step={grpStep}
               onChange={v => { if (meanScale > 0) scaleGroupBy(members.map(m => m.id), v / meanScale); }} />
           </div>
         </div>
@@ -2835,60 +2846,64 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // (add/remove instances, never regenerate), one shared Size, one shared Colour (if the element
   // allows it), and Remove all. Reuses SizeDial + the colour wheel; no parallel renderer.
   function renderScatterBody(card) {
-    const instances = design.stickers.filter(s => s.elementId === card.elementId && s.scatter);
-    if (!instances.length) return null;
-    const count = instances.length;
-    const size = instances[0]?.scale ?? 1;
-    const ref = instances[0];
+    const all = design.stickers.filter(s => s.elementId === card.elementId && s.scatter);
+    if (!all.length) return null;
+    const size = all[0]?.scale ?? 1;        // shared across surfaces (Size + Colour are one set)
     const canColor = !!caps?.color;
-    // Surfaces this element allows (config-driven). Each is a live preview tile (the element rendered
-    // on that surface), like the decor_pattern card — reuses TopperPreview. Click to move the set.
     const el = elementById.get(card.elementId);
+    const scR = scaleRangeOf(el, 0.1, 4, 0.05);   // dial bounds + increment from config
     const zones = el?.allowed_zones ?? [];
+    // Allowed surfaces (config-driven). Sprinkles can occupy SEVERAL at once, so each is an
+    // INDEPENDENT checkbox (like piping's rim/board) — not a single-select move. INVARIANTS #3a/#6.
     const surfaces = [];
-    if (zones.includes(ZONES.TOP_SURFACE)) surfaces.push({ zone: ZONES.TOP_SURFACE, label: 'Top', placement: 'top', tierIndex: scatterTierForZone(ZONES.TOP_SURFACE) });
-    if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) surfaces.push({ zone: ZONES.SIDE, label: 'Side', placement: 'side', tierIndex: scatterTierForZone(ZONES.SIDE) });
-    const activeZone = isSideZoneName(ref.zone) ? ZONES.SIDE : ZONES.TOP_SURFACE;
-    // Max is based on the element's CONFIGURED size, not the live (resized) size — otherwise
-    // resizing would move the count slider even though the count never changed.
-    const maxCount = scatterMaxCount(ref.zone, ref.tierIndex, scatterScaleFor(el));
+    if (zones.includes(ZONES.TOP_SURFACE)) surfaces.push({ group: 'top', zone: ZONES.TOP_SURFACE, label: 'Top', placement: 'top', tierIndex: scatterTierForZone(ZONES.TOP_SURFACE) });
+    if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) surfaces.push({ group: 'side', zone: ZONES.SIDE, label: 'Side', placement: 'side', tierIndex: scatterTierForZone(ZONES.SIDE) });
+    const onSurfaces = surfaces.filter(su => all.some(s => scatterGroupOf(s) === su.group));
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>They pack together without overlapping. Drag any one on the cake to nudge it.</div>
-        {/* Surface previews — one stacked tile per allowed zone (vertical, full width — like the
-            decor_pattern card; a row let the 300px TopperPreview canvas overflow). Each shows the
-            scattered element on that surface; the active one is ticked. Click to move the set. */}
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>They pack together without overlapping. Tick a surface to scatter there; drag any one on the cake to nudge it.</div>
+        {/* One checkbox per allowed surface — sprinkles can sit on Top AND Side at once, each its own
+            set. Reuses PreviewTile (the piping/chooser tile): tick = scatter there, untick = remove
+            that surface's set. Mode/preview come from config (placement_config[zone]); no type branch. */}
         {surfaces.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span style={s.editPanelLabel}>Surface</span>
             {surfaces.map(su => {
-              const on = su.zone === activeZone;
+              const on = all.some(s => scatterGroupOf(s) === su.group);
               return (
-                <div key={su.zone} role="button"
-                  onClick={() => { if (!on) changeScatterZone(card.elementId, su.zone); }}
-                  style={{ cursor: on ? 'default' : 'pointer' }}>
-                  <div style={{ width: '100%', height: 96, borderRadius: 10, overflow: 'hidden', border: `2px solid ${on ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
-                    {/* mode read by zone (no literal/default) so the preview matches the renderer */}
-                    <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={el?.placement_config?.[su.zone]} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
-                  </div>
-                  <span style={{ display: 'block', marginTop: 3, fontSize: 10, fontWeight: 700, color: on ? '#1a1a1a' : '#8a7a80', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: "'Quicksand',sans-serif" }}>{su.label}{on ? ' ✓' : ''}</span>
+                <PreviewTile key={su.zone} checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={96}>
+                  {/* mode read by zone (no literal/default) so the preview matches the renderer */}
+                  <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={el?.placement_config?.[su.zone]} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
+                </PreviewTile>
+              );
+            })}
+          </div>
+        )}
+        {/* Count is per active surface (denser top than side if you like); Size + Colour are shared. */}
+        {onSurfaces.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={s.editPanelLabel}>Count</span>
+            {onSurfaces.map(su => {
+              const c = all.filter(s => scatterGroupOf(s) === su.group).length;
+              // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the slider.
+              const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el));
+              return (
+                <div key={su.group} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {onSurfaces.length > 1 && <span style={{ fontSize: 10, fontWeight: 700, color: '#8a7a80', minWidth: 30 }}>{su.label}</span>}
+                  <input type="range" min={1} max={maxCount} step={1} value={Math.min(c, maxCount)}
+                    onChange={e => setScatterDensity(card.elementId, su.zone, parseInt(e.target.value, 10))}
+                    style={{ flex: 1, accentColor: '#6c47ff', minWidth: 0 }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#333', minWidth: 22, textAlign: 'right' }}>{c}</span>
                 </div>
               );
             })}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={s.editPanelLabel}>Count</span>
-          <input type="range" min={1} max={maxCount} step={1} value={Math.min(count, maxCount)}
-            onChange={e => setScatterDensity(card.elementId, parseInt(e.target.value, 10))}
-            style={{ flex: 1, accentColor: '#6c47ff', minWidth: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#333', minWidth: 22, textAlign: 'right' }}>{count}</span>
-        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={s.editPanelLabel}>Size</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
-            <SizeDial size={size} min={scaleRangeOf(el, 0.1, 4).min} max={scaleRangeOf(el, 0.1, 4).max} step={0.05}
-              onChange={v => scaleStickers(instances.map(s => s.id), v)} />
+            <SizeDial size={size} min={scR.min} max={scR.max} step={scR.step}
+              onChange={v => scaleStickers(all.map(s => s.id), v)} />
           </div>
         </div>
         {canColor && (
@@ -2903,11 +2918,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 setSelectedStickerIds(new Set());
                 if (opening) setColorOpen(true);
               }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: instances[0]?.color ?? '#ffffff' }} />
+              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: all[0]?.color ?? '#ffffff' }} />
             </button>
           </div>
         )}
-        <button onClick={() => { instances.forEach(s => removeSticker(s.id)); clearAllSelections(); }}
+        <button onClick={() => { all.forEach(s => removeSticker(s.id)); clearAllSelections(); }}
           style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove all</button>
       </div>
     );
@@ -2964,7 +2979,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const sticker = !instance ? design.stickers.find(s => s.elementId === elId && onSlot(s, slot)) : null;
       // Drives the preview's orientation (stand vs hug), straight from config — matches the renderer.
       // scaleRange caps the stand-slot Size dial from config (placement_config.scale); hug uses hugMul.
-      return { ...slot, label, checked, sticker, mode: pc[slot.zone], scaleRange: scaleRangeOf(srcEl, 0.5, 8) };
+      return { ...slot, label, checked, sticker, mode: pc[slot.zone], scaleRange: scaleRangeOf(srcEl, 0.5, 8, 0.1) };
     });
     const onToggle = slot => {
       if (instance) {
@@ -3079,9 +3094,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (c.resize && el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       // Same SizeDial as piping + the hero chooser — one Size control everywhere.
-      const scRange = scaleRangeOf(elementById.get(sticker?.elementId), 0.25, 8);
+      const scRange = scaleRangeOf(elementById.get(sticker?.elementId), 0.25, 8, 0.05);
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
-        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scRange.max} step={0.05}
+        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scRange.max} step={scRange.step}
           onChange={v => {
             // Multi-selection → set the same size on all selected (so a pattern's parts stay equal);
             // otherwise just this sticker.
