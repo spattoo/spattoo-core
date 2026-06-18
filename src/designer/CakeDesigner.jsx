@@ -7,7 +7,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf } from './placement.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
@@ -547,7 +547,7 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
                       default 1×) rather than an absolute scale. Stand uses absolute scale (r). */}
                   {isDynamicHug(slot.sticker)
                     ? <SizeDial size={slot.sticker.hugMul ?? 1} min={0.3} max={3} step={0.05} onChange={v => onUpdate(slot.sticker.id, { hugMul: v })} />
-                    : <SizeDial size={slot.sticker.scale ?? 1} min={0.5} max={8} step={0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />}
+                    : <SizeDial size={slot.sticker.scale ?? 1} min={slot.scaleRange?.min ?? 0.5} max={slot.scaleRange?.max ?? 8} step={0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />}
                   <span style={cap}>Size</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
@@ -2792,6 +2792,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       );
     }
     const meanScale = members.reduce((a, m) => a + (m.scale ?? 1), 0) / members.length;
+    // A group can span elements with different configured ranges — use their INTERSECTION so the
+    // shared dial can't push any member past its own cap (tightest floor, tightest ceiling).
+    const memberRanges = members.map(m => scaleRangeOf(elementById.get(m.elementId), 0.25, 8));
+    const grpMin = Math.max(...memberRanges.map(r => r.min));
+    const grpMax = Math.min(...memberRanges.map(r => r.max));
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Drag on the cake to move the group · tap a piece to edit it.</div>
@@ -2812,7 +2817,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={s.editPanelLabel}>Size</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
-            <SizeDial size={meanScale} min={0.25} max={8} step={0.05}
+            <SizeDial size={meanScale} min={grpMin} max={grpMax} step={0.05}
               onChange={v => { if (meanScale > 0) scaleGroupBy(members.map(m => m.id), v / meanScale); }} />
           </div>
         </div>
@@ -2882,7 +2887,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={s.editPanelLabel}>Size</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
-            <SizeDial size={size} min={0.1} max={4} step={0.05}
+            <SizeDial size={size} min={scaleRangeOf(el, 0.1, 4).min} max={scaleRangeOf(el, 0.1, 4).max} step={0.05}
               onChange={v => scaleStickers(instances.map(s => s.id), v)} />
           </div>
         </div>
@@ -2958,7 +2963,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Per-slot Size/Tilt only in hero mode (scatter keeps its own controls below the chooser).
       const sticker = !instance ? design.stickers.find(s => s.elementId === elId && onSlot(s, slot)) : null;
       // Drives the preview's orientation (stand vs hug), straight from config — matches the renderer.
-      return { ...slot, label, checked, sticker, mode: pc[slot.zone] };
+      // scaleRange caps the stand-slot Size dial from config (placement_config.scale); hug uses hugMul.
+      return { ...slot, label, checked, sticker, mode: pc[slot.zone], scaleRange: scaleRangeOf(srcEl, 0.5, 8) };
     });
     const onToggle = slot => {
       if (instance) {
@@ -3073,8 +3079,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (c.resize && el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       // Same SizeDial as piping + the hero chooser — one Size control everywhere.
+      const scRange = scaleRangeOf(elementById.get(sticker?.elementId), 0.25, 8);
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
-        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={0.25} max={8} step={0.05}
+        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scRange.max} step={0.05}
           onChange={v => {
             // Multi-selection → set the same size on all selected (so a pattern's parts stay equal);
             // otherwise just this sticker.

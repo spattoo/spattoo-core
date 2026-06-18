@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3 } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf } from './placement.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
 // for the real types; if a type ever diverges, a shared assertion here breaks. Guards the exact
@@ -97,6 +97,36 @@ describe('facingOffsetRadians — one unit on each side: degrees in DB, radians 
     expect(radToDeg3(degToRad3(deg)).map(Math.round)).toEqual(deg);
     expect(degToRad3(null)).toBe(null);
     expect(radToDeg3(undefined)).toBe(null);
+  });
+});
+
+describe('scaleRangeOf — placement_config.scale bounds the Size dial, with per-key fallback', () => {
+  it('no scale key → falls back to the control defaults (backward compatible)', () => {
+    expect(scaleRangeOf({ placement_config: {} }, 0.25, 8)).toEqual({ min: 0.25, max: 8 });
+    expect(scaleRangeOf(undefined, 0.1, 4)).toEqual({ min: 0.1, max: 4 });
+    expect(scaleRangeOf({ placement_config: { r: 0.5 } }, 0.25, 8)).toEqual({ min: 0.25, max: 8 });
+  });
+  it('a full scale range overrides both ends (admin can tighten OR widen)', () => {
+    expect(scaleRangeOf({ placement_config: { scale: { min: 0.5, max: 1.2 } } }, 0.25, 8))
+      .toEqual({ min: 0.5, max: 1.2 });
+    expect(scaleRangeOf({ placement_config: { scale: { min: 0.2, max: 12 } } }, 0.25, 8))
+      .toEqual({ min: 0.2, max: 12 });
+  });
+  it('partial scale → only the supplied key overrides; the other falls back', () => {
+    expect(scaleRangeOf({ placement_config: { scale: { max: 1 } } }, 0.25, 8))
+      .toEqual({ min: 0.25, max: 1 });       // cap the top, keep the floor
+    expect(scaleRangeOf({ placement_config: { scale: { min: 0.6 } } }, 0.25, 8))
+      .toEqual({ min: 0.6, max: 8 });
+  });
+  it('ignores a non-positive or non-numeric max (guards a bad authored value)', () => {
+    expect(scaleRangeOf({ placement_config: { scale: { max: 0 } } }, 0.25, 8).max).toBe(8);
+    expect(scaleRangeOf({ placement_config: { scale: { max: -2 } } }, 0.25, 8).max).toBe(8);
+    expect(scaleRangeOf({ placement_config: { scale: { max: 'big' } } }, 0.25, 8).max).toBe(8);
+  });
+  it('r (the default render scale) is independent of the range and not consumed here', () => {
+    // r drives the initial size at placement; scaleRangeOf only bounds the dial.
+    const el = { placement_config: { r: 0.5, scale: { min: 0.3, max: 1.5 } } };
+    expect(scaleRangeOf(el, 0.25, 8)).toEqual({ min: 0.3, max: 1.5 });
   });
 });
 

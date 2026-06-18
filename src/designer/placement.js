@@ -30,6 +30,21 @@ export function isDynamicHug(sticker) {
   return sticker?.singlePerSlot === true && sticker?.placementMode === PLACEMENT_MODES.HUG;
 }
 
+// The SizeDial's absolute-scale range for an element, from config — never branched on type.
+// `placement_config.scale = { min, max }` bounds the dial; `placement_config.r` is just the
+// default position WITHIN that range (set at placement). Each key is optional and falls back to
+// the control's own default (`dMin`/`dMax`), so an element with no `scale` keeps its present
+// bounds — backward compatible. Applies ONLY to absolute-scale dials, never the hero-hug `hugMul`
+// (a wall-relative multiplier — a different unit). For a composite group, intersect the members'
+// ranges (max of mins, min of maxes) so the shared dial can't push any member past its own cap.
+export function scaleRangeOf(element, dMin, dMax) {
+  const sc = element?.placement_config?.scale;
+  return {
+    min: typeof sc?.min === 'number'                 ? sc.min : dMin,
+    max: typeof sc?.max === 'number' && sc.max > 0   ? sc.max : dMax,
+  };
+}
+
 // ── Facing-offset unit normalization ─────────────────────────────────────────
 // A GLB's authored facing offset (placement_config.rotation) is AUTHORED in degrees — the same
 // convention the calibrator and piping (top_/bottom_rotation) already use — but consumed by THREE
