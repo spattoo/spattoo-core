@@ -7,7 +7,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG } from './placement.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -3170,6 +3170,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(ta * 180 / Math.PI)}°</span>,
         <button key="ta+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.min(1.2, +((ta) + 0.1).toFixed(3)) })}>+</button>,
       ] });
+    }
+
+    // Fold (wing dihedral) — a foldable sticker lets the customer adjust how far the two wings
+    // hinge up. Config-gated on the instance's `foldable` (placement_config.foldable), never on
+    // element type/slug; the render re-folds live via StickerTexture's createFoldedPlane.
+    if (el.type === 'sticker') {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      if (sticker?.foldable === true) {
+        const fa = sticker.fold ?? DEFAULT_FOLD_DEG;
+        groups.push({ key: 'fold', divider: true, controls: [
+          <span key="fold-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Fold</span>,
+          <button key="fold-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { fold: Math.max(0, Math.round(fa - 5)) })}>−</button>,
+          <span key="fold-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(fa)}°</span>,
+          <button key="fold+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { fold: Math.min(75, Math.round(fa + 5)) })}>+</button>,
+        ] });
+      }
     }
 
     // Trailing actions (duplicate / remove / done) — no dividers between them in

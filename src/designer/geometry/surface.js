@@ -115,6 +115,21 @@ export function topClamp(shape, x, z, k = 0.92) {
   return r > maxR ? { x: (x * maxR) / r, z: (z * maxR) / r } : { x, z };
 }
 
+// Clamp (x,z) onto the top surface, inset by an ABSOLUTE `margin` from the edge — so a footprint
+// of half-width `margin` never overhangs the rim. `margin = 0` lets the point reach the rim itself.
+// Used instead of the fixed-fraction `topClamp` where the inset should track the decoration: a
+// `stand` element (point base) passes margin 0 and can sit at the rim; a flat decal passes half its
+// size so its outer edge meets the rim. Mode/size-derived by the caller — never a config flag.
+export function topClampInset(shape, x, z, margin = 0) {
+  if (shape.kind === 'rect') {
+    const mx = Math.max(0, shape.halfW - margin), mz = Math.max(0, shape.halfD - margin);
+    return { x: Math.max(-mx, Math.min(mx, x)), z: Math.max(-mz, Math.min(mz, z)) };
+  }
+  const maxR = Math.max(0, shape.radius - margin);
+  const r = Math.hypot(x, z);
+  return r > maxR ? { x: (x * maxR) / r, z: (z * maxR) / r } : { x, z };
+}
+
 // Is (x,z) on the top surface (margin k)? Drives tap-to-place hit testing.
 export function topContains(shape, x, z, k = 1) {
   return shape.kind === 'rect'
@@ -240,6 +255,11 @@ export function selfTest() {
   // Round clamp pulls an outside point onto the circle of radius·k.
   const cc = topClamp({ kind: 'round', radius: 1 }, 4, 0, 1);
   check(near(cc.x, 1) && near(cc.z, 0), 'round topClamp should land on the circle (1,0)');
+  // topClampInset: margin 0 reaches the rim; a margin insets the footprint by that absolute amount.
+  const ti0 = topClampInset({ kind: 'round', radius: 1 }, 4, 0, 0);
+  check(near(ti0.x, 1) && near(ti0.z, 0), 'topClampInset margin 0 should reach the rim (1,0)');
+  const ti = topClampInset({ kind: 'round', radius: 1 }, 4, 0, 0.2);
+  check(near(ti.x, 0.8) && near(ti.z, 0), 'topClampInset margin 0.2 should stop at radius−margin (0.8)');
   // Inside points are untouched by both.
   const ins = topClamp({ kind: 'rect', halfW: 2, halfD: 1, cornerR: 0.1 }, 0.5, 0.2, 1);
   check(near(ins.x, 0.5) && near(ins.z, 0.2), 'topClamp must leave interior points alone');

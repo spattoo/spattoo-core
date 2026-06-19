@@ -16,7 +16,7 @@ import {
 } from '../constants.js';
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
-import { tierShape, topClamp, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
@@ -272,6 +272,34 @@ function createFoldedPlane(size, foldRad, spine) {
   return geo;
 }
 
+// Measure a 2D sticker's opaque content bottom so a STANDING sticker seats its VISIBLE base on the
+// surface — not the empty bottom of a square plane with transparent margin (which makes it float).
+// Returns the unscaled half-height from the plane centre down to the content bottom (= STICKER_SIZE/2
+// when the content fills the plane, so margin-free assets are unaffected). Cached per URL; a
+// CORS-tainted canvas falls back to the old half-plane seat. Asset-derived — never type-aware.
+const stickerSeatHalfCache = {};
+function measureStickerSeatHalf(image, imageUrl) {
+  if (imageUrl in stickerSeatHalfCache) return stickerSeatHalfCache[imageUrl];
+  let half = STICKER_SIZE / 2;
+  try {
+    const w = image.naturalWidth || image.width, h = image.naturalHeight || image.height;
+    if (w && h) {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0);
+      const d = ctx.getImageData(0, 0, w, h).data;
+      for (let y = h - 1; y >= 0; y--) {               // scan up from the bottom → first opaque row
+        let opaque = false;
+        for (let x = 0; x < w; x++) { if (d[(y * w + x) * 4 + 3] > 8) { opaque = true; break; } }
+        if (opaque) { half = STICKER_SIZE * (((y + 1) / h) - 0.5); break; }
+      }
+    }
+  } catch (_) { /* tainted canvas → keep the half-plane fallback */ }
+  stickerSeatHalfCache[imageUrl] = Math.max(half, 0.02 * STICKER_SIZE);   // guard against a degenerate 0
+  return stickerSeatHalfCache[imageUrl];
+}
+
 // Returns the sticker's texture, pixel-recoloured to `color` when the element carries a
 // `recolor` region descriptor (placement_config.recolor). useTexture still owns loading/suspense/
 // caching; we derive a recoloured CanvasTexture from the loaded image only when asked. A tainted
@@ -306,8 +334,16 @@ function useStickerImageTexture(imageUrl, recolor, color) {
   return recoloured;
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, recolor, color }) {
+function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, recolor, color, onSeat }) {
   const texture = useStickerImageTexture(imageUrl, recolor, color);
+  // Seat a standing sticker on its visible base (measured from the texture's opaque content), so a
+  // wide butterfly on a square canvas doesn't float above the surface. Top renderer reads this via
+  // onSeat; side/flat ignore it. Alpha bounds are unchanged by recolour, so measuring `texture` is fine.
+  useEffect(() => {
+    if (!onSeat) return;
+    const img = texture?.image;
+    if (img && (img.naturalWidth || img.width)) onSeat(measureStickerSeatHalf(img, imageUrl));
+  }, [texture, imageUrl, onSeat]);
   // Geometry is config-driven: a foldable element hinges into a folded plane (the fold wins
   // over wall-curving — a stuck-on card doesn't also curve); otherwise the prior flat/curved
   // behaviour. curveRadius is capped at 0.3 world units so the bend is actually visible —
@@ -601,7 +637,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} recolor={recolor} color={color} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} recolor={recolor} color={color} onSeat={onSeat} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -1297,7 +1333,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           const incrDz  = hit.z - prevHit.z;
           let newX = lastValidPos.current.x + incrDx;
           let newZ = lastValidPos.current.z + incrDz;
-          ({ x: newX, z: newZ } = topClamp(shp, newX, newZ));
+          // Stand/perch sit on a point base → can reach the rim (margin 0); a flat decal keeps its
+          // footprint on the cake (margin = half its size, so its outer edge meets the rim). Derived
+          // from the placement mode + size already on the instance — never a config flag.
+          const edgeMargin = (isStand || isPerch) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
+          ({ x: newX, z: newZ } = topClampInset(shp, newX, newZ, edgeMargin));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
           for (const sib of siblings) {
             const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
@@ -1308,7 +1348,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
             if (dist < minDist && dist > 0.001) {
               newX = sib.x + ex * (minDist / dist);
               newZ = sib.z + ez * (minDist / dist);
-              ({ x: newX, z: newZ } = topClamp(shp, newX, newZ));
+              ({ x: newX, z: newZ } = topClampInset(shp, newX, newZ, edgeMargin));
             }
           }
           lastValidPos.current = { x: newX, z: newZ };
