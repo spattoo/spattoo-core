@@ -2546,7 +2546,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // cake base. The stops + direction + balance live on the design instance as
   // instance.gradient = { mode, colors:[…], balance }. `color` stays the solid/stop-0 fallback so a
   // single-colour instance behaves exactly as before. Stops drive the shared shader in
-  // canvas/gradientMaterial.js (up to 3 stops). A tier and a sticker are the two gradient targets;
+  // shared/color/gradientMaterial.js (up to 3 stops). A tier and a sticker are the two gradient targets;
   // both use the identical stops/mode/balance model — no per-type gradient code.
   const selectedSticker = selectedEl?.type === 'sticker'
     ? design.stickers.find(s => s.id === selectedEl.id) : null;

@@ -94,7 +94,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // Tier gradient — same instance-level model as piping/stickers (eligibility is gated in the UI by
   // TIER_CAPS.gradient; the stops + balance live on the tier as tier.gradient = { mode, colors,
   // balance }). `color` stays the solid/stop-0 fallback. ≥2 stops = a gradient; fewer drops it back
-  // to the solid colour. Rendered via the shared applyGradient helper (canvas/gradientMaterial.js).
+  // to the solid colour. Rendered via the shared applyGradient helper (shared/color/gradientMaterial.js).
   function setTierGradient(index, colors, mode = 'vertical', balance = 0.5) {
     const clean = (colors ?? []).filter(Boolean);
     setDesign(prev => ({

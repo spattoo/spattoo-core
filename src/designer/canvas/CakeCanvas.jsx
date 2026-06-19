@@ -15,10 +15,10 @@ import {
   SIDE_STICKER_SURFACE_OFFSET, FLAT_STICKER_Y_OFFSET,
 } from '../constants.js';
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
-import { getFondantNormalMap, applyBoxUVs } from './fondantTexture.js';
+import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL } from '../placement.js';
-import { applyGradient } from './gradientMaterial.js';
+import { applyGradient } from '../shared/color/gradientMaterial.js';
 
 function darkenHex(hex, amount) {
   if (!hex || !hex.startsWith('#')) return '#888';
