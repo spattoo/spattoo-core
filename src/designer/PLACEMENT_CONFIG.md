@@ -7,6 +7,10 @@ slug, it only reads these fields (see `INVARIANTS.md`). This file lists every ke
 > Values here are persisted to the DB and to saved designs, so **never rename a value**.
 > Reference the enums in `constants.js` (`ZONES`, `PLACEMENT_MODES`) by name in code.
 
+> **This is a LIVING document — keep EVERY section current.** §0 (superset sample), §1–§4 (the
+> per-key tables), and §5 (full element structure) must all track the code. If you change what the
+> code reads or writes, update the matching section(s) in the **same change**. Full rule at the bottom.
+
 ---
 
 ## 0. Superset sample — every possible key
