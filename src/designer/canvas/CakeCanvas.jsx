@@ -380,9 +380,17 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
   useEffect(() => {
     if (!onSeat || !imageUrl) return;
     let live = true;
+    // Prefer the already-loaded texture image — no extra fetch (r2.dev rate-limits, so a second
+    // download for measuring can fail and fall the seat back to half-plane → constant lift). Only if
+    // THIS image is CORS-tainted (e.g. a non-CORS thumbnail poisoned the cache) do we reload clean.
+    const img = texture?.image;
+    if (img && (img.naturalWidth || img.width)) {
+      try { onSeat(Math.max(computeSeatHalf(img, seatSpine, seatRise), 0.02 * STICKER_SIZE)); return () => { live = false; }; }
+      catch (_) { /* tainted → CORS fallback below */ }
+    }
     requestStickerSeatHalf(imageUrl, { spine: seatSpine, rise: seatRise }, half => { if (live) onSeat(half); });
     return () => { live = false; };
-  }, [imageUrl, onSeat, seatRise, seatSpine]);
+  }, [texture, imageUrl, onSeat, seatRise, seatSpine]);
   // Geometry is config-driven: a foldable element hinges into a folded plane (the fold wins over
   // wall-curving). Standing → wings rise UP in a V from the spine (riseRad = fold), so the body is
   // the support; laid flat / on a wall → hinge into Z-depth (foldRad). curveRadius is capped at 0.3
