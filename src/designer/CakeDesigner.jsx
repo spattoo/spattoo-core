@@ -10,6 +10,8 @@ import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/Cake
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf } from './placement.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
+import FrostingTypePicker from './controls/FrostingPicker.jsx';
+import { frostingSupportsGradient } from './frostings.js';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
@@ -927,7 +929,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
@@ -2554,7 +2556,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     ? (design.tiers[selectedEl.index] ?? null) : null;
   const isTierGradient = selectedEl?.type === 'tier';
   const gradTarget = selectedSticker ?? selectedTierObj;
-  const gradientEligible = !!caps?.gradient && !!gradTarget;
+  // For a tier, gradient is offered only when its frosting supports it (cream finishes, not
+  // fondant/naked) — a declared capability in the frostings registry, not a hardcoded branch.
+  const tierGradientOk = selectedEl?.type !== 'tier'
+    || frostingSupportsGradient(selectedTierObj?.frostingType ?? 'buttercream');
+  const gradientEligible = !!caps?.gradient && !!gradTarget && tierGradientOk;
   // The stops to show: the saved gradient if any, else a single chip = the solid colour.
   const gradStops = gradientEligible
     ? (gradTarget.gradient?.colors?.length
@@ -3998,6 +4004,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   modes={isTierGradient ? ['vertical'] : undefined}
                   balance={isTierGradient ? gradBalance : undefined}
                   onBalanceChange={b => writeGradient(gradStops, gradMode, b)}
+                />
+              )}
+
+              {/* Frosting type (material) — tiers only. Colour stays on the ColorWheel above;
+                  this picks buttercream | whipped | fondant | naked, driving the frostings registry. */}
+              {selectedEl?.type === 'tier' && (
+                <FrostingTypePicker
+                  value={design.tiers[selectedEl.index]?.frostingType ?? 'buttercream'}
+                  onChange={t => setTierFrostingType(selectedEl.index, t)}
                 />
               )}
 

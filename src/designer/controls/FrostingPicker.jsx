@@ -1,42 +1,21 @@
-import { FROSTING_COLORS, FROSTING_TYPES } from '../hooks/useCakeDesign';
+import { FROSTING_TYPES } from '../hooks/useCakeDesign';
 
-export default function FrostingPicker({ frosting, onChange }) {
+// Per-tier frosting TYPE (material) picker — a chip row over FROSTING_TYPES
+// (buttercream | whipped | fondant | naked). Type only; the tier's colour is handled
+// by the shared ColorWheel. `value` = the tier's current frostingType, `onChange(type)`.
+export default function FrostingTypePicker({ value, onChange }) {
   return (
     <div style={styles.section}>
       <label style={styles.label}>Frosting</label>
-
-      {/* Type */}
       <div style={styles.chipRow}>
         {FROSTING_TYPES.map(ft => (
           <button
             key={ft.value}
-            onClick={() => onChange('frosting.type', ft.value)}
-            style={{
-              ...styles.chip,
-              ...(frosting.type === ft.value ? styles.chipActive : {}),
-            }}
+            onClick={() => onChange(ft.value)}
+            style={{ ...styles.chip, ...(value === ft.value ? styles.chipActive : {}) }}
           >
             {ft.label}
           </button>
-        ))}
-      </div>
-
-      {/* Color swatches */}
-      <div style={styles.swatchRow}>
-        {FROSTING_COLORS.map(fc => (
-          <button
-            key={fc.value}
-            title={fc.label}
-            onClick={() => onChange('frosting.color', fc.value)}
-            style={{
-              ...styles.swatch,
-              background: fc.value,
-              border: frosting.color === fc.value
-                ? '3px solid #1a1a1a'
-                : '2px solid #999999',
-              transform: frosting.color === fc.value ? 'scale(1.2)' : 'scale(1)',
-            }}
-          />
         ))}
       </div>
     </div>
@@ -45,7 +24,7 @@ export default function FrostingPicker({ frosting, onChange }) {
 
 const styles = {
   section: {
-    marginBottom: 20,
+    marginBottom: 14,
   },
   label: {
     display: 'block',
@@ -60,7 +39,6 @@ const styles = {
   chipRow: {
     display: 'flex',
     gap: 8,
-    marginBottom: 12,
     flexWrap: 'wrap',
   },
   chip: {
@@ -79,19 +57,5 @@ const styles = {
     border: '1.5px solid #d4849a',
     color: '#6b3040',
     fontWeight: 700,
-  },
-  swatchRow: {
-    display: 'flex',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  swatch: {
-    width: 30,
-    height: 30,
-    borderRadius: '50%',
-    cursor: 'pointer',
-    transition: 'transform 0.15s',
-    padding: 0,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
   },
 };

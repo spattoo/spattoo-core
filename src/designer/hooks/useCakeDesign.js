@@ -2,12 +2,16 @@ import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape, topClamp } from '../geometry/surface.js';
 import { facingOffsetRadians } from '../placement.js';
+import { FROSTING_TYPES, DEFAULT_FROSTING } from '../frostings.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
+// Frosting types now live in the frostings registry; re-export so existing importers
+// (FrostingPicker, admin CreateTemplate) keep resolving them from here.
+export { FROSTING_TYPES };
 
 const DEFAULT_DESIGN = {
   tiers: [
-    { color: '#f5b8c8', topPipings: [], bottomPipings: [] },
+    { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, topPipings: [], bottomPipings: [] },
   ],
   texts: [],
   stickers: [],
@@ -70,13 +74,6 @@ const newLayerId = () => crypto.randomUUID();
 const withLayerId = (piping) => (piping.layerId ? piping : { ...piping, layerId: newLayerId() });
 const zoneKey = (zone) => (zone === ZONES.RIM || zone === ZONES.TOP ? 'topPipings' : 'bottomPipings');
 
-export const FROSTING_TYPES = [
-  { value: 'buttercream', label: 'Buttercream' },
-  { value: 'whipped',     label: 'Whipped' },
-  { value: 'fondant',     label: 'Fondant' },
-  { value: 'naked',       label: 'Naked' },
-];
-
 // Passed as storageBaseUrl option — only used to migrate old-format templates
 // that stored decoration type 'swirl_ring'/'base_border' instead of piping objects.
 const LEGACY_PIPING_SLUG = 'elements/3D-images/piping-cream4.glb';
@@ -88,6 +85,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, color } : t),
+    }));
+  }
+
+  // Frosting TYPE (material) per tier — buttercream | whipped | fondant | naked. Resolved through
+  // the frostings registry in CakeTier (material + edge + capabilities); the colour stays on tier.color.
+  function setTierFrostingType(index, frostingType) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, frostingType } : t),
     }));
   }
 
@@ -163,7 +169,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function addTier() {
     setDesign(prev => {
       if (prev.tiers.length >= 4) return prev;
-      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', topPipings: [], bottomPipings: [] }] };
+      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', frostingType: DEFAULT_FROSTING, topPipings: [], bottomPipings: [] }] };
     });
   }
 
@@ -619,7 +625,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
         color:        t.color,
         gradient:     t.gradient ?? null,
-        frostingType: t.frostingType ?? 'buttercream',
+        frostingType: t.frostingType ?? DEFAULT_FROSTING,
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
@@ -633,7 +639,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

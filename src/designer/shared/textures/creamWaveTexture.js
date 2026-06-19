@@ -152,6 +152,50 @@ export function getCreamGrainNormalMap(size = 256, strength = 0.5) {
   return tex;
 }
 
+// Foamy WHIPPED-CREAM micro-surface — bigger, rounded air-pocket bumps, the opposite of the fine
+// even cream grain. Coarser value-noise lattice (big bubbles) + a rounding curve so bumps read as
+// soft bubbles rather than even pebble, then the same Sobel → tangent-normal recipe. Tileable.
+let _foam = null;
+export function getWhippedFoamNormalMap(size = 256, strength = 0.9) {
+  if (_foam) return _foam;
+  const L = 9;   // coarse lattice → large bubbles (vs the cream grain's L=24)
+  const rand = new Float32Array(L * L);
+  let s = 424242;
+  const next = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (let i = 0; i < L * L; i++) rand[i] = next();
+  const latt = (xi, yi) => rand[((yi % L + L) % L) * L + ((xi % L + L) % L)];
+  const smooth = t => t * t * (3 - 2 * t);
+  const noise = (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const tx = smooth(x - xi), ty = smooth(y - yi);
+    const a = latt(xi, yi), b = latt(xi + 1, yi), c = latt(xi, yi + 1), d = latt(xi + 1, yi + 1);
+    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+  };
+  const H = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const u = x / size * L, v = y / size * L;
+    let h = noise(u, v) * 0.7 + noise(u * 2.1, v * 2.1) * 0.3;
+    h = Math.pow(h, 1.6);   // round the bumps into bubbles (steeper valleys between)
+    H[y * size + x] = h;
+  }
+  const data = new Uint8Array(size * size * 4);
+  const at = (x, y) => H[((y % size) + size) % size * size + (((x % size) + size) % size)];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = (at(x + 1, y) - at(x - 1, y)) * strength * size * 0.02;
+    const dy = (at(x, y + 1) - at(x, y - 1)) * strength * size * 0.02;
+    const nx = -dx, ny = -dy, nz = 1, len = Math.hypot(nx, ny, nz), o = (y * size + x) * 4;
+    data[o] = Math.round((nx / len * 0.5 + 0.5) * 255);
+    data[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
+    data[o + 2] = Math.round((nz / len * 0.5 + 0.5) * 255);
+    data[o + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  _foam = tex;
+  return tex;
+}
+
 // REAL relief: displace a cylinder's side wall outward by the wave field so the ribs genuinely
 // project and break the silhouette (a normal map cannot). Only side vertices (near-horizontal
 // normal) move, radially; caps stay flat. Normals are recomputed so shading is real, not faked.

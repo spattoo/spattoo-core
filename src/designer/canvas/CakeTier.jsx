@@ -2,6 +2,9 @@ import { useMemo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textures/creamWaveTexture.js';
+import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
+import { frostingDef, frostingSupportsGradient, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
@@ -654,11 +657,33 @@ function NakedLayers({ shp, yBase, height, flavour }) {
   );
 }
 
-const FROSTING_MAT = {
-  buttercream: { roughness: 0.68, metalness: 0.00 },
-  whipped:     { roughness: 0.82, metalness: 0.00 },
-  fondant:     { roughness: 0.08, metalness: 0.03 },
+// Per frosting TYPE (material) — distinct, realistic physical-material descriptors. The three
+// Frosting material descriptors, edge profiles and capabilities are DATA in the frostings registry.
+// Here we resolve only the part that must be code: the `grain` KEY → a normal-map generator.
+const GRAIN_GENERATORS = {
+  cream:   getCreamGrainNormalMap,
+  foam:    getWhippedFoamNormalMap,
+  fondant: getFondantNormalMap,
 };
+
+// Tiling micro-grain normal map for the wall, cloned per (grain, repeat) so each material owns its
+// own wrap/repeat without mutating the shared cached texture. `aroundLen`/`upLen` are the wall's
+// world extents so the grain cell stays a constant physical size across tier sizes.
+const GRAIN_TILES_PER_UNIT = 16;
+const _grainCache = new Map();
+function grainNormalMap(grain, aroundLen, upLen, density = 1) {
+  const rx = Math.max(4, Math.round(aroundLen * GRAIN_TILES_PER_UNIT * density));
+  const ry = Math.max(3, Math.round(upLen   * GRAIN_TILES_PER_UNIT * density));
+  const key = `${grain}:${rx}:${ry}`;
+  if (_grainCache.has(key)) return _grainCache.get(key);
+  const base = (GRAIN_GENERATORS[grain] ?? getCreamGrainNormalMap)();
+  const tex = base.clone();
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(rx, ry);
+  tex.needsUpdate = true;
+  _grainCache.set(key, tex);
+  return tex;
+}
 
 // Cake body for a sheet cake: a rounded-RECTANGLE cross-section extruded straight up.
 // Only the 4 vertical corners are rounded (radius r); the top and bottom stay flat and the
@@ -679,6 +704,27 @@ export function buildRoundedPrism(halfW, halfD, height, r) {
   const geo = new THREE.ExtrudeGeometry(s, { depth: height, bevelEnabled: false, curveSegments: 8 });
   geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
   return geo;
+}
+
+// Fondant-draped ROUND tier: a solid of revolution whose top edge is a rounded fillet (the fondant
+// sheet folds over the rim instead of a sharp 90° tin edge). Profile is revolved around Y, spanning
+// y ∈ [0, height]: flat bottom disk → straight wall → quarter-arc top edge → flat top disk. `fillet`
+// is the edge radius in world units. Replaces the cylinder+lid for round fondant tiers; the single
+// mesh means the vertical gradient and grain flow over the rounded edge with no separate cap.
+function buildRoundedTopCylinder(radius, height, fillet, radial = 64) {
+  const r = Math.max(0, Math.min(fillet, radius * 0.9, height * 0.5));
+  const pts = [
+    new THREE.Vector2(0, 0),               // bottom centre (closes the base)
+    new THREE.Vector2(radius, 0),          // bottom outer edge
+    new THREE.Vector2(radius, height - r), // up the wall to where the fillet starts
+  ];
+  const ARC = 10;
+  for (let i = 1; i <= ARC; i++) {         // quarter-arc rim, centre (radius−r, height−r)
+    const a = (i / ARC) * (Math.PI / 2);
+    pts.push(new THREE.Vector2((radius - r) + r * Math.cos(a), (height - r) + r * Math.sin(a)));
+  }
+  pts.push(new THREE.Vector2(0, height));  // top centre (closes the top)
+  return new THREE.LatheGeometry(pts, radial);
 }
 
 // ── Selection outline ─────────────────────────────────────────────────────────
@@ -702,9 +748,16 @@ function SelectionOutline({ shp, yBase, height }) {
 // LOCAL bounding box, so the ombre blends in the body's own frame (bottom→top for vertical) and
 // there is no tier-specific shader. `gradient` null ⇒ plain solid colour, exactly as before.
 // `geoSig` changes whenever the geometry's size changes (tier resize) so the bbox is recomputed.
-function TierBody({ position, color, roughness, metalness, gradient, geoSig, children, castShadow = true, receiveShadow = false }) {
+// `surf` = a frosting material descriptor (roughness/sheen/clearcoat/grain…). `grainExtent` = [aroundLen,
+// upLen] world extents of the wall so the micro-grain tiles at a constant physical size. The material
+// is MeshPhysical so sheen + clearcoat read; applyGradient is documented to leave those untouched.
+function TierBody({ position, color, surf, grainExtent, gradient, geoSig, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
+  const normalMap = useMemo(
+    () => (surf?.grain && grainExtent ? grainNormalMap(surf.grain, grainExtent[0], grainExtent[1], surf.grainDensity) : null),
+    [surf?.grain, grainExtent?.[0], grainExtent?.[1], surf?.grainDensity],
+  );
   useEffect(() => {
     if (!matRef.current) return;
     let bb = null;
@@ -720,7 +773,13 @@ function TierBody({ position, color, roughness, metalness, gradient, geoSig, chi
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshStandardMaterial ref={matRef} color={color} roughness={roughness} metalness={metalness} />
+      <meshPhysicalMaterial ref={matRef} color={color}
+        roughness={surf?.roughness ?? 0.68} metalness={surf?.metalness ?? 0}
+        sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
+        clearcoat={surf?.clearcoat ?? 0} clearcoatRoughness={surf?.clearcoatRoughness ?? 0.5}
+        envMapIntensity={surf?.envMapIntensity ?? 0.5}
+        normalMap={normalMap ?? null}
+        normalScale={[surf?.grainStrength ?? 0.5, surf?.grainStrength ?? 0.5]} />
     </mesh>
   );
 }
@@ -749,16 +808,31 @@ export default function CakeTier({
 }) {
   const topY    = yBase + height;
   const centerY = yBase + height / 2;
-  const mat = FROSTING_MAT[frostingType] ?? FROSTING_MAT.buttercream;
+  // Finish definition (data) → material descriptor, edge profile, capabilities. naked has no
+  // `material` (it renders its own way), so fall back to the default for the unused body material.
+  const fdef = frostingDef(frostingType);
+  const mat = fdef.material ?? FROSTINGS[DEFAULT_FROSTING].material;
+  const roundEdge = fdef.edge?.kind === 'round' ? fdef.edge : null;
+  // Gradient is a cream technique only — ignore any (dormant) gradient on a finish that doesn't
+  // support it (fondant/naked), so it always renders solid. The data is kept; just not rendered.
+  const effGradient = frostingSupportsGradient(frostingType) ? gradient : null;
   // Vertical gradient runs bottom→top, so the top lid takes the last (top-most) stop; solid colour
   // otherwise. Mirrors the shader, which maps gt=1 (the cake top) to the final stop.
-  const gradColors = gradient?.colors?.filter(Boolean) ?? [];
+  const gradColors = effGradient?.colors?.filter(Boolean) ?? [];
   const capColor   = gradColors.length >= 2 ? gradColors[gradColors.length - 1] : color;
   const shp = useMemo(() => tierShape({ shape, width, depth, radius, cornerR }), [shape, width, depth, radius, cornerR]);
   const isRect = shp.kind === 'rect';
   const prismGeo = useMemo(
     () => isRect ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null,
     [isRect, shp, height],
+  );
+  // Round fondant tiers get a draped, rounded-edge body (config-driven via the finish's
+  // `edge: { kind:'round', frac }`). Other round tiers stay a plain cylinder + lid. null ⇒ cylinder.
+  const roundedGeo = useMemo(
+    () => (!isRect && roundEdge)
+      ? buildRoundedTopCylinder(radius, height, roundEdge.frac * Math.min(radius, height))
+      : null,
+    [isRect, roundEdge?.frac, radius, height],
   );
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
@@ -850,14 +924,24 @@ export default function CakeTier({
       {isRect ? (
         // Rounded-rect prism: flat top, only the vertical corners rounded, full footprint.
         // No separate top cap (a cap reads as a stray "board" on a rectangular cake).
-        <TierBody position={[0, yBase, 0]} color={color} roughness={mat.roughness} metalness={mat.metalness}
-          gradient={gradient} geoSig={prismGeo?.uuid} castShadow receiveShadow>
+        <TierBody position={[0, yBase, 0]} color={color} surf={mat}
+          grainExtent={[2 * (shp.halfW + shp.halfD), height]}
+          gradient={effGradient} geoSig={prismGeo?.uuid} castShadow receiveShadow>
           <primitive object={prismGeo} attach="geometry" />
+        </TierBody>
+      ) : roundedGeo ? (
+        // Fondant-draped round tier: one rounded-edge solid (spans y ∈ [0,height]), positioned at
+        // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.
+        <TierBody position={[0, yBase, 0]} color={color} surf={mat}
+          grainExtent={[2 * Math.PI * radius, height]}
+          gradient={effGradient} geoSig={roundedGeo.uuid} castShadow receiveShadow>
+          <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
       ) : (
         <>
-          <TierBody position={[0, centerY, 0]} color={color} roughness={mat.roughness} metalness={mat.metalness}
-            gradient={gradient} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
+          <TierBody position={[0, centerY, 0]} color={color} surf={mat}
+            grainExtent={[2 * Math.PI * radius, height]}
+            gradient={effGradient} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
             <cylinderGeometry args={[radius, radius, height, 64]} />
           </TierBody>
           {/* Top lid: a thin disk that reads as the cake's flat top. Under a vertical gradient its
