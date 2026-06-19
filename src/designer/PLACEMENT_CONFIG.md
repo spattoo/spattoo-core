@@ -203,9 +203,56 @@ Piping has a **top** (rim) and **bottom** (board) set with identical shapes — 
 
 ---
 
+## 5. Full element structure (the row that holds `placement_config`)
+
+The complete `cake_elements` row — `placement_config` is one field of it. Written by the admin
+`createGlobalElement` / `updateGlobalElement` payloads (`AddElement.jsx`, `ManageElements.jsx`);
+`id` / `created_at` are DB-assigned. Comments are illustrative; real stored JSON has none.
+
+```jsonc
+{
+  "id":              "uuid",                              // DB-assigned
+  "name":            "Lilac Butterfly",
+  "description":     "Folded card butterfly",             // | null
+  "element_type_id": "uuid",                              // FK → element_types
+  "parent_id":       null,                                // FK → cake_elements (pattern part / variant); null = top-level
+  "image_url":       "elements/files/2D/uuid.png",        // R2 key; .glb/.gltf ⇒ 3D, else 2D; null = file-less (faux_balls)
+  "thumbnail_url":   "elements/thumbnails/uuid.png",
+  "file_size":       48213,                               // bytes | null
+  "is_active":       true,
+  "sort_order":      0,
+  "default_color":   null,                                // hex seed for recolour / GLB tint | null
+  "allowed_zones":   ["top_surface", "side"],             // subset of ZONES — where it can go
+
+  "allowed_actions": {                                    // capabilities — gate the edit-popup controls
+    "resize":    true,
+    "duplicate": true,
+    "color":     true,                                    // shows the ColorWheel (GLB tint OR 2D recolour)
+    "gradient":  false,
+    "delete":    true,
+    "move":      false,
+    "tilt":      true
+  },
+
+  "placement_config": {                                   // HOW it behaves — see §0 for EVERY possible key
+    "top_surface": "stand",
+    "side":        "stand",
+    "r":           1.0,
+    "foldable":    true,
+    "fold":        32,
+    "spine":       0.5,
+    "recolor":     { "method": "saturated", "sat": 0.25 }
+  }
+}
+```
+
+---
+
 _Generated from the code (`pipingPlacementFromConfig`, `placement.js`, `addSticker`,
-`loadElementsIfNeeded`, `filterEl`)._
+`loadElementsIfNeeded`, `filterEl`, `createGlobalElement` / `updateGlobalElement`)._
 
 > **Keep this living.** Whenever you add, rename, or remove a `placement_config` key (or a `recolor`
 > method / placement mode), update BOTH the superset sample (§0) **and** the relevant table in the
-> same change — the sample is meant to stay a true superset of everything the code reads.
+> same change — the sample is meant to stay a true superset of everything the code reads. When an
+> element-level field changes (a new `cake_elements` column or `allowed_actions` capability), update
+> the full element structure (§5) too.
