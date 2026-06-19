@@ -4,7 +4,10 @@ import { useGLTF } from '@react-three/drei';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textures/creamWaveTexture.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
-import { frostingDef, frostingSupportsGradient, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
+import { getRusticNormalMap } from '../shared/textures/rusticTexture.js';
+import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
+import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
+import { buildStyledWall } from '../geometry/creamWall.js';
 import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
@@ -685,6 +688,25 @@ function grainNormalMap(grain, aroundLen, upLen, density = 1) {
   return tex;
 }
 
+// Style surface normal maps (the data↔code seam for normal-map finishes like rustic). Cloned + tiled
+// per (key, repeat) so each tier owns its wrap/repeat. `density` (from the style's scale param) tiles
+// the stroke pattern more/less finely; tiles scale with the wall extent for a constant physical size.
+const SURFACE_MAP_GENERATORS = { rustic: getRusticNormalMap };
+function surfaceNormalMap(key, aroundLen, upLen, density = 1) {
+  const gen = SURFACE_MAP_GENERATORS[key];
+  if (!gen) return null;
+  const rx = Math.max(1, Math.round(aroundLen * 0.9 * density));
+  const ry = Math.max(1, Math.round(upLen * 1.3 * density));
+  const cacheKey = `surf:${key}:${rx}:${ry}`;
+  if (_grainCache.has(cacheKey)) return _grainCache.get(cacheKey);
+  const tex = gen().clone();
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(rx, ry);
+  tex.needsUpdate = true;
+  _grainCache.set(cacheKey, tex);
+  return tex;
+}
+
 // Cake body for a sheet cake: a rounded-RECTANGLE cross-section extruded straight up.
 // Only the 4 vertical corners are rounded (radius r); the top and bottom stay flat and the
 // footprint keeps its full width×depth — unlike drei RoundedBox, which rounds every edge
@@ -751,13 +773,18 @@ function SelectionOutline({ shp, yBase, height }) {
 // `surf` = a frosting material descriptor (roughness/sheen/clearcoat/grain…). `grainExtent` = [aroundLen,
 // upLen] world extents of the wall so the micro-grain tiles at a constant physical size. The material
 // is MeshPhysical so sheen + clearcoat read; applyGradient is documented to leave those untouched.
-function TierBody({ position, color, surf, grainExtent, gradient, geoSig, children, castShadow = true, receiveShadow = false }) {
+// `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
+// cream grain on this tier — the surface texture then comes from the style, not the type's material.
+function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
+                    gradient, geoSig, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
-  const normalMap = useMemo(
+  const grainMap = useMemo(
     () => (surf?.grain && grainExtent ? grainNormalMap(surf.grain, grainExtent[0], grainExtent[1], surf.grainDensity) : null),
     [surf?.grain, grainExtent?.[0], grainExtent?.[1], surf?.grainDensity],
   );
+  const normalMap = overrideNormalMap ?? grainMap;
+  const normalScale = overrideNormalMap ? overrideNormalScale : (surf?.grainStrength ?? 0.5);
   useEffect(() => {
     if (!matRef.current) return;
     let bb = null;
@@ -779,7 +806,7 @@ function TierBody({ position, color, surf, grainExtent, gradient, geoSig, childr
         clearcoat={surf?.clearcoat ?? 0} clearcoatRoughness={surf?.clearcoatRoughness ?? 0.5}
         envMapIntensity={surf?.envMapIntensity ?? 0.5}
         normalMap={normalMap ?? null}
-        normalScale={[surf?.grainStrength ?? 0.5, surf?.grainStrength ?? 0.5]} />
+        normalScale={[normalScale, normalScale]} />
     </mesh>
   );
 }
@@ -789,6 +816,8 @@ export default function CakeTier({
   gradient = null,
   shape = 'round', width, depth, cornerR,
   frostingType = 'buttercream',
+  frostingStyle = DEFAULT_STYLE,
+  styleParams = null,
   flavour = 'vanilla',
   selected = false,
   // New: arrays of stacked piping layers per zone. Legacy single topPiping/bottomPiping
@@ -834,6 +863,28 @@ export default function CakeTier({
       : null,
     [isRect, roundEdge?.frac, radius, height],
   );
+  // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
+  // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
+  // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
+  const wallKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).wall : 'smooth';
+  const styleVals = resolveStyleParams(frostingStyle, styleParams);
+  const styleSig = JSON.stringify(styleVals);
+  const styledGeo = useMemo(
+    () => (!isRect && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,
+    // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
+    [isRect, roundEdge, wallKey, radius, height, styleSig],
+  );
+  // Normal-map STYLE (rustic): a surface texture on the plain wall instead of geometry. Built when the
+  // style declares a surfaceMap; `depth` → normalScale, `scale` → tiling density.
+  const surfaceMapKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).surfaceMap : null;
+  const styleNormalMap = useMemo(
+    () => (surfaceMapKey && !isRect)
+      ? surfaceNormalMap(surfaceMapKey, 2 * Math.PI * radius, height, (styleVals.scale ?? 9) / 9)
+      : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [surfaceMapKey, isRect, radius, height, styleSig],
+  );
+  const styleNormalScale = styleVals.depth ?? 1;
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
@@ -937,10 +988,19 @@ export default function CakeTier({
           gradient={effGradient} geoSig={roundedGeo.uuid} castShadow receiveShadow>
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
+      ) : styledGeo ? (
+        // Cream STYLE wall (wave/swirl/rustic): a displaced cylinder, one centred mesh (caps flat),
+        // no separate lid — the texture and gradient flow over the whole wall.
+        <TierBody position={[0, centerY, 0]} color={color} surf={mat}
+          grainExtent={[2 * Math.PI * radius, height]}
+          gradient={effGradient} geoSig={styledGeo.uuid} castShadow receiveShadow>
+          <primitive object={styledGeo} attach="geometry" />
+        </TierBody>
       ) : (
         <>
           <TierBody position={[0, centerY, 0]} color={color} surf={mat}
             grainExtent={[2 * Math.PI * radius, height]}
+            overrideNormalMap={styleNormalMap} overrideNormalScale={styleNormalScale}
             gradient={effGradient} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
             <cylinderGeometry args={[radius, radius, height, 64]} />
           </TierBody>

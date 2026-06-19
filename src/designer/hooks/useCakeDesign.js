@@ -3,6 +3,7 @@ import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE, ZONE
 import { tierShape, topClamp } from '../geometry/surface.js';
 import { facingOffsetRadians } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING } from '../frostings.js';
+import { DEFAULT_STYLE } from '../creamStyles.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 // Frosting types now live in the frostings registry; re-export so existing importers
@@ -11,7 +12,7 @@ export { FROSTING_TYPES };
 
 const DEFAULT_DESIGN = {
   tiers: [
-    { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, topPipings: [], bottomPipings: [] },
+    { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [] },
   ],
   texts: [],
   stickers: [],
@@ -97,6 +98,26 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // Frosting STYLE (surface technique) per tier — smooth | wave | swirl | rustic. Composes with
+  // frostingType in CakeTier (material from type, wall geometry from style). The colour is unchanged.
+  function setTierFrostingStyle(index, frostingStyle) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, frostingStyle } : t),
+    }));
+  }
+
+  // Per-tier override of a single STYLE parameter (depth, waviness, …). Stored sparsely on
+  // tier.styleParams; absent keys fall back to the style's schema default in resolveStyleParams.
+  function setTierStyleParam(index, key, value) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, styleParams: { ...(t.styleParams ?? {}), [key]: value } }
+        : t),
+    }));
+  }
+
   // Tier gradient — same instance-level model as piping/stickers (eligibility is gated in the UI by
   // TIER_CAPS.gradient; the stops + balance live on the tier as tier.gradient = { mode, colors,
   // balance }). `color` stays the solid/stop-0 fallback. ≥2 stops = a gradient; fewer drops it back
@@ -169,7 +190,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function addTier() {
     setDesign(prev => {
       if (prev.tiers.length >= 4) return prev;
-      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', frostingType: DEFAULT_FROSTING, topPipings: [], bottomPipings: [] }] };
+      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [] }] };
     });
   }
 
@@ -637,6 +658,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         color:        t.color,
         gradient:     t.gradient ?? null,
         frostingType: t.frostingType ?? DEFAULT_FROSTING,
+        frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
@@ -650,7 +672,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

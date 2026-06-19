@@ -1586,6 +1586,8 @@ function CakeScene({
             depth={tier.depth}
             cornerR={tier.cornerR}
             frostingType={tier.frostingType}
+            frostingStyle={tier.frostingStyle}
+            styleParams={tier.styleParams}
             selected={selectedTier === i}
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
@@ -1832,6 +1834,8 @@ function CakeThumbnailScene({ config }) {
           depth={tier.depth}
           cornerR={tier.cornerR}
           frostingType={tier.frostingType}
+          frostingStyle={tier.frostingStyle}
+          styleParams={tier.styleParams}
           selected={false}
           topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
           bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}

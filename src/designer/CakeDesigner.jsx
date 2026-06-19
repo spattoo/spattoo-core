@@ -11,7 +11,10 @@ import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, sca
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
-import { frostingSupportsGradient } from './frostings.js';
+import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
+import StyleControls from './controls/StyleControls.jsx';
+import { frostingSupportsGradient, frostingAllowsStyles } from './frostings.js';
+import { frostingStyleTypes, applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
@@ -929,7 +932,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierFrostingType, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
@@ -1092,6 +1095,18 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   useEffect(() => {
     if (apiClient?.fetchMe) {
       apiClient.fetchMe().then(me => { setCapabilities(me?.capabilities ?? null); setRole(me?.role ?? null); }).catch(() => {});
+    }
+  }, [apiClient]);
+
+  // Overlay DB-authored cream textures onto the in-code seed (Phase 2). Falls back to the seed if the
+  // host apiClient has no fetchTextures or the table is empty. Bump a version to re-render with merged
+  // params (the style picker + tier geometry read the registry at render time).
+  const [, setTextureVersion] = useState(0);
+  useEffect(() => {
+    if (apiClient?.fetchTextures) {
+      apiClient.fetchTextures()
+        .then(rows => { if (rows?.length) { applyTextureConfig(rows); setTextureVersion(v => v + 1); } })
+        .catch(() => {});
     }
   }, [apiClient]);
 
@@ -4015,6 +4030,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   onChange={t => setTierFrostingType(selectedEl.index, t)}
                 />
               )}
+
+              {/* Frosting style (surface technique) — tiers whose type textures (cream, not fondant).
+                  Geometry only; composes with the type's material. */}
+              {selectedEl?.type === 'tier' && frostingAllowsStyles(design.tiers[selectedEl.index]?.frostingType ?? 'buttercream') && (() => {
+                const tier = design.tiers[selectedEl.index];
+                const style = tier?.frostingStyle ?? DEFAULT_STYLE;
+                const userParams = userStyleParams(style);
+                return (
+                  <>
+                    <FrostingStylePicker
+                      value={style}
+                      options={frostingStyleTypes()}
+                      onChange={st => setTierFrostingStyle(selectedEl.index, st)}
+                    />
+                    {/* Generic, schema-driven controls — the customer-facing (user:true) params of the
+                        active style. Same panel for every texture; advanced params stay authoring-only. */}
+                    {userParams.length > 0 && (
+                      <StyleControls
+                        params={userParams}
+                        values={resolveStyleParams(style, tier?.styleParams)}
+                        onChange={(key, value) => setTierStyleParam(selectedEl.index, key, value)}
+                      />
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Corner radius — only for sheet (rectangular) tiers */}
               {selectedEl?.type === 'tier' && design.tiers[selectedEl.index]?.shape === 'rect' && (() => {

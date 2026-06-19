@@ -24,19 +24,19 @@ export const FROSTINGS = {
     label: 'Buttercream',
     material: { roughness: 0.50, metalness: 0, sheen: 0.60, sheenRoughness: 0.55, sheenColor: '#fff3e0', clearcoat: 0.20, clearcoatRoughness: 0.45, envMapIntensity: 0.65, grain: 'cream', grainStrength: 0.50, grainDensity: 1.0 },
     edge: 'sharp',
-    capabilities: { gradient: true },
+    capabilities: { gradient: true, styles: true },
   },
   whipped: {
     label: 'Whipped',
     material: { roughness: 1.00, metalness: 0, sheen: 0.20, sheenRoughness: 0.95, sheenColor: '#ffffff', clearcoat: 0.00, clearcoatRoughness: 1.00, envMapIntensity: 0.30, grain: 'foam', grainStrength: 1.10, grainDensity: 0.4 },
     edge: 'sharp',
-    capabilities: { gradient: true },
+    capabilities: { gradient: true, styles: true },
   },
   fondant: {
     label: 'Fondant',
     material: { roughness: 0.62, metalness: 0, sheen: 0.40, sheenRoughness: 0.85, sheenColor: '#ffffff', clearcoat: 0.08, clearcoatRoughness: 0.75, envMapIntensity: 0.45, grain: 'fondant', grainStrength: 0.22, grainDensity: 1.6 },
     edge: { kind: 'round', frac: 0.10 },
-    capabilities: { gradient: false },
+    capabilities: { gradient: false, styles: false },
   },
   // 'naked' is deferred to v2 (needs its own design pass on which decorations a bare-sponge cake
   // allows). Its render path (NakedLayers in CakeTier) is kept dormant for reference; just not
@@ -54,3 +54,6 @@ export const DEFAULT_FROSTING = 'buttercream';
 // Resolve a finish (falls back to the default), and read a capability.
 export const frostingDef = (type) => FROSTINGS[type] ?? FROSTINGS[DEFAULT_FROSTING];
 export const frostingSupportsGradient = (type) => !!frostingDef(type).capabilities?.gradient;
+// May this finish carry a surface style (combed/swirl/rustic)? Cream finishes texture; fondant
+// is a smooth rolled sheet → only 'smooth'.
+export const frostingAllowsStyles = (type) => !!frostingDef(type).capabilities?.styles;
