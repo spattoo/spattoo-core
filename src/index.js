@@ -8,6 +8,9 @@ export { default as AuthGate } from './auth/AuthGate.jsx';
 export { useCakeDesign, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { extractFromPhoto } from './designer/hooks/useExtractElements.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';
+// 2D image pixel-recolour (the SAME function the designer runs) + the method registry — exported
+// so the admin recolour tester / element authoring use the exact runtime logic, never a copy.
+export { recolorImageData, RECOLOR_METHODS } from './designer/shared/color/imageRecolor.js';
 // Cream finish/texture registry + the wall-geometry algorithms — exported so the admin texture
 // calibrator authors against the SAME code the designer renders (no duplicated displacement maths).
 export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';

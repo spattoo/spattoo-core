@@ -57,8 +57,22 @@ function matcher(region) {
     const guard = region.guard ?? 12;                        // blue must exceed green by this margin
     return (d, i) => d[i + 3] >= 8 && (d[i + 2] - d[i + 1]) >= guard;
   }
+  if (method === 'saturated') {
+    // The vivid coloured fill, regardless of hue — recolours any colour while leaving black/grey/
+    // white lines untouched (their saturation ≈ 0). For "one colour + black" decals.
+    const sat = region.sat ?? 0.25;
+    return (d, i) => d[i + 3] >= 8 && rgbToHsl(d[i], d[i + 1], d[i + 2])[1] >= sat;
+  }
   return () => false;                                        // unknown method → recolour nothing
 }
+
+// The recolour methods, for admin authoring UIs (label + which param it takes). Keep in sync
+// with `matcher` above — adding a method here AND there is all it takes.
+export const RECOLOR_METHODS = [
+  { value: 'opaque',        label: 'Whole image',        param: null },
+  { value: 'saturated',     label: 'Coloured fill (keep black/white lines)', param: 'sat' },
+  { value: 'blue_gt_green', label: 'Blue-dominant fill (keep gold/white)',   param: 'guard' },
+];
 
 // Recolour the matched region of an RGBA buffer (mutates in place) to `targetHex`, preserving each
 // pixel's brightness relative to the region average — so highlights/shadows survive while the overall

@@ -47,6 +47,15 @@ describe('recolorImageData — blue_gt_green region (wing fill only)', () => {
     expect([d[4], d[5], d[6], d[7]]).toEqual([0, 0, 0, 0]); // transparent pixel untouched
   });
 
+  it('saturated method recolours vivid fill of ANY hue, leaves black & white lines', () => {
+    // vivid green fill + black vein + white pixel
+    const d = new Uint8ClampedArray([40, 200, 80, 255,  12, 12, 12, 255,  250, 250, 250, 255]);
+    recolorImageData(d, 3, 1, '#cc2266', { method: 'saturated' });   // target pink
+    expect(hueOf(d, 0)).toBeGreaterThan(300);                 // green fill → pink hue
+    expect([d[4], d[5], d[6]]).toEqual([12, 12, 12]);         // black vein untouched
+    expect([d[8], d[9], d[10]]).toEqual([250, 250, 250]);     // white untouched
+  });
+
   it('is a no-op when no region descriptor is given', () => {
     const px = [200, 180, 230];
     const d = buf(px);
