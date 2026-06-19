@@ -242,15 +242,16 @@ function createCurvedPlane(width, height, curveRadius, radialSegments = 16) {
 }
 
 // Builds a "folded sticker": the flat square is split at the body spine into two wings
-// that hinge up into a shallow V (dihedral = foldRad). ONE geometry, the image's left half
-// [0,spine] mapped to the left wing and right half [spine,1] to the right — so a single asset
-// reads as a folded butterfly. Wings rise toward +Z, which the renderer turns into up (lay),
-// out (side), or toward-camera (stand). foldRad 0 → a flat plane. spine 0.5 → centred hinge.
-function createFoldedPlane(size, foldRad, spine) {
+// that hinge into a shallow V. ONE geometry, the image's left half [0,spine] → left wing and
+// right half [spine,1] → right, so a single asset reads as a folded butterfly. `foldRad` tents the
+// wings toward +Z (depth — used when laid flat / on a wall). `riseRad` lifts each wing UP (+Y) as it
+// extends from the spine, so when standing the body/spine is the lowest support and the wings rise
+// off the surface in a V (the perched-butterfly look). Both 0 → a flat plane. spine 0.5 → centred.
+function createFoldedPlane(size, foldRad, spine, riseRad = 0) {
   const S = size, hy = S / 2;
   const xh = S * (spine - 0.5);                          // hinge x (the body spine); 0 at spine 0.5
-  const cos = Math.cos(foldRad), sin = Math.sin(foldRad);
-  const fold = (x, y) => [xh + (x - xh) * cos, y, Math.abs(x - xh) * sin];   // both wings tent to +Z
+  const cos = Math.cos(foldRad), sin = Math.sin(foldRad), rise = Math.sin(riseRad);
+  const fold = (x, y) => { const dx = x - xh; return [xh + dx * cos, y + Math.abs(dx) * rise, Math.abs(dx) * sin]; };
   const positions = [], uvs = [], indices = [];
   let base = 0;
   // Each wing is its own quad (no shared spine vertices) so the crease stays sharp.
@@ -277,27 +278,62 @@ function createFoldedPlane(size, foldRad, spine) {
 // Returns the unscaled half-height from the plane centre down to the content bottom (= STICKER_SIZE/2
 // when the content fills the plane, so margin-free assets are unaffected). Cached per URL; a
 // CORS-tainted canvas falls back to the old half-plane seat. Asset-derived — never type-aware.
-const stickerSeatHalfCache = {};
-function measureStickerSeatHalf(image, imageUrl) {
-  if (imageUrl in stickerSeatHalfCache) return stickerSeatHalfCache[imageUrl];
-  let half = STICKER_SIZE / 2;
-  try {
-    const w = image.naturalWidth || image.width, h = image.naturalHeight || image.height;
-    if (w && h) {
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      const ctx = c.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(image, 0, 0);
-      const d = ctx.getImageData(0, 0, w, h).data;
-      for (let y = h - 1; y >= 0; y--) {               // scan up from the bottom → first opaque row
-        let opaque = false;
-        for (let x = 0; x < w; x++) { if (d[(y * w + x) * 4 + 3] > 8) { opaque = true; break; } }
-        if (opaque) { half = STICKER_SIZE * (((y + 1) / h) - 0.5); break; }
+// The seat = distance from the plane centre down to the geometry's LOWEST opaque point, over EVERY
+// opaque pixel (not just the bottom row). `rise` (= sin(fold) when standing) lifts a pixel by
+// |x − spine|·rise, so a low wing pixel that hangs below the body in the flat image rises ABOVE the
+// spine in 3D — making the body the true support and the wings clear. rise 0 = plain content-bottom.
+function computeSeatHalf(img, spine, rise) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  if (!w || !h) return STICKER_SIZE / 2;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, w, h).data;          // throws if the canvas is CORS-tainted
+  const xh = STICKER_SIZE * (spine - 0.5);
+  let minY = Infinity;
+  for (let py = 0; py < h; py++) {
+    const planeY = STICKER_SIZE * (0.5 - py / h);        // flipY: image top → plane top (+S/2)
+    const row = py * w * 4;
+    for (let px = 0; px < w; px++) {
+      if (d[row + px * 4 + 3] > 8) {
+        const planeX = STICKER_SIZE * (px / w - 0.5);
+        const y3 = planeY + Math.abs(planeX - xh) * rise;
+        if (y3 < minY) minY = y3;
       }
     }
-  } catch (_) { /* tainted canvas → keep the half-plane fallback */ }
-  stickerSeatHalfCache[imageUrl] = Math.max(half, 0.02 * STICKER_SIZE);   // guard against a degenerate 0
-  return stickerSeatHalfCache[imageUrl];
+  }
+  return minY < Infinity ? -minY : STICKER_SIZE / 2;
+}
+
+// Load the asset for MEASURING in its own CORS image with a cache-bust, so the pixel read can't hit
+// a cache entry poisoned by a non-CORS <img> (e.g. a picker thumbnail) — which would taint the canvas
+// and silently fall the seat back to half-plane (→ float). One fetch per URL, then cached.
+const seatImgCache = {};   // bustUrl → { img, loaded, cbs }
+function loadSeatImage(imageUrl, cb) {
+  const url = imageUrl + (imageUrl.includes('?') ? '&' : '?') + 'cors=seat';
+  const e = seatImgCache[url];
+  if (e) { e.loaded ? cb(e.img) : e.cbs.push(cb); return; }
+  const entry = { img: null, loaded: false, cbs: [cb] };
+  seatImgCache[url] = entry;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload  = () => { entry.img = img; entry.loaded = true; entry.cbs.forEach(f => f(img)); entry.cbs = []; };
+  img.onerror = () => { entry.loaded = true; entry.cbs.forEach(f => f(null)); entry.cbs = []; };
+  img.src = url;
+}
+
+const stickerSeatHalfCache = {};
+function requestStickerSeatHalf(imageUrl, { spine = 0.5, rise = 0 } = {}, cb) {
+  const key = `${imageUrl}|r${rise.toFixed(2)}|s${spine.toFixed(2)}`;
+  if (key in stickerSeatHalfCache) { cb(stickerSeatHalfCache[key]); return; }
+  loadSeatImage(imageUrl, img => {
+    let half = STICKER_SIZE / 2;
+    if (img) { try { half = computeSeatHalf(img, spine, rise); } catch (_) { /* tainted → fallback */ } }
+    half = Math.max(half, 0.02 * STICKER_SIZE);
+    stickerSeatHalfCache[key] = half;
+    cb(half);
+  });
 }
 
 // Returns the sticker's texture, pixel-recoloured to `color` when the element carries a
@@ -334,28 +370,33 @@ function useStickerImageTexture(imageUrl, recolor, color) {
   return recoloured;
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, recolor, color, onSeat }) {
+function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, onSeat }) {
   const texture = useStickerImageTexture(imageUrl, recolor, color);
-  // Seat a standing sticker on its visible base (measured from the texture's opaque content), so a
-  // wide butterfly on a square canvas doesn't float above the surface. Top renderer reads this via
-  // onSeat; side/flat ignore it. Alpha bounds are unchanged by recolour, so measuring `texture` is fine.
+  // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
+  // wide butterfly on a square canvas doesn't float. When standing (standUp) the wings rise in a V,
+  // so the seat must account for that rise — the spine/body becomes the true lowest point.
+  const seatRise  = (foldable && standUp) ? Math.sin((fold ?? DEFAULT_FOLD_DEG) * Math.PI / 180) : 0;
+  const seatSpine = spine ?? DEFAULT_SPINE;
   useEffect(() => {
-    if (!onSeat) return;
-    const img = texture?.image;
-    if (img && (img.naturalWidth || img.width)) onSeat(measureStickerSeatHalf(img, imageUrl));
-  }, [texture, imageUrl, onSeat]);
-  // Geometry is config-driven: a foldable element hinges into a folded plane (the fold wins
-  // over wall-curving — a stuck-on card doesn't also curve); otherwise the prior flat/curved
-  // behaviour. curveRadius is capped at 0.3 world units so the bend is actually visible —
-  // using the physical tier radius (~1.2) would produce only a 0.008-unit depth.
-  const geo = useMemo(
-    () => foldable
-      ? createFoldedPlane(STICKER_SIZE, (fold ?? DEFAULT_FOLD_DEG) * Math.PI / 180, spine ?? DEFAULT_SPINE)
-      : (curved && curveRadius)
-        ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, Math.min(curveRadius, 0.3))
-        : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE),
-    [foldable, fold, spine, curved, curveRadius],
-  );
+    if (!onSeat || !imageUrl) return;
+    let live = true;
+    requestStickerSeatHalf(imageUrl, { spine: seatSpine, rise: seatRise }, half => { if (live) onSeat(half); });
+    return () => { live = false; };
+  }, [imageUrl, onSeat, seatRise, seatSpine]);
+  // Geometry is config-driven: a foldable element hinges into a folded plane (the fold wins over
+  // wall-curving). Standing → wings rise UP in a V from the spine (riseRad = fold), so the body is
+  // the support; laid flat / on a wall → hinge into Z-depth (foldRad). curveRadius is capped at 0.3
+  // world units so the bend is visible (the physical tier radius ~1.2 → only ~0.008-unit depth).
+  const geo = useMemo(() => {
+    if (foldable) {
+      const f = (fold ?? DEFAULT_FOLD_DEG) * Math.PI / 180, sp = spine ?? DEFAULT_SPINE;
+      return standUp ? createFoldedPlane(STICKER_SIZE, f, sp, f)
+                     : createFoldedPlane(STICKER_SIZE, f, sp, 0);
+    }
+    return (curved && curveRadius)
+      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, Math.min(curveRadius, 0.3))
+      : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
+  }, [foldable, fold, spine, standUp, curved, curveRadius]);
   return (
     <mesh geometry={geo}>
       <meshStandardMaterial
@@ -625,7 +666,7 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
   );
 }
 
-function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, flipX = false, foldable = false, fold, spine, recolor, onSeat }) {
+function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, flipX = false, foldable = false, fold, spine, standUp = false, recolor, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -637,7 +678,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} recolor={recolor} color={color} onSeat={onSeat} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} color={color} onSeat={onSeat} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -1257,15 +1298,18 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
   // float is opt-in via yOffset (the Height control) / config. Fallback to the constant pre-measure.
   const [seatHalf, setSeatHalf] = useState(null);
+  // A foldable card (e.g. butterfly) on the EDGE stands on its BODY base like `stand`, just seated at
+  // the rim — not the figure-straddle (centre on the edge) that perch uses for legged 3D toppers.
+  const standSeat = isStand || (isPerch && sticker.foldable === true);
   const py = topY + (sticker.yOffset ?? 0) + (
-    isStand ? (seatHalf ?? STICKER_SIZE / 2) * (sticker.scale ?? 1) + FLAT_STICKER_Y_OFFSET
-    : isPerch ? 0   // centre straddles the top edge — legs below, body above
+    standSeat ? (seatHalf ?? STICKER_SIZE / 2) * (sticker.scale ?? 1) + FLAT_STICKER_Y_OFFSET
+    : isPerch ? 0   // centre straddles the top edge — legs below, body above (legged toppers)
     : FLAT_STICKER_Y_OFFSET);
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch) && sticker.foldable === true} recolor={sticker.recolor} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1382,10 +1426,18 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     // Billboard must be INSIDE the world-positioned group, not wrapping it.
     // If Billboard wraps the position group, it sits at origin and rotates its
     // local frame — so any x/z offset becomes wrong world-space position.
+    // Lean/tilt must pivot about the BASE (the contact point), not the geometry centre — otherwise
+    // leaning swings the base up off the cake. Translate down to the base, rotate, translate back
+    // (cancels when untilted; no-op for perch where seatLift = 0).
+    const seatLift = standSeat ? (seatHalf ?? STICKER_SIZE / 2) : 0;
     const inner = (
       <group rotation={[0, sticker.rotation ?? 0, 0]}>
-        <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-          {innerContent(onDown)}
+        <group position={[0, -seatLift, 0]}>
+          <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
+            <group position={[0, seatLift, 0]}>
+              {innerContent(onDown)}
+            </group>
+          </group>
         </group>
       </group>
     );
@@ -1929,7 +1981,7 @@ function CakeThumbnailScene({ config }) {
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
               <group rotation={[0, sticker.rotation ?? 0, 0]}>
                 <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-                  <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} />
+                  <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(sticker.placementMode === 'stand' || isPerchPv) && sticker.foldable === true} recolor={sticker.recolor} />
                 </group>
               </group>
             </group>
