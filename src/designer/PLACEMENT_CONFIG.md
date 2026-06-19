@@ -9,6 +9,104 @@ slug, it only reads these fields (see `INVARIANTS.md`). This file lists every ke
 
 ---
 
+## 0. Superset sample — every possible key
+
+A single annotated object listing **every** `placement_config` key the code reads, grouped by
+concern. **This is a SUPERSET, not a real element** — no element uses all of these, and many groups
+are mutually exclusive (a decor sticker, a GLB topper, a `decor_pattern`, and a `cream_piping` ring
+each use a different subset). Comments are illustrative; real stored JSON has no comments. Each
+section below (§1–§4) is the authoritative detail for its keys.
+
+```jsonc
+{
+  // ── Zones × modes (§1 <zone>, §2) — one key per surface the element offers ──
+  "top_surface": "stand",          // stand | hug | faux_ball_single | faux_balls | perch
+  "side":        "hug",
+  "middle_tier": "hug",
+  "board":       "hug",
+  "rim":         "hug",
+
+  // ── Sizing & placement style (§1) ──
+  "r":               1.0,                              // default scale for `stand`
+  "scale":           { "min": 0.5, "max": 1.5, "step": 0.05 },  // size-dial bounds (optional)
+  "single_per_slot": true,                            // hero: one per tier×surface (vs free scatter)
+  "scatter":         false,                           // density scatter (sprinkles); excl. single_per_slot
+  "hug_fill":        0.7,                             // `hug`: fraction of wall height filled
+  "side_proud":      false,                           // side: raised off the wall (deep pieces) vs flush
+
+  // ── GLB facing offset (§1) — read ONLY via facingOffsetRadians() ──
+  "rotation":      [0, -90, 0],                       // DEGREES
+  "rotation_unit": "deg",                             // 'deg' (standard) | 'rad' (legacy)
+
+  // ── GLB material / surface ──
+  "roughness":               0.6,                     // GLB + 3D_GEOM
+  "metalness":               0.0,
+  "useSharedFondantTexture": false,                   // opt into the shared fondant surface
+
+  // ── Folded sticker (2D image only, §1) ──
+  "foldable": true,                                   // gate: split into two hinged wings
+  "fold":     30,                                     // dihedral degrees (only when foldable)
+  "spine":    0.5,                                    // body split 0–1 (only when foldable)
+
+  // ── Pixel recolour (2D image only, §1) — needs allowed_actions.color to show the picker ──
+  "recolor": { "method": "saturated", "sat": 0.25 },  // OR { "method": "blue_gt_green", "guard": 12 }
+                                                      // OR { "method": "opaque" }
+
+  // ── Perch (a figure seated on the top edge) ──
+  "perch": { "tilt_deg": 0, "y_offset": 0, "edge_inset": 0 },
+
+  // ── GLB Recompose — customer-recolourable part groups ──
+  "_model": {
+    "groups":   [ { "key": "wings", "label": "Wings", "default": "#cc88ff", "editable": true } ],
+    "segments": []
+  },
+
+  // ── Pattern fields (decor_pattern / piping_pattern, §3) ──
+  "pattern_only":    false,                           // building-block part, hidden from the picker
+  "parts_deletable": false,                           // decor_pattern: delete singly vs whole-pattern
+  "parts": [ { "element_id": "uuid", "dx": 0.1, "dz": 0.0, "mirror": false } ],
+
+  // ── Piping (cream_piping / piping_pattern, §4) — every top_* has a bottom_* twin ──
+  "top_arrangement":          "ring",                 // ring | single
+  "top_arrangements_allowed": ["ring", "single"],
+  "top_single_angle":         0,                      // RADIANS (single mode seed)
+  "top_single_max":           12,
+  "top_flip":                 false,
+  "top_rotation":             [0, 0, 0],              // DEGREES
+  "top_radial_offset":        0,
+  "top_y_offset":             0,
+  "top_spacing":              0,
+  "top_softness":             0.7,                    // 0–1 cream look
+  "top_alt_enabled":          false,                  // A/B alternation
+  "top_alt_glb_url":          null,
+  "top_alt_flip":             false,
+  "top_alt_rotation":         [0, 0, 0],
+  "top_alt_radial_offset":    0,
+  "top_alt_y_offset":         0,
+  "top_pattern":              "AB",
+  "top_bend":                 false,                  // festoon / swag
+  "top_bend_ring":            false,
+  "top_festoons":             8,
+  "top_bend_depth":           0,
+  "top_bend_tilt":            0,
+  "top_swag_count":           8,                      // swag (alt naming)
+  "top_swag_depth":           0,
+  "top_swag_tilt":            0,
+  "top_wrap":                 false,                  // pre-formed band
+  "top_wrap_tilt":            0,
+  "top_wrap_size":            1.0,
+  // …bottom_* mirrors every top_* above (own defaults), plus two bottom-only flags:
+  "bottom_y_adjustable":    false,                    // let the baker tune Y in the popup
+  "bottom_flip_adjustable": false
+}
+```
+
+> Keys present in the sample but not yet in the tables below (`scatter`, `side_proud`,
+> `useSharedFondantTexture`, `perch`, `_model`, `roughness`, `metalness`) are read by `addSticker` /
+> the GLB material path — tabulate them when next touched.
+
+---
+
 ## 1. Common / decor fields
 
 | Key | Type | Default | Meaning |
@@ -106,4 +204,8 @@ Piping has a **top** (rim) and **bottom** (board) set with identical shapes — 
 ---
 
 _Generated from the code (`pipingPlacementFromConfig`, `placement.js`, `addSticker`,
-`loadElementsIfNeeded`, `filterEl`). If you add a `placement_config` key, add it here._
+`loadElementsIfNeeded`, `filterEl`)._
+
+> **Keep this living.** Whenever you add, rename, or remove a `placement_config` key (or a `recolor`
+> method / placement mode), update BOTH the superset sample (§0) **and** the relevant table in the
+> same change — the sample is meant to stay a true superset of everything the code reads.
