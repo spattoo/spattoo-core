@@ -1996,9 +1996,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // hug vs stand) and select it, which opens its card with the placement chooser. Fully
   // config-driven; works for any element whose allowed_zones has more than one surface.
   function tapPlaceElement(element) {
-    // Cluster elements are DRAG-to-place: you drop the ball exactly where you want it — top OR side —
-    // so a tap must NOT drop one on top by default. The panel hint already says "Drag onto cake to place".
-    if (element.placement_config?.cluster) return;
+    // Cluster elements: clicking in the decorations menu opens a placement popup (consistent "click to
+    // open" behaviour) — the user drags the ball FROM the popup onto the cake (top or side), then grows
+    // it into a cluster. Tapping never auto-drops one on top.
+    if (element.placement_config?.cluster) {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      setSelectedEl({ type: 'cluster-place', elementId: element.id });
+      return;
+    }
     const zones = element.allowed_zones ?? [];
     // Prefer the top surface; a hero decoration belongs on the cake's actual top (the LAST/
     // topmost tier), not tier 0 (which is hidden under upper tiers on a multi-tier cake).
@@ -2883,6 +2889,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     key: `text-${t.id}`, type: 'text', id: t.id,
     name: (t.content && t.content.trim()) || 'Text', thumb: null, glyph: 'T',
   })));
+  // Transient placement popup for a cluster element clicked in the decorations menu (no instance yet):
+  // a "drag onto the cake" card. It vanishes once a ball is dropped (selection moves to that ball).
+  if (selectedEl?.type === 'cluster-place') {
+    const cpEl = elementById.get(selectedEl.elementId);
+    decorationCards.unshift({
+      key: `cluster-place-${selectedEl.elementId}`, type: 'cluster-place', elementId: selectedEl.elementId,
+      name: cpEl?.name ?? 'Cluster', thumb: /\.(glb|gltf)(\?|$)/i.test(cpEl?.image_url ?? '') ? (cpEl?.thumbnail_url ?? null) : (cpEl?.image_url ?? cpEl?.thumbnail_url ?? null),
+    });
+  }
   // The element stack is ONE persistent right-side editor holding every editable
   // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
   // single accordion. It stays open as long as the cake carries any of them and no
@@ -2903,7 +2918,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ? (selectedEl?.type === 'group' && selectedEl.groupId === card.groupId)
         || (selectedEl?.type === 'sticker' && memberGroupId(selectedEl.id) === card.groupId)
       : selectedEl?.type === card.type &&
-        (card.type === 'decorEl' || card.type === 'scatter' ? selectedEl.elementId === card.elementId
+        (card.type === 'decorEl' || card.type === 'scatter' || card.type === 'cluster-place' ? selectedEl.elementId === card.elementId
          : card.type === 'pattern' ? selectedEl.patternId === card.patternId
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : selectedEl?.id === card.id);
@@ -2921,6 +2936,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     } else if (card.type === 'cluster') {
       setSelectedEl({ type: 'cluster', clusterId: card.clusterId });
       setSelectedStickerIds(new Set());   // card is the selection; ops run by clusterId
+      setMultiSelectMode(false);
+    } else if (card.type === 'cluster-place') {
+      setSelectedEl({ type: 'cluster-place', elementId: card.elementId });
+      setSelectedStickerIds(new Set());
       setMultiSelectMode(false);
     } else if (card.type === 'sticker') {
       setSelectedEl({ type: 'sticker', id: card.id });
@@ -3045,6 +3064,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  // The placement popup for a cluster element (before anything is on the cake): a clear instruction
+  // and a draggable ball the user drops onto the cake. Dragging reuses the same path as the panel.
+  function renderClusterPlaceBody(card) {
+    const el = elementById.get(card.elementId);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+        <div style={{ fontSize: 10.5, color: '#5a5a5a', lineHeight: 1.45, fontFamily: "'Quicksand',sans-serif", textAlign: 'center' }}>
+          Drag the ball onto the cake to place it — anywhere on the top or down the side. Once it’s on the cake, switch on <b>Cluster</b> to grow it into a full clustered arrangement.
+        </div>
+        <div role="button" title="Drag onto the cake"
+          onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startStickerDrag(el, e.clientX, e.clientY); }}
+          style={{ width: 70, height: 70, borderRadius: 14, border: '1.5px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', touchAction: 'none' }}>
+          {card.thumb
+            ? <img src={card.thumb} alt={card.name} width={52} height={52} draggable={false} style={{ objectFit: 'contain', pointerEvents: 'none' }} />
+            : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
+        </div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif", letterSpacing: 0.3 }}>DRAG ONTO THE CAKE</div>
+      </div>
+    );
+  }
   // The cluster card body: ONE packed clump (sharing a clusterId). Size slider re-packs; a
   // CUSTOMER-controlled colour palette (add / edit / remove swatches) recolours the balls — one
   // colour = solid clump, several = mixed (cycled across the balls); Remove drops the whole clump.
@@ -4445,6 +4484,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           {card.type === 'pattern' ? renderPatternBody(card)
                            : card.type === 'group' ? renderGroupBody(card)
                            : card.type === 'scatter' ? renderScatterBody(card)
+                           : card.type === 'cluster-place' ? renderClusterPlaceBody(card)
                            : card.type === 'cluster' ? renderClusterBody(card)
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
