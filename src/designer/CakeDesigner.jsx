@@ -2292,7 +2292,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // packer puts the big ones on the base and the small ones on top.
     const radii = clusterRadii(count, sizes.map(s => s * CLUSTER_BASE_R));   // world radii, length = count
     const { topY, baseY, R } = tierGeom(tierIndex);
-    const packed = packCluster({ count, radii, cake: { R, topY, baseY, seed: seedCenter } });
+    const r0 = radii[0];
+    // Keep the seed (big ball) on the cake: its centre can't sit so low its bottom dips below the cake
+    // base, nor above the rim. Radially, a side seed must rest AGAINST the wall (ρ = R+r0), never inside.
+    const sc = [...seedCenter];
+    sc[1] = Math.max(baseY + r0, Math.min(topY + r0, sc[1]));
+    const rho = Math.hypot(sc[0], sc[2]);
+    if (sc[1] < topY - r0 && rho < R + r0 - 1e-3 && rho > 1e-3) {   // a side seed pulled to the wall
+      sc[0] = (sc[0] / rho) * (R + r0); sc[2] = (sc[2] / rho) * (R + r0);
+    }
+    const packed = packCluster({ count, radii, cake: { R, topY, baseY, seed: sc } });
     const baseId = Date.now();
     packed.forEach((ball, i) => {
       addSticker(element, ZONES.TOP_SURFACE, tierIndex, 'stand',
@@ -2302,30 +2311,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     });
     return clusterId;
   }
-  // User-initiated: turn a single placed ball into a packed clump at its current spot. The seed ball
-  // is replaced by the packed set (sharing a fresh clusterId); the cluster card then controls size.
+  // The cake-surface centre of where a placed ball currently rests (top → x/z at topY+r; side → on the
+  // wall at its angle/height). The cluster seed inherits this so the clump forms AT the ball's spot —
+  // no rim-snap, so several clusters can sit anywhere, including more than one on the same surface.
+  function ballSeedCenter(sticker, seedR) {
+    const { topY, height, shp, R } = tierGeom(sticker.tierIndex);
+    const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+    if (isSide && shp.kind !== 'rect') {
+      const th = sticker.theta ?? Math.atan2(sticker.x ?? 0, sticker.z ?? 0);
+      const y = sticker.y ?? (topY - height * 0.4);
+      return [(R + seedR) * Math.sin(th), y, (R + seedR) * Math.cos(th)];
+    }
+    if (shp.kind !== 'rect') {
+      let ax = sticker.x ?? 0, az = sticker.z ?? 0;
+      const rho = Math.hypot(ax, az), maxR = Math.max(0, R - seedR * 0.5);
+      if (rho > maxR) { ax = (ax / rho) * maxR; az = (az / rho) * maxR; }
+      return [ax, topY + seedR, az];
+    }
+    return [sticker.x ?? 0, topY + seedR, sticker.z ?? 0];
+  }
+  // "Cluster" toggle ON: turn a single placed ball into a packed clump at its current spot (fresh
+  // clusterId). The ball is replaced by the packed set; its card becomes the cluster card.
   function makeCluster(sticker) {
     const element = elementById.get(sticker.elementId);
     if (!element) return;
     const clusterId = crypto.randomUUID();
-    const { topY, height, shp, R } = tierGeom(sticker.tierIndex);
     const seedR = (clusterConfigOf(element).sizes[0] ?? 1.6) * CLUSTER_BASE_R;
-    const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
-    // Seed centre = where the big ball rests on the cake:
-    //   • from a SIDE ball → on the wall at its angle/height (so the clump forms on the side & climbs).
-    //   • from a TOP ball  → snapped near the RIM in the drop direction (front if centred), so it drapes.
-    let seedCenter;
-    if (isSide && shp.kind !== 'rect') {
-      const th = sticker.theta ?? 0, y = sticker.y ?? (topY - height * 0.4);
-      seedCenter = [(R + seedR) * Math.sin(th), y, (R + seedR) * Math.cos(th)];
-    } else if (shp.kind !== 'rect') {
-      const ax = sticker.x ?? 0, az = sticker.z ?? 0, rho = Math.hypot(ax, az);
-      const dir = rho > 1e-3 ? { x: ax / rho, z: az / rho } : { x: 0, z: 1 };
-      const target = Math.max(0, R - seedR);
-      seedCenter = [dir.x * target, topY + seedR, dir.z * target];
-    } else {
-      seedCenter = [sticker.x ?? 0, topY + seedR, sticker.z ?? 0];   // rect: at the drop spot on top
-    }
+    const seedCenter = ballSeedCenter(sticker, seedR);
     removeSticker(sticker.id);
     clusterInstances(element, sticker.tierIndex, seedCenter, CLUSTER_DEFAULT_COUNT, clusterId);
     setColorOpen(false);
@@ -2333,6 +2345,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setMultiSelectMode(false);
     setSelectedStickerIds(new Set());
     setSelectedEl({ type: 'cluster', clusterId });
+  }
+  // "Cluster" toggle OFF: dissolve the clump back to a SINGLE ball at the seed's spot.
+  function dissolveCluster(clusterId) {
+    const members = design.stickers.filter(s => s.clusterId === clusterId);
+    if (!members.length) return;
+    const el = elementById.get(members[0].elementId);
+    const seed = [...members].sort((a, b) => a.id - b.id)[0];
+    members.forEach(s => removeSticker(s.id));
+    if (!el) return;
+    const zone = (el.allowed_zones ?? []).includes(seed.zone) ? seed.zone
+      : (el.allowed_zones?.[0] ?? ZONES.TOP_SURFACE);
+    const mode = el.placement_config?.[zone] ?? 'stand';
+    const newId = addSticker(el, zone, seed.tierIndex, mode, { x: seed.x, z: seed.z });
+    setSelectedEl({ type: 'sticker', id: newId });
+    setSelectedStickerIds(new Set([newId]));
   }
   // The cluster's CURRENT palette = the distinct ball colours in placement order (reconstructs what
   // the customer chose, so a re-pack / re-read can reapply it).
@@ -2471,8 +2498,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleElementDrop(element, hit) {
     const parts = element.placement_config?.parts;
     if (Array.isArray(parts) && parts.length) { placePattern(element, parts, hit); return; }
-    // Cluster-capable elements (placement_config.cluster) place as a single ball; the user turns it
-    // into a packed clump from the popup ("Make cluster"), then controls its size on the cluster card.
+    // Faux-ball cluster (placement_config.cluster): drops as a SINGLE ball at the hit point; the card's
+    // "Cluster" toggle turns it into a packed clump (Size 1 = back to single). Drop several balls — on
+    // any surface, several per surface — and toggle each, for multiple independent clusters.
     // Density-scatter element (sprinkles): drop a packed batch as ONE scatter card. Config-driven.
     if (element.placement_config?.scatter === true) { placeScatter(element, hit); return; }
 
@@ -3023,6 +3051,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A packed clump of balls — they touch without overlapping. Drag the clump to move it; Size adds or removes balls; add colours for a mixed clump.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={s.editPanelLabel}>Cluster</span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: '#333', cursor: 'pointer' }}>
+            <input type="checkbox" checked readOnly onChange={() => dissolveCluster(card.clusterId)} style={{ cursor: 'pointer' }} />
+            on (uncheck → single ball)
+          </label>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={s.editPanelLabel}>Size</span>
           <input type="range" min={min} max={max} step={1} value={count}
@@ -3389,18 +3424,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       }
     }
 
-    // Cluster-capable element (placement_config.cluster): a single placed ball can become a packed
-    // clump. The user opts in here (popup button); the cluster card then controls its size.
+    // Cluster-capable element (placement_config.cluster): a per-card toggle turns this single ball into
+    // a packed clump (and the cluster card toggles it back). Config-driven, never element-type.
     if (el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       const srcEl = sticker && elementById.get(sticker.elementId);
       if (sticker && !sticker.clusterId && srcEl?.placement_config?.cluster) {
-        groups.push({ key: 'mk-cluster', divider: true, controls: [
-          <button key="mk-cluster" style={{ ...s.tbIconBtn, fontSize: 11, fontWeight: 700 }}
-            onClick={() => makeCluster(sticker)}>Make cluster</button>,
+        groups.push({ key: 'cluster-toggle', divider: true, controls: [
+          <span key="cl-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Cluster</span>,
+          <button key="cl-on" style={s.tbIconBtn} onClick={() => makeCluster(sticker)}>Make</button>,
         ] });
       }
     }
+
 
     // Trailing actions (duplicate / remove / done) — no dividers between them in
     // the strip; rendered as a footer row in the panel.

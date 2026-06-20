@@ -35,22 +35,50 @@ export function apollo3(P1, rP1, P2, rP2, P3, rP3, rG) {
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-// Per-ball radii for a cluster of `count`, following the size MIX (rough product rule): exactly ONE
-// largest (the seed), ~11% second-largest, ~35% third, the rest smallest. Returned DESCENDING so the
-// packer places big balls FIRST — they take the base/surface — and the small ones last (pockets / on
-// top). `sizes` is the tier list [largest, 2nd, 3rd, small] (descending); shorter lists reuse the last.
-export const CLUSTER_SECOND_FRAC = 0.11;
-export const CLUSTER_THIRD_FRAC  = 0.35;
+// Per-ball radii for a cluster of `count`, following the size MIX: exactly ONE largest (the seed),
+// then ~SECOND/THIRD/SMALL fractions of the rest so ALL FOUR sizes stay well-represented as the
+// cluster grows (rather than the smallest swamping it). Returned DESCENDING so the packer places big
+// balls FIRST — they take the base/surface — and the small ones last (pockets / on top). `sizes` is
+// the tier list [largest, 2nd, 3rd, small] (descending); shorter lists reuse the last tier.
+export const CLUSTER_SECOND_FRAC = 0.22;
+export const CLUSTER_THIRD_FRAC  = 0.33;
+export const CLUSTER_TOP_FRAC    = 0.18;   // fraction placed in on-top pockets (smallest, laid LAST)
+
+// Evenly intersperse tiers of differing counts into one flat sequence (largest-remainder spread): at
+// each step take the tier most "behind" its share. Deterministic, so the mix is reproducible — and
+// avoids the strict big→small order that made the smallest balls pile together spatially.
+function interleaveTiers(tiers) {
+  const out = [], acc = tiers.map(() => 0);
+  const total = tiers.reduce((s, t) => s + Math.max(0, t.count), 0);
+  for (let i = 0; i < total; i++) {
+    let best = -1, bestRatio = Infinity;
+    tiers.forEach((t, j) => {
+      if (acc[j] >= t.count) return;
+      const ratio = acc[j] / t.count;
+      if (ratio < bestRatio) { bestRatio = ratio; best = j; }
+    });
+    if (best < 0) break;
+    out.push(tiers[best].size); acc[best]++;
+  }
+  return out;
+}
 export function clusterRadii(count, sizes) {
   if (!count || count < 1 || !sizes?.length) return [];
   const t = i => sizes[Math.min(i, sizes.length - 1)];
-  const seq = [t(0)];                                   // exactly one largest (seed)
-  const n2 = Math.round(count * CLUSTER_SECOND_FRAC);
-  const n3 = Math.round(count * CLUSTER_THIRD_FRAC);
-  for (let i = 0; i < n2 && seq.length < count; i++) seq.push(t(1));
-  for (let i = 0; i < n3 && seq.length < count; i++) seq.push(t(2));
-  while (seq.length < count) seq.push(t(3));            // the rest: smallest
-  return seq.slice(0, count);
+  if (count === 1) return [t(0)];
+  const rest = count - 1;                               // everything after the single largest
+  const n2 = Math.round(rest * CLUSTER_SECOND_FRAC);
+  const n3 = Math.round(rest * CLUSTER_THIRD_FRAC);
+  const nSmall = rest - n2 - n3;
+  const nPocket = Math.min(Math.round(rest * CLUSTER_TOP_FRAC), Math.max(0, nSmall));   // smallest, on top, LAST
+  // Seed first; the surface tiers (2nd/3rd/surface-smalls) INTERLEAVED so sizes alternate spatially;
+  // then the pocket smalls last (so the packer's on-top phase gets the smallest balls).
+  const surface = interleaveTiers([
+    { size: t(1), count: n2 },
+    { size: t(2), count: n3 },
+    { size: t(3), count: nSmall - nPocket },
+  ]);
+  return [t(0), ...surface, ...Array(nPocket).fill(t(3))].slice(0, count);
 }
 
 // Greedy 3D pack of mixed-size balls into ONE clump that CLINGS TO THE CAKE — most balls rest on the
@@ -73,7 +101,7 @@ export function packCluster({ count, radii, cake }) {
   const EPS = 1e-4;
   const REST = 1e-2;          // clearance below this ⇒ the ball is resting on the cake surface
   const TOUCH = 1e-2;         // |gap| below this ⇒ two balls touch
-  const TOP_FRAC = 0.18;      // ~this fraction of balls ride on top (in pockets); the rest cling to cake
+  const TOP_FRAC = CLUSTER_TOP_FRAC;   // ~this fraction ride on top (pockets); must match clusterRadii's tail
   const PHASE = 1000;         // strong preference for the ball's phase (surface vs pocket); a fallback,
                               // not a hard rule — a top ball with no pocket still takes a surface spot
   const TOP_ANGLES = 28, SIDE_ANGLES = 28;

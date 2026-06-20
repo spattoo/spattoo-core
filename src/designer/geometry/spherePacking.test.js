@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { apollo3, packCluster, clusterRadii } from './spherePacking.js';
+import { apollo3, packCluster, clusterRadii, CLUSTER_SECOND_FRAC, CLUSTER_THIRD_FRAC } from './spherePacking.js';
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 // A flat top with no reachable rim (huge R) — exercises the pure packing invariants.
@@ -23,18 +23,31 @@ describe('apollo3 — tangent to three spheres', () => {
 describe('clusterRadii — size distribution (1 big, few mid, mostly small)', () => {
   const sizes = [1.6, 1.1, 0.8, 0.5];
 
-  it('has the right length, descending, exactly one largest', () => {
+  it('right length, exactly one largest (the seed) first, smalls in the on-top tail', () => {
     const seq = clusterRadii(20, sizes);
     expect(seq).toHaveLength(20);
     expect(seq.filter(r => r === 1.6)).toHaveLength(1);                 // only ONE biggest
-    for (let i = 1; i < seq.length; i++) expect(seq[i]).toBeLessThanOrEqual(seq[i - 1]);  // descending
+    expect(seq[0]).toBe(1.6);                                           // seed is first
+    expect(seq[seq.length - 1]).toBe(0.5);                             // pocket tail is smallest
   });
 
-  it('roughly 11% second, 35% third, the rest smallest', () => {
+  it('INTERLEAVES the surface tiers (sizes alternate, not strict big→small)', () => {
     const seq = clusterRadii(20, sizes);
-    expect(seq.filter(r => r === 1.1).length).toBe(Math.round(20 * 0.11));   // 2
-    expect(seq.filter(r => r === 0.8).length).toBe(Math.round(20 * 0.35));   // 7
-    expect(seq.filter(r => r === 0.5).length).toBe(20 - 1 - 2 - 7);          // 10 — most are small
+    // somewhere a larger ball follows a smaller one — proves the mix isn't strictly descending
+    let mixed = false;
+    for (let i = 1; i < seq.length; i++) if (seq[i] > seq[i - 1]) { mixed = true; break; }
+    expect(mixed).toBe(true);
+  });
+
+  it('balances all four tiers as it grows (2nd/3rd substantial, not swamped by small)', () => {
+    const seq = clusterRadii(20, sizes);
+    const rest = 19;
+    const n2 = Math.round(rest * CLUSTER_SECOND_FRAC), n3 = Math.round(rest * CLUSTER_THIRD_FRAC);
+    expect(seq.filter(r => r === 1.1).length).toBe(n2);
+    expect(seq.filter(r => r === 0.8).length).toBe(n3);
+    expect(seq.filter(r => r === 0.5).length).toBe(rest - n2 - n3);
+    // the 2nd+3rd tiers together are at least as many as the smallest (balanced, not small-dominated)
+    expect(n2 + n3).toBeGreaterThanOrEqual(rest - n2 - n3);
   });
 
   it('safe for tiny counts and short tier lists', () => {
