@@ -2250,8 +2250,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // The packer is cake-aware: it rests the clump on the top and lets it drape over the rim / down the
   // side. Each ball maps to a top-surface `stand` sticker positioned by absolute x/z (may go past the
   // rim) + yOffset (its packed height minus the rest seat; negative = below the top, on the side).
-  function clusterInstances(element, zone, tierIndex, anchorX, anchorZ, count, clusterId) {
-    const { sizes, palette } = clusterConfigOf(element);
+  function clusterInstances(element, zone, tierIndex, anchorX, anchorZ, count, clusterId, paletteOverride) {
+    const { sizes, palette: cfgPalette } = clusterConfigOf(element);
+    // The CUSTOMER controls the palette (config's is only the default seed). On re-pack we pass the
+    // cluster's current palette so the chosen colours survive a size change.
+    const palette = (paletteOverride && paletteOverride.length) ? paletteOverride : cfgPalette;
     const radii = sizes.map(s => s * CLUSTER_BASE_R);                  // world radii
     // Cake geometry in the render's world-Y frame (same convention as seatOnSlot, so yOffset lines up).
     const ti = tierIndex ?? 0;
@@ -2285,17 +2288,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setSelectedStickerIds(new Set());
     setSelectedEl({ type: 'cluster', clusterId });
   }
-  // Resize: re-pack from the seed ball's anchor with a new count. A cluster is packed (not hand-
-  // dragged), so regenerating is correct here — unlike scatter, which preserves dragged seats.
+  // The cluster's CURRENT palette = the distinct ball colours in placement order (reconstructs what
+  // the customer chose, so a re-pack / re-read can reapply it).
+  function clusterPaletteOf(clusterId) {
+    const out = [];
+    design.stickers.filter(s => s.clusterId === clusterId).sort((a, b) => a.id - b.id)
+      .forEach(s => { if (s.color && !out.includes(s.color)) out.push(s.color); });
+    return out;
+  }
+  // Recolour a cluster's balls by cycling the customer's palette across them (mixed-colour clump).
+  function setClusterPalette(clusterId, palette) {
+    if (!palette.length) return;
+    design.stickers.filter(s => s.clusterId === clusterId).sort((a, b) => a.id - b.id)
+      .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
+  }
+  // Resize: re-pack from the seed ball's anchor with a new count, KEEPING the customer's palette. A
+  // cluster is packed (not hand-dragged), so regenerating is correct — unlike scatter (dragged seats).
   function setClusterSize(clusterId, count) {
     const members = design.stickers.filter(s => s.clusterId === clusterId);
     if (!members.length) return;
     const ref = members[0];
     const el = elementById.get(ref.elementId);
     if (!el) return;
+    const palette = clusterPaletteOf(clusterId);                // preserve the customer's colours
     const seed = [...members].sort((a, b) => a.id - b.id)[0];   // first-placed = packer seed = cluster centre
     members.forEach(s => removeSticker(s.id));
-    clusterInstances(el, ref.zone, ref.tierIndex, seed.x, seed.z, count, clusterId);
+    clusterInstances(el, ref.zone, ref.tierIndex, seed.x, seed.z, count, clusterId, palette);
   }
 
   // Top vs side are INDEPENDENT scatter sets of the same element (sprinkles on both at once). Group
@@ -2942,23 +2960,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
-  // The cluster card body: ONE packed clump (sharing a clusterId). A Size slider re-packs with a new
-  // ball count; Remove drops the whole clump. Mixed-colour palette editing is a later step (B4).
+  // The cluster card body: ONE packed clump (sharing a clusterId). Size slider re-packs; a
+  // CUSTOMER-controlled colour palette (add / edit / remove swatches) recolours the balls — one
+  // colour = solid clump, several = mixed (cycled across the balls); Remove drops the whole clump.
   function renderClusterBody(card) {
     const members = design.stickers.filter(s => s.clusterId === card.clusterId);
     if (!members.length) return null;
     const count = members.length;
     const el = elementById.get(members[0].elementId);
     const { min, max } = clusterConfigOf(el ?? {});
+    const palette = clusterPaletteOf(card.clusterId);
+    const swatch = { width: 26, height: 26, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer' };
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A packed clump of balls — they touch without overlapping. Drag the clump to move it; Size adds or removes balls.</div>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A packed clump of balls — they touch without overlapping. Drag the clump to move it; Size adds or removes balls; add colours for a mixed clump.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={s.editPanelLabel}>Size</span>
           <input type="range" min={min} max={max} step={1} value={count}
             onChange={e => setClusterSize(card.clusterId, parseInt(e.target.value, 10))}
             style={{ flex: 1, accentColor: '#1a1a1a' }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: '#333', minWidth: 24, textAlign: 'right' }}>{count}</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={s.editPanelLabel}>Colours</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {palette.map((c, i) => (
+              <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
+                <input type="color" value={c} style={swatch}
+                  onChange={e => { const next = [...palette]; next[i] = e.target.value; setClusterPalette(card.clusterId, next); }} />
+                {palette.length > 1 && (
+                  <button title="Remove colour" onClick={() => setClusterPalette(card.clusterId, palette.filter((_, j) => j !== i))}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: '#e53935', cursor: 'pointer', padding: 0 }}>×</button>
+                )}
+              </span>
+            ))}
+            <button title="Add colour" onClick={() => setClusterPalette(card.clusterId, [...palette, palette[palette.length - 1] ?? '#D4AF37'])}
+              style={{ ...swatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+          </div>
         </div>
         <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
           onClick={() => { members.forEach(m => removeSticker(m.id)); clearAllSelections(); }}>Remove</button>
