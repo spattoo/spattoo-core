@@ -3064,6 +3064,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  // A compact "drag another ball onto the cake" handle, shown INSIDE the single-ball and cluster cards
+  // so the drag-to-place affordance is never lost — you can always add one more ball / cluster without
+  // returning to the menu. Same drag path as the panel / placement popup.
+  function clusterAddHandle(element) {
+    if (!element?.placement_config?.cluster) return null;
+    const thumb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '') ? (element.thumbnail_url ?? null) : (element.image_url ?? element.thumbnail_url ?? null);
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingTop: 8, marginTop: 2, borderTop: '1px dashed #eadde2' }}>
+        <div role="button" title="Drag onto the cake"
+          onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startStickerDrag(element, e.clientX, e.clientY); }}
+          style={{ width: 36, height: 36, borderRadius: 9, border: '1.5px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', flexShrink: 0, touchAction: 'none' }}>
+          {thumb ? <img src={thumb} alt="" width={26} height={26} draggable={false} style={{ objectFit: 'contain', pointerEvents: 'none' }} />
+                 : <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
+        </div>
+        <span style={{ fontSize: 9.5, color: '#8a7a80', lineHeight: 1.35, fontFamily: "'Quicksand',sans-serif" }}>Drag another ball onto the cake to add one more — anywhere on the top or side.</span>
+      </div>
+    );
+  }
   // The placement popup for a cluster element (before anything is on the cake): a clear instruction
   // and a draggable ball the user drops onto the cake. Dragging reuses the same path as the panel.
   function renderClusterPlaceBody(card) {
@@ -3131,6 +3149,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
         <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
           onClick={() => { members.forEach(m => removeSticker(m.id)); clearAllSelections(); }}>Remove</button>
+        {clusterAddHandle(el)}
       </div>
     );
   }
@@ -3485,6 +3504,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         groups.push({ key: 'cluster-toggle', divider: true, controls: [
           <span key="cl-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Cluster</span>,
           <button key="cl-on" style={s.tbIconBtn} onClick={() => makeCluster(sticker)}>Make</button>,
+        ] });
+        groups.push({ key: 'cluster-add', divider: false, controls: [
+          <div key="cl-add" style={{ width: '100%' }}>{clusterAddHandle(srcEl)}</div>,
         ] });
       }
     }
