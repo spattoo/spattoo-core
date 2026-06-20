@@ -2094,7 +2094,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const shp = tierShape(design.tiers[seed.tierIndex ?? 0] ?? design.tiers[0]);
       if (start && shp.kind !== 'rect') {
         const seedR = (seed.scale ?? 1) * CLUSTER_BASE_R;
-        const ring = Math.max(0, shp.radius - seedR);
+        // A TOP/rim cluster locks to a ring just inside the rim; a SIDE cluster locks to the wall ring
+        // (just outside R) so it slides AROUND the wall — neither can be dragged off the cake.
+        const onTop = (seed.yOffset ?? 0) > -seedR;
+        const ring = onTop ? Math.max(0, shp.radius - seedR) : shp.radius + seedR;
         const nx = start.x + (delta.dx ?? 0), nz = start.z + (delta.dz ?? 0);
         const rho = Math.hypot(nx, nz) || 1;
         delta = { ...delta, dx: (nx / rho) * ring - start.x, dz: (nz / rho) * ring - start.z };
@@ -2265,11 +2268,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const palette = (Array.isArray(c.palette) && c.palette.length) ? c.palette : [element.default_color ?? '#D4AF37'];
     return { min: c.min ?? 3, max: c.max ?? 30, sizes, palette };
   }
-  // Spawn `count` packed balls anchored at (anchorX,anchorZ) on (zone×tier), all sharing `clusterId`.
-  // The packer is cake-aware: it rests the clump on the top and lets it drape over the rim / down the
-  // side. Each ball maps to a top-surface `stand` sticker positioned by absolute x/z (may go past the
-  // rim) + yOffset (its packed height minus the rest seat; negative = below the top, on the side).
-  function clusterInstances(element, zone, tierIndex, anchorX, anchorZ, count, clusterId, paletteOverride) {
+  // A tier's geometry in the render's world-Y frame (baseY convention matches seatOnSlot, so a cluster
+  // ball's yOffset lines up with the renderer). Round drapes over the rim; rect packs flat (B3 = round).
+  function tierGeom(tierIndex) {
+    const ti = tierIndex ?? 0;
+    let baseY = 0.1;
+    for (let i = 0; i < ti; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
+    const height = canvasConfig.tiers[ti]?.height ?? BOTTOM_H;
+    const shp = tierShape(canvasConfig.tiers[ti] ?? canvasConfig.tiers[0]);
+    return { baseY, topY: baseY + height, height, shp, R: shp.kind === 'rect' ? 1e6 : shp.radius };
+  }
+  // Spawn `count` packed balls around `seedCenter` ([x,y,z] world — on the cake top OR side wall), all
+  // sharing `clusterId`. The packer rests the clump on the cake and drapes it over the rim / down the
+  // side. EVERY ball is a top-surface `stand` sticker positioned by absolute x/z (may pass the rim) +
+  // yOffset (packed height − rest seat; negative = below the top, on the side) — the zone the seed came
+  // from doesn't matter, the balls are placed absolutely.
+  function clusterInstances(element, tierIndex, seedCenter, count, clusterId, paletteOverride) {
     const { sizes, palette: cfgPalette } = clusterConfigOf(element);
     // The CUSTOMER controls the palette (config's is only the default seed). On re-pack we pass the
     // cluster's current palette so the chosen colours survive a size change.
@@ -2277,18 +2291,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Per-ball radii following the size mix (1 big, ~11% 2nd, ~35% 3rd, rest small), descending so the
     // packer puts the big ones on the base and the small ones on top.
     const radii = clusterRadii(count, sizes.map(s => s * CLUSTER_BASE_R));   // world radii, length = count
-    // Cake geometry in the render's world-Y frame (same convention as seatOnSlot, so yOffset lines up).
-    const ti = tierIndex ?? 0;
-    let baseY = 0.1;
-    for (let i = 0; i < ti; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
-    const topY = baseY + (canvasConfig.tiers[ti]?.height ?? BOTTOM_H);
-    const shp = tierShape(canvasConfig.tiers[ti] ?? canvasConfig.tiers[0]);
-    const R = shp.kind === 'rect' ? 1e6 : shp.radius;   // round drapes over the rim; rect packs flat (B3 = round)
-    const packed = packCluster({ count, radii, cake: { R, topY, baseY, ax: anchorX, az: anchorZ } });
-    const mode = element.placement_config?.[zone] ?? 'stand';
+    const { topY, baseY, R } = tierGeom(tierIndex);
+    const packed = packCluster({ count, radii, cake: { R, topY, baseY, seed: seedCenter } });
     const baseId = Date.now();
     packed.forEach((ball, i) => {
-      addSticker(element, zone, tierIndex, mode,
+      addSticker(element, ZONES.TOP_SURFACE, tierIndex, 'stand',
         { x: ball.x, z: ball.z },
         { id: baseId + i, scale: ball.r / CLUSTER_BASE_R, exact: true,
           yOffset: ball.y - topY - ball.r, clusterId, color: palette[i % palette.length] });
@@ -2301,19 +2308,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const element = elementById.get(sticker.elementId);
     if (!element) return;
     const clusterId = crypto.randomUUID();
-    // Faux-ball clusters belong at the RIM (so they drape over the edge). Snap the seed near the rim
-    // in the direction it was dropped (front if dropped at the centre); rect cakes keep the drop spot.
-    let ax = sticker.x ?? 0, az = sticker.z ?? 0;
-    const shp = tierShape(canvasConfig.tiers[sticker.tierIndex ?? 0] ?? canvasConfig.tiers[0]);
-    if (shp.kind !== 'rect') {
-      const seedR = (clusterConfigOf(element).sizes[0] ?? 1.6) * CLUSTER_BASE_R;
-      const rho = Math.hypot(ax, az);
-      const dir = rho > 1e-3 ? { x: ax / rho, z: az / rho } : { x: 0, z: 1 };   // front if centred
-      const target = Math.max(0, shp.radius - seedR);                            // seed edge near the rim
-      ax = dir.x * target; az = dir.z * target;
+    const { topY, height, shp, R } = tierGeom(sticker.tierIndex);
+    const seedR = (clusterConfigOf(element).sizes[0] ?? 1.6) * CLUSTER_BASE_R;
+    const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+    // Seed centre = where the big ball rests on the cake:
+    //   • from a SIDE ball → on the wall at its angle/height (so the clump forms on the side & climbs).
+    //   • from a TOP ball  → snapped near the RIM in the drop direction (front if centred), so it drapes.
+    let seedCenter;
+    if (isSide && shp.kind !== 'rect') {
+      const th = sticker.theta ?? 0, y = sticker.y ?? (topY - height * 0.4);
+      seedCenter = [(R + seedR) * Math.sin(th), y, (R + seedR) * Math.cos(th)];
+    } else if (shp.kind !== 'rect') {
+      const ax = sticker.x ?? 0, az = sticker.z ?? 0, rho = Math.hypot(ax, az);
+      const dir = rho > 1e-3 ? { x: ax / rho, z: az / rho } : { x: 0, z: 1 };
+      const target = Math.max(0, R - seedR);
+      seedCenter = [dir.x * target, topY + seedR, dir.z * target];
+    } else {
+      seedCenter = [sticker.x ?? 0, topY + seedR, sticker.z ?? 0];   // rect: at the drop spot on top
     }
     removeSticker(sticker.id);
-    clusterInstances(element, sticker.zone, sticker.tierIndex, ax, az, CLUSTER_DEFAULT_COUNT, clusterId);
+    clusterInstances(element, sticker.tierIndex, seedCenter, CLUSTER_DEFAULT_COUNT, clusterId);
     setColorOpen(false);
     focusEditor('decoration');
     setMultiSelectMode(false);
@@ -2344,8 +2358,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!el) return;
     const palette = clusterPaletteOf(clusterId);                // preserve the customer's colours
     const seed = [...members].sort((a, b) => a.id - b.id)[0];   // first-placed = packer seed = cluster centre
+    // Reconstruct the seed's world centre from its sticker (top-path: x/z absolute, y = topY+yOffset+r).
+    const { topY } = tierGeom(seed.tierIndex);
+    const seedCenter = [seed.x ?? 0, topY + (seed.yOffset ?? 0) + (seed.scale ?? 1) * CLUSTER_BASE_R, seed.z ?? 0];
     members.forEach(s => removeSticker(s.id));
-    clusterInstances(el, ref.zone, ref.tierIndex, seed.x, seed.z, count, clusterId, palette);
+    clusterInstances(el, seed.tierIndex, seedCenter, count, clusterId, palette);
   }
 
   // Top vs side are INDEPENDENT scatter sets of the same element (sprinkles on both at once). Group

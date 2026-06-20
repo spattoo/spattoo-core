@@ -64,8 +64,9 @@ export function clusterRadii(count, sizes) {
 //
 //   count — total number of balls
 //   radii — the mix of radii (world units); radii[0] is the seed (biggest first reads best)
-//   cake  — round cylinder: { R, topY, baseY, ax, az } (anchor ax,az on the top, cake-centre coords).
-//           A flat top with no reachable rim = a large R.
+//   cake  — round cylinder: { R, topY, baseY, ax, az, seed }. The seed (big ball) centre is `seed`
+//           [x,y,z] if given (anywhere on the cake — top OR side wall), else [ax, topY+r0, az] on the
+//           top. A flat top with no reachable rim = a large R.
 //
 // Returns [{ x, y, z, r }] in cake-centre WORLD coords (y = ball-centre height).
 export function packCluster({ count, radii, cake }) {
@@ -77,7 +78,7 @@ export function packCluster({ count, radii, cake }) {
                               // not a hard rule — a top ball with no pocket still takes a surface spot
   const TOP_ANGLES = 28, SIDE_ANGLES = 28;
   if (!count || count < 1 || !radii?.length || !cake) return [];
-  const { R, topY, baseY = -Infinity, ax = 0, az = 0 } = cake;
+  const { R, topY, baseY = -Infinity, ax = 0, az = 0, seed } = cake;
   // Signed distance to the cake's rest surface (top cap ∪ side wall ∪ rim circle): >0 outside,
   // ~0 resting on it, <0 buried inside the body.
   const clearance = (c) => {
@@ -85,7 +86,7 @@ export function packCluster({ count, radii, cake }) {
     if (c[1] >= topY) return rho <= R ? c[1] - topY : Math.hypot(rho - R, c[1] - topY);
     return rho - R;
   };
-  const balls = [{ c: [ax, topY + radii[0], az], r: radii[0] }];   // seed resting on the top at the anchor
+  const balls = [{ c: seed ?? [ax, topY + radii[0], az], r: radii[0] }];   // seed resting on the cake (top, or side wall)
   const overlapsAny = (c, r) => balls.some(b => dist3(c, b.c) < b.r + r - EPS);
   const onCake  = (c, r) => clearance(c) <= r + REST;
   const valid   = (c, r) => clearance(c) >= r - REST && c[1] - r >= baseY - EPS && !overlapsAny(c, r);
@@ -103,7 +104,7 @@ export function packCluster({ count, radii, cake }) {
     return false;
   };
 
-  const seed = balls[0].c;                           // grow AROUND the big ball (fixed), not a drifting
+  const seedPt = balls[0].c;                         // grow AROUND the big ball (fixed), not a drifting
                                                      // centroid — keeps the clump radially balanced
   const nTop = Math.round((count - 1) * TOP_FRAC);   // last nTop balls (the smallest) ride on top
   for (let i = 1; i < count; i++) {
@@ -117,7 +118,7 @@ export function packCluster({ count, radii, cake }) {
       // spot. Distance-to-SEED breaks ties so the clump packs tightly around the big ball, evenly.
       const oc = onCake(c, r);
       const phasePenalty = wantsTop ? (oc ? PHASE : 0) : (oc ? 0 : PHASE);
-      const score = phasePenalty + dist3(c, seed);
+      const score = phasePenalty + dist3(c, seedPt);
       if (score < bestScore) { bestScore = score; best = c; }
     };
     for (const b of balls) {
