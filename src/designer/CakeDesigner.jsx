@@ -3067,18 +3067,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // A compact "drag another ball onto the cake" handle, shown INSIDE the single-ball and cluster cards
   // so the drag-to-place affordance is never lost — you can always add one more ball / cluster without
   // returning to the menu. Same drag path as the panel / placement popup.
+  // A prominent draggable ball that sits at the TOP of a cluster element's card (bigger than the
+  // controls below it). Dragging it onto the cake places a new ball — same path as the panel — so you
+  // can always add one more ball / cluster without leaving the popup.
   function clusterAddHandle(element) {
     if (!element?.placement_config?.cluster) return null;
     const thumb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '') ? (element.thumbnail_url ?? null) : (element.image_url ?? element.thumbnail_url ?? null);
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingTop: 8, marginTop: 2, borderTop: '1px dashed #eadde2' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 12, marginBottom: 6, borderBottom: '1px dashed #eadde2' }}>
         <div role="button" title="Drag onto the cake"
           onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startStickerDrag(element, e.clientX, e.clientY); }}
-          style={{ width: 36, height: 36, borderRadius: 9, border: '1.5px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', flexShrink: 0, touchAction: 'none' }}>
-          {thumb ? <img src={thumb} alt="" width={26} height={26} draggable={false} style={{ objectFit: 'contain', pointerEvents: 'none' }} />
-                 : <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
+          style={{ width: 78, height: 78, borderRadius: 16, border: '2px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', flexShrink: 0, touchAction: 'none' }}>
+          {thumb ? <img src={thumb} alt="" width={58} height={58} draggable={false} style={{ objectFit: 'contain', pointerEvents: 'none' }} />
+                 : <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
         </div>
-        <span style={{ fontSize: 9.5, color: '#8a7a80', lineHeight: 1.35, fontFamily: "'Quicksand',sans-serif" }}>Drag another ball onto the cake to add one more — anywhere on the top or side.</span>
+        <span style={{ fontSize: 10.5, color: '#5a5a5a', lineHeight: 1.4, fontFamily: "'Quicksand',sans-serif" }}>Drag this ball onto the cake to add another — anywhere on the top or down the side. Switch on <b>Cluster</b> to grow it.</span>
       </div>
     );
   }
@@ -3115,6 +3118,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const swatch = { width: 26, height: 26, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer' };
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {clusterAddHandle(el)}
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A packed clump of balls — they touch without overlapping. Drag the clump to move it; Size adds or removes balls; add colours for a mixed clump.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={s.editPanelLabel}>Cluster</span>
@@ -3149,7 +3153,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
         <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
           onClick={() => { members.forEach(m => removeSticker(m.id)); clearAllSelections(); }}>Remove</button>
-        {clusterAddHandle(el)}
       </div>
     );
   }
@@ -3505,9 +3508,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <span key="cl-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Cluster</span>,
           <button key="cl-on" style={s.tbIconBtn} onClick={() => makeCluster(sticker)}>Make</button>,
         ] });
-        groups.push({ key: 'cluster-add', divider: false, controls: [
-          <div key="cl-add" style={{ width: '100%' }}>{clusterAddHandle(srcEl)}</div>,
-        ] });
       }
     }
 
@@ -3538,6 +3538,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       );
     }
     if (actions.length) groups.push({ key: 'actions', divider: false, footer: true, controls: actions });
+
+    // Cluster element: the prominent "drag another ball" handle sits at the TOP of the card (above the
+    // controls), so the drag-to-place affordance is the first thing and bigger than the controls below.
+    if (el.type === 'sticker') {
+      const stk = design.stickers.find(stkr => stkr.id === el.id);
+      const cEl = stk && elementById.get(stk.elementId);
+      if (cEl?.placement_config?.cluster) {
+        groups.unshift({ key: 'cluster-add', divider: false, controls: [
+          <div key="cl-add" style={{ width: '100%' }}>{clusterAddHandle(cEl)}</div>,
+        ] });
+      }
+    }
 
     // Vertical right-side popup — consistent with the cream-piping popup.
     if (layout === 'panel') {

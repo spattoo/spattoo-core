@@ -329,7 +329,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           scatter:       element.placement_config?.scatter === true,
           // Side seating: default flush (true hug, centred on the wall); proud = back-on-wall so a
           // deep model stands off the wall (toppers). Config-driven; applied in the side bend path.
-          sideProud:     element.placement_config?.side_proud === true,
+          // A cluster ball is a sphere: on the side it must rest PROUD on the wall (back-on-wall), never
+          // centred/half-buried — so cluster elements are always side-proud regardless of side_proud.
+          sideProud:     element.placement_config?.side_proud === true || !!element.placement_config?.cluster,
           hugFill:       element.placement_config?.hug_fill ?? null,
           // Folded sticker: a flat decal that splits at the body spine into two hinged wings
           // (e.g. a card butterfly). Capability is config-gated like parts_deletable — the
