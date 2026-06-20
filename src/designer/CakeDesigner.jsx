@@ -2244,7 +2244,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const c = element.placement_config?.cluster ?? {};
     // Size TIERS, descending: [largest, 2nd, 3rd, small]. clusterRadii turns these into the per-ball
     // mix (1 biggest, ~11% 2nd, ~35% 3rd, rest small).
-    const sizes = (Array.isArray(c.sizes) && c.sizes.length) ? c.sizes : [1.6, 1.1, 0.8, 0.5];
+    const sizes = (Array.isArray(c.sizes) && c.sizes.length) ? c.sizes : [1.6, 1.35, 0.85, 0.5];
     const palette = (Array.isArray(c.palette) && c.palette.length) ? c.palette : [element.default_color ?? '#D4AF37'];
     return { min: c.min ?? 3, max: c.max ?? 30, sizes, palette };
   }

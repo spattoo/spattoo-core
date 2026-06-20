@@ -72,6 +72,9 @@ export function packCluster({ count, radii, cake }) {
   const EPS = 1e-4;
   const REST = 1e-2;          // clearance below this ⇒ the ball is resting on the cake surface
   const TOUCH = 1e-2;         // |gap| below this ⇒ two balls touch
+  const TOP_FRAC = 0.18;      // ~this fraction of balls ride on top (in pockets); the rest cling to cake
+  const PHASE = 1000;         // strong preference for the ball's phase (surface vs pocket); a fallback,
+                              // not a hard rule — a top ball with no pocket still takes a surface spot
   const TOP_ANGLES = 28, SIDE_ANGLES = 28;
   if (!count || count < 1 || !radii?.length || !cake) return [];
   const { R, topY, baseY = -Infinity, ax = 0, az = 0 } = cake;
@@ -100,8 +103,10 @@ export function packCluster({ count, radii, cake }) {
     return false;
   };
 
+  const nTop = Math.round((count - 1) * TOP_FRAC);   // last nTop balls (the smallest) ride on top
   for (let i = 1; i < count; i++) {
     const r = radii[i % radii.length];
+    const wantsTop = i >= count - nTop;              // surface phase first, then the on-top pocket phase
     const n = balls.length;
     const centroid = [
       balls.reduce((a, b) => a + b.c[0], 0) / n,
@@ -111,8 +116,12 @@ export function packCluster({ count, radii, cake }) {
     let best = null, bestScore = Infinity;
     const consider = (c) => {
       if (!c || !valid(c, r) || !stable(c, r)) return;
-      // Surface rests beat pockets (clings to the cake); within a class, the most compact wins.
-      const score = (onCake(c, r) ? 0 : 1000) + dist3(c, centroid);
+      // Surface balls strongly prefer resting on the cake (base); the last ~TOP_FRAC prefer pockets
+      // (on top). PHASE is a soft fallback: if a top ball finds no pocket it still takes a surface
+      // spot. Compactness breaks ties so the clump stays tight.
+      const oc = onCake(c, r);
+      const phasePenalty = wantsTop ? (oc ? PHASE : 0) : (oc ? 0 : PHASE);
+      const score = phasePenalty + dist3(c, centroid);
       if (score < bestScore) { bestScore = score; best = c; }
     };
     for (const b of balls) {
