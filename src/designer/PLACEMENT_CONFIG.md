@@ -35,6 +35,8 @@ section below (§1–§4) is the authoritative detail for its keys.
   "scale":           { "min": 0.5, "max": 1.5, "step": 0.05 },  // size-dial bounds (optional)
   "single_per_slot": true,                            // hero: one per tier×surface (vs free scatter)
   "scatter":         false,                           // density scatter (sprinkles); excl. single_per_slot
+  "cluster":         { "min": 3, "max": 30, "sizes": [1.6, 1.35, 0.85, 0.5], "palette": ["#D4AF37"] },
+                                                      // packed faux-ball clump; excl. scatter/single_per_slot
   "hug_fill":        0.7,                             // `hug`: fraction of wall height filled
   "side_proud":      false,                           // side: raised off the wall (deep pieces) vs flush
 
@@ -120,7 +122,8 @@ section below (§1–§4) is the authoritative detail for its keys.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `<zone>` | string (a placement mode) | — | One key per surface the element sits on: `top_surface`, `side`, `middle_tier`, `board`, `rim`. The value is the **mode** for that surface — see §2. e.g. `{ "top_surface": "stand", "side": "hug" }`. |
-| `single_per_slot` | bool | `false` | Placement **style**, not mode. `true` = one instance per (tier×surface) slot, chosen via the checkbox chooser (topper, top&side decor). `false` = scatter freely (many independent stickers). Read by `isMultiSlotEl`. **Must not be inferred from `allowed_zones.length`.** |
+| `single_per_slot` | bool | `false` | Placement **style**, not mode. `true` = one instance per (tier×surface) slot, chosen via the checkbox chooser (topper, top&side decor). `false` = scatter freely (many independent stickers). Read by `isMultiSlotEl` (returns `false` when `cluster` is set). **Must not be inferred from `allowed_zones.length`.** |
+| `cluster` | object | `null` | Placement **style** (peer of `scatter`/`single_per_slot`, mutually exclusive). Present = a **packed faux-ball clump**: the element drops as ONE single ball (drag-to-place, no chooser); a per-card **Cluster** toggle grows it into a tangent, non-overlapping clump of mixed-size GLB spheres that clings top→rim→side. Multiple clusters per cake, each its own `clusterId`. Shape: `{ min, max, sizes, palette }` — `min`/`max` = ball-count slider bounds (default 3/30); `sizes` = `[largest, 2nd, 3rd, small]` relative scale multipliers (default `[1.6, 1.35, 0.85, 0.5]`); `palette` = default mix colours (the customer can recolour; default `[default_color ?? '#D4AF37']`). Read by `clusterConfigOf`; packed by `geometry/spherePacking.js`. A cluster ball is always seated **proud** on the side wall regardless of `side_proud`. |
 | `r` | number | GLB `2.5` / 2D `1` | Default scale for a freshly placed sticker (`stand`). Never hard-code a scale elsewhere. |
 | `hug_fill` | number (0–1) | `0.7` | For `hug` mode: fraction of the tier wall height the element fills. Derived at render time (dynamic hug). |
 | `foldable` | bool | `false` | Capability **gate** (like `parts_deletable`). `true` = the flat 2D decal splits at the body spine into two wings that hinge into a shallow V — a folded card (e.g. butterfly). `false`/absent = an ordinary flat plane. The renderer only splits/folds when this is on. Copied to the instance as `foldable`; read by `StickerTexture` via `createFoldedPlane`. |
