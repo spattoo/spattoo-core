@@ -9,6 +9,7 @@ import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
+import { packClusterOnSurface } from './geometry/spherePacking.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -2016,6 +2017,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return;
     }
 
+    // A cluster ball belongs to ONE cluster card (the packed clump is abstracted away); tapping any
+    // ball selects that card (ops run by clusterId). Like scatter, no per-instance highlight.
+    if (!ctrlKey && !multiSelectMode && sticker?.clusterId) {
+      setColorOpen(false);
+      setSelectedEl({ type: 'cluster', clusterId: sticker.clusterId });
+      setSelectedStickerIds(new Set());
+      return;
+    }
+
     // A scatter instance belongs to ONE scatter card (density-managed set); tapping any selects the
     // card. We DON'T mark the instances selected — painting 41 sprinkles purple reads as a recolour
     // and would trip the grouping bar; the open card is the selection feedback. Ops run by elementId.
@@ -2221,6 +2231,58 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setSelectedEl({ type: 'scatter', elementId: element.id });
   }
 
+  // ── Faux-ball cluster ─────────────────────────────────────────────────────────
+  // A cluster is a packed clump of mixed-size GLB-sphere stickers sharing ONE clusterId, rendered on
+  // the generic art path (NOT a procedural mode — that was faux_balls). The pure packer
+  // (geometry/spherePacking.js) computes tangent, non-overlapping ball positions; each becomes a
+  // `stand` sticker placed EXACTLY (extra.exact) so de-overlap can't un-pack it. Mixed colours come
+  // from the palette. Config: placement_config.cluster = { min, max, sizes, palette }. Multiple
+  // clusters per cake, each its own clusterId grown from its own seed.
+  const CLUSTER_BASE_R = STICKER_SIZE / 2;   // a GLB sphere's world radius at scale 1 (normalised to STICKER_SIZE)
+  const CLUSTER_DEFAULT_COUNT = 9;
+  function clusterConfigOf(element) {
+    const c = element.placement_config?.cluster ?? {};
+    const sizes = (Array.isArray(c.sizes) && c.sizes.length) ? c.sizes : [1.5, 1.0, 0.6];
+    const palette = (Array.isArray(c.palette) && c.palette.length) ? c.palette : [element.default_color ?? '#D4AF37'];
+    return { min: c.min ?? 3, max: c.max ?? 30, sizes, palette };
+  }
+  // Spawn `count` packed balls centred at (anchorX,anchorZ) on (zone×tier), all sharing `clusterId`.
+  function clusterInstances(element, zone, tierIndex, anchorX, anchorZ, count, clusterId) {
+    const { sizes, palette } = clusterConfigOf(element);
+    const radii = sizes.map(s => s * CLUSTER_BASE_R);                  // world radii
+    const packed = packClusterOnSurface({ count, radii });
+    const mode = element.placement_config?.[zone] ?? 'stand';
+    const baseId = Date.now();
+    packed.forEach((ball, i) => {
+      addSticker(element, zone, tierIndex, mode,
+        { x: anchorX + ball.x, z: anchorZ + ball.z },
+        { id: baseId + i, scale: ball.r / CLUSTER_BASE_R, exact: true,
+          yOffset: ball.y - ball.r, clusterId, color: palette[i % palette.length] });
+    });
+    return clusterId;
+  }
+  function placeCluster(element, hit) {
+    const clusterId = crypto.randomUUID();
+    clusterInstances(element, hit.zone, hit.tierIndex, hit.x ?? 0, hit.z ?? 0, CLUSTER_DEFAULT_COUNT, clusterId);
+    setElementsOpen(false);
+    focusEditor('decoration');
+    setMultiSelectMode(false);
+    setSelectedStickerIds(new Set());
+    setSelectedEl({ type: 'cluster', clusterId });
+  }
+  // Resize: re-pack from the seed ball's anchor with a new count. A cluster is packed (not hand-
+  // dragged), so regenerating is correct here — unlike scatter, which preserves dragged seats.
+  function setClusterSize(clusterId, count) {
+    const members = design.stickers.filter(s => s.clusterId === clusterId);
+    if (!members.length) return;
+    const ref = members[0];
+    const el = elementById.get(ref.elementId);
+    if (!el) return;
+    const seed = [...members].sort((a, b) => a.id - b.id)[0];   // first-placed = packer seed = cluster centre
+    members.forEach(s => removeSticker(s.id));
+    clusterInstances(el, ref.zone, ref.tierIndex, seed.x, seed.z, count, clusterId);
+  }
+
   // Top vs side are INDEPENDENT scatter sets of the same element (sprinkles on both at once). Group
   // an instance by surface so a count/toggle touches only that surface's instances.
   const scatterGroupOf = s => isSideZoneName(s.zone) ? 'side' : 'top';
@@ -2327,6 +2389,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleElementDrop(element, hit) {
     const parts = element.placement_config?.parts;
     if (Array.isArray(parts) && parts.length) { placePattern(element, parts, hit); return; }
+    // Faux-ball cluster: drop a packed clump as ONE cluster card. Config-driven (placement_config.cluster).
+    if (element.placement_config?.cluster) { placeCluster(element, hit); return; }
     // Density-scatter element (sprinkles): drop a packed batch as ONE scatter card. Config-driven.
     if (element.placement_config?.scatter === true) { placeScatter(element, hit); return; }
 
@@ -2663,11 +2727,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const seenPattern = new Set();
   const seenGroup = new Set();
   const seenScatter = new Set();
+  const seenCluster = new Set();
   design.stickers
     .forEach(st => {
       const thumb = /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl;
+      // A faux-ball cluster's balls collapse into ONE card (managed by a size slider), keyed by
+      // clusterId so multiple clusters each get their own card.
+      if (st.clusterId) {
+        if (seenCluster.has(st.clusterId)) return;
+        seenCluster.add(st.clusterId);
+        decorationCards.push({ key: `cluster-${st.clusterId}`, type: 'cluster', clusterId: st.clusterId, name: st.name ?? 'Cluster', thumb });
       // A density-scatter element's instances collapse into ONE card (managed by a density slider).
-      if (st.scatter) {
+      } else if (st.scatter) {
         if (seenScatter.has(st.elementId)) return;
         seenScatter.add(st.elementId);
         decorationCards.push({ key: `scatter-${st.elementId}`, type: 'scatter', elementId: st.elementId, name: st.name ?? 'Scatter', thumb });
@@ -2716,6 +2787,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : selectedEl?.type === card.type &&
         (card.type === 'decorEl' || card.type === 'scatter' ? selectedEl.elementId === card.elementId
          : card.type === 'pattern' ? selectedEl.patternId === card.patternId
+         : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
     setColorOpen(false);
@@ -2727,6 +2799,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     } else if (card.type === 'scatter') {
       setSelectedEl({ type: 'scatter', elementId: card.elementId });
       setSelectedStickerIds(new Set());   // no per-instance highlight; ops run by elementId
+      setMultiSelectMode(false);
+    } else if (card.type === 'cluster') {
+      setSelectedEl({ type: 'cluster', clusterId: card.clusterId });
+      setSelectedStickerIds(new Set());   // card is the selection; ops run by clusterId
       setMultiSelectMode(false);
     } else if (card.type === 'sticker') {
       setSelectedEl({ type: 'sticker', id: card.id });
@@ -2847,6 +2923,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button onClick={handleDelete}
             style={{ fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove group</button>
         </div>
+      </div>
+    );
+  }
+
+  // The cluster card body: ONE packed clump (sharing a clusterId). A Size slider re-packs with a new
+  // ball count; Remove drops the whole clump. Mixed-colour palette editing is a later step (B4).
+  function renderClusterBody(card) {
+    const members = design.stickers.filter(s => s.clusterId === card.clusterId);
+    if (!members.length) return null;
+    const count = members.length;
+    const el = elementById.get(members[0].elementId);
+    const { min, max } = clusterConfigOf(el ?? {});
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A packed clump of balls — they touch without overlapping. Drag the clump to move it; Size adds or removes balls.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={s.editPanelLabel}>Size</span>
+          <input type="range" min={min} max={max} step={1} value={count}
+            onChange={e => setClusterSize(card.clusterId, parseInt(e.target.value, 10))}
+            style={{ flex: 1, accentColor: '#1a1a1a' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#333', minWidth: 24, textAlign: 'right' }}>{count}</span>
+        </div>
+        <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
+          onClick={() => { members.forEach(m => removeSticker(m.id)); clearAllSelections(); }}>Remove</button>
       </div>
     );
   }
@@ -4181,6 +4281,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           {card.type === 'pattern' ? renderPatternBody(card)
                            : card.type === 'group' ? renderGroupBody(card)
                            : card.type === 'scatter' ? renderScatterBody(card)
+                           : card.type === 'cluster' ? renderClusterBody(card)
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
                       )}

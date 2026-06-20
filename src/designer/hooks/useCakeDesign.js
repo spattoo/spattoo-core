@@ -251,6 +251,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     // paths land identically). Verge leans about the rim tangent at render (radial-outward); perch
     // straddles the edge with a fixed world-X lean.
     const isEdgeSeated = placementMode === PLACEMENT_MODES.PERCH || placementMode === PLACEMENT_MODES.VERGE;
+    // `exact`: place the instance at the given position VERBATIM — skip all seeding/de-overlap. Used by
+    // the ball cluster, which has already packed exact tangent positions (de-overlap would un-pack them).
+    const exact = extra.exact === true;
     const newId = extra.id ?? Date.now();   // returned so callers can select the just-added sticker
     setDesign(prev => {
       let px = position.x ?? 0;
@@ -260,7 +263,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       // instance never lands exactly on a coincident sibling.
       let seatTheta = position.theta ?? 0;
       let seatY = position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45);
-      if (placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
+      if (!exact && placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
         // De-overlap off coincident stand siblings so both toppers have separate, selectable centres
         // (drag-time collision handles the rest). Shared rule — see deOverlapSeat.
         const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
@@ -269,7 +272,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         );
         ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.TOP_SURFACE, { x: px, z: pz }, siblings));
       }
-      if (isEdgeSeated) {
+      if (!exact && isEdgeSeated) {
         // Edge-seated modes (perch, verge) ALWAYS start on the FRONT edge (toward the camera, +z) — in
         // the centre a perch would bury the figure / a verge would have nothing to lean over. Seed via
         // the shared helper, then nudge off a coincident same-mode sibling. The customer drags it
@@ -288,7 +291,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       // De-overlap every OTHER scatter placement (hug / default mode): a re-added instance must
       // not stack exactly on a coincident sibling (they'd look like one). Geometry-driven by zone,
       // never by element type/slug (INVARIANTS #1/#2). stand handles its own above.
-      if (placementMode !== PLACEMENT_MODES.STAND) {
+      if (!exact && placementMode !== PLACEMENT_MODES.STAND) {
         const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
         const isScatterSib = s => s.placementMode !== PLACEMENT_MODES.STAND;
         if (isSide && position.u == null) {
@@ -353,11 +356,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
-          yOffset:       seatYOffset,    // perch/verge: seat-height offset from the tier top (calibrated)
+          yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
           rotation:      0,
           radialOffset:  0,
           tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline (calibrated)
           groupId:       null,
+          // Ball-cluster membership: every ball in one packed clump shares a clusterId, so the UI
+          // presents the set as ONE card (members abstracted) and they move/remove together — a
+          // distinct unit from a user group (groupId) or a decor_pattern (patternId).
+          clusterId:     extra.clusterId ?? null,
           // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
           // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
           // with a persistent zone chooser — like a piping element. `patternDeletable` keeps the
@@ -368,7 +375,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Mirror this instance across its own vertical axis (a pattern's symmetric second
           // part — e.g. the right unicorn eye from the same GLB). Applied as a -X scale in render.
           flipX:            extra.flipX ?? false,
-          color:         element.default_color ?? null,
+          color:         extra.color ?? element.default_color ?? null,
           // GLB Recompose: customer-recolourable part groups. `placement_config._model.groups` (the
           // editable controls) is the source of truth; copy the editable ones onto the instance and
           // seed each group's current colour from its default. Render recolours meshes by
