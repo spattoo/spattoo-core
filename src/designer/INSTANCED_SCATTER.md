@@ -23,8 +23,9 @@ scatter because it's lighter than a GLB." That conflates two costs:
 Decision already taken: author shapes as geometry and **bake to a low-poly GLB at creation**
 (`spattoo-admin` GenerateShape does this; a "Can scatter" toggle was added there). That keeps the
 simple authoring workflow and reuses the one art-based render path with zero new branches. We do
-**not** add a live procedural-geometry render path (that's what `faux_balls` is, and it rotted into
-a top-only, non-scatterable, preview-less special case — the cautionary tale).
+**not** add a live procedural-geometry render path (that's what `faux_balls` was, and it rotted into
+a top-only, non-scatterable, preview-less special case — the cautionary tale; it has since been
+removed, balls are now GLB spheres on the one art path).
 
 The real performance lever for high scatter counts is **`InstancedMesh`**: collapse N draw calls +
 N geometries to ~1, with per-instance transform and colour preserved. That is this note.

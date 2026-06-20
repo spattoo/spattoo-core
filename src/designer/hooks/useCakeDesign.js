@@ -257,7 +257,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       let seatTilt = 0, seatYOffset = 0;   // overridden by edgeSeatSeed for perch/verge below
       let pz = position.z ?? 0;
       // Seat angle/height for round side placements (hug/default). Resolved below so a re-added
-      // instance never lands exactly on a coincident sibling. (faux_ball repurposes px/pz instead.)
+      // instance never lands exactly on a coincident sibling.
       let seatTheta = position.theta ?? 0;
       let seatY = position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45);
       if (placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
@@ -285,50 +285,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         const siblings = prev.stickers.filter(s => s.placementMode === placementMode && s.tierIndex === (tierIndex ?? 0));
         ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.RIM, { x: px, z: pz }, siblings));
       }
-      if (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE) {
-        const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
-        const siblings = prev.stickers.filter(
-          s => s.placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && s.tierIndex === (tierIndex ?? 0)
-        );
-        if (isSide && position.u != null) {
-          // Rect wall: position is a perimeter fraction u (stored below) + height.
-          px = 0; pz = position.y ?? 0;   // theta unused on rect
-        } else if (isSide) {
-          let pt = position.theta ?? 0, py2 = position.y ?? 0;
-          for (const sib of siblings) {
-            const minDist = defaultScale + (sib.scale ?? 0.12);
-            const ax = Math.sin(pt), az = Math.cos(pt);
-            const bx = Math.sin(sib.theta ?? 0), bz = Math.cos(sib.theta ?? 0);
-            const ex = ax - bx, ey = py2 - (sib.y ?? 0), ez = az - bz;
-            const d = Math.sqrt(ex * ex + ey * ey + ez * ez);
-            if (d < minDist && d > 0.001) {
-              pt = Math.atan2(bx + ex * (minDist / d), bz + ez * (minDist / d));
-              py2 = (sib.y ?? 0) + ey * (minDist / d);
-            } else if (d < minDist) {
-              pt += minDist * 0.5;
-            }
-          }
-          // Store resolved theta/y back into position fields
-          px = pt; pz = py2; // repurpose px/pz as theta/y for side
-        } else {
-          for (const sib of siblings) {
-            const minDist = defaultScale + (sib.scale ?? 0.12);
-            const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
-            const d  = Math.sqrt(ex * ex + ez * ez);
-            if (d < minDist) {
-              const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
-              px = (sib.x ?? 0) + dir.x * minDist;
-              pz = (sib.z ?? 0) + dir.z * minDist;
-            }
-          }
-        }
-      }
       // De-overlap every OTHER scatter placement (hug / default mode): a re-added instance must
       // not stack exactly on a coincident sibling (they'd look like one). Geometry-driven by zone,
-      // never by element type/slug (INVARIANTS #1/#2). stand & faux_ball handle their own above.
-      if (placementMode !== PLACEMENT_MODES.STAND && placementMode !== PLACEMENT_MODES.FAUX_BALL_SINGLE) {
+      // never by element type/slug (INVARIANTS #1/#2). stand handles its own above.
+      if (placementMode !== PLACEMENT_MODES.STAND) {
         const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
-        const isScatterSib = s => s.placementMode !== PLACEMENT_MODES.STAND && s.placementMode !== PLACEMENT_MODES.FAUX_BALL_SINGLE;
+        const isScatterSib = s => s.placementMode !== PLACEMENT_MODES.STAND;
         if (isSide && position.u == null) {
           // Round wall: walk the seat angle until clear of any coincident sibling (shared rule).
           const siblings = prev.stickers.filter(
@@ -359,8 +321,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // hugFill tunes that fraction. Scattered decor leaves singlePerSlot falsy → keeps r.
           singlePerSlot: element.placement_config?.single_per_slot === true,
           // Density-scatter unit (sprinkles): packed instances managed by a density control. The
-          // flag rides on each instance so the card can collapse them and the colour-wheel path can
-          // tell scatter from a plain faux_ball. Config-driven (placement_config.scatter).
+          // flag rides on each instance so the card can collapse them. Config-driven
+          // (placement_config.scatter).
           scatter:       element.placement_config?.scatter === true,
           // Side seating: default flush (true hug, centred on the wall); proud = back-on-wall so a
           // deep model stands off the wall (toppers). Config-driven; applied in the side bend path.
@@ -382,10 +344,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.
           recolor:       element.placement_config?.recolor ?? null,
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
-          theta:         (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? px : seatTheta,
-          y:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? pz : seatY,
-          x:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : px,
-          z:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? 0 : pz,
+          theta:         seatTheta,            // round side: seat angle around the wall
+          y:             seatY,                // side: seat height on the wall
+          x:             px,
+          z:             pz,
           scale:         extra.scale ?? defaultScale,   // scatter passes a small per-instance radius
           // The GLB's authored facing offset (e.g. toppers need [0,-90,0]° to face front).
           // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
@@ -418,6 +380,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
                              .map(g => [g.key, g.default ?? '#ffffff'])),
           // Shared fondant surface: opt-in per element (absent → use the GLB's own texture/material).
           useSharedFondantTexture: element.placement_config?.useSharedFondantTexture === true,
+          // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
+          // GLB's own baked material. Lets one sphere read as metallic (low roughness / high metalness)
+          // or matte (high roughness / 0 metalness) from config — applied on the shared art path.
+          roughness:     element.placement_config?.roughness ?? null,
+          metalness:     element.placement_config?.metalness ?? null,
           allowedActions: {
             resize:    element.allowed_actions?.resize    ?? true,
             duplicate: element.allowed_actions?.duplicate ?? true,

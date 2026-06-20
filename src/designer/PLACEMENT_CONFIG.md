@@ -24,7 +24,7 @@ section below (§1–§4) is the authoritative detail for its keys.
 ```jsonc
 {
   // ── Zones × modes (§1 <zone>, §2) — one key per surface the element offers ──
-  "top_surface": "stand",          // stand | hug | faux_ball_single | faux_balls | perch | verge
+  "top_surface": "stand",          // stand | hug | perch | verge
   "side":        "hug",
   "middle_tier": "hug",
   "board":       "hug",
@@ -43,8 +43,8 @@ section below (§1–§4) is the authoritative detail for its keys.
   "rotation_unit": "deg",                             // 'deg' (standard) | 'rad' (legacy)
 
   // ── GLB material / surface ──
-  "roughness":               0.6,                     // GLB + 3D_GEOM
-  "metalness":               0.0,
+  "roughness":               0.6,                     // GLB finish: override the baked material (matte ↑)
+  "metalness":               0.0,                     // GLB finish: 0 = matte/plastic, ~0.9 = metallic
   "useSharedFondantTexture": false,                   // opt into the shared fondant surface
 
   // ── Folded sticker (2D image only, §1) ──
@@ -109,7 +109,7 @@ section below (§1–§4) is the authoritative detail for its keys.
 ```
 
 > Keys present in the sample but not yet in dedicated tables below (`scatter`, `side_proud`,
-> `useSharedFondantTexture`, `perch`, `verge`, `_model`, `roughness`, `metalness`) are read by
+> `useSharedFondantTexture`, `perch`, `verge`, `_model`) are read by
 > `addSticker` / the GLB material path (`verge` is summarised in the §2 modes table) — tabulate them
 > when next touched.
 
@@ -129,6 +129,7 @@ section below (§1–§4) is the authoritative detail for its keys.
 | `recolor` | object | `null` | **2D image stickers only.** Pixel-recolour region descriptor — present = the renderer recolours just the matched pixels to the instance's `color` (driven by the SAME ColorWheel as GLB tint; gated to show by `allowed_actions.color`). Absent = the image renders unchanged. Shape: `{ method, …params }`. Methods (`matcher` in `shared/color/imageRecolor.js`): **`opaque`** (default) = every non-transparent pixel (whole image — solid stickers); **`saturated`** (+ optional `sat`, default `0.25`) = the vivid coloured fill of any hue, leaving black/grey/white lines untouched (for "one colour + black" decals); **`blue_gt_green`** (+ optional `guard`, default `12`) = blue-dominant fill only, excludes gold edges (green > blue) and white highlights. Applied by `recolorImageData`; brightness is preserved so shading survives. GLB material tint (`color`/`groupColors`) is a separate path — chosen by asset kind (`isGlb`), never by element type. |
 | `rotation` | `[x,y,z]` **degrees** | `null` | The GLB's authored facing offset, baked into geometry before render (e.g. toppers `[0, -90, 0]` to face front). **Authored in degrees** — the calibrator's convention, unified with piping's `top_/bottom_rotation`. Read ONLY via `facingOffsetRadians()` (`placement.js`), which converts to the radians THREE uses. |
 | `rotation_unit` | `'deg' \| 'rad'` | `'rad'` | Unit of `rotation`. `'deg'` = degrees (the standard). Absent/`'rad'` = legacy radians, passed through unchanged. **Rollout flag**: admin now always writes `'deg'`; DB rows migrated by `spattoo-api/migrations/008_rotation_unit_degrees.sql` (radians→deg, render-neutral). The absent/`'rad'` legacy branch in `facingOffsetRadians` is retained as a safety fallback **until that migration is confirmed applied in production**, then it (and this flag) can be dropped. |
+| `roughness` / `metalness` | number | `null` | **GLB only.** Config-driven material finish — when set, override the GLB's baked material (copied per instance in `cleanGlbScene`, never mutating the cached GLB). `metalness` ~0 + high `roughness` = matte; `metalness` ~0.9 + low `roughness` = metallic. Lets one sphere/asset read as matte or metallic from config (e.g. sugar pearls vs gold balls). `null`/absent = keep the GLB's own baked material. Colour is a separate path (`color` / recolour). |
 
 ## 2. Placement modes (the value of a `<zone>` key)
 
@@ -140,7 +141,6 @@ From `PLACEMENT_MODES` in `constants.js`:
 | `hug` | `side`, `top_surface` | Lies flat against the surface; size derived from the wall (`hug_fill`), bends around round walls. |
 | `perch` | `rim` | A figure seated on the top edge — its centre straddles the edge (legs over the side, body above). Leans on world-X. Calibrated by `perch` (§ below). Legged 3D toppers. |
 | `verge` | `rim` | Reclines radially **OUTWARD** by `verge.angle_deg` so the body cantilevers over the edge into the air. World-oriented (never billboarded); auto-faces outward, re-orienting as it's dragged round the rim. For butterflies, flowers. Conventionally `rim`, but like every mode it's a config value usable on any allowed surface. Calibrated by `verge`: `{ seat, angle_deg, y_offset, edge_inset }` — **`seat`** = `'center'` (default; the MID-SPINE/geometry centre rests on the rim edge and the body drapes over the lip) or `'base'` (the body BASE seats on the top surface and leans from there); **`angle_deg`** default-tilt in degrees (default 35; seeds the per-instance Tilt control); **`edge_inset`** radial pull-in from the rim (− pushes out over the lip); **`y_offset`** height nudge. Dragging an edge-seated element rim-locks it (snaps to the perimeter — never inward, so a centre-seat element can't bury itself); a base-seat verge drags freely on the top like `stand`. _Planned (with the faux-ball work): **`edge_drag`** = `'rim'` (default, locked to the perimeter) \| `'outward'` (may be dragged OUT over the lip for a "spill over the edge" look, while inward is always clamped to the rim — for faux balls)._ |
-| `faux_ball_single` | `side`, `middle_tier`, `top_surface` | Renders as a faux-ball cluster; collision-spaced against siblings. |
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).
 
@@ -226,7 +226,7 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
   "description":     "Folded card butterfly",             // | null
   "element_type_id": "uuid",                              // FK → element_types
   "parent_id":       null,                                // FK → cake_elements (pattern part / variant); null = top-level
-  "image_url":       "elements/files/2D/uuid.png",        // R2 key; .glb/.gltf ⇒ 3D, else 2D; null = file-less (faux_balls)
+  "image_url":       "elements/files/2D/uuid.png",        // R2 key; .glb/.gltf ⇒ 3D, else 2D
   "thumbnail_url":   "elements/thumbnails/uuid.png",
   "file_size":       48213,                               // bytes | null
   "is_active":       true,
@@ -248,7 +248,7 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
                                                           // A real element uses only a subset; many
                                                           // groups below are mutually exclusive.
     // ── Zones × modes — one key per surface the element offers ──
-    "top_surface": "stand",                               // stand | hug | faux_ball_single | faux_balls | perch | verge
+    "top_surface": "stand",                               // stand | hug | perch | verge
     "side":        "hug",
     "middle_tier": "hug",
     "board":       "hug",

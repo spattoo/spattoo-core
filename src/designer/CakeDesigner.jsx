@@ -2098,8 +2098,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     parts.forEach((part, i) => {
       const partEl = elementById.get(part.element_id);
       if (!partEl) { console.warn(`[decor_pattern] part element_id not found: "${part.element_id}" — check the parts JSON`); return; }
-      let mode = partEl.placement_config?.[hit.zone];
-      if (!mode && Object.values(partEl.placement_config ?? {}).includes('faux_ball_single')) mode = 'faux_ball_single';
+      const mode = partEl.placement_config?.[hit.zone];
       // Part offset is interpreted in the surface's own coordinates: on the TOP it's (x, z) in
       // cake units; on a WALL (side / middle tier) `dx` becomes an angular offset in radians so
       // the parts sit side-by-side around the wall (e.g. two unicorn eyes on the front face),
@@ -2122,9 +2121,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   // A scatter element drops a BATCH of instances spread randomly across the zone, rendered through
-  // the NORMAL sticker path (so they look like the element — NOT faux_ball_single, which draws a
-  // generic sphere). They're spaced so they touch but don't overlap (min-centre distance ≈ one
-  // tile, STICKER_SIZE × scale). One scatter card with a density + surface chooser manages the set.
+  // the NORMAL sticker path (so they look like the element). They're spaced so they touch but don't
+  // overlap (min-centre distance ≈ one tile, STICKER_SIZE × scale). One scatter card with a density +
+  // surface chooser manages the set.
   const SCATTER_DEFAULT_COUNT = 12;
   // Per-instance size for scatter: the element's own configured r (admin-controlled), default 0.5
   // when unset. No element-type branch — just the config value. Tunable on the card afterwards.
@@ -2331,10 +2330,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Density-scatter element (sprinkles): drop a packed batch as ONE scatter card. Config-driven.
     if (element.placement_config?.scatter === true) { placeScatter(element, hit); return; }
 
-    let placementMode = element.placement_config?.[hit.zone];
-    if (!placementMode && Object.values(element.placement_config ?? {}).includes('faux_ball_single')) {
-      placementMode = 'faux_ball_single';
-    }
+    const placementMode = element.placement_config?.[hit.zone];
 
     const imageTopperTypeId = elementTypes.find(et => et.slug === ELEMENT_SLUGS.IMAGE_TOPPER)?.id;
     const isImageTopper = element.element_type_id === imageTopperTypeId;
@@ -2350,18 +2346,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setElementsOpen(false);
     // Make the just-added decoration the active card — collapsing any other open
     // card — so a second element added stacks below and only the newest is expanded
-    // (the same rule piping already follows). Faux balls edit via the colour wheel.
-    if (placementMode !== 'faux_ball_single') {
-      focusEditor('decoration');
-      // Multi-slot decor opens its single element card (manages all placements); others select
-      // the just-placed instance.
-      if (isMultiSlotEl(element.id)) {
-        setSelectedEl({ type: 'decorEl', elementId: element.id });
-        setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === element.id).map(s => s.id).concat(newId)));
-      } else {
-        setSelectedEl({ type: 'sticker', id: newId });
-        setSelectedStickerIds(new Set([newId]));
-      }
+    // (the same rule piping already follows).
+    focusEditor('decoration');
+    // Multi-slot decor opens its single element card (manages all placements); others select
+    // the just-placed instance.
+    if (isMultiSlotEl(element.id)) {
+      setSelectedEl({ type: 'decorEl', elementId: element.id });
+      setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === element.id).map(s => s.id).concat(newId)));
+    } else {
+      setSelectedEl({ type: 'sticker', id: newId });
+      setSelectedStickerIds(new Set([newId]));
     }
 
     if (isImageTopper && hit.zone === 'top_surface') {
@@ -2650,20 +2644,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setGradStop(0);
   }
   // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
-  const selectedStickerIsFauxBall = selectedEl?.type === 'sticker' &&
-    (design.stickers.find(s => s.id === selectedEl.id)?.placementMode === 'faux_ball_single');
   const showRightPanel = tierPanelVisible
     || ((caps?.color || caps?.gradient) && colorOpen)
     // Recompose per-group editing is gated on the group's `editable` flag, not allowed_actions.color.
-    || (activeGroupKey && colorOpen)
-    || selectedStickerIsFauxBall;
+    || (activeGroupKey && colorOpen);
 
   // ── Decoration edit stack ────────────────────────────────────────────────
   // Every editable decoration (sticker + topper + text) is a card in a right-side
   // accordion, mirroring the cream-piping popup: the selected one expands to its
   // full controls, the rest collapse to clickable headers, so adding/selecting a
-  // second element stacks beneath the first instead of replacing it. Faux-ball
-  // stickers are excluded — they edit through the colour wheel, not this popup.
+  // second element stacks beneath the first instead of replacing it.
   // "Single-per-slot" hero elements (topper, top&side decor — flagged in placement_config)
   // collapse to ONE card per element (type 'decorEl'); everything else scatters freely. Pure
   // classifier lives in placement.js (shared with the contract test).
@@ -2674,8 +2664,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const seenGroup = new Set();
   const seenScatter = new Set();
   design.stickers
-    // Plain faux balls edit via the colour wheel (no card); SCATTER faux balls collapse to a card.
-    .filter(st => st.placementMode !== 'faux_ball_single' || st.scatter === true)
     .forEach(st => {
       const thumb = /\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '') ? null : st.imageUrl;
       // A density-scatter element's instances collapse into ONE card (managed by a density slider).
@@ -2716,8 +2704,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const hasWriting = !!design.writing;
   const elementStackOpen = (decorationCards.length > 0 || pipingCards.length > 0 || hasWriting)
     && !toolsOpen
-    && selectedEl?.type !== 'tier'
-    && !selectedStickerIsFauxBall;
+    && selectedEl?.type !== 'tier';
   // A group card stays expanded both when the group itself is selected AND when the user has
   // drilled into one of its members (selectedEl is that member's sticker) — the member has no
   // card of its own, so its controls render inside the group card.
@@ -4119,127 +4106,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 );
               })()}
 
-              {/* Faux ball single controls */}
-              {selectedEl?.type === 'sticker' && (() => {
-                const sticker = design.stickers.find(s => s.id === selectedEl.id);
-                if (!sticker || sticker.placementMode !== 'faux_ball_single') return null;
-                const tierRadius = canvasConfig.tiers[sticker.tierIndex]?.radius ?? 1.2;
-                const isSideBall = sticker.zone === 'side' || sticker.zone === 'middle_tier';
-                const dist  = Math.sqrt((sticker.x ?? 0) ** 2 + (sticker.z ?? 0) ** 2);
-                const theta = Math.atan2(sticker.x ?? 0, sticker.z ?? 0);
-                const rdInset = Math.max(0, tierRadius - dist);
-                const tierInfo = canvasConfig.tiers[sticker.tierIndex];
-                const tierBaseY = (() => {
-                  let y = 0;
-                  for (let i = 0; i < sticker.tierIndex; i++) y += (canvasConfig.tiers[i]?.height ?? 0.5);
-                  return y + 0.1;
-                })();
-                const tierHeight = tierInfo?.height ?? 0.5;
-                function pushApart(newX, newZ, selfR = sticker.scale ?? 0.12) {
-                  const maxR  = tierRadius * 0.92;
-                  let x = newX, z = newZ;
-                  const siblings = design.stickers.filter(
-                    s => s.id !== sticker.id && s.placementMode === 'faux_ball_single' && s.tierIndex === sticker.tierIndex && s.zone === sticker.zone
-                  );
-                  for (const sib of siblings) {
-                    const minDist = selfR + (sib.scale ?? 0.12);
-                    const ex = x - (sib.x ?? 0), ez = z - (sib.z ?? 0);
-                    const d  = Math.sqrt(ex * ex + ez * ez);
-                    if (d < minDist && d > 0.001) {
-                      x = (sib.x ?? 0) + ex * (minDist / d);
-                      z = (sib.z ?? 0) + ez * (minDist / d);
-                      const r2 = Math.sqrt(x * x + z * z);
-                      if (r2 > maxR) { x = x * maxR / r2; z = z * maxR / r2; }
-                    }
-                  }
-                  return { x, z };
-                }
-                function setAngle(v) {
-                  const { x, z } = pushApart(dist * Math.sin(v), dist * Math.cos(v));
-                  updateSticker(sticker.id, { x, z });
-                }
-                function setInset(v) {
-                  const d = Math.max(0, tierRadius - v);
-                  const { x, z } = pushApart(d * Math.sin(theta), d * Math.cos(theta));
-                  updateSticker(sticker.id, { x, z });
-                }
-                function pushApartSide(newTheta, newY, selfR = sticker.scale ?? 0.12) {
-                  const surfR = tierRadius + selfR;
-                  let t = newTheta, y = newY;
-                  const siblings = design.stickers.filter(
-                    s => s.id !== sticker.id && s.placementMode === 'faux_ball_single' && s.tierIndex === sticker.tierIndex
-                  );
-                  for (const sib of siblings) {
-                    const minDist = selfR + (sib.scale ?? 0.12);
-                    const sibSurfR = tierRadius + (sib.scale ?? 0.12);
-                    const ax = surfR * Math.sin(t), ay = y, az = surfR * Math.cos(t);
-                    const bx = sibSurfR * Math.sin(sib.theta ?? 0), by = sib.y ?? (tierBaseY + tierHeight * 0.5), bz = sibSurfR * Math.cos(sib.theta ?? 0);
-                    const ex = ax - bx, ey = ay - by, ez = az - bz;
-                    const d = Math.sqrt(ex * ex + ey * ey + ez * ez);
-                    if (d < minDist && d > 0.001) {
-                      t = Math.atan2(bx + ex * (minDist / d), bz + ez * (minDist / d));
-                      y = Math.max(tierBaseY + selfR, Math.min(tierBaseY + tierHeight - selfR, by + ey * (minDist / d)));
-                    }
-                  }
-                  return { theta: t, y };
-                }
-                const SliderRow = ({ label, value, min, max, step, onChange, display }) => {
-                  const pct = ((value - min) / (max - min)) * 100;
-                  function valFromEvent(e) {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    const snapped = min + Math.round((ratio * (max - min)) / step) * step;
-                    return Math.min(max, Math.max(min, snapped));
-                  }
-                  return (
-                    <div style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#555', letterSpacing: 0.5 }}>{label}</span>
-                        <span style={{ fontSize: 10, color: '#888' }}>{display ?? value.toFixed(3)}</span>
-                      </div>
-                      <div
-                        style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
-                        onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); onChange(valFromEvent(e)); }}
-                        onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); onChange(valFromEvent(e)); }}
-                        onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-                        onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
-                      >
-                        <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
-                        </div>
-                        <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
-                      </div>
-                    </div>
-                  );
-                };
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4, width: '100%' }}>
-                    {isSideBall ? <>
-                      {SliderRow({ label: 'Angle', value: sticker.theta ?? 0, min: -Math.PI, max: Math.PI, step: 0.01, display: `${((sticker.theta ?? 0) * 180 / Math.PI).toFixed(1)}°`, onChange: v => { const { theta: t, y } = pushApartSide(v, sticker.y ?? (tierBaseY + tierHeight * 0.5)); updateSticker(sticker.id, { theta: t, y }); } })}
-                      {SliderRow({ label: 'Height', value: sticker.y ?? (tierBaseY + tierHeight * 0.5), min: tierBaseY, max: tierBaseY + tierHeight, step: 0.01, onChange: v => { const { theta: t, y } = pushApartSide(sticker.theta ?? 0, v); updateSticker(sticker.id, { theta: t, y }); } })}
-                    </> : <>
-                      {SliderRow({ label: 'Angle', value: theta, min: -Math.PI, max: Math.PI, step: 0.01, onChange: setAngle, display: `${(theta * 180 / Math.PI).toFixed(1)}°` })}
-                      {SliderRow({ label: 'Inset from rim', value: rdInset, min: 0, max: tierRadius * 0.95, step: 0.01, onChange: setInset })}
-                    </>}
-                    {SliderRow({ label: 'Radius', value: sticker.scale ?? 0.12, min: 0.03, max: 0.35, step: 0.005, onChange: v => {
-                      if (isSideBall) {
-                        const { theta: t, y } = pushApartSide(sticker.theta ?? 0, sticker.y ?? (tierBaseY + tierHeight * 0.5), v);
-                        updateSticker(sticker.id, { scale: v, theta: t, y });
-                      } else {
-                        const { x, z } = pushApart(sticker.x ?? 0, sticker.z ?? 0, v);
-                        updateSticker(sticker.id, { scale: v, x, z });
-                      }
-                    } })}
-                    <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
-                      onClick={handleDelete}>Remove</button>
-                  </div>
-                );
-              })()}
-
               {/* Resize slider — regular stickers */}
               {caps?.resize && selectedEl?.type === 'sticker' && (() => {
                 const sticker = design.stickers.find(s => s.id === selectedEl.id);
-                if (!sticker || sticker.placementMode === 'faux_ball_single') return null;
+                if (!sticker) return null;
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>

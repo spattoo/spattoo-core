@@ -714,13 +714,11 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: Math.max(0.3, +((selectedSticker.scale - 0.2).toFixed(2))) })}>−</button>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: +((selectedSticker.scale + 0.2).toFixed(2)) })}>+</button>
 
-              {/* Tilt — not applicable for faux_balls */}
-              {selectedSticker.placementMode !== 'faux_balls' && <>
-                <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Tilt</span>
-                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.max(-1.2, +((selectedSticker.tiltAngle ?? 0) - 0.1).toFixed(3)) })}>−</button>
-                <span style={{ fontSize: 10, color: '#1a1a1a', minWidth: 28, textAlign: 'center' }}>{Math.round(((selectedSticker.tiltAngle ?? 0) * 180) / Math.PI)}°</span>
-                <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.min(1.2, +((selectedSticker.tiltAngle ?? 0) + 0.1).toFixed(3)) })}>+</button>
-              </>}
+              {/* Tilt */}
+              <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Tilt</span>
+              <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.max(-1.2, +((selectedSticker.tiltAngle ?? 0) - 0.1).toFixed(3)) })}>−</button>
+              <span style={{ fontSize: 10, color: '#1a1a1a', minWidth: 28, textAlign: 'center' }}>{Math.round(((selectedSticker.tiltAngle ?? 0) * 180) / Math.PI)}°</span>
+              <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.min(1.2, +((selectedSticker.tiltAngle ?? 0) + 0.1).toFixed(3)) })}>+</button>
 
               {/* Spin (top surface stand stickers only) */}
               {selectedSticker.zone === 'top_surface' && selectedSticker.placementMode === 'stand' && <>

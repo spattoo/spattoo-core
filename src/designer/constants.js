@@ -44,7 +44,6 @@ export const PICKER_STEP_Z   =  0.52;
 export const TIER_HEIGHT_STEP = 0.08;   // each upper tier is this shorter than the one below
 
 // ── Visual constants ──────────────────────────────────────────────────────────
-export const GOLD_COLOR       = '#D4AF37';
 export const SELECTION_COLOR  = '#6c47ff';   // emissive highlight on selected elements
 
 // ── Piping ────────────────────────────────────────────────────────────────────
@@ -89,7 +88,6 @@ export const PLACEMENT_MODES = Object.freeze({
   PERCH:            'perch',   // figure seated on the rim/top edge — straddles the edge, legs over
   VERGE:            'verge',   // rests its base on the rim lip and reclines radially OUTWARD, the rest
                               //   cantilevered over the edge into the air (butterflies, flowers)
-  FAUX_BALL_SINGLE: 'faux_ball_single',
 });
 
 // Internal element kinds the designer branches on (NOT the admin element-type slug).

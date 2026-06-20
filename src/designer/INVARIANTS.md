@@ -7,7 +7,7 @@ These rules exist because they were each violated and cost painful rework. Keep 
 An element's behavior comes entirely from its data:
 - `allowed_zones` — where it can go (`top_surface`, `side`, `middle_tier`, `board`, `rim`).
 - `placement_config[zone]` — how it sits there, written EXPLICITLY by admin: `'hug'` | `'stand'`
-  | `'faux_balls'` | `'faux_ball_single'`. Admin persists the mode for every applicable zone (default
+  | `'perch'` | `'verge'`. Admin persists the mode for every applicable zone (default
   `'hug'`), so the renderer never guesses. (Legacy rows may omit it → treat absent as `'hug'`, the
   data-layer default in `addSticker`; the load-time backfill still seeds hero defaults, and an
   element's explicit config always wins via the spread.) NEVER hardcode a different per-zone default
@@ -29,10 +29,12 @@ as `placement_config` and set it — ideally in admin, otherwise in the load‑t
 `CakeDesigner.loadElementsIfNeeded` (the ONE place type→config mapping is allowed).
 
 ## 2. ONE renderer for every placed element
-All placed decor — scattered, picks, image‑topper, faux‑ball, topper, top&side — lives in
+All placed decor — scattered, picks, image‑topper, topper, top&side — lives in
 `design.stickers` and renders through the generic path (`DraggableTopSticker` /
-`DraggableSideSticker` / `FauxBall*` in `canvas/CakeCanvas.jsx`). There is no per‑type renderer.
-`CakeTopper` / `design.topper` were deleted for this reason — do not reintroduce a parallel one.
+`DraggableSideSticker` in `canvas/CakeCanvas.jsx`). There is no per‑type renderer.
+`CakeTopper` / `design.topper` were deleted for this reason; the `FauxBall*` procedural cluster
+renderers were likewise removed (balls are now GLB spheres on this same path) — do not reintroduce a
+parallel one.
 
 ## 3. Reuse the shared components — do not reimplement
 - `PreviewTile` — preview + corner checkbox + label. Used by the piping popup AND the placement chooser.
