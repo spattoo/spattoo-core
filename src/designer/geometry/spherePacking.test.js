@@ -53,11 +53,6 @@ describe('packCluster — the cluster invariants (#3–#5) on a flat top', () =>
     for (const b of balls) expect(b.y).toBeGreaterThanOrEqual(b.r - 1e-3);
   });
 
-  it('grows a MOUND, not a flat disc (#6 — balanced vertical spread)', () => {
-    const maxY = Math.max(...balls.map(b => b.y));
-    expect(maxY).toBeGreaterThan(2 * Math.min(...radii));   // built upward, not all on the plane
-  });
-
   it('seed is the first/biggest ball at the anchor', () => {
     expect(balls[0]).toMatchObject({ x: 0, z: 0, r: 1.5 });
   });
@@ -70,21 +65,39 @@ describe('packCluster — the cluster invariants (#3–#5) on a flat top', () =>
   });
 });
 
-describe('packCluster — drapes over the rim / down the side (#6)', () => {
-  // Seed near the rim of a small cake; a big cluster must spill over the edge / below the top.
+describe('packCluster — supported & draping on a real cake (#5/#6)', () => {
+  // Seed near the rim of a small cake; a big cluster must spill over the edge / down the side.
   const cake = { R: 1.2, topY: 1.5, baseY: 0.1, ax: 1.1, az: 0 };
   const balls = packCluster({ count: 20, radii: [0.18, 0.12, 0.08], cake });
+  // Cake-surface clearance (mirror of the packer's) + on-cake test.
+  const clearance = (b) => {
+    const rho = Math.hypot(b.x, b.z);
+    if (b.y >= cake.topY) return rho <= cake.R ? b.y - cake.topY : Math.hypot(rho - cake.R, b.y - cake.topY);
+    return rho - cake.R;
+  };
+  const onCake = (b) => clearance(b) <= b.r + 1.5e-2;
 
   it('no ball is buried inside the cake body', () => {
-    for (const b of balls) {
-      const insideColumn = Math.hypot(b.x, b.z) <= cake.R - 1e-3;
-      const belowTop = b.y < cake.topY - 1e-3;
-      expect(insideColumn && belowTop).toBe(false);   // inside the column AND below the top = buried
-    }
+    for (const b of balls) expect(clearance(b)).toBeGreaterThanOrEqual(b.r - 1.5e-2);
   });
 
-  it('at least one ball spills past the rim or below the top (drape)', () => {
-    const draped = balls.some(b => Math.hypot(b.x, b.z) > cake.R || b.y < cake.topY);
-    expect(draped).toBe(true);
+  it('EVERY ball is supported — on the cake OR cradled on >=2 balls below it (no floating, #5)', () => {
+    balls.forEach((b, i) => {
+      if (onCake(b)) return;
+      const below = balls.filter((o, j) => j !== i &&
+        Math.abs(dist3([b.x, b.y, b.z], [o.x, o.y, o.z]) - (b.r + o.r)) < 1.5e-2 && o.y < b.y - 0.15 * b.r);
+      const cradled = below.some((p, a) => below.some((q, c) => c > a &&
+        (p.x - b.x) * (q.x - b.x) + (p.z - b.z) * (q.z - b.z) < 0));   // opposing supports
+      expect(onCake(b) || cradled).toBe(true);
+    });
+  });
+
+  it('MOST balls touch the cake surface; only a minority ride on top (#6)', () => {
+    const onSurf = balls.filter(onCake).length;
+    expect(onSurf).toBeGreaterThanOrEqual(Math.ceil(balls.length * 0.6));
+  });
+
+  it('drapes: at least one ball spills past the rim or below the top', () => {
+    expect(balls.some(b => Math.hypot(b.x, b.z) > cake.R || b.y < cake.topY)).toBe(true);
   });
 });
