@@ -933,14 +933,17 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     lastHitRef.current      = null;
     lastValidPos.current    = { x: sticker.x, z: sticker.z };
 
+    // Drag moves the whole group/cluster together. groupId always does; a clusterId does too UNLESS
+    // this ball is individually selected (ctrl-click drill-in) — then it moves alone.
+    const groupKey = sticker.groupId || (!selected ? (sticker.clusterId ?? null) : null);
     if (moveSet && moveSet.length > 1) {
       const setIds = new Set(moveSet);
       groupStart.current = {};
       allStickers.forEach(s => { if (setIds.has(s.id)) groupStart.current[s.id] = { x: s.x, z: s.z }; });
-    } else if (sticker.groupId) {
+    } else if (groupKey) {
       groupStart.current = {};
       allStickers.forEach(s => {
-        if (s.groupId === sticker.groupId)
+        if ((s.groupId || s.clusterId) === groupKey)
           groupStart.current[s.id] = { x: s.x, z: s.z };
       });
     } else {
@@ -959,10 +962,10 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           const rawDx = hit.x - startHit.current.x;
           const rawDz = hit.z - startHit.current.z;
           onMoveMany(moveSet, groupStart.current, { dx: rawDx, dz: rawDz });
-        } else if (sticker.groupId && groupStart.current && onGroupMove) {
+        } else if (groupKey && groupStart.current && onGroupMove) {
           const rawDx = hit.x - startHit.current.x;
           const rawDz = hit.z - startHit.current.z;
-          onGroupMove(sticker.groupId, groupStart.current, { dx: rawDx, dz: rawDz });
+          onGroupMove(groupKey, groupStart.current, { dx: rawDx, dz: rawDz });
         } else {
           // Incremental delta from last frame so the collision direction never flips
           // when the total drag overshoots the sibling centre.

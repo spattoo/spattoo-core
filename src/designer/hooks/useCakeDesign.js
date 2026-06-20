@@ -439,7 +439,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       stickers: prev.stickers.map(s => {
-        if (s.groupId !== groupId) return s;
+        // `groupId` here is the move KEY — a user group's groupId OR a ball cluster's clusterId
+        // (both are distinct UUIDs, so a key matches exactly one set). Move-as-group for both.
+        if (s.groupId !== groupId && s.clusterId !== groupId) return s;
         const start = startPositions[s.id];
         if (!start) return s;
         const updated = { ...s };
