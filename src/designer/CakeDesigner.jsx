@@ -2831,7 +2831,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // "Single-per-slot" hero elements (topper, top&side decor — flagged in placement_config)
   // collapse to ONE card per element (type 'decorEl'); everything else scatters freely. Pure
   // classifier lives in placement.js (shared with the contract test).
-  const isMultiSlotEl = elId => isSinglePerSlot(elementById.get(elId));
+  // A cluster element is NEVER multi-slot (hero) — even if the load-time backfill added single_per_slot
+  // for its type — so it places as a plain ball + Cluster toggle, not the per-slot hero chooser.
+  const isMultiSlotEl = elId => {
+    const e = elementById.get(elId);
+    return isSinglePerSlot(e) && !e?.placement_config?.cluster;
+  };
   const decorationCards = [];
   const seenDecorEl = new Set();
   const seenPattern = new Set();
