@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { apollo3, packClusterOnSurface } from './spherePacking.js';
+import { apollo3, packCluster } from './spherePacking.js';
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+// A flat top with no reachable rim (huge R) — exercises the pure packing invariants.
+const FLAT = { R: 1e6, topY: 0, ax: 0, az: 0 };
 
 describe('apollo3 — tangent to three spheres', () => {
   it('places a unit ball tangent to three unit balls, topmost solution', () => {
@@ -18,9 +20,9 @@ describe('apollo3 — tangent to three spheres', () => {
   });
 });
 
-describe('packClusterOnSurface — the cluster invariants (#3–#5)', () => {
+describe('packCluster — the cluster invariants (#3–#5) on a flat top', () => {
   const radii = [1.5, 1.0, 0.6];
-  const balls = packClusterOnSurface({ count: 14, radii });
+  const balls = packCluster({ count: 14, radii, cake: FLAT });
 
   it('produces the requested number of balls', () => {
     expect(balls).toHaveLength(14);
@@ -47,8 +49,13 @@ describe('packClusterOnSurface — the cluster invariants (#3–#5)', () => {
     }
   });
 
-  it('all balls rest ON or ABOVE the surface (no sinking)', () => {
+  it('all balls rest ON or ABOVE the top (no sinking)', () => {
     for (const b of balls) expect(b.y).toBeGreaterThanOrEqual(b.r - 1e-3);
+  });
+
+  it('grows a MOUND, not a flat disc (#6 — balanced vertical spread)', () => {
+    const maxY = Math.max(...balls.map(b => b.y));
+    expect(maxY).toBeGreaterThan(2 * Math.min(...radii));   // built upward, not all on the plane
   });
 
   it('seed is the first/biggest ball at the anchor', () => {
@@ -56,8 +63,28 @@ describe('packClusterOnSurface — the cluster invariants (#3–#5)', () => {
   });
 
   it('degenerate inputs are safe', () => {
-    expect(packClusterOnSurface({ count: 0, radii })).toEqual([]);
-    expect(packClusterOnSurface({ count: 5, radii: [] })).toEqual([]);
-    expect(packClusterOnSurface({ count: 1, radii })).toHaveLength(1);
+    expect(packCluster({ count: 0, radii, cake: FLAT })).toEqual([]);
+    expect(packCluster({ count: 5, radii: [], cake: FLAT })).toEqual([]);
+    expect(packCluster({ count: 1, radii, cake: FLAT })).toHaveLength(1);
+    expect(packCluster({ count: 5, radii, cake: null })).toEqual([]);
+  });
+});
+
+describe('packCluster — drapes over the rim / down the side (#6)', () => {
+  // Seed near the rim of a small cake; a big cluster must spill over the edge / below the top.
+  const cake = { R: 1.2, topY: 1.5, baseY: 0.1, ax: 1.1, az: 0 };
+  const balls = packCluster({ count: 20, radii: [0.18, 0.12, 0.08], cake });
+
+  it('no ball is buried inside the cake body', () => {
+    for (const b of balls) {
+      const insideColumn = Math.hypot(b.x, b.z) <= cake.R - 1e-3;
+      const belowTop = b.y < cake.topY - 1e-3;
+      expect(insideColumn && belowTop).toBe(false);   // inside the column AND below the top = buried
+    }
+  });
+
+  it('at least one ball spills past the rim or below the top (drape)', () => {
+    const draped = balls.some(b => Math.hypot(b.x, b.z) > cake.R || b.y < cake.topY);
+    expect(draped).toBe(true);
   });
 });

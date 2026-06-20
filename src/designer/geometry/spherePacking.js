@@ -35,34 +35,51 @@ export function apollo3(P1, rP1, P2, rP2, P3, rP3, rG) {
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-// Greedy 3D pack of mixed-size balls into ONE compact clump resting on a flat surface (plane y=0),
-// growing from a seed at the anchor. Every ball after the seed TOUCHES at least one placed ball and
-// NONE overlap, so the cluster reads as a single group (Phase-B requirements #3–#5). Pure +
-// deterministic (candidate angles on a fixed grid, no RNG) so it's unit-testable in isolation.
+// Evenly-spread unit directions on a sphere (Fibonacci lattice) — the candidate growth directions for
+// a new ball off a placed one. Deterministic (no RNG), so packing is reproducible/testable.
+function sphereDirs(n) {
+  const dirs = [], golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (2 * i + 1) / n;            // -1..1
+    const rad = Math.sqrt(Math.max(0, 1 - y * y));
+    const th = i * golden;
+    dirs.push([Math.cos(th) * rad, y, Math.sin(th) * rad]);
+  }
+  return dirs;
+}
+const PACK_DIRS = sphereDirs(64);
+
+// Greedy 3D pack of mixed-size balls into ONE compact clump that RESTS ON THE CAKE and may spill over
+// the rim and down the side wall (Phase-B reqs #3–#6). Every ball after the seed TOUCHES >=1 placed
+// ball, NONE overlap each other, and NONE penetrate the cake — so the clump reads as one group draped
+// on the cake. Pure + deterministic.
 //
 //   count — total number of balls
-//   radii — the mix of radii to draw from; radii[0] is the seed (put the biggest first — reads best)
+//   radii — the mix of radii (world units); radii[0] is the seed (biggest first reads best)
+//   cake  — round cylinder the clump rests on: { R, topY, baseY, ax, az } (anchor ax,az on the top,
+//           in cake-centre coords). A flat top with no reachable rim = a large R.
 //
-// Returns [{ x, y, z, r }] in the surface-local frame (anchor at origin, y = centre height above the
-// surface). B1 covers the TOP surface only; B3 will extend the same candidate model over the rim and
-// down the side wall. Candidates are (a) resting on the surface tangent to one placed ball, and
-// (b) nestled in a pocket tangent to three placed balls (apollo3). The lowest, most central valid
-// candidate wins, so the clump stays grounded and compact rather than sprawling.
-export function packClusterOnSurface({ count, radii }) {
+// Returns [{ x, y, z, r }] in cake-centre WORLD coords (y = ball-centre height). The clump grows as a
+// compact mound (candidates scored by distance to the centroid); the cake-clearance constraint lets
+// it drape over the rim/side once it reaches the edge. Candidates per new ball: tangent to a placed
+// ball along sampled sphere directions, plus tangent to three placed balls (apollo3).
+export function packCluster({ count, radii, cake }) {
   const EPS = 1e-4;
-  const TOUCH_TOL = 1e-2;
-  const ANGLES = 24;
-  if (!count || count < 1 || !radii?.length) return [];
-  const balls = [{ c: [0, radii[0], 0], r: radii[0] }];   // seed on the surface at the anchor
+  if (!count || count < 1 || !radii?.length || !cake) return [];
+  const { R, topY, baseY = -Infinity, ax = 0, az = 0 } = cake;
+  // Signed distance from a point to the cake's REST surface (top cap ∪ side wall ∪ rim circle):
+  // >0 outside (free), ~0 resting on it, <0 inside the cake body (a ball there would be buried).
+  const clearance = (c) => {
+    const rho = Math.hypot(c[0], c[2]);
+    if (c[1] >= topY) return rho <= R ? c[1] - topY : Math.hypot(rho - R, c[1] - topY);
+    return rho - R;                                  // below the top: outside the wall (>0) or inside (<0)
+  };
+  const balls = [{ c: [ax, topY + radii[0], az], r: radii[0] }];   // seed resting on the top at the anchor
   const overlapsAny = (c, r) => balls.some(b => dist3(c, b.c) < b.r + r - EPS);
-  const touchesAny  = (c, r) => balls.some(b => Math.abs(dist3(c, b.c) - (b.r + r)) < TOUCH_TOL);
+  const valid = (c, r) => clearance(c) >= r - EPS && c[1] - r >= baseY - EPS && !overlapsAny(c, r);
 
   for (let i = 1; i < count; i++) {
     const r = radii[i % radii.length];
-    // Grow as a COMPACT 3D mound (balanced horizontal + vertical), not a flat disc: score each
-    // candidate by distance to the current cluster centroid, so the clump fills inward/upward into
-    // pockets rather than only spreading sideways. y >= r keeps it resting on the surface, so the
-    // result is a rounded hemispherical pile.
     const n = balls.length;
     const centroid = [
       balls.reduce((a, b) => a + b.c[0], 0) / n,
@@ -70,23 +87,17 @@ export function packClusterOnSurface({ count, radii }) {
       balls.reduce((a, b) => a + b.c[2], 0) / n,
     ];
     let best = null, bestScore = Infinity;
-    const consider = (c) => {
-      if (!c || c[1] < r - EPS) return;            // null / below the surface
-      if (overlapsAny(c, r) || !touchesAny(c, r)) return;
-      const score = dist3(c, centroid);            // tightest to the centroid wins → compact mound
+    const consider = (c) => {                        // candidates are constructed tangent to a ball → touch >=1
+      if (!c || !valid(c, r)) return;
+      const score = dist3(c, centroid);              // tightest to the centroid wins → compact mound
       if (score < bestScore) { bestScore = score; best = c; }
     };
-    // (a) resting on the surface (centre at y=r), tangent to a placed ball
-    for (const b of balls) {
-      const dh2 = (b.r + r) ** 2 - (b.c[1] - r) ** 2;   // horizontal distance² for surface tangency
-      if (dh2 <= 0) continue;
-      const dh = Math.sqrt(dh2);
-      for (let a = 0; a < ANGLES; a++) {
-        const th = (a / ANGLES) * 2 * Math.PI;
-        consider([b.c[0] + dh * Math.cos(th), r, b.c[2] + dh * Math.sin(th)]);
-      }
-    }
-    // (b) nestled in a pocket: tangent to three placed balls
+    // (a) tangent to a placed ball, grown along sampled sphere directions (covers up / out / over the
+    //     rim / down the side); the clearance test keeps it on the cake, not buried in it.
+    for (const b of balls)
+      for (const d of PACK_DIRS)
+        consider([b.c[0] + d[0] * (b.r + r), b.c[1] + d[1] * (b.r + r), b.c[2] + d[2] * (b.r + r)]);
+    // (b) nestled in a pocket: tangent to three placed balls (apollo3)
     for (let p = 0; p < balls.length; p++)
       for (let q = p + 1; q < balls.length; q++)
         for (let s = q + 1; s < balls.length; s++)

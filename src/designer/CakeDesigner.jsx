@@ -9,7 +9,7 @@ import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
-import { packClusterOnSurface } from './geometry/spherePacking.js';
+import { packCluster } from './geometry/spherePacking.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -2246,18 +2246,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const palette = (Array.isArray(c.palette) && c.palette.length) ? c.palette : [element.default_color ?? '#D4AF37'];
     return { min: c.min ?? 3, max: c.max ?? 30, sizes, palette };
   }
-  // Spawn `count` packed balls centred at (anchorX,anchorZ) on (zone×tier), all sharing `clusterId`.
+  // Spawn `count` packed balls anchored at (anchorX,anchorZ) on (zone×tier), all sharing `clusterId`.
+  // The packer is cake-aware: it rests the clump on the top and lets it drape over the rim / down the
+  // side. Each ball maps to a top-surface `stand` sticker positioned by absolute x/z (may go past the
+  // rim) + yOffset (its packed height minus the rest seat; negative = below the top, on the side).
   function clusterInstances(element, zone, tierIndex, anchorX, anchorZ, count, clusterId) {
     const { sizes, palette } = clusterConfigOf(element);
     const radii = sizes.map(s => s * CLUSTER_BASE_R);                  // world radii
-    const packed = packClusterOnSurface({ count, radii });
+    // Cake geometry in the render's world-Y frame (same convention as seatOnSlot, so yOffset lines up).
+    const ti = tierIndex ?? 0;
+    let baseY = 0.1;
+    for (let i = 0; i < ti; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
+    const topY = baseY + (canvasConfig.tiers[ti]?.height ?? BOTTOM_H);
+    const shp = tierShape(canvasConfig.tiers[ti] ?? canvasConfig.tiers[0]);
+    const R = shp.kind === 'rect' ? 1e6 : shp.radius;   // round drapes over the rim; rect packs flat (B3 = round)
+    const packed = packCluster({ count, radii, cake: { R, topY, baseY, ax: anchorX, az: anchorZ } });
     const mode = element.placement_config?.[zone] ?? 'stand';
     const baseId = Date.now();
     packed.forEach((ball, i) => {
       addSticker(element, zone, tierIndex, mode,
-        { x: anchorX + ball.x, z: anchorZ + ball.z },
+        { x: ball.x, z: ball.z },
         { id: baseId + i, scale: ball.r / CLUSTER_BASE_R, exact: true,
-          yOffset: ball.y - ball.r, clusterId, color: palette[i % palette.length] });
+          yOffset: ball.y - topY - ball.r, clusterId, color: palette[i % palette.length] });
     });
     return clusterId;
   }
