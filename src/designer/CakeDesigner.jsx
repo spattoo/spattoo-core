@@ -3505,8 +3505,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const srcEl = sticker && elementById.get(sticker.elementId);
       if (sticker && !sticker.clusterId && srcEl?.placement_config?.cluster) {
         groups.push({ key: 'cluster-toggle', divider: true, controls: [
-          <span key="cl-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Cluster</span>,
-          <button key="cl-on" style={s.tbIconBtn} onClick={() => makeCluster(sticker)}>Make</button>,
+          <button key="cl-on" style={{ ...s.tbIconBtn, width: '100%', fontWeight: 700 }} onClick={() => makeCluster(sticker)}>✨ Create automatic cluster</button>,
         ] });
       }
     }
