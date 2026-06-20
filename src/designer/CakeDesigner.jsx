@@ -2284,8 +2284,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const element = elementById.get(sticker.elementId);
     if (!element) return;
     const clusterId = crypto.randomUUID();
+    // Faux-ball clusters belong at the RIM (so they drape over the edge). Snap the seed near the rim
+    // in the direction it was dropped (front if dropped at the centre); rect cakes keep the drop spot.
+    let ax = sticker.x ?? 0, az = sticker.z ?? 0;
+    const shp = tierShape(canvasConfig.tiers[sticker.tierIndex ?? 0] ?? canvasConfig.tiers[0]);
+    if (shp.kind !== 'rect') {
+      const seedR = (clusterConfigOf(element).sizes[0] ?? 1.6) * CLUSTER_BASE_R;
+      const rho = Math.hypot(ax, az);
+      const dir = rho > 1e-3 ? { x: ax / rho, z: az / rho } : { x: 0, z: 1 };   // front if centred
+      const target = Math.max(0, shp.radius - seedR);                            // seed edge near the rim
+      ax = dir.x * target; az = dir.z * target;
+    }
     removeSticker(sticker.id);
-    clusterInstances(element, sticker.zone, sticker.tierIndex, sticker.x ?? 0, sticker.z ?? 0, CLUSTER_DEFAULT_COUNT, clusterId);
+    clusterInstances(element, sticker.zone, sticker.tierIndex, ax, az, CLUSTER_DEFAULT_COUNT, clusterId);
     setColorOpen(false);
     focusEditor('decoration');
     setMultiSelectMode(false);

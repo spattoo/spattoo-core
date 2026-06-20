@@ -103,25 +103,21 @@ export function packCluster({ count, radii, cake }) {
     return false;
   };
 
+  const seed = balls[0].c;                           // grow AROUND the big ball (fixed), not a drifting
+                                                     // centroid — keeps the clump radially balanced
   const nTop = Math.round((count - 1) * TOP_FRAC);   // last nTop balls (the smallest) ride on top
   for (let i = 1; i < count; i++) {
     const r = radii[i % radii.length];
     const wantsTop = i >= count - nTop;              // surface phase first, then the on-top pocket phase
-    const n = balls.length;
-    const centroid = [
-      balls.reduce((a, b) => a + b.c[0], 0) / n,
-      balls.reduce((a, b) => a + b.c[1], 0) / n,
-      balls.reduce((a, b) => a + b.c[2], 0) / n,
-    ];
     let best = null, bestScore = Infinity;
     const consider = (c) => {
       if (!c || !valid(c, r) || !stable(c, r)) return;
       // Surface balls strongly prefer resting on the cake (base); the last ~TOP_FRAC prefer pockets
       // (on top). PHASE is a soft fallback: if a top ball finds no pocket it still takes a surface
-      // spot. Compactness breaks ties so the clump stays tight.
+      // spot. Distance-to-SEED breaks ties so the clump packs tightly around the big ball, evenly.
       const oc = onCake(c, r);
       const phasePenalty = wantsTop ? (oc ? PHASE : 0) : (oc ? 0 : PHASE);
-      const score = phasePenalty + dist3(c, centroid);
+      const score = phasePenalty + dist3(c, seed);
       if (score < bestScore) { bestScore = score; best = c; }
     };
     for (const b of balls) {
