@@ -3344,8 +3344,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Reuses the shared chooser in single-instance mode; instance controls stay below.
     if (el.type === 'sticker') {
       const inst = design.stickers.find(s => s.id === el.id);
-      const chooser = elementPlacementChooser(elementById.get(inst?.elementId), { instance: inst });
-      if (chooser) groups.push({ key: 'place', divider: true, controls: [chooser] });
+      const srcEl = elementById.get(inst?.elementId);
+      // Cluster-capable elements don't use the per-surface move chooser — you drag the ball to position
+      // it and use the "Cluster" toggle (drop several for multiple clusters). Skip the preview chooser.
+      if (!srcEl?.placement_config?.cluster) {
+        const chooser = elementPlacementChooser(srcEl, { instance: inst });
+        if (chooser) groups.push({ key: 'place', divider: true, controls: [chooser] });
+      }
     }
 
     if (c.resize && el.type === 'sticker') {
