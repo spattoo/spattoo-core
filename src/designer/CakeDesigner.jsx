@@ -4072,7 +4072,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <button
                 style={{ ...s.sidebarBtn, color: settingsOpen ? '#1a1a1a' : '#555', background: settingsOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
                 onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
-                <GearIcon size={18} />
+                <GearIcon size={20} />
               </button>
               {settingsOpen && (
                 <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
@@ -4170,7 +4170,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button
                   style={{ ...s.sidebarBtn, ...(settingsOpen ? s.sidebarBtnActive : {}) }}
                   onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
-                  <GearIcon size={18} />
+                  <GearIcon size={20} />
                 </button>
               </SidebarTooltip>
               {settingsOpen && (
