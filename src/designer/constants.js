@@ -53,7 +53,10 @@ export const PIPING_FRONT_ANGLE = Math.PI / 2;
 
 // ── Camera ────────────────────────────────────────────────────────────────────
 export const CAMERA_POSITION        = [0, 5.5, 7.9];
-export const CAMERA_POSITION_MOBILE = [0, 7, 10.8];
+// Pulled in ~15% from [0,7,10.8] so the cake is larger and reaches under the right-side popup
+// (the see-through overlay needs cake behind it to read), while still leaving clear headroom above
+// for tall toppers. Tune by eye; if a multi-tier cake clips at the top, switch to height-adaptive.
+export const CAMERA_POSITION_MOBILE = [0, 6.3, 9.3];
 export const CAMERA_FOV             = 42;
 
 // ── Top cap ───────────────────────────────────────────────────────────────────

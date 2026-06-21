@@ -2427,6 +2427,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       <span key="fin-x" style={{ fontSize: 10, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Matte</span>,
     ];
   }
+
+  // ── Element-stack card chrome (ONE source) ───────────────────────────────────
+  // The right-side accordion's card shell + header was the SAME inline literal in 6 places
+  // (decoration / writing / piping cards). Unified here so the mobile see-through treatment lives
+  // once. On mobile the cards go translucent so the cake shows THROUGH the stack instead of being
+  // covered; the expanded (actively-edited) card is more opaque than the collapsed list strips.
+  // Desktop keeps solid white. Stays a right-side panel (INVARIANTS §3a) — no relocation.
+  const stackCardStyle = (expanded) => ({
+    flexShrink: 0,
+    border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`,
+    borderRadius: 10, overflow: 'hidden',
+    background: isMobile ? (expanded ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.28)') : '#fff',
+  });
+  const stackCardHeaderStyle = (expanded) => ({
+    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer',
+    background: expanded
+      ? (isMobile ? 'rgba(242,241,238,0.85)' : '#F2F1EE')
+      : (isMobile ? 'transparent' : '#fff'),
+  });
   // Resize: re-pack from the seed ball's anchor with a new count, KEEPING the customer's palette. A
   // cluster is packed (not hand-dragged), so regenerating is correct — unlike scatter (dragged seats).
   function setClusterSize(clusterId, count) {
@@ -4278,9 +4297,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ── Canvas area ── */}
         <div style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
 
-          {/* Shrink the live canvas to the left when the piping strip is open, so the
-              cake stays fully visible beside it (the Canvas is absolute inset:0 of this div). */}
-          <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 248 : 276) : (elementStackOpen ? 220 : 0), transition: 'right 0.18s ease' }}>
+          {/* Shrink the live canvas to the left when a side panel is open, so the cake stays fully
+              visible beside it (the Canvas is absolute inset:0 of this div). On mobile the element
+              stack does NOT shrink the canvas — it's a translucent overlay, so the cake stays
+              full-width and centred UNDER the popup (you see it through the frosted cards). */}
+          <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 248 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0), transition: 'right 0.18s ease' }}>
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
               config={canvasConfig}
@@ -4558,7 +4579,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* ── Unified element stack: decorations + piping in one accordion ── */}
           {elementStackOpen && (
-            <div ref={pipingPopupRef} className="piping-popup-scroll" style={s.editPopup}>
+            <div ref={pipingPopupRef} className="piping-popup-scroll"
+              style={isMobile
+                // Mobile: a see-through, narrower overlay so the cake shows THROUGH the stack (the cards
+                // carry the fill). Light tint + a small blur (not the heavy 18px frost, which washed the
+                // cake out to white). Scroll/maxHeight kept so a long element list still works.
+                ? { ...s.editPopup, width: 156, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
+                : s.editPopup}>
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
 
@@ -4570,10 +4597,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 .map(card => {
                   const expanded = isCardSelected(card);
                   return (
-                    <div key={card.key} style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                    <div key={card.key} style={stackCardStyle(expanded)}>
                       <div role="button"
                         onClick={() => expanded ? clearAllSelections() : selectDecorationCard(card)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#F2F1EE' : '#fff' }}>
+                        style={stackCardHeaderStyle(expanded)}>
                         <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {card.thumb
                             ? <img src={card.thumb} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -4602,13 +4629,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const expanded = selectedEl?.type === 'writing';
                 const name = (design.writing?.text && design.writing.text.trim()) || 'Texts';
                 return (
-                  <div key="writing" style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                  <div key="writing" style={stackCardStyle(expanded)}>
                     <div role="button"
                       onClick={() => {
                         if (expanded) { clearAllSelections(); }
                         else { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); }
                       }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#F2F1EE' : '#fff' }}>
+                      style={stackCardHeaderStyle(expanded)}>
                       <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>T</span>
                       </div>
@@ -4638,7 +4665,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const sameEl = pipingCards.filter(c => c.id === card.id);
                 const title  = sameEl.length > 1 ? `${card.name} ${sameEl.indexOf(card) + 1}` : card.name;
                 return (
-                <div key={card.cardId} style={{ flexShrink: 0, border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                <div key={card.cardId} style={stackCardStyle(expanded)}>
                   {/* Card header: thumbnail + element name + expand/collapse arrow.
                       No close button — a layer leaves the cake by unchecking its rings. */}
                   <div role="button"
@@ -4647,7 +4674,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       setExpandedPipingId(opening ? card.cardId : null);
                       if (opening) { setSelectedEl(null); setSelectedStickerIds(new Set()); setMultiSelectMode(false); }
                     }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#F2F1EE' : '#fff' }}>
+                    style={stackCardHeaderStyle(expanded)}>
                     <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0 }}>
                       {card.thumbnail_url && <img src={cfImg(card.thumbnail_url, 26, 26, cfAssetsBase)} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     </div>
@@ -5748,7 +5775,8 @@ const s = {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
     maxHeight: '80%', overflowY: 'auto',
-    background: 'rgba(255,255,255,0.97)',
+    // Frosted (was near-solid 0.97) to match the element stack — the cake shows through.
+    background: 'rgba(255,255,255,0.55)',
     backdropFilter: 'blur(18px)',
     WebkitBackdropFilter: 'blur(18px)',
     borderRadius: '20px 20px 0 0',
