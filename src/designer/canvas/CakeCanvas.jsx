@@ -40,6 +40,25 @@ function tierReliefSampler(tier) {
   return _reliefSamplerCache.get(key);
 }
 
+// REST an element on the displaced wall: return the HIGHEST relief under the patch the element covers
+// (its centre ± half its world footprint, expressed as an arc half-span dTheta and a height half-span
+// dV). One rule for any size — a tiny sprinkle's patch ≈ a point (it nestles into a rib), a wide flower's
+// patch spans several ribs (it rests on the tallest, never penetrated). dTheta/dV come from the LIVE
+// element size, so resizing just re-reads them. Sampler is null for flat walls → caller uses lift 0.
+function maxReliefUnder(sampler, thetaC, vC, dTheta, dV) {
+  const N = 3;
+  let m = -Infinity;
+  for (let i = -N; i <= N; i++) {
+    const th = thetaC + dTheta * (i / N);
+    for (let j = -N; j <= N; j++) {
+      const v = Math.min(1, Math.max(0, vC + dV * (j / N)));
+      const r = sampler(th, v);
+      if (r > m) m = r;
+    }
+  }
+  return m;
+}
+
 function darkenHex(hex, amount) {
   if (!hex || !hex.startsWith('#')) return '#888';
   const r = parseInt(hex.slice(1,3), 16);
@@ -745,26 +764,6 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const pressedRef        = useRef(false);
 
   const isRect = shp.kind === 'rect';
-  // Base seat = fixed gap off the BASE wall. The drag hit-test (below) projects onto this base cylinder;
-  // the visible position adds the live surface relief so the decor hugs the displaced wall.
-  const off    = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
-  // Round: angle theta around the cylinder, decal curved to the wall. Rect: perimeter
-  // fraction u along the rounded-rect wall, decal flat (the wall is flat).
-  let cx, cz, yaw, curveRadius;
-  if (isRect) {
-    const pl = rectSidePlacement(shp, sticker.u ?? 0, off);
-    cx = pl.x; cz = pl.z; yaw = pl.yaw; curveRadius = 0;
-  } else {
-    // Seat on the LIVE wall surface: sample the finish's local relief under THIS element (theta, v) so
-    // it hugs the wave/swirl ribs. Smooth/flat walls → sampler null → lift 0 (unchanged).
-    const lift = reliefSampler
-      ? reliefSampler(Math.atan2(Math.cos(sticker.theta), Math.sin(sticker.theta)),
-                      Math.min(1, Math.max(0, (sticker.y - baseY) / height)))
-      : 0;
-    const surfaceR = radius + off + lift;
-    cx = surfaceR * Math.sin(sticker.theta); cz = surfaceR * Math.cos(sticker.theta);
-    yaw = sticker.theta; curveRadius = surfaceR;
-  }
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
   // A hero hug (single_per_slot, hugging a side) sizes to THIS tier's wall height, so it shrinks
   // on smaller tiers automatically — r is the stand size only and is ignored here. Scattered decor
@@ -773,6 +772,29 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const effScale = isDynamicHug(sticker)
     ? hugScale(height, STICKER_SIZE, sticker.hugFill ?? DEFAULT_HUG_FILL) * (sticker.hugMul ?? 1)
     : (sticker.scale ?? 1);   // user-controlled; not clamped (like piping size)
+  // Base seat = fixed gap off the BASE wall. The drag hit-test (below) projects onto this base cylinder;
+  // the visible position adds the live surface relief so the decor rests on the displaced wall.
+  const off    = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+  // Round: angle theta around the cylinder, decal curved to the wall. Rect: perimeter
+  // fraction u along the rounded-rect wall, decal flat (the wall is flat).
+  let cx, cz, yaw, curveRadius;
+  if (isRect) {
+    const pl = rectSidePlacement(shp, sticker.u ?? 0, off);
+    cx = pl.x; cz = pl.z; yaw = pl.yaw; curveRadius = 0;
+  } else {
+    // Rest on the LIVE wall surface: the highest relief under the element's footprint (so a wide flower
+    // clears the ribs it spans while a sprinkle nestles). Smooth/flat walls → sampler null → lift 0.
+    const half = (STICKER_SIZE * effScale) / 2;
+    const lift = reliefSampler
+      ? maxReliefUnder(reliefSampler,
+          Math.atan2(Math.cos(sticker.theta), Math.sin(sticker.theta)),
+          Math.min(1, Math.max(0, (sticker.y - baseY) / height)),
+          half / radius, half / height)
+      : 0;
+    const surfaceR = radius + off + lift;
+    cx = surfaceR * Math.sin(sticker.theta); cz = surfaceR * Math.cos(sticker.theta);
+    yaw = sticker.theta; curveRadius = surfaceR;
+  }
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
   // the true wall radius (bigger stickers span more arc → curve more).
@@ -1547,10 +1569,13 @@ function CakeThumbnailScene({ config }) {
             const pl = rectSidePlacement(tshp, sticker.u ?? 0, off);
             px = pl.x; pz = pl.z; yaw = pl.yaw;
           } else {
-            // hug the live wall surface (local relief under this element); flat wall → 0
+            // rest on the live wall surface (highest relief under the element's footprint); flat wall → 0
+            const half = (STICKER_SIZE * (sticker.scale ?? 1)) / 2;
             const lift = sampler
-              ? sampler(Math.atan2(Math.cos(sticker.theta), Math.sin(sticker.theta)),
-                        Math.min(1, Math.max(0, (sticker.y - tier.baseY) / tier.height)))
+              ? maxReliefUnder(sampler,
+                  Math.atan2(Math.cos(sticker.theta), Math.sin(sticker.theta)),
+                  Math.min(1, Math.max(0, (sticker.y - tier.baseY) / tier.height)),
+                  half / tier.radius, half / tier.height)
               : 0;
             r = tier.radius + off + lift;
             px = r * Math.sin(sticker.theta); pz = r * Math.cos(sticker.theta); yaw = sticker.theta;
