@@ -21,6 +21,16 @@ import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { surfaceRelief } from '../creamStyles.js';
+import { frostingAllowsStyles } from '../frostings.js';
+
+// Radial relief (world units) a tier's cream-wall finish pushes its SIDE out by — so side elements
+// seat OUTSIDE it and aren't swallowed by the displaced geometry (e.g. the cream-wave ribs). Gated by
+// the frosting type permitting styles (mirrors CakeTier's wall build); config-driven via surfaceRelief.
+function tierSurfaceRelief(tier) {
+  if (!tier || !frostingAllowsStyles(tier.frostingType)) return 0;
+  return surfaceRelief(tier.frostingStyle, tier.styleParams, tier.radius);
+}
 
 function darkenHex(hex, amount) {
   if (!hex || !hex.startsWith('#')) return '#888';
@@ -716,7 +726,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
 }
 
 
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, surfaceLift = 0, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -727,7 +737,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const pressedRef        = useRef(false);
 
   const isRect = shp.kind === 'rect';
-  const off    = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+  const off    = SIDE_STICKER_SURFACE_OFFSET + surfaceLift + (sticker.radialOffset ?? 0);
   // Round: angle theta around the cylinder, decal curved to the wall. Rect: perimeter
   // fraction u along the rounded-rect wall, decal flat (the wall is flat).
   let cx, cz, yaw, curveRadius;
@@ -1430,6 +1440,7 @@ function CakeScene({
               baseY={tier.baseY}
               height={tier.height}
               shp={tierShape(tier)}
+              surfaceLift={tierSurfaceRelief(tier)}
               selected={isSelected}
               onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
               onLongPress={onStickerLongPress}
@@ -1512,7 +1523,7 @@ function CakeThumbnailScene({ config }) {
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
         if (isSide) {
           const tshp = tierShape(tier);
-          const off = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+          const off = SIDE_STICKER_SURFACE_OFFSET + tierSurfaceRelief(tier) + (sticker.radialOffset ?? 0);
           const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
           let px, pz, yaw, r = 0;
           if (tshp.kind === 'rect') {

@@ -13,7 +13,7 @@ export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer
 export { recolorImageData, RECOLOR_METHODS } from './designer/shared/color/imageRecolor.js';
 // Cream finish/texture registry + the wall-geometry algorithms — exported so the admin texture
 // calibrator authors against the SAME code the designer renders (no duplicated displacement maths).
-export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';
+export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, surfaceRelief, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';
 export { buildStyledWall, displaceByHeightField } from './designer/geometry/creamWall.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStrokeTile, heightFieldFromImage, heightTextureFromField, normalTextureFromField } from './designer/shared/textures/imageNormalMap.js';
