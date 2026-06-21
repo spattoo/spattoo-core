@@ -628,6 +628,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         gradient:     t.gradient ?? null,
         frostingType: t.frostingType ?? DEFAULT_FROSTING,
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
+        styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),

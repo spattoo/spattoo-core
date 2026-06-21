@@ -994,7 +994,9 @@ export default function CakeTier({
         <TierBody position={[0, centerY, 0]} color={color} surf={mat}
           grainExtent={[2 * Math.PI * radius, height]}
           gradient={effGradient} geoSig={styledGeo.uuid} castShadow receiveShadow>
-          <primitive object={styledGeo} attach="geometry" />
+          {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
+              changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
+          <primitive key={styledGeo.uuid} object={styledGeo} attach="geometry" />
         </TierBody>
       ) : (
         <>
