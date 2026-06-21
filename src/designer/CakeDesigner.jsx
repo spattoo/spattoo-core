@@ -1,4 +1,4 @@
-import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas } from './canvas/CakeCanvas';
@@ -765,6 +765,117 @@ function InviteIcon({ size = 20 }) {
       <path d="M22 2 11 13" />
       <path d="M22 2 15 22l-4-9-9-4Z" />
     </svg>
+  );
+}
+
+// ── Spatula silhouette ─────────────────────────────────────────────────────────
+// The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
+// long straight handle (stretches to the column height), then an asymmetric
+// rounded-rectangle blade at the bottom. Proportions traced from the design ref;
+// each bottom corner is a cubic (cornerH = where it leaves the vertical edge,
+// cornerW = how far it reaches along the bottom). See dev/spatula-menu.html.
+function spatulaFramePath({
+  W, handleHalf, bladeHalf, capTopY,
+  lShoulderY, rShoulderY, bladeFullY, bladeBotY,
+  lCornerH, lCornerW, rCornerH, rCornerW,
+}) {
+  const cx = W / 2;
+  const capR = handleHalf;
+  const capCY = capTopY + capR;
+  const Lh = cx - handleHalf, Rh = cx + handleHalf;
+  const Lb = cx - bladeHalf,  Rb = cx + bladeHalf;
+  const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
+  const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
+  const rSh = bladeFullY - rShoulderY;
+  const lSh = bladeFullY - lShoulderY;
+  return [
+    `M ${cx} ${capTopY}`,
+    `A ${capR} ${capR} 0 0 1 ${Rh} ${capCY}`,
+    `L ${Rh} ${rShoulderY}`,
+    `C ${Rh} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
+    `L ${Rb} ${rEdgeBotY}`,
+    `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
+    `L ${flatL} ${bladeBotY}`,
+    `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
+    `L ${Lb} ${bladeFullY}`,
+    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Lh} ${lShoulderY + lSh * 0.5} ${Lh} ${lShoulderY}`,
+    `L ${Lh} ${capCY}`,
+    `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`,
+    'Z',
+  ].join(' ');
+}
+
+// Absolutely-positioned SVG that fills the sidebar (measured) and draws the
+// spatula behind the nav. The blade is wider than the handle, so it bulges out
+// (overflow visible, pointer-events none so it never blocks the canvas).
+function SpatulaFrame() {
+  const ref = useRef(null);
+  const [h, setH] = useState(720);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setH(el.clientHeight || 720);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const W = 158, cx = W / 2, handleHalf = 30, hr = 9;
+  const capTopY = 8, holeY = capTopY + handleHalf + 24;
+  const bladeBotY = h - 12;
+  const bladeFullY = bladeBotY - 194;     // blade body height (per tuned design)
+  const shoulderY  = bladeFullY - 65;     // shoulder span
+  const path = spatulaFramePath({
+    W, handleHalf, bladeHalf: 61, capTopY,
+    lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
+    lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
+  });
+  const hole = `M ${cx} ${holeY - hr} a ${hr} ${hr} 0 1 0 0 ${2 * hr} a ${hr} ${hr} 0 1 0 0 ${-2 * hr} Z`;
+  const swirls = [
+    `M ${cx + 12} ${holeY - 16} C ${cx + 32} ${holeY + 10} ${cx + 8} ${holeY + 46} ${cx - 10} ${holeY + 34} C ${cx - 24} ${holeY + 24} ${cx - 14} ${holeY + 2} ${cx + 2} ${holeY}`,
+    `M ${cx - 4} ${holeY + 70} C ${cx + 22} ${holeY + 180} ${cx - 22} ${holeY + 300} ${cx + 8} ${holeY + 430}`,
+    `M ${cx + 10} ${holeY + 150} C ${cx - 20} ${holeY + 260} ${cx + 20} ${holeY + 400} ${cx - 6} ${holeY + 520}`,
+  ];
+
+  return (
+    <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
+      <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`}
+        style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible' }}>
+        <defs>
+          <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#2c2d30" />
+            <stop offset="0.5" stopColor="#1d1e21" />
+            <stop offset="1" stopColor="#121315" />
+          </linearGradient>
+          <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
+            <stop offset="0" stopColor="rgba(255,255,255,0.09)" />
+            <stop offset="1" stopColor="rgba(255,255,255,0)" />
+          </radialGradient>
+          <filter id="spat-soft" x="-60%" y="-6%" width="220%" height="112%">
+            <feDropShadow dx="0" dy="7" stdDeviation="16" floodColor="#000" floodOpacity="0.26" />
+          </filter>
+          <filter id="spat-blur"><feGaussianBlur stdDeviation="9" /></filter>
+          <filter id="spat-blurHole"><feGaussianBlur stdDeviation="2.5" /></filter>
+          <clipPath id="spat-sil"><path d={path} /></clipPath>
+        </defs>
+        <path d={`${path} ${hole}`} fill="url(#spat-body)" fillRule="evenodd" filter="url(#spat-soft)" />
+        <g clipPath="url(#spat-sil)">
+          <g filter="url(#spat-blur)">
+            {swirls.slice(1).map((d, i) => (
+              <path key={`d${i}`} d={d} fill="none" stroke="rgba(0,0,0,0.16)" strokeWidth={11} strokeLinecap="round" />
+            ))}
+            {swirls.slice(1).map((d, i) => (
+              <path key={`l${i}`} d={d} fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth={6} strokeLinecap="round" transform="translate(9,2)" />
+            ))}
+          </g>
+          <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#spat-blurHole)" />
+        </g>
+        <path d={`${path} ${hole}`} fill="url(#spat-sheen)" fillRule="evenodd" />
+        <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
+        <circle cx={cx} cy={holeY} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
+      </svg>
+    </div>
   );
 }
 
@@ -3895,6 +4006,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Sidebar ── */}
         <div style={s.sidebar}>
+          <SpatulaFrame />
+          <div style={s.sidebarInner}>
           <nav style={s.sidebarNav}>
             {[
               { id: 'new',        label: 'New Cake',  icon: null,                         requires: 'design:create' },
@@ -4001,6 +4114,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               )}
             </div>
           </div>
+          </div>{/* end sidebarInner */}
         </div>
         </div>}{/* end leftCol */}
 
@@ -5307,10 +5421,12 @@ const s = {
     background:'#f4f4f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
   },
 
-  // Left column (logo above + sidebar below)
+  // Left column (logo above + sidebar below). Extra left padding + raised stacking
+  // give the spatula blade room to bulge left on-screen and overlap the canvas.
   leftCol: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '12px 0 12px 12px', gap: 10, flexShrink: 0,
+    padding: '12px 0 12px 40px', gap: 10, flexShrink: 0,
+    position: 'relative', zIndex: 5,
   },
   topLogo: {
     width: 64, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -5323,18 +5439,19 @@ const s = {
     fontFamily: "'Quicksand',sans-serif",
   },
 
-  // Sidebar
+  // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
+  // this is just the 64px handle-width positioning context. The blade bulges out
+  // (overflow visible). Nav + controls live in sidebarInner, above the silhouette.
   sidebar: {
-    width: 64, minWidth: 64,
-    background: '#18191b',
-    borderRadius: 20,
-    margin: 0,
-    display: 'flex', flexDirection: 'column',
-    alignItems: 'center',
-    padding: '12px 0',
-    flexShrink: 0,
-    flex: 1,
-    boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
+    width: 64, minWidth: 64, margin: 0,
+    position: 'relative', overflow: 'visible',
+    display: 'flex', flexShrink: 0, flex: 1,
+  },
+  sidebarInner: {
+    position: 'relative', zIndex: 1,
+    flex: 1, width: '100%',
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    padding: '12px 0 30px',
   },
   sidebarDivider: {
     height: 1, width: 32,
