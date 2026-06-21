@@ -99,18 +99,18 @@ function MobilePreview({ primaryColor = '#7d7f4a', initials = 'ST' }) {
           <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
             <defs>
               <linearGradient id="mbody" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#1b1b1d" /><stop offset="0.55" stopColor="#0e0e10" /><stop offset="1" stopColor="#050506" />
+                <stop offset="0" stopColor="#121214" /><stop offset="0.55" stopColor="#08080a" /><stop offset="1" stopColor="#020203" />
               </linearGradient>
               <radialGradient id="msheen" cx="0.5" cy="0.1" r="0.7">
-                <stop offset="0" stopColor="rgba(255,255,255,0.05)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
+                <stop offset="0" stopColor="rgba(255,255,255,0.03)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
               </radialGradient>
               <filter id="msoft" x="-20%" y="-60%" width="140%" height="220%">
                 <feDropShadow dx="0" dy="6" stdDeviation="12" floodColor="#000" floodOpacity="0.26" />
               </filter>
               <filter id="mspec" x="-30%" y="-30%" width="160%" height="160%">
                 <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
-                <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
-                  <feDistantLight azimuth="235" elevation="62" />
+                <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.62" specularExponent="22" lightingColor="#d7dbe2" result="s">
+                  <feDistantLight azimuth="235" elevation="30" />
                 </feSpecularLighting>
                 <feComposite in="s" in2="SourceAlpha" operator="in" />
               </filter>

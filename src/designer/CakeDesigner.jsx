@@ -844,12 +844,12 @@ function SpatulaFrame() {
         style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible' }}>
         <defs>
           <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#1b1b1d" />
-            <stop offset="0.5" stopColor="#0e0e10" />
-            <stop offset="1" stopColor="#050506" />
+            <stop offset="0" stopColor="#121214" />
+            <stop offset="0.5" stopColor="#08080a" />
+            <stop offset="1" stopColor="#020203" />
           </linearGradient>
           <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
-            <stop offset="0" stopColor="rgba(255,255,255,0.05)" />
+            <stop offset="0" stopColor="rgba(255,255,255,0.03)" />
             <stop offset="1" stopColor="rgba(255,255,255,0)" />
           </radialGradient>
           <filter id="spat-soft" x="-60%" y="-6%" width="220%" height="112%">
@@ -860,8 +860,8 @@ function SpatulaFrame() {
           {/* 3D: thin edge sheen (top-left light) + thin inner shadow → flat, not chunky */}
           <filter id="spat-spec" x="-30%" y="-30%" width="160%" height="160%">
             <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
-            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
-              <feDistantLight azimuth="235" elevation="62" />
+            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.62" specularExponent="22" lightingColor="#d7dbe2" result="s">
+              <feDistantLight azimuth="235" elevation="30" />
             </feSpecularLighting>
             <feComposite in="s" in2="SourceAlpha" operator="in" />
           </filter>
@@ -959,10 +959,10 @@ function MobileSpatulaBar() {
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', top: '50%', left: 0, transform: 'translateY(-50%)', overflow: 'visible' }}>
         <defs>
           <linearGradient id="mbar-body" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#1b1b1d" /><stop offset="0.55" stopColor="#0e0e10" /><stop offset="1" stopColor="#050506" />
+            <stop offset="0" stopColor="#121214" /><stop offset="0.55" stopColor="#08080a" /><stop offset="1" stopColor="#020203" />
           </linearGradient>
           <radialGradient id="mbar-sheen" cx="0.5" cy="0.08" r="0.7">
-            <stop offset="0" stopColor="rgba(255,255,255,0.05)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
+            <stop offset="0" stopColor="rgba(255,255,255,0.03)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
           </radialGradient>
           <filter id="mbar-soft" x="-10%" y="-60%" width="120%" height="220%">
             <feDropShadow dx="0" dy="5" stdDeviation="11" floodColor="#000" floodOpacity="0.24" />
@@ -970,8 +970,8 @@ function MobileSpatulaBar() {
           {/* 3D: thin edge sheen + thin inner shadow (flat, not chunky) */}
           <filter id="mbar-spec" x="-30%" y="-30%" width="160%" height="160%">
             <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
-            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
-              <feDistantLight azimuth="235" elevation="62" />
+            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.62" specularExponent="22" lightingColor="#d7dbe2" result="s">
+              <feDistantLight azimuth="235" elevation="30" />
             </feSpecularLighting>
             <feComposite in="s" in2="SourceAlpha" operator="in" />
           </filter>

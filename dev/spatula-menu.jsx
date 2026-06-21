@@ -158,12 +158,12 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={s.svg}>
           <defs>
             <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#1b1b1d" />
-              <stop offset="0.5" stopColor="#0e0e10" />
-              <stop offset="1" stopColor="#050506" />
+              <stop offset="0" stopColor="#121214" />
+              <stop offset="0.5" stopColor="#08080a" />
+              <stop offset="1" stopColor="#020203" />
             </linearGradient>
             <radialGradient id="sheen" cx="0.36" cy="0.10" r="0.62">
-              <stop offset="0" stopColor="rgba(255,255,255,0.05)" />
+              <stop offset="0" stopColor="rgba(255,255,255,0.03)" />
               <stop offset="1" stopColor="rgba(255,255,255,0)" />
             </radialGradient>
             <filter id="soft" x="-40%" y="-10%" width="180%" height="120%">
@@ -174,8 +174,8 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
             {/* 3D: soft rounded specular highlight, lit from the top-left */}
             <filter id="spec" x="-30%" y="-30%" width="160%" height="160%">
               <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
-              <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
-                <feDistantLight azimuth="235" elevation="62" />
+              <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.62" specularExponent="22" lightingColor="#d7dbe2" result="s">
+                <feDistantLight azimuth="235" elevation="30" />
               </feSpecularLighting>
               <feComposite in="s" in2="SourceAlpha" operator="in" />
             </filter>
