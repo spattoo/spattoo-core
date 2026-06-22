@@ -7,6 +7,7 @@ import CakeTier from './CakeTier';
 import { TextureErrorBoundary } from './TextureErrorBoundary.jsx';
 import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
+import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
@@ -1366,6 +1367,7 @@ function FrontMarker({ frontZ }) {
 function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
+  selectedAgeId, onAgeSelect, onAgeMove,
   orbitRef,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
@@ -1375,7 +1377,7 @@ function CakeScene({
   penDrawMode = false, penStyle, onAddStroke,
   tierDataRef,
 }) {
-  const { tiers, texts = [], stickers = [], writing = null, piping = [] } = config;
+  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [] } = config;
   const orbitBlockSet = useRef(new Set());
   const { gl, camera, scene } = useThree();
 
@@ -1550,6 +1552,29 @@ function CakeScene({
             toolbar={selectedTextId === t.id ? textToolbar : null}
             onOrbitEnable={enabled => {
               if (enabled) orbitBlockSet.current.delete(t.id); else orbitBlockSet.current.add(t.id);
+              if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
+            }}
+          />
+        );
+      })}
+
+      {ages.map(a => {
+        const topTier = tierData[tierData.length - 1];
+        return (
+          <AgeNumber
+            key={a.id}
+            age={a}
+            topY={stackY}
+            topRadius={topTier.radius}
+            shape={topTier.shape ?? 'round'}
+            width={topTier.width}
+            depth={topTier.depth}
+            shp={tierShape(topTier)}
+            selected={selectedAgeId === a.id}
+            onClick={() => onAgeSelect?.(a.id)}
+            onMove={pos => onAgeMove?.(a.id, pos)}
+            onOrbitEnable={enabled => {
+              if (enabled) orbitBlockSet.current.delete(a.id); else orbitBlockSet.current.add(a.id);
               if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
             }}
           />
@@ -1752,6 +1777,24 @@ function CakeThumbnailScene({ config }) {
           />
         );
       })()}
+
+      {/* Gold age numbers — static (no drag/select). */}
+      {(config.ages ?? []).map(a => {
+        const topTier = tierData[tierData.length - 1];
+        return (
+          <AgeNumber
+            key={a.id}
+            age={a}
+            topY={stackY}
+            topRadius={topTier.radius}
+            shape={topTier.shape ?? 'round'}
+            width={topTier.width}
+            depth={topTier.depth}
+            shp={tierShape(topTier)}
+            selected={false}
+          />
+        );
+      })}
     </>
   );
 }
@@ -1775,6 +1818,7 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
 export default function CakeCanvas({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
+  selectedAgeId, onAgeSelect, onAgeMove,
   autoRotate = false,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
@@ -1884,6 +1928,9 @@ export default function CakeCanvas({
         selectedTextId={selectedTextId}
         onTextSelect={onTextSelect}
         onTextMove={onTextMove}
+        selectedAgeId={selectedAgeId}
+        onAgeSelect={i => { if (!pointerRef.current.dragged) onAgeSelect?.(i); }}
+        onAgeMove={onAgeMove}
         onTextContentChange={onTextContentChange}
         textToolbar={textToolbar}
         orbitRef={orbitRef}
