@@ -144,6 +144,14 @@ export function frameTopMaxScale(shp, frameShape, fill = 1, stickerSize = STICKE
   return Math.max(1, s);   // never below 1× (a tiny cake shouldn't trap the dial under the default)
 }
 
+// Max Size for a photo frame on the SIDE: grow until the shape's height fills the tier WALL (so it
+// never spills above the rim or below the base). `fill` is the shape's extent fraction of the plane,
+// pre-multiplied by (1 + borderWidth) by the caller so the border ring is included in the bound.
+export function frameSideMaxScale(wallHeight, fill = 1, stickerSize = STICKER_SIZE) {
+  const ext = stickerSize * (fill > 0 ? fill : 1);   // shape full height at scale 1
+  return Math.max(0.3, wallHeight / ext);
+}
+
 // ── Facing-offset unit normalization ─────────────────────────────────────────
 // A GLB's authored facing offset (placement_config.rotation) is AUTHORED in degrees — the same
 // convention the calibrator and piping (top_/bottom_rotation) already use — but consumed by THREE

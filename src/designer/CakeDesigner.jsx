@@ -7,7 +7,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, frameTopMaxScale, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, frameTopMaxScale, frameSideMaxScale, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -3839,12 +3839,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       // Same SizeDial as piping + the hero chooser — one Size control everywhere.
       const scRange = scaleRangeOf(elementById.get(sticker?.elementId), 0.25, 8, 0.05);
-      // A photo frame on the TOP may grow until its shape reaches the cake-top boundary (fills to the
-      // rim when frame & cake shapes match, inscribes otherwise) — config-driven via photoShape.
+      // A photo frame is bounded to the cake: on TOP it grows until its shape reaches the rim/edges
+      // (fills when frame & cake shapes match, inscribes otherwise); on the SIDE it fills the wall
+      // height. The border ring is included in the bound so nothing overflows. Config-driven.
       let scMax = scRange.max;
-      if (sticker?.photoMask && sticker?.zone === 'top_surface') {
+      if (sticker?.photoMask) {
         const tier = canvasConfig.tiers[sticker.tierIndex] ?? canvasConfig.tiers[0];
-        scMax = Math.max(scRange.min + scRange.step, frameTopMaxScale(tierShape(tier), sticker.photoShape, sticker.photoFill));
+        const effFill = (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0));
+        if (sticker.zone === 'top_surface') {
+          scMax = Math.max(scRange.min + scRange.step, frameTopMaxScale(tierShape(tier), sticker.photoShape, effFill));
+        } else if (sticker.zone === 'side' || sticker.zone === 'middle_tier') {
+          scMax = Math.max(scRange.min + scRange.step, frameSideMaxScale(tier?.height ?? 0, effFill));
+        }
       }
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
         <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scMax} step={scRange.step}

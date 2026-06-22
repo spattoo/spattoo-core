@@ -20,7 +20,7 @@ import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -900,9 +900,14 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // on smaller tiers automatically — r is the stand size only and is ignored here. Scattered decor
   // (not single_per_slot) keeps its absolute r. `hugMul` is the per-instance +/- nudge (default 1);
   // we never persist the computed scale, only this multiplier + the static hugFill.
-  const effScale = isDynamicHug(sticker)
+  const rawScale = isDynamicHug(sticker)
     ? hugScale(height, STICKER_SIZE, sticker.hugFill ?? DEFAULT_HUG_FILL) * (sticker.hugMul ?? 1)
     : (sticker.scale ?? 1);   // user-controlled; not clamped (like piping size)
+  // A photo frame on the side is bounded so it never spills past the wall (incl. its border ring).
+  const sideFrameMax = sticker.photoMask
+    ? frameSideMaxScale(height, (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)))
+    : Infinity;
+  const effScale = Math.min(rawScale, sideFrameMax);
   // Base seat = fixed gap off the BASE wall. The drag hit-test (below) projects onto this base cylinder;
   // the visible position adds the live surface relief so the decor rests on the displaced wall.
   const off    = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
@@ -1075,8 +1080,13 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Base-seated upright modes: stand, a base-seat verge, and a foldable card on a perch edge — all
   // stand on their BODY base. A centre-seat verge / perch sit centred at the rim edge height instead.
   const standSeat = isStand || isVergeBase || (isPerch && sticker.foldable === true);
+  // A photo frame on top is bounded so it (incl. its border ring) never overflows the rim/edges.
+  const topFrameMax = sticker.photoMask
+    ? frameTopMaxScale(shp, sticker.photoShape, (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)))
+    : Infinity;
+  const effScale = Math.min(sticker.scale ?? 1, topFrameMax);
   const py = topY + (sticker.yOffset ?? 0) + (
-    standSeat ? (seatHalf ?? STICKER_SIZE / 2) * (sticker.scale ?? 1) + FLAT_STICKER_Y_OFFSET
+    standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
 
@@ -1247,7 +1257,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       </group>
     );
     return (
-      <group position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
+      <group position={[sticker.x, py, sticker.z]} scale={effScale}>
         {(isGlb2d || isVerge) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
@@ -1257,7 +1267,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     <group
       position={[sticker.x, py, sticker.z]}
       rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}
-      scale={sticker.scale}
+      scale={effScale}
     >
       {innerContent(onDown)}
     </group>
