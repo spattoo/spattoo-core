@@ -1266,6 +1266,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const thumbContainerRef = useRef();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen,  setProfileOpen]  = useState(false);
+  const [chefsDeskOpen, setChefsDeskOpen] = useState(false);   // Chef's Desk menu (Color Guide, …)
   const [addUserModal,        setAddUserModal]        = useState(false);
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
@@ -1293,6 +1294,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [mobilePanelHeight, setMobilePanelHeight] = useState(260);
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
+  const chefsDeskRef     = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
@@ -1388,6 +1390,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     function onMouseDown(e) {
       if (settingsRef.current && !settingsRef.current.contains(e.target)) setSettingsOpen(false);
       if (profileRef.current  && !profileRef.current.contains(e.target))  setProfileOpen(false);
+      if (chefsDeskRef.current && !chefsDeskRef.current.contains(e.target)) setChefsDeskOpen(false);
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
@@ -4136,6 +4139,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             }
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
+              <button
+                style={{ ...s.sidebarBtn, color: chefsDeskOpen ? '#1a1a1a' : '#555', background: chefsDeskOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
+                onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
+                <ToolsIcon size={20} />
+              </button>
+              {chefsDeskOpen && (
+                <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
+                  <div style={s.dropdownSection}>Chef's Desk</div>
+                  <button style={s.dropdownItem} onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>Color Guide</button>
+                </div>
+              )}
+            </div>}
             {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
               <button
                 style={{ ...s.sidebarBtn, color: settingsOpen ? '#1a1a1a' : '#555', background: settingsOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
@@ -4148,7 +4164,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>Store Settings</button>}
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>Flavours</button>}
                   {hasCap('billing:manage') && <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>}
-                  <button style={s.dropdownItem} onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>Color Guide</button>
                   {hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add Staff</button>}
                 </div>
               )}
@@ -4226,6 +4241,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
               );
             })}
+
+            {/* Chef's Desk — baker fulfilment tools (Color Guide, …). A menu, extensible as more
+                chef tools land; opens a dropdown anchored to the nav item. */}
+            {canManageStore && (
+              <div style={{ position: 'relative' }} ref={chefsDeskRef}>
+                <button style={s.navItem}
+                  onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
+                  <span style={{ ...s.sidebarBtn, ...(chefsDeskOpen ? s.sidebarBtnActive : {}) }}>
+                    <ToolsIcon size={20} />
+                  </span>
+                  <span style={{ ...s.navLabel, ...(chefsDeskOpen ? { color: '#fff' } : {}) }}>Chef's Desk</span>
+                </button>
+                {chefsDeskOpen && (
+                  <div style={s.dropdown}>
+                    <div style={s.dropdownSection}>Chef's Desk</div>
+                    <button style={s.dropdownItem}
+                      onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>
+                      Color Guide
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </nav>
 
           <div style={{ flex: 1 }} />
@@ -4256,10 +4294,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>
                     Billing
                   </button>}
-                  <button style={s.dropdownItem}
-                    onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>
-                    Color Guide
-                  </button>
                   {hasCap('staff:manage') && <button style={s.dropdownItem}
                     onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
                     Add Staff
