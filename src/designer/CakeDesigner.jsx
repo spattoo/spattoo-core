@@ -16,8 +16,8 @@ import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
-import { frostingSupportsGradient, frostingAllowsStyles } from './frostings.js';
-import { frostingStyleTypes, applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
+import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig } from './frostings.js';
+import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
@@ -1335,6 +1335,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     if (apiClient?.fetchTextures) {
       apiClient.fetchTextures()
         .then(rows => { if (rows?.length) { applyTextureConfig(rows); setTextureVersion(v => v + 1); } })
+        .catch(() => {});
+    }
+  }, [apiClient]);
+
+  // Overlay DB-authored materials (the per-material ordered style list) onto the in-code frostings seed.
+  // Bumps the same version so the style picker re-reads the merged registry. Materials absent from the
+  // DB keep their seed. Run after textures so style keys the materials reference are already resolvable.
+  useEffect(() => {
+    if (apiClient?.fetchMaterials) {
+      apiClient.fetchMaterials()
+        .then(rows => { if (rows?.length) { applyMaterialConfig(rows); setTextureVersion(v => v + 1); } })
         .catch(() => {});
     }
   }, [apiClient]);
@@ -4706,13 +4717,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   Geometry only; composes with the type's material. */}
               {selectedEl?.type === 'tier' && frostingAllowsStyles(design.tiers[selectedEl.index]?.frostingType ?? 'buttercream') && (() => {
                 const tier = design.tiers[selectedEl.index];
-                const style = tier?.frostingStyle ?? DEFAULT_STYLE;
+                const type = tier?.frostingType ?? 'buttercream';
+                const options = stylesForFrosting(type);               // this material's ordered styles
+                // Clamp display to the offered set (smooth-safe) — guards stale state from older designs.
+                const style = options.some(o => o.value === tier?.frostingStyle) ? tier.frostingStyle : DEFAULT_STYLE;
                 const userParams = userStyleParams(style);
                 return (
                   <>
                     <FrostingStylePicker
                       value={style}
-                      options={frostingStyleTypes()}
+                      options={options}
                       onChange={st => setTierFrostingStyle(selectedEl.index, st)}
                     />
                     {/* Generic, schema-driven controls — the customer-facing (user:true) params of the

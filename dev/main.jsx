@@ -40,6 +40,9 @@ function createApiClient(supabaseClient) {
     },
     fetchTemplates: () => authFetch('/api/templates'),
     fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
+    fetchTextures: () => authFetch('/api/textures'),     // designer overlays DB cream-style configs
+    fetchMaterials: () => authFetch('/api/materials'),   // designer overlays DB material→style lists
+
     fetchBakerProfile: () => authFetch('/api/baker/profile'),
     fetchStorefrontThemes: () => authFetch('/api/baker/storefront-themes'),
     fetchStorefrontPhotos: () => authFetch('/api/baker/storefront-photos'),

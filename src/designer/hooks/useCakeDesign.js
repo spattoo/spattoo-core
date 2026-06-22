@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape } from '../geometry/surface.js';
 import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
-import { FROSTING_TYPES, DEFAULT_FROSTING } from '../frostings.js';
+import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
@@ -94,7 +94,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function setTierFrostingType(index, frostingType) {
     setDesign(prev => ({
       ...prev,
-      tiers: prev.tiers.map((t, i) => i === index ? { ...t, frostingType } : t),
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index) return t;
+        // Clamp the style to the new material's offered set (smooth always allowed) so a material
+        // switch can't leave an unsupported wall (e.g. wave on fondant).
+        const frostingStyle = frostingAllowsStyle(frostingType, t.frostingStyle ?? DEFAULT_STYLE)
+          ? t.frostingStyle : DEFAULT_STYLE;
+        return { ...t, frostingType, frostingStyle };
+      }),
     }));
   }
 
