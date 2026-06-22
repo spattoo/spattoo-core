@@ -1,5 +1,28 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import XrayReport from './xray/XrayReport.jsx';
+import PhotoSheet from './PhotoSheet.jsx';
+
+const PhotoGlyph = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" strokeLinecap="round">
+    <rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.6" /><path d="M21 16l-5-5-6 6" />
+  </svg>
+);
+
+// Show the print-sheet action only when the order actually has customer-uploaded photo frames.
+function hasPhotoFrames(order) {
+  return (order?.design_snapshot?.stickers ?? []).some(s => s?.photoMask && s?.photoUrl);
+}
+
+function PhotoSheetLauncher({ order }) {
+  const [open, setOpen] = useState(false);
+  if (!hasPhotoFrames(order)) return null;
+  return (
+    <>
+      <IconAction glyph={<PhotoGlyph />} label="Print sheet" onClick={() => setOpen(true)} />
+      {open && <PhotoSheet order={order} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
 
 const XrayGlyph = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -462,6 +485,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
   const cakeActions = (
     <div style={{ display: 'flex', gap: 12, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
       <XrayLauncher order={order} apiClient={apiClient} />
+      <PhotoSheetLauncher order={order} />
       {editBtn}
       {!editing && <IconAction glyph={<PencilGlyph />} label="Edit Details" onClick={() => setEditing(true)} />}
     </div>
