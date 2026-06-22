@@ -415,7 +415,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           photoFill:      element.placement_config?.photo?.fill ?? 1,         // shape extent as a fraction of the plane (measured) — exact fit-to-rim
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
-          photoTransform: { x: 0, y: 0, zoom: 1 },    // pan (UV fraction) + zoom; cover-fit is the baseline at zoom 1
+          photoTransform: { x: 0, y: 0, zoom: 1, rot: 0 },   // pan (UV fraction) + zoom + 2D rotation (deg); cover-fit baseline at zoom 1
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         seatTheta,            // round side: seat angle around the wall
           y:             seatY,                // side: seat height on the wall

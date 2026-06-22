@@ -440,10 +440,12 @@ function useMaskAlpha(maskUrl) {
 
 function applyPhotoTransform(tex, t, imgAspect) {
   const zoom = Math.max(0.2, t?.zoom ?? 1);
+  const rot = ((t?.rot ?? 0) * Math.PI) / 180;   // 2D rotation of the photo within the frame
   let rx = 1, ry = 1;                       // cover-fit a (imgAspect) image into a square
   if (imgAspect >= 1) rx = 1 / imgAspect;   // landscape → show full height, crop width
   else ry = imgAspect;                       // portrait  → show full width,  crop height
-  tex.center.set(0.5, 0.5);
+  tex.center.set(0.5, 0.5);                  // rotate/scale about the photo centre
+  tex.rotation = rot;
   tex.repeat.set(rx / zoom, ry / zoom);
   tex.offset.set(t?.x ?? 0, t?.y ?? 0);
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -455,6 +457,38 @@ function applyPhotoTransform(tex, t, imgAspect) {
 // a hair into the cake). `map` = the photo (cover-fit + zoom/pan), `alphaMap` = the window mask
 // silhouette → the photo is clipped to the frame's window shape; the overlay's opaque border hides
 // the mask seam. Suspends on its own textures (StickerFace already wraps StickerTexture in Suspense).
+// A generic "add a photo here" placeholder for an empty frame: a soft grey fill with a centred
+// camera glyph (vertically symmetric, so texture flip never matters), clipped to the frame shape so
+// an unfilled frame reads as a photo slot rather than a hollow black ring. Built once, cached.
+let _placeholderTex = null;
+function placeholderTexture() {
+  if (_placeholderTex) return _placeholderTex;
+  const S = 256, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const x = c.getContext('2d');
+  x.fillStyle = '#eceaf0'; x.fillRect(0, 0, S, S);                 // soft grey field
+  x.fillStyle = '#c3bcc9';                                          // camera body (rounded rect, centred)
+  const bx = S * 0.30, by = S * 0.36, bw = S * 0.40, bh = S * 0.28, r = S * 0.04;
+  x.beginPath();
+  x.moveTo(bx + r, by); x.arcTo(bx + bw, by, bx + bw, by + bh, r); x.arcTo(bx + bw, by + bh, bx, by + bh, r);
+  x.arcTo(bx, by + bh, bx, by, r); x.arcTo(bx, by, bx + bw, by, r); x.closePath(); x.fill();
+  x.fillStyle = '#eceaf0'; x.beginPath(); x.arc(S / 2, S / 2, S * 0.085, 0, Math.PI * 2); x.fill();  // lens hole
+  x.fillStyle = '#c3bcc9'; x.beginPath(); x.arc(S / 2, S / 2, S * 0.04, 0, Math.PI * 2); x.fill();   // lens centre
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return (_placeholderTex = t);
+}
+
+// The empty-frame placeholder mesh: the camera glyph clipped to the mask shape.
+function PlaceholderBacking({ geo, maskUrl }) {
+  const mask = useMaskAlpha(maskUrl);
+  const tex = useMemo(() => placeholderTexture(), []);
+  return (
+    <mesh geometry={geo} renderOrder={-1} frustumCulled={false}>
+      <meshStandardMaterial map={tex} alphaMap={mask} transparent alphaTest={0.5} roughness={0.9} side={THREE.DoubleSide} depthWrite={false} />
+    </mesh>
+  );
+}
+
 function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
   const photo = useTexture(photoUrl);
   const mask  = useMaskAlpha(maskUrl);        // clips by the mask's shape (alpha→green), any outline
@@ -465,7 +499,7 @@ function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
     return (w && h) ? w / h : 1;
   }, [photo]);
   useMemo(() => applyPhotoTransform(photo, transform, imgAspect),
-    [photo, transform?.x, transform?.y, transform?.zoom, imgAspect]);
+    [photo, transform?.x, transform?.y, transform?.zoom, transform?.rot, imgAspect]);
   return (
     <mesh geometry={geo} renderOrder={-1} frustumCulled={false}>
       <meshStandardMaterial
@@ -568,9 +602,9 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
           ? <OverlayMesh geo={geo} url={photoOverlay} selected={selected} />
           : ((borderWidth ?? 0) > 0 &&
               <BorderBacking geo={geo} maskUrl={photoMask} color={color} width={borderWidth} />)}
-        {photoUrl && (
-          <PhotoBacking geo={geo} photoUrl={photoUrl} maskUrl={photoMask} transform={photoTransform} />
-        )}
+        {photoUrl
+          ? <PhotoBacking geo={geo} photoUrl={photoUrl} maskUrl={photoMask} transform={photoTransform} />
+          : <PlaceholderBacking geo={geo} maskUrl={photoMask} />}
       </>
     );
   }

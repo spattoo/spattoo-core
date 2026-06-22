@@ -3821,6 +3821,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
               <button style={s.tbIconBtn} onClick={() => setT({ y: clampPan((t.y ?? 0) + PAN) })}>↓</button>
             </div>,
+            <div key="rot" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, width: '100%' }}>
+              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Rotate</span>
+              <button style={s.tbIconBtn} onClick={() => setT({ rot: (t.rot ?? 0) - 15 })}>↺</button>
+              <button style={s.tbIconBtn} onClick={() => setT({ rot: (t.rot ?? 0) + 15 })}>↻</button>
+            </div>,
           );
         }
         groups.push({ key: 'photo', divider: true, panelLabel: 'Photo', controls });
