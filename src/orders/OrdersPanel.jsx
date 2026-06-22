@@ -19,18 +19,22 @@ function CustomPhotosSection({ order }) {
   const n = photoFrameCount(order);
   if (!n) return null;
   return (
-    <Section title="Custom photos">
-      <div style={{ fontSize: 13, color: '#5C6B62', lineHeight: 1.6, marginBottom: 12 }}>
+    <div style={{ border: '1.5px solid #cfe0d4', background: '#F1F8F3', borderRadius: 14, padding: '16px 18px', marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: '#2C4433' }}>
+        <PhotoGlyph />
+        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase' }}>Custom photos</span>
+      </div>
+      <div style={{ fontSize: 13, color: '#3D5A44', lineHeight: 1.6, marginBottom: 12 }}>
         The customer uploaded <b>{n}</b> custom photo{n > 1 ? 's' : ''} for this cake. Open the
         A4 page simulator to size and arrange {n > 1 ? 'them' : 'it'} on a sheet, then download a
         print-ready PDF for your edible printer.
       </div>
       <button onClick={() => setOpen(true)}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, border: '1.5px solid #3D5A44', background: '#fff', color: '#3D5A44', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: 'none', background: '#3D5A44', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
         <PhotoGlyph /> Open A4 simulator
       </button>
       {open && <PhotoSheet order={order} onClose={() => setOpen(false)} />}
-    </Section>
+    </div>
   );
 }
 
@@ -524,9 +528,9 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         {editing
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
+              <CustomPhotosSection order={order} />
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
-              <CustomPhotosSection order={order} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
@@ -568,9 +572,9 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         {editing
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
+              <CustomPhotosSection order={order} />
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
-              <CustomPhotosSection order={order} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
