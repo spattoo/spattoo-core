@@ -1,9 +1,10 @@
-import { useRef, useMemo, useEffect, useState, Suspense, Component } from 'react';
+import { useRef, useMemo, useEffect, useState, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, Environment, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
+import { TextureErrorBoundary } from './TextureErrorBoundary.jsx';
 import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
 import CreamPen from './CreamPen.jsx';
@@ -245,11 +246,6 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
 // Populated by StickerModel when the bounding box is first computed.
 const glbXRadiusCache = {};
 
-class TextureErrorBoundary extends Component {
-  constructor(props) { super(props); this.state = { error: null }; }
-  static getDerivedStateFromError(error) { return { error }; }
-  render() { return this.state.error ? null : this.props.children; }
-}
 
 // Builds a flat-strip geometry that curves around a cylinder of the given radius.
 // In the sticker's local space the cylinder axis is at z = -curveRadius, so the

@@ -605,7 +605,10 @@ function ElementTypeCard({
   // ONE draggable thumbnail grid shared by every "drag (or tap) onto the cake" element type
   // (scattered decor, picks, image toppers, and any other generic type). Only the hint text,
   // empty-state text, and image fit differ — passed in as options.
-  const renderDraggableGrid = (elements, { hint, emptyText, objectFit = 'cover', crossOrigin = false }) => (
+  // crossOrigin defaults ON so a tile <img> caches the asset CORS-clean — the same URL is later
+  // loaded as a WebGL texture (placement preview / on-cake), and a non-CORS cache entry would
+  // poison that load. R2 serves the CORS header, so this is safe for every tile.
+  const renderDraggableGrid = (elements, { hint, emptyText, objectFit = 'cover', crossOrigin = true }) => (
     <div style={{ ...s.elementCard, cursor: 'default' }}>
       <div style={s.elementCardLabel}>{name}</div>
       {elements.length > 0 ? (
@@ -3393,7 +3396,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div role="button" title="Drag onto the cake"
           onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startStickerDrag(element, e.clientX, e.clientY); }}
           style={{ width: 78, height: 78, borderRadius: 16, border: '2px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', flexShrink: 0, touchAction: 'none' }}>
-          {thumb ? <img src={thumb} alt="" width={58} height={58} draggable={false} style={{ objectFit: 'contain', pointerEvents: 'none' }} />
+          {thumb ? <img src={thumb} alt="" width={58} height={58} draggable={false} crossOrigin="anonymous" style={{ objectFit: 'contain', pointerEvents: 'none' }} />
                  : <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
         </div>
         <span style={{ fontSize: 10.5, color: '#5a5a5a', lineHeight: 1.4, fontFamily: "'Quicksand',sans-serif" }}>Drag this ball onto the cake to add another — anywhere on the top or down the side. Switch on <b>Cluster</b> to grow it.</span>
@@ -3413,7 +3416,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startStickerDrag(el, e.clientX, e.clientY); }}
           style={{ width: 70, height: 70, borderRadius: 14, border: '1.5px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', touchAction: 'none' }}>
           {card.thumb
-            ? <img src={card.thumb} alt={card.name} width={52} height={52} draggable={false} style={{ objectFit: 'contain', pointerEvents: 'none' }} />
+            ? <img src={card.thumb} alt={card.name} width={52} height={52} draggable={false} crossOrigin="anonymous" style={{ objectFit: 'contain', pointerEvents: 'none' }} />
             : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
         </div>
         <div style={{ fontSize: 9, fontWeight: 700, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif", letterSpacing: 0.3 }}>DRAG ONTO THE CAKE</div>

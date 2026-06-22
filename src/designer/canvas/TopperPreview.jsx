@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { rectSidePlacement } from '../geometry/surface.js';
 import { SIDE_STICKER_SURFACE_OFFSET, STICKER_SIZE } from '../constants.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
+import { TextureErrorBoundary } from './TextureErrorBoundary.jsx';
 import { SceneLoader } from './CakeSpinner.jsx';
 
 const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
@@ -139,11 +140,15 @@ export default function TopperPreview({ glbUrl, parts = null, placement = 'top',
       <Suspense fallback={<SceneLoader size={20} />}>
         <Environment preset="apartment" />
         <PreviewCakeMeshes placed={placed} />
-        {parts && parts.length
-          ? parts.map((pt, i) => (
-              <PreviewDecor key={i} glbUrl={pt.glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={pt.baseRotation} offset={pt} />
-            ))
-          : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={baseRotation} />)}
+        {/* A failed decor texture/GLB (e.g. CORS-poisoned cache, 404) must not crash the whole
+            preview Canvas — render the cake without the decor instead. */}
+        <TextureErrorBoundary>
+          {parts && parts.length
+            ? parts.map((pt, i) => (
+                <PreviewDecor key={i} glbUrl={pt.glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={pt.baseRotation} offset={pt} />
+              ))
+            : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={baseRotation} />)}
+        </TextureErrorBoundary>
       </Suspense>
       <OrbitControls
         enableZoom={false} enablePan={false}
