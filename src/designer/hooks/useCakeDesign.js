@@ -10,11 +10,16 @@ export { TIER_RADII };   // re-export so existing imports from this file keep wo
 // (FrostingPicker, admin CreateTemplate) keep resolving them from here.
 export { FROSTING_TYPES };
 
+// Default digit face for age numbers — a clean, rounded single-stroke face; the fat tube does most
+// of the balloon look. The Age popup lets the customer switch faces.
+const DEFAULT_AGE_FONT = 'ems_readability';
+
 const DEFAULT_DESIGN = {
   tiers: [
     { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [] },
   ],
   texts: [],
+  ages: [],        // gold 3D balloon-number toppers standing on the cake top (see AgeNumber)
   stickers: [],
   writing: null,   // one cream-pen message piped on the cake top (see CreamWriting)
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
@@ -244,6 +249,47 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   function removeText(id) {
     setDesign(prev => ({ ...prev, texts: prev.texts.filter(t => t.id !== id) }));
+  }
+
+  // ── Age numbers — gold balloon-number toppers standing on the cake top ──────────
+  // Reuses the cream tube-sweep geometry (buildCreamWriting) + gold material; a fat tube on a
+  // single-stroke digit reads as a metallic number candle. `value` is a digit string ('5','25');
+  // size = standing height (world units), thickness = tube radius (balloon chunkiness), font picks
+  // the digit shape, offsetX/offsetZ place it on the top plane (drag), yaw rotates it.
+  function addAge() {
+    setDesign(prev => ({
+      ...prev,
+      ages: [...prev.ages, {
+        id:        Date.now(),
+        value:     '1',
+        font:      DEFAULT_AGE_FONT,
+        size:      0.95,
+        thickness: 0.085,
+        finish:    'gold',
+        offsetX:   0,
+        offsetZ:   0,
+        yaw:       0,
+      }],
+    }));
+  }
+
+  function updateAge(id, changes) {
+    setDesign(prev => ({
+      ...prev,
+      ages: prev.ages.map(a => a.id === id ? { ...a, ...changes } : a),
+    }));
+  }
+
+  function duplicateAge(id) {
+    setDesign(prev => {
+      const original = prev.ages.find(a => a.id === id);
+      if (!original) return prev;
+      return { ...prev, ages: [...prev.ages, { ...original, id: Date.now(), offsetX: (original.offsetX ?? 0) + 0.12 }] };
+    });
+  }
+
+  function removeAge(id) {
+    setDesign(prev => ({ ...prev, ages: prev.ages.filter(a => a.id !== id) }));
   }
 
   // `extra` carries identity that isn't derived from the element: an explicit `id`
@@ -622,6 +668,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         };
       }),
       texts:    templateDesign.texts    ?? [],
+      ages:     templateDesign.ages     ?? [],
       // Migrate a legacy single `topper` into the unified sticker list: a topper is just a
       // GLB element standing on the top surface (or hugging the side). Placement is now fully
       // config-driven, so there is no separate topper slot or renderer.
@@ -652,6 +699,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       };
     }),
     texts:    design.texts,
+    ages:     design.ages,
     stickers: design.stickers,
     writing:  design.writing ?? null,
     piping:   design.piping ?? [],
@@ -663,6 +711,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
+    addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
     setWriting, clearWriting,

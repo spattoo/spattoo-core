@@ -1164,7 +1164,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
@@ -1239,6 +1239,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const selectedTier    = selectedEl?.type === 'tier'    ? selectedEl.index : null;
   const selectedPiping  = selectedEl?.type === 'piping'  ? selectedEl       : null;
   const selectedTextId  = selectedEl?.type === 'text'    ? selectedEl.id    : null;
+  const selectedAgeId   = selectedEl?.type === 'age'     ? selectedEl.id    : null;
+  const selectedAge     = design.ages.find(a => a.id === selectedAgeId) ?? null;
   const selectedStickerId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
   const STICKER_CAPS = { resize: true, delete: true, color: false, duplicate: true };
   const caps = selectedEl
@@ -1434,6 +1436,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         bottomPipings: t.bottomPipings ?? [],
         decorations:  [],
         texts:        [],
+        ages:         [],
         ...(t.radius != null && { radius: t.radius }),
         ...(t.height != null && { height: t.height }),
         ...(t.shape   != null && { shape: t.shape }),
@@ -1442,6 +1445,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         ...(t.cornerR != null && { cornerR: t.cornerR }),
       })),
       texts:    design.texts,
+      ages:     design.ages,
       stickers: design.stickers,
       writing:  design.writing ?? null,
       piping:   design.piping ?? [],
@@ -2164,6 +2168,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (selectedEl.layerId != null) removePipingLayer(selectedEl.tierIndex, z, selectedEl.layerId);
     } else if (selectedEl?.type === 'text') {
       removeText(selectedEl.id);
+    } else if (selectedEl?.type === 'age') {
+      removeAge(selectedEl.id);
     } else if (selectedStickerIds.size > 0) {
       // Orphan guard: a decor_pattern part whose pattern is not parts_deletable takes its
       // whole pattern with it — you can't leave a lone eye. Deletable patterns drop singly.
@@ -2915,6 +2921,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
   }, [selectedEl?.type === 'text' ? selectedEl.id : null]);
 
+  // After "Add age" the new item's id isn't known until design updates — resolve the pending
+  // selection to the newest age so its edit popup opens.
+  useEffect(() => {
+    if (selectedEl?.type === 'age' && selectedEl.pending && design.ages.length) {
+      setSelectedEl({ type: 'age', id: design.ages[design.ages.length - 1].id });
+    }
+  }, [design.ages.length, selectedEl?.pending]);
+
 
   function handleNewCake() {
     resetDesign();
@@ -2974,6 +2988,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         bottomPipings: t.bottomPipings ?? [],
         decorations:  [],
         texts:        [],
+        ages:         [],
         ...(t.radius != null && { radius: t.radius }),
         ...(t.height != null && { height: t.height }),
         ...(t.shape   != null && { shape: t.shape }),
@@ -2982,6 +2997,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         ...(t.cornerR != null && { cornerR: t.cornerR }),
       })),
       texts:    design.texts,
+      ages:     design.ages,
       stickers: design.stickers,
       writing:  design.writing ?? null,   // typed cream lettering — was being dropped on order
       piping:   design.piping ?? [],       // freehand cream-pen strokes
@@ -4466,6 +4482,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ fontSize: 10, color: '#888' }}>Write a name in piped cream</div>
                   </div>
                 </button>
+                <button
+                  onClick={() => {
+                    addAge();
+                    setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false);
+                    setSelectedEl({ type: 'age', pending: true });   // resolved to the new id by the effect below
+                  }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FBF1D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b8860b', flexShrink: 0, fontWeight: 800, fontSize: 20 }}>
+                    8
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Age Number</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Gold number standing on top</div>
+                  </div>
+                </button>
               </>
             )}
             </div>{/* end flyoutScroll */}
@@ -4671,6 +4702,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onTextMove={(id, pos) => updateText(id, pos)}
               onTextContentChange={(id, content) => updateText(id, { content })}
               textToolbar={null /* text now edits via the right-side popup, not a floating strip */}
+              selectedAgeId={selectedAgeId}
+              onAgeSelect={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false); setSelectedEl({ type: 'age', id }); }}
+              onAgeMove={(id, pos) => updateAge(id, pos)}
               onWritingClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); setElementsOpen(false); }}
               onWritingMove={moves => setWriting(moves)}
               writingSelected={selectedEl?.type === 'writing'}
@@ -4753,6 +4787,58 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           })()}
 
           <div style={s.rotateHint}>Drag to rotate</div>
+
+          {/* ── Age Number edit popup (right-side) — self-contained, not cap-driven ── */}
+          {selectedAge && (
+            <div style={isMobile ? s.wheelPanelMobile : s.wheelPanel}>
+              <div style={s.wheelHeader}>
+                <span style={s.wheelTitle}>Age Number</span>
+                <button style={s.iconBtn} onClick={() => setSelectedEl(null)}>✕</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '2px' }}>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#888', letterSpacing: 0.3, marginBottom: 4 }}>AGE</div>
+                  <input
+                    type="text" inputMode="numeric" maxLength={3} placeholder="e.g. 30"
+                    value={selectedAge.value}
+                    onChange={e => updateAge(selectedAge.id, { value: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) })}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #C5D4C8', fontSize: 18, fontWeight: 800, color: '#b8860b', textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <SizeDial size={selectedAge.size ?? 0.95} min={0.4} max={2} step={0.05} onChange={v => updateAge(selectedAge.id, { size: v })} />
+                  <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Size</span>
+                </div>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#888' }}>CHUNKINESS</span>
+                  <input type="range" min={0.04} max={0.16} step={0.005} value={selectedAge.thickness ?? 0.085}
+                    onChange={e => updateAge(selectedAge.id, { thickness: +e.target.value })} style={{ accentColor: '#b8860b' }} />
+                </label>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>FINISH</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {['gold', 'silver'].map(f => (
+                      <button key={f} onClick={() => updateAge(selectedAge.id, { finish: f })}
+                        style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${(selectedAge.finish ?? 'gold') === f ? '#b8860b' : '#ddd'}`, background: (selectedAge.finish ?? 'gold') === f ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{f}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>STYLE</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {CREAM_FONTS.map(f => (
+                      <button key={f.key} onClick={() => updateAge(selectedAge.id, { font: f.key })}
+                        style={{ padding: '4px 9px', borderRadius: 14, border: `1.5px solid ${selectedAge.font === f.key ? '#b8860b' : '#ddd'}`, background: selectedAge.font === f.key ? '#FBF1D8' : '#fff', fontSize: 10, fontWeight: 700, color: '#555', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>{f.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+                  <button onClick={() => duplicateAge(selectedAge.id)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1.5px solid #ddd', background: '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>Duplicate</button>
+                  <button onClick={() => { removeAge(selectedAge.id); setSelectedEl(null); }} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1.5px solid #fcc', background: '#fff', fontSize: 11, fontWeight: 700, color: '#e53935', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Right edit panel — driven by element caps ── */}
           {showRightPanel && (
