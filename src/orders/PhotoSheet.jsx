@@ -132,9 +132,9 @@ export default function PhotoSheet({ order, onClose }) {
         </div>
       </div>
 
-      <div style={{ ...s.body, flexDirection: isMobile ? 'column' : 'row' }}>
+      <div style={{ ...s.body, flexDirection: isMobile ? 'column' : 'row', overflowY: isMobile ? 'auto' : 'hidden' }}>
         {/* Palette */}
-        <div style={{ ...s.palette, ...(isMobile ? { width: '100%', borderRight: 'none', borderBottom: '1.5px solid #E8E4DC', maxHeight: '34vh', flexShrink: 0 } : {}) }}>
+        <div style={{ ...s.palette, ...(isMobile ? { width: '100%', borderRight: 'none', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, overflowY: 'visible' } : {}) }}>
           <div style={s.intro}>
             <b>A4 print simulator.</b> Edible sugar sheets print on A4. Lay out the customer’s photos
             at the exact size you’ll print, then download a print-ready PDF for your edible printer.
@@ -158,7 +158,7 @@ export default function PhotoSheet({ order, onClose }) {
         </div>
 
         {/* A4 sheet */}
-        <div style={s.stage}>
+        <div style={{ ...s.stage, ...(isMobile ? { flex: 'none', overflow: 'visible' } : {}) }}>
           <div ref={sheetRef} style={{ ...s.sheet, ...(isMobile ? { height: 'auto', width: 'min(92vw, 460px)' } : {}) }} onPointerDown={e => e.stopPropagation()}>
             <div style={s.watermark}>
               <div style={s.watermarkBig}>A4</div>
@@ -208,7 +208,7 @@ const s = {
   watermark: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', color: '#ececE6', userSelect: 'none' },
   watermarkBig: { fontSize: 'clamp(48px, 14vw, 140px)', fontWeight: 800, letterSpacing: 4, lineHeight: 1 },
   watermarkSub: { fontSize: 'clamp(10px, 2.4vw, 16px)', fontWeight: 700, letterSpacing: 3, marginTop: 8 },
-  stage: { flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, background: '#EFEDE8' },
+  stage: { flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, background: '#EFEDE8' },
   sheet: { position: 'relative', height: 'min(calc(100vh - 130px), 980px)', aspectRatio: `${A4_ASPECT}`, background: '#fff', boxShadow: '0 6px 24px rgba(0,0,0,0.15)', borderRadius: 2 },
   resizeHandle: { position: 'absolute', right: -7, bottom: -7, width: 16, height: 16, borderRadius: 4, background: '#6c47ff', border: '2px solid #fff', cursor: 'nwse-resize', touchAction: 'none' },
   removeBtn: { position: 'absolute', left: -10, top: -10, width: 22, height: 22, borderRadius: '50%', background: '#e53935', color: '#fff', border: '2px solid #fff', fontSize: 14, lineHeight: '18px', cursor: 'pointer', padding: 0 },
