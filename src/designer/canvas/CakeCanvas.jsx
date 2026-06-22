@@ -408,6 +408,35 @@ function useStickerImageTexture(imageUrl, recolor, color) {
 // overflow — never distort), then apply the customer's zoom (>1 crops in) and pan (UV fraction).
 // With center=(0.5,0.5) the image centre maps to the plane centre for any repeat, so offset is pure
 // pan. Clamp wrap so panning past an edge repeats nothing (shows the clamped edge, not a tile seam).
+// Build a clip texture from a window mask whose SHAPE lives in its ALPHA channel (white-on-transparent
+// — the authoring spec). meshStandardMaterial.alphaMap reads the GREEN channel, but a white-on-
+// transparent PNG has green=255 everywhere (the shape is only in alpha), so used raw it would clip
+// nothing → a square photo/border. Here we copy alpha → RGB (opaque), so green encodes the shape and
+// alphaMap clips correctly to any outline. Canvas-derived (CORS-clean now); cached per mask texture.
+function useMaskAlpha(maskUrl) {
+  const mask = useTexture(maskUrl);
+  return useMemo(() => {
+    const img = mask.image;
+    const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
+    if (!w || !h) return mask;
+    try {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      const id = ctx.getImageData(0, 0, w, h), d = id.data;
+      for (let i = 0; i < d.length; i += 4) { const a = d[i + 3]; d[i] = a; d[i + 1] = a; d[i + 2] = a; d[i + 3] = 255; }
+      ctx.putImageData(id, 0, 0);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.NoColorSpace;
+      t.flipY = mask.flipY;
+      return t;
+    } catch (_) {
+      return mask;   // tainted canvas → fall back (clips by green, may be square)
+    }
+  }, [mask]);
+}
+
 function applyPhotoTransform(tex, t, imgAspect) {
   const zoom = Math.max(0.2, t?.zoom ?? 1);
   let rx = 1, ry = 1;                       // cover-fit a (imgAspect) image into a square
@@ -427,9 +456,8 @@ function applyPhotoTransform(tex, t, imgAspect) {
 // the mask seam. Suspends on its own textures (StickerFace already wraps StickerTexture in Suspense).
 function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
   const photo = useTexture(photoUrl);
-  const mask  = useTexture(maskUrl);
+  const mask  = useMaskAlpha(maskUrl);        // clips by the mask's shape (alpha→green), any outline
   photo.colorSpace = THREE.SRGBColorSpace;
-  mask.colorSpace  = THREE.NoColorSpace;      // alpha data, not colour (only its green channel is read)
   const imgAspect = useMemo(() => {
     const img = photo.image;
     const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
@@ -457,8 +485,7 @@ function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
 // even-width ring that follows any shape (heart, circle, square…). width 0 → same size as the photo
 // → fully covered → no visible border. No baked border art needed; the one mask drives both.
 function BorderBacking({ geo, maskUrl, color, width }) {
-  const mask = useTexture(maskUrl);
-  mask.colorSpace = THREE.NoColorSpace;
+  const mask = useMaskAlpha(maskUrl);         // ring follows the mask's shape (alpha→green), any outline
   return (
     <mesh geometry={geo} scale={1 + (width ?? 0)} position={[0, 0, -0.003]} renderOrder={-2}>
       <meshStandardMaterial
