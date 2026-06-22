@@ -47,6 +47,24 @@ function displaceSwirl(geo, radius, { amp, lobes, twist }) {
   return displaceSide(geo, (u, v) => a * Math.sin(lobes * u + twist * v * TAU));
 }
 
+// RIBBED — fat rounded HORIZONTAL ribs stacked up the wall (the "rib-comb" buttercream finish):
+// `bands` semicircular tubes, each sitting proud with a thin shadow groove between, constant all the
+// way around (no undulation). One shared 0..1 profile so the geometry AND the relief sampler read the
+// SAME shape. sin²(π·frac) is a rounded tube — 0 at the groove, 1 at the crest; `round` is an exponent
+// that fattens (>1) / flattens (<1) the tube. POSITIVE-only (ribs project outward, unlike wave's
+// zero-net lines) → the wall radius grows ~amp/2, like real piled-on ribs.
+export function ribbedProfile(v, bands, round = 1) {
+  const frac = v * bands - Math.floor(v * bands);
+  const s = Math.sin(Math.PI * frac);
+  return Math.pow(s * s, round);
+}
+
+// `amp` is a coefficient of radius (relief stays proportional across tiers).
+function displaceRibbed(geo, radius, { amp, bands, round }) {
+  const a = amp * radius;
+  return displaceSide(geo, (_u, v) => a * ribbedProfile(v, bands, round));
+}
+
 // Displace a dense cylinder's SIDE by sampling an image height FIELD (bilinear, wrapping both axes),
 // with a rim fade so the top/bottom edges relax to the wall (no spikes) and caps stay flat. For
 // photo/stamp-derived rustic finishes. `relief` is in world units; `repeatX/Y` tile the field.
@@ -101,6 +119,14 @@ export function buildStyledWall(wall, radius, height, params = {}) {
     }
     case 'swirl':  return displaceSwirl(denseCylinder(radius, height, 220, 160), radius,
       { amp: params.amp ?? 0.045, lobes: params.lobes ?? 9, twist: params.twist ?? 3.0 });
+    case 'ribbed': {
+      // Horizontal ribs need height tessellation that scales with band count (else the tubes facet);
+      // around the cake they're constant, so the radial count can stay modest.
+      const bands = params.bands ?? 12;
+      const heightSeg = Math.min(440, Math.max(200, bands * 24));
+      return displaceRibbed(denseCylinder(radius, height, 160, heightSeg), radius,
+        { amp: params.relief ?? 0.04, bands, round: params.round ?? 1.0 });
+    }
     default:       return denseCylinder(radius, height);
   }
 }
@@ -124,6 +150,11 @@ export function makeWallReliefSampler(wall, radius, params = {}) {
       const a = (params.amp ?? 0.045) * radius;
       const lobes = params.lobes ?? 9, twist = params.twist ?? 3.0;
       return (theta, v) => a * Math.sin(lobes * theta + twist * v * TAU);
+    }
+    case 'ribbed': {
+      const a = (params.relief ?? 0.04) * radius;
+      const bands = params.bands ?? 12, round = params.round ?? 1.0;
+      return (_theta, v) => a * ribbedProfile(v, bands, round);   // constant around → depends only on v
     }
     default: return null;
   }

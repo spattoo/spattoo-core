@@ -38,6 +38,16 @@ export const CREAM_STYLES = {
       { key: 'lobes', label: 'Ridges', min: 3, max: 18,  step: 1,     default: 9,     user: false },
     ],
   },
+  // Ribbed — fat rounded HORIZONTAL ribs (rib-comb finish). Geometry wall (real displacement);
+  // `relief` = rib depth (coeff of radius), `bands` = rib count up the wall, `round` shapes the tube.
+  ribbed: {
+    label: 'Ribbed', wall: 'ribbed',
+    params: [
+      { key: 'relief', label: 'Depth',     min: 0,   max: 0.12, step: 0.005, default: 0.04, user: true },
+      { key: 'bands',  label: 'Ribs',      min: 4,   max: 24,   step: 1,     default: 12,   user: true },
+      { key: 'round',  label: 'Roundness', min: 0.4, max: 2,    step: 0.1,   default: 1.0,  user: false },
+    ],
+  },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
   // displacement can't carry comb lines at sane mesh density). wall stays smooth; surfaceMap drives
   // the material. `depth` = normalScale (bump strength); `scale` = stroke-tiling density on the wall.
@@ -50,7 +60,7 @@ export const CREAM_STYLES = {
   },
 };
 
-export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'rustic'];
+export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'rustic'];
 export const DEFAULT_STYLE = 'smooth';
 
 export const styleDef = (style) => CREAM_STYLES[style] ?? CREAM_STYLES[DEFAULT_STYLE];
