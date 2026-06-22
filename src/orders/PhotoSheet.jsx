@@ -35,7 +35,14 @@ export default function PhotoSheet({ order, onClose }) {
   const [items, setItems] = useState([]);       // [{ uid, frameId, x, y, size }] x/y/size as A4-width fractions
   const [sel, setSel] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 760);
   const sheetRef = useRef(null);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 760);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Load every frame's photo + mask, render the shaped preview once (read-only transform).
   useEffect(() => {
@@ -125,9 +132,9 @@ export default function PhotoSheet({ order, onClose }) {
         </div>
       </div>
 
-      <div style={s.body}>
+      <div style={{ ...s.body, flexDirection: isMobile ? 'column' : 'row' }}>
         {/* Palette */}
-        <div style={s.palette}>
+        <div style={{ ...s.palette, ...(isMobile ? { width: '100%', borderRight: 'none', borderBottom: '1.5px solid #E8E4DC', maxHeight: '34vh', flexShrink: 0 } : {}) }}>
           <div style={s.paletteTitle}>Customer photos</div>
           {frames.length === 0 && <div style={s.hint}>No customer photos in this order.</div>}
           {frames.map(f => (
@@ -149,7 +156,7 @@ export default function PhotoSheet({ order, onClose }) {
 
         {/* A4 sheet */}
         <div style={s.stage}>
-          <div ref={sheetRef} style={s.sheet} onPointerDown={e => e.stopPropagation()}>
+          <div ref={sheetRef} style={{ ...s.sheet, ...(isMobile ? { height: 'auto', width: 'min(92vw, 460px)' } : {}) }} onPointerDown={e => e.stopPropagation()}>
             {items.map(it => {
               const rec = imgs[it.frameId];
               const seld = sel === it.uid;

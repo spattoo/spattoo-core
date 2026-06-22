@@ -39,10 +39,11 @@ export function renderFramedPhoto(photo, mask, transform = {}, S = 512) {
   const det = a * d - b * cc || 1e-6;
   const ia = d / det, ib = -b / det, ic = -cc / det, id = a / det;   // A⁻¹
 
-  // canvasPx = S · A⁻¹ · ( Q·(ix,iy) + (0,1) − b ), with Q = [[1/w,0],[0,−1/h]] (image px → flipped uv)
-  const m00 = S * (ia * (1 / w)), m01 = S * (ib * (-1 / h));
-  const m10 = S * (ic * (1 / w)), m11 = S * (id * (-1 / h));
-  const vx = -bx, vy = 1 - by;
+  // canvasPx = S · A⁻¹ · ( Q·(ix,iy) − b ), with Q = [[1/w,0],[0,1/h]] (image px → uv, natural orientation).
+  // (The texture renders upright on the cake, so no V-flip here — adding one rendered it upside-down.)
+  const m00 = S * (ia * (1 / w)), m01 = S * (ib * (1 / h));
+  const m10 = S * (ic * (1 / w)), m11 = S * (id * (1 / h));
+  const vx = -bx, vy = -by;
   const e = S * (ia * vx + ib * vy);
   const f = S * (ic * vx + id * vy);
 
