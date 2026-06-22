@@ -467,7 +467,7 @@ function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
   useMemo(() => applyPhotoTransform(photo, transform, imgAspect),
     [photo, transform?.x, transform?.y, transform?.zoom, imgAspect]);
   return (
-    <mesh geometry={geo} position={[0, 0, -0.0015]} renderOrder={-1}>
+    <mesh geometry={geo} renderOrder={-1} frustumCulled={false}>
       <meshStandardMaterial
         map={photo}
         alphaMap={mask}
@@ -488,7 +488,7 @@ function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
 function BorderBacking({ geo, maskUrl, color, width }) {
   const mask = useMaskAlpha(maskUrl);         // ring follows the mask's shape (alpha→green), any outline
   return (
-    <mesh geometry={geo} scale={1 + (width ?? 0)} position={[0, 0, -0.003]} renderOrder={-2}>
+    <mesh geometry={geo} scale={1 + (width ?? 0)} renderOrder={-2} frustumCulled={false}>
       <meshStandardMaterial
         color={color || '#ffffff'}
         alphaMap={mask}
@@ -508,7 +508,7 @@ function OverlayMesh({ geo, url, selected }) {
   const tex = useTexture(url);
   tex.colorSpace = THREE.SRGBColorSpace;
   return (
-    <mesh geometry={geo} renderOrder={1}>
+    <mesh geometry={geo} renderOrder={1} frustumCulled={false}>
       <meshStandardMaterial
         map={tex}
         transparent
