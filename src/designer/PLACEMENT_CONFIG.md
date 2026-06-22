@@ -58,6 +58,11 @@ section below (§1–§4) is the authoritative detail for its keys.
   "recolor": { "method": "saturated", "sat": 0.25 },  // OR { "method": "blue_gt_green", "guard": 12 }
                                                       // OR { "method": "opaque" }
 
+  // ── Photo-cake frame (2D image only, §1) — image_url is the FRAME overlay (border + transparent window) ──
+  "photo": { "mask": "elements/files/2D/heart-frame-mask.png" },  // window silhouette (alpha): the
+                                                      // customer's uploaded photo is drawn behind the
+                                                      // overlay, clipped to this shape, with zoom/pan
+
   // ── Perch (a figure seated on the top edge) ──
   "perch": { "tilt_deg": 0, "y_offset": 0, "edge_inset": 0 },
 
@@ -130,6 +135,7 @@ section below (§1–§4) is the authoritative detail for its keys.
 | `fold` | number (degrees) | `30` | Only read when `foldable`. The dihedral angle between the two wings. `0` = flat. |
 | `spine` | number (0–1) | `0.5` | Only read when `foldable`. Where the body centerline splits the image (the hinge). `0.5` = centred; nudge if the asset's body isn't centred. |
 | `recolor` | object | `null` | **2D image stickers only.** Pixel-recolour region descriptor — present = the renderer recolours just the matched pixels to the instance's `color` (driven by the SAME ColorWheel as GLB tint; gated to show by `allowed_actions.color`). Absent = the image renders unchanged. Shape: `{ method, …params }`. Methods (`matcher` in `shared/color/imageRecolor.js`): **`opaque`** (default) = every non-transparent pixel (whole image — solid stickers); **`saturated`** (+ optional `sat`, default `0.25`) = the vivid coloured fill of any hue, leaving black/grey/white lines untouched (for "one colour + black" decals); **`blue_gt_green`** (+ optional `guard`, default `12`) = blue-dominant fill only, excludes gold edges (green > blue) and white highlights. Applied by `recolorImageData`; brightness is preserved so shading survives. GLB material tint (`color`/`groupColors`) is a separate path — chosen by asset kind (`isGlb`), never by element type. |
+| `photo` | object | `null` | **2D image stickers only — photo-cake frame.** Present = this element is a photo frame: its `image_url` is the **frame overlay** (border art + a transparent window), and `photo.mask` is the **window silhouette** (an alpha PNG; white = show photo). The renderer draws the customer's uploaded photo behind the overlay, **clipped to the mask** (cover-fit, then zoom/pan), so it shows through the window while the overlay's opaque border hides the seam. Shape: `{ mask }` (R2 key→URL). Copied to the instance as `photoMask`; the customer's upload lands on the instance as `photoUrl` (persisted in the design JSON) with `photoTransform` `{ x, y, zoom }`. The Upload + zoom/pan controls appear in the popup **only when `photoMask` is present** — config-gated, never an element-type/slug branch. Works on `top_surface` (flat) and `side` (curved) via the standard `hug` path; resize is the standard Size dial. Read by `StickerTexture`/`PhotoBacking` (`canvas/CakeCanvas.jsx`). |
 | `rotation` | `[x,y,z]` **degrees** | `null` | The GLB's authored facing offset, baked into geometry before render (e.g. toppers `[0, -90, 0]` to face front). **Authored in degrees** — the calibrator's convention, unified with piping's `top_/bottom_rotation`. Read ONLY via `facingOffsetRadians()` (`placement.js`), which converts to the radians THREE uses. |
 | `rotation_unit` | `'deg' \| 'rad'` | `'rad'` | Unit of `rotation`. `'deg'` = degrees (the standard). Absent/`'rad'` = legacy radians, passed through unchanged. **Rollout flag**: admin now always writes `'deg'`; DB rows migrated by `spattoo-api/migrations/008_rotation_unit_degrees.sql` (radians→deg, render-neutral). The absent/`'rad'` legacy branch in `facingOffsetRadians` is retained as a safety fallback **until that migration is confirmed applied in production**, then it (and this flag) can be dropped. |
 | `roughness` / `metalness` | number | `null` | **GLB only.** Config-driven material finish — when set, override the GLB's baked material (copied per instance in `cleanGlbScene`, never mutating the cached GLB). `metalness` ~0 + high `roughness` = matte; `metalness` ~0.9 + low `roughness` = metallic. Lets one sphere/asset read as matte or metallic from config (e.g. sugar pearls vs gold balls). `null`/absent = keep the GLB's own baked material. Colour is a separate path (`color` / recolour). |
@@ -281,6 +287,7 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
 
     // ── Pixel recolour (2D image; needs allowed_actions.color) ──
     "recolor": { "method": "saturated", "sat": 0.25 },    // OR { "method": "blue_gt_green", "guard": 12 } OR { "method": "opaque" }
+    "photo":   { "mask": "elements/files/2D/heart-frame-mask.png" },  // photo-cake frame: window-shape mask (alpha)
 
     // ── Perch (figure seated on the top edge) ──
     "perch": { "tilt_deg": 0, "y_offset": 0, "edge_inset": 0 },

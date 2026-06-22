@@ -3650,6 +3650,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  // Photo-cake frame: upload the customer's photo for one frame instance. Shows it instantly via a
+  // local blob URL, uploads to R2 in the background (same signed-URL flow as every other upload), then
+  // swaps in the persisted public URL so it survives a reload (stored inside the design JSON).
+  async function pickFramePhoto(stickerId, file) {
+    if (!file) return;
+    updateSticker(stickerId, { photoUrl: URL.createObjectURL(file) });   // instant local preview
+    if (!apiClient?.getSignedUploadUrl) return;
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const filename = `${stickerId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      const { url, publicUrl } = await apiClient.getSignedUploadUrl('customer/photos', filename, file.type);
+      await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      if (publicUrl) updateSticker(stickerId, { photoUrl: publicUrl });
+    } catch (err) {
+      console.error('Frame photo upload failed', err);
+    }
+  }
+
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
     const c = el.type === 'tier'    ? TIER_CAPS
@@ -3740,6 +3758,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (!srcEl?.placement_config?.cluster) {
         const chooser = elementPlacementChooser(srcEl, { instance: inst });
         if (chooser) groups.push({ key: 'place', divider: true, controls: [chooser] });
+      }
+    }
+
+    // Photo-cake frame controls — Upload + fit (zoom/pan). Gated on the instance carrying a window
+    // mask (config-driven, placement_config.photo), never on element type/slug (INVARIANTS #1/#6).
+    if (el.type === 'sticker') {
+      const inst = design.stickers.find(s => s.id === el.id);
+      if (inst?.photoMask) {
+        const t = inst.photoTransform ?? { x: 0, y: 0, zoom: 1 };
+        const setT = patch => updateSticker(el.id, { photoTransform: { ...t, ...patch } });
+        const PAN = 0.04, clampPan = v => Math.max(-0.6, Math.min(0.6, +v.toFixed(3)));
+        const controls = [
+          <label key="up" style={{ ...s.toolbarBtn, display: 'block', width: '100%', boxSizing: 'border-box', textAlign: 'center', cursor: 'pointer' }}>
+            {inst.photoUrl ? 'Change photo' : 'Upload photo'}
+            <input type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pickFramePhoto(el.id, f); }} />
+          </label>,
+        ];
+        if (inst.photoUrl) {
+          controls.push(
+            <div key="zoom" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, width: '100%' }}>
+              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Zoom</span>
+              <SizeDial size={t.zoom ?? 1} min={1} max={4} step={0.1} onChange={v => setT({ zoom: v })} />
+            </div>,
+            <div key="pan" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 6, width: '100%' }}>
+              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Position</span>
+              <button style={s.tbIconBtn} onClick={() => setT({ y: clampPan((t.y ?? 0) - PAN) })}>↑</button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button style={s.tbIconBtn} onClick={() => setT({ x: clampPan((t.x ?? 0) + PAN) })}>←</button>
+                <button style={s.tbIconBtn} onClick={() => setT({ x: clampPan((t.x ?? 0) - PAN) })}>→</button>
+              </div>
+              <button style={s.tbIconBtn} onClick={() => setT({ y: clampPan((t.y ?? 0) + PAN) })}>↓</button>
+            </div>,
+          );
+        }
+        groups.push({ key: 'photo', divider: true, panelLabel: 'Photo', controls });
       }
     }
 
