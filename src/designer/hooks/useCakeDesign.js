@@ -358,13 +358,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.
           recolor:       element.placement_config?.recolor ?? null,
-          // Photo-cake frame: the element's image_url is the FRAME overlay (border art + a transparent
-          // window); placement_config.photo.mask is the window silhouette (alpha). Present → this is a
-          // photo frame: the renderer draws the customer's uploaded photo (photoUrl) behind the frame,
-          // clipped to the mask, and the popup shows Upload + zoom/pan. Config-gated like foldable/
-          // recolor — never an element-type branch. Absent → renders as a plain decal.
+          // Photo-cake frame (config-gated on placement_config.photo.mask, no element-type branch): the
+          // MASK is the shape (heart/circle/square…) and drives both the photo clip and the procedural
+          // border. The customer's photo (photoUrl) is clipped to it; the border is a colour ring of
+          // borderWidth (0 = none, recoloured via `color`), unless a decorative overlay (photoOverlay)
+          // supplies fancy border art. Absent → renders as a plain decal.
           photoMask:      element.placement_config?.photo?.mask ?? null,
-          photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the frame art)
+          photoOverlay:   element.placement_config?.photo?.overlay ?? null,   // optional decorative border art
+          borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
+          photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1 },    // pan (UV fraction) + zoom; cover-fit is the baseline at zoom 1
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         seatTheta,            // round side: seat angle around the wall

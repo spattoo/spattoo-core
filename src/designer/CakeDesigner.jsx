@@ -1583,13 +1583,18 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       // The alternate piping GLB lives inside placement_config (not a column), so resolve
       // its R2 key to a full URL here too, the same way image_url is handled.
       let pc = r.placement_config;
-      if (pc && (pc.top_alt_glb_url || pc.bottom_alt_glb_url || pc.photo?.mask)) {
+      if (pc && (pc.top_alt_glb_url || pc.bottom_alt_glb_url || pc.photo?.mask || pc.photo?.overlay)) {
         pc = { ...pc };
         if (pc.top_alt_glb_url)    pc.top_alt_glb_url    = resolveUrl(pc.top_alt_glb_url);
         if (pc.bottom_alt_glb_url) pc.bottom_alt_glb_url = resolveUrl(pc.bottom_alt_glb_url);
-        // Photo-frame window mask (nested asset key) → full URL, like image_url. Idempotent: the API
-        // already expands it, so resolveUrl(fullUrl) is a no-op; this covers the direct-Supabase path.
-        if (pc.photo?.mask)        pc.photo = { ...pc.photo, mask: resolveUrl(pc.photo.mask) };
+        // Photo-frame nested asset keys (mask shape, optional decorative overlay) → full URLs, like
+        // image_url. Idempotent: the API already expands these, so resolveUrl(fullUrl) is a no-op;
+        // this also covers the direct-Supabase path.
+        if (pc.photo?.mask || pc.photo?.overlay) {
+          pc.photo = { ...pc.photo };
+          if (pc.photo.mask)    pc.photo.mask    = resolveUrl(pc.photo.mask);
+          if (pc.photo.overlay) pc.photo.overlay = resolveUrl(pc.photo.overlay);
+        }
       }
       return { ...r, image_url: resolveUrl(r.image_url), thumbnail_url: resolveUrl(r.thumbnail_url), placement_config: pc };
     });
@@ -3803,6 +3808,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           );
         }
         groups.push({ key: 'photo', divider: true, panelLabel: 'Photo', controls });
+        // Border width — procedural ring around the photo (0 = no border). Hidden when the frame uses
+        // a decorative overlay (that art IS the border). Colour comes from the shared ColorWheel group.
+        if (!inst.photoOverlay) {
+          const bw = inst.borderWidth ?? 0.06;
+          groups.push({ key: 'border', divider: true, panelLabel: 'Border', controls: [
+            <SizeDial key="bw-dial" size={bw} min={0} max={0.4} step={0.02} onChange={v => updateSticker(el.id, { borderWidth: v })} />,
+          ] });
+        }
       }
     }
 
