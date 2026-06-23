@@ -57,6 +57,14 @@ export default function PipingPreview({
     bendTilt:  placement.bendTilt ?? 0,
     wrap:      placement.wrap ?? false,
   };
+  // Chocolate-drip fields, forwarded so the popup preview matches the cake (rim only).
+  const dripProps = {
+    drip:       placement.drip ?? false,
+    dripConfig: placement.dripConfig ?? null,
+    dripGloss:  placement.dripGloss ?? undefined,
+    dripLength: placement.dripLength ?? undefined,
+    dripFlood:  placement.dripFlood ?? false,
+  };
   // Frame the whole stack and look down on it at ~27° so the ring reads as a ring (not
   // edge-on). camY/camZ ratio sets the tilt — 0.5 ≈ a 63° polar angle, within the clamp
   // below. A small azimuth (≈18°) gives a static 3/4 view; horizontal distance stays camZ
@@ -87,7 +95,7 @@ export default function PipingPreview({
             extraRadialOffset={radial} yOffset={yOff}
             flipTop={placement.flipTop ?? false} spacing={spacing}
             swagCount={swag[0]} swagDepth={swag[1]} swagTilt={swag[2]}
-            arrangement={arrangement} instances={inst} shape={targetShape} {...alt} {...bendProps}
+            arrangement={arrangement} instances={inst} shape={targetShape} {...alt} {...bendProps} {...dripProps}
           />
         ) : (
           <BottomPipingRing

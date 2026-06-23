@@ -15,5 +15,8 @@ export { recolorImageData, RECOLOR_METHODS } from './designer/shared/color/image
 // calibrator authors against the SAME code the designer renders (no duplicated displacement maths).
 export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
+// Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
+// the designer (CakeTier) renders (no duplicated drip maths).
+export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStrokeTile, heightFieldFromImage, heightTextureFromField, normalTextureFromField } from './designer/shared/textures/imageNormalMap.js';

@@ -109,6 +109,11 @@ section below (§1–§4) is the authoritative detail for its keys.
   "top_wrap":                 false,                  // pre-formed band
   "top_wrap_tilt":            0,
   "top_wrap_size":            1.0,
+  "top_drip":                 false,                  // procedural chocolate-drip ring (rim only, no GLB)
+  "top_drip_config":          { "count": 22, "width": 0.05, "length": 0.55, "flat": 0.5, "webDepth": 0.16, "archHeight": 0.11, "lipRadius": 0.05, "seed": 1 },
+  "top_drip_gloss":           0.85,                   // 0 matte … 1 wet (customer-editable default)
+  "top_drip_length":          1,                      // customer Length dial: multiplier on top_drip_config.length
+  "top_drip_flood":           false,                  // flood the whole tier top with chocolate (customer toggle)
   // …bottom_* mirrors every top_* above (own defaults), plus two bottom-only flags:
   "bottom_y_adjustable":    false,                    // let the baker tune Y in the popup
   "bottom_flip_adjustable": false
@@ -219,6 +224,11 @@ Piping has a **top** (rim) and **bottom** (board) set with identical shapes — 
 | `top_wrap` / `bottom_…` | bool | Wrap one pre-formed ring GLB round the wall as a single band. |
 | `top_wrap_tilt` / `bottom_…` | number | Band tilt. |
 | `top_wrap_size` / `bottom_…` | number | Band size. |
+| `top_drip` | bool | Render this rim ring as a procedural **chocolate drip** (no GLB) instead of shells. Rim/top only. |
+| `top_drip_config` | object | The authored drip GEOMETRY bundle (`count`, `width`, `length`, `flat`, `webDepth`, `archHeight`, `lipRadius`, `seed`, …). Tuned in the admin drip studio; linear dims scale with tier radius at render. Built by `geometry/chocolateDrip.js`. |
+| `top_drip_gloss` | number (0–1) | Customer-editable default: 0 matte … 1 wet ganache (drives roughness + clearcoat). |
+| `top_drip_length` | number | Customer Length dial — a multiplier on `top_drip_config.length` (the base run). |
+| `top_drip_flood` | bool | Customer toggle — flood the whole tier top with chocolate (vs. just the rim + drips). |
 
 ---
 

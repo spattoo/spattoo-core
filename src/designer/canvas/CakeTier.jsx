@@ -10,6 +10,7 @@ import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
 import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
+import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
 
@@ -81,6 +82,23 @@ export function creamMaterialProps(softness, color) {
     sheen:          (0.4 / 0.7) * s, // 0 … 0.4 (default) … ~0.571 velvety
     sheenRoughness: 0.9,
     sheenColor:     color,
+  };
+}
+
+// ── Chocolate "gloss" → material ──────────────────────────────────────────────
+// A single 0–1 control for how wet the ganache reads: 0 = matte set chocolate,
+// 1 = glossy wet drip (the default). Drives BOTH roughness and a clearcoat layer
+// together (the clearcoat is what sells "wet ganache" vs "plastic"). Mirrors the
+// cream "softness" idea but for chocolate. The admin drip studio keeps the same map.
+export const DRIP_GLOSS_DEFAULT = 0.85;
+export function chocolateMaterialProps(gloss, color) {
+  const g = Math.min(1, Math.max(0, gloss ?? DRIP_GLOSS_DEFAULT));
+  return {
+    color,
+    metalness:          0,
+    roughness:          0.5 - 0.42 * g,    // 0.5 matte … 0.08 wet
+    clearcoat:          0.4 + 0.6 * g,     // 0.4 … 1.0 glassy
+    clearcoatRoughness: 0.28 - 0.16 * g,   // 0.28 … 0.12
   };
 }
 
@@ -311,8 +329,55 @@ function renderWrap({ wrapGeo, color, softness, gradient, selected }) {
 // (e.g. the "piping pattern" style carries no image/model URL). useGLTF(null)
 // throws deep in the loader, so the guard has to live above the hook-bearing Impl.
 export function TopPipingRing(props) {
+  // A drip layer is a procedural ganache ring (no GLB) — dispatch to its own branch BEFORE any
+  // useGLTF runs. This is a config-driven branch on the ring entry (like festoon/wrap inside the
+  // GLB impl), NOT a per-element-type renderer.
+  if (props.drip) return (
+    <TopDripRing topY={props.topY} radius={props.radius} color={props.color}
+      gloss={props.dripGloss} lengthMul={props.dripLength} flood={props.dripFlood} config={props.dripConfig}
+      selected={props.selected} onClick={props.onClick} />
+  );
   if (!props.glbPath) return null;
   return <TopPipingRingImpl {...props} />;
+}
+
+// ── Top chocolate-drip ring — procedural ganache draped over the rim ──────────
+// The drip geometry (web arches + runs) is built from the tier's REAL radius+topY so it scales to any
+// tier. The rolled rim bead is a torus the consumer adds with the same material (matching the admin
+// drip studio). Customer controls: colour, gloss, length (a multiplier on the authored base run).
+export function TopDripRing({ topY, radius, color = '#3a2117', gloss = DRIP_GLOSS_DEFAULT,
+  lengthMul = 1, flood = false, config = null, selected = false, onClick }) {
+  // ONE derivation of the scaled params + startDrop/lip — shared with the relief sampler (chocolateDrip.js).
+  const cfgKey = JSON.stringify(config ?? {});
+  const { params, startDrop, lipR, s } = useMemo(
+    () => dripRenderParams(config, radius, lengthMul), [cfgKey, radius, lengthMul]);
+  const dripsGeo = useMemo(() => buildDripGeometry({ R: radius, topY, startDrop, ...params }), [radius, topY, startDrop, params]);
+  const webGeo   = useMemo(() => buildDripWeb({ R: radius, topY, ...params }), [radius, topY, params]);
+  const mat = chocolateMaterialProps(gloss, color);
+  const emissive = selected ? color : '#000000', emissiveIntensity = selected ? 0.15 : 0;
+  const floodH = 0.03 * s;
+  return (
+    <group onClick={onClick}>
+      {/* optional top flood — a thin chocolate pool covering the tier top inside the rim */}
+      {flood && (
+        <mesh position={[0, topY + floodH / 2, 0]} castShadow>
+          <cylinderGeometry args={[radius, radius, floodH, 96]} />
+          <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        </mesh>
+      )}
+      {/* rolled rim bead at the very edge */}
+      <mesh position={[0, topY, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+        <torusGeometry args={[radius, lipR, 16, 128]} />
+        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+      </mesh>
+      <mesh geometry={webGeo} castShadow>
+        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+      </mesh>
+      <mesh geometry={dripsGeo} castShadow>
+        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+      </mesh>
+    </group>
+  );
 }
 function TopPipingRingImpl({
   topY, radius, glbPath, color = '#ffffff', sizeFactor = 1,
@@ -920,6 +985,8 @@ export default function CakeTier({
       bend={p.bend ?? false} bendRing={p.bendRing ?? false}
       festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
       wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
+      drip={p.drip ?? false} dripConfig={p.dripConfig ?? null}
+      dripGloss={p.dripGloss ?? DRIP_GLOSS_DEFAULT} dripLength={p.dripLength ?? 1} dripFlood={p.dripFlood ?? false}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));

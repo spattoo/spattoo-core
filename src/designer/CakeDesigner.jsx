@@ -96,6 +96,12 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
     wrapTilt: (isTop ? pc.top_wrap_tilt : pc.bottom_wrap_tilt) ?? null,
     wrapSize: (isTop ? pc.top_wrap_size : pc.bottom_wrap_size) ?? null,
   };
+  // Drip: a procedural chocolate-drip ring (no GLB). Rim/top only for now. `dripConfig` is the
+  // authored geometry bundle (tuned in the admin drip studio); gloss/length are customer-editable
+  // defaults (the layer's `color` carries the chocolate colour, like any ring).
+  const drip = isTop
+    ? { drip: pc.top_drip ?? false, dripConfig: pc.top_drip_config ?? null, dripGloss: pc.top_drip_gloss ?? null, dripLength: pc.top_drip_length ?? null, dripFlood: pc.top_drip_flood ?? false }
+    : { drip: false };
   if (isTop) {
     return {
       flipTop:           pc.top_flip          ?? false,
@@ -111,6 +117,7 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
       ...alt,
       ...bend,
       ...wrap,
+      ...drip,
       ...seed,
     };
   }
@@ -1692,7 +1699,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
       const piping = {
         id: el.id, cardId: newCardId, glbUrl, name: el.name,
-        color: '#f5e6c8', size: 1,
+        color: el.default_color ?? '#f5e6c8', size: 1,
         ...pipingPlacementFromConfig(el.placement_config, isTop),
         ...(altGlbUrl ? { altGlbUrl } : {}),
       };
@@ -1852,7 +1859,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
     const piping = {
       id: pipingPopupEl.id, cardId: pipingPopupEl.cardId, glbUrl, name: pipingPopupEl.name,
-      color: '#f5e6c8', size: 1,
+      color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1,
       ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
     };
     // New rim layers nest concentrically inside any existing rim rings. On the board, a
@@ -1925,6 +1932,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   function handlePipingSizeChange(tierIndex, zone, v) {
     updateRing(tierIndex, zone, p => ({ ...p, size: v }));
+  }
+
+  // Drip ring controls — a multiplier on the authored run length, and the wet/matte gloss.
+  function handleDripLengthChange(tierIndex, zone, v) {
+    updateRing(tierIndex, zone, p => ({ ...p, dripLength: v }));
+  }
+  function handleDripGlossChange(tierIndex, zone, v) {
+    updateRing(tierIndex, zone, p => ({ ...p, dripGloss: v }));
+  }
+  function handleDripFloodChange(tierIndex, zone, v) {
+    updateRing(tierIndex, zone, p => ({ ...p, dripFlood: v }));
   }
 
   // Manual radial position (cake units): + pushes the ring outward, − pulls it inward.
@@ -3017,13 +3035,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   const creamPipingType   = elementTypes.find(et => et.slug === 'cream_piping');
   const pipingPatternType = elementTypes.find(et => et.slug === 'piping_pattern');
+  const dripType          = elementTypes.find(et => et.slug === 'drip');
   const creamPipingEls    = otherElementsDb[creamPipingType?.id] ?? [];
   const pipingPatternEls  = otherElementsDb[pipingPatternType?.id] ?? [];
+  // Chocolate-drip elements ride the SAME ring system as piping (a per-tier rim ring), so they're
+  // picked + edited through the piping popup, not the generic sticker grid.
+  const dripEls           = otherElementsDb[dripType?.id] ?? [];
 
   // Resolve a building-block element id → its element (image_url already full from the API).
   const pipingBlockById = Object.fromEntries(creamPipingEls.map(e => [e.id, e]));
   // Any piping element the baker can pick (for re-opening from a 3D click).
-  const pipingElementById = Object.fromEntries([...creamPipingEls, ...pipingPatternEls].map(e => [e.id, e]));
+  const pipingElementById = Object.fromEntries([...creamPipingEls, ...pipingPatternEls, ...dripEls].map(e => [e.id, e]));
 
   // Resolve the A/B GLB urls for a piping element. A pattern references blocks via
   // placement_config.parts[]; a plain block uses its own image_url. Returns nulls when a
@@ -3043,6 +3065,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     ...creamPipingEls.filter(el => el.placement_config?.pattern_only !== true),
     ...pipingPatternEls.filter(el => pipingBlockById[el.placement_config?.parts?.[0]?.element_id]?.image_url),
   ];
+  // Drips ride the SAME ring popup as piping, but are their OWN picker group (a chocolate drip is not
+  // "cream piping"). dripEls render in a separate labelled card via the shared renderRingPickerCard.
+
+  // Shared thumbnail-grid card for any element that opens the piping/ring popup (piping AND drips) —
+  // ONE renderer so the two groups never drift. `label` is the group heading.
+  function renderRingPickerCard(label, els) {
+    if (!els.length) return null;
+    const q = elemSearch.trim().toLowerCase();
+    const visible = q ? els.filter(el => `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q)) : els;
+    if (q && visible.length === 0) return null;
+    return (
+      <div style={{ ...s.elementCard, cursor: 'default' }}>
+        <div style={s.elementCardLabel}>{label}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {visible.map(el => {
+            const isActive = design.tiers.some(t => (t.topPipings ?? []).some(p => p.id === el.id) || (t.bottomPipings ?? []).some(p => p.id === el.id));
+            return (
+              <div key={el.id} onClick={() => openPipingPopup(el)}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
+                <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff',
+                  border: `1.5px solid ${isActive ? '#1a1a1a' : '#999999'}`,
+                  boxShadow: isActive ? '0 0 0 2px rgba(26,26,26,0.18)' : 'none' }}>
+                  {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                </div>
+                <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#1a1a1a' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   // Sync placement_config-derived fields from DB into any already-applied piping
   useEffect(() => {
@@ -4413,39 +4467,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}><CakeSpinner size={20} /></div>
             )}
 
-            {/* Cream piping — thumbnail grid, tap a style to open popup */}
-            {pipingPickerEls.length > 0 && (() => {
-              const q = elemSearch.trim().toLowerCase();
-              const visiblePipingEls = q ? pipingPickerEls.filter(el => `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q)) : pipingPickerEls;
-              if (q && visiblePipingEls.length === 0) return null;
-              return (
-              <div style={{ ...s.elementCard, cursor: 'default' }}>
-                <div style={s.elementCardLabel}>Cream Piping</div>
-                {visiblePipingEls.length === 0 && (
-                  <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No styles yet</div>
-                )}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {visiblePipingEls.map(el => {
-                    const isActive = design.tiers.some(t => (t.topPipings ?? []).some(p => p.id === el.id) || (t.bottomPipings ?? []).some(p => p.id === el.id));
-                    return (
-                      <div key={el.id} onClick={() => openPipingPopup(el)}
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
-                        <div style={{
-                          width: 64, height: 64, borderRadius: 10, overflow: 'hidden',
-                          background: '#fff',
-                          border: `1.5px solid ${isActive ? '#1a1a1a' : '#999999'}`,
-                          boxShadow: isActive ? '0 0 0 2px rgba(26,26,26,0.18)' : 'none',
-                        }}>
-                          {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
-                        </div>
-                        <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#1a1a1a' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              );
-            })()}
+            {/* Ring-popup elements — own groups, tap a style to open the popup. */}
+            {renderRingPickerCard('Cream Piping', pipingPickerEls)}
+            {renderRingPickerCard(dripType?.name ?? 'Chocolate Drip', dripEls)}
 
             {/* All other element types */}
             {(() => {
@@ -4459,7 +4483,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 return hay.includes(q);
               });
               return elementTypes
-                .filter(et => et.slug !== 'cream_piping' && et.slug !== 'piping_pattern' && activeElementTypeIds.has(et.id))
+                .filter(et => et.slug !== 'cream_piping' && et.slug !== 'piping_pattern' && et.slug !== 'drip' && activeElementTypeIds.has(et.id))
                 .map(et => (
                   <ElementTypeCard
                     key={et.id}
@@ -4827,26 +4851,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <SizeDial size={selectedAge.size ?? 0.95} min={0.4} max={2} step={0.05} onChange={v => updateAge(selectedAge.id, { size: v })} />
                   <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Size</span>
                 </div>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: '#888' }}>CHUNKINESS</span>
-                  <input type="range" min={0.04} max={0.16} step={0.005} value={selectedAge.thickness ?? 0.085}
-                    onChange={e => updateAge(selectedAge.id, { thickness: +e.target.value })} style={{ accentColor: '#b8860b' }} />
-                </label>
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>FINISH</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {['gold', 'silver'].map(f => (
                       <button key={f} onClick={() => updateAge(selectedAge.id, { finish: f })}
                         style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${(selectedAge.finish ?? 'gold') === f ? '#b8860b' : '#ddd'}`, background: (selectedAge.finish ?? 'gold') === f ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{f}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>STYLE</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {CREAM_FONTS.map(f => (
-                      <button key={f.key} onClick={() => updateAge(selectedAge.id, { font: f.key })}
-                        style={{ padding: '4px 9px', borderRadius: 14, border: `1.5px solid ${selectedAge.font === f.key ? '#b8860b' : '#ddd'}`, background: selectedAge.font === f.key ? '#FBF1D8' : '#fff', fontSize: 10, fontWeight: 700, color: '#555', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>{f.label}</button>
                     ))}
                   </div>
                 </div>
@@ -5186,10 +5196,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const applied       = ringPiping(tierIndex, zone);
                 // Unapplied rim rings preview at the inward offset they'd nest to once added.
                 const nestRO        = (isTopZone && !applied) ? nextRimRadialOffset(tierIndex) : null;
-                const p             = applied ?? { color: '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
+                const p             = applied ?? { color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
                 const color         = p.color ?? '#f5e6c8';
                 const size          = p.size  ?? 1;
                 const pc            = pipingPopupEl.placement_config ?? {};
+                const isDrip        = !!pc.top_drip;   // chocolate-drip ring → Length + Gloss, not Size
                 const allowedArr    = pipingAllowedArrangements(pc, isTopZone);
                 const arrAdjustable = allowedArr.length > 1;   // user can switch only when both allowed
                 const arrangement   = p.arrangement ?? pipingDefaultArrangement(pc, isTopZone);
@@ -5249,11 +5260,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         </div>
                         <span style={cap}>Color</span>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                        <SizeDial size={size} onChange={v => handlePipingSizeChange(tierIndex, zone, v)} />
-                        <span style={cap}>Size</span>
-                      </div>
+                      {isDrip ? (<>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                          <SizeDial size={p.dripLength ?? 1} min={0.4} max={2} step={0.05} onChange={v => handleDripLengthChange(tierIndex, zone, v)} />
+                          <span style={cap}>Length</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                          <SizeDial size={p.dripGloss ?? 0.85} min={0} max={1} step={0.05} onChange={v => handleDripGlossChange(tierIndex, zone, v)} />
+                          <span style={cap}>Gloss</span>
+                        </div>
+                      </>) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                          <SizeDial size={size} onChange={v => handlePipingSizeChange(tierIndex, zone, v)} />
+                          <span style={cap}>Size</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Drip: flood the whole tier top with chocolate (vs. just the rim + drips). */}
+                    {isDrip && (
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, cursor: 'pointer', fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif" }}>
+                        <input type="checkbox" checked={p.dripFlood ?? false}
+                          onChange={e => handleDripFloodChange(tierIndex, zone, e.target.checked)}
+                          style={{ accentColor: '#1a1a1a', width: 16, height: 16 }} />
+                        Flood top
+                      </label>
+                    )}
 
                     {/* Colour picker — the same wheel as tiers, floated as a popup. Portaled to
                         <body> so it escapes the card's narrow, backdrop-blurred scroll container
@@ -5369,8 +5401,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </>
                     )}
 
-                    {/* ── Adjust: radial distance + flip + height on one row ── */}
-                    <>
+                    {/* ── Adjust: radial distance + flip + height on one row ── (not for drip rings) */}
+                    {!isDrip && (<>
                         <div style={secRow}><span style={secTitle}>Adjust</span><div style={hair} /></div>
                         {/* Each control is its OWN full-width row (label left, stepper right) and
                             wraps internally, so nothing — including Reset — can clip off the edge. */}
@@ -5431,7 +5463,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             </div>
                           )}
                         </div>
-                      </>
+                      </>)}
                   </div>
                 );
               })}

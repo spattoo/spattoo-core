@@ -26,13 +26,14 @@ import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
 import { frostingAllowsStyles } from '../frostings.js';
 import { makeWallReliefSampler } from '../geometry/creamWall.js';
+import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
 // decor seats on the live wavy/swirled wall and hugs it, instead of a fixed offset (which buries decor
 // in the ribs) or a global lift (which floats small decor off the troughs). Memoised by wall+radius+
 // params (the height-field build is non-trivial). null when the frosting permits no style → flat wall.
 const _reliefSamplerCache = new Map();
-function tierReliefSampler(tier) {
+function wallReliefSamplerOf(tier) {
   if (!tier || !frostingAllowsStyles(tier.frostingType)) return null;
   const wall = styleDef(tier.frostingStyle).wall;
   if (wall === 'smooth') return null;
@@ -40,6 +41,31 @@ function tierReliefSampler(tier) {
   const key = `${wall}|${tier.radius}|${JSON.stringify(params)}`;
   if (!_reliefSamplerCache.has(key)) _reliefSamplerCache.set(key, makeWallReliefSampler(wall, tier.radius, params));
   return _reliefSamplerCache.get(key);
+}
+
+// A chocolate-drip rim ring also adds relief: decor on the upper wall must rest ON the drip where it
+// exists (and nestle on bare wall in the open arch pockets). Built from the SAME params the mesh
+// renders (dripRenderParams), keyed so it rebuilds when the drip changes.
+const _dripReliefCache = new Map();
+function dripReliefSamplerOf(tier) {
+  const layer = (tier?.topPipings ?? []).find(p => p?.drip);
+  if (!layer) return null;
+  const { radius, height } = tier;
+  const key = `${radius}|${height}|${JSON.stringify(layer.dripConfig)}|${layer.dripLength ?? 1}`;
+  if (!_dripReliefCache.has(key)) {
+    const { params, startDrop } = dripRenderParams(layer.dripConfig, radius, layer.dripLength ?? 1);
+    _dripReliefCache.set(key, makeDripReliefSampler({ params, R: radius, height, startDrop }));
+  }
+  return _dripReliefCache.get(key);
+}
+
+// Per-tier relief = the higher of the wall surface and any drip ring, so decor rests on whichever is
+// proud at that point.
+function tierReliefSampler(tier) {
+  const wallS = wallReliefSamplerOf(tier);
+  const dripS = dripReliefSamplerOf(tier);
+  if (wallS && dripS) return (theta, v) => Math.max(wallS(theta, v), dripS(theta, v));
+  return dripS ?? wallS;
 }
 
 // REST an element on the displaced wall: return the HIGHEST relief under the patch the element covers
