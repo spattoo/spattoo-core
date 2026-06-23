@@ -25,6 +25,39 @@ const DEFAULT_DESIGN = {
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
 };
 
+// Pure resolver: a design (authored shape, fields optional) → the canvas/scene config the
+// renderer consumes (radius/height/frosting defaults filled in). This is the SINGLE place tier
+// geometry defaults live — the live editor's `canvasConfig` useMemo and the read-only `CakePreview`
+// both call it, so the two never drift (INVARIANTS #3). Keep it pure (no hooks/state).
+export function toCanvasConfig(design) {
+  return {
+    tiers: (design.tiers ?? []).map((t, i) => {
+      const isRect = t.shape === 'rect';
+      const width  = t.width ?? 2.16;   // default half-sheet footprint
+      const depth  = t.depth ?? 1.56;
+      return {
+        // For rect, radius is the bounding half-extent so radius-based incidental
+        // placement (board, toolbar offsets, topper scale) keeps working.
+        radius:       isRect ? Math.max(width, depth) / 2 : (t.radius ?? TIER_RADII[i] ?? 0.35),
+        height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
+        color:        t.color,
+        gradient:     t.gradient ?? null,
+        frostingType: t.frostingType ?? DEFAULT_FROSTING,
+        frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
+        styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
+        topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
+        bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
+        ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
+      };
+    }),
+    texts:    design.texts ?? [],
+    ages:     design.ages ?? [],
+    stickers: design.stickers ?? [],
+    writing:  design.writing ?? null,
+    piping:   design.piping ?? [],
+  };
+}
+
 // Back-compat: convert a legacy `design.topper` (single hero slot) into a sticker appended to
 // the stickers list. Topper === a GLB element on the top surface (placement 'stand') or side
 // ('hug'). Old topper.scale was a multiplier on CakeTopper's tier-relative base (~5× the
@@ -680,32 +713,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     });
   }
 
-  const canvasConfig = useMemo(() => ({
-    tiers: design.tiers.map((t, i) => {
-      const isRect = t.shape === 'rect';
-      const width  = t.width ?? 2.16;   // default half-sheet footprint
-      const depth  = t.depth ?? 1.56;
-      return {
-        // For rect, radius is the bounding half-extent so radius-based incidental
-        // placement (board, toolbar offsets, topper scale) keeps working.
-        radius:       isRect ? Math.max(width, depth) / 2 : (t.radius ?? TIER_RADII[i] ?? 0.35),
-        height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
-        color:        t.color,
-        gradient:     t.gradient ?? null,
-        frostingType: t.frostingType ?? DEFAULT_FROSTING,
-        frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
-        styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
-        topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
-        bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
-        ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
-      };
-    }),
-    texts:    design.texts,
-    ages:     design.ages,
-    stickers: design.stickers,
-    writing:  design.writing ?? null,
-    piping:   design.piping ?? [],
-  }), [design]);
+  const canvasConfig = useMemo(() => toCanvasConfig(design), [design]);
 
   return {
     design,

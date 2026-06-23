@@ -12,6 +12,7 @@ import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
+import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
@@ -38,105 +39,6 @@ function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
   if (h.length !== 6) return `rgba(26,26,26,${alpha})`;
   return `rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${alpha})`;
-}
-
-// Single source of truth for mapping an element's placement_config to the piping
-// fields a ring consumes. Rim (top) and board (bottom) are symmetric: top_* mirrors
-// bottom_*. Returned keys match what TopPipingRing / BottomPipingRing expect.
-// Which arrangements an element allows for a zone. Mirrors the allowed_zones array
-// convention; absent ⇒ ['ring'] (matches legacy piping that only ever ringed).
-function pipingAllowedArrangements(pc, isTop) {
-  const allowed = isTop ? pc?.top_arrangements_allowed : pc?.bottom_arrangements_allowed;
-  return Array.isArray(allowed) && allowed.length ? allowed : ['ring'];
-}
-
-// Default arrangement for a zone: the admin's `*_arrangement` if it's actually allowed,
-// otherwise the first allowed mode (so a single-only element defaults to single).
-function pipingDefaultArrangement(pc, isTop) {
-  const allowed = pipingAllowedArrangements(pc, isTop);
-  const pref = isTop ? pc?.top_arrangement : pc?.bottom_arrangement;
-  return allowed.includes(pref) ? pref : allowed[0];
-}
-
-function pipingPlacementFromConfig(placementConfig, isTop) {
-  const pc = placementConfig ?? {};
-  const arrangement = pipingDefaultArrangement(pc, isTop);
-  // Single mode seeds exactly one instance from the configured angle; ring carries
-  // no instances array so it stays the cheap, procedural full-circle path.
-  const seed = arrangement === 'single'
-    ? { instances: [{ id: Date.now(), angle: (isTop ? pc.top_single_angle : pc.bottom_single_angle) ?? PIPING_FRONT_ANGLE }] }
-    : {};
-  // Alternating A/B pattern — version B's shape + transform + the repeating cycle string.
-  const alt = isTop
-    ? {
-        altEnabled:      pc.top_alt_enabled        ?? false,
-        altGlbUrl:       pc.top_alt_glb_url         ?? null,
-        altFlip:         pc.top_alt_flip            ?? false,
-        altRotation:     pc.top_alt_rotation        ?? null,
-        altRadialOffset: pc.top_alt_radial_offset   ?? null,
-        altYOffset:      pc.top_alt_y_offset        ?? null,
-        pattern:         pc.top_pattern             || 'AB',
-      }
-    : {
-        altEnabled:      pc.bottom_alt_enabled      ?? false,
-        altGlbUrl:       pc.bottom_alt_glb_url       ?? null,
-        altFlip:         pc.bottom_alt_flip          ?? false,
-        altRotation:     pc.bottom_alt_rotation      ?? null,
-        altRadialOffset: pc.bottom_alt_radial_offset ?? null,
-        altYOffset:      pc.bottom_alt_y_offset      ?? null,
-        pattern:         pc.bottom_pattern           || 'AB',
-      };
-  // U-shaped (bend/festoon) fields — present only on strip elements tuned with "Bend" on.
-  const bend = isTop
-    ? { bend: pc.top_bend ?? false, bendRing: pc.top_bend_ring ?? false, festoons: pc.top_festoons ?? null, bendDepth: pc.top_bend_depth ?? null, bendTilt: pc.top_bend_tilt ?? null }
-    : { bend: pc.bottom_bend ?? false, bendRing: pc.bottom_bend_ring ?? false, festoons: pc.bottom_festoons ?? null, bendDepth: pc.bottom_bend_depth ?? null, bendTilt: pc.bottom_bend_tilt ?? null };
-  // Wrap: a pre-formed ring GLB wrapped round the wall as one band (round or sheet). Flag-only.
-  const wrap = {
-    wrap:     (isTop ? pc.top_wrap      : pc.bottom_wrap)      ?? false,
-    wrapTilt: (isTop ? pc.top_wrap_tilt : pc.bottom_wrap_tilt) ?? null,
-    wrapSize: (isTop ? pc.top_wrap_size : pc.bottom_wrap_size) ?? null,
-  };
-  // Drip: a procedural chocolate-drip ring (no GLB). Rim/top only for now. `dripConfig` is the
-  // authored geometry bundle (tuned in the admin drip studio); gloss/length are customer-editable
-  // defaults (the layer's `color` carries the chocolate colour, like any ring).
-  const drip = isTop
-    ? { drip: pc.top_drip ?? false, dripConfig: pc.top_drip_config ?? null, dripGloss: pc.top_drip_gloss ?? null, dripLength: pc.top_drip_length ?? null, dripFlood: pc.top_drip_flood ?? false }
-    : { drip: false };
-  if (isTop) {
-    return {
-      flipTop:           pc.top_flip          ?? false,
-      rotation:          pc.top_rotation       ?? null,
-      extraRadialOffset: pc.top_radial_offset  ?? null,
-      yOffset:           pc.top_y_offset        ?? null,
-      spacing:           pc.top_spacing         ?? null,
-      softness:          pc.top_softness        ?? null,
-      swagCount:         pc.top_swag_count      ?? null,
-      swagDepth:         pc.top_swag_depth      ?? null,
-      swagTilt:          pc.top_swag_tilt       ?? null,
-      arrangement,
-      ...alt,
-      ...bend,
-      ...wrap,
-      ...drip,
-      ...seed,
-    };
-  }
-  return {
-    flipBottom:        pc.bottom_flip          ?? true,
-    bottomRotation:    pc.bottom_rotation      ?? null,
-    extraRadialOffset: pc.bottom_radial_offset ?? null,
-    yOffset:           pc.bottom_y_offset      ?? null,
-    spacing:           pc.bottom_spacing       ?? null,
-    softness:          pc.bottom_softness      ?? null,
-    swagCount:         pc.bottom_swag_count    ?? null,
-    swagDepth:         pc.bottom_swag_depth    ?? null,
-    swagTilt:          pc.bottom_swag_tilt     ?? null,
-    arrangement,
-    ...alt,
-    ...bend,
-    ...wrap,
-    ...seed,
-  };
 }
 
 // True when a ring's current placement differs from the config-derived placement.
@@ -1697,12 +1599,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     if (zones.length === 1) {
       const isTop = zones[0] === 'rim';
       const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
-      const piping = {
-        id: el.id, cardId: newCardId, glbUrl, name: el.name,
-        color: el.default_color ?? '#f5e6c8', size: 1,
-        ...pipingPlacementFromConfig(el.placement_config, isTop),
-        ...(altGlbUrl ? { altGlbUrl } : {}),
-      };
+      const piping = makePipingLayer(el, { isTop, glbUrl, altGlbUrl, cardId: newCardId });
       if (isTop) { const ro = nextRimRadialOffset(0); if (ro) piping.userRadialOffset = ro; }
       else {
         piping.yAdjustable = !!el.placement_config?.bottom_y_adjustable;

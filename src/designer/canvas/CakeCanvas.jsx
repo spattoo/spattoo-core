@@ -27,6 +27,7 @@ import { styleDef, resolveStyleParams } from '../creamStyles.js';
 import { frostingAllowsStyles } from '../frostings.js';
 import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
+import { toCanvasConfig } from '../hooks/useCakeDesign.js';
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
 // decor seats on the live wavy/swirled wall and hugs it, instead of a fixed offset (which buries decor
@@ -1909,6 +1910,30 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
       >
         <CakeThumbnailScene config={config} />
         <OrbitControls enableZoom={false} enablePan={false} autoRotate={false} target={[0, 2, 0]} />
+      </Canvas>
+    </div>
+  );
+}
+
+// On-screen, read-only cake preview. Hand it an authored `design` (tiers/colours/etc., fields
+// optional) and it draws the cake on a turntable with no edit UI. It resolves the design via the
+// SAME `toCanvasConfig` the live editor uses (one defaulting rule, INVARIANTS #3) and renders the
+// SAME `CakeThumbnailScene` as the thumbnail capture (one renderer, #2). Unlike CakeThumbnailCanvas
+// (fixed 400×400, parked off-screen for PNG capture) this fills its parent and is meant to be seen.
+export function CakePreview({ design, autoRotate = true, style }) {
+  const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
+      <Canvas
+        gl={{ preserveDrawingBuffer: true, alpha: true }}
+        onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
+        camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
+        style={{ width: '100%', height: '100%' }}
+      >
+        <Suspense fallback={null}>
+          <CakeThumbnailScene config={config} />
+        </Suspense>
+        <OrbitControls enableZoom={false} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={[0, 2, 0]} />
       </Canvas>
     </div>
   );

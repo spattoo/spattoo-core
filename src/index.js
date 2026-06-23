@@ -1,13 +1,16 @@
 export { default as CakeDesigner } from './designer/CakeDesigner.jsx';
 export { default as PatternBuilder } from './designer/PatternBuilder.jsx';
 export { default as PatternBuilderCanvas, placementPosition, getOverlappingIds, ALL_TIER_GEOM } from './designer/canvas/PatternBuilderCanvas.jsx';
-export { default as CakeCanvas, CakeThumbnailCanvas } from './designer/canvas/CakeCanvas.jsx';
+export { default as CakeCanvas, CakeThumbnailCanvas, CakePreview } from './designer/canvas/CakeCanvas.jsx';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 export { default as AuthGate } from './auth/AuthGate.jsx';
-export { useCakeDesign, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
+export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { extractFromPhoto } from './designer/hooks/useExtractElements.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';
+// Piping-layer factory + placement resolver — exported so the admin inspiration preview builds the
+// SAME tier topPipings/bottomPipings the live designer does (one factory, no drift — INVARIANTS #3).
+export { makePipingLayer, pipingPlacementFromConfig } from './designer/piping/pipingLayer.js';
 // 2D image pixel-recolour (the SAME function the designer runs) + the method registry — exported
 // so the admin recolour tester / element authoring use the exact runtime logic, never a copy.
 export { recolorImageData, RECOLOR_METHODS } from './designer/shared/color/imageRecolor.js';
