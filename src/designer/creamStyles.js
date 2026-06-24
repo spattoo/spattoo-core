@@ -58,9 +58,27 @@ export const CREAM_STYLES = {
       { key: 'scale', label: 'Roughness', min: 3, max: 20, step: 1,   default: 9,   user: false },
     ],
   },
+  // Chevron Weave — first of the stencil-pressed "Weave" finish family. HYBRID relief: a shallow real
+  // wall displacement (wall:'weave', the shared weave ENGINE) for true groove shadow + a normal map
+  // (surfaceMap:'weave') baked from the same field for crisp lines + buttercream grain. `relief` =
+  // groove depth (coeff of radius), `tile` = cell size, `grooves` = lines per cell, `depth` →
+  // normalScale. Future siblings (basket_weave, lattice_weave…) reuse wall/surfaceMap 'weave' with a
+  // different motif field — the key here is the SPECIFIC pattern; 'weave' is the generic engine.
+  chevron_weave: {
+    label: 'Chevron Weave', wall: 'weave', surfaceMap: 'weave',
+    params: [
+      { key: 'relief',  label: 'Depth',      min: 0,   max: 0.06, step: 0.002, default: 0.012, user: true },
+      { key: 'tile',    label: 'Cell size',  min: 0.4, max: 1.6,  step: 0.05,  default: 0.8,  user: true },
+      { key: 'grooves', label: 'Lines',      min: 2,   max: 10,   step: 1,     default: 5,    user: true },
+      { key: 'depth',   label: 'Line crisp', min: 0,   max: 2,    step: 0.05,  default: 0.4,  user: false },
+      { key: 'grain',   label: 'Buttercream',min: 0,   max: 0.4,  step: 0.02,  default: 0.12, user: true },
+      { key: 'width',   label: 'Line width', min: 0.2, max: 0.9,  step: 0.05,  default: 0.62, user: false },
+      { key: 'border',  label: 'Cell edge',  min: 0,   max: 0.8,  step: 0.05,  default: 0,    user: false },
+    ],
+  },
 };
 
-export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'rustic'];
+export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'rustic', 'chevron_weave'];
 export const DEFAULT_STYLE = 'smooth';
 
 export const styleDef = (style) => CREAM_STYLES[style] ?? CREAM_STYLES[DEFAULT_STYLE];

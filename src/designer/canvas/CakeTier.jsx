@@ -5,6 +5,7 @@ import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textures/creamWaveTexture.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 import { getRusticNormalMap } from '../shared/textures/rusticTexture.js';
+import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
@@ -756,15 +757,30 @@ function grainNormalMap(grain, aroundLen, upLen, density = 1) {
 // Style surface normal maps (the data↔code seam for normal-map finishes like rustic). Cloned + tiled
 // per (key, repeat) so each tier owns its wrap/repeat. `density` (from the style's scale param) tiles
 // the stroke pattern more/less finely; tiles scale with the wall extent for a constant physical size.
-const SURFACE_MAP_GENERATORS = { rustic: getRusticNormalMap };
-function surfaceNormalMap(key, aroundLen, upLen, density = 1) {
-  const gen = SURFACE_MAP_GENERATORS[key];
-  if (!gen) return null;
-  const rx = Math.max(1, Math.round(aroundLen * 0.9 * density));
-  const ry = Math.max(1, Math.round(upLen * 1.3 * density));
-  const cacheKey = `surf:${key}:${rx}:${ry}`;
+// Each finish: how to TILE its normal map across the wall, a SIG of the params that change the bake
+// (so the cache rebuilds only when needed), and the BUILD. Registry-driven — a new normal-map finish
+// is one entry, no render-path branching. Weave tiles by `weaveTiles` (the SAME count its real-relief
+// displacement uses) so the baked lines land exactly on the displaced grooves instead of ghosting.
+const SURFACE_MAP_GENERATORS = {
+  rustic: {
+    tiles: ({ aroundLen, upLen, density }) =>
+      [Math.max(1, Math.round(aroundLen * 0.9 * density)), Math.max(1, Math.round(upLen * 1.3 * density))],
+    sig: () => 'rustic',
+    build: () => getRusticNormalMap(),
+  },
+  weave: {
+    tiles: ({ radius, height, params }) => { const { around, up } = weaveTiles(radius, height, params.tile ?? 0.8); return [around, up]; },
+    sig: ({ params }) => `weave:${params.grooves ?? 5}:${params.width ?? 0.5}:${params.border ?? 0}:${params.grain ?? 0.12}`,
+    build: ({ params }) => getWeaveNormalMap({ grooves: params.grooves ?? 5, width: params.width ?? 0.5, border: params.border ?? 0, grain: params.grain ?? 0.12 }),
+  },
+};
+function surfaceNormalMap(key, ctx) {
+  const def = SURFACE_MAP_GENERATORS[key];
+  if (!def) return null;
+  const [rx, ry] = def.tiles(ctx);
+  const cacheKey = `surf:${def.sig(ctx)}:${rx}:${ry}`;
   if (_grainCache.has(cacheKey)) return _grainCache.get(cacheKey);
-  const tex = gen().clone();
+  const tex = def.build(ctx).clone();
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(rx, ry);
   tex.needsUpdate = true;
@@ -944,7 +960,10 @@ export default function CakeTier({
   const surfaceMapKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).surfaceMap : null;
   const styleNormalMap = useMemo(
     () => (surfaceMapKey && !isRect)
-      ? surfaceNormalMap(surfaceMapKey, 2 * Math.PI * radius, height, (styleVals.scale ?? 9) / 9)
+      ? surfaceNormalMap(surfaceMapKey, {
+          aroundLen: 2 * Math.PI * radius, upLen: height, density: (styleVals.scale ?? 9) / 9,
+          radius, height, params: styleVals,
+        })
       : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [surfaceMapKey, isRect, radius, height, styleSig],

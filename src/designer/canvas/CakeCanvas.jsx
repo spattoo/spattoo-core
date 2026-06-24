@@ -39,8 +39,8 @@ function wallReliefSamplerOf(tier) {
   const wall = styleDef(tier.frostingStyle).wall;
   if (wall === 'smooth') return null;
   const params = resolveStyleParams(tier.frostingStyle, tier.styleParams);
-  const key = `${wall}|${tier.radius}|${JSON.stringify(params)}`;
-  if (!_reliefSamplerCache.has(key)) _reliefSamplerCache.set(key, makeWallReliefSampler(wall, tier.radius, params));
+  const key = `${wall}|${tier.radius}|${tier.height}|${JSON.stringify(params)}`;
+  if (!_reliefSamplerCache.has(key)) _reliefSamplerCache.set(key, makeWallReliefSampler(wall, tier.radius, params, tier.height));
   return _reliefSamplerCache.get(key);
 }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures/creamWaveTexture.js';
+import { makeWeaveField, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
 
 // ── Styled cream walls — geometry strategies for the frosting STYLE axis ───────
 //
@@ -65,20 +66,24 @@ function displaceRibbed(geo, radius, { amp, bands, round }) {
   return displaceSide(geo, (_u, v) => a * ribbedProfile(v, bands, round));
 }
 
+// Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
+// Shared by the image-relief displacement and the weave relief sampler so both read the field the same.
+export function sampleFieldWrap(field, fu, fv) {
+  const { height, w, h } = field;
+  const fx = (((fu % 1) + 1) % 1) * w;
+  const fy = (((fv % 1) + 1) % 1) * h;
+  const x0 = Math.floor(fx), y0 = Math.floor(fy);
+  const x1 = (x0 + 1) % w, y1 = (y0 + 1) % h;
+  const tx = fx - x0, ty = fy - y0;
+  const a = height[y0 * w + x0], b = height[y0 * w + x1], c = height[y1 * w + x0], d = height[y1 * w + x1];
+  return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+}
+
 // Displace a dense cylinder's SIDE by sampling an image height FIELD (bilinear, wrapping both axes),
 // with a rim fade so the top/bottom edges relax to the wall (no spikes) and caps stay flat. For
 // photo/stamp-derived rustic finishes. `relief` is in world units; `repeatX/Y` tile the field.
 export function displaceByHeightField(geo, field, { repeatX = 1, repeatY = 1, relief = 0.08, rimFade = 0.1 } = {}) {
-  const { height, w, h } = field;
-  const sample = (u, v) => {
-    const fx = ((((u * repeatX) % 1) + 1) % 1) * w;
-    const fy = ((((v * repeatY) % 1) + 1) % 1) * h;
-    const x0 = Math.floor(fx), y0 = Math.floor(fy);
-    const x1 = (x0 + 1) % w, y1 = (y0 + 1) % h;
-    const tx = fx - x0, ty = fy - y0;
-    const a = height[y0 * w + x0], b = height[y0 * w + x1], c = height[y1 * w + x0], d = height[y1 * w + x1];
-    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-  };
+  const sample = (u, v) => sampleFieldWrap(field, u * repeatX, v * repeatY);
   const ss = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
   geo.computeBoundingBox();
   const bb = geo.boundingBox, yMin = bb.min.y, yH = (bb.max.y - bb.min.y) || 1;
@@ -127,6 +132,20 @@ export function buildStyledWall(wall, radius, height, params = {}) {
       return displaceRibbed(denseCylinder(radius, height, 160, heightSeg), radius,
         { amp: params.relief ?? 0.04, bands, round: params.round ?? 1.0 });
     }
+    case 'weave': {
+      // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
+      // as a normal map, baked from the same field in CakeTier). Tessellation scales with the line
+      // count so the grooves don't facet; the normal map carries any detail finer than the mesh.
+      const { around, up } = weaveTiles(radius, height, params.tile ?? 0.8);
+      const grooves = params.grooves ?? 5;
+      // Diagonal grooves alias into "beads" on a coarse quad grid — need dense tessellation on BOTH
+      // axes; the normal map carries anything finer than the mesh, so displacement stays shallow.
+      const radial    = Math.min(512, Math.max(320, around * grooves * 6));
+      const heightSeg = Math.min(512, Math.max(280, up * grooves * 8));
+      const field = makeWeaveField(512, { grooves, width: params.width ?? 0.5, border: params.border ?? 0 });
+      return displaceByHeightField(denseCylinder(radius, height, radial, heightSeg), field,
+        { repeatX: around, repeatY: up, relief: (params.relief ?? 0.015) * radius, rimFade: 0.08 });
+    }
     default:       return denseCylinder(radius, height);
   }
 }
@@ -136,7 +155,7 @@ export function buildStyledWall(wall, radius, height, params = {}) {
 // (world units) there — i.e. the live surface height, so decor can seat on the wavy wall instead of a
 // fixed offset. Mirrors each displacement strategy exactly (reuses the wave field; same swirl formula).
 // Returns null for non-displacing walls (smooth / normal-map finishes) → caller treats as flat.
-export function makeWallReliefSampler(wall, radius, params = {}) {
+export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = radius) {
   switch (wall) {
     case 'wave': {
       const field  = creamWaveFieldFor({
@@ -155,6 +174,13 @@ export function makeWallReliefSampler(wall, radius, params = {}) {
       const a = (params.relief ?? 0.04) * radius;
       const bands = params.bands ?? 12, round = params.round ?? 1.0;
       return (_theta, v) => a * ribbedProfile(v, bands, round);   // constant around → depends only on v
+    }
+    case 'weave': {
+      // Same field & tiling as buildStyledWall's weave case, so decor seats on the real groove relief.
+      const { around, up } = weaveTiles(radius, wallHeight, params.tile ?? 0.8);
+      const field  = makeWeaveField(256, { grooves: params.grooves ?? 5, width: params.width ?? 0.5, border: params.border ?? 0 });
+      const relief = (params.relief ?? 0.015) * radius;
+      return (theta, v) => relief * sampleFieldWrap(field, (theta / TAU + 0.5) * around, v * up);
     }
     default: return null;
   }
