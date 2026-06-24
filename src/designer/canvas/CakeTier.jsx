@@ -6,6 +6,7 @@ import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textu
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 import { getRusticNormalMap } from '../shared/textures/rusticTexture.js';
 import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
+import { makeLusterDustMaps } from '../shared/textures/lusterDust.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
@@ -857,7 +858,7 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, geoSig, children, castShadow = true, receiveShadow = false }) {
+                    gradient, geoSig, dusting = null, dustingMaps = null, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const grainMap = useMemo(
@@ -878,11 +879,29 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
     }
     applyGradient(matRef.current, gradient, bb);
   }, [gradient, geoSig]);
+  // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
+  // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
+  // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
+  useEffect(() => { if (matRef.current) matRef.current.needsUpdate = true; }, [dustingMaps]);
+  // Luster dust = metallic flecks. The albedo MAP carries the base colour + gold flecks (so `color`
+  // goes white and the map drives it); metalness/roughness maps make the flecks read as satin-gold
+  // METAL over the untouched matte base (map base = base colour, metalnessMap base = 0, roughnessMap
+  // base = 1 → the wall keeps the frosting look). Gold comes from the fleck's surface colour, not
+  // emission — so it reads gold on ANY base and never tone-map-clips to white (the emissive trap on
+  // light cakes). `emissive` stays an optional faint glow (glow defaults to 0). The grain/style normal
+  // stays. (Map binding requires the needsUpdate recompile above.)
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshPhysicalMaterial ref={matRef} color={color}
-        roughness={surf?.roughness ?? 0.68} metalness={surf?.metalness ?? 0}
+      <meshPhysicalMaterial ref={matRef} color={dustingMaps ? '#ffffff' : color}
+        map={dustingMaps?.map ?? null}
+        roughness={surf?.roughness ?? 0.68}
+        metalness={dustingMaps ? (dusting?.metalness ?? 0.2) : (surf?.metalness ?? 0)}
+        metalnessMap={dustingMaps?.metalnessMap ?? null}
+        roughnessMap={dustingMaps?.roughnessMap ?? null}
+        emissive={dustingMaps ? (dusting?.dustColor ?? '#000000') : '#000000'}
+        emissiveMap={dustingMaps?.emissiveMap ?? null}
+        emissiveIntensity={dustingMaps ? (dusting?.glow ?? 0) : 0}
         sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
         clearcoat={surf?.clearcoat ?? 0} clearcoatRoughness={surf?.clearcoatRoughness ?? 0.5}
         envMapIntensity={surf?.envMapIntensity ?? 0.5}
@@ -899,6 +918,7 @@ export default function CakeTier({
   frostingType = 'buttercream',
   frostingStyle = DEFAULT_STYLE,
   styleParams = null,
+  dusting = null,
   flavour = 'vanilla',
   selected = false,
   // New: arrays of stacked piping layers per zone. Legacy single topPiping/bottomPiping
@@ -969,6 +989,17 @@ export default function CakeTier({
     [surfaceMapKey, isRect, radius, height, styleSig],
   );
   const styleNormalScale = styleVals.depth ?? 1;
+
+  // Luster dust — composite the tier's splash points into wall material maps (round tiers only; the
+  // cylinder UV is what the splash u,v address). Rebuilt only when the dusting config changes.
+  const dustingSig = dusting ? JSON.stringify(dusting) : '';
+  const dustingMaps = useMemo(
+    () => (!isRect && dusting?.splashes?.length)
+      ? makeLusterDustMaps({ radius, height, baseColor: color, ...dusting, splashes: dusting.splashes })
+      : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isRect, radius, height, color, dustingSig],
+  );
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
@@ -1070,7 +1101,7 @@ export default function CakeTier({
         // Fondant-draped round tier: one rounded-edge solid (spans y ∈ [0,height]), positioned at
         // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.
         <TierBody position={[0, yBase, 0]} color={color} surf={mat}
-          grainExtent={[2 * Math.PI * radius, height]}
+          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} dustingMaps={dustingMaps}
           gradient={effGradient} geoSig={roundedGeo.uuid} castShadow receiveShadow>
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
@@ -1078,7 +1109,7 @@ export default function CakeTier({
         // Cream STYLE wall (wave/swirl/rustic): a displaced cylinder, one centred mesh (caps flat),
         // no separate lid — the texture and gradient flow over the whole wall.
         <TierBody position={[0, centerY, 0]} color={color} surf={mat}
-          grainExtent={[2 * Math.PI * radius, height]}
+          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} dustingMaps={dustingMaps}
           gradient={effGradient} geoSig={styledGeo.uuid} castShadow receiveShadow>
           {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
               changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
@@ -1087,7 +1118,7 @@ export default function CakeTier({
       ) : (
         <>
           <TierBody position={[0, centerY, 0]} color={color} surf={mat}
-            grainExtent={[2 * Math.PI * radius, height]}
+            grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} dustingMaps={dustingMaps}
             overrideNormalMap={styleNormalMap} overrideNormalScale={styleNormalScale}
             gradient={effGradient} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
             <cylinderGeometry args={[radius, radius, height, 64]} />

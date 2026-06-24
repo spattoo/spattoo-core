@@ -23,6 +23,7 @@ export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from '.
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 export { getWeaveNormalMap, makeWeaveField, weaveTiles } from './designer/shared/textures/weaveStencilTexture.js';
+export { makeLusterDustMaps, LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from './designer/shared/textures/lusterDust.js';
 export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStrokeTile, heightFieldFromImage, heightTextureFromField, normalTextureFromField } from './designer/shared/textures/imageNormalMap.js';
 // Vendor-neutral error telemetry. Host apps inject a Sentry-backed transport via
 // configureTelemetry(); until then it logs to the console. See src/telemetry/.

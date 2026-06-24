@@ -9,6 +9,7 @@ import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
+import DustHandles from './DustHandles.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
   STICKER_SIZE, SELECTION_COLOR,
@@ -1475,6 +1476,7 @@ function CakeScene({
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
+  dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   tierDataRef,
 }) {
   const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [] } = config;
@@ -1497,7 +1499,9 @@ function CakeScene({
       // Cream-pen catchers (present only in draw mode): pressing on the cake draws, so
       // suspend rotate; pressing empty space still rotates.
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
-      if (orbitRef.current) orbitRef.current.enabled = !overSticker && !overPen;
+      // Dragging a luster-dust handle must not rotate the cake.
+      const overDust = hits.some(h => h.object.userData.isDustHandle);
+      if (orbitRef.current) orbitRef.current.enabled = !overSticker && !overPen && !overDust;
     }
     canvas.addEventListener('pointerdown', onCaptureDown, { capture: true });
     return () => canvas.removeEventListener('pointerdown', onCaptureDown, { capture: true });
@@ -1559,6 +1563,7 @@ function CakeScene({
             frostingType={tier.frostingType}
             frostingStyle={tier.frostingStyle}
             styleParams={tier.styleParams}
+            dusting={tier.dusting ?? null}
             selected={selectedTier === i}
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
@@ -1611,6 +1616,8 @@ function CakeScene({
           />
         );
       })()}
+
+      {dustMode && <DustHandles tierData={tierData} selected={dustSelected} onMove={onDustMove} onSelect={onDustSelect} />}
 
       <CreamPen
         piping={piping}
@@ -1776,6 +1783,7 @@ function CakeThumbnailScene({ config }) {
           frostingType={tier.frostingType}
           frostingStyle={tier.frostingStyle}
           styleParams={tier.styleParams}
+          dusting={tier.dusting ?? null}
           selected={false}
           topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
           bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}

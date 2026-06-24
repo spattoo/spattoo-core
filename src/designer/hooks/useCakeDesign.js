@@ -4,6 +4,7 @@ import { tierShape } from '../geometry/surface.js';
 import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
+import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 // Frosting types now live in the frostings registry; re-export so existing importers
@@ -45,6 +46,7 @@ export function toCanvasConfig(design) {
         frostingType: t.frostingType ?? DEFAULT_FROSTING,
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
+        dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
@@ -229,6 +231,66 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, [key]: (t[key] ?? []).filter(p => p.layerId !== layerId) }
         : t),
+    }));
+  }
+
+  // Luster dust — a per-tier wall treatment (NOT a sticker): a list of flicked splash points plus the
+  // shared appearance. A tap on the wall adds a splash {u,v} (aim defaults from LUSTER_DUST_NEW_SPLASH);
+  // `updateDusting` tunes colour/appearance; clearing removes the whole dusting. The first splash seeds
+  // the dusting object from the studio-approved defaults.
+  function addDustSplash(index, u, v) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index) return t;
+        const base = t.dusting ?? { ...LUSTER_DUST_DEFAULTS, splashes: [] };
+        return { ...t, dusting: { ...base, splashes: [...base.splashes, { u, v, ...LUSTER_DUST_NEW_SPLASH }] } };
+      }),
+    }));
+  }
+
+  function updateDusting(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.dusting) ? { ...t, dusting: { ...t.dusting, ...changes } } : t),
+    }));
+  }
+
+  function clearDusting(index) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, dusting: null } : t),
+    }));
+  }
+
+  function updateDustSplash(index, splashIndex, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.dusting?.splashes)
+        ? { ...t, dusting: { ...t.dusting, splashes: t.dusting.splashes.map((sp, j) => j === splashIndex ? { ...sp, ...patch } : sp) } }
+        : t),
+    }));
+  }
+
+  function removeDustSplash(index, splashIndex) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index || !t.dusting?.splashes) return t;
+        const splashes = t.dusting.splashes.filter((_, j) => j !== splashIndex);
+        return { ...t, dusting: splashes.length ? { ...t.dusting, splashes } : null };
+      }),
+    }));
+  }
+
+  function removeLastDustSplash(index) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index || !t.dusting?.splashes?.length) return t;
+        const splashes = t.dusting.splashes.slice(0, -1);
+        return { ...t, dusting: splashes.length ? { ...t.dusting, splashes } : null };
+      }),
     }));
   }
 
@@ -719,6 +781,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     design,
     setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
+    addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
     addAge, updateAge, duplicateAge, removeAge,
