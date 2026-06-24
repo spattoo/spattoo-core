@@ -31,7 +31,7 @@ export function pointerRay(e, dom, camera) {
  *   theta = Math.atan2(x, z) at the hit point, y = world-space Y at hit.
  *   Returns null when the ray misses the cylinder.
  */
-export function cylinderHit(ray, radius) {
+export function cylinderHitPoint(ray, radius) {
   const { origin: o, direction: d } = ray;
   const a = d.x * d.x + d.z * d.z;
   const b = 2 * (o.x * d.x + o.z * d.z);
@@ -40,8 +40,12 @@ export function cylinderHit(ray, radius) {
   if (disc < 0) return null;
   const t = (-b - Math.sqrt(disc)) / (2 * a);
   if (t < 0) return null;
-  const p = ray.at(t, new THREE.Vector3());
-  return { theta: Math.atan2(p.x, p.z), y: p.y };
+  return ray.at(t, new THREE.Vector3());
+}
+
+export function cylinderHit(ray, radius) {
+  const p = cylinderHitPoint(ray, radius);
+  return p ? { theta: Math.atan2(p.x, p.z), y: p.y } : null;
 }
 
 /**

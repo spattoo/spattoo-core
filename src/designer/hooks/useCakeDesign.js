@@ -5,6 +5,7 @@ import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.j
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
+import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 // Frosting types now live in the frostings registry; re-export so existing importers
@@ -17,7 +18,7 @@ const DEFAULT_AGE_FONT = 'ems_readability';
 
 const DEFAULT_DESIGN = {
   tiers: [
-    { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [] },
+    { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] },
   ],
   texts: [],
   ages: [],        // gold 3D balloon-number toppers standing on the cake top (see AgeNumber)
@@ -49,6 +50,7 @@ export function toCanvasConfig(design) {
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
+        creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
         ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -114,6 +116,20 @@ const DEFAULT_WRITING = {
 const newLayerId = () => crypto.randomUUID();
 const withLayerId = (piping) => (piping.layerId ? piping : { ...piping, layerId: newLayerId() });
 const zoneKey = (zone) => (zone === ZONES.RIM || zone === ZONES.TOP ? 'topPipings' : 'bottomPipings');
+
+// Default per-instance shape for a second cream layer (a raised two-tone band with a
+// customer-drawn torn edge). `edge` is the height-per-angle profile h(θ); `order`
+// drives the radial stack (set on add/duplicate) so a later band sits proud of the
+// one beneath. Lives on tier.creamLayers — NOT a sticker, NOT a piping ring.
+const SECOND_CREAM_LAYER_DEFAULT = {
+  color: '#d96a86',
+  edge: SECOND_CREAM_PRESETS['Gentle wave'](),
+  lift: SECOND_CREAM_DEFAULTS.lift,
+  fillSide: SECOND_CREAM_DEFAULTS.fillSide,
+  noise: SECOND_CREAM_DEFAULTS.noise,
+  seed: 1,
+  gold: { on: false, color: '#c89b3c' },
+};
 
 // Passed as storageBaseUrl option — only used to migrate old-format templates
 // that stored decoration type 'swirl_ring'/'base_border' instead of piping objects.
@@ -205,33 +221,55 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
-  // ── Layer-aware piping ops (multiple piping styles stacked per zone) ──────────
-  function addPipingLayer(index, zone, piping) {
-    const key = zoneKey(zone);
+  // Generic per-tier layer-array mutation: map tier[index][key] through `fn`. Shared by
+  // piping-layer and cream-layer ops so the "addressable stacked layers" logic lives in
+  // ONE place (INVARIANTS #3) instead of a copy per layer type.
+  function mutateTierLayers(index, key, fn) {
     setDesign(prev => ({
       ...prev,
-      tiers: prev.tiers.map((t, i) => i === index ? { ...t, [key]: [...(t[key] ?? []), withLayerId(piping)] } : t),
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, [key]: fn(t[key] ?? []) } : t),
     }));
+  }
+
+  // ── Layer-aware piping ops (multiple piping styles stacked per zone) ──────────
+  function addPipingLayer(index, zone, piping) {
+    mutateTierLayers(index, zoneKey(zone), arr => [...arr, withLayerId(piping)]);
   }
 
   function updatePipingLayer(index, zone, layerId, mutate) {
-    const key = zoneKey(zone);
-    setDesign(prev => ({
-      ...prev,
-      tiers: prev.tiers.map((t, i) => i === index
-        ? { ...t, [key]: (t[key] ?? []).map(p => p.layerId === layerId ? { ...mutate(p), layerId } : p) }
-        : t),
-    }));
+    mutateTierLayers(index, zoneKey(zone), arr =>
+      arr.map(p => p.layerId === layerId ? { ...mutate(p), layerId } : p));
   }
 
   function removePipingLayer(index, zone, layerId) {
-    const key = zoneKey(zone);
-    setDesign(prev => ({
-      ...prev,
-      tiers: prev.tiers.map((t, i) => i === index
-        ? { ...t, [key]: (t[key] ?? []).filter(p => p.layerId !== layerId) }
-        : t),
-    }));
+    mutateTierLayers(index, zoneKey(zone), arr => arr.filter(p => p.layerId !== layerId));
+  }
+
+  // ── Second cream layer ops (stacked raised two-tone bands per tier) ───────────
+  // Each entry carries its own edge/colour/lift/gold; `order` = its radial stack slot.
+  function addCreamLayer(index, layer = {}) {
+    mutateTierLayers(index, 'creamLayers', arr =>
+      [...arr, withLayerId({ ...SECOND_CREAM_LAYER_DEFAULT, ...layer, order: arr.length })]);
+  }
+
+  function updateCreamLayer(index, layerId, mutate) {
+    mutateTierLayers(index, 'creamLayers', arr =>
+      arr.map(l => l.layerId === layerId ? { ...mutate(l), layerId } : l));
+  }
+
+  function removeCreamLayer(index, layerId) {
+    mutateTierLayers(index, 'creamLayers', arr => arr.filter(l => l.layerId !== layerId));
+  }
+
+  // Duplicate → a new layer one slot prouder (order = current count), so it stacks
+  // over the source instead of z-fighting it. Copies edge/colour/gold; drops layerId.
+  function duplicateCreamLayer(index, layerId) {
+    mutateTierLayers(index, 'creamLayers', arr => {
+      const src = arr.find(l => l.layerId === layerId);
+      if (!src) return arr;
+      const { layerId: _drop, ...rest } = src;
+      return [...arr, withLayerId({ ...rest, order: arr.length })];
+    });
   }
 
   // Luster dust — a per-tier wall treatment (NOT a sticker): a list of flicked splash points plus the
@@ -297,7 +335,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function addTier() {
     setDesign(prev => {
       if (prev.tiers.length >= 4) return prev;
-      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [] }] };
+      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] }] };
     });
   }
 
@@ -781,6 +819,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     design,
     setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
+    addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

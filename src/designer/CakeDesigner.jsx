@@ -23,6 +23,7 @@ import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, appl
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
+import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // TEMP: Phase-A dev fixture
 import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
 import OrdersPanel from '../orders/OrdersPanel';
@@ -1075,7 +1076,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
@@ -1083,6 +1084,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dustColor, setDustColor] = useState('#f0cf63');
   const [dustTier, setDustTier] = useState(0);
   const [dustSel, setDustSel] = useState(0);
+  // TEMP Phase-A fixture: which tier the second-cream dev panel edits (real entry = admin element, step 3).
+  const [devTier, setDevTier] = useState(0);
+  // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
+  const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
+  const [creamAutoRotate, setCreamAutoRotate] = useState(false);
+  const handleCreamPaint = (tierIndex, layerId, theta01, frac) =>
+    updateCreamLayer(tierIndex, layerId, l => ({ ...l, edge: paintProfile(l.edge, theta01, frac) }));
   // A new flick lands on the front of the wall (default camera view); the customer then aims it.
   const addDustToTier = (tierIndex) => {
     const count = design.tiers[tierIndex]?.dusting?.splashes?.length ?? 0;
@@ -4743,9 +4751,86 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               stack does NOT shrink the canvas — it's a translucent overlay, so the cake stays
               full-width and centred UNDER the popup (you see it through the frosted cards). */}
           <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 248 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0), transition: 'right 0.18s ease' }}>
+          {/* ───────── TEMP Phase-A fixture: Second Cream Layer dev panel ─────────
+              Drives the full model (reducers → state → render) before the real card +
+              admin element exist (step 3) and live spin-paint (Phase B). REMOVE then. */}
+          {(() => {
+            const tCount = design.tiers.length;
+            const dt = Math.min(devTier, tCount - 1);
+            const layers = design.tiers[dt]?.creamLayers ?? [];
+            const up = (id, fn) => updateCreamLayer(dt, id, fn);
+            const P = { wrap: { position: 'fixed', left: 12, bottom: 12, width: 244, maxHeight: '70vh', overflowY: 'auto', background: 'rgba(255,255,255,0.96)', border: '1.5px solid #C5D4C8', borderRadius: 12, padding: 12, font: '12px/1.4 Quicksand, sans-serif', color: '#2C4433', zIndex: 300, boxShadow: '0 6px 24px rgba(44,68,51,0.18)' },
+              row: { display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' },
+              btn: { padding: '5px 8px', borderRadius: 7, border: '1px solid #C5D4C8', background: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', color: '#2C4433' },
+              prim: { padding: '7px 10px', borderRadius: 7, border: 'none', background: '#3D5A44', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', width: '100%' } };
+            return (
+              <div style={P.wrap}>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>Second Layer · dev</div>
+                <div style={P.row}>
+                  <span>Tier</span>
+                  {design.tiers.map((_, i) => (
+                    <button key={i} style={{ ...P.btn, ...(i === dt ? { background: '#EEF4EF', borderColor: '#3D5A44' } : {}) }} onClick={() => setDevTier(i)}>{i + 1}</button>
+                  ))}
+                </div>
+                <button style={P.prim} onClick={() => addCreamLayer(dt)}>+ Add layer</button>
+                <label style={{ ...P.row, marginTop: 6 }}>
+                  <input type="checkbox" checked={creamAutoRotate} onChange={e => setCreamAutoRotate(e.target.checked)} />
+                  Auto-rotate (spin to paint)
+                </label>
+                {layers.length === 0 && <div style={{ color: '#9BB5A2', marginTop: 8 }}>No layers on this tier yet.</div>}
+                {layers.map((l, idx) => (
+                  <div key={l.layerId} style={{ borderTop: '1px solid #E3EAE5', marginTop: 8, paddingTop: 8 }}>
+                    <div style={{ ...P.row, justifyContent: 'space-between' }}>
+                      <strong>Layer {idx + 1}</strong>
+                      <span>
+                        {(() => {
+                          const painting = creamPaint?.tierIndex === dt && creamPaint?.layerId === l.layerId;
+                          return (
+                            <button style={{ ...P.btn, ...(painting ? { background: '#3D5A44', color: '#fff', borderColor: '#3D5A44' } : {}) }}
+                              title="Scrape the torn edge on the cake (turn on Auto-rotate to go all the way around)"
+                              onClick={() => setCreamPaint(painting ? null : { tierIndex: dt, layerId: l.layerId })}>
+                              {painting ? 'painting…' : 'paint'}
+                            </button>
+                          );
+                        })()}{' '}
+                        <button style={P.btn} title="Duplicate (stacks another layer)" onClick={() => duplicateCreamLayer(dt, l.layerId)}>dup</button>{' '}
+                        <button style={{ ...P.btn, color: '#C0392B' }} onClick={() => { if (creamPaint?.layerId === l.layerId) setCreamPaint(null); removeCreamLayer(dt, l.layerId); }}>✕</button>
+                      </span>
+                    </div>
+                    <div style={P.row}>
+                      <span>Colour</span>
+                      <input type="color" value={l.color} onChange={e => up(l.layerId, x => ({ ...x, color: e.target.value }))} />
+                      <span style={{ flex: 1 }} />
+                      <button style={{ ...P.btn, ...(l.fillSide === 'below' ? { background: '#EEF4EF', borderColor: '#3D5A44' } : {}) }} onClick={() => up(l.layerId, x => ({ ...x, fillSide: 'below' }))}>below</button>
+                      <button style={{ ...P.btn, ...(l.fillSide === 'above' ? { background: '#EEF4EF', borderColor: '#3D5A44' } : {}) }} onClick={() => up(l.layerId, x => ({ ...x, fillSide: 'above' }))}>above</button>
+                    </div>
+                    <div style={P.row}><span style={{ width: 40 }}>Lift</span>
+                      <input type="range" min={0} max={0.12} step={0.005} value={l.lift} onChange={e => up(l.layerId, x => ({ ...x, lift: +e.target.value }))} style={{ flex: 1 }} /></div>
+                    <div style={P.row}><span style={{ width: 40 }}>Torn</span>
+                      <input type="range" min={0} max={0.18} step={0.005} value={l.noise} onChange={e => up(l.layerId, x => ({ ...x, noise: +e.target.value }))} style={{ flex: 1 }} /></div>
+                    <div style={P.row}>
+                      {Object.keys(SECOND_CREAM_PRESETS).map(name => (
+                        <button key={name} style={P.btn} onClick={() => up(l.layerId, x => ({ ...x, edge: SECOND_CREAM_PRESETS[name]() }))}>{name.split(' ')[0]}</button>
+                      ))}
+                    </div>
+                    <div style={P.row}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input type="checkbox" checked={!!l.gold?.on} onChange={e => up(l.layerId, x => ({ ...x, gold: { ...(x.gold ?? {}), on: e.target.checked } }))} />
+                        Gold edge
+                      </label>
+                      {l.gold?.on && <input type="color" value={l.gold?.color ?? '#c89b3c'} onChange={e => up(l.layerId, x => ({ ...x, gold: { ...(x.gold ?? {}), color: e.target.value } }))} />}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
               config={canvasConfig}
+              autoRotate={creamAutoRotate}
+              creamPaint={creamPaint}
+              onCreamPaint={handleCreamPaint}
               selectedTier={selectedTier}
               onTierClick={handleTierClick}
               onDeselect={handleDeselect}

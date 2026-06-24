@@ -17,7 +17,7 @@ import {
   CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
   SIDE_STICKER_SURFACE_OFFSET, FLAT_STICKER_Y_OFFSET,
 } from '../constants.js';
-import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
+import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
@@ -1465,6 +1465,50 @@ function FrontMarker({ frontZ }) {
   );
 }
 
+// Live spin-paint target for the second cream layer: an invisible cylinder around the
+// active tier. Dragging writes the layer's torn edge at the hit angle/height; with
+// auto-rotate on, a useFrame re-samples each frame so a held pointer "scrapes" the edge
+// all the way around as the cake turns. The angle convention matches the band geometry
+// (a = atan2(z, x)), so the painted edge lands exactly where the pointer is. Orbit-rotate
+// is suspended over it (CakeScene's capture-phase handler) while auto-rotate keeps spinning.
+function CreamPaintTarget({ tier, onPaint }) {
+  const { camera, gl } = useThree();
+  const pressed = useRef(false);
+  const last = useRef({ x: 0, y: 0 });
+  const R = tier.radius + 0.04;   // hit just outside the proud band
+
+  const sample = (clientX, clientY) => {
+    const p = cylinderHitPoint(buildRay(clientX, clientY, gl.domElement, camera), R);
+    if (!p) return;
+    let a = Math.atan2(p.z, p.x); if (a < 0) a += Math.PI * 2;
+    const frac = Math.max(0, Math.min(1, (p.y - tier.baseY) / tier.height));
+    onPaint(a / (Math.PI * 2), frac);
+  };
+
+  useFrame(() => { if (pressed.current) sample(last.current.x, last.current.y); });
+  // Window pointerup guarantees release even if the up lands off the mesh (capture/auto-rotate).
+  useEffect(() => {
+    const onUp = () => { pressed.current = false; };
+    window.addEventListener('pointerup', onUp);
+    return () => window.removeEventListener('pointerup', onUp);
+  }, []);
+
+  return (
+    <mesh position={[0, tier.baseY + tier.height / 2, 0]} userData={{ isCreamPaint: true }}
+      onPointerDown={e => {
+        e.stopPropagation();
+        pressed.current = true; last.current = { x: e.clientX, y: e.clientY };
+        try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+        sample(e.clientX, e.clientY);
+      }}
+      onPointerMove={e => { if (pressed.current) { last.current = { x: e.clientX, y: e.clientY }; sample(e.clientX, e.clientY); } }}
+      onPointerUp={e => { pressed.current = false; try { gl.domElement.releasePointerCapture(e.pointerId); } catch (_) {} }}>
+      <cylinderGeometry args={[R, R, tier.height, 64, 1, true]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
 function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
@@ -1477,6 +1521,7 @@ function CakeScene({
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
+  creamPaint = null, onCreamPaint,
   tierDataRef,
 }) {
   const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [] } = config;
@@ -1501,7 +1546,13 @@ function CakeScene({
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
       // Dragging a luster-dust handle must not rotate the cake.
       const overDust = hits.some(h => h.object.userData.isDustHandle);
-      if (orbitRef.current) orbitRef.current.enabled = !overSticker && !overPen && !overDust;
+      // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
+      // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
+      const overCream = hits.some(h => h.object.userData.isCreamPaint);
+      if (orbitRef.current) {
+        orbitRef.current.enabled = !overSticker && !overPen && !overDust;
+        orbitRef.current.enableRotate = !overCream;
+      }
     }
     canvas.addEventListener('pointerdown', onCaptureDown, { capture: true });
     return () => canvas.removeEventListener('pointerdown', onCaptureDown, { capture: true });
@@ -1567,6 +1618,7 @@ function CakeScene({
             selected={selectedTier === i}
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
+            creamLayers={tier.creamLayers ?? []}
             highlightPipingId={highlightPipingId}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
@@ -1583,6 +1635,12 @@ function CakeScene({
         </group>
       ))}
 
+      {creamPaint && tierData[creamPaint.tierIndex] && (
+        <CreamPaintTarget
+          tier={tierData[creamPaint.tierIndex]}
+          onPaint={(theta01, frac) => onCreamPaint?.(creamPaint.tierIndex, creamPaint.layerId, theta01, frac)}
+        />
+      )}
 
       {writing?.text?.trim() && (() => {
         const topTier = tierData[tierData.length - 1];
@@ -1961,6 +2019,7 @@ export default function CakeCanvas({
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
+  creamPaint = null, onCreamPaint,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -2079,6 +2138,8 @@ export default function CakeCanvas({
         penDrawMode={penDrawMode}
         penStyle={penStyle}
         onAddStroke={onAddStroke}
+        creamPaint={creamPaint}
+        onCreamPaint={onCreamPaint}
         tierDataRef={tierDataRef}
       />
       <OrbitControls
@@ -2086,7 +2147,7 @@ export default function CakeCanvas({
         ref={orbitRef}
         enableZoom={false}
         enablePan={false}
-        autoRotate={autoRotate && selectedTier === null && selectedTextId === null && !pipingTarget}
+        autoRotate={autoRotate && (creamPaint != null || (selectedTier === null && selectedTextId === null && !pipingTarget))}
         autoRotateSpeed={0.8}
         maxPolarAngle={Math.PI / 2.05}
         target={[0, 2, 0]}

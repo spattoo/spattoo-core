@@ -13,6 +13,8 @@ import { buildStyledWall } from '../geometry/creamWall.js';
 import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
+import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
+import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
 
@@ -911,6 +913,64 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   );
 }
 
+// ── Second cream layer ────────────────────────────────────────────────────────
+// A stack of raised two-tone bands on the tier wall, each with a customer-drawn torn
+// edge h(θ) and optional gold-leaf trim. Bands are REAL geometry (offset shell + ledge
+// lip) — the raised lip is the whole look. Round tiers only (the geometry is cylindrical).
+const SECOND_CREAM_STACK_STEP = 0.04;                       // radial gap per stacked band
+const SECOND_CREAM_GRAIN_SCALE = new THREE.Vector2(0.35, 0.35);
+const SECOND_CREAM_GOLD_NORMAL_SCALE = new THREE.Vector2(0.7, 0.7);
+
+// One band. `order` pushes it radially proud of lower layers so the lips stack without
+// z-fighting; it wears the same cream grain as the wall, plus optional gold-leaf trim.
+function SecondCreamBand({ layer, radius, yBase, height, grain }) {
+  const order = layer.order ?? 0;
+  const baseR = radius + order * SECOND_CREAM_STACK_STEP;
+  const { color, edge, lift, fillSide, noise, seed } = layer;
+  const gold = layer.gold ?? {};
+
+  const bandGeo = useMemo(
+    () => buildSecondCreamLayer({ R: baseR, y0: yBase, wallH: height, lift, edge, fillSide, noise, seed }),
+    [baseR, yBase, height, lift, fillSide, noise, seed, edge],
+  );
+  const goldGeo = useMemo(
+    () => (gold.on ? buildSecondCreamEdgeLine({ R: baseR, y0: yBase, wallH: height, lift, edge, noise, seed }) : null),
+    [gold.on, baseR, yBase, height, lift, noise, seed, edge],
+  );
+  const goldMaps = useMemo(() => (gold.on ? makeGoldLeafMaps({ seed }) : null), [gold.on, seed]);
+
+  return (
+    <group>
+      <mesh geometry={bandGeo} castShadow>
+        <meshPhysicalMaterial {...creamMaterialProps(0.85, color)}
+          normalMap={grain} normalScale={SECOND_CREAM_GRAIN_SCALE} side={THREE.DoubleSide} />
+      </mesh>
+      {gold.on && goldMaps && (
+        <mesh geometry={goldGeo}>
+          {/* Matte foil, not the acrylic gold finish — the texture supplies the torn crinkle/glint. */}
+          <meshStandardMaterial color={gold.color ?? '#c89b3c'}
+            map={goldMaps.map} normalMap={goldMaps.normalMap} normalScale={SECOND_CREAM_GOLD_NORMAL_SCALE}
+            metalness={0.9} roughness={0.42} envMapIntensity={1.6}
+            transparent={false} alphaTest={0.45} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+// All second-cream bands on a (round) tier. The grain matches the wall's (constant
+// physical cell size across tier sizes) so the bands read as the SAME buttercream.
+function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensity }) {
+  const grain = useMemo(
+    () => grainNormalMap(grainKey, 2 * Math.PI * radius, height, grainDensity),
+    [grainKey, radius, height, grainDensity],
+  );
+  if (!layers?.length) return null;
+  return layers.map((layer, idx) => (
+    <SecondCreamBand key={layer.layerId ?? idx} layer={layer} radius={radius} yBase={yBase} height={height} grain={grain} />
+  ));
+}
+
 export default function CakeTier({
   radius, height, color, yBase,
   gradient = null,
@@ -927,6 +987,8 @@ export default function CakeTier({
   bottomPipings = null,
   topPiping = null,
   bottomPiping = null,
+  creamLayers = null,   // raised two-tone bands (second cream layer) — round tiers only
+
   // Element id of the piping whose card is expanded — every ring of that element is
   // highlighted on the cake. Legacy single-piping callers fall back to the booleans.
   highlightPipingId = null,
@@ -1130,6 +1192,10 @@ export default function CakeTier({
             <meshStandardMaterial color={capColor} roughness={mat.roughness - 0.08} />
           </mesh>
         </>
+      )}
+      {!isRect && (
+        <SecondCreamLayers layers={creamLayers ?? []} radius={radius} yBase={yBase} height={height}
+          grainKey={mat.grain} grainDensity={mat.grainDensity} />
       )}
       {renderTops()}
       {renderBottoms()}
