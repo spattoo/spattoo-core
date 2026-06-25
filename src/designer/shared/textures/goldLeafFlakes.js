@@ -69,7 +69,7 @@ export function stampFoilFlakes({
   const metFill = gray(metalness), rouFill = gray(roughness);
 
   flakes.forEach((f, fi) => {
-    const worldRad = 0.085 * (f.size ?? 1) * sizeScale;
+    const worldRad = 0.2 * (f.size ?? 1) * sizeScale;   // a default shard reads as a torn piece, not a dot
     const radPx = Math.max(3, worldRad * pxPerWorld);
     const cx0 = (f.u ?? 0.5) * Wc;
     const cy = (1 - (f.v ?? 0.5)) * Hc;          // invert Y → flake lands under the tap
