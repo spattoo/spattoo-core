@@ -23,6 +23,8 @@ export default function FinishHandles({
   const { gl, camera, scene } = useThree();
   const rc = useRef(new THREE.Raycaster());
   const drag = useRef(null);   // { tier, idx } while dragging a handle
+  const pendingMove = useRef(null);   // latest pointer pos, applied once per frame (coalesced)
+  const rafId = useRef(0);
 
   const uvAt = (clientX, clientY) => {
     const ray = buildRay(clientX, clientY, gl.domElement, camera);
@@ -40,16 +42,25 @@ export default function FinishHandles({
 
   useEffect(() => {
     const el = gl.domElement;
-    const move = ev => {
-      if (!drag.current) return;
-      const hit = uvAt(ev.clientX, ev.clientY);
+    // Coalesce moves: each rebuild regenerates the wall texture, so apply at most ONE move per frame
+    // (the latest pointer pos) instead of one per pointermove event — kills the drag "glue".
+    const flush = () => {
+      rafId.current = 0;
+      const p = pendingMove.current;
+      if (!p || !drag.current) return;
+      const hit = uvAt(p.x, p.y);
       if (hit && hit.tier === drag.current.tier) onMove?.(drag.current.tier, drag.current.idx, hit.u, hit.v);
     };
-    const up = () => { drag.current = null; };
+    const move = ev => {
+      if (!drag.current) return;
+      pendingMove.current = { x: ev.clientX, y: ev.clientY };
+      if (!rafId.current) rafId.current = requestAnimationFrame(flush);
+    };
+    const up = () => { drag.current = null; pendingMove.current = null; if (rafId.current) { cancelAnimationFrame(rafId.current); rafId.current = 0; } };
     el.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
-    return () => { el.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+    return () => { el.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); if (rafId.current) cancelAnimationFrame(rafId.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gl, camera, scene, onMove]);
 

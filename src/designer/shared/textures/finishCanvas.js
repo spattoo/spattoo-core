@@ -12,8 +12,11 @@ import * as THREE from 'three';
 export function finishCanvasSize(radius, height) {
   const WU = 2 * Math.PI * radius;
   const aspect = WU / Math.max(0.01, height);
-  let Hc = 512, Wc = Math.round(Hc * aspect);
-  if (Wc > 2048) { Wc = 2048; Hc = Math.round(2048 / aspect); }
+  // Resolution is a direct cost on every rebuild (add/drag regenerates + re-uploads these canvases),
+  // so cap the width modestly — 1280 keeps shards/flecks crisp while ~2.5× cheaper than 2048.
+  const CAP = 1280;
+  let Hc = 448, Wc = Math.round(Hc * aspect);
+  if (Wc > CAP) { Wc = CAP; Hc = Math.round(CAP / aspect); }
   Hc = Math.max(8, Hc); Wc = Math.max(8, Wc);
   return { WU, Wc, Hc };
 }
