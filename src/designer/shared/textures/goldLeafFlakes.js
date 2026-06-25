@@ -14,7 +14,7 @@ import { gray } from './finishCanvas.js';
 export const GOLD_LEAF_DEFAULTS = {
   metalness: 0.6,         // metallic SHEEN, but low enough that the gold albedo still reads bright
   roughness: 0.16,        // low → glossy shine (sells "foil", not matte paint)
-  env: 3.0,               // envMapIntensity — high so it reflects the (dim apartment) scene env
+  env: 4.5,               // envMapIntensity — high so it reflects the (dim apartment) scene env
   crinkle: 0.7,           // reserved for a future bound crinkle normal (M4)
   sizeScale: 1.0,         // global flake-size multiplier
   raggedness: 0.55,       // 0 = round blob, 1 = very torn/spiky shard

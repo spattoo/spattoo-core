@@ -2204,13 +2204,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setMultiSelectMode(false);
   }
 
-  // While editing a foil finish, clicks on the cake/background must NOT deselect it — otherwise the
-  // foil card closes and its drag dots vanish, so flakes feel unmovable. Foil edit mode persists (like
-  // the luster-dust tool) until the user collapses the foil card. Missing a dot is simply a no-op.
-  function handleDeselect() { if (selectedEl?.type === 'foil') return; clearAllSelections(); }
+  function handleDeselect() { clearAllSelections(); }
 
   function handleTierClick(i) {
-    if (selectedEl?.type === 'foil') return;   // keep foil edit mode + its dots alive
     closeAllPopups();
     setSelectedEl(prev => (prev?.type === 'tier' && prev.index === i) ? null : { type: 'tier', index: i });
   }

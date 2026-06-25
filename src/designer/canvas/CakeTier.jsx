@@ -907,8 +907,10 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
         emissiveMap={finishMaps?.emissiveMap ?? null}
         emissiveIntensity={finishMaps && dusting ? (dusting?.glow ?? 0) : 0}
         sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
-        clearcoat={surf?.clearcoat ?? 0} clearcoatRoughness={surf?.clearcoatRoughness ?? 0.5}
-        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 2.0) : (surf?.envMapIntensity ?? 0.5)}
+        clearcoat={finishMaps ? 1 : (surf?.clearcoat ?? 0)}
+        clearcoatMap={finishMaps?.metalnessMap ?? null}
+        clearcoatRoughness={finishMaps ? 0.12 : (surf?.clearcoatRoughness ?? 0.5)}
+        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 4.5) : (surf?.envMapIntensity ?? 0.5)}
         normalMap={normalMap ?? null}
         normalScale={[normalScale, normalScale]} />
     </mesh>
