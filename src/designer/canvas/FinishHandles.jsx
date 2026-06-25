@@ -72,14 +72,19 @@ export default function FinishHandles({
               const isSel = selected && selected.tier === ti && selected.idx === si;
               return (
                 <group key={si} position={pos}>
+                  {/* Large INVISIBLE grab target — easy to click without covering the decoration. */}
                   <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, ti, si)}>
-                    <sphereGeometry args={[(isSel ? 0.055 : 0.045) * dotScale, 16, 16]} />
+                    <sphereGeometry args={[0.1, 12, 12]} />
+                    <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+                  </mesh>
+                  {/* Small visible marker (non-interactive) so the foil shard stays visible. */}
+                  <mesh>
+                    <sphereGeometry args={[(isSel ? 0.03 : 0.022) * dotScale, 16, 16]} />
                     <meshBasicMaterial color={isSel ? selColor : color} />
                   </mesh>
-                  {/* dark rim so a light handle reads on a light cake */}
                   <mesh>
-                    <sphereGeometry args={[(isSel ? 0.066 : 0.055) * dotScale, 16, 16]} />
-                    <meshBasicMaterial color="#1a1a1a" transparent opacity={0.35} depthWrite={false} side={THREE.BackSide} />
+                    <sphereGeometry args={[(isSel ? 0.04 : 0.03) * dotScale, 16, 16]} />
+                    <meshBasicMaterial color="#1a1a1a" transparent opacity={0.3} depthWrite={false} side={THREE.BackSide} />
                   </mesh>
                 </group>
               );
