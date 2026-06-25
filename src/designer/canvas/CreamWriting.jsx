@@ -1,9 +1,10 @@
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildCreamWriting } from '../geometry/creamText.js';
 import { topClamp } from '../geometry/surface.js';
-import { pointerRay, planeHit, cylinderHit } from '../utils/raycasting.js';
+import { planeHit, cylinderHit } from '../utils/raycasting.js';
+import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { creamMaterialProps, goldMaterialProps, silverMaterialProps, metallicCreamProps, GOLD_FINISH_COLOR, SILVER_FINISH_COLOR, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
 
 const DEG = Math.PI / 180;
@@ -55,7 +56,35 @@ export default function CreamWriting({
     });
   }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.letterSpacing, writing?.curve, wrapRadius]);
 
-  const pressedRef = useRef(false);
+  // Side-drag vertical bounds (also used by the drag resolver below).
+  const minSideY = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
+
+  // Drag-to-place: map the pointer ray to a per-surface placement patch; the press/drag/tap plumbing
+  // and grabProps are shared (useDragPlacement). Called before the early return to satisfy hook rules.
+  const { grabProps } = useDragPlacement({
+    camera, gl, onMove, onClick, onOrbitEnable,
+    resolve: (ray) => {
+      if (surface === 'side' && !sideRect) {
+        const hit = cylinderHit(ray, sideR);
+        if (!hit) return null;
+        return { sideAngle: hit.theta, sideY: clamp(hit.y, minSideY, maxSideY) };
+      }
+      if (surface === 'side') {
+        // Rect side: intersect the front face plane (z = depth/2), drag in x & y.
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(sideR));
+        const t = new THREE.Vector3();
+        if (!ray.intersectPlane(plane, t)) return null;
+        return { offsetX: clamp(t.x, -sideTier.width / 2, sideTier.width / 2), sideY: clamp(t.y, minSideY, maxSideY) };
+      }
+      const planeY = surface === 'board' ? boardY : topY;
+      const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
+      if (!hit) return null;
+      const cs = surface === 'board' ? (boardShp ?? shp) : shp;
+      const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
+      return surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z };
+    },
+  });
+
   if (!geo) return null;
 
   const isGold       = writing.finish === 'gold';
@@ -72,55 +101,11 @@ export default function CreamWriting({
   const ox        = surface === 'board' ? (writing.boardX ?? 0) : (writing.offsetX ?? 0);
   const oz        = surface === 'board' ? (writing.boardZ ?? (cakeBaseR + (boardRadius || cakeBaseR)) / 2) : (writing.offsetZ ?? 0);
   const sideAngle = writing.sideAngle ?? 0;
-  const minSideY  = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
 
   // Grab proxy size (from the built geometry's extents).
   const bb = geo.boundingBox;
   const grabW = Math.max((bb.max.x - bb.min.x) + thickness * 3, thickness * 4);
   const grabH = Math.max((bb.max.y - bb.min.y) + thickness * 3, thickness * 4);
-
-  const onDown = e => {
-    e.stopPropagation();
-    pressedRef.current = true;
-    onOrbitEnable?.(false);
-    try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
-    let didDrag = false;
-    const start = { x: e.clientX, y: e.clientY };
-    const canvas = gl.domElement;
-    function move(ev) {
-      const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
-      if (dx * dx + dy * dy > 25) didDrag = true;
-      if (!didDrag || !onMove) return;
-      const ray = pointerRay(ev, canvas, camera);
-      if (surface === 'side' && !sideRect) {
-        const hit = cylinderHit(ray, sideR);
-        if (!hit) return;
-        onMove({ sideAngle: hit.theta, sideY: clamp(hit.y, minSideY, maxSideY) });
-      } else if (surface === 'side') {
-        // Rect side: intersect the front face plane (z = depth/2), drag in x & y.
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(sideR));
-        const t = new THREE.Vector3();
-        if (!ray.intersectPlane(plane, t)) return;
-        onMove({ offsetX: clamp(t.x, -sideTier.width / 2, sideTier.width / 2), sideY: clamp(t.y, minSideY, maxSideY) });
-      } else {
-        const planeY = surface === 'board' ? boardY : topY;
-        const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
-        if (!hit) return;
-        const cs = surface === 'board' ? (boardShp ?? shp) : shp;
-        const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
-        onMove(surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z });
-      }
-    }
-    function up(ev) {
-      pressedRef.current = false;
-      onOrbitEnable?.(true);
-      if (!didDrag && onClick) onClick(ev);
-      canvas.removeEventListener('pointermove', move);
-      canvas.removeEventListener('pointerup', up);
-    }
-    canvas.addEventListener('pointermove', move);
-    canvas.addEventListener('pointerup', up);
-  };
 
   // Emissive: cream lights up purple only when selected; metal finishes carry a constant
   // glow (so they read as metal without a strong env map) and brighten a touch when selected.
@@ -144,13 +129,6 @@ export default function CreamWriting({
       emissiveIntensity={emissiveIntensity}
     />
   );
-  const grabProps = {
-    userData: { isStickerHitPlane: true },
-    onPointerEnter: e => { e.stopPropagation(); onOrbitEnable?.(false); },
-    onPointerLeave: e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable?.(true); },
-    onPointerDown: onDown,
-    onClick: e => e.stopPropagation(),
-  };
   const grabPlane = (z = 0.005) => (
     <mesh position={[0, 0, z]} {...grabProps}>
       <planeGeometry args={[grabW, grabH]} />

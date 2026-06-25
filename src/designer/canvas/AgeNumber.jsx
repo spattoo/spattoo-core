@@ -1,10 +1,10 @@
-import { useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Text3D, Center } from '@react-three/drei';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { topClamp } from '../geometry/surface.js';
-import { pointerRay, planeHit } from '../utils/raycasting.js';
+import { planeHit } from '../utils/raycasting.js';
+import { useDragPlacement } from '../hooks/useDragPlacement.js';
 
 const DEG = Math.PI / 180;
 
@@ -29,7 +29,17 @@ export default function AgeNumber({
   const size  = age?.size ?? 0.95;                                   // standing height (world units)
   const value = String(age?.value ?? '').replace(/[^0-9]/g, '');    // digits only
   const fin   = FINISHES[age?.finish] ?? FINISHES.gold;
-  const pressedRef = useRef(false);
+
+  // Drag on the cake-top plane → snap inside the surface footprint; shared press/drag/tap behaviour.
+  const { grabProps } = useDragPlacement({
+    camera, gl, onMove, onClick, onOrbitEnable,
+    resolve: (ray) => {
+      const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY));
+      if (!hit) return null;
+      const p = shp ? topClamp(shp, hit.x, hit.z, 1.0) : hit;
+      return { offsetX: p.x, offsetZ: p.z };
+    },
+  });
 
   if (!value) return null;
 
@@ -40,43 +50,6 @@ export default function AgeNumber({
   // Approximate footprint for the grab plane (Text3D is auto-centred by <Center>).
   const numW = value.length * size * 0.7;
   const numH = size * 0.72;   // cap height for helvetiker bold
-
-  const onDown = e => {
-    e.stopPropagation();
-    pressedRef.current = true;
-    onOrbitEnable?.(false);
-    try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
-    let didDrag = false;
-    const start = { x: e.clientX, y: e.clientY };
-    const canvas = gl.domElement;
-    function move(ev) {
-      const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
-      if (dx * dx + dy * dy > 25) didDrag = true;
-      if (!didDrag || !onMove) return;
-      const ray = pointerRay(ev, canvas, camera);
-      const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY));
-      if (!hit) return;
-      const p = shp ? topClamp(shp, hit.x, hit.z, 1.0) : hit;
-      onMove({ offsetX: p.x, offsetZ: p.z });
-    }
-    function up(ev) {
-      pressedRef.current = false;
-      onOrbitEnable?.(true);
-      if (!didDrag && onClick) onClick(ev);
-      canvas.removeEventListener('pointermove', move);
-      canvas.removeEventListener('pointerup', up);
-    }
-    canvas.addEventListener('pointermove', move);
-    canvas.addEventListener('pointerup', up);
-  };
-
-  const grabProps = {
-    userData: { isStickerHitPlane: true },
-    onPointerEnter: e => { e.stopPropagation(); onOrbitEnable?.(false); },
-    onPointerLeave: e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable?.(true); },
-    onPointerDown: onDown,
-    onClick: e => e.stopPropagation(),
-  };
 
   const matProps = (color) => ({
     color, metalness: 0.95, roughness: 0.32,

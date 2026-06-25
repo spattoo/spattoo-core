@@ -1,6 +1,6 @@
 {
-  "//": "Copy-paste detector — a HARD GATE in `npm run verify` (and the pre-commit hook). `threshold` is the max % of duplicated lines allowed; the build fails above it. RATCHET IT DOWN as existing clones are paid off, so the gain can never silently erode. History: 2.82% (wiring) → 2.62% (heightfield→normalMap helper) → 2.21% (value-noise helper) → 2.09% (mulberry32 PRNG → utils/random.js) → 1.93% (ChipPicker shared by the Frosting/Style pickers). Next clusters to extract: AgeNumber/CreamWriting cream-text, and the CakeCanvas/CakeTier internal JSX blocks (no byte-hash safety net — need visual verification). A deliberate, reviewed clone goes between `// jscpd:ignore-start` … `// jscpd:ignore-end` so it doesn't count.",
-  "threshold": 2.0,
+  "//": "Copy-paste detector — a HARD GATE in `npm run verify` (and the pre-commit hook). `threshold` is the max % of duplicated lines allowed; the build fails above it. RATCHET IT DOWN as existing clones are paid off, so the gain can never silently erode. History: 2.82% (wiring) → 2.62% (heightfield→normalMap helper) → 2.21% (value-noise helper) → 2.09% (mulberry32 PRNG → utils/random.js) → 1.93% (ChipPicker shared by the Frosting/Style pickers) → 1.73% (useDragPlacement hook shared by AgeNumber/CreamWriting). Next clusters to extract: the CakeCanvas/CakeTier internal JSX blocks (two scene paths, top/bottom piping rings) and PipingPreview/TopperPreview — all need visual/interaction verification, no byte-hash safety net. A deliberate, reviewed clone goes between `// jscpd:ignore-start` … `// jscpd:ignore-end` so it doesn't count.",
+  "threshold": 1.8,
   "minTokens": 50,
   "minLines": 8,
   "absolute": true,
