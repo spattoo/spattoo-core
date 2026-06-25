@@ -12,9 +12,9 @@ import { gray } from './finishCanvas.js';
 // not a re-derived one. Developed in the admin Gold Leaf Studio. Ships in two finishes — gold/silver.
 
 export const GOLD_LEAF_DEFAULTS = {
-  metalness: 0.55,        // metallic SHEEN, but low enough that the gold albedo still reads bright
-  roughness: 0.22,        // low → glossy shine (sells "foil", not matte paint)
-  env: 2.0,               // envMapIntensity — how hard it reflects the room
+  metalness: 0.6,         // metallic SHEEN, but low enough that the gold albedo still reads bright
+  roughness: 0.16,        // low → glossy shine (sells "foil", not matte paint)
+  env: 3.0,               // envMapIntensity — high so it reflects the (dim apartment) scene env
   crinkle: 0.7,           // reserved for a future bound crinkle normal (M4)
   sizeScale: 1.0,         // global flake-size multiplier
   raggedness: 0.55,       // 0 = round blob, 1 = very torn/spiky shard
@@ -85,14 +85,22 @@ export function stampFoilFlakes({
       const box = [cx - radPx * 1.3, cy - radPx * 1.3, radPx * 2.6, radPx * 2.6];
       const k = (radPx * 3.4) / 256;             // foil tile drawn large enough to cover the shard
 
-      // ALBEDO: bright gold fill + a GENTLE crinkle (soft multiply shadows + screen sparkle).
+      // ALBEDO: bright gold fill + crinkle from a REPEATING foil pattern at a FIXED density, so the
+      // sparkle/shine stays consistent at any shard size (a single stretched tile read flat when large).
+      const pat = alb.createPattern(foilMap, 'repeat');
+      if (pat?.setTransform) {
+        try { pat.setTransform(new DOMMatrix().translate(cx, cy).rotate((rot * 1.7 + fi) * 57.29578).scale(0.42)); } catch { /* older browsers: untransformed tile */ }
+      }
       alb.save(); trace(alb, pts); alb.clip();
       alb.fillStyle = leafColor; alb.fillRect(...box);
-      alb.translate(cx, cy); alb.rotate(rot * 1.7 + fi);
-      alb.globalCompositeOperation = 'multiply'; alb.globalAlpha = 0.40;
-      alb.drawImage(foilMap, -128 * k, -128 * k, 256 * k, 256 * k);
-      alb.globalCompositeOperation = 'screen';   alb.globalAlpha = 0.35;
-      alb.drawImage(foilMap, -128 * k, -128 * k, 256 * k, 256 * k);
+      if (pat) {
+        alb.globalCompositeOperation = 'multiply'; alb.globalAlpha = 0.42; alb.fillStyle = pat; alb.fillRect(...box);
+        alb.globalCompositeOperation = 'screen';   alb.globalAlpha = 0.42; alb.fillStyle = pat; alb.fillRect(...box);
+      } else {
+        alb.translate(cx, cy); alb.rotate(rot * 1.7 + fi);
+        alb.globalCompositeOperation = 'multiply'; alb.globalAlpha = 0.40;
+        alb.drawImage(foilMap, -128 * k, -128 * k, 256 * k, 256 * k);
+      }
       alb.restore();
 
       // METALNESS + ROUGHNESS: absolute greys inside the shard → it goes metal & glossy.

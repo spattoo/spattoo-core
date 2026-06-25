@@ -18,7 +18,7 @@ const TAU = Math.PI * 2;
 export default function FinishHandles({
   tierData = [], getPoints, selected = null, onMove, onSelect,
   catcherFlag = 'isFinishCatcher', handleFlag = 'isFinishHandle',
-  color = '#ffffff', selColor = '#3D5A44', dotScale = 1,
+  color = '#ffffff', selColor = '#3D5A44', dotScale = 1, showMarker = true,
 }) {
   const { gl, camera, scene } = useThree();
   const rc = useRef(new THREE.Raycaster());
@@ -77,15 +77,20 @@ export default function FinishHandles({
                     <sphereGeometry args={[0.1, 12, 12]} />
                     <meshBasicMaterial transparent opacity={0} depthWrite={false} />
                   </mesh>
-                  {/* Small visible marker (non-interactive) so the foil shard stays visible. */}
-                  <mesh>
-                    <sphereGeometry args={[(isSel ? 0.03 : 0.022) * dotScale, 16, 16]} />
-                    <meshBasicMaterial color={isSel ? selColor : color} />
-                  </mesh>
-                  <mesh>
-                    <sphereGeometry args={[(isSel ? 0.04 : 0.03) * dotScale, 16, 16]} />
-                    <meshBasicMaterial color="#1a1a1a" transparent opacity={0.3} depthWrite={false} side={THREE.BackSide} />
-                  </mesh>
+                  {/* Visible marker — only when the finish has no visible particle of its own (dust). Foil
+                      shards are visible, so they show no marker; you grab the shard directly. */}
+                  {showMarker && (
+                    <>
+                      <mesh>
+                        <sphereGeometry args={[(isSel ? 0.03 : 0.022) * dotScale, 16, 16]} />
+                        <meshBasicMaterial color={isSel ? selColor : color} />
+                      </mesh>
+                      <mesh>
+                        <sphereGeometry args={[(isSel ? 0.04 : 0.03) * dotScale, 16, 16]} />
+                        <meshBasicMaterial color="#1a1a1a" transparent opacity={0.3} depthWrite={false} side={THREE.BackSide} />
+                      </mesh>
+                    </>
+                  )}
                 </group>
               );
             })}

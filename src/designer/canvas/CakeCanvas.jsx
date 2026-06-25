@@ -1681,7 +1681,7 @@ function CakeScene({
         onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher" handleFlag="isDustHandle" />}
       {foilMode && <FinishHandles tierData={tierData} getPoints={t => t.foil?.flakes} selected={foilSelected}
         onMove={onFoilMove} onSelect={onFoilSelect} catcherFlag="isFoilCatcher" handleFlag="isFoilHandle"
-        color="#f0d878" selColor="#3D5A44" />}
+        color="#f0d878" selColor="#3D5A44" showMarker={false} />}
 
       <CreamPen
         piping={piping}
