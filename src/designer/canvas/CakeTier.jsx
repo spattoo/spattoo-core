@@ -863,6 +863,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
                     gradient, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
+  const finishOnRef = useRef(false);
   const grainMap = useMemo(
     () => (surf?.grain && grainExtent ? grainNormalMap(surf.grain, grainExtent[0], grainExtent[1], surf.grainDensity) : null),
     [surf?.grain, grainExtent?.[0], grainExtent?.[1], surf?.grainDensity],
@@ -884,7 +885,14 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
-  useEffect(() => { if (matRef.current) matRef.current.needsUpdate = true; }, [finishMaps]);
+  // Recompile the shader ONLY when finish maps appear/disappear (the map defines change). Doing it on
+  // every finishMaps change recompiled the shader each drag frame — that was the drag "glue". Content
+  // updates (swapping the canvas texture while dragging) need no recompile, just a texture re-upload.
+  useEffect(() => {
+    if (!matRef.current) return;
+    const on = !!finishMaps;
+    if (on !== finishOnRef.current) { matRef.current.needsUpdate = true; finishOnRef.current = on; }
+  }, [finishMaps]);
   // Particle finishes (luster dust + gold leaf) bake into ONE wall-map set (`finishMaps`). The albedo
   // MAP carries the base colour + dust flecks + gold shards (so `color` goes white and the map drives
   // it). metalness/roughness are baked ABSOLUTE into the maps, so the material scalars are 1 and each
