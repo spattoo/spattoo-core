@@ -3557,10 +3557,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ))}
           </div>
         )}
-        {flakes[foilSel] && (
-          <PenSlider label="Size" value={flakes[foilSel].size ?? 0.5} min={0.1} max={1.5} step={0.05}
-            onChange={v => updateFoilFlake(foilTier, foilSel, { size: v })} fmt={v => v.toFixed(2)} />
-        )}
+        {flakes[foilSel] && (() => {
+          // Dial bounds + increment from the element's placement_config.scale (fallbacks if absent).
+          const sc = scaleRangeOf(elementById.get(card.elementId), 0.1, 1.5, 0.05);
+          return (
+            <PenSlider label="Size" value={flakes[foilSel].size ?? 0.5} min={sc.min} max={sc.max} step={sc.step}
+              onChange={v => updateFoilFlake(foilTier, foilSel, { size: v })} fmt={v => v.toFixed(2)} />
+          );
+        })()}
         {flakes.length > 0 && (
           <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
             onClick={() => { clearFoil(foilTier); setFoilSel(0); }}>Remove all on this tier</button>
