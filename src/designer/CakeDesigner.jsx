@@ -1569,7 +1569,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
     const topperTypeId   = elementTypes.find(et => et.slug === 'topper')?.id;
     const topSideTypeId  = elementTypes.find(et => et.slug === 'top_side_decors')?.id;
-    const foilTypeId     = elementTypes.find(et => et.slug === 'food-foil')?.id;
+    // Match the food-foil type tolerantly (slug or name contains "foil") so routing fires regardless of
+    // the exact slug the admin chose (food-foil / food_foil / gold foil …). The one allowed type→config place.
+    const foilTypeId     = elementTypes.find(et => /foil/i.test(et.slug ?? '') || /foil/i.test(et.name ?? ''))?.id;
     // Placement STYLE is config, not an allowed_zones guess. "Hero" elements (topper, top&side
     // decor) are single-per-slot: ONE instance per (tier×surface), chosen via the checkbox
     // chooser. Everything else (scattered, picks, image toppers) scatters freely as many
@@ -2815,6 +2817,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleElementDrop(element, hit) {
+    // Tier-finish elements (food foil) paint into the tier material, never place a sticker — open the
+    // finish card. Covers the DRAG path (tapPlaceElement covers tap). Config-driven, no slug branch.
+    if (element.placement_config?.kind === 'tier_finish') {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      setFoilTier(hit?.tierIndex ?? 0); setFoilSel(0);
+      setSelectedEl({ type: 'foil', elementId: element.id });
+      return;
+    }
     const parts = element.placement_config?.parts;
     if (Array.isArray(parts) && parts.length) { placePattern(element, parts, hit); return; }
     // Faux-ball cluster (placement_config.cluster): drops as a SINGLE ball at the hit point; the card's
