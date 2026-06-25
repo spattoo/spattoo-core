@@ -24,6 +24,8 @@ export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 export { getWeaveNormalMap, makeWeaveField, weaveTiles } from './designer/shared/textures/weaveStencilTexture.js';
 export { makeLusterDustMaps, LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from './designer/shared/textures/lusterDust.js';
+export { makeParticleFinishMaps } from './designer/shared/textures/particleFinish.js';
+export { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from './designer/shared/textures/goldLeafFlakes.js';
 export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStrokeTile, heightFieldFromImage, heightTextureFromField, normalTextureFromField } from './designer/shared/textures/imageNormalMap.js';
 // Vendor-neutral error telemetry. Host apps inject a Sentry-backed transport via
 // configureTelemetry(); until then it logs to the console. See src/telemetry/.

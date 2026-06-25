@@ -16,6 +16,7 @@ import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
+import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
@@ -1076,7 +1077,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
@@ -1084,6 +1085,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dustColor, setDustColor] = useState('#f0cf63');
   const [dustTier, setDustTier] = useState(0);
   const [dustSel, setDustSel] = useState(0);
+  // Gold leaf ("food foil") — selection state for the finish card (which tier / which flake).
+  const [foilColor, setFoilColor] = useState(GOLD_LEAF_COLORS.gold);
+  const [foilTier, setFoilTier] = useState(0);
+  const [foilSel, setFoilSel] = useState(0);
   // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
   const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
@@ -1110,6 +1115,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [elementById, setElementById] = useState(() => new Map()); // id → element row, for placed-sticker config lookups
+  // The food-foil ("gold leaf") element is identified by CONFIG, never slug (#1): kind === 'tier_finish'.
+  // (Declared after elementById so it doesn't read it before initialization.)
+  const foilElement = [...elementById.values()].find(e => e.placement_config?.kind === 'tier_finish') ?? null;
+  // A new flake lands on the front of the wall (default camera view); the customer drags it / adds more.
+  const addFoilToTier = (tierIndex) => {
+    const count = design.tiers[tierIndex]?.foil?.flakes?.length ?? 0;
+    const pc = foilElement?.placement_config ?? {};
+    addFoilFlake(tierIndex, 0.0, 0.5, { color: foilColor, finish: pc.finish });
+    setFoilTier(tierIndex); setFoilSel(count);
+  };
+  const setAllFoilColor = (c) => {
+    setFoilColor(c);
+    design.tiers.forEach((t, i) => { if (t.foil) updateFoil(i, { color: c }); });
+  };
   const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
   const [picksDb, setPicksDb] = useState([]);
   const [stampsDb, setStampsDb] = useState([]);
@@ -1550,6 +1569,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
     const topperTypeId   = elementTypes.find(et => et.slug === 'topper')?.id;
     const topSideTypeId  = elementTypes.find(et => et.slug === 'top_side_decors')?.id;
+    const foilTypeId     = elementTypes.find(et => et.slug === 'food-foil')?.id;
     // Placement STYLE is config, not an allowed_zones guess. "Hero" elements (topper, top&side
     // decor) are single-per-slot: ONE instance per (tier×surface), chosen via the checkbox
     // chooser. Everything else (scattered, picks, image toppers) scatters freely as many
@@ -1568,6 +1588,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       }
       if (r.element_type_id === topSideTypeId) {
         return { ...r, placement_config: { single_per_slot: true, ...(r.placement_config ?? {}) } };
+      }
+      // Gold leaf ("food foil"): a tier-finish element. Seed kind:'tier_finish' + the studio-tuned
+      // finish look and the two allowed colours; the row's own config always wins via the spread.
+      if (r.element_type_id === foilTypeId) {
+        const rPc = r.placement_config ?? {};
+        return { ...r,
+          allowed_zones: r.allowed_zones?.length ? r.allowed_zones : ['side'],
+          placement_config: { ...rPc, kind: 'tier_finish',
+            finish: { ...GOLD_LEAF_DEFAULTS, ...(rPc.finish ?? {}) },
+            colors: rPc.colors ?? GOLD_LEAF_COLORS } };
       }
       return r;
     });
@@ -2211,6 +2241,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setElementsOpen(false);
       focusEditor('decoration');
       setSelectedEl({ type: 'cluster-place', elementId: element.id });
+      return;
+    }
+    // Tier-finish elements (gold leaf / food foil) paint flakes into the tier material rather than
+    // placing a sticker. Config-driven (kind === 'tier_finish', never slug) → open the finish card,
+    // where the customer picks tier/colour and taps flakes onto the cake.
+    if (element.placement_config?.kind === 'tier_finish') {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      setFoilTier(0); setFoilSel(0);
+      setSelectedEl({ type: 'foil', elementId: element.id });
       return;
     }
     const zones = element.allowed_zones ?? [];
@@ -3229,6 +3269,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       name: cpEl?.name ?? 'Cluster', thumb: /\.(glb|gltf)(\?|$)/i.test(cpEl?.image_url ?? '') ? (cpEl?.thumbnail_url ?? null) : (cpEl?.image_url ?? cpEl?.thumbnail_url ?? null),
     });
   }
+  // Gold-leaf finish card: ONE card with the tier/colour chooser inside, shown while editing foil OR
+  // whenever the cake carries any (so it reappears on reload — a finish is not a sticker).
+  if (selectedEl?.type === 'foil' || design.tiers.some(t => t.foil?.flakes?.length)) {
+    const fEl = foilElement ?? (selectedEl?.elementId ? elementById.get(selectedEl.elementId) : null);
+    decorationCards.unshift({
+      key: 'foil', type: 'foil', elementId: fEl?.id ?? selectedEl?.elementId ?? null,
+      name: fEl?.name ?? 'Gold Leaf',
+      thumb: /\.(glb|gltf)(\?|$)/i.test(fEl?.image_url ?? '') ? (fEl?.thumbnail_url ?? null) : (fEl?.image_url ?? fEl?.thumbnail_url ?? null),
+    });
+  }
   // The element stack is ONE persistent right-side editor holding every editable
   // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
   // single accordion. It stays open as long as the cake carries any of them and no
@@ -3252,6 +3302,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         (card.type === 'decorEl' || card.type === 'scatter' || card.type === 'cluster-place' ? selectedEl.elementId === card.elementId
          : card.type === 'pattern' ? selectedEl.patternId === card.patternId
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
+         : card.type === 'foil' ? true
          : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
     setColorOpen(false);
@@ -3270,6 +3321,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setMultiSelectMode(false);
     } else if (card.type === 'cluster-place') {
       setSelectedEl({ type: 'cluster-place', elementId: card.elementId });
+      setSelectedStickerIds(new Set());
+      setMultiSelectMode(false);
+    } else if (card.type === 'foil') {
+      setSelectedEl({ type: 'foil', elementId: card.elementId });
       setSelectedStickerIds(new Set());
       setMultiSelectMode(false);
     } else if (card.type === 'sticker') {
@@ -3439,6 +3494,64 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // The cluster card body: ONE packed clump (sharing a clusterId). Size slider re-packs; a
   // CUSTOMER-controlled colour palette (add / edit / remove swatches) recolours the balls — one
   // colour = solid clump, several = mixed (cycled across the balls); Remove drops the whole clump.
+  // The gold-leaf ("food foil") finish card: a tier finish painted into the wall (like dusting), but
+  // edited through the decorations card stack. Tier + colour chooser INSIDE the card; then tap "Add",
+  // and drag each flake's dot on the cake to scatter the shards. Round tiers only in v1.
+  function renderFoilBody(card) {
+    const colors = elementById.get(card.elementId)?.placement_config?.colors ?? GOLD_LEAF_COLORS;
+    const flakes = design.tiers[foilTier]?.foil?.flakes ?? [];
+    const tierBtn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+      border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Torn shards of edible gold leaf pressed onto the cake. Add several and drag each dot to scatter them.</div>
+        {design.tiers.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={s.editPanelLabel}>Tier</span>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {design.tiers.map((_, i) => (
+                <button key={i} style={tierBtn(foilTier === i)} onClick={() => { setFoilTier(i); setFoilSel(0); }}>{i + 1}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={s.editPanelLabel}>Colour</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {Object.entries(colors).map(([name, hex]) => (
+              <button key={name} onClick={() => setAllFoilColor(hex)} title={name}
+                style={{ padding: '5px 12px', borderRadius: 14, fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
+                  border: foilColor.toLowerCase() === hex.toLowerCase() ? '2px solid #3D5A44' : '1.5px solid #C5D4C8',
+                  background: hex, color: '#3d2f12' }}>{name}</button>
+            ))}
+          </div>
+        </div>
+        <button style={{ width: '100%', borderRadius: 8, fontSize: 12, fontWeight: 800, color: '#fff', background: '#3D5A44', border: 'none', padding: '9px', cursor: 'pointer' }}
+          onClick={() => addFoilToTier(foilTier)}>Add gold leaf</button>
+        {flakes.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {flakes.map((_, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
+                border: foilSel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: foilSel === i ? '#EEF4EF' : '#fff' }}>
+                <button onClick={() => setFoilSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' }}>Flake {i + 1}</button>
+                <button title="Remove" onClick={() => { if (foilSel >= i) setFoilSel(v => Math.max(0, v - 1)); removeFoilFlake(foilTier, i); }}
+                  style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: '#e53935', cursor: 'pointer' }}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        {flakes[foilSel] && (
+          <PenSlider label="Size" value={flakes[foilSel].size ?? 1} min={0.3} max={3} step={0.05}
+            onChange={v => updateFoilFlake(foilTier, foilSel, { size: v })} fmt={v => v.toFixed(2)} />
+        )}
+        {flakes.length > 0 && (
+          <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
+            onClick={() => { clearFoil(foilTier); setFoilSel(0); }}>Remove all on this tier</button>
+        )}
+      </div>
+    );
+  }
+
   function renderClusterBody(card) {
     const members = design.stickers.filter(s => s.clusterId === card.clusterId);
     if (!members.length) return null;
@@ -4786,6 +4899,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               dustSelected={{ tier: dustTier, idx: dustSel }}
               onDustMove={(tier, idx, u, v) => updateDustSplash(tier, idx, { u, v })}
               onDustSelect={(tier, idx) => { setDustTier(tier); setDustSel(idx); }}
+              foilMode={selectedEl?.type === 'foil'}
+              foilSelected={{ tier: foilTier, idx: foilSel }}
+              onFoilMove={(tier, idx, u, v) => updateFoilFlake(tier, idx, { u, v })}
+              onFoilSelect={(tier, idx) => { setFoilTier(tier); setFoilSel(idx); }}
               selectedStickerIds={selectedStickerIds}
               onStickerSelect={handleStickerSelect}
               onStickerLongPress={handleStickerLongPress}
@@ -5115,6 +5232,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'scatter' ? renderScatterBody(card)
                            : card.type === 'cluster-place' ? renderClusterPlaceBody(card)
                            : card.type === 'cluster' ? renderClusterBody(card)
+                           : card.type === 'foil' ? renderFoilBody(card)
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
                       )}

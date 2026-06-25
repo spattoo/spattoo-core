@@ -5,6 +5,7 @@ import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.j
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
+import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
@@ -48,6 +49,7 @@ export function toCanvasConfig(design) {
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
+        foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
@@ -329,6 +331,59 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         const splashes = t.dusting.splashes.slice(0, -1);
         return { ...t, dusting: splashes.length ? { ...t.dusting, splashes } : null };
       }),
+    }));
+  }
+
+  // ── Gold leaf ("food foil") — a per-tier wall finish, sibling to dusting: a LIST of torn flakes
+  // {u,v,rot,size,seed} + a colour/finish. A tap adds one flake; the first flake seeds the foil object
+  // from the food-foil element's config (DB-authored finish + chosen colour). NOT a sticker.
+  function addFoilFlake(index, u, v, seed = {}) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index) return t;
+        const base = t.foil ?? {
+          color: seed.color ?? GOLD_LEAF_COLORS.gold,
+          finish: { ...GOLD_LEAF_DEFAULTS, ...(seed.finish ?? {}) },
+          flakes: [],
+        };
+        const fseed = (base.flakes.length * 977 + Math.round(u * 9973) + Math.round(v * 7919)) % 100000 + 1;
+        return { ...t, foil: { ...base, flakes: [...base.flakes, { u, v, ...GOLD_LEAF_NEW_FLAKE, rot: Math.round((u * 360) % 360), seed: fseed }] } };
+      }),
+    }));
+  }
+
+  function updateFoil(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.foil) ? { ...t, foil: { ...t.foil, ...changes } } : t),
+    }));
+  }
+
+  function updateFoilFlake(index, flakeIndex, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.foil?.flakes)
+        ? { ...t, foil: { ...t.foil, flakes: t.foil.flakes.map((f, j) => j === flakeIndex ? { ...f, ...patch } : f) } }
+        : t),
+    }));
+  }
+
+  function removeFoilFlake(index, flakeIndex) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index || !t.foil?.flakes) return t;
+        const flakes = t.foil.flakes.filter((_, j) => j !== flakeIndex);
+        return { ...t, foil: flakes.length ? { ...t.foil, flakes } : null };
+      }),
+    }));
+  }
+
+  function clearFoil(index) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, foil: null } : t),
     }));
   }
 
@@ -821,6 +876,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
+    addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
     addAge, updateAge, duplicateAge, removeAge,

@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { finishCanvasSize, mkCtx, ctxTexture } from './finishCanvas.js';
 
 // ── Luster dust — flicked edible metallic powder (the "gold dust" finish) ──────
 //
@@ -28,29 +28,26 @@ export const LUSTER_DUST_NEW_SPLASH = { dir: 90, spread: 0.8 };   // dir 90° = 
 function mulberry(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 function gaussOf(rnd) { return () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }; }
 
-// Composite every splash of `splashes` (each {u, v, dir, spread}) into four/​five canvases (albedo /
-// metalness / roughness / emissive / normal). Canvas aspect = circumference:height so flecks draw
-// round; the textures map once (repeat 1) so splashes sit where they were placed. Each splash throws
-// `density·240` flecks into a forward cone from its point: distance with a long tail (dense head →
-// thinning), angle within ±cone of `dir` (clamped — never sprays backward), `scatter` flinging a
-// fraction farther as bigger stray droplets. Canvas Y is inverted (texture upload flips Y; cake UV v=0
-// is the bottom) so a 90° flick sprays UP and the splash lands exactly under the tap.
-export function makeLusterDustMaps({
-  radius = 1, height = 2.2, baseColor = '#1c2336', dustColor, density, fleckSize, sizeVar, sparkle,
-  glitter, falloff, scatter, directionality, splashes = [], seed = 1337,
+// Stamp every splash of `splashes` (each {u, v, dir, spread}) onto the supplied canvas 2D contexts
+// (albedo / metalness / roughness / emissive / normal). Each splash throws `density·240` flecks into a
+// forward cone from its point: distance with a long tail (dense head → thinning), angle within ±cone of
+// `dir` (clamped — never sprays backward), `scatter` flinging a fraction farther as bigger stray
+// droplets. Canvas Y is inverted (texture upload flips Y; cake UV v=0 is the bottom) so a 90° flick
+// sprays UP and lands exactly under the tap.
+//
+// `metalFill`/`roughFill` are the colours written on a fleck in the metalness/roughness maps. They
+// default to the studio scheme (white metalness, sparkle-grey roughness — the material then supplies
+// the metalness/roughness SCALAR). The unified compositor overrides them with ABSOLUTE greys so dust
+// can share one material with gold-leaf at a different metalness/roughness.
+export function stampDustFlecks({
+  alb, met, rou, emi, nrm, Wc, Hc, WU, radius = 1, height = 2.2,
+  dustColor, density, fleckSize, sizeVar, sparkle, glitter, falloff, scatter, directionality,
+  splashes = [], seed = 1337, metalFill, roughFill,
 }) {
-  const WU = 2 * Math.PI * radius;
-  // Canvas aspect = wall circumference:height so flecks draw round. Cap the width (keeping aspect) so a
-  // short/wide tier can't make a giant texture that fails to upload (→ a blank/white wall).
-  const aspect = WU / Math.max(0.01, height);
-  // Moderate resolution + NO mipmaps (below): on a big minified texture, mipmapping averages fine
-  // flecks away to nothing, so the dust would be generated but invisible on screen.
-  let Hc = 512, Wc = Math.round(Hc * aspect);
-  if (Wc > 2048) { Wc = 2048; Hc = Math.round(2048 / aspect); }
-  Hc = Math.max(8, Hc); Wc = Math.max(8, Wc);
-  const mk = (bg) => { const c = document.createElement('canvas'); c.width = Wc; c.height = Hc; const x = c.getContext('2d'); x.fillStyle = bg; x.fillRect(0, 0, Wc, Hc); return x; };
-  const alb = mk(baseColor), met = mk('#000000'), rou = mk('#ffffff'), emi = mk('#000000'), nrm = mk('#8080ff');
+  WU = WU ?? 2 * Math.PI * radius;
   const fr = Math.round(sparkle * 255);
+  const mFill = metalFill ?? '#ffffff';
+  const rFill = roughFill ?? `rgb(${fr},${fr},${fr})`;
   const fanStd = (1 - directionality) * 0.95 + 0.08;
   const maxDev = Math.min(Math.PI, fanStd * 2.5);
   const maxTilt = glitter * 1.0;
@@ -63,8 +60,8 @@ export function makeLusterDustMaps({
     const xs = px < rad ? [px, px + Wc] : px > Wc - rad ? [px, px - Wc] : [px];   // wrap the back seam
     for (const X of xs) {
       alb.globalAlpha = bright;       draw(alb, X, py, rad, dustColor);
-      met.globalAlpha = bright;       draw(met, X, py, rad, '#ffffff');
-      rou.globalAlpha = bright;       draw(rou, X, py, rad, `rgb(${fr},${fr},${fr})`);
+      met.globalAlpha = bright;       draw(met, X, py, rad, mFill);
+      rou.globalAlpha = bright;       draw(rou, X, py, rad, rFill);
       emi.globalAlpha = bright * 0.8; draw(emi, X, py, rad, '#ffffff');   // MASK — material.emissive tints it gold
       nrm.globalAlpha = 0.95;         draw(nrm, X, py, rad, facet, 0.55);
     }
@@ -92,6 +89,24 @@ export function makeLusterDustMaps({
       fleck(u * Wc, (1 - v) * Hc, Math.max(0.6, rad), 0.5 + rnd() * 0.5, facet);   // invert Y → lands at the tap
     }
   });
-  const tex = (ctx, srgb) => { const t = new THREE.CanvasTexture(ctx.canvas); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; };
-  return { map: tex(alb, true), metalnessMap: tex(met, false), roughnessMap: tex(rou, false), emissiveMap: tex(emi, true), normalMap: tex(nrm, false) };
+  alb.globalAlpha = met.globalAlpha = rou.globalAlpha = emi.globalAlpha = nrm.globalAlpha = 1;
+}
+
+// Standalone dust map set (used by the admin Luster Dust Studio). Output is unchanged from before the
+// stamp helper was extracted — the studio binds these with the metalness SCALAR.
+export function makeLusterDustMaps({
+  radius = 1, height = 2.2, baseColor = '#1c2336', dustColor, density, fleckSize, sizeVar, sparkle,
+  glitter, falloff, scatter, directionality, splashes = [], seed = 1337,
+}) {
+  const { WU, Wc, Hc } = finishCanvasSize(radius, height);
+  const alb = mkCtx(baseColor, Wc, Hc), met = mkCtx('#000000', Wc, Hc), rou = mkCtx('#ffffff', Wc, Hc),
+        emi = mkCtx('#000000', Wc, Hc), nrm = mkCtx('#8080ff', Wc, Hc);
+  stampDustFlecks({
+    alb, met, rou, emi, nrm, Wc, Hc, WU, radius, height,
+    dustColor, density, fleckSize, sizeVar, sparkle, glitter, falloff, scatter, directionality, splashes, seed,
+  });
+  return {
+    map: ctxTexture(alb, true), metalnessMap: ctxTexture(met), roughnessMap: ctxTexture(rou),
+    emissiveMap: ctxTexture(emi, true), normalMap: ctxTexture(nrm),
+  };
 }

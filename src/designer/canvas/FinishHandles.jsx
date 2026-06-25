@@ -3,17 +3,23 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildRay } from '../utils/raycasting.js';
 
-// ── Luster-dust placement handles ─────────────────────────────────────────────
-// In dust mode each flick shows a draggable dot ON the cake at its splash origin, so the customer sees
-// exactly where the dust lands and nudges it directly (clicking bare wall still edits the tier — we do
-// NOT make the whole wall a placement target). Dragging a handle raycasts an invisible wall catcher to
-// read the new uv and moves the splash. The handle's world position is the inverse of THREE's cylinder
-// UV: angle = u·2π (x=R·sinθ, z=R·cosθ), y = baseY + v·height — the same (u,v) the dust generator uses,
-// so handle and dust stay locked together. Round tiers only (rect UV differs).
+// ── Particle-finish placement handles (luster dust + gold leaf) ───────────────────────────────
+// In a finish's edit mode each placed point (a dust splash / a leaf flake) shows a draggable dot ON the
+// cake at its origin, so the customer sees exactly where it lands and nudges it directly (clicking bare
+// wall still edits the tier — we do NOT make the whole wall a placement target). Dragging raycasts an
+// invisible wall catcher to read the new uv. The handle's world position is the inverse of THREE's
+// cylinder UV: angle = u·2π (x=R·sinθ, z=R·cosθ), y = baseY + v·height — the same (u,v) the finish
+// generator uses, so handle and particle stay locked. Round tiers only (rect UV differs). Generic over
+// the finish: `getPoints` reads the per-tier point list; the `catcherFlag`/`handleFlag` userData keys
+// keep dust and foil handles distinct so each can suspend orbit on its own drag.
 
 const TAU = Math.PI * 2;
 
-export default function DustHandles({ tierData = [], selected = null, onMove, onSelect }) {
+export default function FinishHandles({
+  tierData = [], getPoints, selected = null, onMove, onSelect,
+  catcherFlag = 'isFinishCatcher', handleFlag = 'isFinishHandle',
+  color = '#ffffff', selColor = '#3D5A44',
+}) {
   const { gl, camera, scene } = useThree();
   const rc = useRef(new THREE.Raycaster());
   const drag = useRef(null);   // { tier, idx } while dragging a handle
@@ -21,7 +27,7 @@ export default function DustHandles({ tierData = [], selected = null, onMove, on
   const uvAt = (clientX, clientY) => {
     const ray = buildRay(clientX, clientY, gl.domElement, camera);
     rc.current.set(ray.origin, ray.direction);
-    const hit = rc.current.intersectObjects(scene.children, true).find(h => h.object.userData?.isDustCatcher && h.uv);
+    const hit = rc.current.intersectObjects(scene.children, true).find(h => h.object.userData?.[catcherFlag] && h.uv);
     return hit ? { u: hit.uv.x, v: hit.uv.y, tier: hit.object.userData.tierIndex } : null;
   };
 
@@ -50,26 +56,27 @@ export default function DustHandles({ tierData = [], selected = null, onMove, on
   return (
     <>
       {tierData.map((t, ti) => {
-        if ((t.shape ?? 'round') === 'rect' || !t.dusting?.splashes?.length) return null;
+        const points = getPoints(t);
+        if ((t.shape ?? 'round') === 'rect' || !points?.length) return null;
         const R = t.radius, cy = t.baseY;
         return (
           <group key={ti}>
             {/* invisible open-cylinder wall catcher — raycast target for reading uv during a drag */}
-            <mesh position={[0, cy + t.height / 2, 0]} userData={{ isDustCatcher: true, tierIndex: ti }}>
+            <mesh position={[0, cy + t.height / 2, 0]} userData={{ [catcherFlag]: true, tierIndex: ti }}>
               <cylinderGeometry args={[R * 1.012, R * 1.012, t.height, 96, 1, true]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
             </mesh>
-            {t.dusting.splashes.map((sp, si) => {
-              const ang = sp.u * TAU;
-              const pos = [R * 1.02 * Math.sin(ang), cy + sp.v * t.height, R * 1.02 * Math.cos(ang)];
+            {points.map((p, si) => {
+              const ang = p.u * TAU;
+              const pos = [R * 1.02 * Math.sin(ang), cy + p.v * t.height, R * 1.02 * Math.cos(ang)];
               const isSel = selected && selected.tier === ti && selected.idx === si;
               return (
                 <group key={si} position={pos}>
-                  <mesh userData={{ isDustHandle: true }} onPointerDown={e => onDown(e, ti, si)}>
+                  <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, ti, si)}>
                     <sphereGeometry args={[isSel ? 0.055 : 0.045, 16, 16]} />
-                    <meshBasicMaterial color={isSel ? '#3D5A44' : '#ffffff'} />
+                    <meshBasicMaterial color={isSel ? selColor : color} />
                   </mesh>
-                  {/* dark rim so a white handle reads on a light cake */}
+                  {/* dark rim so a light handle reads on a light cake */}
                   <mesh>
                     <sphereGeometry args={[isSel ? 0.066 : 0.055, 16, 16]} />
                     <meshBasicMaterial color="#1a1a1a" transparent opacity={0.35} depthWrite={false} side={THREE.BackSide} />

@@ -860,7 +860,7 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, geoSig, dusting = null, dustingMaps = null, children, castShadow = true, receiveShadow = false }) {
+                    gradient, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const grainMap = useMemo(
@@ -884,29 +884,31 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
-  useEffect(() => { if (matRef.current) matRef.current.needsUpdate = true; }, [dustingMaps]);
-  // Luster dust = metallic flecks. The albedo MAP carries the base colour + gold flecks (so `color`
-  // goes white and the map drives it); metalness/roughness maps make the flecks read as satin-gold
-  // METAL over the untouched matte base (map base = base colour, metalnessMap base = 0, roughnessMap
-  // base = 1 → the wall keeps the frosting look). Gold comes from the fleck's surface colour, not
-  // emission — so it reads gold on ANY base and never tone-map-clips to white (the emissive trap on
-  // light cakes). `emissive` stays an optional faint glow (glow defaults to 0). The grain/style normal
-  // stays. (Map binding requires the needsUpdate recompile above.)
+  useEffect(() => { if (matRef.current) matRef.current.needsUpdate = true; }, [finishMaps]);
+  // Particle finishes (luster dust + gold leaf) bake into ONE wall-map set (`finishMaps`). The albedo
+  // MAP carries the base colour + dust flecks + gold shards (so `color` goes white and the map drives
+  // it). metalness/roughness are baked ABSOLUTE into the maps, so the material scalars are 1 and each
+  // particle keeps its own metalness/roughness (dust ≠ foil) over the untouched matte base (base map =
+  // base colour, base metalness = surf.metalness, base roughness = surf.roughness → the wall keeps its
+  // frosting look). Gold/dust colour comes from the particle's surface colour, never emission, so it
+  // reads on ANY base. `emissive` stays an optional faint dust glow. Gold leaf bumps envMapIntensity so
+  // the metal shards reflect the room (the "shine"). The grain/style normal stays. (Map binding requires
+  // the needsUpdate recompile above.)
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshPhysicalMaterial ref={matRef} color={dustingMaps ? '#ffffff' : color}
-        map={dustingMaps?.map ?? null}
-        roughness={surf?.roughness ?? 0.68}
-        metalness={dustingMaps ? (dusting?.metalness ?? 0.2) : (surf?.metalness ?? 0)}
-        metalnessMap={dustingMaps?.metalnessMap ?? null}
-        roughnessMap={dustingMaps?.roughnessMap ?? null}
-        emissive={dustingMaps ? (dusting?.dustColor ?? '#000000') : '#000000'}
-        emissiveMap={dustingMaps?.emissiveMap ?? null}
-        emissiveIntensity={dustingMaps ? (dusting?.glow ?? 0) : 0}
+      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : color}
+        map={finishMaps?.map ?? null}
+        roughness={finishMaps ? 1 : (surf?.roughness ?? 0.68)}
+        metalness={finishMaps ? 1 : (surf?.metalness ?? 0)}
+        metalnessMap={finishMaps?.metalnessMap ?? null}
+        roughnessMap={finishMaps?.roughnessMap ?? null}
+        emissive={finishMaps && dusting ? (dusting?.dustColor ?? '#000000') : '#000000'}
+        emissiveMap={finishMaps?.emissiveMap ?? null}
+        emissiveIntensity={finishMaps && dusting ? (dusting?.glow ?? 0) : 0}
         sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
         clearcoat={surf?.clearcoat ?? 0} clearcoatRoughness={surf?.clearcoatRoughness ?? 0.5}
-        envMapIntensity={surf?.envMapIntensity ?? 0.5}
+        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 2.0) : (surf?.envMapIntensity ?? 0.5)}
         normalMap={normalMap ?? null}
         normalScale={[normalScale, normalScale]} />
     </mesh>
@@ -979,6 +981,7 @@ export default function CakeTier({
   frostingStyle = DEFAULT_STYLE,
   styleParams = null,
   dusting = null,
+  foil = null,
   flavour = 'vanilla',
   selected = false,
   // New: arrays of stacked piping layers per zone. Legacy single topPiping/bottomPiping
@@ -1052,15 +1055,16 @@ export default function CakeTier({
   );
   const styleNormalScale = styleVals.depth ?? 1;
 
-  // Luster dust — composite the tier's splash points into wall material maps (round tiers only; the
-  // cylinder UV is what the splash u,v address). Rebuilt only when the dusting config changes.
-  const dustingSig = dusting ? JSON.stringify(dusting) : '';
-  const dustingMaps = useMemo(
-    () => (!isRect && dusting?.splashes?.length)
-      ? makeLusterDustMaps({ radius, height, baseColor: color, ...dusting, splashes: dusting.splashes })
+  // Particle finishes (luster dust + gold leaf) — composite the tier's splash points and foil flakes
+  // into ONE wall material map set (round tiers only; the cylinder UV is what the u,v address). Rebuilt
+  // only when a finish config changes.
+  const finishSig = `${dusting ? JSON.stringify(dusting) : ''}|${foil ? JSON.stringify(foil) : ''}`;
+  const finishMaps = useMemo(
+    () => (!isRect && (dusting?.splashes?.length || foil?.flakes?.length))
+      ? makeParticleFinishMaps({ radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0, dusting, foil })
       : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isRect, radius, height, color, dustingSig],
+    [isRect, radius, height, color, mat.roughness, mat.metalness, finishSig],
   );
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
@@ -1163,7 +1167,7 @@ export default function CakeTier({
         // Fondant-draped round tier: one rounded-edge solid (spans y ∈ [0,height]), positioned at
         // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.
         <TierBody position={[0, yBase, 0]} color={color} surf={mat}
-          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} dustingMaps={dustingMaps}
+          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
           gradient={effGradient} geoSig={roundedGeo.uuid} castShadow receiveShadow>
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
@@ -1171,7 +1175,7 @@ export default function CakeTier({
         // Cream STYLE wall (wave/swirl/rustic): a displaced cylinder, one centred mesh (caps flat),
         // no separate lid — the texture and gradient flow over the whole wall.
         <TierBody position={[0, centerY, 0]} color={color} surf={mat}
-          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} dustingMaps={dustingMaps}
+          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
           gradient={effGradient} geoSig={styledGeo.uuid} castShadow receiveShadow>
           {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
               changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
@@ -1180,7 +1184,7 @@ export default function CakeTier({
       ) : (
         <>
           <TierBody position={[0, centerY, 0]} color={color} surf={mat}
-            grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} dustingMaps={dustingMaps}
+            grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
             overrideNormalMap={styleNormalMap} overrideNormalScale={styleNormalScale}
             gradient={effGradient} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
             <cylinderGeometry args={[radius, radius, height, 64]} />
