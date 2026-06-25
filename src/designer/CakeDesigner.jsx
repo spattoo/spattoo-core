@@ -2204,9 +2204,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setMultiSelectMode(false);
   }
 
-  function handleDeselect() { clearAllSelections(); }
+  // While editing a foil finish, clicks on the cake/background must NOT deselect it — otherwise the
+  // foil card closes and its drag dots vanish, so flakes feel unmovable. Foil edit mode persists (like
+  // the luster-dust tool) until the user collapses the foil card. Missing a dot is simply a no-op.
+  function handleDeselect() { if (selectedEl?.type === 'foil') return; clearAllSelections(); }
 
   function handleTierClick(i) {
+    if (selectedEl?.type === 'foil') return;   // keep foil edit mode + its dots alive
     closeAllPopups();
     setSelectedEl(prev => (prev?.type === 'tier' && prev.index === i) ? null : { type: 'tier', index: i });
   }
@@ -3291,7 +3295,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const fEl = foilElement ?? (selectedEl?.elementId ? elementById.get(selectedEl.elementId) : null);
     decorationCards.unshift({
       key: 'foil', type: 'foil', elementId: fEl?.id ?? selectedEl?.elementId ?? null,
-      name: fEl?.name ?? 'Gold Leaf',
+      name: fEl?.name ?? 'Foil',
       thumb: /\.(glb|gltf)(\?|$)/i.test(fEl?.image_url ?? '') ? (fEl?.thumbnail_url ?? null) : (fEl?.image_url ?? fEl?.thumbnail_url ?? null),
     });
   }
@@ -3520,7 +3524,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Torn shards of edible gold leaf pressed onto the cake. Add several and drag each dot to scatter them.</div>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Torn shards of edible foil pressed onto the cake. Add a few, then drag each dot to move it.</div>
         {design.tiers.length > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={s.editPanelLabel}>Tier</span>
@@ -3543,7 +3547,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </div>
         <button style={{ width: '100%', borderRadius: 8, fontSize: 12, fontWeight: 800, color: '#fff', background: '#3D5A44', border: 'none', padding: '9px', cursor: 'pointer' }}
-          onClick={() => addFoilToTier(foilTier)}>Add gold leaf</button>
+          onClick={() => addFoilToTier(foilTier)}>Add foil</button>
         {flakes.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {flakes.map((_, i) => (
