@@ -1,6 +1,6 @@
 {
-  "//": "Copy-paste detector — a HARD GATE in `npm run verify` (and the pre-commit hook). `threshold` is the max % of duplicated lines allowed; the build fails above it. Baseline at wiring was 2.82%, so 3 holds the line and blocks regressions. RATCHET IT DOWN as existing clones are paid off (see the heightfield→normal-map loop shared across the texture files). A deliberate, reviewed clone goes between `// jscpd:ignore-start` … `// jscpd:ignore-end` so it doesn't count.",
-  "threshold": 3,
+  "//": "Copy-paste detector — a HARD GATE in `npm run verify` (and the pre-commit hook). `threshold` is the max % of duplicated lines allowed; the build fails above it. RATCHET IT DOWN as existing clones are paid off, so the gain can never silently erode. History: 2.82% (wiring) → 2.62% after the heightfield→normalMap helper. Next clusters to extract: the tileable value-noise generator and the mulberry32 PRNG. A deliberate, reviewed clone goes between `// jscpd:ignore-start` … `// jscpd:ignore-end` so it doesn't count.",
+  "threshold": 2.7,
   "minTokens": 50,
   "minLines": 8,
   "absolute": true,

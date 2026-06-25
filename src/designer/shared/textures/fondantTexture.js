@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { heightfieldToNormalMap } from './heightfieldNormal.js';
 
 // Shared FONDANT surface — one procedurally-built, tileable, colour-agnostic NORMAL map reused by
 // every element flagged `placement_config.useSharedFondantTexture`. It adds the soft sugar-paste
@@ -34,24 +35,8 @@ function buildFondantNormalMap(size = 256, strength = 0.6) {
     H[y * size + x] = noise(u, v) * 0.7 + noise(u * 2, v * 2) * 0.3;
   }
 
-  const data = new Uint8Array(size * size * 4);
-  const at = (x, y) => H[((y % size) + size) % size * size + (((x % size) + size) % size)];
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    // Sobel gradient → normal (wrapped neighbours keep it seamless)
-    const dx = (at(x + 1, y) - at(x - 1, y)) * strength * size * 0.02;
-    const dy = (at(x, y + 1) - at(x, y - 1)) * strength * size * 0.02;
-    const nx = -dx, ny = -dy, nz = 1;
-    const len = Math.hypot(nx, ny, nz);
-    const o = (y * size + x) * 4;
-    data[o]     = Math.round((nx / len * 0.5 + 0.5) * 255);
-    data[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
-    data[o + 2] = Math.round((nz / len * 0.5 + 0.5) * 255);
-    data[o + 3] = 255;
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.needsUpdate = true;
-  return tex;
+  // Sobel gradient → normal (shared packer; wrapped neighbours keep it seamless)
+  return heightfieldToNormalMap(H, size, size, strength * size * 0.02);
 }
 
 export function getFondantNormalMap() {

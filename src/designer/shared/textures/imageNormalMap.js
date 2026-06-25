@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { heightfieldToNormalMap } from './heightfieldNormal.js';
 
 // Turn a photo of a real texture (e.g. a palette-knife stroke on white) into cake-surface relief.
 // A flat colour photo can't be used as a height map directly: the white BACKGROUND is bright but must
@@ -128,23 +129,9 @@ export function heightTextureFromField({ height, w, h }) {
   return tex;
 }
 
-// Tangent-space normal map (Sobel) from a height field.
+// Tangent-space normal map (Sobel) from a height field (shared packer).
 export function normalTextureFromField({ height, w, h }, strength = 1) {
-  const at = (x, y) => height[(((y % h) + h) % h) * w + (((x % w) + w) % w)];
-  const out = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const dx = (at(x + 1, y) - at(x - 1, y)) * strength * 4;
-    const dy = (at(x, y + 1) - at(x, y - 1)) * strength * 4;
-    const nx = -dx, ny = -dy, nz = 1, len = Math.hypot(nx, ny, nz), o = (y * w + x) * 4;
-    out[o]     = Math.round((nx / len * 0.5 + 0.5) * 255);
-    out[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
-    out[o + 2] = Math.round((nz / len * 0.5 + 0.5) * 255);
-    out[o + 3] = 255;
-  }
-  const tex = new THREE.DataTexture(out, w, h, THREE.RGBAFormat);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.needsUpdate = true;
-  return tex;
+  return heightfieldToNormalMap(height, w, h, strength * 4);
 }
 
 function loadImage(url) {

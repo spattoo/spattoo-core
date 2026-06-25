@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { heightfieldToNormalMap } from './heightfieldNormal.js';
 
 // Procedural CREAM-WAVE surface — the soft horizontal "spatula-combed buttercream" ridges.
 //
@@ -74,29 +75,11 @@ function buildCreamWaveNormalMap({ size, ridges, lobes, waveAmp, noiseAmt, relie
   const H = new Float32Array(size * size);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) H[y * size + x] = height(x / size, y / size);
 
-  // Gradient → tangent-space normal map. Central difference brought to per-UV-unit (× size), then
-  // de-frequencied by the ridge count so per-ridge steepness is constant — `relief` is the single
-  // soft-relief knob. Neighbours wrap so the seam around U is invisible.
-  const data = new Uint8Array(size * size * 4);
-  const at = (x, y) => H[((y % size) + size) % size * size + (((x % size) + size) % size)];
+  // Gradient → tangent-space normal map (shared packer). The central difference is brought to
+  // per-UV-unit (× 0.5·size), de-frequencied by the ridge count so per-ridge steepness is constant
+  // (`relief` is the single soft-relief knob), then faded toward the top by the relief mask.
   const k = relief / (TAU * ridges);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const v = y / size;
-    const mask = reliefMask(v);
-    const du = (at(x + 1, y) - at(x - 1, y)) * 0.5 * size;
-    const dv = (at(x, y + 1) - at(x, y - 1)) * 0.5 * size;
-    const nx = -du * k * mask, ny = -dv * k * mask, nz = 1;
-    const len = Math.hypot(nx, ny, nz);
-    const o = (y * size + x) * 4;
-    data[o]     = Math.round((nx / len * 0.5 + 0.5) * 255);
-    data[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
-    data[o + 2] = Math.round((nz / len * 0.5 + 0.5) * 255);
-    data[o + 3] = 255;
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.needsUpdate = true;
-  return tex;
+  return heightfieldToNormalMap(H, size, size, (x, y) => 0.5 * size * k * reliefMask(y / size));
 }
 
 // Cached per (rounded) parameter set. `relief` baked here is gentle; the material's normalScale
@@ -134,22 +117,8 @@ export function getCreamGrainNormalMap(size = 256, strength = 0.5) {
     const u = x / size * L, v = y / size * L;
     H[y * size + x] = noise(u, v) * 0.6 + noise(u * 2.3, v * 2.3) * 0.4;
   }
-  const data = new Uint8Array(size * size * 4);
-  const at = (x, y) => H[((y % size) + size) % size * size + (((x % size) + size) % size)];
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const dx = (at(x + 1, y) - at(x - 1, y)) * strength * size * 0.02;
-    const dy = (at(x, y + 1) - at(x, y - 1)) * strength * size * 0.02;
-    const nx = -dx, ny = -dy, nz = 1, len = Math.hypot(nx, ny, nz), o = (y * size + x) * 4;
-    data[o] = Math.round((nx / len * 0.5 + 0.5) * 255);
-    data[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
-    data[o + 2] = Math.round((nz / len * 0.5 + 0.5) * 255);
-    data[o + 3] = 255;
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.needsUpdate = true;
-  _grain = tex;
-  return tex;
+  _grain = heightfieldToNormalMap(H, size, size, strength * size * 0.02);
+  return _grain;
 }
 
 // Foamy WHIPPED-CREAM micro-surface — bigger, rounded air-pocket bumps, the opposite of the fine
@@ -178,22 +147,8 @@ export function getWhippedFoamNormalMap(size = 256, strength = 0.9) {
     h = Math.pow(h, 1.6);   // round the bumps into bubbles (steeper valleys between)
     H[y * size + x] = h;
   }
-  const data = new Uint8Array(size * size * 4);
-  const at = (x, y) => H[((y % size) + size) % size * size + (((x % size) + size) % size)];
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const dx = (at(x + 1, y) - at(x - 1, y)) * strength * size * 0.02;
-    const dy = (at(x, y + 1) - at(x, y - 1)) * strength * size * 0.02;
-    const nx = -dx, ny = -dy, nz = 1, len = Math.hypot(nx, ny, nz), o = (y * size + x) * 4;
-    data[o] = Math.round((nx / len * 0.5 + 0.5) * 255);
-    data[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
-    data[o + 2] = Math.round((nz / len * 0.5 + 0.5) * 255);
-    data[o + 3] = 255;
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.needsUpdate = true;
-  _foam = tex;
-  return tex;
+  _foam = heightfieldToNormalMap(H, size, size, strength * size * 0.02);
+  return _foam;
 }
 
 // REAL relief: displace a cylinder's side wall outward by the wave field so the ribs genuinely
