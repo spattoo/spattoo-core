@@ -72,10 +72,9 @@ export default function FinishHandles({
               const isSel = selected && selected.tier === ti && selected.idx === si;
               return (
                 <group key={si} position={pos}>
-                  <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, ti, si)} renderOrder={10}>
+                  <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, ti, si)}>
                     <sphereGeometry args={[(isSel ? 0.055 : 0.045) * dotScale, 16, 16]} />
-                    {/* depthTest off → the dot always shows above the cake so it's never hidden/ungrabbable */}
-                    <meshBasicMaterial color={isSel ? selColor : color} depthTest={false} />
+                    <meshBasicMaterial color={isSel ? selColor : color} />
                   </mesh>
                   {/* dark rim so a light handle reads on a light cake */}
                   <mesh>
