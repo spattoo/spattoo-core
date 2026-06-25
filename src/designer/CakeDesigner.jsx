@@ -24,7 +24,7 @@ import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, appl
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
-import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // TEMP: Phase-A dev fixture
+import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
 import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
 import OrdersPanel from '../orders/OrdersPanel';
@@ -263,6 +263,26 @@ function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
         onChange={e => onChange(Number(e.target.value))}
         style={{ flex: 1, minWidth: 0, accentColor: '#1a1a1a' }} />
       <span style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', minWidth: 32, flexShrink: 0, textAlign: 'right' }}>{fmt(value)}</span>
+    </div>
+  );
+}
+
+// Tier chooser shared by the tier-finish cards (food foil, second cream layer): a finish edits ONE
+// tier at a time, so tapping a number switches which. Hidden on single-tier cakes. Config-free —
+// the SAME picker for any finish (no slug/type branch). Lives in ONE place so the two finish cards
+// don't each carry a copy (the jscpd duplication gate).
+function FinishTierPicker({ tiers, tier, onPick }) {
+  if (tiers.length <= 1) return null;
+  const btn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+    border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={s.editPanelLabel}>Tier</span>
+      <div style={{ display: 'flex', gap: 5 }}>
+        {tiers.map((_, i) => (
+          <button key={i} style={btn(tier === i)} onClick={() => onPick(i)}>{i + 1}</button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1077,7 +1097,7 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
@@ -1090,6 +1110,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [foilTier, setFoilTier] = useState(0);
   const [foilSel, setFoilSel] = useState(0);
   const [foilSurface, setFoilSurface] = useState('side');   // which surface "Add foil" places onto
+  // Second cream layer ("Cream layer" finish element) — which tier the card edits + which band is selected.
+  const [creamTier, setCreamTier] = useState(0);
+  const [creamSel, setCreamSel] = useState(0);
   // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
   const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
@@ -1119,6 +1142,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // The food-foil ("gold leaf") element is identified by CONFIG, never slug (#1): kind === 'tier_finish'.
   // (Declared after elementById so it doesn't read it before initialization.)
   const foilElement = [...elementById.values()].find(e => e.placement_config?.kind === 'tier_finish') ?? null;
+  // The "Cream layer" element is a tier finish too, identified by CONFIG not slug (#1): it carries a
+  // placement_config.second_cream block (lift/noise/fill_side seeds). It drives tier.creamLayers (raised
+  // second-buttercream bands), NOT a sticker — so it routes to the cream card, never the generic path.
+  const creamElement = [...elementById.values()].find(e => e.placement_config?.second_cream) ?? null;
   // A new flake lands in view (default camera) so its dot is grabbable; the customer drags it / adds
   // more. (u,v) is interpreted per surface (side = angle/height; top = angle/radial-frac), so each
   // surface seeds a small in-view cluster in its own space.
@@ -1144,6 +1171,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const setAllFoilColor = (c) => {
     setFoilColor(c);
     design.tiers.forEach((t, i) => { if (t.foil) updateFoil(i, { color: c }); });
+  };
+  // Add a second-cream band to a tier, seeding ONLY the keys the admin authored (lift/noise/fill_side)
+  // from placement_config.second_cream so the reducer's own defaults stand for anything absent — passing
+  // `undefined` would clobber them. Selects the new band so the card edits it. Renders via SecondCreamLayers.
+  const addCreamToTier = (tierIndex) => {
+    const sc = creamElement?.placement_config?.second_cream ?? {};
+    const existing = design.tiers[tierIndex]?.creamLayers ?? [];
+    const count = existing.length;
+    const layer = {};
+    if (sc.lift != null) layer.lift = sc.lift;
+    if (sc.noise != null) layer.noise = sc.noise;
+    // First band sits at the bottom (admin default). Each subsequent band defaults to the OPPOSITE
+    // anchor of the previous one, so two taps give the popular top+bottom two-tone with a gap between.
+    const prevSide = count ? (existing[count - 1].fillSide ?? 'below') : null;
+    layer.fillSide = prevSide ? (prevSide === 'above' ? 'below' : 'above') : (sc.fill_side ?? 'below');
+    addCreamLayer(tierIndex, layer);
+    setCreamTier(tierIndex); setCreamSel(count);
   };
   const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
   const [picksDb, setPicksDb] = useState([]);
@@ -2271,6 +2315,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setSelectedEl({ type: 'foil', elementId: element.id });
       return;
     }
+    // Second cream layer (config: placement_config.second_cream) — a raised buttercream band, not a
+    // sticker. Seed a first band so it shows immediately, then open the cream card to edit/add more.
+    if (element.placement_config?.second_cream) {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      addCreamToTier(0);
+      setSelectedEl({ type: 'cream', elementId: element.id });
+      return;
+    }
     const zones = element.allowed_zones ?? [];
     // Prefer the top surface; a hero decoration belongs on the cake's actual top (the LAST/
     // topmost tier), not tier 0 (which is hidden under upper tiers on a multi-tier cake).
@@ -2842,6 +2895,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setSelectedEl({ type: 'foil', elementId: element.id });
       return;
     }
+    // Second cream layer (config: placement_config.second_cream) — drag path. Seeds a band on the
+    // dropped tier (round tiers only render it) and opens the cream card. Config-driven, no slug branch.
+    if (element.placement_config?.second_cream) {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      addCreamToTier(hit?.tierIndex ?? 0);
+      setSelectedEl({ type: 'cream', elementId: element.id });
+      return;
+    }
     const parts = element.placement_config?.parts;
     if (Array.isArray(parts) && parts.length) { placePattern(element, parts, hit); return; }
     // Faux-ball cluster (placement_config.cluster): drops as a SINGLE ball at the hit point; the card's
@@ -3306,6 +3368,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       thumb: /\.(glb|gltf)(\?|$)/i.test(fEl?.image_url ?? '') ? (fEl?.thumbnail_url ?? null) : (fEl?.image_url ?? fEl?.thumbnail_url ?? null),
     });
   }
+  // Second-cream-layer finish card: ONE card editing the raised bands (tier.creamLayers). Shown while
+  // editing OR whenever any tier carries a band (so it reappears on reload — a finish, not a sticker).
+  if (selectedEl?.type === 'cream' || design.tiers.some(t => t.creamLayers?.length)) {
+    const cEl = creamElement ?? (selectedEl?.elementId ? elementById.get(selectedEl.elementId) : null);
+    decorationCards.unshift({
+      key: 'cream', type: 'cream', elementId: cEl?.id ?? selectedEl?.elementId ?? null,
+      name: cEl?.name ?? 'Cream layer',
+      thumb: /\.(glb|gltf)(\?|$)/i.test(cEl?.image_url ?? '') ? (cEl?.thumbnail_url ?? null) : (cEl?.image_url ?? cEl?.thumbnail_url ?? null),
+    });
+  }
   // The element stack is ONE persistent right-side editor holding every editable
   // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
   // single accordion. It stays open as long as the cake carries any of them and no
@@ -3330,6 +3402,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'pattern' ? selectedEl.patternId === card.patternId
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : card.type === 'foil' ? true
+         : card.type === 'cream' ? true
          : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
     setColorOpen(false);
@@ -3352,6 +3425,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setMultiSelectMode(false);
     } else if (card.type === 'foil') {
       setSelectedEl({ type: 'foil', elementId: card.elementId });
+      setSelectedStickerIds(new Set());
+      setMultiSelectMode(false);
+    } else if (card.type === 'cream') {
+      setSelectedEl({ type: 'cream', elementId: card.elementId });
       setSelectedStickerIds(new Set());
       setMultiSelectMode(false);
     } else if (card.type === 'sticker') {
@@ -3539,16 +3616,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Torn shards of edible foil pressed onto the cake. Add a few, then drag each dot to move it.</div>
-        {design.tiers.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={s.editPanelLabel}>Tier</span>
-            <div style={{ display: 'flex', gap: 5 }}>
-              {design.tiers.map((_, i) => (
-                <button key={i} style={tierBtn(foilTier === i)} onClick={() => { setFoilTier(i); setFoilSel(0); }}>{i + 1}</button>
-              ))}
-            </div>
-          </div>
-        )}
+        <FinishTierPicker tiers={design.tiers} tier={foilTier} onPick={i => { setFoilTier(i); setFoilSel(0); }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={s.editPanelLabel}>Colour</span>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -3595,6 +3663,78 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {flakes.length > 0 && (
           <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
             onClick={() => { clearFoil(foilTier); setFoilSel(0); }}>Remove all on this tier</button>
+        )}
+      </div>
+    );
+  }
+
+  // The second-cream-layer finish card: raised buttercream bands on a tier (tier.creamLayers). Pick a
+  // tier, "Add band", then per band recolour / set fill side / Lift / Torn / edge preset / gold edge,
+  // and "Paint edge" to scrape the torn rim live (with Auto-rotate to go all the way around). Round
+  // tiers only — SecondCreamLayers renders on round walls. Reuses the cream reducers + presets + paint.
+  function renderCreamBody() {
+    const layers = design.tiers[creamTier]?.creamLayers ?? [];
+    const sel = Math.min(creamSel, Math.max(0, layers.length - 1));
+    const band = layers[sel] ?? null;
+    const up = (fn) => band && updateCreamLayer(creamTier, band.layerId, fn);
+    const painting = creamPaint?.tierIndex === creamTier && creamPaint?.layerId === band?.layerId;
+    const chip = (active) => ({ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+      border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
+    const action = { width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+      border: '1.5px solid #C5D4C8', background: '#fff', color: '#3D5A44', padding: '8px' };
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A raised second buttercream band with a torn edge. Add a band, then scrape its edge on the cake (turn on Auto-rotate to go around).</div>
+        <FinishTierPicker tiers={design.tiers} tier={creamTier} onPick={i => { setCreamTier(i); setCreamSel(0); }} />
+        <button style={{ width: '100%', borderRadius: 8, fontSize: 12, fontWeight: 800, color: '#fff', background: '#3D5A44', border: 'none', padding: '9px', cursor: 'pointer' }}
+          onClick={() => addCreamToTier(creamTier)}>+ Add band</button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#3D5A44' }}>
+          <input type="checkbox" checked={creamAutoRotate} onChange={e => setCreamAutoRotate(e.target.checked)} />
+          Auto-rotate (spin to paint)
+        </label>
+        {layers.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {layers.map((l, i) => (
+              <span key={l.layerId} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
+                border: sel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: sel === i ? '#EEF4EF' : '#fff' }}>
+                <button onClick={() => setCreamSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' }}>Band {i + 1}</button>
+                <button title="Remove" onClick={() => { if (creamPaint?.layerId === l.layerId) setCreamPaint(null); if (sel >= i) setCreamSel(v => Math.max(0, v - 1)); removeCreamLayer(creamTier, l.layerId); }}
+                  style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: '#e53935', cursor: 'pointer' }}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        {band && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={s.editPanelLabel}>Colour</span>
+              <input type="color" value={band.color} onChange={e => up(x => ({ ...x, color: e.target.value }))}
+                style={{ width: 36, height: 26, border: '1.5px solid #C5D4C8', borderRadius: 7, cursor: 'pointer', background: '#fff', padding: 0 }} />
+            </div>
+            {/* Anchor: Bottom = band rises from the base (torn TOP edge); Top = band hangs from the rim
+                (torn BOTTOM edge). One of each leaves the classic gap-in-the-middle two-tone. */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button style={{ ...chip(band.fillSide !== 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'below' }))}>Bottom</button>
+              <button style={{ ...chip(band.fillSide === 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'above' }))}>Top</button>
+            </div>
+            <PenSlider label="Lift" value={band.lift} min={0} max={0.12} step={0.005} onChange={v => up(x => ({ ...x, lift: v }))} fmt={v => v.toFixed(3)} />
+            <PenSlider label="Torn" value={band.noise} min={0} max={0.18} step={0.005} onChange={v => up(x => ({ ...x, noise: v }))} fmt={v => v.toFixed(3)} />
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {Object.keys(SECOND_CREAM_PRESETS).map(name => (
+                <button key={name} style={chip(false)} onClick={() => up(x => ({ ...x, edge: SECOND_CREAM_PRESETS[name]() }))}>{name}</button>
+              ))}
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#3D5A44' }}>
+              <input type="checkbox" checked={!!band.gold?.on} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), on: e.target.checked } }))} />
+              Gold edge
+              {band.gold?.on && <input type="color" value={band.gold?.color ?? '#c89b3c'} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), color: e.target.value } }))}
+                style={{ width: 30, height: 22, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer', padding: 0 }} />}
+            </label>
+            <button style={{ ...action, ...(painting ? { background: '#3D5A44', color: '#fff', borderColor: '#3D5A44' } : {}) }}
+              onClick={() => setCreamPaint(painting ? null : { tierIndex: creamTier, layerId: band.layerId })}>
+              {painting ? 'Painting edge — drag on the cake' : 'Paint edge'}
+            </button>
+          </>
         )}
       </div>
     );
@@ -5281,6 +5421,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'cluster-place' ? renderClusterPlaceBody(card)
                            : card.type === 'cluster' ? renderClusterBody(card)
                            : card.type === 'foil' ? renderFoilBody(card)
+                           : card.type === 'cream' ? renderCreamBody()
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
                       )}
