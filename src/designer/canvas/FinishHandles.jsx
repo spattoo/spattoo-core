@@ -18,7 +18,7 @@ const TAU = Math.PI * 2;
 export default function FinishHandles({
   tierData = [], getPoints, selected = null, onMove, onSelect,
   catcherFlag = 'isFinishCatcher', handleFlag = 'isFinishHandle',
-  color = '#ffffff', selColor = '#3D5A44',
+  color = '#ffffff', selColor = '#3D5A44', dotScale = 1,
 }) {
   const { gl, camera, scene } = useThree();
   const rc = useRef(new THREE.Raycaster());
@@ -73,12 +73,12 @@ export default function FinishHandles({
               return (
                 <group key={si} position={pos}>
                   <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, ti, si)}>
-                    <sphereGeometry args={[isSel ? 0.055 : 0.045, 16, 16]} />
+                    <sphereGeometry args={[(isSel ? 0.055 : 0.045) * dotScale, 16, 16]} />
                     <meshBasicMaterial color={isSel ? selColor : color} />
                   </mesh>
                   {/* dark rim so a light handle reads on a light cake */}
                   <mesh>
-                    <sphereGeometry args={[isSel ? 0.066 : 0.055, 16, 16]} />
+                    <sphereGeometry args={[(isSel ? 0.066 : 0.055) * dotScale, 16, 16]} />
                     <meshBasicMaterial color="#1a1a1a" transparent opacity={0.35} depthWrite={false} side={THREE.BackSide} />
                   </mesh>
                 </group>

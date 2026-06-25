@@ -43,6 +43,16 @@ function trace(ctx, pts) {
   ctx.closePath();
 }
 
+// Cache the foil crinkle source canvas by seed — the fbm noise is deterministic per seed, so building
+// it once and reusing it keeps dragging (which rebuilds the wall maps each frame) smooth.
+let _foilTile = null;
+function foilCrinkleTile(seed) {
+  if (_foilTile && _foilTile.seed === seed) return _foilTile.canvas;
+  const t = makeGoldLeafMaps({ w: 256, h: 256, seed });
+  _foilTile = { seed, canvas: t.map.image };
+  return _foilTile.canvas;
+}
+
 // Stamp every flake (each {u, v, rot, size, seed}) onto the supplied canvas 2D contexts. Albedo = bright
 // gold/silver with a gentle foil crinkle (soft fold shadows + bright sparkle); metalness/roughness =
 // ABSOLUTE greys on the shard so it goes metal over the matte base.
@@ -52,9 +62,10 @@ export function stampFoilFlakes({
   sizeScale = 1, raggedness = GOLD_LEAF_DEFAULTS.raggedness, flakes = [], seed = 99,
 }) {
   const pxPerWorld = Hc / height;
-  // Shared foil crinkle tile — reuse the approved gold-leaf texture as each shard's interior.
-  const foil = makeGoldLeafMaps({ w: 256, h: 256, seed });
-  const foilMap = foil.map.image;
+  // Shared foil crinkle tile — reuse the approved gold-leaf texture as each shard's interior. Cached by
+  // seed at module scope: the crinkle is identical every rebuild, so we must NOT re-run the fbm noise on
+  // every drag frame (that made dragging lag). Only the cheap per-flake stamping repeats.
+  const foilMap = foilCrinkleTile(seed);
   const metFill = gray(metalness), rouFill = gray(roughness);
 
   flakes.forEach((f, fi) => {

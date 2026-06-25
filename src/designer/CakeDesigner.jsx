@@ -1122,10 +1122,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const addFoilToTier = (tierIndex) => {
     const count = design.tiers[tierIndex]?.foil?.flakes?.length ?? 0;
     const pc = foilElement?.placement_config ?? {};
-    // Scatter each new shard to a fresh spot (golden-angle around the wall, banded height) so they
-    // don't stack on one point — the customer then drags each dot to fine-tune the scatter.
-    const u = (0.13 + count * 0.618034) % 1;
-    const v = 0.32 + ((count * 0.27) % 1) * 0.38;   // ~0.32 .. 0.70 of the wall height
+    // Like luster dust, new shards land at the FRONT (u≈0, the default camera view) so the dot is in
+    // view and grabbable — but spread in a small front cluster (not stacked on one point, not flung to
+    // the back). The customer drags each dot to scatter further.
+    const u = ((((count * 0.37) % 1) - 0.5) * 0.16 + 1) % 1;   // ~±0.08 around the front
+    const v = 0.40 + ((count * 0.29) % 1) * 0.25;              // ~0.40 .. 0.65 of the wall height
     addFoilFlake(tierIndex, u, v, { color: foilColor, finish: pc.finish });
     setFoilTier(tierIndex); setFoilSel(count);
   };
