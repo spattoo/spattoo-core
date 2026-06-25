@@ -15,6 +15,7 @@ import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
+import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
 
@@ -970,18 +971,21 @@ const SECOND_CREAM_GOLD_NORMAL_SCALE = new THREE.Vector2(0.7, 0.7);
 function SecondCreamBand({ layer, radius, yBase, height, grain }) {
   const order = layer.order ?? 0;
   const baseR = radius + order * SECOND_CREAM_STACK_STEP;
-  const { color, edge, lift, fillSide, noise, seed } = layer;
+  // NB: `height` (prop) is the WALL height; the band's own thickness is layer.height → bandHeight.
+  const { color, edge, lift, fillSide, noise, seed, height: bandHeight } = layer;
   const gold = layer.gold ?? {};
 
   const bandGeo = useMemo(
-    () => buildSecondCreamLayer({ R: baseR, y0: yBase, wallH: height, lift, edge, fillSide, noise, seed }),
-    [baseR, yBase, height, lift, fillSide, noise, seed, edge],
+    () => buildSecondCreamLayer({ R: baseR, y0: yBase, wallH: height, lift, edge, fillSide, noise, height: bandHeight, seed }),
+    [baseR, yBase, height, lift, fillSide, noise, bandHeight, seed, edge],
   );
   const goldGeo = useMemo(
-    () => (gold.on ? buildSecondCreamEdgeLine({ R: baseR, y0: yBase, wallH: height, lift, edge, noise, seed }) : null),
-    [gold.on, baseR, yBase, height, lift, noise, seed, edge],
+    () => (gold.on ? buildSecondCreamEdgeLine({ R: baseR, y0: yBase, wallH: height, lift, edge, noise, height: bandHeight, fillSide, seed }) : null),
+    [gold.on, baseR, yBase, height, lift, noise, bandHeight, fillSide, seed, edge],
   );
-  const goldMaps = useMemo(() => (gold.on ? makeGoldLeafMaps({ seed }) : null), [gold.on, seed]);
+  // Brighter floor than the food-foil shards: the edge ribbon uses this map AS its albedo (full-strength
+  // multiply), so a low floor browns the creases — lift it so the crinkle reads as gold, not mud.
+  const goldMaps = useMemo(() => (gold.on ? makeGoldLeafMaps({ seed, lumFloor: 0.5 }) : null), [gold.on, seed]);
 
   return (
     <group>
@@ -991,10 +995,13 @@ function SecondCreamBand({ layer, radius, yBase, height, grain }) {
       </mesh>
       {gold.on && goldMaps && (
         <mesh geometry={goldGeo}>
-          {/* Matte foil, not the acrylic gold finish — the texture supplies the torn crinkle/glint. */}
-          <meshStandardMaterial color={gold.color ?? '#c89b3c'}
+          {/* Glossy edible leaf — the SAME approved gold look as the food-foil shards (GOLD_LEAF_DEFAULTS):
+              metalness low enough that the gold albedo stays bright, high env to catch the dim apartment
+              scene, and a gold emissive glow gated by the crinkle map so it reads luminous, not muddy. */}
+          <meshStandardMaterial color={gold.color ?? GOLD_LEAF_COLORS.gold}
             map={goldMaps.map} normalMap={goldMaps.normalMap} normalScale={SECOND_CREAM_GOLD_NORMAL_SCALE}
-            metalness={0.9} roughness={0.42} envMapIntensity={1.6}
+            metalness={GOLD_LEAF_DEFAULTS.metalness} roughness={GOLD_LEAF_DEFAULTS.roughness} envMapIntensity={GOLD_LEAF_DEFAULTS.env}
+            emissive={gold.color ?? GOLD_LEAF_COLORS.gold} emissiveMap={goldMaps.map} emissiveIntensity={GOLD_LEAF_DEFAULTS.glow}
             transparent={false} alphaTest={0.45} side={THREE.DoubleSide} />
         </mesh>
       )}

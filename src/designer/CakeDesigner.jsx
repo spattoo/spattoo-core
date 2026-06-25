@@ -1182,6 +1182,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const layer = {};
     if (sc.lift != null) layer.lift = sc.lift;
     if (sc.noise != null) layer.noise = sc.noise;
+    if (sc.height != null) layer.height = sc.height;
     // First band sits at the bottom (admin default). Each subsequent band defaults to the OPPOSITE
     // anchor of the previous one, so two taps give the popular top+bottom two-tone with a gap between.
     const prevSide = count ? (existing[count - 1].fillSide ?? 'below') : null;
@@ -3676,6 +3677,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const layers = design.tiers[creamTier]?.creamLayers ?? [];
     const sel = Math.min(creamSel, Math.max(0, layers.length - 1));
     const band = layers[sel] ?? null;
+    // Height slider bounds from config (placement_config.second_cream.height_range), with sane fallbacks
+    // so a band can't be a sliver or swallow the whole wall. Mirrors how foil's Size reads scaleRangeOf.
+    const hr = creamElement?.placement_config?.second_cream?.height_range ?? {};
+    const hMin = typeof hr.min === 'number' ? hr.min : 0.15;
+    const hMax = typeof hr.max === 'number' && hr.max > 0 ? hr.max : 0.9;
+    const hStep = typeof hr.step === 'number' && hr.step > 0 ? hr.step : 0.05;
     const up = (fn) => band && updateCreamLayer(creamTier, band.layerId, fn);
     const painting = creamPaint?.tierIndex === creamTier && creamPaint?.layerId === band?.layerId;
     const chip = (active) => ({ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
@@ -3717,6 +3724,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <button style={{ ...chip(band.fillSide !== 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'below' }))}>Bottom</button>
               <button style={{ ...chip(band.fillSide === 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'above' }))}>Top</button>
             </div>
+            <PenSlider label="Height" value={band.height ?? 0.5} min={hMin} max={hMax} step={hStep} onChange={v => up(x => ({ ...x, height: v }))} fmt={v => v.toFixed(2)} />
             <PenSlider label="Lift" value={band.lift} min={0} max={0.12} step={0.005} onChange={v => up(x => ({ ...x, lift: v }))} fmt={v => v.toFixed(3)} />
             <PenSlider label="Torn" value={band.noise} min={0} max={0.18} step={0.005} onChange={v => up(x => ({ ...x, noise: v }))} fmt={v => v.toFixed(3)} />
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>

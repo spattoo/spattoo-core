@@ -129,8 +129,10 @@ const SECOND_CREAM_LAYER_DEFAULT = {
   lift: SECOND_CREAM_DEFAULTS.lift,
   fillSide: SECOND_CREAM_DEFAULTS.fillSide,
   noise: SECOND_CREAM_DEFAULTS.noise,
+  height: SECOND_CREAM_DEFAULTS.height,   // band thickness from its anchor; customer's Height slider
+
   seed: 1,
-  gold: { on: false, color: '#c89b3c' },
+  gold: { on: false, color: '#e6be4a' },   // GOLD_LEAF_COLORS.gold — the approved bright edible-leaf gold
 };
 
 // Passed as storageBaseUrl option — only used to migrate old-format templates

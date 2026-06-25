@@ -23,11 +23,25 @@ export const SECOND_CREAM_DEFAULTS = {
   noise: 0.05,       // coherent jitter added to the torn edge (0 = exactly as drawn)
   fillSide: 'below', // 'below' = colour fills from the bottom up to h(θ) (the refs);
                      // 'above' = colour fills from h(θ) up to the rim
+  height: 0.5,       // band thickness from its anchor (fraction of wall height); the customer's slider
   segments: 256,     // angular tessellation of the rendered band
   profileLen: 96,    // resolution of the authored edge array
 };
 
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+// Shift a sampled torn profile so its MEAN sits at the band-height level, preserving the torn shape
+// (the customer's paint/preset). Anchor-aware so the control always means "how tall the band is": a
+// 'below' band fills `height` up from the base; an 'above' band hangs `height` down from the rim
+// (edge level = 1 - height). `height == null` → no shift (back-compat: bands saved before this control).
+function applyHeight(prof, height, fillSide) {
+  if (height == null) return prof;
+  const targetMean = fillSide === 'above' ? 1 - height : height;
+  let m = 0; for (let i = 0; i < prof.length; i++) m += prof[i];
+  const shift = targetMean - m / prof.length;
+  for (let i = 0; i < prof.length; i++) prof[i] = clamp01(prof[i] + shift);
+  return prof;
+}
 
 // A flat starting edge — the customer (or a preset) overwrites it. Exported so the
 // studio and core seed identical defaults.
@@ -105,6 +119,7 @@ export function paintProfile(edge, theta01, frac, { brush = 3 } = {}) {
  * @param {number}   o.lift      radial offset of the band beyond R (the raised lip)
  * @param {number[]} o.edge      authored edge profile (fractions 0..1 of wallH)
  * @param {string}   o.fillSide  'below' | 'above'
+ * @param {number}   [o.height]  band thickness from the anchor (0..1 of wallH); omit = no level shift
  * @param {number}   o.noise     torn-edge jitter
  * @param {number}   o.seed      jitter seed
  * @param {number}   o.segments  angular tessellation
@@ -118,13 +133,14 @@ export function buildSecondCreamLayer({
   edge,
   fillSide = SECOND_CREAM_DEFAULTS.fillSide,
   noise = SECOND_CREAM_DEFAULTS.noise,
+  height,
   seed = 1,
   segments = SECOND_CREAM_DEFAULTS.segments,
 } = {}) {
   const N = Math.max(8, segments | 0);
   const ro = R + lift;                       // outer (proud) radius of the band
   const yTop = y0 + wallH;                    // rim of the wall
-  const prof = sampleProfile(edge, N, noise, seed);
+  const prof = applyHeight(sampleProfile(edge, N, noise, seed), height, fillSide);
   const tornHigh = fillSide !== 'above';      // 'below' → torn edge is the TOP edge
 
   const pos = [];
@@ -193,6 +209,8 @@ export function buildSecondCreamEdgeLine({
   lift = SECOND_CREAM_DEFAULTS.lift,
   edge,
   noise = SECOND_CREAM_DEFAULTS.noise,
+  height,
+  fillSide = SECOND_CREAM_DEFAULTS.fillSide,
   seed = 1,
   segments = SECOND_CREAM_DEFAULTS.segments,
   width = 0.09,            // band height the foil texture feathers within
@@ -200,7 +218,7 @@ export function buildSecondCreamEdgeLine({
 } = {}) {
   const N = Math.max(8, segments | 0);
   const rr = R + lift + 0.005;   // just proud of the band so the leaf sits on top
-  const prof = sampleProfile(edge, N, noise, seed);
+  const prof = applyHeight(sampleProfile(edge, N, noise, seed), height, fillSide);   // same edge as the band
 
   const pos = [];
   const uv = [];

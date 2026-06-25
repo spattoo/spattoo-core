@@ -53,7 +53,7 @@ function fbm(noise, x, y) {
  * @param {number} o.seed
  * @returns {{ map: THREE.CanvasTexture, normalMap: THREE.CanvasTexture }}
  */
-export function makeGoldLeafMaps({ w = 256, h = 96, seed = 7 } = {}) {
+export function makeGoldLeafMaps({ w = 256, h = 96, seed = 7, lumFloor = 0.18 } = {}) {
   const crink = tilingNoise(seed, 48);
   const streak = tilingNoise(seed * 31 + 5, 64);   // finer wrinkle lines
   const edgeA = tilingNoise(seed * 7 + 1, 24);      // top-border wobble
@@ -90,7 +90,9 @@ export function makeGoldLeafMaps({ w = 256, h = 96, seed = 7 } = {}) {
     // mostly bright with sparkle on the high crinkles, dark only in deep creases
     let lum = 0.5 + 0.55 * (n - 0.45);
     lum += 0.45 * smoothstep(0.72, 0.95, n);              // specular sparkle pops
-    lum = Math.max(0.18, Math.min(1, lum));
+    // lumFloor raises the darkest creases — the default keeps the torn-foil shards' look; the cream
+    // gold EDGE passes a higher floor so the crinkle reads as gold variation, not muddy brown creases.
+    lum = Math.max(lumFloor, Math.min(1, lum));
     const g = Math.round(lum * 255);
     cimg.data[i * 4 + 0] = g;
     cimg.data[i * 4 + 1] = g;
