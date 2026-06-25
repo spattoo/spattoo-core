@@ -2026,6 +2026,8 @@ export default function CakeCanvas({
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
+  dustMode = false, dustSelected = null, onDustMove, onDustSelect,
+  foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
@@ -2147,6 +2149,14 @@ export default function CakeCanvas({
         onAddStroke={onAddStroke}
         creamPaint={creamPaint}
         onCreamPaint={onCreamPaint}
+        dustMode={dustMode}
+        dustSelected={dustSelected}
+        onDustMove={onDustMove}
+        onDustSelect={onDustSelect}
+        foilMode={foilMode}
+        foilSelected={foilSelected}
+        onFoilMove={onFoilMove}
+        onFoilSelect={onFoilSelect}
         tierDataRef={tierDataRef}
       />
       <OrbitControls

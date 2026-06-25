@@ -36,7 +36,6 @@ export default function FinishHandles({
     try { gl.domElement.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
     drag.current = { tier, idx };
     onSelect?.(tier, idx);
-    console.log('[FH] down', handleFlag, 'tier', tier, 'idx', idx);   // TEMP debug
   };
 
   useEffect(() => {
@@ -44,7 +43,6 @@ export default function FinishHandles({
     const move = ev => {
       if (!drag.current) return;
       const hit = uvAt(ev.clientX, ev.clientY);
-      console.log('[FH] move', handleFlag, 'drag', drag.current, 'hit', hit);   // TEMP debug
       if (hit && hit.tier === drag.current.tier) onMove?.(drag.current.tier, drag.current.idx, hit.u, hit.v);
     };
     const up = () => { drag.current = null; };
@@ -55,7 +53,6 @@ export default function FinishHandles({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gl, camera, scene, onMove]);
 
-  if (handleFlag === 'isFoilHandle') console.log('[FH] render foil; points/tier =', tierData.map(t => getPoints(t)?.length ?? 0));   // TEMP debug
   return (
     <>
       {tierData.map((t, ti) => {
