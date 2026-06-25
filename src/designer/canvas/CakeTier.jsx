@@ -1069,13 +1069,16 @@ export default function CakeTier({
   // into ONE wall material map set (round tiers only; the cylinder UV is what the u,v address). Rebuilt
   // only when a finish config changes.
   const finishSig = `${dusting ? JSON.stringify(dusting) : ''}|${foil ? JSON.stringify(foil) : ''}`;
-  const finishMaps = useMemo(
-    () => (!isRect && (dusting?.splashes?.length || foil?.flakes?.length))
-      ? makeParticleFinishMaps({ radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0, dusting, foil })
-      : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isRect, radius, height, color, mat.roughness, mat.metalness, finishSig],
-  );
+  const finishRef = useRef(null);   // reused canvases/textures across rebuilds (drag/add stay cheap)
+  const finishMaps = useMemo(() => {
+    if (isRect || !(dusting?.splashes?.length || foil?.flakes?.length)) { finishRef.current = null; return null; }
+    finishRef.current = makeParticleFinishMaps({
+      radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+      dusting, foil, reuse: finishRef.current,
+    });
+    return finishRef.current;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRect, radius, height, color, mat.roughness, mat.metalness, finishSig]);
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);

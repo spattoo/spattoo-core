@@ -26,6 +26,12 @@ export function mkCtx(bg, Wc, Hc) {
   const x = c.getContext('2d'); x.fillStyle = bg; x.fillRect(0, 0, Wc, Hc); return x;
 }
 
+// Reset an existing canvas ctx to a flat bg (reuse it across rebuilds instead of allocating a new one).
+export function clearCtx(ctx, bg, Wc, Hc) {
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, Wc, Hc);
+}
+
 // No mipmaps + LinearFilter so fine particles survive minification; sRGB only on colour maps.
 export function ctxTexture(ctx, srgb = false) {
   const t = new THREE.CanvasTexture(ctx.canvas);

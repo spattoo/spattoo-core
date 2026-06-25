@@ -63,7 +63,7 @@ export function stampDustFlecks({
       met.globalAlpha = bright;       draw(met, X, py, rad, mFill);
       rou.globalAlpha = bright;       draw(rou, X, py, rad, rFill);
       emi.globalAlpha = bright * 0.8; draw(emi, X, py, rad, '#ffffff');   // MASK — material.emissive tints it gold
-      nrm.globalAlpha = 0.95;         draw(nrm, X, py, rad, facet, 0.55);
+      if (nrm) { nrm.globalAlpha = 0.95; draw(nrm, X, py, rad, facet, 0.55); }   // nrm optional (core doesn't bind it)
     }
   };
   splashes.forEach((sp, si) => {
@@ -89,7 +89,8 @@ export function stampDustFlecks({
       fleck(u * Wc, (1 - v) * Hc, Math.max(0.6, rad), 0.5 + rnd() * 0.5, facet);   // invert Y → lands at the tap
     }
   });
-  alb.globalAlpha = met.globalAlpha = rou.globalAlpha = emi.globalAlpha = nrm.globalAlpha = 1;
+  alb.globalAlpha = met.globalAlpha = rou.globalAlpha = emi.globalAlpha = 1;
+  if (nrm) nrm.globalAlpha = 1;
 }
 
 // Standalone dust map set (used by the admin Luster Dust Studio). Output is unchanged from before the
