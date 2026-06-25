@@ -348,7 +348,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           flakes: [],
         };
         const fseed = (base.flakes.length * 977 + Math.round(u * 9973) + Math.round(v * 7919)) % 100000 + 1;
-        return { ...t, foil: { ...base, flakes: [...base.flakes, { u, v, ...GOLD_LEAF_NEW_FLAKE, rot: Math.round((u * 360) % 360), seed: fseed }] } };
+        return { ...t, foil: { ...base, flakes: [...base.flakes, { u, v, ...GOLD_LEAF_NEW_FLAKE, size: seed.size ?? GOLD_LEAF_NEW_FLAKE.size, rot: Math.round((u * 360) % 360), seed: fseed }] } };
       }),
     }));
   }

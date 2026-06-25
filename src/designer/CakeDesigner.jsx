@@ -1127,7 +1127,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // the back). The customer drags each dot to scatter further.
     const u = ((((count * 0.37) % 1) - 0.5) * 0.16 + 1) % 1;   // ~±0.08 around the front
     const v = 0.40 + ((count * 0.29) % 1) * 0.25;              // ~0.40 .. 0.65 of the wall height
-    addFoilFlake(tierIndex, u, v, { color: foilColor, finish: pc.finish });
+    // Default flake size = the element's placement_config.r (default scale, never hard-coded).
+    addFoilFlake(tierIndex, u, v, { color: foilColor, finish: pc.finish, size: pc.r ?? 0.5 });
     setFoilTier(tierIndex); setFoilSel(count);
   };
   const setAllFoilColor = (c) => {
@@ -3557,7 +3558,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
         {flakes[foilSel] && (
-          <PenSlider label="Size" value={flakes[foilSel].size ?? 1} min={0.3} max={3} step={0.05}
+          <PenSlider label="Size" value={flakes[foilSel].size ?? 0.5} min={0.1} max={1.5} step={0.05}
             onChange={v => updateFoilFlake(foilTier, foilSel, { size: v })} fmt={v => v.toFixed(2)} />
         )}
         {flakes.length > 0 && (
