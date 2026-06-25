@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mulberry32 } from '../../utils/random.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Gold leaf texture — the crinkled edible gold-foil look pressed along a torn cake
@@ -14,15 +15,6 @@ import * as THREE from 'three';
 //
 // Pure texture generator (THREE only) — shared by the designer render and the studio.
 // ─────────────────────────────────────────────────────────────────────────────
-
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 const smoothstep = (e0, e1, x) => {
   const t = Math.max(0, Math.min(1, (e1 === e0 ? 0 : (x - e0) / (e1 - e0))));

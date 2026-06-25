@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mulberry32 } from '../utils/random.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Second cream layer — a second buttercream "skin" applied over part of a cake
@@ -27,16 +28,6 @@ export const SECOND_CREAM_DEFAULTS = {
 };
 
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
-
-// Deterministic RNG so a given seed always yields the same torn jitter.
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 // A flat starting edge — the customer (or a preset) overwrites it. Exported so the
 // studio and core seed identical defaults.

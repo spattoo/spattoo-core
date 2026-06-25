@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { heightfieldToNormalMap } from './heightfieldNormal.js';
+import { mulberry32 } from '../../utils/random.js';
 
 // Turn a photo of a real texture (e.g. a palette-knife stroke on white) into cake-surface relief.
 // A flat colour photo can't be used as a height map directly: the white BACKGROUND is bright but must
@@ -73,15 +74,6 @@ export function heightFieldFromImage(image, { crop = null, max = 512, base = 0.4
   }
   H = boxBlur(H, w, h, blur);
   return { height: H, w, h };
-}
-
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 // Compose a SEAMLESS, full-coverage height tile by STAMPING a single stroke field many times at
