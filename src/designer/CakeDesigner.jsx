@@ -1122,7 +1122,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const addFoilToTier = (tierIndex) => {
     const count = design.tiers[tierIndex]?.foil?.flakes?.length ?? 0;
     const pc = foilElement?.placement_config ?? {};
-    addFoilFlake(tierIndex, 0.0, 0.5, { color: foilColor, finish: pc.finish });
+    // Scatter each new shard to a fresh spot (golden-angle around the wall, banded height) so they
+    // don't stack on one point — the customer then drags each dot to fine-tune the scatter.
+    const u = (0.13 + count * 0.618034) % 1;
+    const v = 0.32 + ((count * 0.27) % 1) * 0.38;   // ~0.32 .. 0.70 of the wall height
+    addFoilFlake(tierIndex, u, v, { color: foilColor, finish: pc.finish });
     setFoilTier(tierIndex); setFoilSel(count);
   };
   const setAllFoilColor = (c) => {
