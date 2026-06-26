@@ -25,7 +25,14 @@ const TAU = Math.PI * 2;
 export default function FinishHandles({
   tierData = [], getPoints, selected = null, onMove, onSelect,
   catcherFlag = 'isFinishCatcher', handleFlag = 'isFinishHandle',
-  color = '#ffffff', selColor = '#3D5A44', dotScale = 1, showMarker = true,
+  // NOTE — default is NO visible marker. A particle finish (dust, foil, and any
+  // FUTURE finish) is grabbed via the invisible sphere at its origin; we do NOT
+  // draw a coloured dot on the cake, because that dot reads as part of the design
+  // and gets baked into the order thumbnail (the "green dot" bug). Only opt into a
+  // marker (showMarker) for a finish that has NO visible particle of its own AND
+  // accept it won't appear in renders. Keeping the default false means new finishes
+  // can't reintroduce the stray dot.
+  color = '#ffffff', selColor = '#3D5A44', dotScale = 1, showMarker = false,
 }) {
   const { gl, camera, scene } = useThree();
   const rc = useRef(new THREE.Raycaster());
