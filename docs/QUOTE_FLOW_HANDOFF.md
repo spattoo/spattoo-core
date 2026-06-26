@@ -46,6 +46,7 @@ No capability migration was needed — the RBAC seed already grants the `custome
 NEXT_PUBLIC_API_URL=<spattoo-api base, e.g. http://localhost:4000 or the Render URL>
 NEXT_PUBLIC_SUPABASE_URL=<your Supabase project URL>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<your Supabase anon key>
+NEXT_PUBLIC_SENTRY_DSN=<optional — Sentry client DSN; telemetry no-ops if unset>
 ```
 **`spattoo-api`** — its usual env (Supabase URL/service key, SMTP, R2, etc.). Run the API on the
 `worktree-custom-quote-flow` branch so the new routes exist.
@@ -123,6 +124,11 @@ Prereqs: a baker with a **published storefront** + slug, and a **customer invite
 - **Core publish strategy** — replace the vendored tarball with a published `@spattoo/designer`.
 - **Deploy** — two Vercel projects (`apps/marketing`, `apps/app`) + wildcard DNS `*.spattoo.com`.
 - **`middleware.ts` → `proxy.ts`** — Next 16 deprecation warning on `apps/app/middleware.ts`.
+- **Sentry telemetry** — ✅ **wired (Task 12):** `@sentry/nextjs` client init + `global-error` + per-surface
+  context (surface / baker_slug / role / user); core's `reportError` bridged to Sentry on the
+  designer + baker routes. Deferred: **`withSentryConfig`** (source-map upload → symbolicated stacks +
+  server-side instrumentation) — client errors capture without it, just unminified. Set
+  `NEXT_PUBLIC_SENTRY_DSN` to turn it on.
 
 ---
 
