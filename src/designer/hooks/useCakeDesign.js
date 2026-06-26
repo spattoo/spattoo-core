@@ -859,6 +859,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           ...(t.width   != null  && { width: t.width }),
           ...(t.depth   != null  && { depth: t.depth }),
           ...(t.cornerR != null  && { cornerR: t.cornerR }),
+          // Restore per-tier wall treatments saved in the snapshot (luster dust,
+          // gold-leaf foil) so edit-in-3D / template load brings them back.
+          ...(t.dusting != null && { dusting: t.dusting }),
+          ...(t.foil    != null && { foil: t.foil }),
         };
       }),
       texts:    templateDesign.texts    ?? [],

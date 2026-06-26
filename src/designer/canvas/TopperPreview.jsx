@@ -1,11 +1,11 @@
 import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment, useGLTF, useTexture } from '@react-three/drei';
+import { OrbitControls, useGLTF, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { rectSidePlacement } from '../geometry/surface.js';
 import { SIDE_STICKER_SURFACE_OFFSET, STICKER_SIZE } from '../constants.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
-import { TextureErrorBoundary } from './TextureErrorBoundary.jsx';
+import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { SceneLoader } from './CakeSpinner.jsx';
 
 const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
@@ -138,7 +138,7 @@ export default function TopperPreview({ glbUrl, parts = null, placement = 'top',
       <directionalLight position={[4, 9, 6]} intensity={1.3} />
       <directionalLight position={[-3, 3, -3]} intensity={0.4} />
       <Suspense fallback={<SceneLoader size={20} />}>
-        <Environment preset="apartment" />
+        <SafeEnvironment preset="apartment" />
         <PreviewCakeMeshes placed={placed} />
         {/* A failed decor texture/GLB (e.g. CORS-poisoned cache, 404) must not crash the whole
             preview Canvas — render the cake without the decor instead. */}

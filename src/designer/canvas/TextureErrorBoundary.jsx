@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { Environment } from '@react-three/drei';
 import { reportError } from '../../telemetry/index.js';
 
 // Render-time error boundary for texture/GLB load failures inside an R3F tree. If a child throws
@@ -15,4 +16,16 @@ export class TextureErrorBoundary extends Component {
     reportError(error, { screen: this.props.screen || 'CakeCanvas', action: 'texture_load', severity: 'warning' });
   }
   render() { return this.state.error ? null : this.props.children; }
+}
+
+// drei's <Environment preset> fetches an HDRI from a public CDN (pmndrs drei-assets
+// on GitHub raw), which is flaky / rate-limited and 503s. A failed env map must
+// NEVER crash the scene — wrap it so a load failure degrades to the scene's default
+// lighting instead of white-screening the designer. Same props as <Environment>.
+export function SafeEnvironment(props) {
+  return (
+    <TextureErrorBoundary screen="Environment">
+      <Environment {...props} />
+    </TextureErrorBoundary>
+  );
 }

@@ -1,6 +1,7 @@
 import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
+import { SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { TopPipingRing, BottomPipingRing } from './CakeTier.jsx';
 import { PIPING_FRONT_ANGLE } from '../constants.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
@@ -86,7 +87,7 @@ export default function PipingPreview({
       <directionalLight position={[4, 9, 6]} intensity={1.3} />
       <directionalLight position={[-3, 3, -3]} intensity={0.4} />
       <Suspense fallback={<SceneLoader size={20} />}>
-        <Environment preset="apartment" />
+        <SafeEnvironment preset="apartment" />
         <PreviewCakeMeshes placed={placed} />
         {isTop ? (
           <TopPipingRing
