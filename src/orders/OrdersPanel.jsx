@@ -941,6 +941,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               {selected
                 ? <OrderDetail
+                    key={selected.id}
                     order={selected}
                     onEditDesign={(order) => { onClose(); onEditDesign(order); }}
                     onStatusChange={handleStatusChange}
