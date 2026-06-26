@@ -187,6 +187,7 @@ export default function OrderModal({
   brandBtn, primaryColor = '#1a1a1a',
   editingOrder = null,
   onViewOrder = null,
+  mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
 }) {
   const isMobile = useIsMobile();
 
@@ -225,8 +226,10 @@ export default function OrderModal({
   const [submitError,  setSubmitError]  = useState(null);
   const [orderId,      setOrderId]      = useState(null);
 
-  // Load customers on mount
+  // Load customers on mount — baker mode only (a customer never lists the baker's
+  // customers; their own identity comes from the session).
   useEffect(() => {
+    if (mode === 'customer') return;
     if (apiClient?.fetchCustomers) {
       setCustomersLoading(true);
       apiClient.fetchCustomers()
@@ -325,12 +328,23 @@ export default function OrderModal({
   const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim());
   const canSubmit   = deliveryMode === 'pickup' || deliveryAddress.trim();
 
+  // Steps depend on mode: the customer is already known from their session, so the
+  // customer-search step exists ONLY for the baker placing an order on someone's behalf.
+  const STEP_DEFS = mode === 'customer'
+    ? [{ key: 'details', label: 'Cake Details' }, { key: 'delivery', label: 'Delivery' }]
+    : [{ key: 'customer', label: 'Customer' }, { key: 'details', label: 'Cake Details' }, { key: 'delivery', label: 'Delivery' }];
+  const currentStepKey = STEP_DEFS[step]?.key;
+  const isLastStep     = step === STEP_DEFS.length - 1;
+  const submitLabel     = mode === 'customer' ? 'Request quote' : 'Create order';
+  const submittingLabel = mode === 'customer' ? 'Requesting…'   : 'Creating…';
+
   async function handleSubmit() {
     setSubmitting(true);
     setSubmitError(null);
     try {
       const result = await onSubmit({
-        customer,
+        // Customer mode: identity comes from the session server-side — never send it.
+        ...(mode === 'baker' ? { customer } : {}),
         weightKg:            weightKg ? parseFloat(weightKg) : undefined,
         flavours:            flavours.filter(f => f.name.trim()),
         specialInstructions: specialInstructions.trim() || undefined,
@@ -359,8 +373,6 @@ export default function OrderModal({
   const lbl = { fontSize: isMobile ? 13 : 11, fontWeight: 700, color: '#444', letterSpacing: 0.3, fontFamily: "'Quicksand', sans-serif" };
   const field = { display: 'flex', flexDirection: 'column', gap: 6 };
 
-  const STEPS = ['Customer', 'Cake Details', 'Delivery'];
-
   // ── Success ─────────────────────────────────────────────────────────────────
   if (orderId) {
     return (
@@ -378,12 +390,14 @@ export default function OrderModal({
               </svg>
             </div>
             <div style={{ fontSize: isMobile ? 20 : 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>
-              {editingOrder ? 'Design Updated!' : 'Order Placed!'}
+              {editingOrder ? 'Design Updated!' : mode === 'customer' ? 'Quote Requested!' : 'Order Placed!'}
             </div>
             <div style={{ fontSize: isMobile ? 14 : 12, color: '#666', lineHeight: 1.6 }}>
               {editingOrder
                 ? 'The new design has been saved to this order.'
-                : <>Your order has been received.<br />We'll be in touch soon.</>}
+                : mode === 'customer'
+                  ? <>Your request is with the baker.<br />You'll receive a quote soon.</>
+                  : <>Your order has been received.<br />We'll be in touch soon.</>}
             </div>
             {!editingOrder && orderId !== 'ok' && (
               <div style={{ fontSize: 11, color: '#aaa', marginTop: 12, fontFamily: 'monospace', letterSpacing: 1 }}>
@@ -465,23 +479,24 @@ export default function OrderModal({
   }
 
   // ── Footer button logic ─────────────────────────────────────────────────────
-  // Step 0 phone phase: one big "Find Customer" button
-  // Step 0 found/not_found: Back + Next
-  // Step 1-2: Back + Next/Place Order
-  const showBackInFooter  = step > 0 || (step === 0 && searchPhase !== 'phone');
+  // Customer step, phone phase: one big "Find Customer" button (baker mode only).
+  // Customer step, found/not_found: Back + Next.
+  // Details/Delivery: Back + Next / submit (label by mode).
+  const onCustomerStep = currentStepKey === 'customer';
+  const showBackInFooter  = step > 0 || (onCustomerStep && searchPhase !== 'phone');
   const footerPrimaryLabel =
-    step === 0 && searchPhase === 'phone' ? (customersLoading ? 'Loading…' : 'Find or Create Customer')
-    : step < 2 ? 'Next'
-    : submitting ? 'Placing order…' : 'Place Order';
+    onCustomerStep && searchPhase === 'phone' ? (customersLoading ? 'Loading…' : 'Find or Create Customer')
+    : !isLastStep ? 'Next'
+    : submitting ? submittingLabel : submitLabel;
   const footerPrimaryDisabled =
-    step === 0 && searchPhase === 'phone' ? !canSearch
-    : step === 0 ? !canGoNext0
-    : step === 2 ? (!canSubmit || submitting)
+    onCustomerStep && searchPhase === 'phone' ? !canSearch
+    : onCustomerStep ? !canGoNext0
+    : isLastStep ? (!canSubmit || submitting)
     : false;
 
   function handleFooterPrimary() {
-    if (step === 0 && searchPhase === 'phone') { handleSearch(); return; }
-    if (step < 2) { setStep(s => s + 1); return; }
+    if (onCustomerStep && searchPhase === 'phone') { handleSearch(); return; }
+    if (!isLastStep) { setStep(s => s + 1); return; }
     handleSubmit();
   }
 
@@ -510,20 +525,20 @@ export default function OrderModal({
 
           {/* Header */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink:0 }}>
-            <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>Order This Cake</span>
+            <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>{mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}</span>
             <button style={{ background:'#f3f4f6', border:'none', cursor:'pointer', borderRadius:'50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize:13, color:'#333', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>✕</button>
           </div>
 
           {/* Step dots */}
           <div style={{ display:'flex', padding: isMobile ? '0 20px 14px' : '0 0 14px', borderBottom:'1px solid #999999', flexShrink:0 }}>
-            {STEPS.map((label, i) => {
+            {STEP_DEFS.map((s, i) => {
               const done = i < step, active = i === step;
               return (
-                <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+                <div key={s.key} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
                   <div style={{ width: isMobile?30:24, height: isMobile?30:24, borderRadius:'50%', background:(done||active)?primaryColor:'#d8d4cf', color:'#fff', fontWeight:700, fontSize: isMobile?13:11, display:'flex', alignItems:'center', justifyContent:'center', transition:'background 0.2s' }}>
                     {done ? <CheckIcon /> : i+1}
                   </div>
-                  <span style={{ fontSize: isMobile?10:9, fontWeight:700, letterSpacing:0.5, textTransform:'uppercase', color:(done||active)?primaryColor:'#bbb' }}>{label}</span>
+                  <span style={{ fontSize: isMobile?10:9, fontWeight:700, letterSpacing:0.5, textTransform:'uppercase', color:(done||active)?primaryColor:'#bbb' }}>{s.label}</span>
                 </div>
               );
             })}
@@ -532,8 +547,8 @@ export default function OrderModal({
           {/* Scrollable content */}
           <div style={{ flex:1, overflowY:'auto', overscrollBehavior:'contain', padding: isMobile ? '20px 20px' : '16px 0', display:'flex', flexDirection:'column', gap: isMobile?16:12 }}>
 
-            {/* ── Step 0: Customer ── */}
-            {step === 0 && (
+            {/* ── Step: Customer (baker mode only) ── */}
+            {currentStepKey === 'customer' && (
               <>
                 {/* PHASE: phone entry */}
                 {searchPhase === 'phone' && (
@@ -633,8 +648,8 @@ export default function OrderModal({
               </>
             )}
 
-            {/* ── Step 1: Cake details ── */}
-            {step === 1 && (
+            {/* ── Step: Cake details ── */}
+            {currentStepKey === 'details' && (
               <>
                 <label style={field}>
                   <span style={lbl}>Cake weight (kg)</span>
@@ -679,8 +694,8 @@ export default function OrderModal({
               </>
             )}
 
-            {/* ── Step 2: Delivery ── */}
-            {step === 2 && (
+            {/* ── Step: Delivery ── */}
+            {currentStepKey === 'delivery' && (
               <>
                 <div style={{ display:'flex', gap:10 }}>
                   <label style={{ ...field, flex:1 }}>

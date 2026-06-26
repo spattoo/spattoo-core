@@ -1096,7 +1096,7 @@ function AddUserModal({ onClose, brandBtn }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase, orderMode = 'baker' }) {
   const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
@@ -3091,6 +3091,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
 
     const payload = { ...formData, designSnapshot, designThumbnailKey };
+
+    // Customer mode (storefront): the logged-in customer requests a quote. Identity
+    // comes from their session server-side (never in the payload); the route needs
+    // the baker slug to resolve the storefront.
+    if (orderMode === 'customer') {
+      const quotePayload = { ...payload, bakerSlug: bakerData?.slug };
+      if (apiClient?.requestQuote) return await apiClient.requestQuote(quotePayload);
+      if (onOrder)                 return await onOrder({ ...quotePayload, mode: 'request_quote' });
+      return;
+    }
+
+    // Baker mode: places an order on behalf of the searched customer.
     if (apiClient?.placeOrder) return await apiClient.placeOrder(payload);
     if (onOrder)               return await onOrder(payload);
   }
@@ -6087,6 +6099,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {orderModalOpen && (
         <OrderModal
           tierCount={design.tiers.length}
+          mode={orderMode}
           onClose={() => { setOrderModalOpen(false); setEditingOrder(null); }}
           onSubmit={handleOrderSubmit}
           editingOrder={editingOrder}
