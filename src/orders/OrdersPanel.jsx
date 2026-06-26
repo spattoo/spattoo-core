@@ -104,36 +104,56 @@ function useIsMobile() {
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
-const STATUS_META = {
-  pending:     { label: 'Pending',     bg: '#FEF9C3', color: '#92400E' },
-  approved:    { label: 'Approved',    bg: '#D1FAE5', color: '#065F46' },
-  in_progress: { label: 'In Progress', bg: '#DBEAFE', color: '#1E40AF' },
-  ready:       { label: 'Ready',       bg: '#EDE9FE', color: '#4C1D95' },
-  delivered:   { label: 'Delivered',   bg: '#F0FDF4', color: '#14532D' },
-  cancelled:   { label: 'Cancelled',   bg: '#FEE2E2', color: '#991B1B' },
-};
-const ALL_STATUSES = Object.keys(STATUS_META);
+// ── Order status lifecycle ────────────────────────────────────────────────────
+// The lifecycle is owned by the DB (order_statuses table) and served via
+// GET /api/order-statuses. Core keeps ONE fallback copy (used until the host wires
+// apiClient.fetchOrderStatuses) and derives EVERY status-dependent bit — labels,
+// filter chips, the stepper — from it, instead of the four scattered hardcoded maps
+// this file used to carry. Visual tone stays a core concern (a deliberate monochrome
+// design), derived from lifecycle position rather than per-status colours.
+const DEFAULT_STATUSES = [
+  { key: 'initiated',     label: 'Initiated',    phase: 'quote',       sort_order: 10,  is_terminal: false },
+  { key: 'requested',     label: 'Requested',    phase: 'quote',       sort_order: 20,  is_terminal: false },
+  { key: 'quoted',        label: 'Quoted',       phase: 'quote',       sort_order: 30,  is_terminal: false },
+  { key: 'confirmed',     label: 'Confirmed',    phase: 'fulfillment', sort_order: 40,  is_terminal: false },
+  { key: 'in_production', label: 'In production', phase: 'fulfillment', sort_order: 50,  is_terminal: false },
+  { key: 'ready',         label: 'Ready',        phase: 'fulfillment', sort_order: 60,  is_terminal: false },
+  { key: 'completed',     label: 'Completed',    phase: 'fulfillment', sort_order: 70,  is_terminal: true  },
+  { key: 'declined',      label: 'Declined',     phase: 'closed',      sort_order: 80,  is_terminal: true  },
+  { key: 'cancelled',     label: 'Cancelled',    phase: 'closed',      sort_order: 90,  is_terminal: true  },
+  { key: 'expired',       label: 'Expired',      phase: 'closed',      sort_order: 100, is_terminal: true  },
+];
 
-// Neutral, monochrome badge tones — no hues. In-progress states read as soft grey,
-// "Delivered" is a solid black (complete), "Cancelled" a muted outline.
-const STATUS_TONE = {
-  pending:     { bg: '#F2F1EE', color: '#777', border: 'transparent' },
-  approved:    { bg: '#ECEBE6', color: '#5e5e5e', border: 'transparent' },
-  in_progress: { bg: '#E4E2DC', color: '#4a4a4a', border: 'transparent' },
-  ready:       { bg: '#D9D6CF', color: '#3a3a3a', border: 'transparent' },
-  delivered:   { bg: '#1a1a1a', color: '#fff', border: 'transparent' },
-  cancelled:   { bg: '#fff', color: '#999', border: '#E0DDD8' },
-};
+// Build a lookup index + derived lists from a status list (API or fallback).
+function buildStatusIndex(list) {
+  const ordered   = [...list].sort((a, b) => a.sort_order - b.sort_order);
+  const byKey     = Object.fromEntries(ordered.map(s => [s.key, s]));
+  // The happy-path stepper is everything that isn't a closed off-ramp, in order.
+  const flowSteps = ordered.filter(s => s.phase !== 'closed');
+  return { ordered, byKey, flowSteps };
+}
+const DEFAULT_STATUS_INDEX = buildStatusIndex(DEFAULT_STATUSES);
 
-function StatusBadge({ status }) {
-  const label = STATUS_META[status]?.label ?? status;
-  const t = STATUS_TONE[status] ?? { bg: '#F2F1EE', color: '#555', border: 'transparent' };
+const statusLabel = (idx, key) => idx.byKey[key]?.label ?? key;
+const isClosed    = (idx, key) => idx.byKey[key]?.phase === 'closed';
+const isTerminal  = (idx, key) => !!idx.byKey[key]?.is_terminal;
+
+// Monochrome badge tone derived from lifecycle position — no per-status hues.
+// Completed = solid ink; closed off-ramps = muted outline; in-flight = soft grey.
+function statusTone(idx, key) {
+  if (key === 'completed') return { bg: '#1a1a1a', color: '#fff',     border: 'transparent' };
+  if (isClosed(idx, key))  return { bg: '#fff',    color: '#999',     border: '#E0DDD8' };
+  return                          { bg: '#ECEBE6', color: '#5e5e5e',  border: 'transparent' };
+}
+
+function StatusBadge({ status, statusIndex = DEFAULT_STATUS_INDEX }) {
+  const t = statusTone(statusIndex, status);
   return (
     <span style={{
       padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
       letterSpacing: 0.3, background: t.bg, color: t.color,
       border: `1px solid ${t.border}`, whiteSpace: 'nowrap',
-    }}>{label}</span>
+    }}>{statusLabel(statusIndex, status)}</span>
   );
 }
 
@@ -149,6 +169,66 @@ function InfoRow({ label, value }) {
       <span style={{ fontSize: 10, fontWeight: 700, color: '#bbb', textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
       <span style={{ fontSize: 14, color: '#222', lineHeight: 1.5, wordBreak: 'break-word' }}>{value}</span>
     </div>
+  );
+}
+
+// ── Quote panel ───────────────────────────────────────────────────────────────
+// Baker price entry → "Send quote". Visible only while the order is in the quote
+// phase (initiated/requested/quoted); once confirmed it shows the agreed price
+// read-only. A quote pins to the current design version — if the design changed
+// after the quote (stale), the baker can re-affirm the price (re-pin) or set a new
+// one. The suggested-price algorithm (plan §2) is not here yet — this is manual entry.
+function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '#1a1a1a' }) {
+  const phase = statusIndex.byKey[order.status]?.phase;
+  const hasQuote = order.quoted_price != null;
+  const [price, setPrice] = useState(hasQuote ? String(order.quoted_price) : '');
+
+  // Out of the quote phase (confirmed onward): read-only agreed price.
+  if (phase !== 'quote') {
+    if (!hasQuote) return null;
+    return (
+      <Section title="Quote">
+        <InfoRow label="Agreed price" value={`₹${order.quoted_price}`} />
+      </Section>
+    );
+  }
+
+  const stale = !!order.quote_stale;
+  const label = busy ? 'Sending…' : hasQuote ? (stale ? 'Re-send quote' : 'Update quote') : 'Send quote';
+  const btn = (bg, color, border) => ({
+    padding: '10px 16px', borderRadius: 10, border: border ?? 'none', background: bg,
+    color, fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
+    fontFamily: 'inherit', opacity: busy ? 0.6 : 1,
+  });
+
+  return (
+    <Section title="Quote">
+      {hasQuote && (
+        <InfoRow label="Current quote" value={`₹${order.quoted_price}${stale ? ' · design changed' : ''}`} />
+      )}
+      {stale && (
+        <div style={{ fontSize: 12.5, color: '#7a5b00', background: '#FEF9C3', border: '1px solid #FCD34D', borderRadius: 10, padding: '8px 12px', lineHeight: 1.5 }}>
+          The design changed since this quote. Re-affirm the price (re-pins it to the new design) or set a new one.
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: '#555' }}>₹</span>
+        <input
+          value={price}
+          onChange={e => setPrice(e.target.value)}
+          inputMode="decimal"
+          placeholder="Price"
+          style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #E0DDD8', fontSize: 14, fontFamily: 'inherit', color: '#222', outline: 'none', minWidth: 0 }}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button disabled={busy} onClick={() => onIssue(parseFloat(price))} style={btn(primaryColor, '#fff')}>{label}</button>
+        {stale && hasQuote && (
+          <button disabled={busy} onClick={() => onIssue(order.quoted_price)} style={btn('#fff', '#333', '1.5px solid #E0DDD8')}>Price holds</button>
+        )}
+      </div>
+      {error && <div style={{ fontSize: 12.5, fontWeight: 700, color: '#C0392B' }}>{error}</div>}
+    </Section>
   );
 }
 
@@ -444,7 +524,7 @@ function AuditTrail({ orderId, apiClient, refresh }) {
 
 // ── Detail pane ───────────────────────────────────────────────────────────────
 
-function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null }) {
+function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, statusIndex = DEFAULT_STATUS_INDEX }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [editing, setEditing]               = useState(false);
   const [saving, setSaving]                 = useState(false);
@@ -471,6 +551,27 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
     setChangingStatus(false);
   }
 
+  const [quoting, setQuoting]   = useState(false);
+  const [quoteErr, setQuoteErr] = useState(null);
+
+  // Issue (or re-issue) the quote: captures the price and pins it to the current
+  // design version. Re-issuing with the existing price on a stale quote = "price
+  // holds". Sent by the QuotePanel below.
+  async function handleIssueQuote(price) {
+    if (!(price > 0)) { setQuoteErr('Enter a valid price'); return; }
+    if (quoting) return;
+    setQuoting(true); setQuoteErr(null);
+    try {
+      const updated = await apiClient.issueQuote(order.id, { price });
+      onOrderEdited({ ...order, ...updated });
+      setAuditRefresh(r => r + 1);
+    } catch (err) {
+      setQuoteErr(err.message);
+    } finally {
+      setQuoting(false);
+    }
+  }
+
   const [saveError, setSaveError] = useState(null);
 
   async function handleSaveEdit(formData) {
@@ -488,7 +589,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
     }
   }
 
-  const isDelivered = order.status === 'delivered';
+  const isDelivered = order.status === 'completed';
   const editBtn = isDelivered ? (
     <IconAction glyph={<LockGlyph />} label="Design locked" disabled />
   ) : (
@@ -529,7 +630,8 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
               <CustomPhotosSection order={order} />
-              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
+              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
+              <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
@@ -573,7 +675,8 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
               <CustomPhotosSection order={order} />
-              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
+              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
+              <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
@@ -632,8 +735,9 @@ function Section({ title, children }) {
 
 // ── List pane ─────────────────────────────────────────────────────────────────
 
-function OrderList({ orders, loading, error, filter, onFilter, onSelect, selected, primaryColor, isMobile }) {
-  const counts  = ALL_STATUSES.reduce((a, s) => ({ ...a, [s]: orders.filter(o => o.status === s).length }), {});
+function OrderList({ orders, loading, error, filter, onFilter, onSelect, selected, primaryColor, isMobile, statusIndex = DEFAULT_STATUS_INDEX }) {
+  const orderedKeys = statusIndex.ordered.map(s => s.key);
+  const counts  = orderedKeys.reduce((a, s) => ({ ...a, [s]: orders.filter(o => o.status === s).length }), {});
   const visible = filter === 'all' ? orders : orders.filter(o => o.status === filter);
 
   return (
@@ -645,7 +749,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
       {/* Filter chips */}
       <div style={{ padding: '10px 14px', borderBottom: '1px solid #F0EDE8', display: 'flex', gap: 6, overflowX: 'auto', flexShrink: 0 }}>
         {[{ key: 'all', label: 'All', count: orders.length },
-          ...ALL_STATUSES.filter(s => counts[s] > 0).map(s => ({ key: s, label: STATUS_META[s].label, count: counts[s] }))
+          ...orderedKeys.filter(s => counts[s] > 0).map(s => ({ key: s, label: statusLabel(statusIndex, s), count: counts[s] }))
         ].map(({ key, label, count }) => {
           const active = filter === key;
           return (
@@ -698,7 +802,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                  <StatusBadge status={order.status} />
+                  <StatusBadge status={order.status} statusIndex={statusIndex} />
                 </div>
                 <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[fmt(order.delivery_date), flavours[0]].filter(Boolean).join(' · ') || fmt(order.created_at)}
@@ -721,6 +825,17 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
   const [error, setError]       = useState(null);
   const [filter, setFilter]     = useState('all');
   const [selected, setSelected] = useState(null);
+  const [statusIndex, setStatusIndex] = useState(DEFAULT_STATUS_INDEX);
+
+  // Pull the lifecycle from the DB when the host exposes it; otherwise the built-in
+  // fallback (DEFAULT_STATUSES) keeps the panel working. The table is authoritative
+  // when wired — core no longer owns the canonical status list.
+  useEffect(() => {
+    if (!open || !apiClient?.fetchOrderStatuses) return;
+    apiClient.fetchOrderStatuses()
+      .then(list => { if (Array.isArray(list) && list.length) setStatusIndex(buildStatusIndex(list)); })
+      .catch(() => {});
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -823,6 +938,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
               selected={selected}
               primaryColor={primaryColor}
               isMobile={isMobile}
+              statusIndex={statusIndex}
             />
           )}
 
@@ -843,6 +959,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
                     isMobile={isMobile}
                     homeDeliveryEnabled={homeDeliveryEnabled}
                     bakerSlug={bakerSlug}
+                    statusIndex={statusIndex}
                   />
                 : <Empty>Select an order to view details.</Empty>
               }
@@ -860,34 +977,27 @@ function Empty({ children, color = '#bbb' }) {
   return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color, fontSize: 14, padding: 40, textAlign: 'center' }}>{children}</div>;
 }
 
-const FLOW_STEPS = [
-  { key: 'pending',     label: 'Placed',    short: 'Placed'    },
-  { key: 'approved',    label: 'Approved',  short: 'Approved'  },
-  { key: 'in_progress', label: 'Baking',    short: 'Baking'    },
-  { key: 'ready',       label: 'Ready',     short: 'Ready'     },
-  { key: 'delivered',   label: 'Delivered', short: 'Done'      },
-];
-
 // Reached steps render ink-black, unreached stay white/grey — a clean monochrome
 // stepper (no per-status colours, no red).
 const INK = '#1a1a1a';
 
-function StatusProgress({ status, onChange, disabled, readOnly = false }) {
-  const isMobile    = useIsMobile();
-  const isCancelled = status === 'cancelled';
-  const currentIdx  = FLOW_STEPS.findIndex(s => s.key === status);
+function StatusProgress({ status, onChange, disabled, readOnly = false, statusIndex = DEFAULT_STATUS_INDEX }) {
+  const isMobile       = useIsMobile();
+  const flowSteps      = statusIndex.flowSteps;
+  const isClosedStatus = isClosed(statusIndex, status);   // cancelled / declined / expired
+  const currentIdx     = flowSteps.findIndex(s => s.key === status);
 
-  const cancelledBanner = (
+  const closedBanner = (
     <div style={{
       marginBottom: 20, padding: '12px 16px', borderRadius: 12,
       background: '#F3F2EF', border: '1.5px solid #E0DDD8',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: INK }}>
-        <span style={{ fontSize: 18 }}>✕</span> Order Cancelled
+        <span style={{ fontSize: 18 }}>✕</span> Order {statusLabel(statusIndex, status)}
       </div>
-      {!readOnly && (
-        <button onClick={() => onChange('pending')} disabled={disabled} style={{
+      {!readOnly && flowSteps.length > 0 && (
+        <button onClick={() => onChange(flowSteps[0].key)} disabled={disabled} style={{
           fontSize: 11, fontWeight: 700, color: INK, background: 'none',
           border: '1.5px solid #E0DDD8', borderRadius: 8, padding: '4px 10px',
           cursor: 'pointer', fontFamily: 'inherit', opacity: disabled ? 0.5 : 1,
@@ -896,16 +1006,16 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
     </div>
   );
 
-  if (isCancelled) return cancelledBanner;
+  if (isClosedStatus) return closedBanner;
 
   // ── Mobile: vertical stepper ────────────────────────────────────────────────
   if (isMobile) {
     return (
       <div style={{ marginBottom: 20 }}>
-        {FLOW_STEPS.map((step, i) => {
+        {flowSteps.map((step, i) => {
           const done     = i < currentIdx;
           const active   = i === currentIdx;
-          const isLast   = i === FLOW_STEPS.length - 1;
+          const isLast   = i === flowSteps.length - 1;
           const reached  = done || active;
           const dotColor = reached ? INK : '#d1d5db';
           const canClick = !readOnly && !disabled && !active;
@@ -960,7 +1070,7 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
           );
         })}
 
-        {!readOnly && status !== 'delivered' && (
+        {!readOnly && !isTerminal(statusIndex, status) && (
           <button onClick={e => { e.stopPropagation(); onChange('cancelled'); }} disabled={disabled} style={{
             marginTop: 8, background: 'none', border: 'none', padding: 0,
             fontSize: 12, color: '#888', fontFamily: 'inherit', fontWeight: 600,
@@ -979,7 +1089,7 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-        {FLOW_STEPS.map((step, i) => {
+        {flowSteps.map((step, i) => {
           const done     = i < currentIdx;
           const active   = i === currentIdx;
           const reached  = done || active;
@@ -1022,14 +1132,14 @@ function StatusProgress({ status, onChange, disabled, readOnly = false }) {
                   fontSize: 9, fontWeight: 700, textAlign: 'center',
                   color: reached ? INK : '#aaa',
                   lineHeight: 1.2, whiteSpace: 'nowrap',
-                }}>{step.short}</span>
+                }}>{step.label}</span>
               </div>
             </Fragment>
           );
         })}
       </div>
 
-      {!readOnly && status !== 'delivered' && (
+      {!readOnly && !isTerminal(statusIndex, status) && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
           <button onClick={() => onChange('cancelled')} disabled={disabled} style={{
             background: 'none', border: 'none', padding: 0,
