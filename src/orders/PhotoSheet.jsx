@@ -10,8 +10,12 @@ import { buildA4Pdf } from './pdf.js';
 // math: the A4 is the ruler. Edible sugar sheets are A4, so this is print-ready.
 
 const A4_ASPECT = 210 / 297;   // portrait W/H
-const A4_WIDTH_IN = 210 / 25.4;   // 8.27" — used to size the cake-fit guide circles proportionally
-const GUIDE_SIZES = [6, 7, 8];    // inch cake diameters the baker can check fit against
+const A4_WIDTH_IN = 210 / 25.4;    // 8.27" — A4 width, used to size cake-fit guides to scale
+const A4_HEIGHT_IN = 297 / 25.4;   // 11.69" — A4 height, used for the vertical extent of guides
+const GUIDE_SIZES = [3, 4, 5, 6, 7, 8];    // inch cake diameters/sides the baker can check fit against
+
+// Drop trailing ".0" so 9 prints as "9" but 8.5 stays "8.5".
+const fmtIn = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 let _uid = 0;
 const uid = () => `it${++_uid}`;
@@ -36,16 +40,36 @@ export default function PhotoSheet({ order, onClose }) {
   const [loadErr, setLoadErr] = useState(false);
   const [items, setItems] = useState([]);       // [{ uid, frameId, x, y, size }] x/y/size as A4-width fractions
   const [sel, setSel] = useState(null);
-  const [guide, setGuide] = useState(null);   // selected cake-size guide (inch diameter) or null
+  const [guide, setGuide] = useState(null);    // active cake-fit guide { shape:'round'|'square'|'rect', w, h } inches, or null
+  const [shape, setShape] = useState('round'); // which shape the size controls author
+  const [rect, setRect] = useState({ l: '', w: '' });  // custom rectangle length × width (inch, as typed)
   const [busy, setBusy] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 760);
+  const [showTip, setShowTip] = useState(true);   // the intro is a dismissible tip card — hide it for more sheet room
+  const [stripOverflow, setStripOverflow] = useState(false);  // true → photo strip scrolls, show carousel arrows
   const sheetRef = useRef(null);
+  const stripRef = useRef(null);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 760);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Show carousel arrows only when the photo strip actually overflows its width (any count, any width).
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const check = () => setStripOverflow(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [frames.length, imgs]);
+
+  function scrollStrip(dir) {
+    stripRef.current?.scrollBy({ left: dir * 148, behavior: 'smooth' });
+  }
 
   // Load every frame's photo + mask, render the shaped preview once (read-only transform).
   useEffect(() => {
@@ -74,6 +98,16 @@ export default function PhotoSheet({ order, onClose }) {
     });
   }
   function removeItem(u) { setItems(list => list.filter(it => it.uid !== u)); if (sel === u) setSel(null); }
+
+  // Switch which shape the size controls author; clear any active guide so stale dims don't linger.
+  function pickShape(sh) { setShape(sh); setGuide(null); }
+  // Live-apply the custom rectangle as the baker types L × W (length → vertical, width → horizontal).
+  function setRectDim(k, v) {
+    const next = { ...rect, [k]: v };
+    setRect(next);
+    const l = parseFloat(next.l), w = parseFloat(next.w);
+    setGuide(l > 0 && w > 0 ? { shape: 'rect', w, h: l } : null);
+  }
   function patch(u, p) { setItems(list => list.map(it => it.uid === u ? { ...it, ...p } : it)); }
 
   // Pointer drag (move) / resize, in A4-width fractions.
@@ -125,6 +159,15 @@ export default function PhotoSheet({ order, onClose }) {
 
   return (
     <div style={s.overlay} onPointerDown={() => setSel(null)}>
+      <style>{`.ps-strip::-webkit-scrollbar{display:none}`}</style>
+      {showTip && (
+        <div style={{ ...s.tipPopup, ...(isMobile ? { bottom: 16, right: 16 } : { top: 74, right: 24 }) }}
+          onPointerDown={e => e.stopPropagation()}>
+          <button style={s.tipClose} onClick={() => setShowTip(false)} title="Dismiss">×</button>
+          <b>A4 print simulator</b> (to scale). Lay the photos out at print size, then download a
+          print-ready PDF. Drag to move, drag a corner to resize.
+        </div>
+      )}
       <div style={s.header}>
         <div style={{ fontWeight: 800, fontSize: 16, color: '#2C4433' }}>Print sheet — A4</div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -138,34 +181,54 @@ export default function PhotoSheet({ order, onClose }) {
       <div style={{ ...s.body, flexDirection: isMobile ? 'column' : 'row', overflowY: isMobile ? 'auto' : 'hidden' }}>
         {/* Palette */}
         <div style={{ ...s.palette, ...(isMobile ? { width: '100%', borderRight: 'none', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, overflowY: 'visible' } : {}) }}>
-          <div style={s.intro}>
-            <b>A4 print simulator</b> (to scale). Lay the photos out at print size, then download a
-            print-ready PDF. Drag to move, drag a corner to resize.
-          </div>
           <div style={s.paletteTitle}>Uploaded photos{frames.length ? ` (${frames.length})` : ''}</div>
           {frames.length === 0 && <div style={s.hint}>No customer photos in this order.</div>}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            {frames.map(f => (
-              <div key={f.id} style={s.palCard}>
-                <div style={s.palThumb}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {stripOverflow && <button style={s.carArrow} onClick={() => scrollStrip(-1)} aria-label="Scroll left">‹</button>}
+            <div ref={stripRef} className="ps-strip" style={s.carStrip}>
+              {frames.map(f => (
+                <button key={f.id} style={s.palThumb} onClick={() => addFrame(f.id)}
+                  disabled={!imgs[f.id]} title="Add to sheet">
                   {imgs[f.id]
                     ? <img src={imgs[f.id].dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                     : <div style={{ fontSize: 10, color: '#aaa' }}>…</div>}
-                </div>
-                <button style={s.addBtn} onClick={() => addFrame(f.id)}>+ Add</button>
-              </div>
-            ))}
+                  <span style={s.addBadge}>+</span>
+                </button>
+              ))}
+            </div>
+            {stripOverflow && <button style={s.carArrow} onClick={() => scrollStrip(1)} aria-label="Scroll right">›</button>}
           </div>
           {loadErr && <div style={{ ...s.hint, color: '#c0392b', marginTop: 10 }}>Some images couldn’t load (check R2 CORS for this origin).</div>}
 
           <div style={s.guideBlock}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ ...s.paletteTitle, margin: 0 }}>Check size</span>
-              <button onClick={() => setGuide(null)} style={{ ...s.guideBtn, ...(guide === null ? s.guideBtnOn : {}) }}>Off</button>
-              {GUIDE_SIZES.map(d => (
-                <button key={d} onClick={() => setGuide(d)} style={{ ...s.guideBtn, ...(guide === d ? s.guideBtnOn : {}) }}>{d}″</button>
+            <div style={{ ...s.paletteTitle, marginBottom: 10 }}>Check size</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              {[['round', 'Round'], ['square', 'Square'], ['rect', 'Rectangle']].map(([sh, label]) => (
+                <button key={sh} onClick={() => pickShape(sh)}
+                  style={{ ...s.guideBtn, flex: 1, ...(shape === sh ? s.guideBtnOn : {}) }}>{label}</button>
               ))}
             </div>
+            {shape === 'rect' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <input type="number" min="0" step="0.5" placeholder="L" value={rect.l}
+                  onChange={e => setRectDim('l', e.target.value)} style={s.dimInput} />
+                <span style={{ color: '#8a7a80', fontWeight: 700 }}>×</span>
+                <input type="number" min="0" step="0.5" placeholder="W" value={rect.w}
+                  onChange={e => setRectDim('w', e.target.value)} style={s.dimInput} />
+                <span style={{ fontSize: 11, color: '#8a7a80' }}>in</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => setGuide(null)} style={{ ...s.guideBtn, ...(guide === null ? s.guideBtnOn : {}) }}>Off</button>
+                {GUIDE_SIZES.map(d => {
+                  const on = guide?.shape === shape && guide.w === d && guide.h === d;
+                  return (
+                    <button key={d} onClick={() => setGuide({ shape, w: d, h: d })}
+                      style={{ ...s.guideBtn, ...(on ? s.guideBtnOn : {}) }}>{d}″</button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -200,11 +263,13 @@ export default function PhotoSheet({ order, onClose }) {
             {guide && (
               <div style={{
                 position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-                width: `${(guide / A4_WIDTH_IN) * 100}%`, aspectRatio: '1 / 1',
-                border: '2px dashed #b08968', borderRadius: '50%', pointerEvents: 'none',
-                display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+                width: `${(guide.w / A4_WIDTH_IN) * 100}%`, height: `${(guide.h / A4_HEIGHT_IN) * 100}%`,
+                border: '2px dashed #b08968', borderRadius: guide.shape === 'round' ? '50%' : 6,
+                pointerEvents: 'none', display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
               }}>
-                <span style={{ transform: 'translateY(-50%)', background: '#fff', padding: '0 6px', fontSize: 11, fontWeight: 700, color: '#b08968' }}>{guide}″ cake</span>
+                <span style={{ transform: 'translateY(-50%)', background: '#fff', padding: '0 6px', fontSize: 11, fontWeight: 700, color: '#b08968' }}>
+                  {guide.shape === 'rect' ? `${fmtIn(guide.h)} × ${fmtIn(guide.w)}″` : `${fmtIn(guide.w)}″ ${guide.shape}`}
+                </span>
               </div>
             )}
           </div>
@@ -221,15 +286,18 @@ const s = {
   ghostBtn: { padding: '9px 14px', borderRadius: 10, border: '1.5px solid #ccc', background: '#fff', fontSize: 13, fontWeight: 700, color: '#555', cursor: 'pointer' },
   body: { flex: 1, display: 'flex', overflow: 'hidden' },
   palette: { width: 260, flexShrink: 0, borderRight: '1.5px solid #E8E4DC', background: '#fff', padding: 16, overflowY: 'auto' },
-  intro: { fontSize: 12, color: '#5b5340', lineHeight: 1.6, marginBottom: 14, paddingBottom: 12, borderBottom: '1px dashed #e6e2ea' },
+  tipPopup: { position: 'absolute', zIndex: 10, width: 'min(300px, calc(100vw - 48px))', fontSize: 12, color: '#5b5340', lineHeight: 1.6, padding: '14px 34px 14px 16px', borderRadius: 12, border: '1px solid #E8E4DC', background: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.18)' },
+  tipClose: { position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'transparent', color: '#9a8f80', fontSize: 18, lineHeight: '22px', cursor: 'pointer', padding: 0 },
   paletteTitle: { fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: '#8a7a80', marginBottom: 10 },
-  palCard: { width: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 },
-  palThumb: { width: 64, height: 64, flexShrink: 0, borderRadius: 8, border: '1px solid #e6e2ea', background: '#faf9fb', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  addBtn: { padding: '4px 12px', borderRadius: 8, border: '1.5px solid #C5D4C8', background: '#F7FAF8', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' },
+  palThumb: { position: 'relative', width: 64, height: 64, flexShrink: 0, padding: 0, borderRadius: 8, border: '1px solid #e6e2ea', background: '#faf9fb', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: 'pointer' },
+  addBadge: { position: 'absolute', right: 3, bottom: 3, width: 20, height: 20, borderRadius: '50%', background: '#3D5A44', color: '#fff', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, lineHeight: 1, boxShadow: '0 1px 4px rgba(0,0,0,0.25)' },
+  carStrip: { flex: 1, minWidth: 0, display: 'flex', gap: 10, overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', paddingBottom: 2 },
+  carArrow: { flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: '1.5px solid #d8cfd9', background: '#fff', color: '#5b5340', fontSize: 17, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 },
   hint: { fontSize: 11, color: '#8a7a80', lineHeight: 1.5 },
   guideBlock: { marginTop: 16, paddingTop: 14, borderTop: '1px dashed #e6e2ea' },
   guideBtn: { padding: '5px 12px', borderRadius: 8, border: '1.5px solid #d8cfd9', background: '#fff', fontSize: 12, fontWeight: 700, color: '#8a7a80', cursor: 'pointer' },
   guideBtnOn: { borderColor: '#b08968', background: '#fbf3ec', color: '#8a5a36' },
+  dimInput: { width: 56, padding: '5px 8px', borderRadius: 8, border: '1.5px solid #d8cfd9', background: '#fff', fontSize: 12, fontWeight: 700, color: '#5b5340', textAlign: 'center' },
   watermark: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', color: '#ececE6', userSelect: 'none' },
   watermarkBig: { fontSize: 'clamp(48px, 14vw, 140px)', fontWeight: 800, letterSpacing: 4, lineHeight: 1 },
   watermarkSub: { fontSize: 'clamp(10px, 2.4vw, 16px)', fontWeight: 700, letterSpacing: 3, marginTop: 8 },
