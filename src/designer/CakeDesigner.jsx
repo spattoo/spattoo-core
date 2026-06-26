@@ -1467,6 +1467,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         ...(t.width   != null && { width: t.width }),
         ...(t.depth   != null && { depth: t.depth }),
         ...(t.cornerR != null && { cornerR: t.cornerR }),
+        // Per-tier wall treatments — were being dropped on order (lost on snapshot
+        // + reload): gradient fill, luster dust, gold-leaf foil.
+        ...(t.gradient != null && { gradient: t.gradient }),
+        ...(t.dusting  != null && { dusting: t.dusting }),
+        ...(t.foil     != null && { foil: t.foil }),
       })),
       texts:    design.texts,
       ages:     design.ages,
@@ -3075,6 +3080,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         ...(t.width   != null && { width: t.width }),
         ...(t.depth   != null && { depth: t.depth }),
         ...(t.cornerR != null && { cornerR: t.cornerR }),
+        // Per-tier wall treatments — were being dropped on order (lost on snapshot
+        // + reload): gradient fill, luster dust, gold-leaf foil.
+        ...(t.gradient != null && { gradient: t.gradient }),
+        ...(t.dusting  != null && { dusting: t.dusting }),
+        ...(t.foil     != null && { foil: t.foil }),
       })),
       texts:    design.texts,
       ages:     design.ages,
@@ -5845,7 +5855,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button
             style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
             onClick={handleOrder}>
-            {editingOrder ? 'Update Design' : 'Order This Cake'}
+            {editingOrder ? 'Update Design' : orderMode === 'customer' ? 'Request a Quote' : 'Order This Cake'}
           </button>
           {hasCap('template:manage') && <button
             style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}

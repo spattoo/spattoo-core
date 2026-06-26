@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
+import { SafeEnvironment } from './TextureErrorBoundary.jsx';
 import * as THREE from 'three';
 import CakeTier from './CakeTier.jsx';
 import {
@@ -584,7 +585,7 @@ function BuilderScene({
       <ambientLight intensity={0.8} />
       <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
-      <Environment preset="apartment" backgroundBlurriness={1} />
+      <SafeEnvironment preset="apartment" backgroundBlurriness={1} />
 
       {/* Floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={e => e.stopPropagation()}>

@@ -1,10 +1,10 @@
 import { useRef, useMemo, useEffect, useState, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Text3D, Text, Center, Html, Environment, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
+import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
-import { TextureErrorBoundary } from './TextureErrorBoundary.jsx';
+import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
@@ -1581,7 +1581,7 @@ function CakeScene({
       <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
       <color attach="background" args={['#f4f4f5']} />
-      <Environment preset="apartment" backgroundBlurriness={1} />
+      <SafeEnvironment preset="apartment" backgroundBlurriness={1} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); onDeselect(); }}>
