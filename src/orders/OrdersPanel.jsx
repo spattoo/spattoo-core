@@ -178,28 +178,49 @@ function InfoRow({ label, value }) {
 // read-only. A quote pins to the current design version — if the design changed
 // after the quote (stale), the baker can re-affirm the price (re-pin) or set a new
 // one. The suggested-price algorithm (plan §2) is not here yet — this is manual entry.
-function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '#1a1a1a' }) {
+function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '#1a1a1a', onConfirm, confirming }) {
   const phase = statusIndex.byKey[order.status]?.phase;
   const hasQuote = order.quoted_price != null;
-  const [price, setPrice] = useState(hasQuote ? String(order.quoted_price) : '');
+  const [price, setPrice]     = useState(hasQuote ? String(order.quoted_price) : '');
+  const [advance, setAdvance] = useState(order.advance_amount != null ? String(order.advance_amount) : '');
+  const [note, setNote]       = useState(order.quote_note ?? '');
 
-  // Out of the quote phase (confirmed onward): read-only agreed price.
+  const btn = (bg, color, border) => ({
+    padding: '10px 16px', borderRadius: 10, border: border ?? 'none', background: bg,
+    color, fontSize: 13, fontWeight: 700, cursor: (busy || confirming) ? 'default' : 'pointer',
+    fontFamily: 'inherit', opacity: (busy || confirming) ? 0.6 : 1,
+  });
+
+  // Out of the quote phase. quote_approved = customer is happy with the price; the
+  // baker confirms (advance received) to lock it in. Confirmed onward = read-only.
   if (phase !== 'quote') {
+    if (order.status === 'quote_approved') {
+      return (
+        <Section title="Quote">
+          <InfoRow label="Approved price" value={`₹${order.quoted_price}`} />
+          {order.advance_amount != null && <InfoRow label="Advance" value={`₹${order.advance_amount}`} />}
+          <div style={{ fontSize: 12.5, color: '#2C4433', background: '#EAF0EC', borderRadius: 10, padding: '8px 12px', lineHeight: 1.5 }}>
+            The customer is happy with the price. Confirm the order once you&apos;ve received the advance.
+          </div>
+          <button disabled={confirming} onClick={onConfirm} style={btn(primaryColor, '#fff')}>
+            {confirming ? 'Confirming…' : 'Confirm order'}
+          </button>
+        </Section>
+      );
+    }
     if (!hasQuote) return null;
     return (
       <Section title="Quote">
         <InfoRow label="Agreed price" value={`₹${order.quoted_price}`} />
+        {order.advance_amount != null && <InfoRow label="Advance" value={`₹${order.advance_amount}`} />}
       </Section>
     );
   }
 
   const stale = !!order.quote_stale;
   const label = busy ? 'Sending…' : hasQuote ? (stale ? 'Re-send quote' : 'Update quote') : 'Send quote';
-  const btn = (bg, color, border) => ({
-    padding: '10px 16px', borderRadius: 10, border: border ?? 'none', background: bg,
-    color, fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
-    fontFamily: 'inherit', opacity: busy ? 0.6 : 1,
-  });
+  const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #E0DDD8', fontSize: 14, fontFamily: 'inherit', color: '#222', outline: 'none', boxSizing: 'border-box' };
+  const issue = (p, a) => onIssue({ price: p, advanceAmount: a === '' || a == null ? null : parseFloat(a), note });
 
   return (
     <Section title="Quote">
@@ -213,18 +234,14 @@ function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: '#555' }}>₹</span>
-        <input
-          value={price}
-          onChange={e => setPrice(e.target.value)}
-          inputMode="decimal"
-          placeholder="Price"
-          style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #E0DDD8', fontSize: 14, fontFamily: 'inherit', color: '#222', outline: 'none', minWidth: 0 }}
-        />
+        <input value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Price" style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
       </div>
+      <input value={advance} onChange={e => setAdvance(e.target.value)} inputMode="decimal" placeholder="Advance to confirm (optional)" style={inputStyle} />
+      <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="A note to the customer (optional) — e.g. love this design, can't wait to bake it!" style={{ ...inputStyle, resize: 'vertical' }} />
       <div style={{ display: 'flex', gap: 8 }}>
-        <button disabled={busy} onClick={() => onIssue(parseFloat(price))} style={btn(primaryColor, '#fff')}>{label}</button>
+        <button disabled={busy} onClick={() => issue(parseFloat(price), advance)} style={btn(primaryColor, '#fff')}>{label}</button>
         {stale && hasQuote && (
-          <button disabled={busy} onClick={() => onIssue(order.quoted_price)} style={btn('#fff', '#333', '1.5px solid #E0DDD8')}>Price holds</button>
+          <button disabled={busy} onClick={() => issue(order.quoted_price, order.advance_amount)} style={btn('#fff', '#333', '1.5px solid #E0DDD8')}>Price holds</button>
         )}
       </div>
       {error && <div style={{ fontSize: 12.5, fontWeight: 700, color: '#C0392B' }}>{error}</div>}
@@ -557,12 +574,13 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
   // Issue (or re-issue) the quote: captures the price and pins it to the current
   // design version. Re-issuing with the existing price on a stale quote = "price
   // holds". Sent by the QuotePanel below.
-  async function handleIssueQuote(price) {
+  async function handleIssueQuote({ price, advanceAmount, note }) {
     if (!(price > 0)) { setQuoteErr('Enter a valid price'); return; }
+    if (advanceAmount != null && advanceAmount > price) { setQuoteErr('Advance cannot exceed the price'); return; }
     if (quoting) return;
     setQuoting(true); setQuoteErr(null);
     try {
-      const updated = await apiClient.issueQuote(order.id, { price });
+      const updated = await apiClient.issueQuote(order.id, { price, advanceAmount, note });
       onOrderEdited({ ...order, ...updated });
       setAuditRefresh(r => r + 1);
     } catch (err) {
@@ -628,7 +646,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           : <>
               <CustomPhotosSection order={order} />
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
-              <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} />
+              <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
@@ -670,7 +688,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           : <>
               <CustomPhotosSection order={order} />
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
-              <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} />
+              <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
