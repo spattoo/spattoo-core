@@ -4,6 +4,7 @@ export { default as PatternBuilderCanvas, placementPosition, getOverlappingIds, 
 export { default as CakeCanvas, CakeThumbnailCanvas, CakePreview } from './designer/canvas/CakeCanvas.jsx';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
+export { default as OrdersPanel } from './orders/OrdersPanel.jsx';
 export { default as AuthGate } from './auth/AuthGate.jsx';
 export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { extractFromPhoto } from './designer/hooks/useExtractElements.js';
