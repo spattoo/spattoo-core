@@ -94,12 +94,22 @@ through its right‑side popup (#3a). It MUST NOT branch on element type, slug, 
 - **"Piping" is not a panel category** — it's just an element whose config places it as a hugging
   ring. Do not group, label, or special‑case the picker by piping vs decor.
 
-## 7. No emojis in the UI
-Never put emoji in UI text — buttons, labels, hints, card titles, toasts. Use plain words (and, where
-an icon is wanted, the existing icon/style system). A control must look like the control it is: e.g. a
-button gets a real button style (`s.toolbarBtn` / background + padding), not an emoji standing in for
-one. (Cautionary tale: a "✨ Create automatic cluster" button — emoji + no button styling — was
-rejected and changed to a plain filled "Create cluster" button.)
+## 7. No emojis in the UI — RULE IS ON. ZERO pictographic emoji, anywhere.
+This is a **hard rule and a recurring offender** — emoji keep creeping back in and getting removed
+(✨ cluster button, 🎂 "no preview" placeholder, 🔍 filter banner, 🏪/📷 settings, 🔒 lock state, …).
+The app is professional; it must never show a pictographic/colour emoji (`U+1F000–1FAFF` and friends:
+🎂🔍🏪📷🔒✨ etc.) — **including empty-states, placeholders, fallbacks, and "no preview" cells**, which
+is exactly where they hide.
+- **Never** put an emoji in UI text — buttons, labels, hints, card titles, toasts, **placeholders/empty
+  states**. Use plain words, or the existing **SVG icon/glyph system** (e.g. `PhotoGlyph`, the `*Icon`
+  components) for a visual.
+- A control must look like the control it is: a real button style (`s.toolbarBtn` / bg + padding), not
+  an emoji standing in for one.
+- Plain typographic glyphs used as functional controls (the `✕` close, `✓` saved tick, `★` rating) are
+  acceptable — the ban is on **pictographic emoji**, not every non-ASCII char.
+- When you add ANY placeholder/empty-state, reach for a muted `*Glyph`/text — never an emoji.
+(Cautionary tales: "✨ Create automatic cluster" → plain "Create cluster"; the 🎂 order-preview
+placeholder → plain "No preview" / `PhotoGlyph`.)
 
 ## Definition of Done (run through this before saying "done")
 - [ ] No new `=== '<slug>'` / type branch in render or popup code (config instead).

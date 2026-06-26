@@ -619,10 +619,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           {order.design_thumbnail_url
             ? <img src={order.design_thumbnail_url} alt="Cake design"
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            : <div style={{ textAlign: 'center', color: '#ccc' }}>
-                <div style={{ fontSize: 48 }}>🎂</div>
-                <div style={{ fontSize: 13 }}>No preview</div>
-              </div>
+            : <div style={{ textAlign: 'center', color: '#bbb', fontSize: 13, fontWeight: 600 }}>No preview</div>
           }
         </div>
         <div style={{ marginBottom: 20 }}>{cakeActions}</div>
@@ -660,10 +657,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           {order.design_thumbnail_url
             ? <img src={order.design_thumbnail_url} alt="Cake design"
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            : <div style={{ textAlign: 'center', color: '#ccc' }}>
-                <div style={{ fontSize: 56, marginBottom: 8 }}>🎂</div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>No preview</div>
-              </div>
+            : <div style={{ textAlign: 'center', color: '#bbb', fontSize: 13, fontWeight: 600 }}>No preview</div>
           }
         </div>
         {cakeActions}
@@ -795,7 +789,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
               }}>
                 {order.design_thumbnail_url
                   ? <img src={order.design_thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <span style={{ fontSize: 20 }}>🎂</span>
+                  : <span style={{ color: '#ccc' }}><PhotoGlyph /></span>
                 }
               </div>
 
@@ -915,7 +909,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
             display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
           }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#92400E', flex: 1 }}>
-              🔍 {externalFilter.label}
+              {externalFilter.label}
             </span>
             <button onClick={onClose} style={{
               fontSize: 11, fontWeight: 700, color: '#92400E', background: 'none',
