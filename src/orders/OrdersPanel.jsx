@@ -114,7 +114,8 @@ const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 const DEFAULT_STATUSES = [
   { key: 'initiated',     label: 'Initiated',    phase: 'quote',       sort_order: 10,  is_terminal: false },
   { key: 'requested',     label: 'Requested',    phase: 'quote',       sort_order: 20,  is_terminal: false },
-  { key: 'quoted',        label: 'Quoted',       phase: 'quote',       sort_order: 30,  is_terminal: false },
+  { key: 'quoted',         label: 'Quoted',         phase: 'quote',       sort_order: 30,  is_terminal: false },
+  { key: 'quote_approved', label: 'Quote approved', phase: 'fulfillment', sort_order: 35,  is_terminal: false },
   { key: 'confirmed',     label: 'Confirmed',    phase: 'fulfillment', sort_order: 40,  is_terminal: false },
   { key: 'in_production', label: 'In production', phase: 'fulfillment', sort_order: 50,  is_terminal: false },
   { key: 'ready',         label: 'Ready',        phase: 'fulfillment', sort_order: 60,  is_terminal: false },
@@ -133,6 +134,17 @@ function buildStatusIndex(list) {
   return { ordered, byKey, flowSteps };
 }
 const DEFAULT_STATUS_INDEX = buildStatusIndex(DEFAULT_STATUSES);
+
+// Readable labels for audit-log event types (else falls back to 'Order edited').
+const AUDIT_EVENT_LABELS = {
+  status_changed:  'Status changed',
+  design_updated:  'Design updated',
+  quoted:          'Quote sent',
+  quote_approved:  'Quote approved',
+  quote_accepted:  'Quote approved',
+  customer_message: 'Customer message',
+  edited:          'Order edited',
+};
 
 const statusLabel = (idx, key) => idx.byKey[key]?.label ?? key;
 const isClosed    = (idx, key) => idx.byKey[key]?.phase === 'closed';
@@ -495,7 +507,7 @@ function AuditTrail({ orderId, apiClient, refresh }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#444' }}>
-                    {entry.event === 'status_changed' ? 'Status changed' : entry.event === 'design_updated' ? 'Design updated' : 'Order edited'}
+                    {AUDIT_EVENT_LABELS[entry.event] ?? 'Order edited'}
                   </span>
                   {entry.changed_by_name && (
                     <span style={{ fontSize: 11, color: '#aaa', marginLeft: 6 }}>by {entry.changed_by_name}</span>
