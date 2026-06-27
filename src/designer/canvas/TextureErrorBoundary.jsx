@@ -1,4 +1,4 @@
-import { Component } from 'react';
+import { Component, Suspense } from 'react';
 import { Environment } from '@react-three/drei';
 import { reportError } from '../../telemetry/index.js';
 
@@ -23,9 +23,16 @@ export class TextureErrorBoundary extends Component {
 // NEVER crash the scene — wrap it so a load failure degrades to the scene's default
 // lighting instead of white-screening the designer. Same props as <Environment>.
 export function SafeEnvironment(props) {
+  // ErrorBoundary OUTSIDE the Suspense: <Environment> suspends while loading the
+  // HDR, and on a load REJECTION React unwinds to the Suspense and the error
+  // propagates to the boundary ABOVE it — so the boundary must sit outside to
+  // catch it (and the Suspense lets call sites without their own boundary, like
+  // the off-screen thumbnail canvas, load it safely).
   return (
     <TextureErrorBoundary screen="Environment">
-      <Environment {...props} />
+      <Suspense fallback={null}>
+        <Environment {...props} />
+      </Suspense>
     </TextureErrorBoundary>
   );
 }

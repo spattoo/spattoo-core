@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { HexColorPicker } from 'react-colorful';
-import CakeCanvas, { CakeThumbnailCanvas, CakePreview } from './canvas/CakeCanvas';
+import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
@@ -704,6 +704,17 @@ function InviteIcon({ size = 20 }) {
   );
 }
 
+function ShareIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
+    </svg>
+  );
+}
+
 // ── Spatula silhouette ─────────────────────────────────────────────────────────
 // The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
 // long straight handle (stretches to the column height), then an asymmetric
@@ -1121,7 +1132,10 @@ function OrderDesignViewer({ order, onClose }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onSaveTemplate, cfAssetsBase, orderMode = 'baker' }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker' }) {
+  // Point the scenes' env map at the host's R2 assets base (runs before children
+  // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
+  configureEnvMap(cfAssetsBase);
   const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
@@ -4626,6 +4640,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view' },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
+              { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
             ].filter(item => hasCap(item.requires)).map(({ id, label, icon }) => {
               const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
               const isNew  = id === 'new';
@@ -4640,6 +4655,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     if (id === 'orders')    setOrdersPanelOpen(true);
                     if (id === 'customers') setCustomersPanelOpen(true);
                     if (id === 'invite')    setInvitePanelOpen(true);
+                    if (id === 'share')     onShareStore?.();
                   }}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
@@ -5927,6 +5943,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view' },
             { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
             { id: 'invite',     icon: <InviteIcon size={20} />,    requires: 'customer:manage' },
+            { id: 'share',      icon: <ShareIcon size={20} />,     requires: 'design:create' },
           ].filter(item => hasCap(item.requires)).map(({ id, icon }) => {
             const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
             return (
@@ -5940,6 +5957,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   if (id === 'orders')    setOrdersPanelOpen(true);
                   if (id === 'customers') setCustomersPanelOpen(true);
                   if (id === 'invite')    setInvitePanelOpen(true);
+                  if (id === 'share')     onShareStore?.();
                 }}>
                 {icon}
               </button>
