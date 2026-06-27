@@ -291,6 +291,45 @@ function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '
   );
 }
 
+// The baker's forward action(s) from the current status, as prominent buttons (so
+// they don't have to hunt the timeline dots). Quote-phase actions (Send quote /
+// Confirm order) live in QuotePanel; this covers fulfillment. 'in_production' is an
+// internal, OPTIONAL step (no customer/baker email) — from 'confirmed' the baker can
+// start production OR jump straight to ready. First action = primary, the rest = a
+// lighter "skip ahead" button. Terminal/closed/quote states → nothing.
+const NEXT_ACTIONS = {
+  confirmed:     [{ to: 'in_production', label: 'Start production' }, { to: 'ready', label: 'Mark as ready' }],
+  in_production: [{ to: 'ready', label: 'Mark as ready' }],
+  ready:         [{ to: 'completed', label: 'Mark as completed' }],
+};
+function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = '#1a1a1a' }) {
+  const actions = (NEXT_ACTIONS[order.status] ?? []).filter(a => statusIndex.byKey[a.to]);
+  if (!actions.length) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+      {actions.map((a, i) => {
+        const primary = i === 0;
+        return (
+          <button
+            key={a.to}
+            disabled={busy}
+            onClick={() => onAdvance(a.to)}
+            style={{
+              width: '100%', padding: '12px', borderRadius: 11,
+              border: primary ? 'none' : '1.5px solid #E0DDD8',
+              background: primary ? (busy ? '#9BB5A2' : primaryColor) : '#fff',
+              color: primary ? '#fff' : '#333',
+              fontSize: 14, fontWeight: 800, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            {busy ? 'Updating…' : a.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Edit form ─────────────────────────────────────────────────────────────────
 
 // Normalise an order's stored flavours into editable rows. Entries may come back
@@ -706,6 +745,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               {/* Action buttons (send quote / confirm / cancel) sit directly below the
                   image; the status flow goes underneath them. */}
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
+              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={handleStatus} busy={changingStatus} primaryColor={primaryColor} />
               {!isClosed(statusIndex, order.status) && !isTerminal(statusIndex, order.status) && (
                 <div style={{ marginBottom: 20 }}>
                   <CancelOrderLink onClick={() => handleStatus('cancelled')} disabled={changingStatus} />
@@ -755,6 +795,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               <CustomPhotosSection order={order} />
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
+              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={handleStatus} busy={changingStatus} primaryColor={primaryColor} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
