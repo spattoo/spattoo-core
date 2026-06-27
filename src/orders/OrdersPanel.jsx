@@ -193,8 +193,16 @@ function InfoRow({ label, value }) {
 function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '#1a1a1a', onConfirm, confirming }) {
   const phase = statusIndex.byKey[order.status]?.phase;
   const hasQuote = order.quoted_price != null;
+  // Advance defaults to 50% of the price (rounded) and auto-tracks the price field
+  // until the baker edits it — then their value sticks. An already-saved advance is
+  // respected as-is.
+  const halfOf = (p) => {
+    const n = parseFloat(p);
+    return Number.isFinite(n) && n > 0 ? String(Math.round(n / 2)) : '';
+  };
   const [price, setPrice]     = useState(hasQuote ? String(order.quoted_price) : '');
-  const [advance, setAdvance] = useState(order.advance_amount != null ? String(order.advance_amount) : '');
+  const [advance, setAdvance] = useState(order.advance_amount != null ? String(order.advance_amount) : halfOf(order.quoted_price));
+  const [advanceTouched, setAdvanceTouched] = useState(order.advance_amount != null);
   const [note, setNote]       = useState(order.quote_note ?? '');
 
   const btn = (bg, color, border) => ({
@@ -246,9 +254,9 @@ function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: '#555' }}>₹</span>
-        <input value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Price" style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
+        <input value={price} onChange={e => { setPrice(e.target.value); if (!advanceTouched) setAdvance(halfOf(e.target.value)); }} inputMode="decimal" placeholder="Price" style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
       </div>
-      <input value={advance} onChange={e => setAdvance(e.target.value)} inputMode="decimal" placeholder="Advance to confirm (optional)" style={inputStyle} />
+      <input value={advance} onChange={e => { setAdvance(e.target.value); setAdvanceTouched(true); }} inputMode="decimal" placeholder="Advance to confirm (50% by default)" style={inputStyle} />
       <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="A note to the customer (optional) — e.g. love this design, can't wait to bake it!" style={{ ...inputStyle, resize: 'vertical' }} />
       <div style={{ display: 'flex', gap: 8 }}>
         <button disabled={busy} onClick={() => issue(parseFloat(price), advance)} style={btn(primaryColor, '#fff')}>{label}</button>
