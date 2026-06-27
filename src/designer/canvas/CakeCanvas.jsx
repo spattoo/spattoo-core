@@ -30,6 +30,19 @@ import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { toCanvasConfig } from '../hooks/useCakeDesign.js';
 
+// Image-based lighting (HDRI). We self-host the env map on R2 — the host supplies
+// the assets base (cfAssetsBase, an env var, dev/prod-specific); only this PATH is
+// a constant. We avoid drei's `preset` (a public CDN that 503s/400s and, on
+// failure, poisoned the shared loader cache → dimmed the studio). A module-level
+// singleton (set by CakeDesigner each render, read by the scenes) so the value
+// crosses the R3F <Canvas> boundary without threading a prop through 6 components.
+const ENV_HDR_PATH = 'code/env/lebombo_1k.hdr';
+let _envMapUrl = null;
+export function configureEnvMap(cfAssetsBase) {
+  _envMapUrl = cfAssetsBase ? `${String(cfAssetsBase).replace(/\/$/, '')}/${ENV_HDR_PATH}` : null;
+}
+function envMapUrl() { return _envMapUrl; }
+
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
 // decor seats on the live wavy/swirled wall and hugs it, instead of a fixed offset (which buries decor
 // in the ribs) or a global lift (which floats small decor off the troughs). Memoised by wall+radius+
@@ -1581,7 +1594,9 @@ function CakeScene({
       <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
       <color attach="background" args={['#f4f4f5']} />
-      <SafeEnvironment preset="apartment" backgroundBlurriness={1} />
+      {envMapUrl()
+        ? <SafeEnvironment files={envMapUrl()} />
+        : <SafeEnvironment preset="apartment" backgroundBlurriness={1} />}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); onDeselect(); }}>
@@ -1833,9 +1848,13 @@ function CakeThumbnailScene({ config }) {
 
   return (
     <>
-      <ambientLight intensity={1.2} />
+      <ambientLight intensity={0.8} />
       <directionalLight position={[6, 14, 8]} intensity={1.5} />
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      {/* Same R2 HDRI the studio uses, so the captured snapshot's metallics render
+          gold instead of black (ambient lowered 1.2→0.8 to match now the env adds
+          light). No `background` prop → the capture stays transparent. */}
+      {envMapUrl() && <SafeEnvironment files={envMapUrl()} />}
       {tierData.map((tier, i) => (
         <CakeTier
           key={i}
