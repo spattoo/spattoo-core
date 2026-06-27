@@ -1373,7 +1373,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   useEffect(() => {
     if (apiClient?.fetchMe) {
-      apiClient.fetchMe().then(me => { setCapabilities(me?.capabilities ?? null); setRole(me?.role ?? null); }).catch(() => {});
+      apiClient.fetchMe().then(me => {
+        setCapabilities(me?.capabilities ?? null);
+        setRole(me?.role ?? null);
+        // Avatar initials: in customer mode fetchBakerProfile returns no `user`, so
+        // /api/me is where the logged-in principal's name comes from (baker or customer).
+        if (me?.firstName || me?.lastName) {
+          setUserData({ firstName: me.firstName, lastName: me.lastName, email: me.email });
+        }
+      }).catch(() => {});
     }
   }, [apiClient]);
 
