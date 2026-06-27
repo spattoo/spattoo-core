@@ -1121,7 +1121,7 @@ function OrderDesignViewer({ order, onClose }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase, orderMode = 'baker' }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onSaveTemplate, cfAssetsBase, orderMode = 'baker' }) {
   const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
@@ -1315,6 +1315,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
+  // Holds the quote result after a successful customer submit; read when the
+  // OrderModal success screen is dismissed so the host can react (redirect to a
+  // share screen). A ref so it survives the submit→close render gap.
+  const quoteSubmittedRef = useRef(null);
   const [newOrderId,          setNewOrderId]          = useState(null);
   const [editingOrder,        setEditingOrder]        = useState(null);
   const [viewingOrder,        setViewingOrder]        = useState(null);  // locked order opened READ-ONLY in 3D
@@ -3141,7 +3145,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // the baker slug to resolve the storefront.
     if (orderMode === 'customer') {
       const quotePayload = { ...payload, bakerSlug: bakerData?.slug };
-      if (apiClient?.requestQuote) return await apiClient.requestQuote(quotePayload);
+      if (apiClient?.requestQuote) {
+        const result = await apiClient.requestQuote(quotePayload);
+        quoteSubmittedRef.current = result ?? true;   // → onQuoteRequested fires on Done
+        return result;
+      }
       if (onOrder)                 return await onOrder({ ...quotePayload, mode: 'request_quote' });
       return;
     }
@@ -6152,7 +6160,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <OrderModal
           tierCount={design.tiers.length}
           mode={orderMode}
-          onClose={() => { setOrderModalOpen(false); setEditingOrder(null); }}
+          onClose={() => {
+            setOrderModalOpen(false); setEditingOrder(null);
+            // Only after a successful customer quote (not a cancel), once the
+            // customer dismisses the success screen — host redirects to share.
+            if (quoteSubmittedRef.current) { onQuoteRequested?.(quoteSubmittedRef.current); quoteSubmittedRef.current = null; }
+          }}
           onSubmit={handleOrderSubmit}
           editingOrder={editingOrder}
           apiClient={apiClient}
