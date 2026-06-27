@@ -18,7 +18,7 @@ export function buildPreviewTiers(tiers) {
     const height = t?.height ?? BOTTOM_H;
     const shp = tierShape({ shape: t?.shape, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
     const prismGeo = shp.kind === 'rect' ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null;
-    return { radius, height, shp, prismGeo };
+    return { radius, height, shp, prismGeo, color: t?.color };
   });
   let acc = 0;
   const placed = geo.map(t => { const baseY = acc; acc += t.height; return { ...t, baseY, topY: baseY + t.height }; });
@@ -43,26 +43,32 @@ export function PreviewCakeMeshes({ placed }) {
           <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
         </mesh>
       )}
-      {placed.map((t, i) => (
+      {placed.map((t, i) => {
+        // Match the real on-canvas cake: use this tier's colour, falling back to the dark
+        // chocolate stand-in only when no colour is set. Cap follows the body colour too.
+        const bodyColor = t.color ?? PREVIEW_CAKE_COLOR;
+        const capColor  = t.color ?? PREVIEW_CAP_COLOR;
+        return (
         <group key={i}>
           {t.shp.kind === 'rect' ? (
             <mesh geometry={t.prismGeo} position={[0, t.baseY, 0]}>
-              <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
+              <meshStandardMaterial color={bodyColor} roughness={0.85} />
             </mesh>
           ) : (
             <>
               <mesh position={[0, t.baseY + t.height / 2, 0]}>
                 <cylinderGeometry args={[t.radius, t.radius, t.height, 48]} />
-                <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
+                <meshStandardMaterial color={bodyColor} roughness={0.85} />
               </mesh>
               <mesh position={[0, t.topY + 0.005, 0]}>
                 <cylinderGeometry args={[t.radius - 0.01, t.radius - 0.01, 0.01, 48]} />
-                <meshStandardMaterial color={PREVIEW_CAP_COLOR} roughness={0.7} />
+                <meshStandardMaterial color={capColor} roughness={0.7} />
               </mesh>
             </>
           )}
         </group>
-      ))}
+        );
+      })}
     </>
   );
 }
