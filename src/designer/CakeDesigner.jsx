@@ -4,7 +4,6 @@ import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap } from './canvas/CakeCanvas';
-import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
@@ -38,6 +37,15 @@ import BillingPanel from '../settings/BillingPanel';
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, gradient: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
+
+// Thumbnail src for any item (element / template / piping card): prefer the
+// pre-baked WebP (thumb_key), fall back to the raw thumbnail_url. Served DIRECT
+// from R2 — the old Cloudflare /cdn-cgi/image transform 404'd on the r2.dev
+// endpoint (no zone) and was removed.
+const thumbSrc = (item) => item?.thumb_key ?? item?.thumbnail_url ?? null;
+// Hide a thumbnail that fails to load so the card shows its neutral background
+// instead of the browser's broken-image icon.
+const onThumbError = (e) => { e.currentTarget.style.display = 'none'; };
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
@@ -552,7 +560,7 @@ function ElementTypeCard({
               <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}>
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
-                  {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
+                  {thumbSrc(el) && <img src={thumbSrc(el)} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
                 </div>
                 <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
               </div>
@@ -1659,7 +1667,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         .order('sort_order');
       rows = topLevelData ?? [];
     }
-    // Normalise relative keys to full URLs so cfImg and canvas renderers work consistently
+    // Normalise relative keys to full URLs so the canvas renderers work consistently
     const resolveUrl = key => {
       if (!key) return key;
       try { new URL(key); return key; } catch { return cfAssetsBase ? `${cfAssetsBase}/${key}` : key; }
@@ -3227,7 +3235,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff',
                   border: `1.5px solid ${isActive ? '#1a1a1a' : '#999999'}`,
                   boxShadow: isActive ? '0 0 0 2px rgba(26,26,26,0.18)' : 'none' }}>
-                  {el.thumbnail_url && <img src={cfImg(el.thumbnail_url, 64, 64, cfAssetsBase)} alt={el.name} width={64} height={64} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                  {thumbSrc(el) && <img src={thumbSrc(el)} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
                 </div>
                 <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#1a1a1a' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
               </div>
@@ -5108,8 +5116,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   }
                 }}
               >
-                {t.thumbnail_url
-                  ? <img src={cfImg(t.thumbnail_url, 180, 120, cfAssetsBase)} alt={t.name} width={180} height={120} decoding="async" style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#FAFAF8' }} />
+                {thumbSrc(t)
+                  ? <img src={thumbSrc(t)} alt={t.name} width={180} height={120} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#FAFAF8' }} />
                   : <div style={s.templateThumbPlaceholder} />
                 }
                 <div style={s.templateCardFooter}>
@@ -5568,7 +5576,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     }}
                     style={stackCardHeaderStyle(expanded)}>
                     <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0 }}>
-                      {card.thumbnail_url && <img src={cfImg(card.thumbnail_url, 26, 26, cfAssetsBase)} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                      {thumbSrc(card) && <img src={thumbSrc(card)} alt={card.name} width={26} height={26} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     </div>
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
                     <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
