@@ -4693,8 +4693,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             )}
           </nav>
 
-          <div style={{ flex: 1 }} />
-
           <div style={s.sidebarDivider} />
 
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -6280,8 +6278,10 @@ const s = {
     margin: '6px 0', flexShrink: 0,
   },
   sidebarNav: {
+    flex: 1, width: '100%',
     display: 'flex', flexDirection: 'column',
-    alignItems: 'center', padding: '4px 0', gap: 2,
+    alignItems: 'center', justifyContent: 'space-evenly',
+    padding: '4px 0', gap: 2,   // gap = floor spacing; space-evenly spreads items down the blade
   },
   // Stacked nav item: icon box on top, label below.
   navItem: {
