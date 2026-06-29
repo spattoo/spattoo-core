@@ -43,6 +43,21 @@ export function configureEnvMap(cfAssetsBase) {
 }
 function envMapUrl() { return _envMapUrl; }
 
+// Shared three-point rig for every cake scene (live designer, snapshot capture, preview) so the look
+// — and the captured snapshot — stay identical. Softened from the original ambient 0.8 / key 1.5,
+// which overexposed the cake top + camera-facing wall and washed the diffuse colour toward white
+// head-on (true colour only appeared once orbited). `shadows` enables the key's shadow (live scene
+// only). The ONE light rig — edit here, every scene follows.
+function SceneLights({ shadows = false }) {
+  return (
+    <>
+      <ambientLight intensity={0.45} />
+      <directionalLight position={[6, 14, 8]} intensity={1.1} castShadow={shadows} />
+      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+    </>
+  );
+}
+
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
 // decor seats on the live wavy/swirled wall and hugs it, instead of a fixed offset (which buries decor
 // in the ribs) or a global lift (which floats small decor off the troughs). Memoised by wall+radius+
@@ -600,7 +615,7 @@ function OverlayMesh({ geo, url, selected }) {
   );
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, roughness = null, metalness = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
   const texture = useStickerImageTexture(imageUrl, recolor, color);
   // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
   // wide butterfly on a square canvas doesn't float. When standing (standUp) the wings rise in a V,
@@ -657,9 +672,20 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
         map={texture}
         transparent
         alphaTest={0.05}
-        roughness={0.75}
-        emissive={selected ? SELECTION_COLOR : '#000000'}
-        emissiveIntensity={selected ? 0.2 : 0}
+        // Matte by default (fondant-like) so the bright environment doesn't reflect a whitish sheen
+        // that washes out the printed colour — the old 0.75 read glossy and desaturated head-on.
+        // Honors the element's placement_config.roughness/metalness override (parity with StickerModel).
+        // envMapIntensity damps how much the HDRI lifts/desaturates the albedo.
+        roughness={roughness ?? 0.95}
+        metalness={metalness ?? 0}
+        envMapIntensity={0.4}
+        // The print bypasses the scene's ACES tone mapping (which desaturates) so the decal shows its
+        // true colours — the cake stays filmic, the artwork stays vivid. A little emissive still lifts
+        // it in shadow. Selection swaps to a flat SELECTION_COLOR tint (no map) as the highlight cue.
+        toneMapped={!selected ? false : true}
+        emissive={selected ? SELECTION_COLOR : '#ffffff'}
+        emissiveMap={selected ? null : texture}
+        emissiveIntensity={selected ? 0.2 : 0.12}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
@@ -949,7 +975,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} color={color} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} color={color} roughness={roughness} metalness={metalness} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -1590,9 +1616,7 @@ function CakeScene({
 
   return (
     <>
-      <ambientLight intensity={0.8} />
-      <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
-      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      <SceneLights shadows />
       <color attach="background" args={['#f4f4f5']} />
       {envMapUrl()
         ? <SafeEnvironment files={envMapUrl()} />
@@ -1848,12 +1872,10 @@ function CakeThumbnailScene({ config }) {
 
   return (
     <>
-      <ambientLight intensity={0.8} />
-      <directionalLight position={[6, 14, 8]} intensity={1.5} />
-      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      <SceneLights />
       {/* Same R2 HDRI the studio uses, so the captured snapshot's metallics render
-          gold instead of black (ambient lowered 1.2→0.8 to match now the env adds
-          light). No `background` prop → the capture stays transparent. */}
+          gold instead of black (the env adds the rest of the light). No `background`
+          prop → the capture stays transparent. */}
       {envMapUrl() && <SafeEnvironment files={envMapUrl()} />}
       {tierData.map((tier, i) => (
         <CakeTier
