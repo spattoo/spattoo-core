@@ -15,6 +15,7 @@ import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
+import { captureThumbnailBlob, blobExt } from './utils/thumbnail.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
@@ -1493,17 +1494,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setSaving(true);
     setSaveMsg(null);
 
-    // Capture from the off-screen thumbnail canvas (no floor, transparent bg)
+    // Capture from the off-screen thumbnail canvas (no floor, transparent bg) as a compact WebP
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const thumbnailBlob = await new Promise(resolve => {
-      if (!thumbCanvas) return resolve(null);
-      try {
-        const timeout = setTimeout(() => resolve(null), 4000);
-        thumbCanvas.toBlob(blob => { clearTimeout(timeout); resolve(blob ?? null); }, 'image/png');
-      } catch {
-        resolve(null);
-      }
-    });
+    const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
 
     // Derive the cake shape from the design (bottom tier): rect with equal sides = square.
     const t0 = design.tiers[0];
@@ -1567,9 +1560,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     let thumbnail_url = null;
     if (thumbnailBlob && apiClient?.getSignedUploadUrl) {
       try {
-        const filename = `${crypto.randomUUID()}.png`;
-        const { url, key } = await apiClient.getSignedUploadUrl('templates/thumbnails', filename, 'image/png');
-        await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: thumbnailBlob });
+        const filename = `${crypto.randomUUID()}.${blobExt(thumbnailBlob)}`;
+        const { url, key } = await apiClient.getSignedUploadUrl('templates/thumbnails', filename, thumbnailBlob.type);
+        await fetch(url, { method: 'PUT', headers: { 'Content-Type': thumbnailBlob.type }, body: thumbnailBlob });
         thumbnail_url = key;
       } catch (_) { /* thumbnail upload failure is non-fatal */ }
     }
@@ -3105,18 +3098,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   async function handleOrderSubmit(formData) {
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const thumbnailBlob = await new Promise(resolve => {
-      if (!thumbCanvas) return resolve(null);
-      thumbCanvas.toBlob(blob => resolve(blob ?? null), 'image/png');
-    });
+    const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
 
     // Upload thumbnail directly to R2 via signed URL — never send base64 in JSON body
     let designThumbnailKey = null;
     if (thumbnailBlob && apiClient?.getSignedUploadUrl) {
       try {
-        const filename = `${crypto.randomUUID()}.png`;
-        const { url, key } = await apiClient.getSignedUploadUrl('orders/thumbnails', filename, 'image/png');
-        await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: thumbnailBlob });
+        const filename = `${crypto.randomUUID()}.${blobExt(thumbnailBlob)}`;
+        const { url, key } = await apiClient.getSignedUploadUrl('orders/thumbnails', filename, thumbnailBlob.type);
+        await fetch(url, { method: 'PUT', headers: { 'Content-Type': thumbnailBlob.type }, body: thumbnailBlob });
         designThumbnailKey = key;
       } catch (_) { /* thumbnail upload failure is non-fatal */ }
     }
