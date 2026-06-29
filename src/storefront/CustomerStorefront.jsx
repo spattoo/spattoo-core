@@ -89,8 +89,13 @@ export default function CustomerStorefront({
   const firstName = invite?.customer?.first_name || invite?.first_name || null;
   const occasion  = invite?.occasion || invite?.note || null;
   const expired = inviteId && invite && !invite.valid;
+  // The baker's storefront is paused for new orders (trial lapsed / order cap). Show
+  // a banner + disable the design CTAs so customers aren't blocked only at submit.
+  // `accepting_orders` comes from the public storefront API.
+  const notAcceptingOrders = baker.accepting_orders === false;
 
   function handleCta() {
+    if (notAcceptingOrders) return;
     if (inviteId && invite?.valid) { setShowLogin(true); return; }
     if (expired) return;
     onStartDesign?.(baker);
@@ -138,6 +143,15 @@ export default function CustomerStorefront({
         </button>
       </header>
 
+      {notAcceptingOrders && (
+        <div style={{
+          background: lighten(accent, 0.34), color: darken(primary, 0.12),
+          textAlign: 'center', padding: '11px 16px', fontSize: 13.5, fontWeight: 600, lineHeight: 1.4,
+        }}>
+          This bakery isn't accepting new orders right now — please check back soon.
+        </div>
+      )}
+
       {menuOpen && (
         <div style={s.drawerOverlay} onClick={() => setMenuOpen(false)}>
           <nav style={s.drawer} onClick={e => e.stopPropagation()}>
@@ -163,7 +177,11 @@ export default function CustomerStorefront({
             {expired ? (
               <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
             ) : (
-              <button type="button" style={s.heroCta} onClick={handleCta}>{designLabel}</button>
+              <button type="button" disabled={notAcceptingOrders}
+                style={{ ...s.heroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                onClick={handleCta}>
+                {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+              </button>
             )}
           </div>
         </div>
@@ -190,7 +208,11 @@ export default function CustomerStorefront({
             <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
               <CakeIcon size={52} color={alpha('#ffffff', 0.8)} />
               <div style={s.gFallbackText}>Fresh photos coming soon</div>
-              <button type="button" style={s.gFallbackCta} onClick={handleCta}>Design your own</button>
+              <button type="button" disabled={notAcceptingOrders}
+                style={{ ...s.gFallbackCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                onClick={handleCta}>
+                {notAcceptingOrders ? 'Not taking new orders' : 'Design your own'}
+              </button>
             </div>
           )}
         </Section>
