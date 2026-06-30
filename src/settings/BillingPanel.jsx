@@ -618,7 +618,9 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{EVENT_LABELS[ev.event] ?? ev.event}</div>
-                          {ev.new_status && <StatusBadge status={ev.new_status} />}
+                          {/* No per-event status badge — the event label already says what happened,
+                              and the live plan/status is shown in the Current Plan card up top. A badge
+                              here read as if each historical event were a separate active subscription. */}
                           {ev.note && <div style={{ fontSize: 11, color: '#888', marginTop: 3, fontStyle: 'italic' }}>"{ev.note}"</div>}
                           <div style={{ fontSize: 10, color: '#bbb', marginTop: 4 }}>
                             {new Date(ev.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
