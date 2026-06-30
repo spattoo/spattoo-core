@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
 import { FONT, SERIF, buildContent, storefrontText, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
+import { resolveTemplate } from './templates.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -76,13 +77,12 @@ export default function CustomerStorefront({
   const logo    = logoUrl || baker.logo_url;   // a full logo / wordmark; replaces the name lockup
   const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback
 
-  // Storefront template routing — the baker picks their theme in Settings → Storefront Theme,
-  // and the public API returns its key as `storefront_theme`. Only 'spotlight' is implemented
-  // today, so any other (or missing) theme falls back to it until that template is built.
-  const BUILT_TEMPLATES = ['spotlight'];
-  const theme = BUILT_TEMPLATES.includes(baker.storefront_theme) ? baker.storefront_theme : 'spotlight';
-  // (theme === 'spotlight' renders the layout below; future templates branch here.)
-  const s = styles(primary, accent);
+  // Storefront template — resolve the baker's chosen key (Settings → Storefront Theme, returned
+  // by the public API as `storefront_theme`) to a built template; unknown/missing → the Standard
+  // baseline. The template supplies the DESIGN TOKENS; the baker's primary/accent overlay. ONE
+  // renderer below, driven by tokens — new templates are data, not forked layouts.
+  const template = resolveTemplate(baker.storefront_theme);
+  const s = styles(primary, accent, template.tokens);
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
@@ -122,6 +122,14 @@ export default function CustomerStorefront({
   const hasPhotos = gallery.length > 0;
   const gPhoto = hasPhotos ? gallery[gIdx % gallery.length] : null;
   const gMove = d => setGIdx(i => (i + d + gallery.length) % gallery.length);
+
+  // Hero: lead with the baker's featured creation by default — their real work is the strongest,
+  // most-differentiating visual. The 3D "design your own" cake is an opt-in the baker can choose
+  // (storefront_customizations.hero_style === 'designer') AND the fallback when they have no
+  // photos yet, so a brand-new storefront still looks alive.
+  const heroStyle = baker.storefront_customizations?.hero_style || 'photo';
+  const heroPhoto = hasPhotos ? (gallery[0].url || gallery[0]) : null;
+  const useDesignerHero = heroStyle === 'designer' || !heroPhoto;
 
   return (
     <div style={s.page}>
@@ -164,9 +172,11 @@ export default function CustomerStorefront({
         </div>
       )}
 
-      {/* ── HERO: full-bleed rotating cake, CTA overlaid ──────────────────────────── */}
+      {/* ── HERO: the baker's featured creation (default) or the 3D "design your own" cake ── */}
       <section style={s.hero}>
-        <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
+        {useDesignerHero
+          ? <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
+          : <div style={{ ...s.heroCake, backgroundImage: `url(${heroPhoto})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={`${baker.name} cake`} />}
         <div style={s.heroScrim} />
         <div style={s.heroFade} />
         <div style={s.heroContent}>
@@ -471,13 +481,15 @@ function Centered({ children }) {
   );
 }
 
-function styles(primary, accent) {
-  const ink = mix(primary, '#3a363a', 0.74);  // soft warm-grey hero/footer (lighter than near-black)
-  const heading = '#241A1E', text = '#3A2E32', muted = '#8B7B80';
-  const cardBorder = '#ECE5DE', shadow = '0 12px 30px rgba(60,40,45,0.08)';
-  const cw = 600;                             // mobile-first content width
+function styles(primary, accent, tk) {
+  // Template design tokens (tk) supply the look; the baker's primary/accent overlay. FONT/SERIF
+  // shadow the module imports so the rest of styles() picks up the template's typography.
+  const FONT = tk.font, SERIF = tk.serif;
+  const ink = mix(primary, tk.inkMix.with, tk.inkMix.amount);  // soft warm-grey hero/footer
+  const { heading, text, muted, cardBorder, shadow, pageBg } = tk;
+  const cw = tk.contentWidth;                 // mobile-first content width
   return {
-    page:        { minHeight: '100vh', background: '#FCFAF7', fontFamily: FONT, color: text, display: 'flex', flexDirection: 'column' },
+    page:        { minHeight: '100vh', background: pageBg, fontFamily: FONT, color: text, display: 'flex', flexDirection: 'column' },
 
     utilbar:     { background: lighten(primary, 0.9), color: darken(primary, 0.1), fontSize: 13.5, fontWeight: 700, textAlign: 'center', padding: '9px 16px' },
     utilLink:    { color: darken(primary, 0.1), textDecoration: 'none' },
@@ -501,7 +513,7 @@ function styles(primary, accent) {
     heroCake:    { position: 'absolute', inset: 0 },
     heroScrim:   { position: 'absolute', inset: 0, background: `linear-gradient(180deg, ${alpha(ink, 0.82)} 0%, ${alpha(ink, 0.32)} 24%, transparent 44%, ${alpha(ink, 0.4)} 64%, transparent 84%)`, pointerEvents: 'none' },
     // Dissolve the dark hero into the page colour at the seam — no hard edge.
-    heroFade:    { position: 'absolute', left: 0, right: 0, bottom: 0, height: '46%', background: `linear-gradient(180deg, transparent 0%, ${alpha('#FCFAF7', 0.0)} 8%, #FCFAF7 100%)`, zIndex: 1, pointerEvents: 'none' },
+    heroFade:    { position: 'absolute', left: 0, right: 0, bottom: 0, height: '46%', background: `linear-gradient(180deg, transparent 0%, ${alpha(pageBg, 0.0)} 8%, ${pageBg} 100%)`, zIndex: 1, pointerEvents: 'none' },
     // pointerEvents none so drags pass through to the 3D canvas; the CTA re-enables itself.
     heroContent: { position: 'relative', zIndex: 2, height: '100%', maxWidth: cw, margin: '0 auto', padding: '54px 24px 30px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'center', alignItems: 'center', color: '#fff', pointerEvents: 'none' },
     heroEyebrow: { fontSize: 12.5, fontWeight: 600, letterSpacing: 2.4, textTransform: 'uppercase', color: lighten(accent, 0.1), margin: 0, lineHeight: 1.5, textShadow: '0 2px 14px rgba(0,0,0,0.3)' },

@@ -45,12 +45,18 @@ function usePatchTexture(primary) {
       { x: 0.86, y: 0.64, r: 0.20, a: 0.32, c: dk },
     ];
     for (const p of patches) {
-      const cx = p.x * size, cy = p.y * size, r = p.r * size;
-      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      grad.addColorStop(0, `rgba(${p.c[0]}, ${p.c[1]}, ${p.c[2]}, ${p.a})`);
-      grad.addColorStop(1, `rgba(${p.c[0]}, ${p.c[1]}, ${p.c[2]}, 0)`);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, size, size);
+      const cy = p.y * size, r = p.r * size;
+      // Draw each patch wrapped across the horizontal edges (−size, 0, +size) so a patch
+      // near an edge continues across the cylinder's UV seam. Without this, a patch that
+      // spills off one side has no match on the other → a visible vertical "split" line.
+      for (const dx of [-size, 0, size]) {
+        const cx = p.x * size + dx;
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        grad.addColorStop(0, `rgba(${p.c[0]}, ${p.c[1]}, ${p.c[2]}, ${p.a})`);
+        grad.addColorStop(1, `rgba(${p.c[0]}, ${p.c[1]}, ${p.c[2]}, 0)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+      }
     }
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -100,10 +106,13 @@ export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', he
         camera={{ position: [0, 3.8, 8.4], fov: 30 }}
         style={{ width: '100%', height: '100%' }}
       >
-        <ambientLight intensity={mood === 'dark' ? 1.4 : 1.1} />
-        <directionalLight position={[5, 10, 6]} intensity={1.3} />
-        <directionalLight position={[-5, 6, 3]} intensity={0.9} />
-        <pointLight position={[3, 2, 4]} intensity={0.6} color="#ffffff" />
+        {/* Low ambient + a strong key light gives the cake form and keeps the brand colour
+            rich. (Previously ambient was ~1.4 which flooded the colour to a pale, flat,
+            "frosted glass" look on top of the Environment IBL.) */}
+        <ambientLight intensity={mood === 'dark' ? 0.45 : 0.4} />
+        <directionalLight position={[5, 10, 6]} intensity={1.9} />
+        <directionalLight position={[-5, 6, 3]} intensity={0.7} />
+        <pointLight position={[3, 2, 4]} intensity={0.5} color="#ffffff" />
         <Suspense fallback={<SceneLoader size={22} />}>
           <Environment preset="apartment" />
           <Cake primary={primary} />
