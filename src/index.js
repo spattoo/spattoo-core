@@ -5,6 +5,11 @@ export { default as CakeCanvas, CakeThumbnailCanvas, CakePreview } from './desig
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 export { default as OrdersPanel } from './orders/OrdersPanel.jsx';
+// Shared subscription-plan picker (select-to-expand) + pricing helpers — used by the billing
+// screen AND the signup onboarding wizard so the plan catalog lives in ONE place (the DB), not
+// duplicated per consumer.
+export { default as PlanCards } from './billing/PlanCards.jsx';
+export { periodPrice, formatPlanPrice, PERIOD_SUFFIX } from './billing/planPricing.js';
 export { default as AuthGate } from './auth/AuthGate.jsx';
 export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { extractFromPhoto } from './designer/hooks/useExtractElements.js';

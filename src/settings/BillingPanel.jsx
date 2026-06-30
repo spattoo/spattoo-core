@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PlanCards from '../billing/PlanCards.jsx';
 
 function useIsMobile() {
   const [m, setM] = useState(() => window.innerWidth < 768);
@@ -32,43 +33,11 @@ const EVENT_LABELS = {
   admin_override: 'Updated by admin',
 };
 
-const PLAN_INFO = {
-  spark: {
-    label: 'Spark', free: true, rank: 0,
-    color: '#6B7280',
-    tagline: '10 orders · 1 member · Help docs',
-    features: ['Design canvas', '10 total orders', '1 team member', 'Help docs support'],
-    prices: { monthly: 'Free', quarterly: 'Free', yearly: 'Free' },
-  },
-  flame: {
-    label: 'Flame', rank: 1,
-    color: '#C2410C',
-    gradient: 'linear-gradient(135deg, #C2410C, #EA580C)',
-    tagline: 'Unlimited orders · Subdomain · WhatsApp',
-    features: ['Unlimited orders', 'Custom subdomain', 'WhatsApp notifications', '2 team members', 'Email support'],
-    prices: { monthly: '₹999', quarterly: '₹2,697', yearly: '₹9,999' },
-  },
-  blaze: {
-    label: 'Blaze', popular: true, rank: 2,
-    color: '#7C3AED',
-    gradient: 'linear-gradient(135deg, #6D28D9, #7C3AED)',
-    tagline: 'Custom templates · Branding · 5 members',
-    features: ['Everything in Flame', 'Custom templates', 'Custom branding', 'Branded subdomain', '5 team members', 'Priority chat support'],
-    prices: { monthly: '₹2,499', quarterly: '₹6,747', yearly: '₹24,999' },
-  },
-  forge: {
-    label: 'Forge', rank: 3,
-    color: '#1D4ED8',
-    gradient: 'linear-gradient(135deg, #1E3A8A, #1D4ED8)',
-    tagline: 'Unlimited team · Account manager',
-    features: ['Everything in Blaze', 'Unlimited team members', 'Dedicated account manager'],
-    prices: { monthly: '₹4,999', quarterly: '₹13,497', yearly: '₹49,999' },
-  },
-};
+// Plan catalog (display names, taglines, feature bullets, prices, popular flag) now comes from
+// the DB via GET /api/plans — see PlanCards + the billing fetch. Nothing hardcoded here.
 
 const PERIOD_KEYS  = ['monthly', 'quarterly', 'yearly'];
 const PERIOD_SHORT = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
-const PERIOD_LABEL = { monthly: '/mo', quarterly: '/qtr', yearly: '/yr' };
 
 function inferPeriodType(displayName) {
   const d = (displayName ?? '').toLowerCase();
@@ -86,76 +55,6 @@ function StatusBadge({ status }) {
   );
 }
 
-function PlanRow({ planKey, selected, onSelect, currentTier, isActive, period, primaryColor }) {
-  const info       = PLAN_INFO[planKey];
-  const isCurrent  = currentTier === planKey && isActive;
-  const isSelected = selected === planKey;
-  const price      = info.prices[period] ?? info.prices.monthly;
-
-  return (
-    <div
-      onClick={() => onSelect(planKey)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '14px 18px', borderRadius: 14, cursor: 'pointer',
-        background: isSelected ? `${primaryColor}0a` : '#fff',
-        border: `1.5px solid ${isSelected ? primaryColor : '#E8EFE9'}`,
-        boxShadow: isSelected ? `0 0 0 3px ${primaryColor}20` : 'none',
-        transition: 'all 0.15s',
-      }}
-    >
-      {/* Radio */}
-      <div style={{
-        width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-        border: `2px solid ${isSelected ? primaryColor : '#CBD5E1'}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        transition: 'border-color 0.15s',
-      }}>
-        {isSelected && (
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: primaryColor }} />
-        )}
-      </div>
-
-      {/* Name + tagline */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14, fontWeight: 800, color: '#1a1a1a' }}>{info.label}</span>
-          {info.popular && (
-            <span style={{
-              fontSize: 9, fontWeight: 800, padding: '2px 8px', borderRadius: 20,
-              background: `${primaryColor}15`, color: primaryColor,
-            }}>
-              Most Popular
-            </span>
-          )}
-          {isCurrent && (
-            <span style={{
-              fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-              background: '#F0F4F1', color: '#6B7280', border: '1px solid #D4E0D7',
-            }}>
-              current
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3, fontWeight: 500 }}>
-          {info.tagline}
-        </div>
-      </div>
-
-      {/* Price */}
-      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: isSelected ? primaryColor : '#374151' }}>
-          {price}
-        </span>
-        {!info.free && (
-          <span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 2, fontWeight: 600 }}>
-            {PERIOD_LABEL[period]}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', onConfirm, onCancel, danger = false }) {
   if (!open) return null;
@@ -313,6 +212,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [error,          setError]          = useState(null);
   const [entitlements,   setEntitlements]   = useState(null);
   const [paymentsInfo,   setPaymentsInfo]   = useState(null);   // { payments:[latest], total }
+  const [plans,          setPlans]          = useState([]);     // DB plan catalog (GET /api/plans)
 
   useEffect(() => {
     if (!open) return;
@@ -323,13 +223,15 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       apiClient.fetchBillingPeriods().catch(() => []),
       apiClient.fetchEntitlements ? apiClient.fetchEntitlements().catch(() => null) : Promise.resolve(null),
       apiClient.fetchLatestPayment ? apiClient.fetchLatestPayment().catch(() => null) : Promise.resolve(null),
+      apiClient.fetchPlans ? apiClient.fetchPlans().catch(() => []) : Promise.resolve([]),
     ])
-      .then(([b, h, p, ent, pay]) => {
+      .then(([b, h, p, ent, pay, pl]) => {
         setBilling(b);
         setHistory(h);
         setPeriods(p);
         setEntitlements(ent);
         setPaymentsInfo(pay);
+        setPlans(Array.isArray(pl) ? pl : []);
         setSelectedTier(b.tier ?? 'spark');
         if (b.billing_period) setSelectedPeriod(inferPeriodType(b.billing_period));
       })
@@ -395,16 +297,20 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const endDate    = billing?.next_billing_at ? new Date(billing.next_billing_at) : null;
   const daysLeft   = endDate ? Math.max(0, Math.ceil((endDate - Date.now()) / 86400000)) : null;
 
-  const currentRank  = PLAN_INFO[billing?.tier]?.rank ?? 0;
-  const selectedRank = PLAN_INFO[selectedTier]?.rank   ?? 0;
+  // Rank + display name come from the DB catalog (sort_order is the tier rank).
+  const planByName   = Object.fromEntries(plans.map(p => [p.name, p]));
+  const rankOf       = name => planByName[name]?.sort_order ?? 0;
+  const labelOf      = name => planByName[name]?.display_name ?? (name ? name[0].toUpperCase() + name.slice(1) : '—');
+  const currentRank  = rankOf(billing?.tier);
+  const selectedRank = rankOf(selectedTier);
   const isSameTier   = billing && selectedTier === billing.tier;
 
   function ctaLabel() {
     if (subscribing) return 'Processing…';
-    if (isSameTier) return `${PLAN_INFO[selectedTier]?.label ?? 'Current'} — Current Plan`;
+    if (isSameTier) return `${labelOf(selectedTier)} — Current Plan`;
     if (selectedTier === 'spark') return 'Switch to Spark — Free';
-    if (!isActive || isOnSpark || selectedRank > currentRank) return `Upgrade to ${PLAN_INFO[selectedTier]?.label}`;
-    return `Switch to ${PLAN_INFO[selectedTier]?.label}`;
+    if (!isActive || isOnSpark || selectedRank > currentRank) return `Upgrade to ${labelOf(selectedTier)}`;
+    return `Switch to ${labelOf(selectedTier)}`;
   }
 
   function getDiscount(pk) {
@@ -470,7 +376,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#9BB5A2', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Current Plan</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a' }}>
-                      {PLAN_INFO[billing.tier]?.label ?? billing.tier ?? '—'}
+                      {labelOf(billing.tier)}
                     </div>
                     {endDate && isActive && (
                       <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: daysLeft <= 7 ? '#DC2626' : '#6B7280' }}>
@@ -566,21 +472,16 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   })}
                 </div>
 
-                {/* Radio rows */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {Object.keys(PLAN_INFO).map(key => (
-                    <PlanRow
-                      key={key}
-                      planKey={key}
-                      selected={selectedTier}
-                      onSelect={setSelectedTier}
-                      currentTier={billing.tier}
-                      isActive={isActive}
-                      period={selectedPeriod}
-                      primaryColor={primaryColor}
-                    />
-                  ))}
-                </div>
+                {/* Shared select-to-expand plan cards (same component as onboarding). */}
+                <PlanCards
+                  plans={plans}
+                  periods={periods}
+                  selectedPeriod={selectedPeriod}
+                  selected={selectedTier}
+                  currentTier={isActive ? billing.tier : null}
+                  onSelect={setSelectedTier}
+                  theme={{ accent: primaryColor, check: primaryColor, popularBg: primaryColor }}
+                />
 
                 {/* Subscribe / Upgrade button — always visible */}
                 <button
