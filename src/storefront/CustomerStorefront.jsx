@@ -12,6 +12,25 @@ const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. 
 // whole thing is designed for the phone frame first. A contact bar + header/hamburger, a
 // full-bleed rotating-cake hero with the CTA overlaid, branded sections, a testimonials carousel
 // and the invite-gated OTP login. Branding + colours come from the baker record.
+// Coarse responsive breakpoint for the customer-facing storefront. Mobile-first (SSR-safe
+// default 'mobile'); upgrades to tablet/desktop after mount + on resize. Inline styles can't do
+// media queries, so the layout adapts off this in styles() and the section render.
+function useBreakpoint() {
+  const read = () => {
+    if (typeof window === 'undefined') return 'mobile';
+    const w = window.innerWidth;
+    return w >= 1024 ? 'desktop' : w >= 720 ? 'tablet' : 'mobile';
+  };
+  const [bp, setBp] = useState('mobile');
+  useEffect(() => {
+    const onResize = () => setBp(read());
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return bp;
+}
+
 export default function CustomerStorefront({
   slug,
   baker: bakerProp = null,
@@ -35,6 +54,7 @@ export default function CustomerStorefront({
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
   const [gIdx, setGIdx]           = useState(0);
+  const bp = useBreakpoint();
 
   useEffect(() => {
     let alive = true;
@@ -82,7 +102,7 @@ export default function CustomerStorefront({
   // baseline. The template supplies the DESIGN TOKENS; the baker's primary/accent overlay. ONE
   // renderer below, driven by tokens — new templates are data, not forked layouts.
   const template = resolveTemplate(baker.storefront_theme);
-  const s = styles(primary, accent, template.tokens);
+  const s = styles(primary, accent, template.tokens, bp);
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
@@ -172,34 +192,55 @@ export default function CustomerStorefront({
         </div>
       )}
 
-      {/* ── HERO: the baker's featured creation (default) or the 3D "design your own" cake ── */}
-      <section style={s.hero}>
-        {useDesignerHero
-          ? <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
-          : <div style={{ ...s.heroCake, backgroundImage: `url(${heroPhoto})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={`${baker.name} cake`} />}
-        <div style={s.heroScrim} />
-        <div style={s.heroFade} />
-        <div style={s.heroContent}>
-          <div>
-            <h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1>
+      {/* ── HERO ── two distinct treatments: the 3D "design your own" cake (dark, full-bleed)
+          OR the baker's featured creation, FRAMED beside the tagline/CTA. A product cake photo
+          can't be a full-bleed crop, so the photo hero gets its own (light, contained) layout. */}
+      {useDesignerHero ? (
+        <section style={s.hero}>
+          <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
+          <div style={s.heroScrim} />
+          <div style={s.heroFade} />
+          <div style={s.heroContent}>
+            <div><h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1></div>
+            <div style={s.heroBottom}>
+              {expired ? (
+                <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+              ) : (
+                <button type="button" disabled={notAcceptingOrders}
+                  style={{ ...s.heroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                  onClick={handleCta}>
+                  {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+                </button>
+              )}
+            </div>
           </div>
-          <div style={s.heroBottom}>
-            {expired ? (
-              <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
-            ) : (
-              <button type="button" disabled={notAcceptingOrders}
-                style={{ ...s.heroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                onClick={handleCta}>
-                {notAcceptingOrders ? 'Not taking new orders' : designLabel}
-              </button>
-            )}
+        </section>
+      ) : (
+        <section style={s.photoHero}>
+          <div style={s.photoHeroInner}>
+            <div style={s.photoHeroText}>
+              <h1 style={s.photoHeroTitle}>{txt('hero_tagline')}</h1>
+              {expired ? (
+                <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+              ) : (
+                <button type="button" disabled={notAcceptingOrders}
+                  style={{ ...s.photoHeroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                  onClick={handleCta}>
+                  {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+                </button>
+              )}
+            </div>
+            <div style={s.photoHeroMedia}>
+              <img src={heroPhoto} alt={`${baker.name} cake`} style={s.photoHeroImg} />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <main style={s.main}>
         <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
           {hasPhotos ? (
+            bp === 'mobile' ? (
             <>
               <div style={s.carousel}>
                 {gallery.length > 1 && <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => gMove(-1)}>‹</button>}
@@ -213,6 +254,17 @@ export default function CustomerStorefront({
                 </div>
               )}
             </>
+            ) : (
+              // Tablet/desktop: a grid shows all the baker's work at once (not one-at-a-time).
+              <div style={s.galleryGrid}>
+                {gallery.map((g, i) => (
+                  <figure key={i} style={s.gGridFig}>
+                    <div style={s.gGridCard}><img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gImg} /></div>
+                    {g.caption && <figcaption style={s.gGridCap}>{g.caption}</figcaption>}
+                  </figure>
+                ))}
+              </div>
+            )
           ) : (
             // Fallback when the baker hasn't uploaded photos yet — branded, not broken.
             <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
@@ -241,8 +293,10 @@ export default function CustomerStorefront({
               {onEditPortrait && <div style={s.portraitBadge}><CameraIcon size={16} color="#fff" /></div>}
             </div>
             {onEditPortrait && <div style={s.portraitHint}>{portrait ? 'Click to change your photo' : 'Click to add your photo'}</div>}
-            <p style={s.bio}>{story}</p>
-            <div style={s.signature}>— {baker.name}</div>
+            <div style={s.storyText}>
+              <p style={s.bio}>{story}</p>
+              <div style={s.signature}>— {baker.name}</div>
+            </div>
           </div>
         </section>
 
@@ -481,13 +535,16 @@ function Centered({ children }) {
   );
 }
 
-function styles(primary, accent, tk) {
+function styles(primary, accent, tk, bp = 'mobile') {
   // Template design tokens (tk) supply the look; the baker's primary/accent overlay. FONT/SERIF
   // shadow the module imports so the rest of styles() picks up the template's typography.
   const FONT = tk.font, SERIF = tk.serif;
   const ink = mix(primary, tk.inkMix.with, tk.inkMix.amount);  // soft warm-grey hero/footer
   const { heading, text, muted, cardBorder, shadow, pageBg } = tk;
-  const cw = tk.contentWidth;                 // mobile-first content width
+  const desktop = bp === 'desktop', wide = bp !== 'mobile';
+  // Responsive content width — a phone column on mobile, but USE the screen on bigger devices
+  // (the storefront is customer-facing; it must not be a skinny strip on desktop).
+  const cw = desktop ? 1040 : wide ? 760 : tk.contentWidth;
   return {
     page:        { minHeight: '100vh', background: pageBg, fontFamily: FONT, color: text, display: 'flex', flexDirection: 'column' },
 
@@ -523,8 +580,18 @@ function styles(primary, accent, tk) {
     expired:     { fontSize: 14, fontWeight: 700, color: '#fff', background: 'rgba(192,57,43,0.9)', padding: '12px 18px', borderRadius: 12 },
     heroHint:    { fontSize: 12.5, fontWeight: 600, color: alpha('#ffffff', 0.82), marginTop: 14, maxWidth: 320 },
 
+    // Photo hero — the baker's featured creation FRAMED beside the tagline/CTA (not a full-bleed
+    // crop). Light, contained, responsive: side-by-side on desktop, photo-over-text on mobile.
+    photoHero:      { background: pageBg, padding: wide ? '40px 24px 6px' : '24px 20px 6px' },
+    photoHeroInner: { maxWidth: cw, margin: '0 auto', display: 'flex', flexDirection: desktop ? 'row' : 'column-reverse', alignItems: 'center', gap: desktop ? 48 : 26 },
+    photoHeroText:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 22, alignItems: desktop ? 'flex-start' : 'center', textAlign: desktop ? 'left' : 'center' },
+    photoHeroTitle: { fontFamily: SERIF, fontSize: wide ? 30 : 23, fontWeight: 600, color: heading, margin: 0, lineHeight: 1.25, letterSpacing: 0.2 },
+    photoHeroCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    photoHeroMedia: { width: '100%', maxWidth: 480 },
+    photoHeroImg:   { width: '100%', aspectRatio: desktop ? '4 / 5' : '4 / 3', objectFit: 'cover', borderRadius: 22, boxShadow: shadow, display: 'block', border: `1px solid ${cardBorder}` },
+
     main:        { maxWidth: cw, width: '100%', margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' },
-    section:     { padding: '46px 0 6px' },
+    section:     { padding: wide ? '66px 0 8px' : '46px 0 6px' },
     eyebrow:     { fontSize: 11.5, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: primary, marginBottom: 12, textAlign: 'center' },
     sectionTitle:{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: heading, margin: '0 0 22px', textAlign: 'center', lineHeight: 1.3 },
 
@@ -535,8 +602,9 @@ function styles(primary, accent, tk) {
     stepBody:    { fontSize: 14, fontWeight: 500, lineHeight: 1.55, color: muted, margin: 0 },
 
     // Our story
-    storyWrap:   { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', maxWidth: 460, margin: '0 auto' },
-    portraitWrap:{ position: 'relative', width: 116, height: 116, marginBottom: 20 },
+    storyWrap:   { display: 'flex', flexDirection: desktop ? 'row' : 'column', alignItems: 'center', textAlign: desktop ? 'left' : 'center', gap: desktop ? 40 : 0, maxWidth: desktop ? 820 : 460, margin: '0 auto' },
+    storyText:   { flex: 1 },
+    portraitWrap:{ position: 'relative', width: 116, height: 116, marginBottom: desktop ? 0 : 20, flexShrink: 0 },
     portrait:    { width: 116, height: 116, borderRadius: '50%', background: `linear-gradient(135deg, ${lighten(primary, 0.35)}, ${lighten(accent, 0.1)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: shadow, border: '4px solid #fff', boxSizing: 'border-box' },
     portraitBadge:{ position: 'absolute', bottom: 0, right: 0, width: 34, height: 34, borderRadius: '50%', background: primary, border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.2)' },
     portraitHint:{ fontSize: 12.5, fontWeight: 700, color: primary, margin: '-8px 0 16px' },
@@ -556,6 +624,10 @@ function styles(primary, accent, tk) {
     gSlide:      { aspectRatio: '4 / 3', borderRadius: 18, overflow: 'hidden', boxShadow: shadow, background: '#fff', border: `1px solid ${cardBorder}` },
     gImg:        { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
     gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: 'center' },
+    galleryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 },
+    gGridFig:    { margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+    gGridCard:   { aspectRatio: '4 / 3', borderRadius: 16, overflow: 'hidden', boxShadow: shadow, background: '#fff', border: `1px solid ${cardBorder}` },
+    gGridCap:    { fontSize: 13, fontWeight: 600, color: muted, textAlign: 'center' },
     gFallback:   { aspectRatio: '4 / 3', borderRadius: 18, boxShadow: shadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: '#fff', textAlign: 'center', padding: 20 },
     gFallbackText:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: '#fff' },
     gFallbackCta:{ padding: '11px 24px', borderRadius: 12, border: `1.5px solid ${alpha('#ffffff', 0.7)}`, background: alpha('#ffffff', 0.12), color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, backdropFilter: 'blur(4px)' },
