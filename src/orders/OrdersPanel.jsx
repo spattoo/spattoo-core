@@ -1,6 +1,10 @@
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import XrayReport from './xray/XrayReport.jsx';
 import PhotoSheet from './PhotoSheet.jsx';
+import { compressImageFile } from './imageCompress.js';
+
+// Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
+const MAX_FINISHED_PHOTOS = 3;
 
 const PhotoGlyph = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" strokeLinecap="round">
@@ -330,6 +334,154 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
   );
 }
 
+// ── Mark-ready: finished-cake photos ──────────────────────────────────────────
+// When the baker marks an order 'ready' we let them OPTIONALLY attach up to 3 photos
+// of the finished cake. They ride along in the order-ready email, so they must be
+// uploaded + persisted BEFORE the status flips (the email fires synchronously on the
+// transition). This sheet uploads each pick to R2 (orders/photos) as it's added and
+// hands the resulting keys back on confirm; the caller persists them then advances.
+// Photos are never required — "Mark as ready" works with zero.
+function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
+  const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
+  const uploading = photos.some(p => p.uploading);
+  const atMax = photos.length >= MAX_FINISHED_PHOTOS;
+
+  // Revoke any still-live object URLs on unmount (a ref tracks the latest set, since the
+  // cleanup runs once and would otherwise close over the initial empty array).
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  useEffect(() => () => photosRef.current.forEach(p => p.previewUrl && URL.revokeObjectURL(p.previewUrl)), []);
+
+  async function addFiles(e) {
+    const files = [...(e.target.files || [])].slice(0, MAX_FINISHED_PHOTOS - photos.length);
+    e.target.value = '';
+    for (const file of files) {
+      const id = `p${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const previewUrl = URL.createObjectURL(file);
+      setPhotos(ps => [...ps, { id, previewUrl, key: null, uploading: true, failed: false }]);
+      try {
+        const blob = await compressImageFile(file);
+        const ct = blob.type || file.type || 'image/jpeg';
+        const ext = ct === 'image/webp' ? 'webp' : (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const filename = `${order.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { url, key } = await apiClient.getSignedUploadUrl('orders/photos', filename, ct);
+        await fetch(url, { method: 'PUT', headers: { 'Content-Type': ct }, body: blob });
+        setPhotos(ps => ps.map(p => (p.id === id ? { ...p, key, uploading: false } : p)));
+      } catch (err) {
+        console.error('Finished-photo upload failed', err);
+        setPhotos(ps => ps.map(p => (p.id === id ? { ...p, uploading: false, failed: true } : p)));
+      }
+    }
+  }
+
+  function remove(id) {
+    setPhotos(ps => {
+      const it = ps.find(p => p.id === id);
+      if (it?.previewUrl) URL.revokeObjectURL(it.previewUrl);
+      return ps.filter(p => p.id !== id);
+    });
+  }
+
+  const slots = [...photos];
+  if (!atMax) slots.push(null);   // trailing "add" tile
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20,18,16,0.55)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }} onClick={busy ? undefined : onCancel}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 440, background: '#fff', borderRadius: 18, padding: 22,
+        boxShadow: '0 18px 50px rgba(0,0,0,0.3)', fontFamily: 'inherit',
+      }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: '#1a1a1a' }}>Mark as ready</h3>
+        <p style={{ margin: '0 0 16px', fontSize: 13.5, color: '#777', lineHeight: 1.5 }}>
+          Add a few photos of the finished cake — your customer will see them in their "order ready" email.
+          <b> Optional</b>; you can mark ready without any.
+        </p>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
+          {slots.map((p, i) => p ? (
+            <div key={p.id} style={{ position: 'relative', width: 96, height: 96 }}>
+              <img src={p.previewUrl} alt="Finished cake" style={{
+                width: 96, height: 96, objectFit: 'cover', borderRadius: 12,
+                border: '1.5px solid #E8E4DC', opacity: p.uploading ? 0.55 : 1,
+                filter: p.failed ? 'grayscale(1)' : 'none',
+              }} />
+              {p.uploading && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#444' }}>Uploading…</div>}
+              {p.failed && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#c0392b' }}>Failed</div>}
+              {!busy && (
+                <button onClick={() => remove(p.id)} aria-label="Remove photo" style={{
+                  position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%',
+                  border: 'none', background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', lineHeight: '22px', textAlign: 'center', padding: 0,
+                }}>×</button>
+              )}
+            </div>
+          ) : (
+            <label key="add" style={{
+              width: 96, height: 96, borderRadius: 12, border: '1.5px dashed #C9C4BC',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 4, cursor: busy ? 'default' : 'pointer', color: '#999', background: '#FAF9F6',
+            }}>
+              <PhotoGlyph />
+              <span style={{ fontSize: 11, fontWeight: 700 }}>Add photo</span>
+              {/* No `capture` attr: on phones this lets the baker choose Camera OR gallery; on
+                  desktop (browser fallback) it's a plain file picker. */}
+              <input type="file" accept="image/*" multiple disabled={busy}
+                onChange={addFiles} style={{ display: 'none' }} />
+            </label>
+          ))}
+        </div>
+
+        {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onCancel} disabled={busy} style={{
+            flex: '0 0 auto', padding: '12px 18px', borderRadius: 11, border: '1.5px solid #E0DDD8',
+            background: '#fff', color: '#555', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>Cancel</button>
+          <button
+            onClick={() => onConfirm(photos.filter(p => p.key).map(p => p.key))}
+            disabled={busy || uploading}
+            style={{
+              flex: 1, padding: '12px', borderRadius: 11, border: 'none',
+              background: (busy || uploading) ? '#9BB5A2' : primaryColor, color: '#fff',
+              fontSize: 14, fontWeight: 800, cursor: (busy || uploading) ? 'default' : 'pointer', fontFamily: 'inherit',
+            }}>
+            {busy ? 'Marking ready…' : uploading ? 'Uploading…' : 'Mark as ready'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Read-only strip of the finished-cake photos on a ready/completed order.
+function FinishedPhotosSection({ order, apiClient, refresh }) {
+  const [photos, setPhotos] = useState([]);
+  useEffect(() => {
+    if (!apiClient?.fetchOrderPhotos) return;
+    let live = true;
+    apiClient.fetchOrderPhotos(order.id)
+      .then(d => { if (live && Array.isArray(d)) setPhotos(d); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [order.id, refresh]);
+  if (!photos.length) return null;
+  return (
+    <Section title="Finished cake photos">
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {photos.map(p => (
+          <img key={p.id} src={p.url} alt="Finished cake" style={{
+            width: 96, height: 96, objectFit: 'cover', borderRadius: 10, border: '1.5px solid #E8E4DC',
+          }} />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 // ── Edit form ─────────────────────────────────────────────────────────────────
 
 // Normalise an order's stored flavours into editable rows. Entries may come back
@@ -649,6 +801,38 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
     setChangingStatus(false);
   }
 
+  // Marking 'ready' opens the finished-photos sheet first (when the host supports
+  // uploads) so the optional photos are persisted BEFORE the email-firing transition.
+  // Every other transition advances directly.
+  const [markingReady, setMarkingReady] = useState(false);
+  const [readyErr, setReadyErr]         = useState(null);
+  const canAttachPhotos = !!(apiClient?.getSignedUploadUrl && apiClient?.saveOrderPhotos);
+
+  function advance(s) {
+    if (s === 'ready' && canAttachPhotos && order.status !== 'ready') {
+      setReadyErr(null);
+      setMarkingReady(true);
+      return;
+    }
+    handleStatus(s);
+  }
+
+  async function confirmMarkReady(keys) {
+    if (changingStatus) return;
+    setChangingStatus(true);
+    setReadyErr(null);
+    try {
+      if (keys.length) await apiClient.saveOrderPhotos(order.id, keys);   // persist BEFORE the email fires
+      await onStatusChange(order.id, 'ready');
+      setAuditRefresh(r => r + 1);
+      setMarkingReady(false);
+    } catch (err) {
+      setReadyErr(err.message || 'Could not mark ready');
+    } finally {
+      setChangingStatus(false);
+    }
+  }
+
   const [quoting, setQuoting]   = useState(false);
   const [quoteErr, setQuoteErr] = useState(null);
 
@@ -745,20 +929,26 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               {/* Action buttons (send quote / confirm / cancel) sit directly below the
                   image; the status flow goes underneath them. */}
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
-              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={handleStatus} busy={changingStatus} primaryColor={primaryColor} />
+              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={advance} busy={changingStatus} primaryColor={primaryColor} />
               {!isClosed(statusIndex, order.status) && !isTerminal(statusIndex, order.status) && (
                 <div style={{ marginBottom: 20 }}>
                   <CancelOrderLink onClick={() => handleStatus('cancelled')} disabled={changingStatus} />
                 </div>
               )}
-              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} hideCancel />
+              <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} hideCancel />
               <CustomPhotosSection order={order} />
+              <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
             </>
         }
+        {markingReady && (
+          <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+            busy={changingStatus} error={readyErr}
+            onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
+        )}
       </div>
     );
   }
@@ -793,9 +983,10 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
               <CustomPhotosSection order={order} />
-              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
+              <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
+              <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} />
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
-              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={handleStatus} busy={changingStatus} primaryColor={primaryColor} />
+              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={advance} busy={changingStatus} primaryColor={primaryColor} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
@@ -803,6 +994,11 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
             </>
         }
       </div>
+      {markingReady && (
+        <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+          busy={changingStatus} error={readyErr}
+          onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
+      )}
     </div>
   );
 }
