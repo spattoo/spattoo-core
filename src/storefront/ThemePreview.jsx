@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import CustomerStorefront from './CustomerStorefront.jsx';
+import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
 
 const TEXT_FIELDS = [
@@ -48,11 +49,12 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [publishing, setPublishing] = useState(false);
   const [hlUploading, setHlUploading] = useState(null);   // index of the highlight whose image is uploading
   const [mobileTab, setMobileTab] = useState('preview');   // mobile: 'preview' | 'edit' (preview is the default)
+  const [ready, setReady] = useState(false);   // preview config synced from `value`? (gates the storefront render)
   const portraitInputRef = useRef(null);
   const isWide = useIsWide(900);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setReady(false); return; }   // reset so each open shows the loader until synced
     setThemeId(value?.storefront_theme_id ?? themes[0]?.id ?? 1);
     setPrimary(value?.primary_color || '#2C4433');
     setAccent(value?.accent_color || '#6B8C74');
@@ -60,6 +62,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     setCustomizations(value?.storefront_customizations || {});
     setPortraitUrl(value?.portrait_url || null);
     setPortraitKey(undefined);
+    setReady(true);   // config synced from `value` → safe to render the real (JSON) storefront
     setGalleryDirty(false);
     apiClient?.fetchStorefrontPhotos?.()
       .then(r => setGallery((r?.photos || []).map((p, i) => ({ id: p.id || `e${i}`, key: p.key, url: p.url, caption: p.caption || '' }))))
@@ -417,7 +420,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         <div style={{ ...s.stage, padding: isWide ? 20 : 0 }}>
           <div style={isWide ? s.phone : s.phoneMobile}>
             <div style={s.phoneScroll}>
-              <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
+              {ready
+                ? <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
+                : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CakeSpinner label="Loading…" /></div>}
             </div>
           </div>
           {dirty && <div style={s.dirtyTag}>Unpublished changes</div>}
