@@ -390,16 +390,28 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   );
 }
 
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
 function Swatch({ label, value, onChange }) {
+  // The colour square IS the picker (native colour input overlaid). The hex box is optional —
+  // typed edits commit only when they form a valid #rrggbb (on change/blur/Enter), so typing a code
+  // char-by-char never fights the picker or paints an invalid swatch.
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value]);   // stay in sync when the picker/parent changes it
+  const safe = HEX_RE.test(value) ? value : '#000000';
+  const commit = v => { const h = v.trim(); if (HEX_RE.test(h)) onChange(h); };
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-      <label style={{ position: 'relative', cursor: 'pointer', flexShrink: 0 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: value, border: '2.5px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }} />
-        <input type="color" value={value} onChange={e => onChange(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+      <label style={{ position: 'relative', cursor: 'pointer', flexShrink: 0 }} title="Pick a colour">
+        <div style={{ width: 44, height: 44, borderRadius: 11, background: safe, border: '2.5px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }} />
+        <input type="color" value={safe} onChange={e => onChange(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
       </label>
       <div>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: '#2C4433' }}>{label}</div>
-        <input type="text" value={value} onChange={e => onChange(e.target.value)}
+        <input type="text" value={text} spellCheck={false} placeholder="#rrggbb"
+          onChange={e => { setText(e.target.value); commit(e.target.value); }}
+          onBlur={e => commit(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') commit(e.currentTarget.value); }}
           style={{ width: 96, padding: '5px 8px', borderRadius: 8, border: '1.5px solid #D9DED9', fontSize: 12.5, fontFamily: 'monospace', color: '#2C4433', outline: 'none', marginTop: 3 }} />
       </div>
     </div>
