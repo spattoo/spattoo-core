@@ -36,9 +36,9 @@ export function buildPalette(primary, accent, tk = {}, opts = {}) {
   // NOT the accent. Accent is the secondary POP (the drip). bandStrong darkened slightly so on-band
   // text has contrast; onBand is ADAPTIVE (onColor) so it reads on a dark OR light primary.
   const bandStrong = darken(primary, 0.04);   // hero + header — the primary band
-  // Baker lever (storefront_customizations.cta_color): ONE colour that drives the hero HEADLINE and
-  // the primary BUTTONS together. Unset → today's look (adaptive on-band headline + primary button).
-  const cta = opts.ctaColor || primary;
+  // Baker lever (storefront_customizations.cta_color): ONE "text" colour for the hero HEADLINE +
+  // SUBTITLE + BUTTON LABELS. Unset → adaptive (white on dark band, dark on light). The BUTTON
+  // BACKGROUND is always the BAND colour, so the band and the buttons match.
   const heroText = opts.ctaColor || onColor(bandStrong);
   return {
     // Backgrounds (light → strong)
@@ -53,11 +53,11 @@ export function buildPalette(primary, accent, tk = {}, opts = {}) {
     grid:        '#ffffff',
     gridOpacity: 0.5,
     // Text / actions
-    onBand:   onColor(bandStrong),       // header/nav/subtitle ON the band — white on dark, dark on light
-    heroText,                            // the hero HEADLINE colour (baker-choosable via cta_color)
-    cta,                                 // primary button background
-    ctaHover: darken(cta, 0.08),         // button hover
-    onCta:    onColor(cta),              // label colour on the CTA
+    onBand:   onColor(bandStrong),       // header/nav ON the band — white on dark, dark on light
+    heroText,                            // hero headline + subtitle + button labels (via cta_color)
+    cta:      bandStrong,                // buttons use the BAND colour (band & button match)
+    ctaHover: darken(bandStrong, 0.08),  // button hover
+    onCta:    heroText,                  // button label = the chosen text colour
     eyebrow:  primary,                   // section eyebrows
   };
 }
