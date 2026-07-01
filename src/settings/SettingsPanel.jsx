@@ -550,7 +550,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
           storefront_customizations: profile?.storefront_customizations,
         }}
         baker={{ name: profile?.name, slug: profile?.slug, story: profile?.story, instagram_handle: profile?.instagram_handle, website_url: profile?.website_url }}
-        logoUrl={profile?.logo_url || null}
+        logoUrl={profile?.logo_transparent_url || profile?.logo_url || null}
         onPublish={publishStorefront}
         onUnpublish={unpublishStorefront}
         onClose={() => setPreviewOpen(false)}
