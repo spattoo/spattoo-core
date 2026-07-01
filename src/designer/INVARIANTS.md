@@ -3,6 +3,13 @@
 Read this before changing element placement, rendering, or the right‑side popups.
 These rules exist because they were each violated and cost painful rework. Keep them true.
 
+> **Scope:** the CROSS-CUTTING principles here — **DRY / reuse-scan (#3), config-driven not
+> type-branching (#1/#6), no pictographic emoji (#7), and verify-in-the-real-app** — are
+> **PROJECT-WIDE**: they apply to every screen/module (storefront, settings/customiser, admin, api),
+> not just the designer. They're stated once, authoritatively, in the root `CLAUDE.md`
+> ("REUSE & CONFIG-DRIVEN … ALL MODULES"). Everything else below is designer-SPECIFIC
+> (placement modes, zones, the ONE renderer, right-side popups).
+
 ## 1. Placement & behavior are CONFIG‑driven, never element‑type‑driven
 An element's behavior comes entirely from its data:
 - `allowed_zones` — where it can go (`top_surface`, `side`, `middle_tier`, `board`, `rim`).
