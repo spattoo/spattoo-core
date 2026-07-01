@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Environment, OrbitControls } from '@react-three/drei';
+import { Environment, OrbitControls, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import { SceneLoader } from '../designer/canvas/CakeSpinner.jsx';
 
@@ -24,7 +24,7 @@ function lighten(hex, t) {
 
 // A soft, hand-iced look: the brand colour with a few lighter radial "patches" baked into a
 // canvas texture — exactly the technique the marketing hero uses (just brand-driven).
-function usePatchTexture(primary) {
+function usePatchTexture(primary, grid) {
   return useMemo(() => {
     const size = 1024;
     const canvas = document.createElement('canvas');
@@ -84,7 +84,41 @@ function Cake({ primary }) {
   );
 }
 
-export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', height = 420, mood = 'dark', spin = 0.4 }) {
+// StudioGrid — the "3D studio" space the cake sits inside: a floor grid receding to a vanishing
+// point + concentric rings around the base. Ported from the marketing hero (SpaceGrid.tsx), tinted
+// to the theme and kept low-visibility so it frames the cake without competing with it.
+const FLOOR_Y = -0.68;   // just under the gold board (board bottom ≈ -0.675)
+
+function StudioGrid({ color = '#ffffff', opacity = 0.5 }) {
+  const lines = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const verts = [];
+    const halfW = 5, zBack = -14, zFront = 3, cell = 0.7;   // deep floor → strong vanishing point
+    // Floor (XZ plane at y=0), receding back to the horizon
+    for (let z = zBack; z <= zFront + 1e-6; z += cell) verts.push(-halfW, 0, z, halfW, 0, z);
+    for (let x = -halfW; x <= halfW + 1e-6; x += cell) verts.push(x, 0, zBack, x, 0, zFront);
+    // Right wall — sparse horizontal lines at rising heights, running back to the vanishing point:
+    // the radiating "fan" from the marketing hero (NOT a dense grid wall).
+    for (const y of [0.5, 1.1, 1.8, 2.6, 3.5, 4.5]) verts.push(halfW, y, zFront, halfW, y, zBack);
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    return geo;
+  }, []);
+  const mat = useMemo(() => new THREE.LineBasicMaterial({ color, transparent: true, opacity }), [color, opacity]);
+  return (
+    <group position={[0, FLOOR_Y, 0]}>
+      <lineSegments geometry={lines} material={mat} />
+      {/* concentric rings around the cake base — the vanishing-point flourish */}
+      {[1.5, 2.4, 3.3, 4.2].map((r, i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
+          <ringGeometry args={[r, r + 0.012, 96]} />
+          <meshBasicMaterial color={color} transparent opacity={Math.max(0.05, opacity - i * 0.09)} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', height = 420, mood = 'dark', spin = 0.4, grid = false, gridColor = '#ffffff', gridOpacity = 0.5 }) {
   // Client-only: skip WebGL during SSR / first paint (spattoo-web is Next.js).
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -106,17 +140,21 @@ export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', he
         camera={{ position: [0, 3.8, 8.4], fov: 30 }}
         style={{ width: '100%', height: '100%' }}
       >
-        {/* Low ambient + a strong key light gives the cake form and keeps the brand colour
-            rich. (Previously ambient was ~1.4 which flooded the colour to a pale, flat,
-            "frosted glass" look on top of the Environment IBL.) */}
-        <ambientLight intensity={mood === 'dark' ? 0.45 : 0.4} />
-        <directionalLight position={[5, 10, 6]} intensity={1.9} />
-        <directionalLight position={[-5, 6, 3]} intensity={0.7} />
+        {/* Low ambient + a strong key light gives the cake form and keeps the colour rich. On a
+            LIGHT background a pale/ivory cake washes out, so drop the ambient further and lean on a
+            single strong key + soft fill for a clear light-to-shadow gradient across the cylinder. */}
+        <ambientLight intensity={mood === 'dark' ? 0.45 : 0.22} />
+        <directionalLight position={[5, 10, 6]} intensity={mood === 'dark' ? 1.9 : 2.3} castShadow />
+        <directionalLight position={[-5, 6, 3]} intensity={mood === 'dark' ? 0.7 : 0.45} />
         <pointLight position={[3, 2, 4]} intensity={0.5} color="#ffffff" />
+        {grid && <StudioGrid color={gridColor} opacity={gridOpacity} />}
         <Suspense fallback={<SceneLoader size={22} />}>
           <Environment preset="apartment" />
           <Cake primary={primary} />
         </Suspense>
+        {/* Contact shadow grounds the cake so it doesn't look like a floating 2D sticker. Invisible
+            on the dark hero (dark-on-dark), visible + grounding on the light band. */}
+        <ContactShadows position={[0, -0.72, 0]} opacity={mood === 'dark' ? 0.3 : 0.42} scale={7} blur={2.6} far={4} resolution={512} color="#3a2a2e" />
         {/* Drag to rotate; gentle auto-spin when idle. No zoom/pan — it's a hero, not a viewer. */}
         <OrbitControls
           enableZoom={false}

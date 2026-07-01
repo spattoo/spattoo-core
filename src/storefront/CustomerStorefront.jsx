@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
-import { FONT, SERIF, buildContent, storefrontText, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
+import { FONT, SERIF, buildContent, storefrontText, buildPalette, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
@@ -29,6 +29,33 @@ function useBreakpoint() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
   return bp;
+}
+
+// Varied, asymmetric wave paths so the bands don't all read as the same flat horizontal stripe.
+const WAVES = [
+  'M0,40 C300,90 720,4 1140,52 C1320,72 1400,40 1440,50 L1440,70 L0,70 Z',
+  'M0,55 C360,2 800,84 1200,30 C1350,10 1410,52 1440,40 L1440,70 L0,70 Z',
+  'M0,30 C260,78 640,8 1040,46 C1280,68 1380,28 1440,44 L1440,70 L0,70 Z',
+];
+
+// Full-width tinted band with a wavy (curved) top + bottom edge — the recurring soft-curve motif
+// down the page. top/bottom can use DIFFERENT paths (asymmetry). innerStyle re-applies the content
+// max-width container.
+function WavyBand({ tint, fill, curveH, innerStyle, topPath = WAVES[0], bottomPath = WAVES[1], children }) {
+  const wave = (flip, d) => (
+    <svg
+      style={{ position: 'absolute', [flip ? 'top' : 'bottom']: -1, left: 0, width: '100%', height: curveH, display: 'block', transform: flip ? 'scaleY(-1)' : 'none' }}
+      viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+      <path d={d} fill={fill} />
+    </svg>
+  );
+  return (
+    <div style={{ position: 'relative', background: tint, padding: `${curveH + 28}px 0` }}>
+      {wave(true, topPath)}
+      <div style={innerStyle}>{children}</div>
+      {wave(false, bottomPath)}
+    </div>
+  );
 }
 
 export default function CustomerStorefront({
@@ -102,7 +129,21 @@ export default function CustomerStorefront({
   // baseline. The template supplies the DESIGN TOKENS; the baker's primary/accent overlay. ONE
   // renderer below, driven by tokens — new templates are data, not forked layouts.
   const template = resolveTemplate(baker.storefront_theme);
-  const s = styles(primary, accent, template.tokens, bp);
+  const pal = buildPalette(primary, accent, template.tokens);   // one place to tune every colour
+  const s = styles(primary, accent, template.tokens, bp, pal);
+  // Interactive states (hover/active/focus) — inline styles can't express :hover, so one small
+  // palette-driven stylesheet handles them. Colours come from `pal`, so this stays centralised too.
+  const interactionCss = `
+    .sf-cta { transition: background .18s ease, transform .18s ease, box-shadow .18s ease; }
+    .sf-cta:hover:not(:disabled) { background: ${pal.ctaHover}; transform: translateY(-1px); box-shadow: 0 14px 34px ${alpha(primary, 0.3)}; }
+    .sf-cta:active:not(:disabled) { transform: translateY(0); }
+    .sf-cta:focus-visible { outline: 3px solid ${alpha(primary, 0.45)}; outline-offset: 3px; }
+    .sf-navlink { transition: opacity .15s ease; }
+    .sf-navlink:hover { opacity: .68; }
+    .sf-arrow { transition: transform .15s ease, background .15s ease; }
+    .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
+  `;
+  const pageBg = template.tokens.pageBg;   // exposed for inline SVG fills (the hero curve)
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
@@ -147,28 +188,49 @@ export default function CustomerStorefront({
   // most-differentiating visual. The 3D "design your own" cake is an opt-in the baker can choose
   // (storefront_customizations.hero_style === 'designer') AND the fallback when they have no
   // photos yet, so a brand-new storefront still looks alive.
+  const heroImage = baker.storefront_customizations?.hero_image || null;   // baker-set wide/lifestyle hero photo
   const heroStyle = baker.storefront_customizations?.hero_style || 'photo';
   const heroPhoto = hasPhotos ? (gallery[0].url || gallery[0]) : null;
-  const useDesignerHero = heroStyle === 'designer' || !heroPhoto;
+  // 3D when chosen (or nothing to show); FULL-BLEED when the baker set a hero image; otherwise the
+  // featured creation FRAMED (a product cutout can't be full-bleed without cropping to mush).
+  const useDesignerHero = heroStyle === 'designer' || (!heroImage && !heroPhoto);
+  const useFramedHero   = !useDesignerHero && !heroImage;
+  // For the Standard curved-band hero the brand tint flows up THROUGH the header (logo on the
+  // pink, like Honeybear) — so the header + phone bar adopt the band colour and lose their seam.
+  const isCurveHero = useFramedHero;
+  const bandTint = pal.bandStrong;   // header/utilbar adopt the hero band colour in curve mode
+  const wide = bp !== 'mobile';
+  const headerText = isCurveHero ? '#ffffff' : darken(primary, 0.12);   // on the pink band → white
+  const bandTints = [pal.bandSoftA, pal.bandSoftB];   // the two tone-on-tone section bands
 
   return (
     <div style={s.page}>
+      <style>{interactionCss}</style>
       {phone && (
-        <div style={s.utilbar}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
+        <div style={{ ...s.utilbar, ...(isCurveHero ? { background: bandTint } : {}) }}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
       )}
 
-      <header style={s.header}>
-        <div style={s.brand}>
+      <header style={{ ...s.header, ...(isCurveHero ? { background: bandTint, borderBottom: 'none', backdropFilter: 'none', position: 'relative' } : {}) }}>
+        <div style={{ ...s.brand, ...(wide ? { flex: 1 } : {}) }}>
           {logo
             ? <img src={logo} alt={baker.name} style={s.logoImg} />
-            : (<>
-                <div style={s.logoFallback}>{(baker.name ?? '?').slice(0, 1).toUpperCase()}</div>
-                <span style={s.brandName}>{baker.name}</span>
-              </>)}
+            : <span style={{ ...s.brandName, color: headerText }}>{baker.name}</span>}
         </div>
-        <button type="button" aria-label="Menu" style={s.burger} onClick={() => setMenuOpen(true)}>
-          <span style={s.burgerLine} /><span style={s.burgerLine} /><span style={s.burgerLine} />
-        </button>
+        {bp === 'mobile' ? (
+          <button type="button" aria-label="Menu" style={s.burger} onClick={() => setMenuOpen(true)}>
+            <span style={{ ...s.burgerLine, background: headerText }} /><span style={{ ...s.burgerLine, background: headerText }} /><span style={{ ...s.burgerLine, background: headerText }} />
+          </button>
+        ) : (
+          <>
+            {/* Nav centered: brand (flex:1) + trailing spacer (flex:1) push the menu to the middle. */}
+            <nav style={s.navRow}>
+              {nav.map(n => n.href
+                ? <a key={n.label} className="sf-navlink" href={n.href} style={{ ...s.navItem, color: headerText }}>{n.label}</a>
+                : <button key={n.label} type="button" className="sf-navlink" style={{ ...s.navItem, ...s.navItemBtn, color: headerText }} onClick={n.action}>{n.label}</button>)}
+            </nav>
+            <div style={{ flex: 1 }} aria-hidden="true" />
+          </>
+        )}
       </header>
 
       {notAcceptingOrders && (
@@ -195,9 +257,68 @@ export default function CustomerStorefront({
       {/* ── HERO ── two distinct treatments: the 3D "design your own" cake (dark, full-bleed)
           OR the baker's featured creation, FRAMED beside the tagline/CTA. A product cake photo
           can't be a full-bleed crop, so the photo hero gets its own (light, contained) layout. */}
-      {useDesignerHero ? (
+      {useFramedHero ? (
+        wide ? (
+          // SPLIT hero (tablet/desktop): message + CTA left, one large featured cake right, on the
+          // brand-tinted band with the signature wavy bottom. Fills the width; single focal cake.
+          <section style={s.curveHero}>
+            <div style={s.splitBand}>
+              <div style={s.splitInner}>
+                <div style={s.splitText}>
+                  <h1 style={s.splitTitle}>{txt('hero_tagline')}</h1>
+                  <p style={s.splitSub}>{txt('hero_subtitle')}</p>
+                  {expired ? (
+                    <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+                  ) : (
+                    <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                      style={{ ...s.splitCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                      onClick={handleCta}>
+                      {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+                    </button>
+                  )}
+                </div>
+                <div style={s.splitMedia}>
+                  {/* Live 3D cake floating on the band (transparent canvas) — no white card, and it
+                      renders in the theme's cake colour (ivory here). On-brand "design your own". */}
+                  <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} />
+                </div>
+              </div>
+              <svg style={s.splitWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
+              </svg>
+            </div>
+          </section>
+        ) : (
+        <section style={s.curveHero}>
+          {/* Brand-tinted band with a curved (SVG wave) bottom — the signature soft-curve hero.
+              Headline + the ivory 3D cake sit on the colour (cake floats, transparent canvas). */}
+          <div style={s.curveBand}>
+            <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
+            <div style={s.curveCake}>
+              <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} />
+            </div>
+            <svg style={s.curveWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
+            </svg>
+          </div>
+          <div style={s.curveBody}>
+            {expired ? (
+              <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+            ) : (
+              <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                style={{ ...s.curveCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                onClick={handleCta}>
+                {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+              </button>
+            )}
+          </div>
+        </section>
+        )
+      ) : (
         <section style={s.hero}>
-          <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
+          {useDesignerHero
+            ? <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
+            : <div style={{ ...s.heroCake, backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={baker.name} />}
           <div style={s.heroScrim} />
           <div style={s.heroFade} />
           <div style={s.heroContent}>
@@ -215,26 +336,6 @@ export default function CustomerStorefront({
             </div>
           </div>
         </section>
-      ) : (
-        <section style={s.photoHero}>
-          <div style={s.photoHeroInner}>
-            <div style={s.photoHeroText}>
-              <h1 style={s.photoHeroTitle}>{txt('hero_tagline')}</h1>
-              {expired ? (
-                <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
-              ) : (
-                <button type="button" disabled={notAcceptingOrders}
-                  style={{ ...s.photoHeroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                  onClick={handleCta}>
-                  {notAcceptingOrders ? 'Not taking new orders' : designLabel}
-                </button>
-              )}
-            </div>
-            <div style={s.photoHeroMedia}>
-              <img src={heroPhoto} alt={`${baker.name} cake`} style={s.photoHeroImg} />
-            </div>
-          </div>
-        </section>
       )}
 
       <main style={s.main}>
@@ -243,9 +344,9 @@ export default function CustomerStorefront({
             bp === 'mobile' ? (
             <>
               <div style={s.carousel}>
-                {gallery.length > 1 && <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => gMove(-1)}>‹</button>}
+                {gallery.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => gMove(-1)}>‹</button>}
                 <div style={s.gSlide}><img src={gPhoto.url || gPhoto} alt={gPhoto.caption || `${baker.name} cake`} style={s.gImg} /></div>
-                {gallery.length > 1 && <button type="button" aria-label="Next" style={{ ...s.arrow, ...s.arrowR }} onClick={() => gMove(1)}>›</button>}
+                {gallery.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => gMove(1)}>›</button>}
               </div>
               {gPhoto.caption && <p style={s.gCaption}>{gPhoto.caption}</p>}
               {gallery.length > 1 && (
@@ -278,8 +379,10 @@ export default function CustomerStorefront({
             </div>
           )}
         </Section>
+      </main>
 
-        <section id="story" style={s.section}>
+      <WavyBand tint={bandTints[0]} fill={pageBg} curveH={wide ? 64 : 46} topPath={WAVES[0]} bottomPath={WAVES[1]} innerStyle={s.main}>
+        <section id="story" style={{ padding: '4px 0' }}>
           <div style={s.eyebrow}>{txt('story_heading')}</div>
           <div style={s.storyWrap}>
             <div
@@ -299,17 +402,19 @@ export default function CustomerStorefront({
             </div>
           </div>
         </section>
+      </WavyBand>
 
-        {testimonials.length > 0 && (
+      {testimonials.length > 0 && (
+        <WavyBand tint={bandTints[1]} fill={pageBg} curveH={wide ? 64 : 46} topPath={WAVES[2]} bottomPath={WAVES[0]} innerStyle={s.main}>
           <Section eyebrow={txt('reviews_heading')} s={s}>
             <div style={s.carousel}>
-              {testimonials.length > 1 && <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>}
+              {testimonials.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>}
               <figure style={s.testiCard}>
                 <div style={s.stars}>★★★★★</div>
                 <blockquote style={s.quote}>“{t.quote}”</blockquote>
                 <figcaption style={s.author}>{t.author}{t.occasion && <span style={s.authorOcc}> · {t.occasion}</span>}</figcaption>
               </figure>
-              {testimonials.length > 1 && <button type="button" aria-label="Next" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>}
+              {testimonials.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>}
             </div>
             {testimonials.length > 1 && (
               <div style={s.dotsRow}>
@@ -317,8 +422,8 @@ export default function CustomerStorefront({
               </div>
             )}
           </Section>
-        )}
-      </main>
+        </WavyBand>
+      )}
 
       <footer id="contact" style={s.footer}>
         {(phone || ig || baker.website_url) && (
@@ -535,12 +640,17 @@ function Centered({ children }) {
   );
 }
 
-function styles(primary, accent, tk, bp = 'mobile') {
+function styles(primary, accent, tk, bp = 'mobile', pal) {
   // Template design tokens (tk) supply the look; the baker's primary/accent overlay. FONT/SERIF
   // shadow the module imports so the rest of styles() picks up the template's typography.
   const FONT = tk.font, SERIF = tk.serif;
   const ink = mix(primary, tk.inkMix.with, tk.inkMix.amount);  // soft warm-grey hero/footer
-  const { heading, text, muted, cardBorder, shadow, pageBg } = tk;
+  const { heading, text, muted, shadow, pageBg } = tk;
+  // Brand-derived colours all come from the shared palette (storefrontKit → buildPalette) — the
+  // single place to tune the tone-on-tone look. Aliased here so the style rules stay readable.
+  const bandStrong = pal.bandStrong;   // hero + header band
+  const cardBorder = pal.hairline;     // rose-tinted card / divider borders
+  const brandFont = tk.brandFont || tk.font;
   const desktop = bp === 'desktop', wide = bp !== 'mobile';
   // Responsive content width — a phone column on mobile, but USE the screen on bigger devices
   // (the storefront is customer-facing; it must not be a skinny strip on desktop).
@@ -555,8 +665,11 @@ function styles(primary, accent, tk, bp = 'mobile') {
     logoImg:     { height: 30, width: 'auto', maxWidth: 210, objectFit: 'contain', display: 'block' },
     logo:        { width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accent}`, background: '#fff' },
     logoFallback:{ width: 38, height: 38, borderRadius: '50%', background: primary, color: onColor(primary), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 },
-    brandName:   { fontSize: 18, fontWeight: 700, color: heading },
-    burger:      { width: 42, height: 42, borderRadius: 10, border: `1px solid ${cardBorder}`, background: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 4 },
+    brandName:   { fontFamily: brandFont, fontSize: wide ? 30 : 26, fontWeight: 400, color: heading, lineHeight: 1 },
+    navRow:      { display: 'flex', alignItems: 'center', gap: 28 },
+    navItem:     { fontSize: 14.5, fontWeight: 600, color: heading, textDecoration: 'none', cursor: 'pointer', fontFamily: FONT, letterSpacing: 0.2 },
+    navItemBtn:  { background: 'none', border: 'none', padding: 0 },
+    burger:      { width: 42, height: 42, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 4, padding: 0 },
     burgerLine:  { width: 18, height: 2, borderRadius: 2, background: heading },
 
     drawerOverlay:{ position: 'fixed', inset: 0, background: 'rgba(20,14,16,0.4)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' },
@@ -589,6 +702,31 @@ function styles(primary, accent, tk, bp = 'mobile') {
     photoHeroCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
     photoHeroMedia: { width: '100%', maxWidth: 480 },
     photoHeroImg:   { width: '100%', aspectRatio: desktop ? '4 / 5' : '4 / 3', objectFit: 'cover', borderRadius: 22, boxShadow: shadow, display: 'block', border: `1px solid ${cardBorder}` },
+
+    // Curved-band hero (Honeybear-style): a brand-tinted top band with a wavy SVG bottom edge,
+    // headline on the colour, featured cake pulled up over the curve. (Colours = brand tint for
+    // now; baker colour controls come later.)
+    curveHero:  { background: pageBg },
+    curveBand:  { position: 'relative', background: bandStrong, padding: wide ? '54px 24px 80px' : '40px 22px 66px', textAlign: 'center' },
+    curveTitle: { fontFamily: SERIF, fontSize: wide ? 34 : 26, fontWeight: 700, color: pal.onBand, margin: '0 auto', lineHeight: 1.2, letterSpacing: 0.2, maxWidth: 560, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
+    curveWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: wide ? 70 : 48, display: 'block' },
+    curveBody:  { maxWidth: cw, margin: '0 auto', padding: '18px 22px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 },
+    curveCake:  { width: '100%', maxWidth: 340, margin: '4px auto -6px' },
+    curveImg:   { width: '100%', maxWidth: wide ? 460 : 360, aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 20, boxShadow: shadow, border: `1px solid ${cardBorder}`, marginTop: wide ? -50 : -38, background: '#fff' },
+    curveCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+
+    // Split hero (tablet/desktop variant of the curved-band hero): message + CTA on the left, one
+    // large featured cake on the right, all sitting on the brand-tinted band with the signature wavy
+    // bottom. Fills the width and gives a single strong focal cake. Mobile keeps the stacked curve.
+    splitBand:  { position: 'relative', background: bandStrong },
+    splitInner: { position: 'relative', zIndex: 2, maxWidth: cw, margin: '0 auto', padding: desktop ? '68px 24px 104px' : '54px 24px 92px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: desktop ? 56 : 40 },
+    splitText:  { flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 22 },
+    splitTitle: { fontFamily: SERIF, fontSize: desktop ? 46 : 36, fontWeight: 700, color: pal.onBand, margin: 0, lineHeight: 1.08, letterSpacing: 0.2, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
+    splitSub:   { fontSize: desktop ? 18 : 16, fontWeight: 600, color: alpha(pal.onBand, 0.96), margin: 0, lineHeight: 1.6, maxWidth: 460 },
+    splitCta:   { padding: '16px 38px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 16.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    splitMedia: { flex: '0 0 auto', width: desktop ? 440 : 340 },
+    splitImg:   { width: '100%', aspectRatio: '4 / 5', objectFit: 'cover', borderRadius: 26, boxShadow: shadow, border: `1px solid ${cardBorder}`, background: '#fff', display: 'block' },
+    splitWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: desktop ? 72 : 56, display: 'block', zIndex: 1 },
 
     main:        { maxWidth: cw, width: '100%', margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' },
     section:     { padding: wide ? '66px 0 8px' : '46px 0 6px' },

@@ -22,12 +22,45 @@ export function alpha(hex, a) { const [r, g, b] = parse(hex); return `rgba(${r},
 export function lum(hex) { const [r, g, b] = parse(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
 export const onColor = hex => (lum(hex) > 0.6 ? '#241a1d' : '#ffffff');
 
+// ── Storefront palette ──────────────────────────────────────────────────────────
+// SINGLE SOURCE OF TRUTH for every brand-derived colour on the storefront. Colour work is highly
+// iterative, so ALL the tunable numbers live here — change one and the whole page follows; no
+// scattered lighten()/darken() magic numbers in styles(). Every value derives from the baker's
+// `primary` (deep maroon) + `accent` (rose), so the palette holds for ANY baker's brand colours.
+//
+// Model = TONE-ON-TONE: band backgrounds are tints of `accent`; text/actions use `primary`.
+// To retune the look, edit the amounts below. To switch models later (e.g. accent-band), this is
+// the only function to change.
+export function buildPalette(primary, accent, tk = {}) {
+  return {
+    // Backgrounds (light → strong)
+    // bandStrong deepened via darken (not lighten) so WHITE headline text clears the 3:1 large-text
+    // contrast bar — lighten(accent,0.28) ≈ #D8ACB2 only gave ~2:1. Dial here if it feels too deep.
+    bandStrong: darken(accent, 0.08),    // hero + header — the saturated rose band
+    bandSoftA:  lighten(accent, 0.66),   // section band A (Our story)
+    bandSoftB:  lighten(accent, 0.54),   // section band B (Reviews)
+    // Lines
+    hairline:   lighten(accent, 0.72),   // card / divider borders (rose-tinted, replaces neutral)
+    // Hero 3D cake (HeroCake3D) — the featured cake colour + its studio grid
+    cake:        '#E6D3AC',              // ivory (deliberately neutral so it pops on the rose band)
+    grid:        '#ffffff',
+    gridOpacity: 0.5,
+    // Text / actions
+    onBand:   '#ffffff',                 // headline + text sitting ON bandStrong
+    cta:      primary,                   // primary button
+    ctaHover: darken(primary, 0.08),     // (reserved) button hover
+    onCta:    onColor(primary),          // label colour on the CTA
+    eyebrow:  primary,                   // section eyebrows
+  };
+}
+
 export const FONT  = "'Quicksand', sans-serif";              // soft sans for body / UI
 export const SERIF = "'Cormorant Garamond', Georgia, serif"; // elegant serif for headings
 
 // Baker-editable storefront text (bakers.storefront_customizations); empty/missing → these.
 export const STOREFRONT_TEXT = {
   hero_tagline:      'You design, we bake it',
+  hero_subtitle:     'Custom cakes for birthdays, weddings and every sweet occasion — designed by you, baked fresh to order.',
   creations_heading: 'Our creations',
   story_heading:     'Our story',
   reviews_heading:   'Loved by our customers',

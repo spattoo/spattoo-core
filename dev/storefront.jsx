@@ -32,11 +32,17 @@ const SAMPLE_BAKER = {
 
 function Preview() {
   const [tpl, setTpl] = useState('spotlight');
-  const [hero, setHero] = useState('photo');
+  const [hero, setHero] = useState('framed');   // 'framed' | 'fullbleed' | 'designer'
   const baker = {
     ...SAMPLE_BAKER,
     storefront_theme: tpl,
-    storefront_customizations: { ...SAMPLE_BAKER.storefront_customizations, hero_style: hero },
+    storefront_customizations: {
+      ...SAMPLE_BAKER.storefront_customizations,
+      hero_style: hero === 'designer' ? 'designer' : 'photo',
+      // NOTE: placeholder is a product CUTOUT so the full-bleed crops; a real baker sets a wide
+      // lifestyle hero shot here (then it reads like the Honeybear full-bleed hero).
+      hero_image: hero === 'fullbleed' ? '/sample-cake-1.png' : null,
+    },
   };
   return (
     <>
@@ -49,7 +55,8 @@ function Preview() {
         </label>
         <label>Hero:&nbsp;
           <select value={hero} onChange={e => setHero(e.target.value)} style={{ font: 'inherit' }}>
-            <option value="photo">Featured photo</option>
+            <option value="framed">Curved band (Standard)</option>
+            <option value="fullbleed">Full-bleed photo</option>
             <option value="designer">3D designer</option>
           </select>
         </label>
