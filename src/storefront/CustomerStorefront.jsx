@@ -127,7 +127,7 @@ export default function CustomerStorefront({
   const accent  = baker.accent_color  || '#6B8C74';
   const ig      = baker.instagram_handle?.replace(/^@/, '');
   const phone   = baker.whatsapp || baker.whatsapp_number || baker.phone || null;
-  const logo    = logoUrl || baker.logo_url;   // a full logo / wordmark; replaces the name lockup
+  const logo    = logoUrl || baker.logo_transparent_url || baker.logo_url;   // prefer the bg-removed logo (floats cleanly on any surface)
   const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback
 
   // Storefront template — resolve the baker's chosen key (Settings → Storefront Theme, returned
