@@ -1056,20 +1056,35 @@ function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
   );
 }
 
-// ── Add team member modal ──────────────────────────────────────────────────────
-function AddUserModal({ onClose, brandBtn }) {
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'staff' });
+// ── Add staff modal ─────────────────────────────────────────────────────────────
+// Creates a real staff account: POST /api/baker/staff → auth user + baker_appusers
+// (role='staff'). Returns a temp password the owner hands to the staff member. V1 =
+// one baker per staff (server rejects an email/phone already used by any appuser).
+function AddUserModal({ onClose, brandBtn, apiClient }) {
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '' });
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [created, setCreated] = useState(null);   // { email, tempPassword }
 
   function setField(key, val) { setForm(f => ({ ...f, [key]: val })); }
 
   async function handleSubmit() {
+    if (!apiClient?.addStaff) { setMsg({ ok: false, text: 'Staff management is not available here.' }); return; }
     setLoading(true); setMsg(null);
-    // TODO: POST /api/baker/invite-user
-    await new Promise(r => setTimeout(r, 600));
-    setMsg({ ok: true, text: 'Invitation sent successfully.' });
-    setLoading(false);
+    try {
+      await apiClient.addStaff({
+        first_name: form.firstName.trim(),
+        last_name:  form.lastName.trim(),
+        email:      form.email.trim(),
+        phone:      form.phone.trim() || null,
+        redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+      });
+      setCreated({ email: form.email.trim() });
+    } catch (e) {
+      setMsg({ ok: false, text: e?.message || 'Could not add staff member.' });
+    } finally {
+      setLoading(false);
+    }
   }
 
   const canSubmit = form.firstName.trim() && form.email.trim() && !loading;
@@ -1078,37 +1093,48 @@ function AddUserModal({ onClose, brandBtn }) {
     <div style={s.modalOverlay} onClick={onClose}>
       <div style={s.modal} onClick={e => e.stopPropagation()}>
         <div style={s.modalHeader}>
-          <span style={s.modalTitle}>Add Team Member</span>
+          <span style={s.modalTitle}>Add Staff</span>
           <button style={s.iconBtn} onClick={onClose}>✕</button>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={s.fieldLabel}>First name</span>
-            <input style={s.modalInput} value={form.firstName} onChange={e => setField('firstName', e.target.value)} disabled={loading} />
-          </label>
-          <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={s.fieldLabel}>Last name</span>
-            <input style={s.modalInput} value={form.lastName} onChange={e => setField('lastName', e.target.value)} disabled={loading} />
-          </label>
-        </div>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={s.fieldLabel}>Email</span>
-          <input style={s.modalInput} type="email" value={form.email} onChange={e => setField('email', e.target.value)} disabled={loading} />
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={s.fieldLabel}>Role</span>
-          <select style={{ ...s.modalInput, background: '#fff' }} value={form.role} onChange={e => setField('role', e.target.value)} disabled={loading}>
-            <option value="staff">Staff</option>
-            <option value="owner">Owner</option>
-          </select>
-        </label>
-        {msg && (
-          <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>{msg.text}</div>
+
+        {created ? (
+          <>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#2e7d52' }}>Invitation sent.</div>
+            <div style={{ fontSize: 12, color: '#555', lineHeight: 1.5 }}>
+              We emailed <b>{created.email}</b> an activation link. They'll set their own password,
+              then sign in via the <b>Staff</b> tab.
+            </div>
+            <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4 }} onClick={onClose}>Done</button>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={s.fieldLabel}>First name</span>
+                <input style={s.modalInput} value={form.firstName} onChange={e => setField('firstName', e.target.value)} disabled={loading} />
+              </label>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={s.fieldLabel}>Last name</span>
+                <input style={s.modalInput} value={form.lastName} onChange={e => setField('lastName', e.target.value)} disabled={loading} />
+              </label>
+            </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={s.fieldLabel}>Email</span>
+              <input style={s.modalInput} type="email" value={form.email} onChange={e => setField('email', e.target.value)} disabled={loading} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={s.fieldLabel}>Phone <span style={{ fontWeight: 400, color: '#999' }}>(optional)</span></span>
+              <input style={s.modalInput} type="tel" value={form.phone} onChange={e => setField('phone', e.target.value)} disabled={loading} placeholder="+91 98765 43210" />
+            </label>
+            {msg && (
+              <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>{msg.text}</div>
+            )}
+            <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
+              disabled={!canSubmit} onClick={handleSubmit}>
+              {loading ? 'Adding…' : 'Add Staff'}
+            </button>
+          </>
         )}
-        <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
-          disabled={!canSubmit} onClick={handleSubmit}>
-          {loading ? 'Sending...' : 'Send Invitation'}
-        </button>
       </div>
     </div>
   );
@@ -6050,7 +6076,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       )}
 
       {/* ── Add User modal ── */}
-      {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} brandBtn={brandBtn} />}
+      {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} brandBtn={brandBtn} apiClient={apiClient} />}
 
       {/* ── Change Password modal ── */}
       {changePasswordModal && (
