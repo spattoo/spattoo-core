@@ -46,6 +46,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [published, setPublished] = useState(!!value?.storefront_published);
   const [customizations, setCustomizations] = useState(value?.storefront_customizations || {});
   const [publishing, setPublishing] = useState(false);
+  const [hlUploading, setHlUploading] = useState(null);   // index of the highlight whose image is uploading
   const [mobileTab, setMobileTab] = useState('preview');   // mobile: 'preview' | 'edit' (preview is the default)
   const portraitInputRef = useRef(null);
   const isWide = useIsWide(900);
@@ -164,6 +165,26 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const addSection = (type = 'highlight') => setSections([...sectionList, newSection(type)]);
   const removeSection = i => setSections(sectionList.filter((_, j) => j !== i));
   const setSectionField = (i, field, v) => setSections(sectionList.map((sec, j) => (j === i ? { ...sec, [field]: v } : sec)));
+  // Upload a fresh photo for a section (e.g. a Highlight "cake of the week"): PUT to R2, convert to
+  // optimised WebP server-side, then store the returned URL in the section's `image`.
+  async function uploadSectionImage(i, e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !apiClient?.getSignedUploadUrl) return;
+    setHlUploading(i);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const filename = `${baker.slug || 'baker'}-hl-${Date.now()}.${ext}`;
+      const { url: signed, key } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type);
+      await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      const r = await apiClient.optimizeStorefrontImage?.(key);
+      if (r?.url) setSectionField(i, 'image', r.url);
+    } catch (err) {
+      console.error('Highlight image upload failed', err);
+    } finally {
+      setHlUploading(null);
+    }
+  }
 
   if (!open) return null;
 
@@ -315,17 +336,25 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
                     <input value={sec.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setSectionField(i, 'title', e.target.value)} style={s.textInput} />
                     <textarea value={sec.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setSectionField(i, 'blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
                     <input value={sec.cta_label || ''} placeholder="Button text (optional) — e.g. Order now" onChange={e => setSectionField(i, 'cta_label', e.target.value)} style={s.textInput} />
-                    {gallery.length > 0 && (
-                      <div style={s.hlImgRow}>
-                        <button type="button" onClick={() => setSectionField(i, 'image', '')} style={{ ...s.hlImgNone, borderColor: !sec.image ? primary : '#D9DED9' }}>None</button>
-                        {gallery.filter(g => g.url).map(g => (
-                          <button key={g.id} type="button" onClick={() => setSectionField(i, 'image', g.url)}
-                            style={{ ...s.hlImgThumb, borderColor: sec.image === g.url ? primary : 'transparent', borderWidth: sec.image === g.url ? 2 : 1 }}>
-                            <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <label style={s.textLabel}>Image — upload one, or pick from your cake photos</label>
+                    <div style={s.hlImgRow}>
+                      <label style={s.hlUpload} title="Upload a photo">
+                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadSectionImage(i, e)} />
+                        {hlUploading === i ? '…' : '＋'}
+                      </label>
+                      <button type="button" onClick={() => setSectionField(i, 'image', '')} style={{ ...s.hlImgNone, borderColor: !sec.image ? primary : '#D9DED9' }}>None</button>
+                      {sec.image && !gallery.some(g => g.url === sec.image) && (
+                        <div style={{ ...s.hlImgThumb, borderColor: primary, borderWidth: 2 }}>
+                          <img src={sec.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      )}
+                      {gallery.filter(g => g.url).map(g => (
+                        <button key={g.id} type="button" onClick={() => setSectionField(i, 'image', g.url)}
+                          style={{ ...s.hlImgThumb, borderColor: sec.image === g.url ? primary : 'transparent', borderWidth: sec.image === g.url ? 2 : 1 }}>
+                          <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -460,6 +489,7 @@ const s = {
   moveBtn:  { width: 28, height: 28, borderRadius: 7, border: '1px solid #D9DED9', background: '#F8FBF9', color: '#2C4433', fontSize: 14, lineHeight: 1, cursor: 'pointer' },
   hlHint:   { fontSize: 11.5, fontWeight: 500, color: '#6B8C74', lineHeight: 1.5, margin: '0 0 10px' },
   hlImgRow: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  hlUpload: { width: 40, height: 40, borderRadius: 8, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 20, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   hlImgNone:{ height: 40, padding: '0 10px', borderRadius: 8, border: '1.5px solid #D9DED9', background: '#fff', color: '#6B8C74', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
   hlImgThumb:{ width: 40, height: 40, borderRadius: 8, overflow: 'hidden', padding: 0, border: '1px solid transparent', background: '#F0F4F1', cursor: 'pointer' },
   textRow:  { marginTop: 10 },
