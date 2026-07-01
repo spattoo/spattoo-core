@@ -205,17 +205,12 @@ export default function CustomerStorefront({
     el.scrollBy({ left: dir * step, behavior: 'smooth' });
   };
 
-  // Hero: lead with the baker's featured creation by default — their real work is the strongest,
-  // most-differentiating visual. The 3D "design your own" cake is an opt-in the baker can choose
-  // (storefront_customizations.hero_style === 'designer') AND the fallback when they have no
-  // photos yet, so a brand-new storefront still looks alive.
+  // Hero: the branded curve/split hero (with the live 3D cake) is ALWAYS the default — it needs no
+  // photos, so it holds up for a brand-new storefront too. FULL-BLEED only when the baker sets an
+  // explicit wide/lifestyle hero image. (The old dark "designer" hero fallback was removed — it was
+  // the thing that reappeared when a baker had no gallery photos.)
   const heroImage = baker.storefront_customizations?.hero_image || null;   // baker-set wide/lifestyle hero photo
-  const heroStyle = baker.storefront_customizations?.hero_style || 'photo';
-  const heroPhoto = hasPhotos ? (gallery[0].url || gallery[0]) : null;
-  // 3D when chosen (or nothing to show); FULL-BLEED when the baker set a hero image; otherwise the
-  // featured creation FRAMED (a product cutout can't be full-bleed without cropping to mush).
-  const useDesignerHero = heroStyle === 'designer' || (!heroImage && !heroPhoto);
-  const useFramedHero   = !useDesignerHero && !heroImage;
+  const useFramedHero = !heroImage;
   // For the Standard curved-band hero the brand tint flows up THROUGH the header (logo on the
   // pink, like Honeybear) — so the header + phone bar adopt the band colour and lose their seam.
   const isCurveHero = useFramedHero;
@@ -336,10 +331,9 @@ export default function CustomerStorefront({
         </section>
         )
       ) : (
+        // Full-bleed hero — only when the baker set an explicit wide/lifestyle hero image.
         <section style={s.hero}>
-          {useDesignerHero
-            ? <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
-            : <div style={{ ...s.heroCake, backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={baker.name} />}
+          <div style={{ ...s.heroCake, backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={baker.name} />
           <div style={s.heroScrim} />
           <div style={s.heroFade} />
           <div style={s.heroContent}>

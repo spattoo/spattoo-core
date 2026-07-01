@@ -34,7 +34,7 @@ const SAMPLE_BAKER = {
 
 function Preview() {
   const [tpl, setTpl] = useState('spotlight');
-  const [hero, setHero] = useState('framed');   // 'framed' | 'fullbleed' | 'designer'
+  const [hero, setHero] = useState('framed');   // 'framed' (branded curve/split) | 'fullbleed'
   const [font, setFont] = useState('montserrat');
   const [highlight, setHighlight] = useState(true);
   const [ctaColor, setCtaColor] = useState('');   // '' = default (adaptive headline + primary button)
@@ -43,9 +43,7 @@ function Preview() {
     storefront_theme: tpl,
     storefront_customizations: {
       ...SAMPLE_BAKER.storefront_customizations,
-      hero_style: hero === 'designer' ? 'designer' : 'photo',
-      // NOTE: placeholder is a product CUTOUT so the full-bleed crops; a real baker sets a wide
-      // lifestyle hero shot here (then it reads like the Honeybear full-bleed hero).
+      // Full-bleed only when a wide hero image is set; otherwise the branded curve/split hero.
       hero_image: hero === 'fullbleed' ? '/sample-cake-1.png' : null,
       font_key: font,
       ...(ctaColor ? { cta_color: ctaColor } : {}),
@@ -69,9 +67,8 @@ function Preview() {
         </label>
         <label>Hero:&nbsp;
           <select value={hero} onChange={e => setHero(e.target.value)} style={{ font: 'inherit' }}>
-            <option value="framed">Curved band (Standard)</option>
+            <option value="framed">Branded (curve/split)</option>
             <option value="fullbleed">Full-bleed photo</option>
-            <option value="designer">3D designer</option>
           </select>
         </label>
         <label>Font:&nbsp;
