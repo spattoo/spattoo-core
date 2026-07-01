@@ -19,7 +19,7 @@ const bpOf = w => (w >= 1024 ? 'desktop' : w >= 720 ? 'tablet' : 'mobile');
 // both full-page AND inside a narrow preview frame (the customiser's phone mock, where the window is
 // desktop-wide but the storefront box is ~mobile). Mobile-first, SSR-safe default 'mobile'.
 function useContainerBreakpoint() {
-  const [bp, setBp] = useState('mobile');
+  const [bp, setBp] = useState(null);   // null = not measured yet → render a loader, not a guessed layout
   const roRef = useRef(null);
   // Callback ref → (re)attaches the observer whenever the root node mounts, even if the first render
   // was a loading state without the node yet. ResizeObserver also covers window/container resizes.
@@ -88,6 +88,7 @@ export default function CustomerStorefront({
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
   const [bp, rootRef] = useContainerBreakpoint();
+  const galRef = useRef(null);   // "Our creations" scroll row (hook must precede any early return)
 
   useEffect(() => {
     let alive = true;
@@ -119,7 +120,10 @@ export default function CustomerStorefront({
   // (design → confirm identity → bake). Only for a valid invite; browse visits skip it.
   useEffect(() => { if (inviteId && invite?.valid) setWelcomeOpen(true); }, [inviteId, invite]);
 
-  if (loading) return <Centered><CakeSpinner label="Loading…" /></Centered>;
+  // Loader stays until the baker is fetched AND the container breakpoint is measured — so the FIRST
+  // storefront paint is already at the correct layout (no mobile→desktop / default→config flash).
+  // rootRef is attached to the loader too, so the breakpoint can measure before content renders.
+  if (loading || !bp) return <Centered rootRef={rootRef}><CakeSpinner label="Loading…" /></Centered>;
   if (error)   return <Centered>{error}</Centered>;
   if (!baker)  return <Centered>Storefront unavailable</Centered>;
 
@@ -193,7 +197,6 @@ export default function CustomerStorefront({
   const gallery = (galleryProp?.length ? galleryProp : baker.gallery) || [];
   const hasPhotos = gallery.length > 0;
   // "Our creations": 3 visible, horizontal-scroll with arrows once there are more than 3.
-  const galRef = useRef(null);
   const galScroll = dir => {
     const el = galRef.current;
     if (!el) return;
@@ -676,9 +679,9 @@ async function postJSON(url, body) {
   return res.json();
 }
 
-function Centered({ children }) {
+function Centered({ children, rootRef }) {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    <div ref={rootRef} style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontFamily: FONT, color: '#6B8C74', fontWeight: 600, background: '#EDEAE2' }}>
       {children}
     </div>
