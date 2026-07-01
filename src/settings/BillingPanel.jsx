@@ -285,14 +285,16 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
     setCancelling(true); setError(null);
     try {
       await apiClient.cancelSubscription();
-      setBilling(b => ({ ...b, status: 'cancelled' }));
+      // Cancel-at-period-end: the plan stays active until end_date, it just won't renew.
+      setBilling(b => ({ ...b, cancel_at_period_end: true }));
     } catch (e) { setError(e.message); }
     finally { setCancelling(false); }
   }
 
   if (!open) return null;
 
-  const isActive   = billing?.status === 'active';
+  const isActive        = billing?.status === 'active';
+  const cancelScheduled = !!billing?.cancel_at_period_end;
   const isOnSpark  = billing?.tier === 'spark';
   const endDate    = billing?.next_billing_at ? new Date(billing.next_billing_at) : null;
   const daysLeft   = endDate ? Math.max(0, Math.ceil((endDate - Date.now()) / 86400000)) : null;
@@ -379,10 +381,12 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                       {labelOf(billing.tier)}
                     </div>
                     {endDate && isActive && (
-                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: daysLeft <= 7 ? '#DC2626' : '#6B7280' }}>
-                        {isOnSpark ? 'Expires' : 'Renews'}{' '}
+                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: (cancelScheduled || daysLeft <= 7) ? '#DC2626' : '#6B7280' }}>
+                        {cancelScheduled ? 'Ends' : isOnSpark ? 'Expires' : 'Renews'}{' '}
                         {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        {daysLeft <= 7 && ` · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}
+                        {cancelScheduled
+                          ? ' · won’t renew'
+                          : daysLeft <= 7 ? ` · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left` : ''}
                       </div>
                     )}
                     {billing.status === 'expired' && (
@@ -407,22 +411,26 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                 </div>
 
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <div style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 500 }}>
-                    You'll keep access until the end of this billing period.
+                  <div style={{ fontSize: 11, color: cancelScheduled ? '#DC2626' : '#9BB5A2', fontWeight: cancelScheduled ? 700 : 500 }}>
+                    {cancelScheduled
+                      ? "Cancellation scheduled — you'll keep access until this period ends."
+                      : "You'll keep access until the end of this billing period."}
                   </div>
-                  <button
-                    onClick={handleCancel}
-                    disabled={cancelling}
-                    style={{
-                      flexShrink: 0,
-                      background: '#fff', border: '1.5px solid #FCA5A5', borderRadius: 8,
-                      padding: '7px 16px', cursor: cancelling ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
-                      color: cancelling ? '#ccc' : '#DC2626', opacity: cancelling ? 0.6 : 1,
-                    }}
-                  >
-                    {cancelling ? 'Cancelling…' : 'Cancel subscription'}
-                  </button>
+                  {!cancelScheduled && (
+                    <button
+                      onClick={handleCancel}
+                      disabled={cancelling}
+                      style={{
+                        flexShrink: 0,
+                        background: '#fff', border: '1.5px solid #FCA5A5', borderRadius: 8,
+                        padding: '7px 16px', cursor: cancelling ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                        color: cancelling ? '#ccc' : '#DC2626', opacity: cancelling ? 0.6 : 1,
+                      }}
+                    >
+                      {cancelling ? 'Cancelling…' : 'Cancel subscription'}
+                    </button>
+                  )}
                 </div>
               </div>
 
