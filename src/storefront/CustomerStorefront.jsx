@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
@@ -12,23 +12,30 @@ const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. 
 // whole thing is designed for the phone frame first. A contact bar + header/hamburger, a
 // full-bleed rotating-cake hero with the CTA overlaid, branded sections, a testimonials carousel
 // and the invite-gated OTP login. Branding + colours come from the baker record.
-// Coarse responsive breakpoint for the customer-facing storefront. Mobile-first (SSR-safe
-// default 'mobile'); upgrades to tablet/desktop after mount + on resize. Inline styles can't do
-// media queries, so the layout adapts off this in styles() and the section render.
-function useBreakpoint() {
-  const read = () => {
-    if (typeof window === 'undefined') return 'mobile';
-    const w = window.innerWidth;
-    return w >= 1024 ? 'desktop' : w >= 720 ? 'tablet' : 'mobile';
-  };
+const bpOf = w => (w >= 1024 ? 'desktop' : w >= 720 ? 'tablet' : 'mobile');
+
+// Coarse responsive breakpoint for the customer-facing storefront. Measured off the storefront's
+// OWN CONTAINER width (via ResizeObserver on the root ref), NOT window.innerWidth — so it's correct
+// both full-page AND inside a narrow preview frame (the customiser's phone mock, where the window is
+// desktop-wide but the storefront box is ~mobile). Mobile-first, SSR-safe default 'mobile'.
+function useContainerBreakpoint() {
   const [bp, setBp] = useState('mobile');
-  useEffect(() => {
-    const onResize = () => setBp(read());
-    onResize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+  const roRef = useRef(null);
+  // Callback ref → (re)attaches the observer whenever the root node mounts, even if the first render
+  // was a loading state without the node yet. ResizeObserver also covers window/container resizes.
+  const setRef = useCallback(el => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const read = () => setBp(bpOf(el.clientWidth));
+      read();
+      const ro = new ResizeObserver(read);
+      ro.observe(el);
+      roRef.current = ro;
+    } else if (typeof window !== 'undefined') {
+      setBp(bpOf(window.innerWidth));
+    }
   }, []);
-  return bp;
+  return [bp, setRef];
 }
 
 // Varied, asymmetric wave paths so the bands don't all read as the same flat horizontal stripe.
@@ -81,7 +88,7 @@ export default function CustomerStorefront({
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
   const [gIdx, setGIdx]           = useState(0);
-  const bp = useBreakpoint();
+  const [bp, rootRef] = useContainerBreakpoint();
 
   useEffect(() => {
     let alive = true;
@@ -208,7 +215,7 @@ export default function CustomerStorefront({
   const bandTints = [pal.bandSoftA, pal.bandSoftB];   // the two tone-on-tone section bands
 
   return (
-    <div style={s.page}>
+    <div style={s.page} ref={rootRef}>
       <style>{interactionCss}</style>
       {phone && (
         <div style={{ ...s.utilbar, ...(isCurveHero ? { background: bandTint } : {}) }}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
