@@ -31,27 +31,33 @@ export const onColor = hex => (lum(hex) > 0.6 ? '#241a1d' : '#ffffff');
 // Model = TONE-ON-TONE: band backgrounds are tints of `accent`; text/actions use `primary`.
 // To retune the look, edit the amounts below. To switch models later (e.g. accent-band), this is
 // the only function to change.
-export function buildPalette(primary, accent, tk = {}) {
+export function buildPalette(primary, accent, tk = {}, opts = {}) {
+  // Bands derive from PRIMARY (the dominant brand colour) — the hero/header band is the primary,
+  // NOT the accent. Accent is the secondary POP (the drip). bandStrong darkened slightly so on-band
+  // text has contrast; onBand is ADAPTIVE (onColor) so it reads on a dark OR light primary.
+  const bandStrong = darken(primary, 0.04);   // hero + header — the primary band
+  // Baker lever (storefront_customizations.cta_color): ONE colour that drives the hero HEADLINE and
+  // the primary BUTTONS together. Unset → today's look (adaptive on-band headline + primary button).
+  const cta = opts.ctaColor || primary;
+  const heroText = opts.ctaColor || onColor(bandStrong);
   return {
     // Backgrounds (light → strong)
-    // bandStrong darkened just enough that the WHITE headline clears the ~3:1 large-text contrast
-    // bar (lighten(accent,0.28) ≈ #D8ACB2 gave only ~2:1). 0.04 is about the LIGHTEST it can go with
-    // white text; any lighter → switch the headline to dark text. Deepen the amount for a richer band.
-    bandStrong: darken(accent, 0.04),    // hero + header — the rose band
-    bandSoftA:  lighten(accent, 0.66),   // section band A (Our story)
-    bandSoftB:  lighten(accent, 0.54),   // section band B (Reviews)
+    bandStrong,
+    bandSoftA:  lighten(primary, 0.66),  // section band A (Our story)
+    bandSoftB:  lighten(primary, 0.54),  // section band B (Reviews)
     // Lines
-    hairline:   lighten(accent, 0.72),   // card / divider borders (rose-tinted, replaces neutral)
+    hairline:   lighten(primary, 0.72),  // card / divider borders (tinted, replaces neutral)
     // Hero 3D cake (HeroCake3D) — the featured cake colour + its studio grid + drip
-    cake:        '#E6D3AC',              // ivory (deliberately neutral so it pops on the rose band)
-    drip:        darken(accent, 0.06),   // buttercream drip over the rim — blush (switch to gold/white here)
+    cake:        '#E6D3AC',              // ivory (deliberately neutral so it pops on the band)
+    drip:        darken(accent, 0.06),   // buttercream drip over the rim — the ACCENT pop
     grid:        '#ffffff',
     gridOpacity: 0.5,
     // Text / actions
-    onBand:   '#ffffff',                 // headline + text sitting ON bandStrong
-    cta:      primary,                   // primary button
-    ctaHover: darken(primary, 0.08),     // (reserved) button hover
-    onCta:    onColor(primary),          // label colour on the CTA
+    onBand:   onColor(bandStrong),       // header/nav/subtitle ON the band — white on dark, dark on light
+    heroText,                            // the hero HEADLINE colour (baker-choosable via cta_color)
+    cta,                                 // primary button background
+    ctaHover: darken(cta, 0.08),         // button hover
+    onCta:    onColor(cta),              // label colour on the CTA
     eyebrow:  primary,                   // section eyebrows
   };
 }

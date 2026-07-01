@@ -23,6 +23,8 @@ const SAMPLE_BAKER = {
     { url: '/sample-cake-1.png', caption: 'Three-tier celebration cake' },
     { url: '/sample-cake-2.png', caption: 'Floral buttercream' },
     { url: '/sample-cake-3.png', caption: 'Chocolate drip finish' },
+    { url: '/sample-cake-1.png', caption: 'Ivory & gold' },
+    { url: '/sample-cake-2.png', caption: 'Berry compote' },
   ],
   testimonials: [
     { quote: 'Absolutely stunning — exactly what we pictured.', author: 'Aarti', occasion: 'Birthday' },
@@ -35,6 +37,7 @@ function Preview() {
   const [hero, setHero] = useState('framed');   // 'framed' | 'fullbleed' | 'designer'
   const [font, setFont] = useState('montserrat');
   const [highlight, setHighlight] = useState(true);
+  const [ctaColor, setCtaColor] = useState('');   // '' = default (adaptive headline + primary button)
   const baker = {
     ...SAMPLE_BAKER,
     storefront_theme: tpl,
@@ -45,6 +48,7 @@ function Preview() {
       // lifestyle hero shot here (then it reads like the Honeybear full-bleed hero).
       hero_image: hero === 'fullbleed' ? '/sample-cake-1.png' : null,
       font_key: font,
+      ...(ctaColor ? { cta_color: ctaColor } : {}),
       // Exercise the section-array + Highlight section (baker lever). Highlight sits after gallery.
       sections: [
         { type: 'gallery',   enabled: true },
@@ -78,9 +82,12 @@ function Preview() {
           </select>
         </label>
         <label><input type="checkbox" checked={highlight} onChange={e => setHighlight(e.target.checked)} />&nbsp;Highlight</label>
+        <label>CTA/Text:&nbsp;<input type="color" value={ctaColor || '#7a4a52'} onChange={e => setCtaColor(e.target.value)} />
+          {ctaColor && <button type="button" onClick={() => setCtaColor('')} style={{ marginLeft: 4, font: 'inherit' }}>×</button>}
+        </label>
       </div>
       <CustomerStorefront
-        key={tpl + hero + font + highlight}
+        key={tpl + hero + font + highlight + ctaColor}
         baker={baker}
         apiBaseUrl=""
         supabase={null}

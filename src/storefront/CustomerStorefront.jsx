@@ -87,7 +87,6 @@ export default function CustomerStorefront({
   const [menuOpen, setMenuOpen]   = useState(false);
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
-  const [gIdx, setGIdx]           = useState(0);
   const [bp, rootRef] = useContainerBreakpoint();
 
   useEffect(() => {
@@ -138,7 +137,7 @@ export default function CustomerStorefront({
   const template = resolveTemplate(baker.storefront_theme);
   // Baker font-theme lever (storefront_customizations.font_key) overlays the template's typography.
   const tokens = applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
-  const pal = buildPalette(primary, accent, tokens);   // one place to tune every colour
+  const pal = buildPalette(primary, accent, tokens, { ctaColor: baker.storefront_customizations?.cta_color });   // one place to tune every colour
   const s = styles(primary, accent, tokens, bp, pal);
   // Ordered, toggleable body sections (storefront_customizations.sections); absence → defaults.
   const sections = resolveSections(baker.storefront_customizations);
@@ -153,6 +152,7 @@ export default function CustomerStorefront({
     .sf-navlink:hover { opacity: .68; }
     .sf-arrow { transition: transform .15s ease, background .15s ease; }
     .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
+    .sf-gallery::-webkit-scrollbar { display: none; }
   `;
   const pageBg = tokens.pageBg;   // exposed for inline SVG fills (the hero curve)
   const { steps } = buildContent(baker);
@@ -192,8 +192,15 @@ export default function CustomerStorefront({
   // Gallery photos uploaded by the baker (baker.gallery); empty → graceful fallback below.
   const gallery = (galleryProp?.length ? galleryProp : baker.gallery) || [];
   const hasPhotos = gallery.length > 0;
-  const gPhoto = hasPhotos ? gallery[gIdx % gallery.length] : null;
-  const gMove = d => setGIdx(i => (i + d + gallery.length) % gallery.length);
+  // "Our creations": 3 visible, horizontal-scroll with arrows once there are more than 3.
+  const galRef = useRef(null);
+  const galScroll = dir => {
+    const el = galRef.current;
+    if (!el) return;
+    const first = el.firstElementChild;
+    const step = first ? first.getBoundingClientRect().width + (bp === 'mobile' ? 8 : 14) : el.clientWidth / 3;
+    el.scrollBy({ left: dir * step, behavior: 'smooth' });
+  };
 
   // Hero: lead with the baker's featured creation by default — their real work is the strongest,
   // most-differentiating visual. The 3D "design your own" cake is an opt-in the baker can choose
@@ -211,14 +218,14 @@ export default function CustomerStorefront({
   const isCurveHero = useFramedHero;
   const bandTint = pal.bandStrong;   // header/utilbar adopt the hero band colour in curve mode
   const wide = bp !== 'mobile';
-  const headerText = isCurveHero ? '#ffffff' : darken(primary, 0.12);   // on the pink band → white
+  const headerText = isCurveHero ? pal.onBand : darken(primary, 0.12);   // on the band → adaptive on-band colour
   const bandTints = [pal.bandSoftA, pal.bandSoftB];   // the two tone-on-tone section bands
 
   return (
     <div style={s.page} ref={rootRef}>
       <style>{interactionCss}</style>
       {phone && (
-        <div style={{ ...s.utilbar, ...(isCurveHero ? { background: bandTint } : {}) }}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
+        <div style={{ ...s.utilbar, ...(isCurveHero ? { background: bandTint, color: pal.onBand } : {}) }}><PhoneIcon size={13} color={isCurveHero ? pal.onBand : darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={{ ...s.utilLink, ...(isCurveHero ? { color: pal.onBand } : {}) }}>{phone}</a></div>
       )}
 
       <header style={{ ...s.header, ...(isCurveHero ? { background: bandTint, borderBottom: 'none', backdropFilter: 'none', position: 'relative' } : {}) }}>
@@ -373,30 +380,19 @@ export default function CustomerStorefront({
                 <main key="gallery" style={s.main}>
                   <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
                     {hasPhotos ? (
-                      bp === 'mobile' ? (
-                      <>
-                        <div style={s.carousel}>
-                          {gallery.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => gMove(-1)}>‹</button>}
-                          <div style={s.gSlide}><img src={gPhoto.url || gPhoto} alt={gPhoto.caption || `${baker.name} cake`} style={s.gImg} /></div>
-                          {gallery.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => gMove(1)}>›</button>}
-                        </div>
-                        {gPhoto.caption && <p style={s.gCaption}>{gPhoto.caption}</p>}
-                        {gallery.length > 1 && (
-                          <div style={s.dotsRow}>
-                            {gallery.map((_, gi) => <span key={gi} style={{ ...s.dot, ...(gi === gIdx ? s.dotOn : {}) }} onClick={() => setGIdx(gi)} />)}
-                          </div>
-                        )}
-                      </>
-                      ) : (
-                        <div style={s.galleryGrid}>
+                      // 3 visible at a time; horizontal-scroll with arrows once there are more than 3.
+                      <div style={s.galleryWrap}>
+                        {gallery.length > 3 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => galScroll(-1)}>‹</button>}
+                        <div ref={galRef} className="sf-gallery" style={s.galleryScroll}>
                           {gallery.map((g, gi) => (
-                            <figure key={gi} style={s.gGridFig}>
+                            <figure key={gi} style={s.galleryItem}>
                               <div style={s.gGridCard}><img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gImg} /></div>
                               {g.caption && <figcaption style={s.gGridCap}>{g.caption}</figcaption>}
                             </figure>
                           ))}
                         </div>
-                      )
+                        {gallery.length > 3 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => galScroll(1)}>›</button>}
+                      </div>
                     ) : (
                       <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
                         <CakeIcon size={52} color={alpha('#ffffff', 0.8)} />
@@ -722,7 +718,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     brand:       { display: 'flex', alignItems: 'center', gap: 10 },
     logoImg:     { height: 30, width: 'auto', maxWidth: 210, objectFit: 'contain', display: 'block' },
     logo:        { width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accent}`, background: '#fff' },
-    logoFallback:{ width: 38, height: 38, borderRadius: '50%', background: primary, color: onColor(primary), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 },
+    logoFallback:{ width: 38, height: 38, borderRadius: '50%', background: pal.cta, color: pal.onCta, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 },
     brandName:   { fontFamily: brandFont, fontSize: wide ? 30 : 26, fontWeight: 400, color: heading, lineHeight: 1 },
     navRow:      { display: 'flex', alignItems: 'center', gap: 28 },
     navItem:     { fontSize: 14.5, fontWeight: 600, color: heading, textDecoration: 'none', cursor: 'pointer', fontFamily: FONT, letterSpacing: 0.2 },
@@ -735,7 +731,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     drawerClose: { position: 'absolute', top: 14, right: 18, fontSize: 30, lineHeight: 1, background: 'none', border: 'none', color: muted, cursor: 'pointer' },
     drawerLink:  { padding: '14px 4px', fontSize: 17, fontWeight: 700, color: heading, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` },
     drawerLinkBtn:{ background: 'none', border: 'none', borderBottom: `1px solid ${cardBorder}`, textAlign: 'left', cursor: 'pointer', fontFamily: FONT, width: '100%' },
-    drawerCta:   { marginTop: 20, padding: '14px', borderRadius: 12, border: 'none', background: primary, color: onColor(primary), fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: FONT },
+    drawerCta:   { marginTop: 20, padding: '14px', borderRadius: 12, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: FONT },
 
     hero:        { position: 'relative', width: '100%', height: '50vh', minHeight: 380, maxHeight: 480, background: `linear-gradient(180deg, ${lighten(ink, 0.06)}, ${ink})`, overflow: 'hidden' },
     heroCake:    { position: 'absolute', inset: 0 },
@@ -757,7 +753,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     photoHeroInner: { maxWidth: cw, margin: '0 auto', display: 'flex', flexDirection: desktop ? 'row' : 'column-reverse', alignItems: 'center', gap: desktop ? 48 : 26 },
     photoHeroText:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 22, alignItems: desktop ? 'flex-start' : 'center', textAlign: desktop ? 'left' : 'center' },
     photoHeroTitle: { fontFamily: SERIF, fontSize: wide ? 30 : 23, fontWeight: 600, color: heading, margin: 0, lineHeight: 1.25, letterSpacing: 0.2 },
-    photoHeroCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    photoHeroCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
     photoHeroMedia: { width: '100%', maxWidth: 480 },
     photoHeroImg:   { width: '100%', aspectRatio: desktop ? '4 / 5' : '4 / 3', objectFit: 'cover', borderRadius: 22, boxShadow: shadow, display: 'block', border: `1px solid ${cardBorder}` },
 
@@ -766,12 +762,12 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     // now; baker colour controls come later.)
     curveHero:  { background: pageBg },
     curveBand:  { position: 'relative', background: bandStrong, padding: wide ? '54px 24px 80px' : '40px 22px 66px', textAlign: 'center' },
-    curveTitle: { fontFamily: SERIF, fontSize: wide ? 34 : 26, fontWeight: 700, color: pal.onBand, margin: '0 auto', lineHeight: 1.2, letterSpacing: 0.2, maxWidth: 560, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
+    curveTitle: { fontFamily: SERIF, fontSize: wide ? 34 : 26, fontWeight: 700, color: pal.heroText, margin: '0 auto', lineHeight: 1.2, letterSpacing: 0.2, maxWidth: 560, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
     curveWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: wide ? 70 : 48, display: 'block' },
     curveBody:  { maxWidth: cw, margin: '0 auto', padding: '18px 22px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 },
     curveCake:  { width: '100%', maxWidth: 340, margin: '4px auto -6px' },
     curveImg:   { width: '100%', maxWidth: wide ? 460 : 360, aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 20, boxShadow: shadow, border: `1px solid ${cardBorder}`, marginTop: wide ? -50 : -38, background: '#fff' },
-    curveCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    curveCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
 
     // Split hero (tablet/desktop variant of the curved-band hero): message + CTA on the left, one
     // large featured cake on the right, all sitting on the brand-tinted band with the signature wavy
@@ -779,9 +775,9 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     splitBand:  { position: 'relative', background: bandStrong },
     splitInner: { position: 'relative', zIndex: 2, maxWidth: cw, margin: '0 auto', padding: desktop ? '68px 24px 104px' : '54px 24px 92px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: desktop ? 56 : 40 },
     splitText:  { flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 22 },
-    splitTitle: { fontFamily: SERIF, fontSize: desktop ? 46 : 36, fontWeight: 700, color: pal.onBand, margin: 0, lineHeight: 1.08, letterSpacing: 0.2, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
+    splitTitle: { fontFamily: SERIF, fontSize: desktop ? 46 : 36, fontWeight: 700, color: pal.heroText, margin: 0, lineHeight: 1.08, letterSpacing: 0.2, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
     splitSub:   { fontSize: desktop ? 18 : 16, fontWeight: 600, color: alpha(pal.onBand, 0.96), margin: 0, lineHeight: 1.6, maxWidth: 460 },
-    splitCta:   { padding: '16px 38px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 16.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    splitCta:   { padding: '16px 38px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 16.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
     splitMedia: { flex: '0 0 auto', width: desktop ? 440 : 340 },
     splitImg:   { width: '100%', aspectRatio: '4 / 5', objectFit: 'cover', borderRadius: 26, boxShadow: shadow, border: `1px solid ${cardBorder}`, background: '#fff', display: 'block' },
     splitWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: desktop ? 72 : 56, display: 'block', zIndex: 1 },
@@ -804,7 +800,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     highlightText:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 12, alignItems: wide ? 'flex-start' : 'center', textAlign: wide ? 'left' : 'center' },
     highlightTitle: { fontFamily: SERIF, fontSize: wide ? 26 : 22, fontWeight: 700, color: heading, margin: 0, lineHeight: 1.2 },
     highlightBlurb: { fontSize: 15.5, fontWeight: 500, lineHeight: 1.65, color: text, margin: 0 },
-    highlightCta:   { marginTop: 6, padding: '13px 30px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 15.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    highlightCta:   { marginTop: 6, padding: '13px 30px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 15.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
 
     // Our story
     storyWrap:   { display: 'flex', flexDirection: desktop ? 'row' : 'column', alignItems: 'center', textAlign: desktop ? 'left' : 'center', gap: desktop ? 40 : 0, maxWidth: desktop ? 820 : 460, margin: '0 auto' },
@@ -829,7 +825,9 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     gSlide:      { aspectRatio: '4 / 3', borderRadius: 18, overflow: 'hidden', boxShadow: shadow, background: '#fff', border: `1px solid ${cardBorder}` },
     gImg:        { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
     gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: 'center' },
-    galleryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 },
+    galleryWrap:   { position: 'relative', maxWidth: wide ? 760 : '100%', margin: '0 auto' },
+    galleryScroll: { display: 'flex', gap: wide ? 14 : 8, overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none', width: '100%', paddingBottom: 2 },
+    galleryItem:   { flex: `0 0 calc((100% - ${wide ? 28 : 16}px) / 3)`, minWidth: 0, scrollSnapAlign: 'start', margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
     gGridFig:    { margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
     gGridCard:   { aspectRatio: '4 / 3', borderRadius: 16, overflow: 'hidden', boxShadow: shadow, background: '#fff', border: `1px solid ${cardBorder}` },
     gGridCap:    { fontSize: 13, fontWeight: 600, color: muted, textAlign: 'center' },
@@ -869,7 +867,7 @@ function welcomeStyles(primary, accent) {
     bakerName:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: heading, marginBottom: 6 },
     title:    { fontFamily: SERIF, fontSize: 27, fontWeight: 600, color: heading, lineHeight: 1.18, margin: '4px 0 12px' },
     sub:      { fontSize: 14.5, lineHeight: 1.55, color: muted, margin: '0 2px 24px' },
-    start:    { width: '100%', boxSizing: 'border-box', padding: '15px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontFamily: FONT, fontSize: 16, fontWeight: 800, cursor: 'pointer', boxShadow: `0 8px 22px ${alpha(primary, 0.38)}` },
+    start:    { width: '100%', boxSizing: 'border-box', padding: '15px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontFamily: FONT, fontSize: 16, fontWeight: 800, cursor: 'pointer', boxShadow: `0 8px 22px ${alpha(primary, 0.38)}` },
   };
 }
 
