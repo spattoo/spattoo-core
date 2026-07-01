@@ -42,8 +42,9 @@ export function buildPalette(primary, accent, tk = {}) {
     bandSoftB:  lighten(accent, 0.54),   // section band B (Reviews)
     // Lines
     hairline:   lighten(accent, 0.72),   // card / divider borders (rose-tinted, replaces neutral)
-    // Hero 3D cake (HeroCake3D) — the featured cake colour + its studio grid
+    // Hero 3D cake (HeroCake3D) — the featured cake colour + its studio grid + drip
     cake:        '#E6D3AC',              // ivory (deliberately neutral so it pops on the rose band)
+    drip:        darken(accent, 0.06),   // buttercream drip over the rim — blush (switch to gold/white here)
     grid:        '#ffffff',
     gridOpacity: 0.5,
     // Text / actions

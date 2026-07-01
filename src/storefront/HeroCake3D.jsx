@@ -3,6 +3,8 @@ import { Canvas } from '@react-three/fiber';
 import { Environment, OrbitControls, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import { SceneLoader } from '../designer/canvas/CakeSpinner.jsx';
+// Reuse the designer's PURE drip generators (no heavy deps) rather than re-authoring drip geometry.
+import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../designer/geometry/chocolateDrip.js';
 
 // HeroCake3D — the storefront hero cake, ported from the spattoo.com marketing hero
 // (spattoo-web/components/SpaceGrid.tsx): a tall single-tier cylinder with a soft canvas
@@ -13,6 +15,23 @@ import { SceneLoader } from '../designer/canvas/CakeSpinner.jsx';
 
 const RADIUS = 1.1;
 const HEIGHT = 2.2;
+
+// Drip settings dialed in the admin Chocolate Drip Studio (colour is overridden per-theme via the
+// `dripColor` prop). Geometry keys map to chocolateDrip.js DRIP_DEFAULTS; gloss/flood are handled here.
+const DRIP_CFG = {
+  count: 22, width: 0.05, widthVar: 0.30, length: 0.62, lengthVar: 0.60,
+  meander: 0, protrude: 0.010, flat: 0.55, lipRadius: 0.050,
+  webDepth: 0.265, archHeight: 0.110,
+};
+const DRIP_GLOSS = 0.21;   // studio "Gloss"
+const DRIP_FLOOD = true;   // studio "Flood top" — a thin pool covering the cake top inside the rim
+
+// Same glossy-ganache material the studio uses (copied from CakeTier.chocolateMaterialProps so this
+// file stays lean and doesn't pull the whole designer tier module).
+function chocoMat(gloss, color) {
+  const g = Math.min(1, Math.max(0, gloss));
+  return { color, metalness: 0, roughness: 0.5 - 0.42 * g, clearcoat: 0.4 + 0.6 * g, clearcoatRoughness: 0.28 - 0.16 * g };
+}
 
 function lighten(hex, t) {
   const c = (hex || '#2C4433').replace('#', '');
@@ -64,8 +83,20 @@ function usePatchTexture(primary, grid) {
   }, [primary]);
 }
 
-function Cake({ primary }) {
+function Cake({ primary, drip, dripColor = '#c98b94' }) {
   const patch = usePatchTexture(primary);
+  // Buttercream drip over the rim — reuse the designer's generator (web band + tubes). Positions are
+  // absolute (radius RADIUS, hanging from the rim topY), so the meshes sit at the Cake group origin.
+  const dripGeo = useMemo(() => {
+    if (!drip) return null;
+    const topY = -0.6 + HEIGHT;   // the cake's top rim, in the Cake-group frame
+    const { params, startDrop, lipR, s } = dripRenderParams(DRIP_CFG, RADIUS, 1);
+    return {
+      web:   buildDripWeb({ R: RADIUS, topY, ...params }),
+      tubes: buildDripGeometry({ R: RADIUS, topY, startDrop, ...params }),
+      topY, lipR, s,
+    };
+  }, [drip]);
   return (
     <group>
       {/* gold metallic cake board */}
@@ -80,6 +111,24 @@ function Cake({ primary }) {
           <meshStandardMaterial map={patch} roughness={0.95} metalness={0} />
         </mesh>
       </group>
+      {dripGeo && (
+        <group>
+          {/* Flood top — a thin pool covering the cake top inside the rim */}
+          {DRIP_FLOOD && (
+            <mesh position={[0, dripGeo.topY + (0.03 * dripGeo.s) / 2, 0]} castShadow>
+              <cylinderGeometry args={[RADIUS, RADIUS, 0.03 * dripGeo.s, 96]} />
+              <meshPhysicalMaterial {...chocoMat(DRIP_GLOSS, dripColor)} />
+            </mesh>
+          )}
+          {/* Rolled rim bead at the very edge */}
+          <mesh position={[0, dripGeo.topY, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <torusGeometry args={[RADIUS, dripGeo.lipR, 16, 128]} />
+            <meshPhysicalMaterial {...chocoMat(DRIP_GLOSS, dripColor)} />
+          </mesh>
+          <mesh geometry={dripGeo.web} castShadow><meshPhysicalMaterial {...chocoMat(DRIP_GLOSS, dripColor)} /></mesh>
+          <mesh geometry={dripGeo.tubes} castShadow><meshPhysicalMaterial {...chocoMat(DRIP_GLOSS, dripColor)} /></mesh>
+        </group>
+      )}
     </group>
   );
 }
@@ -118,7 +167,7 @@ function StudioGrid({ color = '#ffffff', opacity = 0.5 }) {
   );
 }
 
-export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', height = 420, mood = 'dark', spin = 0.4, grid = false, gridColor = '#ffffff', gridOpacity = 0.5 }) {
+export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', height = 420, mood = 'dark', spin = 0.4, grid = false, gridColor = '#ffffff', gridOpacity = 0.5, drip = false, dripColor = '#c98b94' }) {
   // Client-only: skip WebGL during SSR / first paint (spattoo-web is Next.js).
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -150,7 +199,7 @@ export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', he
         {grid && <StudioGrid color={gridColor} opacity={gridOpacity} />}
         <Suspense fallback={<SceneLoader size={22} />}>
           <Environment preset="apartment" />
-          <Cake primary={primary} />
+          <Cake primary={primary} drip={drip} dripColor={dripColor} />
         </Suspense>
         {/* Contact shadow grounds the cake so it doesn't look like a floating 2D sticker. Invisible
             on the dark hero (dark-on-dark), visible + grounding on the light band. */}

@@ -280,7 +280,7 @@ export default function CustomerStorefront({
                 <div style={s.splitMedia}>
                   {/* Live 3D cake floating on the band (transparent canvas) — no white card, and it
                       renders in the theme's cake colour (ivory here). On-brand "design your own". */}
-                  <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} />
+                  <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
                 </div>
               </div>
               <svg style={s.splitWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
@@ -295,7 +295,7 @@ export default function CustomerStorefront({
           <div style={s.curveBand}>
             <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
             <div style={s.curveCake}>
-              <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} />
+              <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
             </div>
             <svg style={s.curveWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
               <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
