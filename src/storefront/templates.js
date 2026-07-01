@@ -1,4 +1,7 @@
-import { FONT, SERIF } from './storefrontKit.js';
+// Standard ("Honeybear-style") typography — one clean geometric sans for headings + body
+// (the original serif heading read less professional). A future template (e.g. an editorial
+// direction) can set its own serif in these tokens.
+const SANS = "'Montserrat', system-ui, -apple-system, sans-serif";
 
 // Storefront template registry.
 //
@@ -14,9 +17,10 @@ import { FONT, SERIF } from './storefrontKit.js';
 // data migration.
 
 const SPOTLIGHT_TOKENS = {
-  font:         FONT,                                  // body
-  serif:        SERIF,                                 // headings
-  pageBg:       '#FCFAF7',
+  font:         SANS,                                  // body
+  serif:        SANS,                                  // headings (clean sans)
+  brandFont:    "'Pacifico', cursive",                 // the bakery name — thick, curvy script
+  pageBg:       '#FFFFFF',
   heading:      '#241A1E',
   text:         '#3A2E32',
   muted:        '#8B7B80',
