@@ -33,6 +33,8 @@ const SAMPLE_BAKER = {
 function Preview() {
   const [tpl, setTpl] = useState('spotlight');
   const [hero, setHero] = useState('framed');   // 'framed' | 'fullbleed' | 'designer'
+  const [font, setFont] = useState('montserrat');
+  const [highlight, setHighlight] = useState(true);
   const baker = {
     ...SAMPLE_BAKER,
     storefront_theme: tpl,
@@ -42,6 +44,14 @@ function Preview() {
       // NOTE: placeholder is a product CUTOUT so the full-bleed crops; a real baker sets a wide
       // lifestyle hero shot here (then it reads like the Honeybear full-bleed hero).
       hero_image: hero === 'fullbleed' ? '/sample-cake-1.png' : null,
+      font_key: font,
+      // Exercise the section-array + Highlight section (baker lever). Highlight sits after gallery.
+      sections: [
+        { type: 'gallery',   enabled: true },
+        { type: 'highlight', enabled: highlight, title: 'This week: Pistachio & rose', blurb: 'A limited-run three-tier with real pistachio sponge and a rosewater buttercream. Order by Friday.', cta_label: 'Order this cake', image: '/sample-cake-2.png' },
+        { type: 'story',     enabled: true },
+        { type: 'reviews',   enabled: true },
+      ],
     },
   };
   return (
@@ -60,9 +70,17 @@ function Preview() {
             <option value="designer">3D designer</option>
           </select>
         </label>
+        <label>Font:&nbsp;
+          <select value={font} onChange={e => setFont(e.target.value)} style={{ font: 'inherit' }}>
+            <option value="montserrat">Modern</option>
+            <option value="cormorant">Classic serif</option>
+            <option value="quicksand">Soft &amp; round</option>
+          </select>
+        </label>
+        <label><input type="checkbox" checked={highlight} onChange={e => setHighlight(e.target.checked)} />&nbsp;Highlight</label>
       </div>
       <CustomerStorefront
-        key={tpl + hero}
+        key={tpl + hero + font + highlight}
         baker={baker}
         apiBaseUrl=""
         supabase={null}

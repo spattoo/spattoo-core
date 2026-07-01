@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
-import { FONT, SERIF, buildContent, storefrontText, buildPalette, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
+import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
@@ -129,8 +129,12 @@ export default function CustomerStorefront({
   // baseline. The template supplies the DESIGN TOKENS; the baker's primary/accent overlay. ONE
   // renderer below, driven by tokens — new templates are data, not forked layouts.
   const template = resolveTemplate(baker.storefront_theme);
-  const pal = buildPalette(primary, accent, template.tokens);   // one place to tune every colour
-  const s = styles(primary, accent, template.tokens, bp, pal);
+  // Baker font-theme lever (storefront_customizations.font_key) overlays the template's typography.
+  const tokens = applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
+  const pal = buildPalette(primary, accent, tokens);   // one place to tune every colour
+  const s = styles(primary, accent, tokens, bp, pal);
+  // Ordered, toggleable body sections (storefront_customizations.sections); absence → defaults.
+  const sections = resolveSections(baker.storefront_customizations);
   // Interactive states (hover/active/focus) — inline styles can't express :hover, so one small
   // palette-driven stylesheet handles them. Colours come from `pal`, so this stays centralised too.
   const interactionCss = `
@@ -143,7 +147,7 @@ export default function CustomerStorefront({
     .sf-arrow { transition: transform .15s ease, background .15s ease; }
     .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
   `;
-  const pageBg = template.tokens.pageBg;   // exposed for inline SVG fills (the hero curve)
+  const pageBg = tokens.pageBg;   // exposed for inline SVG fills (the hero curve)
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
@@ -338,92 +342,139 @@ export default function CustomerStorefront({
         </section>
       )}
 
-      <main style={s.main}>
-        <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
-          {hasPhotos ? (
-            bp === 'mobile' ? (
-            <>
-              <div style={s.carousel}>
-                {gallery.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => gMove(-1)}>‹</button>}
-                <div style={s.gSlide}><img src={gPhoto.url || gPhoto} alt={gPhoto.caption || `${baker.name} cake`} style={s.gImg} /></div>
-                {gallery.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => gMove(1)}>›</button>}
-              </div>
-              {gPhoto.caption && <p style={s.gCaption}>{gPhoto.caption}</p>}
-              {gallery.length > 1 && (
-                <div style={s.dotsRow}>
-                  {gallery.map((_, i) => <span key={i} style={{ ...s.dot, ...(i === gIdx ? s.dotOn : {}) }} onClick={() => setGIdx(i)} />)}
-                </div>
-              )}
-            </>
-            ) : (
-              // Tablet/desktop: a grid shows all the baker's work at once (not one-at-a-time).
-              <div style={s.galleryGrid}>
-                {gallery.map((g, i) => (
-                  <figure key={i} style={s.gGridFig}>
-                    <div style={s.gGridCard}><img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gImg} /></div>
-                    {g.caption && <figcaption style={s.gGridCap}>{g.caption}</figcaption>}
-                  </figure>
-                ))}
-              </div>
-            )
-          ) : (
-            // Fallback when the baker hasn't uploaded photos yet — branded, not broken.
-            <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
-              <CakeIcon size={52} color={alpha('#ffffff', 0.8)} />
-              <div style={s.gFallbackText}>Fresh photos coming soon</div>
-              <button type="button" disabled={notAcceptingOrders}
-                style={{ ...s.gFallbackCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                onClick={handleCta}>
-                {notAcceptingOrders ? 'Not taking new orders' : 'Design your own'}
-              </button>
-            </div>
-          )}
-        </Section>
-      </main>
-
-      <WavyBand tint={bandTints[0]} fill={pageBg} curveH={wide ? 64 : 46} topPath={WAVES[0]} bottomPath={WAVES[1]} innerStyle={s.main}>
-        <section id="story" style={{ padding: '4px 0' }}>
-          <div style={s.eyebrow}>{txt('story_heading')}</div>
-          <div style={s.storyWrap}>
-            <div
-              style={{ ...s.portraitWrap, ...(onEditPortrait ? { cursor: 'pointer' } : {}) }}
-              onClick={onEditPortrait || undefined}
-              title={onEditPortrait ? 'Upload your photo' : undefined}
-            >
-              <div style={s.portrait}>
-                {portrait ? <img src={portrait} alt={baker.name} style={s.portraitImg} /> : <BakerIcon size={66} color={primary} />}
-              </div>
-              {onEditPortrait && <div style={s.portraitBadge}><CameraIcon size={16} color="#fff" /></div>}
-            </div>
-            {onEditPortrait && <div style={s.portraitHint}>{portrait ? 'Click to change your photo' : 'Click to add your photo'}</div>}
-            <div style={s.storyText}>
-              <p style={s.bio}>{story}</p>
-              <div style={s.signature}>— {baker.name}</div>
-            </div>
-          </div>
-        </section>
-      </WavyBand>
-
-      {testimonials.length > 0 && (
-        <WavyBand tint={bandTints[1]} fill={pageBg} curveH={wide ? 64 : 46} topPath={WAVES[2]} bottomPath={WAVES[0]} innerStyle={s.main}>
-          <Section eyebrow={txt('reviews_heading')} s={s}>
-            <div style={s.carousel}>
-              {testimonials.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>}
-              <figure style={s.testiCard}>
-                <div style={s.stars}>★★★★★</div>
-                <blockquote style={s.quote}>“{t.quote}”</blockquote>
-                <figcaption style={s.author}>{t.author}{t.occasion && <span style={s.authorOcc}> · {t.occasion}</span>}</figcaption>
-              </figure>
-              {testimonials.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>}
-            </div>
-            {testimonials.length > 1 && (
-              <div style={s.dotsRow}>
-                {testimonials.map((_, i) => <span key={i} style={{ ...s.dot, ...(i === tIdx ? s.dotOn : {}) }} onClick={() => setTIdx(i)} />)}
-              </div>
-            )}
-          </Section>
-        </WavyBand>
-      )}
+      {/* Body = ordered, toggleable sections (storefront_customizations.sections). Wavy bands
+          alternate tint/wave by their position among the wavy sections, so reorder/toggle stays
+          correct. Gallery lives on the plain white main; story/reviews/highlight ride wavy bands. */}
+      {(() => {
+        let bandIdx = 0;
+        const wavy = (key, children) => {
+          const tint = bandTints[bandIdx % bandTints.length];
+          const topPath = WAVES[bandIdx % WAVES.length];
+          const bottomPath = WAVES[(bandIdx + 1) % WAVES.length];
+          bandIdx++;
+          return (
+            <WavyBand key={key} tint={tint} fill={pageBg} curveH={wide ? 64 : 46} topPath={topPath} bottomPath={bottomPath} innerStyle={s.main}>
+              {children}
+            </WavyBand>
+          );
+        };
+        return sections.map((sec, i) => {
+          if (!sec.enabled) return null;
+          switch (sec.type) {
+            case 'gallery':
+              return (
+                <main key="gallery" style={s.main}>
+                  <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
+                    {hasPhotos ? (
+                      bp === 'mobile' ? (
+                      <>
+                        <div style={s.carousel}>
+                          {gallery.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => gMove(-1)}>‹</button>}
+                          <div style={s.gSlide}><img src={gPhoto.url || gPhoto} alt={gPhoto.caption || `${baker.name} cake`} style={s.gImg} /></div>
+                          {gallery.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => gMove(1)}>›</button>}
+                        </div>
+                        {gPhoto.caption && <p style={s.gCaption}>{gPhoto.caption}</p>}
+                        {gallery.length > 1 && (
+                          <div style={s.dotsRow}>
+                            {gallery.map((_, gi) => <span key={gi} style={{ ...s.dot, ...(gi === gIdx ? s.dotOn : {}) }} onClick={() => setGIdx(gi)} />)}
+                          </div>
+                        )}
+                      </>
+                      ) : (
+                        <div style={s.galleryGrid}>
+                          {gallery.map((g, gi) => (
+                            <figure key={gi} style={s.gGridFig}>
+                              <div style={s.gGridCard}><img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gImg} /></div>
+                              {g.caption && <figcaption style={s.gGridCap}>{g.caption}</figcaption>}
+                            </figure>
+                          ))}
+                        </div>
+                      )
+                    ) : (
+                      <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
+                        <CakeIcon size={52} color={alpha('#ffffff', 0.8)} />
+                        <div style={s.gFallbackText}>Fresh photos coming soon</div>
+                        <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                          style={{ ...s.gFallbackCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                          onClick={handleCta}>
+                          {notAcceptingOrders ? 'Not taking new orders' : 'Design your own'}
+                        </button>
+                      </div>
+                    )}
+                  </Section>
+                </main>
+              );
+            case 'highlight': {
+              // Baker-set featured item ("this week's special"). Rendered only when it has content.
+              if (!(sec.title || sec.blurb || sec.image)) return null;
+              return wavy(`highlight-${i}`, (
+                <section id={`highlight-${i}`} style={{ padding: '4px 0' }}>
+                  <div style={s.eyebrow}>{sec.eyebrow || txt('highlight_heading')}</div>
+                  <div style={{ ...s.highlightWrap, flexDirection: wide ? (sec.image ? 'row' : 'column') : 'column' }}>
+                    {sec.image && <div style={s.highlightMedia}><img src={sec.image} alt={sec.title || ''} style={s.highlightImg} /></div>}
+                    <div style={s.highlightText}>
+                      {sec.title && <h3 style={s.highlightTitle}>{sec.title}</h3>}
+                      {sec.blurb && <p style={s.highlightBlurb}>{sec.blurb}</p>}
+                      {sec.cta_label && !expired && (
+                        <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                          style={{ ...s.highlightCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                          onClick={handleCta}>
+                          {notAcceptingOrders ? 'Not taking new orders' : sec.cta_label}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              ));
+            }
+            case 'story':
+              return wavy('story', (
+                <section id="story" style={{ padding: '4px 0' }}>
+                  <div style={s.eyebrow}>{txt('story_heading')}</div>
+                  <div style={s.storyWrap}>
+                    <div
+                      style={{ ...s.portraitWrap, ...(onEditPortrait ? { cursor: 'pointer' } : {}) }}
+                      onClick={onEditPortrait || undefined}
+                      title={onEditPortrait ? 'Upload your photo' : undefined}
+                    >
+                      <div style={s.portrait}>
+                        {portrait ? <img src={portrait} alt={baker.name} style={s.portraitImg} /> : <BakerIcon size={66} color={primary} />}
+                      </div>
+                      {onEditPortrait && <div style={s.portraitBadge}><CameraIcon size={16} color="#fff" /></div>}
+                    </div>
+                    {onEditPortrait && <div style={s.portraitHint}>{portrait ? 'Click to change your photo' : 'Click to add your photo'}</div>}
+                    <div style={s.storyText}>
+                      <p style={s.bio}>{story}</p>
+                      <div style={s.signature}>— {baker.name}</div>
+                    </div>
+                  </div>
+                </section>
+              ));
+            case 'reviews':
+              if (!testimonials.length) return null;
+              return wavy('reviews', (
+                <Section eyebrow={txt('reviews_heading')} s={s}>
+                  <div style={s.carousel}>
+                    {testimonials.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>}
+                    <figure style={s.testiCard}>
+                      <div style={s.stars}>★★★★★</div>
+                      <blockquote style={s.quote}>“{t.quote}”</blockquote>
+                      <figcaption style={s.author}>{t.author}{t.occasion && <span style={s.authorOcc}> · {t.occasion}</span>}</figcaption>
+                    </figure>
+                    {testimonials.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>}
+                  </div>
+                  {testimonials.length > 1 && (
+                    <div style={s.dotsRow}>
+                      {testimonials.map((_, ti) => <span key={ti} style={{ ...s.dot, ...(ti === tIdx ? s.dotOn : {}) }} onClick={() => setTIdx(ti)} />)}
+                    </div>
+                  )}
+                </Section>
+              ));
+            default:
+              return null;
+          }
+        });
+      })()}
 
       <footer id="contact" style={s.footer}>
         {(phone || ig || baker.website_url) && (
@@ -738,6 +789,15 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     stepNum:     { fontSize: 26, fontWeight: 700, color: primary, lineHeight: 1, flexShrink: 0 },
     stepTitle:   { fontSize: 16.5, fontWeight: 700, color: heading, marginBottom: 5 },
     stepBody:    { fontSize: 14, fontWeight: 500, lineHeight: 1.55, color: muted, margin: 0 },
+
+    // Highlight — baker-set featured item ("this week's special")
+    highlightWrap:  { display: 'flex', alignItems: 'center', gap: desktop ? 40 : 22, maxWidth: 860, margin: '0 auto' },
+    highlightMedia: { flex: '0 0 auto', width: wide ? 300 : '100%', maxWidth: wide ? 300 : 360 },
+    highlightImg:   { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 18, boxShadow: shadow, border: `1px solid ${cardBorder}`, display: 'block' },
+    highlightText:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 12, alignItems: wide ? 'flex-start' : 'center', textAlign: wide ? 'left' : 'center' },
+    highlightTitle: { fontFamily: SERIF, fontSize: wide ? 26 : 22, fontWeight: 700, color: heading, margin: 0, lineHeight: 1.2 },
+    highlightBlurb: { fontSize: 15.5, fontWeight: 500, lineHeight: 1.65, color: text, margin: 0 },
+    highlightCta:   { marginTop: 6, padding: '13px 30px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontSize: 15.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
 
     // Our story
     storyWrap:   { display: 'flex', flexDirection: desktop ? 'row' : 'column', alignItems: 'center', textAlign: desktop ? 'left' : 'center', gap: desktop ? 40 : 0, maxWidth: desktop ? 820 : 460, margin: '0 auto' },

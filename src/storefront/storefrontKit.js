@@ -66,7 +66,47 @@ export const STOREFRONT_TEXT = {
   creations_heading: 'Our creations',
   story_heading:     'Our story',
   reviews_heading:   'Loved by our customers',
+  highlight_heading: 'This week',
 };
+
+// ── Font themes ─────────────────────────────────────────────────────────────────
+// A "font theme" swaps the storefront's typography as a set (baker lever, saved as
+// storefront_customizations.font_key). Reuses fonts already loaded by the app (Montserrat,
+// Pacifico, Quicksand, Cormorant) — ADD a new theme only after loading its fonts in the host apps.
+export const FONT_THEMES = {
+  montserrat: { key: 'montserrat', label: 'Modern',       brandFont: "'Pacifico', cursive", serif: "'Montserrat', system-ui, sans-serif",      font: "'Montserrat', system-ui, sans-serif" },
+  cormorant:  { key: 'cormorant',  label: 'Classic serif', brandFont: "'Pacifico', cursive", serif: "'Cormorant Garamond', Georgia, serif",     font: "'Montserrat', system-ui, sans-serif" },
+  quicksand:  { key: 'quicksand',  label: 'Soft & round',  brandFont: "'Pacifico', cursive", serif: "'Quicksand', system-ui, sans-serif",       font: "'Quicksand', system-ui, sans-serif" },
+};
+// Overlay a chosen font theme onto template tokens (returns tokens unchanged if none/unknown).
+export function applyFontTheme(tokens, fontKey) {
+  const ft = fontKey && FONT_THEMES[fontKey];
+  return ft ? { ...tokens, font: ft.font, serif: ft.serif, brandFont: ft.brandFont } : tokens;
+}
+
+// ── Sections ────────────────────────────────────────────────────────────────────
+// The storefront body is an ORDERED, TOGGLEABLE list of sections (baker lever, saved as
+// storefront_customizations.sections). Hero + footer are always present and not in this list.
+// Absence → DEFAULT_SECTIONS, so already-published bakers render exactly as before (back-compat).
+// A section object is { type, enabled, ...content } — content lives inline so a type can repeat.
+export const SECTION_TYPES = ['gallery', 'highlight', 'story', 'reviews'];
+export const DEFAULT_SECTIONS = [
+  { type: 'gallery',   enabled: true },
+  { type: 'highlight', enabled: false, title: '', blurb: '', cta_label: '', image: '' },
+  { type: 'story',     enabled: true },
+  { type: 'reviews',   enabled: true },
+];
+// Resolve the baker's saved sections into a clean ordered list. Keeps only known types, and
+// appends any DEFAULT type the baker's list is missing (so new section types light up for
+// existing bakers rather than silently never appearing).
+export function resolveSections(customizations) {
+  const saved = Array.isArray(customizations?.sections) ? customizations.sections : null;
+  if (!saved) return DEFAULT_SECTIONS.map(s => ({ ...s }));
+  const known = saved.filter(s => s && SECTION_TYPES.includes(s.type));
+  const seen = new Set(known.map(s => s.type));
+  for (const d of DEFAULT_SECTIONS) if (!seen.has(d.type)) known.push({ ...d });
+  return known.map(s => ({ ...s }));
+}
 // Pick an override only when it's a non-empty string, else the default.
 export const storefrontText = (custom, key) => (custom?.[key]?.trim?.() || STOREFRONT_TEXT[key]);
 

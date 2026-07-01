@@ -1,13 +1,16 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import CustomerStorefront from './CustomerStorefront.jsx';
-import { STOREFRONT_TEXT } from './storefrontKit.js';
+import { STOREFRONT_TEXT, FONT_THEMES, resolveSections } from './storefrontKit.js';
 
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
+  { key: 'hero_subtitle',     label: 'Hero subtitle' },
   { key: 'creations_heading', label: 'Gallery heading' },
   { key: 'story_heading',     label: 'Story heading' },
   { key: 'reviews_heading',   label: 'Reviews heading' },
 ];
+
+const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 'Our story', reviews: 'Reviews' };
 
 // ThemePreview — a full-screen "see it before you pick it" customiser. Renders the REAL
 // storefront live in a phone frame using a synthetic baker, lets the baker switch theme and
@@ -147,6 +150,20 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   const setText = (k, v) => setCustomizations(c => ({ ...c, [k]: v }));
 
+  // Sections lever — normalize to a concrete ordered list, then write the whole array back on edit.
+  const sectionList = resolveSections(customizations);
+  const setSections = next => setCustomizations(c => ({ ...c, sections: next }));
+  const toggleSection = i => setSections(sectionList.map((sec, j) => (j === i ? { ...sec, enabled: !sec.enabled } : sec)));
+  const moveSection = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= sectionList.length) return;
+    const n = [...sectionList];
+    [n[i], n[j]] = [n[j], n[i]];
+    setSections(n);
+  };
+  const setHighlight = (field, v) => setSections(sectionList.map(sec => (sec.type === 'highlight' ? { ...sec, [field]: v } : sec)));
+  const highlight = sectionList.find(sec => sec.type === 'highlight') || {};
+
   if (!open) return null;
 
   const busy = uploadingPortrait || uploadingGallery > 0;
@@ -234,6 +251,19 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           <Swatch label="Primary" value={primary} onChange={setPrimary} />
           <Swatch label="Accent"  value={accent}  onChange={setAccent} />
 
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Font</div>
+          <div style={s.fontList}>
+            {Object.values(FONT_THEMES).map(ft => {
+              const sel = (customizations.font_key || 'montserrat') === ft.key;
+              return (
+                <button key={ft.key} type="button" onClick={() => setText('font_key', ft.key)}
+                  style={{ ...s.fontBtn, fontFamily: ft.serif, borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1 }}>
+                  {ft.label}
+                </button>
+              );
+            })}
+          </div>
+
           <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Your photo</div>
           <label style={s.portraitRow}>
             <div style={s.portraitThumb}>
@@ -260,6 +290,48 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               />
             </div>
           ))}
+
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Sections</div>
+          <div style={s.sectionMgr}>
+            {sectionList.map((sec, i) => (
+              <div key={`${sec.type}-${i}`} style={s.sectionRow}>
+                <label style={s.sectionToggle}>
+                  <input type="checkbox" checked={sec.enabled !== false} onChange={() => toggleSection(i)} />
+                  <span>{SECTION_LABELS[sec.type] || sec.type}</span>
+                </label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveSection(i, -1)} style={{ ...s.moveBtn, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
+                  <button type="button" aria-label="Move down" disabled={i === sectionList.length - 1} onClick={() => moveSection(i, 1)} style={{ ...s.moveBtn, opacity: i === sectionList.length - 1 ? 0.35 : 1 }}>↓</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Highlight section</div>
+          <p style={s.hlHint}>A featured item (e.g. “This week”). Turn it on under <b>Sections</b>; it shows once it has a title or blurb.</p>
+          <div style={s.textRow}>
+            <input value={highlight.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setHighlight('title', e.target.value)} style={s.textInput} />
+          </div>
+          <div style={s.textRow}>
+            <textarea value={highlight.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setHighlight('blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
+          </div>
+          <div style={s.textRow}>
+            <input value={highlight.cta_label || ''} placeholder="Button text (optional) — e.g. Order now" onChange={e => setHighlight('cta_label', e.target.value)} style={s.textInput} />
+          </div>
+          {gallery.length > 0 && (
+            <div style={s.textRow}>
+              <label style={s.textLabel}>Image (pick from your cake photos)</label>
+              <div style={s.hlImgRow}>
+                <button type="button" onClick={() => setHighlight('image', '')} style={{ ...s.hlImgNone, borderColor: !highlight.image ? primary : '#D9DED9' }}>None</button>
+                {gallery.filter(g => g.url).map(g => (
+                  <button key={g.id} type="button" onClick={() => setHighlight('image', g.url)}
+                    style={{ ...s.hlImgThumb, borderColor: highlight.image === g.url ? primary : 'transparent', borderWidth: highlight.image === g.url ? 2 : 1 }}>
+                    <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Cake photos</div>
           <div style={s.galleryList}>
@@ -366,6 +438,16 @@ const s = {
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   portraitRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #D9DED9', background: '#fff', cursor: 'pointer' },
   portraitThumb: { width: 46, height: 46, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  fontList: { display: 'flex', flexDirection: 'column', gap: 8 },
+  fontBtn:  { padding: '10px 14px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', color: '#2C4433', fontSize: 15, fontWeight: 600, cursor: 'pointer', textAlign: 'left' },
+  sectionMgr: { display: 'flex', flexDirection: 'column', gap: 6 },
+  sectionRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 9, border: '1px solid #E3E8E4', background: '#fff' },
+  sectionToggle: { display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, fontWeight: 700, color: '#2C4433', cursor: 'pointer' },
+  moveBtn:  { width: 28, height: 28, borderRadius: 7, border: '1px solid #D9DED9', background: '#F8FBF9', color: '#2C4433', fontSize: 14, lineHeight: 1, cursor: 'pointer' },
+  hlHint:   { fontSize: 11.5, fontWeight: 500, color: '#6B8C74', lineHeight: 1.5, margin: '0 0 10px' },
+  hlImgRow: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  hlImgNone:{ height: 40, padding: '0 10px', borderRadius: 8, border: '1.5px solid #D9DED9', background: '#fff', color: '#6B8C74', fontSize: 12, fontWeight: 700, cursor: 'pointer' },
+  hlImgThumb:{ width: 40, height: 40, borderRadius: 8, overflow: 'hidden', padding: 0, border: '1px solid transparent', background: '#F0F4F1', cursor: 'pointer' },
   textRow:  { marginTop: 10 },
   textLabel:{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#6B8C74', marginBottom: 4 },
   textInput:{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 9, border: '1px solid #D9DED9', fontSize: 13, fontFamily: FONT, color: '#2C4433', outline: 'none', background: '#fff' },
