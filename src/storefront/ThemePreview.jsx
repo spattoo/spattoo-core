@@ -333,6 +333,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
                 </div>
                 {sec.type === 'highlight' && (
                   <div style={s.hlEditor}>
+                    <div style={s.hlEditorCap}>This highlight’s content</div>
                     <input value={sec.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setSectionField(i, 'title', e.target.value)} style={s.textInput} />
                     <textarea value={sec.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setSectionField(i, 'blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
                     <input value={sec.cta_label || ''} placeholder="Button text (optional) — e.g. Order now" onChange={e => setSectionField(i, 'cta_label', e.target.value)} style={s.textInput} />
@@ -482,9 +483,12 @@ const s = {
   fontList: { display: 'flex', flexDirection: 'column', gap: 8 },
   fontBtn:  { padding: '10px 14px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', color: '#2C4433', fontSize: 15, fontWeight: 600, cursor: 'pointer', textAlign: 'left' },
   sectionMgr: { display: 'flex', flexDirection: 'column', gap: 6 },
-  sectionCard: { borderRadius: 9, border: '1px solid #E3E8E4', background: '#fff' },
+  sectionCard: { borderRadius: 9, border: '1px solid #E3E8E4', background: '#fff', overflow: 'hidden' },
   sectionRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px' },
-  hlEditor:  { display: 'flex', flexDirection: 'column', gap: 6, padding: '0 10px 10px' },
+  // Nested content of a Highlight section — a tinted, divided sub-panel so it clearly belongs to the
+  // section above it (not a flat run of inputs).
+  hlEditor:  { display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 12px 14px', background: '#F6FAF7', borderTop: '1px solid #E7EDE8' },
+  hlEditorCap: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.8, textTransform: 'uppercase', color: '#9BB5A2', marginBottom: 2 },
   sectionToggle: { display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, fontWeight: 700, color: '#2C4433', cursor: 'pointer' },
   moveBtn:  { width: 28, height: 28, borderRadius: 7, border: '1px solid #D9DED9', background: '#F8FBF9', color: '#2C4433', fontSize: 14, lineHeight: 1, cursor: 'pointer' },
   hlHint:   { fontSize: 11.5, fontWeight: 500, color: '#6B8C74', lineHeight: 1.5, margin: '0 0 10px' },
