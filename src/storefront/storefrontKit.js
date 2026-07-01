@@ -34,9 +34,10 @@ export const onColor = hex => (lum(hex) > 0.6 ? '#241a1d' : '#ffffff');
 export function buildPalette(primary, accent, tk = {}) {
   return {
     // Backgrounds (light → strong)
-    // bandStrong deepened via darken (not lighten) so WHITE headline text clears the 3:1 large-text
-    // contrast bar — lighten(accent,0.28) ≈ #D8ACB2 only gave ~2:1. Dial here if it feels too deep.
-    bandStrong: darken(accent, 0.08),    // hero + header — the saturated rose band
+    // bandStrong darkened just enough that the WHITE headline clears the ~3:1 large-text contrast
+    // bar (lighten(accent,0.28) ≈ #D8ACB2 gave only ~2:1). 0.04 is about the LIGHTEST it can go with
+    // white text; any lighter → switch the headline to dark text. Deepen the amount for a richer band.
+    bandStrong: darken(accent, 0.04),    // hero + header — the rose band
     bandSoftA:  lighten(accent, 0.66),   // section band A (Our story)
     bandSoftB:  lighten(accent, 0.54),   // section band B (Reviews)
     // Lines
