@@ -96,12 +96,17 @@ export function applyFontTheme(tokens, fontKey) {
 // Absence → DEFAULT_SECTIONS, so already-published bakers render exactly as before (back-compat).
 // A section object is { type, enabled, ...content } — content lives inline so a type can repeat.
 export const SECTION_TYPES = ['gallery', 'highlight', 'story', 'reviews'];
+// Singleton sections present by default. `highlight` is REPEATABLE and add-only (bakers add one or
+// more via the customiser), so it's not in the defaults — a fresh storefront has no highlight.
 export const DEFAULT_SECTIONS = [
-  { type: 'gallery',   enabled: true },
-  { type: 'highlight', enabled: false, title: '', blurb: '', cta_label: '', image: '' },
-  { type: 'story',     enabled: true },
-  { type: 'reviews',   enabled: true },
+  { type: 'gallery', enabled: true },
+  { type: 'story',   enabled: true },
+  { type: 'reviews', enabled: true },
 ];
+// A new (blank, enabled) section of the given type — used by the customiser's "Add section".
+export function newSection(type = 'highlight') {
+  return { type, enabled: true, title: '', blurb: '', cta_label: '', image: '' };
+}
 // Resolve the baker's saved sections into a clean ordered list. Keeps only known types, and
 // appends any DEFAULT type the baker's list is missing (so new section types light up for
 // existing bakers rather than silently never appearing).

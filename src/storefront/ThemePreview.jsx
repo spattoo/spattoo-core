@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import CustomerStorefront from './CustomerStorefront.jsx';
-import { STOREFRONT_TEXT, FONT_THEMES, resolveSections } from './storefrontKit.js';
+import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
 
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
@@ -161,8 +161,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     [n[i], n[j]] = [n[j], n[i]];
     setSections(n);
   };
-  const setHighlight = (field, v) => setSections(sectionList.map(sec => (sec.type === 'highlight' ? { ...sec, [field]: v } : sec)));
-  const highlight = sectionList.find(sec => sec.type === 'highlight') || {};
+  const addSection = (type = 'highlight') => setSections([...sectionList, newSection(type)]);
+  const removeSection = i => setSections(sectionList.filter((_, j) => j !== i));
+  const setSectionField = (i, field, v) => setSections(sectionList.map((sec, j) => (j === i ? { ...sec, [field]: v } : sec)));
 
   if (!open) return null;
 
@@ -294,46 +295,43 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           ))}
 
           <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Sections</div>
+          <p style={s.hlHint}>Turn sections on/off and reorder them. Add one or more <b>Highlight</b> bands (e.g. “This week”) with their own image, text and button.</p>
           <div style={s.sectionMgr}>
             {sectionList.map((sec, i) => (
-              <div key={`${sec.type}-${i}`} style={s.sectionRow}>
-                <label style={s.sectionToggle}>
-                  <input type="checkbox" checked={sec.enabled !== false} onChange={() => toggleSection(i)} />
-                  <span>{SECTION_LABELS[sec.type] || sec.type}</span>
-                </label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveSection(i, -1)} style={{ ...s.moveBtn, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
-                  <button type="button" aria-label="Move down" disabled={i === sectionList.length - 1} onClick={() => moveSection(i, 1)} style={{ ...s.moveBtn, opacity: i === sectionList.length - 1 ? 0.35 : 1 }}>↓</button>
+              <div key={`${sec.type}-${i}`} style={s.sectionCard}>
+                <div style={s.sectionRow}>
+                  <label style={s.sectionToggle}>
+                    <input type="checkbox" checked={sec.enabled !== false} onChange={() => toggleSection(i)} />
+                    <span>{sec.type === 'highlight' ? (sec.title?.trim() || 'Highlight') : (SECTION_LABELS[sec.type] || sec.type)}</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveSection(i, -1)} style={{ ...s.moveBtn, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
+                    <button type="button" aria-label="Move down" disabled={i === sectionList.length - 1} onClick={() => moveSection(i, 1)} style={{ ...s.moveBtn, opacity: i === sectionList.length - 1 ? 0.35 : 1 }}>↓</button>
+                    {sec.type === 'highlight' && <button type="button" aria-label="Remove section" onClick={() => removeSection(i)} style={s.galleryRemove}>×</button>}
+                  </div>
                 </div>
+                {sec.type === 'highlight' && (
+                  <div style={s.hlEditor}>
+                    <input value={sec.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setSectionField(i, 'title', e.target.value)} style={s.textInput} />
+                    <textarea value={sec.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setSectionField(i, 'blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
+                    <input value={sec.cta_label || ''} placeholder="Button text (optional) — e.g. Order now" onChange={e => setSectionField(i, 'cta_label', e.target.value)} style={s.textInput} />
+                    {gallery.length > 0 && (
+                      <div style={s.hlImgRow}>
+                        <button type="button" onClick={() => setSectionField(i, 'image', '')} style={{ ...s.hlImgNone, borderColor: !sec.image ? primary : '#D9DED9' }}>None</button>
+                        {gallery.filter(g => g.url).map(g => (
+                          <button key={g.id} type="button" onClick={() => setSectionField(i, 'image', g.url)}
+                            style={{ ...s.hlImgThumb, borderColor: sec.image === g.url ? primary : 'transparent', borderWidth: sec.image === g.url ? 2 : 1 }}>
+                            <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
-
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Highlight section</div>
-          <p style={s.hlHint}>A featured item (e.g. “This week”). Turn it on under <b>Sections</b>; it shows once it has a title or blurb.</p>
-          <div style={s.textRow}>
-            <input value={highlight.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setHighlight('title', e.target.value)} style={s.textInput} />
-          </div>
-          <div style={s.textRow}>
-            <textarea value={highlight.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setHighlight('blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
-          </div>
-          <div style={s.textRow}>
-            <input value={highlight.cta_label || ''} placeholder="Button text (optional) — e.g. Order now" onChange={e => setHighlight('cta_label', e.target.value)} style={s.textInput} />
-          </div>
-          {gallery.length > 0 && (
-            <div style={s.textRow}>
-              <label style={s.textLabel}>Image (pick from your cake photos)</label>
-              <div style={s.hlImgRow}>
-                <button type="button" onClick={() => setHighlight('image', '')} style={{ ...s.hlImgNone, borderColor: !highlight.image ? primary : '#D9DED9' }}>None</button>
-                {gallery.filter(g => g.url).map(g => (
-                  <button key={g.id} type="button" onClick={() => setHighlight('image', g.url)}
-                    style={{ ...s.hlImgThumb, borderColor: highlight.image === g.url ? primary : 'transparent', borderWidth: highlight.image === g.url ? 2 : 1 }}>
-                    <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <button type="button" style={s.addPhotos} onClick={() => addSection('highlight')}>+ Add a Highlight section</button>
 
           <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Cake photos</div>
           <div style={s.galleryList}>
@@ -455,7 +453,9 @@ const s = {
   fontList: { display: 'flex', flexDirection: 'column', gap: 8 },
   fontBtn:  { padding: '10px 14px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', color: '#2C4433', fontSize: 15, fontWeight: 600, cursor: 'pointer', textAlign: 'left' },
   sectionMgr: { display: 'flex', flexDirection: 'column', gap: 6 },
-  sectionRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 9, border: '1px solid #E3E8E4', background: '#fff' },
+  sectionCard: { borderRadius: 9, border: '1px solid #E3E8E4', background: '#fff' },
+  sectionRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px' },
+  hlEditor:  { display: 'flex', flexDirection: 'column', gap: 6, padding: '0 10px 10px' },
   sectionToggle: { display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, fontWeight: 700, color: '#2C4433', cursor: 'pointer' },
   moveBtn:  { width: 28, height: 28, borderRadius: 7, border: '1px solid #D9DED9', background: '#F8FBF9', color: '#2C4433', fontSize: 14, lineHeight: 1, cursor: 'pointer' },
   hlHint:   { fontSize: 11.5, fontWeight: 500, color: '#6B8C74', lineHeight: 1.5, margin: '0 0 10px' },
