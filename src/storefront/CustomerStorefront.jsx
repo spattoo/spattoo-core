@@ -216,19 +216,18 @@ export default function CustomerStorefront({
   // For the Standard curved-band hero the brand tint flows up THROUGH the header (logo on the
   // pink, like Honeybear) — so the header + phone bar adopt the band colour and lose their seam.
   const isCurveHero = useFramedHero;
-  const bandTint = pal.bandStrong;   // header/utilbar adopt the hero band colour in curve mode
   const wide = bp !== 'mobile';
-  const headerText = isCurveHero ? pal.onBand : darken(primary, 0.12);   // on the band → adaptive on-band colour
+  const headerText = darken(primary, 0.12);   // header/nav sit on a LIGHT bar (band starts below the logo)
   const bandTints = [pal.bandSoftA, pal.bandSoftB];   // the two tone-on-tone section bands
 
   return (
     <div style={s.page} ref={rootRef}>
       <style>{interactionCss}</style>
       {phone && (
-        <div style={{ ...s.utilbar, ...(isCurveHero ? { background: bandTint, color: pal.onBand } : {}) }}><PhoneIcon size={13} color={isCurveHero ? pal.onBand : darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={{ ...s.utilLink, ...(isCurveHero ? { color: pal.onBand } : {}) }}>{phone}</a></div>
+        <div style={s.utilbar}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
       )}
 
-      <header style={{ ...s.header, ...(isCurveHero ? { background: bandTint, borderBottom: 'none', backdropFilter: 'none', position: 'relative' } : {}) }}>
+      <header style={{ ...s.header, ...(isCurveHero ? { position: 'relative' } : {}) }}>
         <div style={{ ...s.brand, ...(wide ? { flex: 1 } : {}) }}>
           {logo
             ? <img src={logo} alt={baker.name} style={s.logoImg} />
@@ -312,6 +311,7 @@ export default function CustomerStorefront({
               Headline + the ivory 3D cake sit on the colour (cake floats, transparent canvas). */}
           <div style={s.curveBand}>
             <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
+            {txt('hero_subtitle') && <p style={s.curveSub}>{txt('hero_subtitle')}</p>}
             <div style={s.curveCake}>
               <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
             </div>
@@ -763,6 +763,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     curveHero:  { background: pageBg },
     curveBand:  { position: 'relative', background: bandStrong, padding: wide ? '54px 24px 80px' : '40px 22px 66px', textAlign: 'center' },
     curveTitle: { fontFamily: SERIF, fontSize: wide ? 34 : 26, fontWeight: 700, color: pal.heroText, margin: '0 auto', lineHeight: 1.2, letterSpacing: 0.2, maxWidth: 560, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
+    curveSub:   { fontSize: 15, fontWeight: 600, color: alpha(pal.onBand, 0.96), margin: '10px auto 0', lineHeight: 1.55, maxWidth: 440, textAlign: 'center' },
     curveWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: wide ? 70 : 48, display: 'block' },
     curveBody:  { maxWidth: cw, margin: '0 auto', padding: '18px 22px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 },
     curveCake:  { width: '100%', maxWidth: 340, margin: '4px auto -6px' },
