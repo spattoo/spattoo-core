@@ -88,13 +88,6 @@ export const TEMPLATES = {
     defaults: { primary: '#5B3A29', accent: '#C8945B', ctaColor: '#3A281C' },   // chocolate/caramel + dark hero text
     controls: DEFAULT_CONTROLS,
   },
-  // TEMP DEMO (uncommitted-intent) — proves BOTH registries: hero.type:'none' → no hero, and a SUBSET
-  // controls list → the customiser shows only Brand colours + Sections. Data only. Remove after demo.
-  demoNone: {
-    key: 'demoNone', label: 'Demo — no hero', tokens: { ...SPOTLIGHT_TOKENS, hero: { type: 'none' } },
-    defaults: { primary: '#9FA28B', accent: '#A3AB9B', ctaColor: '#EAEBE5' },
-    controls: ['brandColors', 'sections'],
-  },
 };
 
 // Resolve a baker's chosen template key to a built template. Unknown / missing → the baseline,

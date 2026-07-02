@@ -215,9 +215,6 @@ if (settingsPreview) {
       { id: 1, key: 'spotlight',  name: 'Spotlight',  description: 'A dramatic dark hero with a spotlit, rotating 3D cake. Bold and modern.', is_active: true },
       { id: 2, key: 'patisserie', name: 'Patisserie', description: 'A light, elegant editorial layout that lets your cakes lead.',           is_active: false },
       { id: 3, key: 'aurora',     name: 'Aurora',     description: 'Soft, airy and colourful — a bright, welcoming storefront.',              is_active: true },
-      // TEMP DEMO (uncommitted) — selecting this shows Phase 1 (no hero) + Phase 3 (only the
-      // Brand-colours + Sections controls, because demoNone.controls is a subset). Remove after demo.
-      { id: 4, key: 'demoNone',   name: 'Demo — no hero', description: 'Registry demo: no hero + subset of controls.',                        is_active: true },
     ] }),
     updateBakerSettings: async () => ({ ok: true }),
     updateBakerProfile:  async () => ({ ok: true }),
