@@ -214,29 +214,52 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [paymentsInfo,   setPaymentsInfo]   = useState(null);   // { payments:[latest], total }
   const [plans,          setPlans]          = useState([]);     // DB plan catalog (GET /api/plans)
 
+  // Refetch the MUTABLE billing data (status / history / entitlements / latest payment) — the server
+  // is the source of truth. Called on open AND after every mutation so the WHOLE panel reconciles,
+  // instead of drifting on partial optimistic updates (a stale cancel notice after resubscribe, a
+  // subscription-history that never refreshes). periods + plans are a static catalog → loaded once.
+  async function reload() {
+    const [b, h, ent, pay] = await Promise.all([
+      apiClient.fetchBillingStatus(),
+      apiClient.fetchSubscriptionHistory().catch(() => []),
+      apiClient.fetchEntitlements ? apiClient.fetchEntitlements().catch(() => null) : Promise.resolve(null),
+      apiClient.fetchLatestPayment ? apiClient.fetchLatestPayment().catch(() => null) : Promise.resolve(null),
+    ]);
+    setBilling(b);
+    setHistory(h);
+    setEntitlements(ent);
+    setPaymentsInfo(pay);
+    setSelectedTier(b.tier ?? 'spark');
+    if (b.billing_period) setSelectedPeriod(inferPeriodType(b.billing_period));
+    return b;
+  }
+
+  // After a Checkout success the subscription.activated webhook processes ASYNCHRONOUSLY, so the
+  // first refetch can still read 'pending'. Poll a few times until it settles (then give up quietly —
+  // a later open reconciles). Runs in the background; it never blocks the UI.
+  async function reloadUntilSettled(tries = 5, delayMs = 1500) {
+    for (let i = 0; i < tries; i++) {
+      const b = await reload().catch(() => null);
+      if (b && b.status !== 'pending') return;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
   useEffect(() => {
     if (!open) return;
     setLoading(true); setError(null);
     Promise.all([
-      apiClient.fetchBillingStatus(),
-      apiClient.fetchSubscriptionHistory().catch(() => []),
       apiClient.fetchBillingPeriods().catch(() => []),
-      apiClient.fetchEntitlements ? apiClient.fetchEntitlements().catch(() => null) : Promise.resolve(null),
-      apiClient.fetchLatestPayment ? apiClient.fetchLatestPayment().catch(() => null) : Promise.resolve(null),
       apiClient.fetchPlans ? apiClient.fetchPlans().catch(() => []) : Promise.resolve([]),
+      reload(),
     ])
-      .then(([b, h, p, ent, pay, pl]) => {
-        setBilling(b);
-        setHistory(h);
+      .then(([p, pl]) => {
         setPeriods(p);
-        setEntitlements(ent);
-        setPaymentsInfo(pay);
         setPlans(Array.isArray(pl) ? pl : []);
-        setSelectedTier(b.tier ?? 'spark');
-        if (b.billing_period) setSelectedPeriod(inferPeriodType(b.billing_period));
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   async function handleSubscribe() {
@@ -244,7 +267,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
     try {
       if (selectedTier === 'spark') {
         await apiClient.activateSparkPlan();
-        setBilling(b => ({ ...b, status: 'active', tier: 'spark' }));
+        await reload();
         return;
       }
       const periodObj = periods.find(p => inferPeriodType(p.display_name) === selectedPeriod) ?? periods[0];
@@ -252,7 +275,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
 
       if (data.mock || !data.key_id) {
         // TODO: remove this branch once Razorpay is live — open checkout instead
-        setBilling(b => ({ ...b, status: 'active', tier: selectedTier }));
+        await reload();
       } else {
         if (!window.Razorpay) {
           await new Promise((resolve, reject) => {
@@ -266,7 +289,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
           const rzp = new window.Razorpay({
             key: data.key_id, subscription_id: data.subscription_id,
             name: 'Spattoo', theme: { color: primaryColor },
-            handler: () => { setBilling(b => ({ ...b, status: 'active', tier: selectedTier })); resolve(); },
+            handler: () => { resolve(); reloadUntilSettled(); },   // reconcile from the server (webhook is async)
             modal: { ondismiss: resolve },
           });
           rzp.open();
@@ -285,8 +308,9 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
     setCancelling(true); setError(null);
     try {
       await apiClient.cancelSubscription();
-      // Cancel-at-period-end: the plan stays active until end_date, it just won't renew.
-      setBilling(b => ({ ...b, cancel_at_period_end: true }));
+      // Re-fetch authoritative state so the WHOLE panel reconciles (top card + history), not just a
+      // local flag flip. cancelSubscription already set cancel_at_period_end server-side.
+      await reload();
     } catch (e) { setError(e.message); }
     finally { setCancelling(false); }
   }
@@ -398,13 +422,15 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   <StatusBadge status={billing.status} />
                 </div>
 
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <div style={{ fontSize: 11, color: cancelScheduled ? '#DC2626' : '#9BB5A2', fontWeight: cancelScheduled ? 700 : 500 }}>
-                    {cancelScheduled
-                      ? "Cancellation scheduled — you'll keep access until this period ends."
-                      : "You'll keep access until the end of this billing period."}
-                  </div>
-                  {!cancelScheduled && (
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: cancelScheduled ? 'flex-start' : 'flex-end', gap: 12 }}>
+                  {cancelScheduled ? (
+                    // Grace notice — ONLY after a standalone cancellation (cancel_at_period_end).
+                    // An upgrade supersedes the old plan instead of setting this flag, so this never
+                    // shows in the upgrade case. Active plans show just the Cancel button (no pre-hint).
+                    <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 700 }}>
+                      Cancellation scheduled — you'll keep access until this period ends.
+                    </div>
+                  ) : (
                     <button
                       onClick={handleCancel}
                       disabled={cancelling}
