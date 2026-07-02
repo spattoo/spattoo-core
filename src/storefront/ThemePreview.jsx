@@ -61,25 +61,30 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   useEffect(() => {
     if (!open) { setReady(false); return; }   // reset so each open shows the loader until synced
-    const syncId = value?.storefront_theme_id ?? themes[0]?.id ?? 1;
-    const syncDefaults = templateDefaultsFor(syncId);
-    setThemeId(syncId);
-    setPrimary(value?.primary_color || syncDefaults.primary || '#2C4433');
-    setAccent(value?.accent_color || syncDefaults.accent || '#6B8C74');
-    setPublished(!!value?.storefront_published);
-    setCustomizations(value?.storefront_customizations || {});
-    setPortraitUrl(value?.portrait_url || null);
-    setPortraitKey(undefined);
-    setGalleryDirty(false);
+    // Sync the pickers from `value`, guarded — a throw here must NEVER leave the preview stuck on the
+    // loader (ready would never flip). Any failure is logged, not swallowed silently.
+    try {
+      const syncId = value?.storefront_theme_id ?? themes[0]?.id ?? 1;
+      const syncDefaults = templateDefaultsFor(syncId);
+      setThemeId(syncId);
+      setPrimary(value?.primary_color || syncDefaults.primary || '#2C4433');
+      setAccent(value?.accent_color || syncDefaults.accent || '#6B8C74');
+      setPublished(!!value?.storefront_published);
+      setCustomizations(value?.storefront_customizations || {});
+      setPortraitUrl(value?.portrait_url || null);
+      setPortraitKey(undefined);
+      setGalleryDirty(false);
+      setTestimonialsDirty(false);
+    } catch (e) { console.error('[ThemePreview] value sync failed', e); }
     // Render the storefront only AFTER the gallery photos have loaded — otherwise it first paints the
-    // no-photos state (dark 3D hero + "coming soon") then swaps to the framed hero once photos arrive.
+    // no-photos state then swaps once photos arrive. Promise.resolve() so a missing/non-promise
+    // fetchStorefrontPhotos can't throw synchronously and strand the gate — ready ALWAYS flips.
     setReady(false);
-    apiClient?.fetchStorefrontPhotos?.()
+    Promise.resolve(apiClient?.fetchStorefrontPhotos?.())
       .then(r => setGallery((r?.photos || []).map((p, i) => ({ id: p.id || `e${i}`, key: p.key, url: p.url, caption: p.caption || '' }))))
       .catch(() => setGallery([]))
       .finally(() => setReady(true));
-    setTestimonialsDirty(false);
-    apiClient?.fetchTestimonials?.()
+    Promise.resolve(apiClient?.fetchTestimonials?.())
       .then(r => setTestimonials((r?.testimonials || []).map((t, i) => ({ id: t.id || `e${i}`, quote: t.quote || '', author: t.author || '', occasion: t.occasion || '' }))))
       .catch(() => setTestimonials([]));
   }, [open]);
