@@ -22,6 +22,24 @@ export function alpha(hex, a) { const [r, g, b] = parse(hex); return `rgba(${r},
 export function lum(hex) { const [r, g, b] = parse(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
 export const onColor = hex => (lum(hex) > 0.6 ? '#241a1d' : '#ffffff');
 
+// SEC-16 — allow only http(s) at an href sink for a stored, baker-controlled URL (e.g. website_url).
+// React escapes the string but does NOT block dangerous schemes, so `javascript:`/`data:`/`vbscript:`
+// on an href would still execute on click. Returns the URL if it's an absolute http(s) URL, else null
+// (caller then omits the link). Relative/garbage URLs → null (website_url should be absolute anyway).
+// Mirror of the server-side guard in spattoo-api (src/lib/safeUrl.js) — the two runtimes can't share
+// one module, so keep them in sync. (Hardcoded-scheme links — tel:, https://instagram.com/… — are
+// safe by construction and don't go through this.)
+export function safeHref(url) {
+  if (typeof url !== 'string') return null;
+  const v = url.trim();
+  try {
+    const u = new URL(v);
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Storefront palette ──────────────────────────────────────────────────────────
 // SINGLE SOURCE OF TRUTH for every brand-derived colour on the storefront. Colour work is highly
 // iterative, so ALL the tunable numbers live here — change one and the whole page follows; no

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
-import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
+import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
@@ -182,6 +182,7 @@ export default function CustomerStorefront({
   // end-to-end (Feelings & Flavours has no story/portrait on its record yet).
   const story    = baker.story || SAMPLE_STORY;
   const portrait = baker.portrait_url || null;   // a real baker photo; placeholder glyph otherwise
+  const websiteHref = safeHref(baker.website_url);   // SEC-16 — https/http only; null → no link rendered
 
   const nav = [
     { label: 'Gallery', href: '#gallery' },
@@ -468,11 +469,11 @@ export default function CustomerStorefront({
       })()}
 
       <footer id="contact" style={s.footer}>
-        {(phone || ig || baker.website_url) && (
+        {(phone || ig || websiteHref) && (
           <div style={s.footerLinks}>
             {phone && <a href={`tel:${phone}`} style={s.footerLink}><PhoneIcon size={13} color={lighten(accent, 0.1)} style={{ verticalAlign: '-2px', marginRight: 5 }} />{phone}</a>}
             {ig && <a style={s.footerLink} href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer">@{ig}</a>}
-            {baker.website_url && <a style={s.footerLink} href={baker.website_url} target="_blank" rel="noreferrer">Website</a>}
+            {websiteHref && <a style={s.footerLink} href={websiteHref} target="_blank" rel="noreferrer">Website</a>}
           </div>
         )}
         <div style={s.madeWith}>Made with Spattoo</div>
