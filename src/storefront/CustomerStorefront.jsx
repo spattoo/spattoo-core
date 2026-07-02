@@ -216,12 +216,14 @@ export default function CustomerStorefront({
   // explicit wide/lifestyle hero image. (The old dark "designer" hero fallback was removed — it was
   // the thing that reappeared when a baker had no gallery photos.)
   const heroImage = baker.storefront_customizations?.hero_image || null;   // baker-set wide/lifestyle hero photo
-  const gradientHero = tokens.heroTreatment === 'gradient';   // aurora: full-bleed gradient split hero
-  const useFramedHero = !heroImage;
-  // For the Standard curved-band hero the brand tint flows up THROUGH the header (logo on the
-  // pink, like Honeybear) — so the header + phone bar adopt the band colour and lose their seam.
-  // The gradient hero (aurora) keeps its own light header — no brand band through it.
-  const isCurveHero = useFramedHero && !gradientHero;
+  // HERO TYPE (Phase 1 — pluggable heroes): a baker's wide hero photo overrides to the 'photo' hero;
+  // otherwise the TEMPLATE declares its hero (tokens.hero.type; default 'centered-cake'). The renderer
+  // dispatches through HERO_RENDERERS below — adding a hero is a new renderer + a template `hero.type`,
+  // never a branch here. 'none' → no hero (just header + sections).
+  const heroType = heroImage ? 'photo' : (tokens.hero?.type ?? 'centered-cake');
+  // The brand tint flows up THROUGH the header only for the centred-cake (curve) hero — the logo sits
+  // on the pink. Gradient / photo / none keep their own light header.
+  const isCurveHero = heroType === 'centered-cake';
   const wide = bp !== 'mobile';
   const headerText = darken(primary, 0.12);   // header/nav sit on a LIGHT bar (band starts below the logo)
   const bandTints = [pal.bandSoftA, pal.bandSoftB];   // the two tone-on-tone section bands
@@ -277,115 +279,11 @@ export default function CustomerStorefront({
         </div>
       )}
 
-      {/* ── HERO ── two distinct treatments: the 3D "design your own" cake (dark, full-bleed)
-          OR the baker's featured creation, FRAMED beside the tagline/CTA. A product cake photo
-          can't be a full-bleed crop, so the photo hero gets its own (light, contained) layout. */}
-      {useFramedHero && gradientHero ? (
-        // GRADIENT hero (aurora): a soft warm cream wash with the message + CTA in a LEFT column,
-        // and one BIG rotating chocolate cake anchored to the right that bleeds off the edge (only
-        // ~half visible) — a bold, distinct look vs Standard's centred band/wave. No brand band.
-        <section style={s.gradHero}>
-          <div style={s.gradInner}>
-            <div style={s.gradText}>
-              <h1 style={s.gradTitle}>{txt('hero_tagline')}</h1>
-              <p style={s.gradSub}>{txt('hero_subtitle')}</p>
-              {expired ? (
-                <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
-              ) : (
-                <button type="button" className="sf-cta" disabled={notAcceptingOrders}
-                  style={{ ...s.gradCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                  onClick={handleCta}>
-                  {notAcceptingOrders ? 'Not taking new orders' : designLabel}
-                </button>
-              )}
-            </div>
-          </div>
-          {/* Big cake, anchored right and pushed off-edge so only ~half shows (section clips it).
-              Draggable to rotate; NO studio grid so it floats cleanly on the gradient. */}
-          <div style={s.gradMedia}>
-            <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : 400} spin={0.4} drip dripColor={pal.drip} />
-          </div>
-        </section>
-      ) : useFramedHero ? (
-        wide ? (
-          // SPLIT hero (tablet/desktop): message + CTA left, one large featured cake right, on the
-          // brand-tinted band with the signature wavy bottom. Fills the width; single focal cake.
-          <section style={s.curveHero}>
-            <div style={s.splitBand}>
-              <div style={s.splitInner}>
-                <div style={s.splitText}>
-                  <h1 style={s.splitTitle}>{txt('hero_tagline')}</h1>
-                  <p style={s.splitSub}>{txt('hero_subtitle')}</p>
-                  {expired ? (
-                    <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
-                  ) : (
-                    <button type="button" className="sf-cta" disabled={notAcceptingOrders}
-                      style={{ ...s.splitCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                      onClick={handleCta}>
-                      {notAcceptingOrders ? 'Not taking new orders' : designLabel}
-                    </button>
-                  )}
-                </div>
-                <div style={s.splitMedia}>
-                  {/* Live 3D cake floating on the band (transparent canvas) — no white card, and it
-                      renders in the theme's cake colour (ivory here). On-brand "design your own". */}
-                  <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
-                </div>
-              </div>
-              <svg style={s.splitWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
-                <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
-              </svg>
-            </div>
-          </section>
-        ) : (
-        <section style={s.curveHero}>
-          {/* Brand-tinted band with a curved (SVG wave) bottom — the signature soft-curve hero.
-              Headline + the ivory 3D cake sit on the colour (cake floats, transparent canvas). */}
-          <div style={s.curveBand}>
-            <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
-            {txt('hero_subtitle') && <p style={s.curveSub}>{txt('hero_subtitle')}</p>}
-            <div style={s.curveCake}>
-              <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
-            </div>
-            <svg style={s.curveWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
-              <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
-            </svg>
-          </div>
-          <div style={s.curveBody}>
-            {expired ? (
-              <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
-            ) : (
-              <button type="button" className="sf-cta" disabled={notAcceptingOrders}
-                style={{ ...s.curveCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                onClick={handleCta}>
-                {notAcceptingOrders ? 'Not taking new orders' : designLabel}
-              </button>
-            )}
-          </div>
-        </section>
-        )
-      ) : (
-        // Full-bleed hero — only when the baker set an explicit wide/lifestyle hero image.
-        <section style={s.hero}>
-          <div style={{ ...s.heroCake, backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={baker.name} />
-          <div style={s.heroScrim} />
-          <div style={s.heroFade} />
-          <div style={s.heroContent}>
-            <div><h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1></div>
-            <div style={s.heroBottom}>
-              {expired ? (
-                <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
-              ) : (
-                <button type="button" disabled={notAcceptingOrders}
-                  style={{ ...s.heroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                  onClick={handleCta}>
-                  {notAcceptingOrders ? 'Not taking new orders' : designLabel}
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* ── HERO ── the template picks the type (tokens.hero.type); a baker hero photo overrides to
+          the photo hero. ONE dispatch through the registry — no per-type branch here. */}
+      {(HERO_RENDERERS[heroType] ?? HERO_RENDERERS['centered-cake'])({
+        s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroImage,
+      })}
 
       {/* Body = ordered, toggleable sections (storefront_customizations.sections). Wavy bands
           alternate tint/wave by their position among the wavy sections, so reorder/toggle stays
@@ -715,6 +613,124 @@ function Centered({ children, rootRef }) {
     </div>
   );
 }
+
+// ── Hero renderers (Phase 1 — pluggable heroes) ─────────────────────────────────────────────────
+// Each renders the hero <section> for ONE hero type, from a shared ctx (the storefront's locals). The
+// template picks the type via tokens.hero.type; a baker hero photo overrides to 'photo'. Adding a hero
+// = a new function here + a HERO_RENDERERS entry + a template's `hero.type`. No branch in the renderer.
+// The message + CTA in a LEFT column, a big rotating cake bleeding off the right on a soft gradient.
+function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide }) {
+  return (
+    <section style={s.gradHero}>
+      <div style={s.gradInner}>
+        <div style={s.gradText}>
+          <h1 style={s.gradTitle}>{txt('hero_tagline')}</h1>
+          <p style={s.gradSub}>{txt('hero_subtitle')}</p>
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.gradCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+            </button>
+          )}
+        </div>
+      </div>
+      {/* Big cake, anchored right and pushed off-edge so only ~half shows (section clips it).
+          Draggable to rotate; NO studio grid so it floats cleanly on the gradient. */}
+      <div style={s.gradMedia}>
+        <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : 400} spin={0.4} drip dripColor={pal.drip} />
+      </div>
+    </section>
+  );
+}
+// The signature centred cake on a brand-tinted band with a wavy bottom (split on wide, stacked curve
+// on mobile). The 3D cake floats on the band (transparent canvas) inside the studio grid.
+function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg }) {
+  return wide ? (
+    <section style={s.curveHero}>
+      <div style={s.splitBand}>
+        <div style={s.splitInner}>
+          <div style={s.splitText}>
+            <h1 style={s.splitTitle}>{txt('hero_tagline')}</h1>
+            <p style={s.splitSub}>{txt('hero_subtitle')}</p>
+            {expired ? (
+              <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+            ) : (
+              <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                style={{ ...s.splitCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                onClick={handleCta}>
+                {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+              </button>
+            )}
+          </div>
+          <div style={s.splitMedia}>
+            <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+          </div>
+        </div>
+        <svg style={s.splitWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
+        </svg>
+      </div>
+    </section>
+  ) : (
+    <section style={s.curveHero}>
+      <div style={s.curveBand}>
+        <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
+        {txt('hero_subtitle') && <p style={s.curveSub}>{txt('hero_subtitle')}</p>}
+        <div style={s.curveCake}>
+          <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+        </div>
+        <svg style={s.curveWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
+        </svg>
+      </div>
+      <div style={s.curveBody}>
+        {expired ? (
+          <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+        ) : (
+          <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+            style={{ ...s.curveCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+            onClick={handleCta}>
+            {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+// Full-bleed baker lifestyle photo with the tagline + CTA overlaid.
+function photoHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, heroImage }) {
+  return (
+    <section style={s.hero}>
+      <div style={{ ...s.heroCake, backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={baker.name} />
+      <div style={s.heroScrim} />
+      <div style={s.heroFade} />
+      <div style={s.heroContent}>
+        <div><h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1></div>
+        <div style={s.heroBottom}>
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" disabled={notAcceptingOrders}
+              style={{ ...s.heroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+// The registry — template `hero.type` (or a baker photo) selects one. 'none' → no hero (just sections).
+const HERO_RENDERERS = {
+  'gradient-cake': gradientCakeHero,
+  'centered-cake': centeredCakeHero,
+  'photo':         photoHero,
+  'none':          () => null,
+};
 
 function styles(primary, accent, tk, bp = 'mobile', pal) {
   // Template design tokens (tk) supply the look; the baker's primary/accent overlay. FONT/SERIF

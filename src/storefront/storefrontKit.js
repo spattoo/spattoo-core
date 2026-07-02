@@ -78,7 +78,7 @@ export function buildPalette(primary, accent, tk = {}, opts = {}) {
     gridOpacity: 0.5,
     // Gradient-hero derived surfaces (see above) — all move with the pickers.
     heroTop,
-    heroGradient: tk.heroTreatment === 'gradient' ? `linear-gradient(120deg, ${heroTop} 0%, ${lighten(accent, 0.55)} 100%)` : null,
+    heroGradient: tk.hero?.type === 'gradient-cake' ? `linear-gradient(120deg, ${heroTop} 0%, ${lighten(accent, 0.55)} 100%)` : null,
     heroInk:      opts.ctaColor || onColor(heroTop),
     // Text / actions
     onBand:   onColor(bandStrong),       // header/nav ON the band — white on dark, dark on light

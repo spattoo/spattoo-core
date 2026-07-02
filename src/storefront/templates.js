@@ -30,6 +30,8 @@ const SPOTLIGHT_TOKENS = {
   // The dark hero/footer "ink" is mixed FROM the baker's primary; inkMix lets a template
   // retune that mix (towards a warmer/cooler/darker tone) as pure data.
   inkMix:       { with: '#3a363a', amount: 0.74 },
+  // HERO: the signature centred cake on a brand-tinted band with a wavy bottom (split on wide).
+  hero:         { type: 'centered-cake' },
   // DEFAULT palette — the designed sage/green that seeds the pickers when Spotlight is selected
   // (the starting point the baker tweaks from). The storefront still renders from the pickers.
   defaultPrimary:  '#9FA28B',                          // sage
@@ -37,13 +39,12 @@ const SPOTLIGHT_TOKENS = {
   defaultCtaColor: '#EAEBE5',                           // light hero/button text (on the dark band)
 };
 
-// `aurora` — a modern GRADIENT theme. Unlike spotlight (which overlays the baker's brand),
-// aurora ships its OWN curated palette (chocolate + caramel on warm cream) so it looks
-// designed out of the box; applying the baker's brand colours is opt-in
-// (storefront_customizations.use_brand_colors — a future toggle). `paletteMode: 'curated'`
-// tells the renderer to use brandPrimary/brandAccent below instead of the baker's colours.
-// `heroTreatment: 'gradient'` selects the full-bleed gradient split hero (message + CTA left,
-// rotating 3D cake right) — no brand band / wave. All values are DATA; the renderer is shared.
+// `aurora` — a modern GRADIENT theme (message + CTA left, a big rotating chocolate cake bleeding off
+// the right, on a soft warm gradient with a top-flush transparent header). `hero.type:'gradient-cake'`
+// selects the hero renderer from HERO_RENDERERS. Colours DERIVE from the pickers (gradient/cake/top all
+// computed in buildPalette) — moving a picker moves the design; the template supplies only the DEFAULT
+// palette below (chocolate/caramel), which the customiser seeds into the pickers on select. All DATA;
+// the renderer + customiser are shared.
 const AURORA_TOKENS = {
   font:         SANS,                                  // body — modern geometric sans
   serif:        SANS,                                  // headings also sans (heavy weight set in styles)
@@ -60,13 +61,13 @@ const AURORA_TOKENS = {
   shadow:       '0 14px 34px rgba(80,50,30,0.10)',
   contentWidth: 600,
   inkMix:       { with: '#2C1D13', amount: 0.70 },     // warm dark ink for footer/sections
-  // LAYOUT: full-bleed gradient hero, cake bleeding off the right (config-driven, not the colour).
-  heroTreatment: 'gradient',
-  // Hero layout KNOBS — all data, tunable per breakpoint as [mobile, tablet, desktop]. These keep the
-  // message clear of the cake: textWidth = the headline/CTA column; subMaxWidth caps the subtitle so it
-  // stays LEFT of the cake; cakeWidth + cakeRight size and bleed the cake off the right edge; minHeight
-  // sets the hero height. Change these numbers to retune the layout — no renderer change.
+  // HERO: `type` selects the renderer from HERO_RENDERERS (config-driven, no branch). The remaining
+  // keys are LAYOUT knobs for this hero, tunable per breakpoint as [mobile, tablet, desktop]: they keep
+  // the message clear of the cake — textWidth = the headline/CTA column; subMaxWidth caps the subtitle so
+  // it stays LEFT of the cake; cakeWidth + cakeRight size and bleed the cake off the right; minHeight is
+  // the hero height. Change these numbers to retune the layout — no renderer change.
   hero: {
+    type:        'gradient-cake',
     textWidth:   ['66%', '56%', '54%'],
     subMaxWidth: [230, 300, 320],
     cakeWidth:   [360, 520, 620],
