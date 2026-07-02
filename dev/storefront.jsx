@@ -40,18 +40,18 @@ function Preview() {
   const [ctaColor, setCtaColor] = useState('');   // '' = default (adaptive headline + primary button)
   // Seed the "picker" values from the selected template's DEFAULTS (mirrors what the customiser does
   // on theme select) — so aurora shows its chocolate/caramel defaults, spotlight its own.
-  const tplTokens = TEMPLATES[tpl]?.tokens || {};
+  const tplDefaults = TEMPLATES[tpl]?.defaults || {};
   const baker = {
     ...SAMPLE_BAKER,
-    primary_color: tplTokens.defaultPrimary || SAMPLE_BAKER.primary_color,
-    accent_color:  tplTokens.defaultAccent  || SAMPLE_BAKER.accent_color,
+    primary_color: tplDefaults.primary || SAMPLE_BAKER.primary_color,
+    accent_color:  tplDefaults.accent  || SAMPLE_BAKER.accent_color,
     storefront_theme: tpl,
     storefront_customizations: {
       ...SAMPLE_BAKER.storefront_customizations,
       // Full-bleed only when a wide hero image is set; otherwise the branded curve/split hero.
       hero_image: hero === 'fullbleed' ? '/sample-cake-1.png' : null,
       font_key: font,
-      ...((ctaColor || tplTokens.defaultCtaColor) ? { cta_color: ctaColor || tplTokens.defaultCtaColor } : {}),
+      ...((ctaColor || tplDefaults.ctaColor) ? { cta_color: ctaColor || tplDefaults.ctaColor } : {}),
       // Exercise the section-array + Highlight section (baker lever). Highlight sits after gallery.
       sections: [
         { type: 'gallery',   enabled: true },

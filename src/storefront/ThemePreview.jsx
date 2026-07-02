@@ -165,9 +165,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const selectTheme = (id) => {
     if (id === themeId) return;
     setThemeId(id);
-    const tok = TEMPLATES[themes.find(t => t.id === id)?.key]?.tokens;
-    if (tok?.defaultPrimary) { setPrimary(tok.defaultPrimary); setAccent(tok.defaultAccent); }
-    setText('cta_color', tok?.defaultCtaColor || '');
+    const def = TEMPLATES[themes.find(t => t.id === id)?.key]?.defaults;
+    if (def?.primary) { setPrimary(def.primary); setAccent(def.accent); }
+    setText('cta_color', def?.ctaColor || '');
   };
 
   // Sections lever — normalize to a concrete ordered list, then write the whole array back on edit.
