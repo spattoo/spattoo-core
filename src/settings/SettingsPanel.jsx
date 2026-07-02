@@ -541,6 +541,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         open={previewOpen}
         apiClient={apiClient}
         themes={themes}
+        appPrimary={primaryColor}
+        appAccent={accentColor}
         value={{
           storefront_theme_id: profile?.storefront_theme_id,
           primary_color: profile?.primary_color,

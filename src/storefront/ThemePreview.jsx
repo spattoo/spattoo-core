@@ -27,7 +27,7 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 //   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
 //   onClose     () => void
-export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, onPublish, onUnpublish, onClose }) {
+export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
   // A baker with no colour on file falls back to the SELECTED template's designed defaults (not a
@@ -407,7 +407,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {isWide && published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
-          <button type="button" style={{ ...s.publish, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy} onClick={publish}>
+          <button type="button" style={{ ...s.publish, background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})`, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy} onClick={publish}>
             {publishing ? 'Publishing…' : busy ? 'Uploading…' : published ? 'Update' : 'Publish'}
           </button>
         </div>
@@ -521,9 +521,9 @@ const s = {
   pillLive: { color: '#1B7A4B', background: '#E4F4EA' },
   pillDraft:{ color: '#9A6B16', background: '#FBF0DA' },
   unpublish:{ border: '1px solid #E3D3D3', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#9A4040' },
-  // App CHROME — fixed Spattoo green, NOT the baker's theme colour (the Publish button isn't part of
-  // the storefront design, so it must stay constant across themes).
-  publish:  { flexShrink: 0, border: 'none', borderRadius: 10, padding: '10px 20px', cursor: 'pointer', fontFamily: FONT, fontSize: 14, fontWeight: 800, color: '#fff', background: '#2C4433', boxShadow: '0 4px 14px rgba(0,0,0,0.18)', whiteSpace: 'nowrap' },
+  // App action button (like Save Settings) — coloured by the APP brand (appPrimary/appAccent props),
+  // NOT the baker's storefront theme. Background is applied inline from those props.
+  publish:  { flexShrink: 0, border: 'none', borderRadius: 10, padding: '10px 20px', cursor: 'pointer', fontFamily: FONT, fontSize: 14, fontWeight: 800, color: '#fff', boxShadow: '0 4px 14px rgba(0,0,0,0.18)', whiteSpace: 'nowrap' },
   unpublishLink: { display: 'block', width: '100%', marginTop: 14, padding: '11px', borderRadius: 10, border: '1px solid #E3D3D3', background: '#fff', color: '#9A4040', fontFamily: FONT, fontSize: 13.5, fontWeight: 700, cursor: 'pointer' },
   body:     { flex: 1, display: 'flex', minHeight: 0 },
   controls: { flexShrink: 0, background: '#fff', padding: '20px 20px 24px', overflowY: 'auto', boxSizing: 'border-box' },
