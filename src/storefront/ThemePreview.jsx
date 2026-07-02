@@ -30,9 +30,14 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, onPublish, onUnpublish, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
-  const [themeId, setThemeId] = useState(value?.storefront_theme_id ?? themes[0]?.id ?? 1);
-  const [primary, setPrimary] = useState(value?.primary_color || '#2C4433');
-  const [accent,  setAccent]  = useState(value?.accent_color  || '#6B8C74');
+  // A baker with no colour on file falls back to the SELECTED template's designed defaults (not a
+  // literal) — so a new Spotlight baker's pickers start on its sage palette, matching the storefront.
+  const templateDefaultsFor = (id) => TEMPLATES[themes.find(t => t.id === id)?.key || 'spotlight']?.defaults || {};
+  const initThemeId = value?.storefront_theme_id ?? themes[0]?.id ?? 1;
+  const initDefaults = templateDefaultsFor(initThemeId);
+  const [themeId, setThemeId] = useState(initThemeId);
+  const [primary, setPrimary] = useState(value?.primary_color || initDefaults.primary || '#2C4433');
+  const [accent,  setAccent]  = useState(value?.accent_color  || initDefaults.accent  || '#6B8C74');
   // Portrait: `portraitUrl` is what the preview shows (existing public URL, or a local object
   // URL after picking); `portraitKey` is the R2 key to persist (undefined = unchanged).
   const [portraitUrl, setPortraitUrl] = useState(value?.portrait_url || null);
@@ -56,9 +61,11 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   useEffect(() => {
     if (!open) { setReady(false); return; }   // reset so each open shows the loader until synced
-    setThemeId(value?.storefront_theme_id ?? themes[0]?.id ?? 1);
-    setPrimary(value?.primary_color || '#2C4433');
-    setAccent(value?.accent_color || '#6B8C74');
+    const syncId = value?.storefront_theme_id ?? themes[0]?.id ?? 1;
+    const syncDefaults = templateDefaultsFor(syncId);
+    setThemeId(syncId);
+    setPrimary(value?.primary_color || syncDefaults.primary || '#2C4433');
+    setAccent(value?.accent_color || syncDefaults.accent || '#6B8C74');
     setPublished(!!value?.storefront_published);
     setCustomizations(value?.storefront_customizations || {});
     setPortraitUrl(value?.portrait_url || null);

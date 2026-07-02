@@ -139,8 +139,11 @@ export default function CustomerStorefront({
   // template's palette (gradient, cake, band, ink) is DERIVED from these in buildPalette, so moving a
   // picker moves the whole design. A template only supplies DEFAULT colours (tokens.default*), which
   // the customiser seeds into the pickers when the template is selected — the starting point to tweak.
-  const primary = baker.primary_color || '#2C4433';
-  const accent  = baker.accent_color  || '#6B8C74';
+  // A baker with no saved colour falls back to the SELECTED template's designed defaults (e.g. a new
+  // Spotlight baker gets its sage band), not a hardcoded literal — the template's `defaults` is the
+  // single source of the starting palette. The literal is only a last resort if a template omits defaults.
+  const primary = baker.primary_color || template.defaults?.primary || '#2C4433';
+  const accent  = baker.accent_color  || template.defaults?.accent  || '#6B8C74';
   const ig      = baker.instagram_handle?.replace(/^@/, '');
   const phone   = baker.whatsapp || baker.whatsapp_number || baker.phone || null;
   const logo    = logoUrl || baker.logo_transparent_url || baker.logo_url;   // prefer the bg-removed logo (floats cleanly on any surface)
