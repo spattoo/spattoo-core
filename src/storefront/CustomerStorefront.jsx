@@ -149,7 +149,10 @@ export default function CustomerStorefront({
   const logo    = logoUrl || baker.logo_transparent_url || baker.logo_url;   // prefer the bg-removed logo (floats cleanly on any surface)
   const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback
 
-  const pal = buildPalette(primary, accent, tokens, { ctaColor: baker.storefront_customizations?.cta_color });   // one place to tune every colour
+  // Hero/button text: the baker's cta_color, else the TEMPLATE's default (e.g. Spotlight ships light
+  // #EAEBE5 for its sage band → white text). Only if a template omits it does buildPalette fall back to
+  // its own adaptive onColor(band).
+  const pal = buildPalette(primary, accent, tokens, { ctaColor: baker.storefront_customizations?.cta_color || template.defaults?.ctaColor });   // one place to tune every colour
   const s = styles(primary, accent, tokens, bp, pal);
   // Ordered, toggleable body sections (storefront_customizations.sections); absence → defaults.
   const sections = resolveSections(baker.storefront_customizations);

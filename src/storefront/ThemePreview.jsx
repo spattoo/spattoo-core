@@ -270,7 +270,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Brand colours</div>
       <Swatch label="Primary" value={primary} onChange={setPrimary} />
       <Swatch label="Accent"  value={accent}  onChange={setAccent} />
-      <Swatch label="Hero & button text" value={customizations.cta_color || primary} onChange={v => setText('cta_color', v)} />
+      <Swatch label="Hero & button text" value={customizations.cta_color || TEMPLATES[themeKey]?.defaults?.ctaColor || primary} onChange={v => setText('cta_color', v)} />
       <p style={s.hlHint}>Sets the headline, subtitle and button text. Buttons themselves use your band (primary) colour.</p>
     </>),
     font: () => (<>
