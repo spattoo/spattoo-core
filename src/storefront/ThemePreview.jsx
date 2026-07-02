@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import CustomerStorefront from './CustomerStorefront.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
+import { TEMPLATES } from './templates.js';
 
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
@@ -157,6 +158,18 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   const setText = (k, v) => setCustomizations(c => ({ ...c, [k]: v }));
 
+  // Selecting a template SEEDS the colour pickers from that template's DEFAULTS (the starting point
+  // the baker tweaks from). Only on an actual switch, so re-clicking the current theme never clobbers
+  // the baker's own tweaks. Templates without defaults (e.g. spotlight) keep the baker's brand colours;
+  // cta_color resets to the template's hero-text default (or '' = adaptive) so text stays readable.
+  const selectTheme = (id) => {
+    if (id === themeId) return;
+    setThemeId(id);
+    const tok = TEMPLATES[themes.find(t => t.id === id)?.key]?.tokens;
+    if (tok?.defaultPrimary) { setPrimary(tok.defaultPrimary); setAccent(tok.defaultAccent); }
+    setText('cta_color', tok?.defaultCtaColor || '');
+  };
+
   // Sections lever — normalize to a concrete ordered list, then write the whole array back on edit.
   const sectionList = resolveSections(customizations);
   const setSections = next => setCustomizations(c => ({ ...c, sections: next }));
@@ -277,7 +290,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               const sel = t.id === themeId, off = !t.is_active;
               return (
                 <button key={t.id} type="button" disabled={off}
-                  onClick={() => setThemeId(t.id)}
+                  onClick={() => selectTheme(t.id)}
                   style={{ ...s.themeBtn, borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1, opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
                   <span style={{ fontWeight: 800, color: '#2C4433', fontSize: 13.5 }}>{t.name}</span>
                   {off ? <span style={s.soon}>Soon</span> : sel ? <span style={{ color: primary, fontWeight: 800, fontSize: 12 }}>✓</span> : null}

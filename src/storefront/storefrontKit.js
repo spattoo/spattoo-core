@@ -40,6 +40,11 @@ export function buildPalette(primary, accent, tk = {}, opts = {}) {
   // SUBTITLE + BUTTON LABELS. Unset → adaptive (white on dark band, dark on light). The BUTTON
   // BACKGROUND is always the BAND colour, so the band and the buttons match.
   const heroText = opts.ctaColor || onColor(bandStrong);
+  // Gradient-hero (aurora) surfaces — DERIVED from the pickers so moving a picker moves the whole
+  // hero. heroTop = the light top tone (also the flush page/header surface); heroGradient = a soft
+  // top→deeper warm wash; heroInk = the headline/subtitle colour (cta_color picker, else dark on the
+  // light gradient). Only meaningful when the template opts into the gradient treatment.
+  const heroTop = lighten(accent, 0.82);
   return {
     // Backgrounds (light → strong)
     bandStrong,
@@ -47,11 +52,16 @@ export function buildPalette(primary, accent, tk = {}, opts = {}) {
     bandSoftB:  lighten(primary, 0.54),  // section band B (Reviews)
     // Lines
     hairline:   lighten(primary, 0.72),  // card / divider borders (tinted, replaces neutral)
-    // Hero 3D cake (HeroCake3D) — the featured cake colour + its studio grid + drip
-    cake:        '#E6D3AC',              // ivory (deliberately neutral so it pops on the band)
+    // Hero 3D cake (HeroCake3D) — the featured cake colour + its studio grid + drip. tk.cake='brand'
+    // → the cake takes the PRIMARY colour (follows the picker); a hex → that fixed colour; default ivory.
+    cake:        tk.cake === 'brand' ? primary : (tk.cake ?? '#E6D3AC'),
     drip:        darken(accent, 0.06),   // buttercream drip over the rim — the ACCENT pop
     grid:        '#ffffff',
     gridOpacity: 0.5,
+    // Gradient-hero derived surfaces (see above) — all move with the pickers.
+    heroTop,
+    heroGradient: tk.heroTreatment === 'gradient' ? `linear-gradient(120deg, ${heroTop} 0%, ${lighten(accent, 0.55)} 100%)` : null,
+    heroInk:      opts.ctaColor || onColor(heroTop),
     // Text / actions
     onBand:   onColor(bandStrong),       // header/nav ON the band — white on dark, dark on light
     heroText,                            // hero headline + subtitle + button labels (via cta_color)

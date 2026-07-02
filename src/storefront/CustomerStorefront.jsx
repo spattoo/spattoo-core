@@ -127,6 +127,18 @@ export default function CustomerStorefront({
   if (error)   return <Centered>{error}</Centered>;
   if (!baker)  return <Centered>Storefront unavailable</Centered>;
 
+  // Storefront template — resolve the baker's chosen key (Settings → Storefront Theme, returned
+  // by the public API as `storefront_theme`) to a built template; unknown/missing → the Standard
+  // baseline. The template supplies the DESIGN TOKENS. ONE renderer below, driven by tokens —
+  // new templates are data, not forked layouts.
+  const template = resolveTemplate(baker.storefront_theme);
+  // Baker font-theme lever (storefront_customizations.font_key) overlays the template's typography.
+  const tokens = applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
+
+  // COLOUR SOURCE = the baker's brand (the pickers), for EVERY template — full baker control. Each
+  // template's palette (gradient, cake, band, ink) is DERIVED from these in buildPalette, so moving a
+  // picker moves the whole design. A template only supplies DEFAULT colours (tokens.default*), which
+  // the customiser seeds into the pickers when the template is selected — the starting point to tweak.
   const primary = baker.primary_color || '#2C4433';
   const accent  = baker.accent_color  || '#6B8C74';
   const ig      = baker.instagram_handle?.replace(/^@/, '');
@@ -134,13 +146,6 @@ export default function CustomerStorefront({
   const logo    = logoUrl || baker.logo_transparent_url || baker.logo_url;   // prefer the bg-removed logo (floats cleanly on any surface)
   const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback
 
-  // Storefront template — resolve the baker's chosen key (Settings → Storefront Theme, returned
-  // by the public API as `storefront_theme`) to a built template; unknown/missing → the Standard
-  // baseline. The template supplies the DESIGN TOKENS; the baker's primary/accent overlay. ONE
-  // renderer below, driven by tokens — new templates are data, not forked layouts.
-  const template = resolveTemplate(baker.storefront_theme);
-  // Baker font-theme lever (storefront_customizations.font_key) overlays the template's typography.
-  const tokens = applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
   const pal = buildPalette(primary, accent, tokens, { ctaColor: baker.storefront_customizations?.cta_color });   // one place to tune every colour
   const s = styles(primary, accent, tokens, bp, pal);
   // Ordered, toggleable body sections (storefront_customizations.sections); absence → defaults.
@@ -158,7 +163,7 @@ export default function CustomerStorefront({
     .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
     .sf-gallery::-webkit-scrollbar { display: none; }
   `;
-  const pageBg = tokens.pageBg;   // exposed for inline SVG fills (the hero curve)
+  const pageBg = tokens.pageBgMode === 'heroTop' ? pal.heroTop : tokens.pageBg;   // aurora: derived cream top; else the fixed token. (exposed for inline SVG fills)
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
@@ -210,10 +215,12 @@ export default function CustomerStorefront({
   // explicit wide/lifestyle hero image. (The old dark "designer" hero fallback was removed — it was
   // the thing that reappeared when a baker had no gallery photos.)
   const heroImage = baker.storefront_customizations?.hero_image || null;   // baker-set wide/lifestyle hero photo
+  const gradientHero = tokens.heroTreatment === 'gradient';   // aurora: full-bleed gradient split hero
   const useFramedHero = !heroImage;
   // For the Standard curved-band hero the brand tint flows up THROUGH the header (logo on the
   // pink, like Honeybear) — so the header + phone bar adopt the band colour and lose their seam.
-  const isCurveHero = useFramedHero;
+  // The gradient hero (aurora) keeps its own light header — no brand band through it.
+  const isCurveHero = useFramedHero && !gradientHero;
   const wide = bp !== 'mobile';
   const headerText = darken(primary, 0.12);   // header/nav sit on a LIGHT bar (band starts below the logo)
   const bandTints = [pal.bandSoftA, pal.bandSoftB];   // the two tone-on-tone section bands
@@ -272,7 +279,33 @@ export default function CustomerStorefront({
       {/* ── HERO ── two distinct treatments: the 3D "design your own" cake (dark, full-bleed)
           OR the baker's featured creation, FRAMED beside the tagline/CTA. A product cake photo
           can't be a full-bleed crop, so the photo hero gets its own (light, contained) layout. */}
-      {useFramedHero ? (
+      {useFramedHero && gradientHero ? (
+        // GRADIENT hero (aurora): a soft warm cream wash with the message + CTA in a LEFT column,
+        // and one BIG rotating chocolate cake anchored to the right that bleeds off the edge (only
+        // ~half visible) — a bold, distinct look vs Standard's centred band/wave. No brand band.
+        <section style={s.gradHero}>
+          <div style={s.gradInner}>
+            <div style={s.gradText}>
+              <h1 style={s.gradTitle}>{txt('hero_tagline')}</h1>
+              <p style={s.gradSub}>{txt('hero_subtitle')}</p>
+              {expired ? (
+                <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+              ) : (
+                <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                  style={{ ...s.gradCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                  onClick={handleCta}>
+                  {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+                </button>
+              )}
+            </div>
+          </div>
+          {/* Big cake, anchored right and pushed off-edge so only ~half shows (section clips it).
+              Draggable to rotate; NO studio grid so it floats cleanly on the gradient. */}
+          <div style={s.gradMedia}>
+            <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : 400} spin={0.4} drip dripColor={pal.drip} />
+          </div>
+        </section>
+      ) : useFramedHero ? (
         wide ? (
           // SPLIT hero (tablet/desktop): message + CTA left, one large featured cake right, on the
           // brand-tinted band with the signature wavy bottom. Fills the width; single focal cake.
@@ -687,7 +720,8 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
   // shadow the module imports so the rest of styles() picks up the template's typography.
   const FONT = tk.font, SERIF = tk.serif;
   const ink = mix(primary, tk.inkMix.with, tk.inkMix.amount);  // soft warm-grey hero/footer
-  const { heading, text, muted, shadow, pageBg } = tk;
+  const { heading, text, muted, shadow } = tk;
+  const pageBg = tk.pageBgMode === 'heroTop' ? pal.heroTop : tk.pageBg;   // aurora: derived cream top surface
   // Brand-derived colours all come from the shared palette (storefrontKit → buildPalette) — the
   // single place to tune the tone-on-tone look. Aliased here so the style rules stay readable.
   const bandStrong = pal.bandStrong;   // hero + header band
@@ -697,12 +731,16 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
   // Responsive content width — a phone column on mobile, but USE the screen on bigger devices
   // (the storefront is customer-facing; it must not be a skinny strip on desktop).
   const cw = desktop ? 1040 : wide ? 760 : tk.contentWidth;
+  // Aurora gradient-hero layout knobs (config-driven, per breakpoint: [mobile, tablet, desktop]).
+  const hero = tk.hero || {};
+  const hIdx = desktop ? 2 : wide ? 1 : 0;
+  const hPick = (a, d) => (Array.isArray(a) ? a[hIdx] : a) ?? d;
   return {
     page:        { minHeight: '100vh', background: pageBg, fontFamily: FONT, color: text, display: 'flex', flexDirection: 'column' },
 
-    utilbar:     { background: lighten(primary, 0.9), color: darken(primary, 0.1), fontSize: 13.5, fontWeight: 700, textAlign: 'center', padding: '9px 16px' },
+    utilbar:     { background: tk.utilbarBg ?? lighten(primary, 0.9), color: darken(primary, 0.1), fontSize: 13.5, fontWeight: 700, textAlign: 'center', padding: '9px 16px' },
     utilLink:    { color: darken(primary, 0.1), textDecoration: 'none' },
-    header:      { position: 'sticky', top: 0, zIndex: 30, background: 'rgba(252,250,247,0.92)', backdropFilter: 'blur(8px)', borderBottom: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px' },
+    header:      { position: tk.headerBg === 'transparent' ? 'relative' : 'sticky', top: 0, zIndex: 30, background: tk.headerBg ?? 'rgba(252,250,247,0.92)', backdropFilter: tk.headerBg === 'transparent' ? 'none' : 'blur(8px)', borderBottom: `1px solid ${tk.headerBorderColor ?? cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px' },
     brand:       { display: 'flex', alignItems: 'center', gap: 10 },
     logoImg:     { height: wide ? 52 : 44, width: 'auto', maxWidth: wide ? 300 : 240, objectFit: 'contain', display: 'block' },
     logo:        { width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accent}`, background: '#fff' },
@@ -770,6 +808,28 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     splitMedia: { flex: '0 0 auto', width: desktop ? 440 : 340 },
     splitImg:   { width: '100%', aspectRatio: '4 / 5', objectFit: 'cover', borderRadius: 26, boxShadow: shadow, border: `1px solid ${cardBorder}`, background: '#fff', display: 'block' },
     splitWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: desktop ? 72 : 56, display: 'block', zIndex: 1 },
+
+    // Aurora GRADIENT hero: a soft warm cream wash (tk.heroGradient). The message + CTA sit in a
+    // contained LEFT column; one BIG rotating chocolate cake is anchored to the section's right and
+    // pushed off-edge so only ~half shows (the section clips it). Bold + distinct vs the Standard
+    // band/wave. The section is the positioning context; the cake bleeds past the screen edge.
+    // Content flows from near the TOP (not vertically centred) so the headline sits high, clear of
+    // the cake. gradInner is click-through (pointerEvents:none) so the cake behind stays draggable;
+    // gradText re-enables events for the CTA. The headline is sized to keep the default tagline on
+    // one line at each breakpoint.
+    gradHero:  { position: 'relative', overflow: 'hidden', background: pal.heroGradient || pageBg, minHeight: hPick(hero.minHeight, desktop ? 540 : wide ? 460 : 400), padding: wide ? '0 24px' : '0 20px', boxSizing: 'border-box' },
+    gradInner: { position: 'relative', zIndex: 2, width: '100%', maxWidth: cw, margin: '0 auto', paddingTop: wide ? 72 : 42, paddingBottom: wide ? 56 : 32, pointerEvents: 'none' },
+    // width = the message column (config); the headline fills it (one line), the subtitle is capped
+    // narrower (config) so it stays LEFT of the cake, never overlapping it.
+    gradText:  { pointerEvents: 'auto', width: hPick(hero.textWidth, wide ? '58%' : '90%'), maxWidth: 560, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 20 },
+    // Headline/subtitle colour = pal.heroInk (the Hero-text picker, else dark on the light gradient).
+    gradTitle: { fontFamily: SERIF, fontSize: desktop ? 46 : wide ? 36 : 26, fontWeight: 800, color: pal.heroInk, margin: 0, lineHeight: 1.08, letterSpacing: -0.5 },
+    gradSub:   { fontSize: desktop ? 17 : 15, fontWeight: 600, color: alpha(pal.heroInk, 0.82), margin: 0, lineHeight: 1.5, maxWidth: hPick(hero.subMaxWidth, 300) },
+    // Button bg = the brand (pal.cta); label ADAPTS to it (readable on any picked colour).
+    gradCta:   { padding: '16px 40px', borderRadius: 40, border: 'none', background: pal.cta, color: onColor(pal.cta), fontSize: 16.5, fontWeight: 800, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    // Anchored to the section's right and pushed off-screen (config negative right) → ~half shows.
+    // Interactive (draggable to rotate) — the click-through gradInner keeps it reachable.
+    gradMedia: { position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: hPick(hero.cakeRight, desktop ? -150 : wide ? -130 : -120), width: hPick(hero.cakeWidth, desktop ? 640 : wide ? 540 : 430), zIndex: 1 },
 
     main:        { maxWidth: cw, width: '100%', margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' },
     section:     { padding: wide ? '66px 0 8px' : '46px 0 6px' },

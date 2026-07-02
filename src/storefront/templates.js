@@ -30,10 +30,63 @@ const SPOTLIGHT_TOKENS = {
   // The dark hero/footer "ink" is mixed FROM the baker's primary; inkMix lets a template
   // retune that mix (towards a warmer/cooler/darker tone) as pure data.
   inkMix:       { with: '#3a363a', amount: 0.74 },
+  // DEFAULT palette — the designed sage/green that seeds the pickers when Spotlight is selected
+  // (the starting point the baker tweaks from). The storefront still renders from the pickers.
+  defaultPrimary:  '#9FA28B',                          // sage
+  defaultAccent:   '#A3AB9B',                          // muted green
+  defaultCtaColor: '#EAEBE5',                           // light hero/button text (on the dark band)
+};
+
+// `aurora` — a modern GRADIENT theme. Unlike spotlight (which overlays the baker's brand),
+// aurora ships its OWN curated palette (chocolate + caramel on warm cream) so it looks
+// designed out of the box; applying the baker's brand colours is opt-in
+// (storefront_customizations.use_brand_colors — a future toggle). `paletteMode: 'curated'`
+// tells the renderer to use brandPrimary/brandAccent below instead of the baker's colours.
+// `heroTreatment: 'gradient'` selects the full-bleed gradient split hero (message + CTA left,
+// rotating 3D cake right) — no brand band / wave. All values are DATA; the renderer is shared.
+const AURORA_TOKENS = {
+  font:         SANS,                                  // body — modern geometric sans
+  serif:        SANS,                                  // headings also sans (heavy weight set in styles)
+  brandFont:    SANS,                                  // modern wordmark (not the script) to match the gradient look
+  // Top-flush header: no white bar — the header + util strip are transparent so the cream/gradient
+  // shows from pixel 0. (spotlight leaves these unset → its opaque light header.)
+  headerBg:         'transparent',
+  headerBorderColor:'transparent',
+  utilbarBg:        'transparent',
+  heading:      '#3A281C',                             // body-section neutrals (below the hero)
+  text:         '#5A4636',
+  muted:        '#9C8A79',
+  cardBorder:   '#EFE4D6',
+  shadow:       '0 14px 34px rgba(80,50,30,0.10)',
+  contentWidth: 600,
+  inkMix:       { with: '#2C1D13', amount: 0.70 },     // warm dark ink for footer/sections
+  // LAYOUT: full-bleed gradient hero, cake bleeding off the right (config-driven, not the colour).
+  heroTreatment: 'gradient',
+  // Hero layout KNOBS — all data, tunable per breakpoint as [mobile, tablet, desktop]. These keep the
+  // message clear of the cake: textWidth = the headline/CTA column; subMaxWidth caps the subtitle so it
+  // stays LEFT of the cake; cakeWidth + cakeRight size and bleed the cake off the right edge; minHeight
+  // sets the hero height. Change these numbers to retune the layout — no renderer change.
+  hero: {
+    textWidth:   ['66%', '56%', '54%'],
+    subMaxWidth: [230, 300, 320],
+    cakeWidth:   [360, 520, 620],
+    cakeRight:   [-90, -120, -140],
+    minHeight:   [440, 460, 540],
+  },
+  // COLOUR = DERIVED FROM THE PICKERS (full baker control). The hero gradient, the 3D cake and the
+  // flush top surface are all computed from the baker's primary/accent in buildPalette — so moving a
+  // picker moves the whole design. The template only supplies the DEFAULTS below, which the
+  // customiser seeds into the pickers when Aurora is selected (the starting point to tweak from).
+  cake:        'brand',                                // 3D cake takes the PRIMARY colour (chocolate by default)
+  pageBgMode:  'heroTop',                              // page/top surface = the gradient's derived light top tone
+  defaultPrimary:  '#5B3A29',                          // chocolate  → seeds the Primary picker
+  defaultAccent:   '#C8945B',                          // caramel    → seeds the Accent picker
+  defaultCtaColor: '#3A281C',                          // dark hero text (gradient is light) → seeds Hero/button text
 };
 
 export const TEMPLATES = {
   spotlight: { key: 'spotlight', label: 'Standard', tokens: SPOTLIGHT_TOKENS },
+  aurora:    { key: 'aurora',    label: 'Aurora',   tokens: AURORA_TOKENS },
 };
 
 // Resolve a baker's chosen template key to a built template. Unknown / missing → the baseline,
