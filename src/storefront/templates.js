@@ -85,9 +85,17 @@ const AURORA_TOKENS = {
   defaultCtaColor: '#3A281C',                          // dark hero text (gradient is light) → seeds Hero/button text
 };
 
+// Which customiser controls a template exposes, in order (Phase 3). The customiser (ThemePreview)
+// renders the left panel from this list — a template omits it → DEFAULT_CONTROLS (all). This is how a
+// template hides irrelevant knobs (e.g. a photo-hero template would swap in a hero-photo uploader).
+export const DEFAULT_CONTROLS = ['brandColors', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
+
 export const TEMPLATES = {
-  spotlight: { key: 'spotlight', label: 'Standard', tokens: SPOTLIGHT_TOKENS },
-  aurora:    { key: 'aurora',    label: 'Aurora',   tokens: AURORA_TOKENS },
+  spotlight: { key: 'spotlight', label: 'Standard', tokens: SPOTLIGHT_TOKENS, controls: DEFAULT_CONTROLS },
+  aurora:    { key: 'aurora',    label: 'Aurora',   tokens: AURORA_TOKENS,    controls: DEFAULT_CONTROLS },
+  // TEMP DEMO (uncommitted) — proves BOTH registries: hero.type:'none' → no hero, and a SUBSET
+  // controls list → the customiser shows only Brand colours + Sections. Data only. Remove after demo.
+  demoNone:  { key: 'demoNone',  label: 'Demo — no hero', tokens: { ...SPOTLIGHT_TOKENS, hero: { type: 'none' } }, controls: ['brandColors', 'sections'] },
 };
 
 // Resolve a baker's chosen template key to a built template. Unknown / missing → the baseline,

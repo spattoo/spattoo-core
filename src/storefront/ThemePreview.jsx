@@ -253,6 +253,143 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     setPublished(false);
   }
 
+  // Phase 3 — the customiser's left panel is a REGISTRY. The current template declares which controls
+  // to show, and in what order (TEMPLATES[key].controls → DEFAULT_CONTROLS). Each control is a closure
+  // over the state above; the panel renders `templateControls.map(CONTROLS[k])`. Adding a control =
+  // a new entry here + the key in a template's `controls`. The Theme selector is always shown.
+  const templateControls = TEMPLATES[themeKey]?.controls ?? DEFAULT_CONTROLS;
+  const CONTROLS = {
+    brandColors: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Brand colours</div>
+      <Swatch label="Primary" value={primary} onChange={setPrimary} />
+      <Swatch label="Accent"  value={accent}  onChange={setAccent} />
+      <Swatch label="Hero & button text" value={customizations.cta_color || primary} onChange={v => setText('cta_color', v)} />
+      <p style={s.hlHint}>Sets the headline, subtitle and button text. Buttons themselves use your band (primary) colour.</p>
+    </>),
+    font: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Font</div>
+      <div style={s.fontList}>
+        {Object.values(FONT_THEMES).map(ft => {
+          const sel = (customizations.font_key || 'montserrat') === ft.key;
+          return (
+            <button key={ft.key} type="button" onClick={() => setText('font_key', ft.key)}
+              style={{ ...s.fontBtn, fontFamily: ft.serif, borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1 }}>
+              {ft.label}
+            </button>
+          );
+        })}
+      </div>
+    </>),
+    photo: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Your photo</div>
+      <label style={s.portraitRow}>
+        <div style={s.portraitThumb}>
+          {portraitUrl
+            ? <img src={portraitUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <span style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 700 }}>None</span>}
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>{uploadingPortrait ? 'Uploading…' : portraitUrl ? 'Change photo' : 'Upload photo'}</div>
+          <div style={{ fontSize: 11.5, color: '#9BB5A2', marginTop: 2 }}>Shows in “Our story”</div>
+        </div>
+        <input ref={portraitInputRef} type="file" accept="image/*" onChange={pickPortrait} style={{ display: 'none' }} />
+      </label>
+    </>),
+    text: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Text</div>
+      {TEXT_FIELDS.map(f => (
+        <div key={f.key} style={s.textRow}>
+          <label style={s.textLabel}>{f.label}</label>
+          <input value={customizations[f.key] ?? ''} placeholder={STOREFRONT_TEXT[f.key]} onChange={e => setText(f.key, e.target.value)} style={s.textInput} />
+        </div>
+      ))}
+    </>),
+    sections: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Sections</div>
+      <p style={s.hlHint}>Turn sections on/off and reorder them. Add one or more <b>Highlight</b> bands (e.g. “This week”) with their own image, text and button.</p>
+      <div style={s.sectionMgr}>
+        {sectionList.map((sec, i) => (
+          <div key={`${sec.type}-${i}`} style={s.sectionCard}>
+            <div style={s.sectionRow}>
+              <label style={s.sectionToggle}>
+                <input type="checkbox" checked={sec.enabled !== false} onChange={() => toggleSection(i)} />
+                <span>{sec.type === 'highlight' ? (sec.title?.trim() || 'Highlight') : (SECTION_LABELS[sec.type] || sec.type)}</span>
+              </label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveSection(i, -1)} style={{ ...s.moveBtn, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
+                <button type="button" aria-label="Move down" disabled={i === sectionList.length - 1} onClick={() => moveSection(i, 1)} style={{ ...s.moveBtn, opacity: i === sectionList.length - 1 ? 0.35 : 1 }}>↓</button>
+                {sec.type === 'highlight' && <button type="button" aria-label="Remove section" onClick={() => removeSection(i)} style={s.galleryRemove}>×</button>}
+              </div>
+            </div>
+            {sec.type === 'highlight' && (
+              <div style={s.hlEditor}>
+                <div style={s.hlEditorCap}>This highlight’s content</div>
+                <input value={sec.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setSectionField(i, 'title', e.target.value)} style={s.textInput} />
+                <textarea value={sec.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setSectionField(i, 'blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
+                <label style={s.textLabel}>Image — upload one, or pick from your cake photos</label>
+                <div style={s.hlImgRow}>
+                  <label style={s.hlUpload} title="Upload a photo">
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadSectionImage(i, e)} />
+                    {hlUploading === i ? '…' : '＋'}
+                  </label>
+                  <button type="button" onClick={() => setSectionField(i, 'image', '')} style={{ ...s.hlImgNone, borderColor: !sec.image ? primary : '#D9DED9' }}>None</button>
+                  {sec.image && !gallery.some(g => g.url === sec.image) && (
+                    <div style={{ ...s.hlImgThumb, borderColor: primary, borderWidth: 2 }}>
+                      <img src={sec.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                  {gallery.filter(g => g.url).map(g => (
+                    <button key={g.id} type="button" onClick={() => setSectionField(i, 'image', g.url)}
+                      style={{ ...s.hlImgThumb, borderColor: sec.image === g.url ? primary : 'transparent', borderWidth: sec.image === g.url ? 2 : 1 }}>
+                      <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <button type="button" style={s.addPhotos} onClick={() => addSection('highlight')}>+ Add a Highlight section</button>
+    </>),
+    gallery: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Cake photos</div>
+      <div style={s.galleryList}>
+        {gallery.map(g => (
+          <div key={g.id} style={s.galleryItem}>
+            <div style={s.galleryThumb}>
+              <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              {g.key === null && <div style={s.galleryUploading} />}
+            </div>
+            <input value={g.caption} onChange={e => setCaption(g.id, e.target.value)} placeholder="Caption (optional)" style={s.galleryCaption} />
+            <button type="button" aria-label="Remove" style={s.galleryRemove} onClick={() => removePhoto(g.id)}>×</button>
+          </div>
+        ))}
+      </div>
+      <label style={s.addPhotos}>
+        <input type="file" accept="image/*" multiple onChange={addPhotos} style={{ display: 'none' }} />
+        + Add photos
+      </label>
+    </>),
+    reviews: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Reviews</div>
+      <div style={s.reviewList}>
+        {testimonials.map(t => (
+          <div key={t.id} style={s.reviewItem}>
+            <textarea value={t.quote} placeholder="What the customer said…" rows={2}
+              onChange={e => setTestimonialField(t.id, 'quote', e.target.value)} style={s.reviewQuote} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input value={t.author} placeholder="Name" onChange={e => setTestimonialField(t.id, 'author', e.target.value)} style={s.reviewMeta} />
+              <input value={t.occasion} placeholder="Occasion" onChange={e => setTestimonialField(t.id, 'occasion', e.target.value)} style={s.reviewMeta} />
+              <button type="button" aria-label="Remove" style={s.galleryRemove} onClick={() => removeTestimonial(t.id)}>×</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <button type="button" style={s.addPhotos} onClick={addTestimonial}>+ Add review</button>
+    </>),
+  };
+
   return (
     <div style={s.overlay}>
       <div style={s.topbar}>
@@ -299,132 +436,8 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
             })}
           </div>
 
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Brand colours</div>
-          <Swatch label="Primary" value={primary} onChange={setPrimary} />
-          <Swatch label="Accent"  value={accent}  onChange={setAccent} />
-          <Swatch label="Hero & button text" value={customizations.cta_color || primary} onChange={v => setText('cta_color', v)} />
-          <p style={s.hlHint}>Sets the headline, subtitle and button text. Buttons themselves use your band (primary) colour.</p>
-
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Font</div>
-          <div style={s.fontList}>
-            {Object.values(FONT_THEMES).map(ft => {
-              const sel = (customizations.font_key || 'montserrat') === ft.key;
-              return (
-                <button key={ft.key} type="button" onClick={() => setText('font_key', ft.key)}
-                  style={{ ...s.fontBtn, fontFamily: ft.serif, borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1 }}>
-                  {ft.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Your photo</div>
-          <label style={s.portraitRow}>
-            <div style={s.portraitThumb}>
-              {portraitUrl
-                ? <img src={portraitUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <span style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 700 }}>None</span>}
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>{uploadingPortrait ? 'Uploading…' : portraitUrl ? 'Change photo' : 'Upload photo'}</div>
-              <div style={{ fontSize: 11.5, color: '#9BB5A2', marginTop: 2 }}>Shows in “Our story”</div>
-            </div>
-            <input ref={portraitInputRef} type="file" accept="image/*" onChange={pickPortrait} style={{ display: 'none' }} />
-          </label>
-
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Text</div>
-          {TEXT_FIELDS.map(f => (
-            <div key={f.key} style={s.textRow}>
-              <label style={s.textLabel}>{f.label}</label>
-              <input
-                value={customizations[f.key] ?? ''}
-                placeholder={STOREFRONT_TEXT[f.key]}
-                onChange={e => setText(f.key, e.target.value)}
-                style={s.textInput}
-              />
-            </div>
-          ))}
-
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Sections</div>
-          <p style={s.hlHint}>Turn sections on/off and reorder them. Add one or more <b>Highlight</b> bands (e.g. “This week”) with their own image, text and button.</p>
-          <div style={s.sectionMgr}>
-            {sectionList.map((sec, i) => (
-              <div key={`${sec.type}-${i}`} style={s.sectionCard}>
-                <div style={s.sectionRow}>
-                  <label style={s.sectionToggle}>
-                    <input type="checkbox" checked={sec.enabled !== false} onChange={() => toggleSection(i)} />
-                    <span>{sec.type === 'highlight' ? (sec.title?.trim() || 'Highlight') : (SECTION_LABELS[sec.type] || sec.type)}</span>
-                  </label>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveSection(i, -1)} style={{ ...s.moveBtn, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
-                    <button type="button" aria-label="Move down" disabled={i === sectionList.length - 1} onClick={() => moveSection(i, 1)} style={{ ...s.moveBtn, opacity: i === sectionList.length - 1 ? 0.35 : 1 }}>↓</button>
-                    {sec.type === 'highlight' && <button type="button" aria-label="Remove section" onClick={() => removeSection(i)} style={s.galleryRemove}>×</button>}
-                  </div>
-                </div>
-                {sec.type === 'highlight' && (
-                  <div style={s.hlEditor}>
-                    <div style={s.hlEditorCap}>This highlight’s content</div>
-                    <input value={sec.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setSectionField(i, 'title', e.target.value)} style={s.textInput} />
-                    <textarea value={sec.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setSectionField(i, 'blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
-                    <label style={s.textLabel}>Image — upload one, or pick from your cake photos</label>
-                    <div style={s.hlImgRow}>
-                      <label style={s.hlUpload} title="Upload a photo">
-                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadSectionImage(i, e)} />
-                        {hlUploading === i ? '…' : '＋'}
-                      </label>
-                      <button type="button" onClick={() => setSectionField(i, 'image', '')} style={{ ...s.hlImgNone, borderColor: !sec.image ? primary : '#D9DED9' }}>None</button>
-                      {sec.image && !gallery.some(g => g.url === sec.image) && (
-                        <div style={{ ...s.hlImgThumb, borderColor: primary, borderWidth: 2 }}>
-                          <img src={sec.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </div>
-                      )}
-                      {gallery.filter(g => g.url).map(g => (
-                        <button key={g.id} type="button" onClick={() => setSectionField(i, 'image', g.url)}
-                          style={{ ...s.hlImgThumb, borderColor: sec.image === g.url ? primary : 'transparent', borderWidth: sec.image === g.url ? 2 : 1 }}>
-                          <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <button type="button" style={s.addPhotos} onClick={() => addSection('highlight')}>+ Add a Highlight section</button>
-
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Cake photos</div>
-          <div style={s.galleryList}>
-            {gallery.map(g => (
-              <div key={g.id} style={s.galleryItem}>
-                <div style={s.galleryThumb}>
-                  <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  {g.key === null && <div style={s.galleryUploading} />}
-                </div>
-                <input value={g.caption} onChange={e => setCaption(g.id, e.target.value)} placeholder="Caption (optional)" style={s.galleryCaption} />
-                <button type="button" aria-label="Remove" style={s.galleryRemove} onClick={() => removePhoto(g.id)}>×</button>
-              </div>
-            ))}
-          </div>
-          <label style={s.addPhotos}>
-            <input type="file" accept="image/*" multiple onChange={addPhotos} style={{ display: 'none' }} />
-            + Add photos
-          </label>
-
-          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Reviews</div>
-          <div style={s.reviewList}>
-            {testimonials.map(t => (
-              <div key={t.id} style={s.reviewItem}>
-                <textarea value={t.quote} placeholder="What the customer said…" rows={2}
-                  onChange={e => setTestimonialField(t.id, 'quote', e.target.value)} style={s.reviewQuote} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input value={t.author} placeholder="Name" onChange={e => setTestimonialField(t.id, 'author', e.target.value)} style={s.reviewMeta} />
-                  <input value={t.occasion} placeholder="Occasion" onChange={e => setTestimonialField(t.id, 'occasion', e.target.value)} style={s.reviewMeta} />
-                  <button type="button" aria-label="Remove" style={s.galleryRemove} onClick={() => removeTestimonial(t.id)}>×</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" style={s.addPhotos} onClick={addTestimonial}>+ Add review</button>
+          {/* Phase 3 — the panel is rendered from the template's control list (order matters). */}
+          {templateControls.map(k => <React.Fragment key={k}>{CONTROLS[k]?.()}</React.Fragment>)}
 
           <p style={s.hint}>Edits show in <b>Preview</b>. Hit <b>{published ? 'Update' : 'Publish'}</b> to make them go live on your storefront.</p>
           {!isWide && published && <button type="button" style={s.unpublishLink} onClick={unpublish}>Unpublish storefront</button>}
