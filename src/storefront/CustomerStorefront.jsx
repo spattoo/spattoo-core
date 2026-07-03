@@ -849,7 +849,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     gradTitle: { fontFamily: SERIF, fontSize: desktop ? 46 : wide ? 36 : 26, fontWeight: 800, color: pal.heroInk, margin: 0, lineHeight: 1.08, letterSpacing: -0.5 },
     gradSub:   { fontSize: desktop ? 17 : 15, fontWeight: 600, color: alpha(pal.heroInk, 0.82), margin: 0, lineHeight: 1.5, maxWidth: hPick(hero.subMaxWidth, 300) },
     // Button bg = the brand (pal.cta); label ADAPTS to it (readable on any picked colour).
-    gradCta:   { padding: '16px 40px', borderRadius: 40, border: 'none', background: pal.cta, color: onColor(pal.cta), fontSize: 16.5, fontWeight: 800, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    gradCta:   { padding: wide ? '16px 40px' : '13px 26px', borderRadius: 40, border: 'none', background: pal.cta, color: onColor(pal.cta), fontSize: wide ? 16.5 : 15, fontWeight: 800, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
     // Anchored to the section's right and pushed off-screen (config negative right) → ~half shows.
     // Interactive (draggable to rotate) — the click-through gradInner keeps it reachable.
     gradMedia: { position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: hPick(hero.cakeRight, desktop ? -150 : wide ? -130 : -120), width: hPick(hero.cakeWidth, desktop ? 640 : wide ? 540 : 430), zIndex: 1 },

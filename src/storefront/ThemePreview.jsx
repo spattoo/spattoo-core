@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import CustomerStorefront from './CustomerStorefront.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
@@ -55,9 +55,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [publishing, setPublishing] = useState(false);
   const [hlUploading, setHlUploading] = useState(null);   // index of the highlight whose image is uploading
   const [mobileTab, setMobileTab] = useState('preview');   // mobile: 'preview' | 'edit' (preview is the default)
+  const [device, setDevice] = useState('mobile');   // preview device frame: 'mobile' | 'desktop' (mobile default)
   const [ready, setReady] = useState(false);   // preview config synced from `value`? (gates the storefront render)
   const portraitInputRef = useRef(null);
   const isWide = useIsWide(900);
+  // Measure the preview stage so the DESKTOP frame (rendered at a true 1280px width) can be scaled to
+  // fit whatever room the stage has. transform:scale is visual only — it doesn't change clientWidth —
+  // so the storefront's ResizeObserver still measures 1280 and picks its real `desktop` layout.
+  const [frameAreaRef, stageSize] = useMeasure();
 
   useEffect(() => {
     if (!open) { setReady(false); return; }   // reset so each open shows the loader until synced
@@ -402,6 +407,17 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     </>),
   };
 
+  // The live storefront node — identical for every device frame (it self-measures its container to
+  // choose mobile/tablet/desktop, so ONE instance covers all frames; no per-device render path).
+  const storefront = ready
+    ? <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
+    : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CakeSpinner label="Loading…" /></div>;
+  // Desktop frame scale: fit the 1280×834 window into the measured stage (never upscale past 1:1).
+  const framePad = device === 'mobile' && !isWide ? 0 : (isWide ? 28 : 14);
+  const kFit = (stageSize.width && stageSize.height)
+    ? Math.min(1, (stageSize.width - framePad) / DESKTOP_W, (stageSize.height - framePad) / DESKTOP_H)
+    : 0.1;
+
   return (
     <div style={s.overlay}>
       <div style={s.topbar}>
@@ -418,14 +434,12 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         </div>
       </div>
 
-      {!isWide && (
-        <div style={s.tabs}>
-          {['preview', 'edit'].map(tab => (
-            <button key={tab} type="button" onClick={() => setMobileTab(tab)}
-              style={{ ...s.tab, ...(mobileTab === tab ? s.tabActive : {}) }}>
-              {tab === 'preview' ? 'Preview' : 'Edit'}
-            </button>
-          ))}
+      {/* Theme switcher pinned at the TOP (mobile, preview only) — the frequent action stays in reach,
+          no scrolling to a bottom bar. Device toggle + Edit move to a bottom bar (below). */}
+      {!isWide && mobileTab === 'preview' && (
+        <div style={s.themeTopWrap}>
+          <span style={s.themeTopLabel}>Theme</span>
+          <ThemePicker layout="row" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} />
         </div>
       )}
 
@@ -433,20 +447,13 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         {/* controls — full screen on mobile (Edit tab), fixed sidebar on desktop */}
         {(isWide || mobileTab === 'edit') && (
         <div style={{ ...s.controls, width: isWide ? 300 : 'auto', flex: isWide ? 'none' : 1, borderRight: isWide ? '1px solid #E3E8E4' : 'none' }}>
-          <div style={s.ctrlLabel}>Theme</div>
-          <div style={s.themeList}>
-            {themes.map(t => {
-              const sel = t.id === themeId, off = !t.is_active;
-              return (
-                <button key={t.id} type="button" disabled={off}
-                  onClick={() => selectTheme(t.id)}
-                  style={{ ...s.themeBtn, borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1, opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
-                  <span style={{ fontWeight: 800, color: '#2C4433', fontSize: 13.5 }}>{t.name}</span>
-                  {off ? <span style={s.soon}>Soon</span> : sel ? <span style={{ color: primary, fontWeight: 800, fontSize: 12 }}>✓</span> : null}
-                </button>
-              );
-            })}
-          </div>
+          {/* Theme lives with the LIVE preview so switching is instant: the desktop sidebar (preview
+              always visible beside it) keeps it here; on mobile it moves to the preview screen's
+              bottom bar (see below), so the Edit screen is pure per-theme config — no dead theme list. */}
+          {isWide && (<>
+            <div style={s.ctrlLabel}>Theme</div>
+            <ThemePicker layout="column" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} />
+          </>)}
 
           {/* Phase 3 — the panel is rendered from the template's control list (order matters). */}
           {templateControls.map(k => <React.Fragment key={k}>{CONTROLS[k]?.()}</React.Fragment>)}
@@ -456,20 +463,49 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         </div>
         )}
 
-        {/* live preview — phone frame on desktop, full-bleed on mobile (Preview tab) */}
+        {/* live preview — a Mobile/Desktop device toggle over the framed storefront. The frame swaps
+            from a phone to a scaled 1280px browser window; the storefront itself is unchanged. */}
         {(isWide || mobileTab === 'preview') && (
-        <div style={{ ...s.stage, padding: isWide ? 20 : 0 }}>
-          <div style={isWide ? s.phone : s.phoneMobile}>
-            <div style={s.phoneScroll}>
-              {ready
-                ? <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
-                : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CakeSpinner label="Loading…" /></div>}
-            </div>
+        <div style={s.stage}>
+          {/* Desktop customiser has no tabs row, so the device toggle gets a slim bar here. */}
+          {isWide && <div style={s.deviceBar}><DeviceToggle device={device} onChange={setDevice} /></div>}
+          {/* Centre on the roomy desktop customiser; top-align on the narrow one so the frame rides up
+              under the toggle instead of floating mid-screen. */}
+          <div ref={frameAreaRef} style={{ ...s.frameArea, alignItems: isWide ? 'center' : 'flex-start', padding: framePad }}>
+            {device === 'desktop' ? (
+              // Footprint wrapper = the SCALED size (clips overflow); the 1280-wide window is
+              // absolutely placed and scaled into it, so it centres cleanly with no layout push.
+              <div style={{ ...s.browserFit, width: DESKTOP_W * kFit, height: DESKTOP_H * kFit }}>
+                <div style={{ ...s.browser, transform: `scale(${kFit})`, transformOrigin: 'top left' }}>
+                  <div style={s.browserBar}>
+                    <span style={{ ...s.browserDot, background: '#ff5f57' }} />
+                    <span style={{ ...s.browserDot, background: '#febc2e' }} />
+                    <span style={{ ...s.browserDot, background: '#28c840' }} />
+                  </div>
+                  <div style={s.browserViewport}><div style={s.phoneScroll}>{storefront}</div></div>
+                </div>
+              </div>
+            ) : (
+              <div style={isWide ? s.phone : s.phoneMobile}><div style={s.phoneScroll}>{storefront}</div></div>
+            )}
+            {dirty && <div style={s.dirtyTag}>Unpublished changes</div>}
           </div>
-          {dirty && <div style={s.dirtyTag}>Unpublished changes</div>}
         </div>
         )}
       </div>
+
+      {/* Bottom bar (mobile) — device toggle + Edit. Persistent across preview/edit so the device
+          icons are always the way back to the live preview. Themes sit at the top instead. */}
+      {!isWide && (
+        <div style={s.bottomBar}>
+          <DeviceToggle device={mobileTab === 'preview' ? device : null}
+            onChange={d => { setDevice(d); setMobileTab('preview'); }} />
+          <button type="button" onClick={() => setMobileTab('edit')}
+            style={{ ...s.tab, ...(mobileTab === 'edit' ? s.tabActive : {}) }}>
+            Edit
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -502,6 +538,24 @@ function Swatch({ label, value, onChange }) {
   );
 }
 
+// Measure an element's content box (via ResizeObserver) — used to scale the desktop preview frame.
+function useMeasure() {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const ref = useRef(null);
+  const setRef = useCallback(node => {
+    ref.current = node;
+    if (node) setSize({ width: node.clientWidth, height: node.clientHeight });
+  }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [setRef, size];
+}
+
 function useIsWide(bp = 900) {
   const [w, setW] = useState(typeof window !== 'undefined' ? window.innerWidth >= bp : true);
   useEffect(() => {
@@ -513,13 +567,66 @@ function useIsWide(bp = 900) {
 }
 
 const FONT = "'Quicksand', sans-serif";
+// Desktop preview frame — a fixed 1280-wide browser window (viewport 800 + a 34px chrome bar). The
+// storefront renders at this TRUE width (→ its `desktop` breakpoint) and the whole frame is scaled to
+// fit the stage. Config, not a branch: adding a device preset = one row here + a DEVICE_TABS entry.
+const DESKTOP_W = 1280, DESKTOP_VP = 800, BROWSER_BAR = 34, DESKTOP_H = DESKTOP_VP + BROWSER_BAR;
+const PhoneIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="7" y="2" width="10" height="20" rx="2.2" /><line x1="11" y1="18.5" x2="13" y2="18.5" />
+  </svg>
+);
+const MonitorIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="13" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+  </svg>
+);
+const DEVICE_TABS = [['mobile', 'Mobile', PhoneIcon], ['desktop', 'Desktop', MonitorIcon]];
+
+// Compact segmented icon control (phone / monitor) — one instance, placed in the mobile tabs row and
+// in the desktop stage bar. Config-driven from DEVICE_TABS; adding a device = one row there.
+function DeviceToggle({ device, onChange }) {
+  return (
+    <div style={s.deviceToggle}>
+      {DEVICE_TABS.map(([d, label, Icon]) => (
+        <button key={d} type="button" aria-label={`${label} preview`} title={`${label} preview`}
+          onClick={() => onChange(d)}
+          style={{ ...s.deviceIconBtn, ...(device === d ? s.deviceIconBtnActive : {}) }}>
+          <Icon />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Theme selector — ONE component for both placements: a vertical card list in the desktop sidebar
+// (layout='column') and a horizontal scrolling chip bar on the mobile preview (layout='row'). Same
+// data + selection; only the arrangement differs, so there's no duplicate theme-list logic.
+function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column' }) {
+  const row = layout === 'row';
+  return (
+    <div style={row ? s.themeBar : s.themeList}>
+      {themes.map(t => {
+        const sel = t.id === themeId, off = !t.is_active;
+        return (
+          <button key={t.id} type="button" disabled={off} onClick={() => onSelect(t.id)}
+            style={{ ...(row ? s.themeChip : s.themeBtn), borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1,
+              ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
+            <span style={{ fontWeight: 800, color: '#2C4433', fontSize: row ? 13 : 13.5 }}>{t.name}</span>
+            {off ? <span style={s.soon}>Soon</span> : sel && !row ? <span style={{ color: primary, fontWeight: 800, fontSize: 12 }}>✓</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const s = {
   overlay:  { position: 'fixed', inset: 0, zIndex: 400, background: '#EEF2EF', fontFamily: FONT, display: 'flex', flexDirection: 'column' },
   topbar:   { flexShrink: 0, minHeight: 60, background: '#fff', borderBottom: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', gap: 10 },
   cancel:   { flexShrink: 0, background: '#F0F4F1', border: '1px solid #D9DED9', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#2C4433', whiteSpace: 'nowrap' },
   titleWrap:{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
   title:    { fontSize: 15, fontWeight: 800, color: '#2C4433', whiteSpace: 'nowrap' },
-  tabs:     { flexShrink: 0, display: 'flex', gap: 6, padding: 8, background: '#fff', borderBottom: '1px solid #E3E8E4' },
   tab:      { flex: 1, padding: '9px', borderRadius: 9, border: 'none', background: '#F0F4F1', color: '#6B8C74', fontFamily: FONT, fontSize: 13.5, fontWeight: 800, cursor: 'pointer' },
   tabActive:{ background: '#2C4433', color: '#fff' },
   statusPill:{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -535,6 +642,13 @@ const s = {
   ctrlLabel:{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#9BB5A2', marginBottom: 10 },
   themeList:{ display: 'flex', flexDirection: 'column', gap: 8 },
   themeBtn: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', fontFamily: FONT },
+  // Mobile: live theme switcher pinned at the TOP (leading label + horizontal scrolling chips).
+  themeTopWrap: { flexShrink: 0, background: '#fff', borderBottom: '1px solid #E3E8E4', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 },
+  themeTopLabel: { flexShrink: 0, fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#9BB5A2' },
+  themeBar: { display: 'flex', gap: 8, overflowX: 'auto', flex: 1, minWidth: 0, WebkitOverflowScrolling: 'touch' },
+  themeChip:{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', fontFamily: FONT, whiteSpace: 'nowrap' },
+  // Mobile: persistent bottom bar — device toggle (left) + Edit (right).
+  bottomBar:{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: '#fff', borderTop: '1px solid #E3E8E4' },
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   portraitRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #D9DED9', background: '#fff', cursor: 'pointer' },
   portraitThumb: { width: 46, height: 46, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'center' },
@@ -569,7 +683,20 @@ const s = {
   reviewQuote:{ width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12.5, fontFamily: FONT, color: '#2C4433', outline: 'none', resize: 'vertical' },
   reviewMeta: { flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '6px 8px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12, fontFamily: FONT, color: '#2C4433', outline: 'none' },
   hint:     { fontSize: 12, fontWeight: 500, color: '#6B8C74', lineHeight: 1.55, marginTop: 22 },
-  stage:    { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, position: 'relative', overflow: 'hidden' },
+  stage:    { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' },
+  // Desktop-only slim bar for the device toggle (mobile shows it inline in the tabs row instead).
+  deviceBar:{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: '10px 0 2px' },
+  // Compact segmented icon control (phone / monitor).
+  deviceToggle: { display: 'flex', gap: 4, padding: 4, background: '#fff', border: '1px solid #E3E8E4', borderRadius: 11, flexShrink: 0, alignSelf: 'center' },
+  deviceIconBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 30, borderRadius: 8, border: 'none', background: 'transparent', color: '#6B8C74', cursor: 'pointer', padding: 0 },
+  deviceIconBtnActive: { background: '#2C4433', color: '#fff' },
+  frameArea:{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' },
+  // Desktop preview: footprint wrapper is the SCALED size and clips; the true-1280 window sits inside.
+  browserFit:{ position: 'relative', overflow: 'hidden', flexShrink: 0, borderRadius: 12, boxShadow: '0 24px 70px rgba(40,30,35,0.28)' },
+  browser:  { position: 'absolute', top: 0, left: 0, width: DESKTOP_W, height: DESKTOP_H, background: '#fff', overflow: 'hidden', border: '1px solid #d7d7da', display: 'flex', flexDirection: 'column' },
+  browserBar:{ flexShrink: 0, height: BROWSER_BAR, background: '#f0f0f2', borderBottom: '1px solid #e2e2e5', display: 'flex', alignItems: 'center', gap: 8, padding: '0 15px' },
+  browserDot:{ width: 12, height: 12, borderRadius: '50%', display: 'inline-block' },
+  browserViewport: { flex: 1, minHeight: 0, position: 'relative' },
   // transform:translateZ(0) promotes the frame to its own layer so Safari ≤15 actually clips the
   // scrolling storefront inside to the rounded corners (without it, the content's square corners show).
   phone:    { width: 392, maxWidth: '100%', height: 'min(86vh, 780px)', background: '#fff', borderRadius: 30, overflow: 'hidden', boxShadow: '0 24px 70px rgba(40,30,35,0.28)', border: '8px solid #1c1518', transform: 'translateZ(0)', WebkitTransform: 'translateZ(0)' },
