@@ -1168,11 +1168,22 @@ function OrderDesignViewer({ order, onClose }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker' }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
   const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
+  // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
+  // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
+  const seededInitialRef = useRef(false);
+  useEffect(() => {
+    if (initialDesign && !seededInitialRef.current) {
+      seededInitialRef.current = true;
+      try { loadDesign(initialDesign); } catch (e) { console.error('initialDesign seed failed', e); }
+    }
+  }, [initialDesign]);
+
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
@@ -1375,6 +1386,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [ordersPanelOpen,     setOrdersPanelOpen]     = useState(false);
   const [customersPanelOpen,  setCustomersPanelOpen]  = useState(false);
   const [invitePanelOpen,     setInvitePanelOpen]     = useState(false);
+  // When set, the invite panel opens with the CURRENT design attached (the "Share the draft" flow):
+  // { designSnapshot, designThumbnailKey }. Null = a plain invite (blank start).
+  const [shareDraftDesign,    setShareDraftDesign]    = useState(null);
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
@@ -3086,6 +3100,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setOrderModalOpen(true);
   }
 
+  // "Share the draft": snapshot the current design + upload a thumbnail (same helpers as order
+  // placement), then open the invite panel with it attached so the baker sends a customer straight
+  // into THIS design. The design rides on the invite (design_snapshot) — no template row is created.
+  async function handleShareDraft() {
+    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
+    const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
+    setShareDraftDesign({ designSnapshot: buildDesignSnapshot(design), designThumbnailKey });
+    setInvitePanelOpen(true);
+  }
+
   async function handleOrderSubmit(formData) {
     // Thumbnail → R2 (never base64 in the JSON body) + the full design snapshot, via the
     // shared helpers so order / template / share all serialise identically.
@@ -4602,7 +4626,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     if (id === 'dashboard') setDashboardOpen(true);
                     if (id === 'orders')    setOrdersPanelOpen(true);
                     if (id === 'customers') setCustomersPanelOpen(true);
-                    if (id === 'invite')    setInvitePanelOpen(true);
+                    if (id === 'invite')    { setShareDraftDesign(null); setInvitePanelOpen(true); }
                     if (id === 'share')     onShareStore?.();
                   }}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
@@ -5866,6 +5890,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             onClick={() => setSaveModal(true)}>
             Save as Template
           </button>}
+          {hasCap('customer:manage') && <button
+            style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+            onClick={handleShareDraft}>
+            Share the draft
+          </button>}
         </div>
       )}
 
@@ -5902,7 +5931,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   if (id === 'dashboard') setDashboardOpen(true);
                   if (id === 'orders')    setOrdersPanelOpen(true);
                   if (id === 'customers') setCustomersPanelOpen(true);
-                  if (id === 'invite')    setInvitePanelOpen(true);
+                  if (id === 'invite')    { setShareDraftDesign(null); setInvitePanelOpen(true); }
                   if (id === 'share')     onShareStore?.();
                 }}>
                 {icon}
@@ -6109,9 +6138,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* ── Invite panel ── */}
       <InvitePanel
         open={invitePanelOpen}
-        onClose={() => setInvitePanelOpen(false)}
+        onClose={() => { setInvitePanelOpen(false); setShareDraftDesign(null); }}
         apiClient={apiClient}
         primaryColor={primaryColor}
+        attachedDesign={shareDraftDesign}
       />
 
       {/* ── Read-only 3D viewer for locked (confirmed+) orders ── */}

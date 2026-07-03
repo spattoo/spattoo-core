@@ -553,11 +553,13 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, 
   async function verify() {
     setBusy(true); setErr(null);
     try {
-      const { session } = await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/verify-otp`, { channel, code });
+      const { session, design_snapshot } = await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/verify-otp`, { channel, code });
       if (supabase && session) {
         await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
       }
-      onAuthenticated?.(session);
+      // Hand the baker's attached starting design (if any) to the host so it can seed the
+      // designer on resume. Null for a plain invite — the host just opens a blank designer.
+      onAuthenticated?.(session, design_snapshot ?? null);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 

@@ -7,7 +7,10 @@ import CustomerSearch from './CustomerSearch.jsx';
 // Two modes: invite a NEW customer (fill details) or an EXISTING one (search + pick).
 // For an existing customer we pass their details to the same inviteCustomer call — the
 // API dedupes by email/phone (scoped to the baker), so no duplicate is created.
-export default function InvitePanel({ open, onClose, apiClient, primaryColor = '#1a1a1a' }) {
+// `attachedDesign` (optional): { designSnapshot, designThumbnailKey } from the designer's "Share the
+// draft" flow. When present, the invite carries this starting design so the customer resumes straight
+// into it — the design rides on the invite (design_snapshot), not a template row.
+export default function InvitePanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', attachedDesign = null }) {
   const empty = { firstName: '', lastName: '', email: '', phone: '', note: '' };
   const [form, setForm]     = useState(empty);
   const [mode, setMode]     = useState('search'); // 'search' (existing) | 'new'
@@ -26,7 +29,10 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
     if (!apiClient?.inviteCustomer) return setError('Invite is not available');
     setSaving(true); setError(null);
     try {
-      const res = await apiClient.inviteCustomer(payload);
+      // Attach the shared design (if any) so the invite carries a starting snapshot.
+      const res = await apiClient.inviteCustomer(attachedDesign
+        ? { ...payload, designSnapshot: attachedDesign.designSnapshot, designThumbnailKey: attachedDesign.designThumbnailKey }
+        : payload);
       setResult(res);
     } catch (err) {
       setError(err.message);
@@ -89,6 +95,13 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
             {!result ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <p style={st.lead}>Invite a customer to design their own cake. They'll get a link and log in with a one-time code — no account needed.</p>
+
+                {attachedDesign && (
+                  <div style={st.attachBanner}>
+                    <span style={st.attachTitle}>Your current design is attached</span>
+                    <span style={st.attachSub}>The customer opens straight into this cake and can refine it before requesting a quote.</span>
+                  </div>
+                )}
 
                 {mode === 'search' ? (
                   !selected ? (
@@ -190,4 +203,7 @@ const st = {
   orText:   { fontSize: 11, fontWeight: 700, color: '#bbb', textTransform: 'uppercase', letterSpacing: 0.6 },
   selectedCard: { display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: '#fff', border: '1.5px solid #E0DDD8', borderRadius: 12 },
   changeBtn: { padding: '6px 12px', borderRadius: 9, border: '1.5px solid #E0DDD8', background: '#fff', color: '#666', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 },
+  attachBanner: { display: 'flex', flexDirection: 'column', gap: 3, padding: '11px 14px', borderRadius: 11, background: '#EEF5F0', border: '1.5px solid #CDE3D6' },
+  attachTitle: { fontSize: 13, fontWeight: 800, color: '#2E6B4F' },
+  attachSub:   { fontSize: 12, fontWeight: 600, color: '#5B7A68', lineHeight: 1.45 },
 };
