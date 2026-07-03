@@ -222,6 +222,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [subscribing,    setSubscribing]    = useState(false);
   const [cancelling,     setCancelling]     = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showChangeConfirm, setShowChangeConfirm] = useState(false);   // reactivation / downgrade confirm
   const [error,          setError]          = useState(null);
   const [entitlements,   setEntitlements]   = useState(null);
   const [paymentsInfo,   setPaymentsInfo]   = useState(null);   // { payments:[latest], total }
@@ -337,11 +338,13 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const endDate    = billing?.next_billing_at ? new Date(billing.next_billing_at) : null;
   const daysLeft   = endDate ? Math.max(0, Math.ceil((endDate - Date.now()) / 86400000)) : null;
 
-  // A deferred downgrade ALSO sets cancel_at_period_end on the current row — distinguish it from a
-  // real cancellation so the UI reads "moving to X", not "won't renew".
+  // cancel_at_period_end is set by BOTH a real cancel AND a scheduled change (downgrade / reactivation),
+  // so distinguish them for the copy. `scheduled_downgrade_to` = the plan that takes over at period end.
   const scheduledTo          = billing?.scheduled_downgrade_to ?? null;
-  const isDowngradeScheduled = !!scheduledTo;
-  const realCancel           = cancelScheduled && !isDowngradeScheduled;
+  const isReactivateSame     = !!scheduledTo && scheduledTo === billing?.tier;   // resubscribed to same plan → renews
+  const isDowngradeScheduled = !!scheduledTo && !isReactivateSame;               // scheduled change to a different plan
+  const realCancel           = cancelScheduled && !scheduledTo;                  // a true cancel (no pending change)
+  const windingDown          = isActive && realCancel;                           // cancelled + in grace → reactivatable
   // Spark is the free baseline — a PAID baker can't re-select it (returning to free = Cancel). A baker
   // still on Spark keeps seeing it. Shared PlanCards (onboarding) is unaffected — this filters here only.
   const selectablePlans = (isActive && !isOnSpark) ? plans.filter(p => p.name !== 'spark') : plans;
@@ -352,14 +355,32 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const labelOf      = name => planByName[name]?.display_name ?? (name ? name[0].toUpperCase() + name.slice(1) : '—');
   const currentRank  = rankOf(billing?.tier);
   const selectedRank = rankOf(selectedTier);
-  const isSameTier   = billing && selectedTier === billing.tier;
+  // Same tier is only "current" when NOT winding down — while cancelled, picking the same tier = reactivate.
+  const isSameTier   = billing && selectedTier === billing.tier && !windingDown;
 
   function ctaLabel() {
     if (subscribing) return 'Processing…';
+    if (windingDown) return selectedTier === billing.tier ? `Reactivate ${labelOf(selectedTier)}` : `Switch to ${labelOf(selectedTier)}`;
     if (isSameTier) return `${labelOf(selectedTier)} — Current Plan`;
     if (selectedTier === 'spark') return 'Switch to Spark — Free';
     if (!isActive || isOnSpark || selectedRank > currentRank) return `Upgrade to ${labelOf(selectedTier)}`;
     return `Switch to ${labelOf(selectedTier)}`;
+  }
+
+  // Reactivation or a downgrade defers the change to period-end — confirm first so the baker sees it.
+  const needsChangeConfirm = billing && !isSameTier && selectedTier !== 'spark'
+    && (windingDown || (isActive && !isOnSpark && selectedRank < currentRank));
+  function changeConfirmMessage() {
+    const cur = labelOf(billing?.tier), next = labelOf(selectedTier);
+    const dateStr = endDate ? endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : 'the end of your current period';
+    const reauth = windingDown ? ' You’ll re-authorize your payment method now.' : '';
+    if (windingDown && selectedRank > currentRank) {   // reactivate to a higher tier = immediate upgrade
+      return `You’ll upgrade to ${next} now.${reauth}`;
+    }
+    if (windingDown && selectedTier === billing?.tier) {   // reactivate the same plan = it just renews
+      return `Your subscription will continue — you keep access until ${dateStr}, then it renews as ${next}.${reauth}`;
+    }
+    return `You’ll keep ${cur} until ${dateStr}, then move to ${next}.${reauth}`;   // downgrade / reactivate-lower
   }
 
   function getDiscount(pk) {
@@ -376,6 +397,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       case 'subscribed':          return to   ? `Subscription activated — ${to}` : EVENT_LABELS.activated;
       case 'upgraded':            return to   ? `Upgraded to ${to}`              : EVENT_LABELS.upgraded;
       case 'downgraded':          return to   ? `Downgraded to ${to}`            : EVENT_LABELS.downgraded;
+      case 'reactivated':         return to   ? `Reactivated — ${to}`            : EVENT_LABELS.reactivated;
       case 'downgrade_scheduled': return to   ? `Downgrade to ${to} scheduled`   : EVENT_LABELS.downgrade_scheduled;
       case 'renewed':             return to   ? `Renewed — ${to}`                : EVENT_LABELS.renewed;
       case 'expired':             return to   ? `${to} expired`                  : EVENT_LABELS.expired;
@@ -553,7 +575,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
 
                 {/* Subscribe / Upgrade button — always visible */}
                 <button
-                  onClick={isSameTier ? undefined : handleSubscribe}
+                  onClick={isSameTier ? undefined : (needsChangeConfirm ? () => setShowChangeConfirm(true) : handleSubscribe)}
                   disabled={subscribing || isSameTier}
                   style={{
                     padding: '15px', borderRadius: 14, border: 'none',
@@ -633,6 +655,15 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
         danger
         onConfirm={confirmCancel}
         onCancel={() => setShowCancelConfirm(false)}
+      />
+
+      <ConfirmDialog
+        open={showChangeConfirm}
+        title={windingDown ? 'Reactivate subscription?' : 'Switch plan?'}
+        message={changeConfirmMessage()}
+        confirmLabel="Continue"
+        onConfirm={() => { setShowChangeConfirm(false); handleSubscribe(); }}
+        onCancel={() => setShowChangeConfirm(false)}
       />
     </>
   );
