@@ -7,6 +7,7 @@ import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
+import { pickTierFields } from '../utils/designSnapshot.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 // Frosting types now live in the frostings registry; re-export so existing importers
@@ -162,19 +163,12 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
       }
       return {
         color:        t.color ?? '#ffffff',
-        ...(t.gradient && { gradient: t.gradient }),
         topPipings:    topPipings.map(withLayerId),
         bottomPipings: bottomPipings.map(withLayerId),
-        ...(t.radius != null  && { radius: t.radius }),
-        ...(t.height != null  && { height: t.height }),
-        ...(t.shape   != null  && { shape: t.shape }),
-        ...(t.width   != null  && { width: t.width }),
-        ...(t.depth   != null  && { depth: t.depth }),
-        ...(t.cornerR != null  && { cornerR: t.cornerR }),
-        // Restore per-tier wall treatments saved in the snapshot (luster dust,
-        // gold-leaf foil) so edit-in-3D / template load / view brings them back.
-        ...(t.dusting != null && { dusting: t.dusting }),
-        ...(t.foil    != null && { foil: t.foil }),
+        // Dimensions + wall treatments (gradient/dust/foil) restored from the snapshot so
+        // edit-in-3D / template load / view brings them back. Same round-trip field list as
+        // buildDesignSnapshot — see OPTIONAL_TIER_FIELDS.
+        ...pickTierFields(t),
       };
     }),
     texts:    templateDesign.texts ?? [],
