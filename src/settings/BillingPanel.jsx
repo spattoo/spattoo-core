@@ -626,7 +626,9 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       <ConfirmDialog
         open={showCancelConfirm}
         title="Cancel subscription?"
-        message="You'll keep full access until the end of your current billing period. This action cannot be undone."
+        message={isDowngradeScheduled
+          ? `You have a downgrade to ${labelOf(scheduledTo)} scheduled${endDate ? ` for ${endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''} — cancelling discards it. You'll keep ${labelOf(billing.tier)} until then, then your subscription ends. This can't be undone.`
+          : "You'll keep full access until the end of your current billing period. This action cannot be undone."}
         confirmLabel="Yes, cancel"
         danger
         onConfirm={confirmCancel}
