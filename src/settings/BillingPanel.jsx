@@ -21,16 +21,22 @@ const STATUS_META = {
   cancelled: { label: 'Cancelled', color: '#6B7280', bg: '#F3F4F6' },
 };
 
+// Fallback labels when a tier isn't available; historyLabel() below adds the tier (e.g.
+// "Upgraded to Blaze") when the event carries new_tier/previous_tier.
 const EVENT_LABELS = {
-  trial_started:  'Trial started',
-  trial_expired:  'Trial expired',
-  activated:      'Subscription activated',
-  upgraded:       'Plan upgraded',
-  downgraded:     'Plan downgraded',
-  cancelled:      'Subscription cancelled',
-  reactivated:    'Subscription reactivated',
-  payment_failed: 'Payment failed',
-  admin_override: 'Updated by admin',
+  trial_started:       'Trial started',
+  trial_expired:       'Trial expired',
+  activated:           'Subscription activated',
+  subscribed:          'Subscription activated',
+  upgraded:            'Plan upgraded',
+  downgraded:          'Plan downgraded',
+  downgrade_scheduled: 'Downgrade scheduled',
+  renewed:             'Subscription renewed',
+  expired:             'Subscription expired',
+  cancelled:           'Subscription cancelled',
+  reactivated:         'Subscription reactivated',
+  payment_failed:      'Payment failed',
+  admin_override:      'Updated by admin',
 };
 
 // Plan catalog (display names, taglines, feature bullets, prices, popular flag) now comes from
@@ -145,7 +151,7 @@ function PaymentRow({ p, divider }) {
 // Latest payment on first look; the recent list is fetched on demand when expanded.
 // `info` ({ payments:[latest], total }) comes from the panel's initial batch, so the
 // collapsed view costs no extra request — only "View all" triggers a fetch.
-function PaymentsCard({ info, apiClient, primaryColor }) {
+function PaymentsCard({ info, apiClient, primaryColor, bare = false }) {
   const [expanded, setExpanded] = useState(false);
   const [all, setAll]           = useState(null);   // null until first expand
   const [loading, setLoading]   = useState(false);
@@ -172,9 +178,10 @@ function PaymentsCard({ info, apiClient, primaryColor }) {
     setExpanded(true);
   }
 
-  return (
-    <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: '#9BB5A2', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>Payments</div>
+  // `bare` = render inside the Activity tab card (no own chrome / header — the tab supplies both).
+  const inner = (
+    <>
+      {!bare && <div style={{ fontSize: 11, fontWeight: 800, color: '#9BB5A2', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>Payments</div>}
       {rows.map((p, i) => <PaymentRow key={p.id} p={p} divider={i > 0} />)}
       {err && <div style={{ fontSize: 12, color: '#991B1B', marginTop: 8, fontWeight: 600 }}>{err}</div>}
       {total > 1 && (
@@ -194,6 +201,12 @@ function PaymentsCard({ info, apiClient, primaryColor }) {
       {expanded && all && total > all.length && (
         <div style={{ fontSize: 11, color: '#bbb', marginTop: 6 }}>Showing the most recent {all.length} of {total}.</div>
       )}
+    </>
+  );
+  if (bare) return inner;
+  return (
+    <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+      {inner}
     </div>
   );
 }
@@ -212,6 +225,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [error,          setError]          = useState(null);
   const [entitlements,   setEntitlements]   = useState(null);
   const [paymentsInfo,   setPaymentsInfo]   = useState(null);   // { payments:[latest], total }
+  const [activityTab,    setActivityTab]    = useState('payments');   // bottom Activity card: 'payments' | 'history'
   const [plans,          setPlans]          = useState([]);     // DB plan catalog (GET /api/plans)
 
   // Refetch the MUTABLE billing data (status / history / entitlements / latest payment) — the server
@@ -352,6 +366,24 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
     return periods.find(p => inferPeriodType(p.display_name) === pk)?.discount_pct ?? 0;
   }
 
+  // History row label with the tier woven in (events carry previous_tier/new_tier). Falls back to the
+  // plain EVENT_LABELS map when a tier isn't present.
+  function historyLabel(ev) {
+    const to   = ev.new_tier      ? labelOf(ev.new_tier)      : null;
+    const from = ev.previous_tier ? labelOf(ev.previous_tier) : null;
+    switch (ev.event) {
+      case 'activated':
+      case 'subscribed':          return to   ? `Subscription activated — ${to}` : EVENT_LABELS.activated;
+      case 'upgraded':            return to   ? `Upgraded to ${to}`              : EVENT_LABELS.upgraded;
+      case 'downgraded':          return to   ? `Downgraded to ${to}`            : EVENT_LABELS.downgraded;
+      case 'downgrade_scheduled': return to   ? `Downgrade to ${to} scheduled`   : EVENT_LABELS.downgrade_scheduled;
+      case 'renewed':             return to   ? `Renewed — ${to}`                : EVENT_LABELS.renewed;
+      case 'expired':             return to   ? `${to} expired`                  : EVENT_LABELS.expired;
+      case 'cancelled':           return from ? `${from} cancelled`              : EVENT_LABELS.cancelled;
+      default:                    return EVENT_LABELS[ev.event] ?? ev.event;
+    }
+  }
+
   return (
     <>
       <style>{`
@@ -467,11 +499,6 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                 </div>
               </div>
 
-              {/* ── Payments ─────────────────────────────────────── */}
-              {paymentsInfo?.total > 0 && (
-                <PaymentsCard info={paymentsInfo} apiClient={apiClient} primaryColor={primaryColor} />
-              )}
-
               {/* ── Plan picker ──────────────────────────────────── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>
@@ -547,30 +574,48 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                 </button>
               </div>
 
-              {/* ── History ──────────────────────────────────────── */}
-              {history.length > 0 && (
+              {/* ── Activity (Payments + Subscription history) — tabbed, one at a time ── */}
+              {/* History is reference material → kept at the bottom, both under one card. */}
+              {(paymentsInfo?.total > 0 || history.length > 0) && (
                 <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#9BB5A2', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16 }}>History</div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {history.map((ev, i) => (
-                      <div key={ev.id} style={{ display: 'flex', gap: 12, paddingBottom: 16 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 16 }}>
-                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#2C4433', marginTop: 3, flexShrink: 0 }} />
-                          {i < history.length - 1 && <div style={{ width: 2, flex: 1, background: '#E8EFE9', marginTop: 3 }} />}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{EVENT_LABELS[ev.event] ?? ev.event}</div>
-                          {/* No per-event status badge — the event label already says what happened,
-                              and the live plan/status is shown in the Current Plan card up top. A badge
-                              here read as if each historical event were a separate active subscription. */}
-                          {ev.note && <div style={{ fontSize: 11, color: '#888', marginTop: 3, fontStyle: 'italic' }}>"{ev.note}"</div>}
-                          <div style={{ fontSize: 10, color: '#bbb', marginTop: 4 }}>
-                            {new Date(ev.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </div>
-                        </div>
-                      </div>
+                  {/* Tab header */}
+                  <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid #F0F4F1', marginBottom: 16 }}>
+                    {[['payments', 'Payments'], ['history', 'History']].map(([key, label]) => (
+                      <button key={key} type="button" onClick={() => setActivityTab(key)} style={{
+                        background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                        padding: '0 0 10px', marginBottom: -1,
+                        fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase',
+                        color: activityTab === key ? '#2C4433' : '#9BB5A2',
+                        borderBottom: `2px solid ${activityTab === key ? '#2C4433' : 'transparent'}`,
+                      }}>{label}</button>
                     ))}
                   </div>
+
+                  {activityTab === 'payments' ? (
+                    paymentsInfo?.total > 0
+                      ? <PaymentsCard bare info={paymentsInfo} apiClient={apiClient} primaryColor={primaryColor} />
+                      : <div style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>No payments yet.</div>
+                  ) : (
+                    history.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {history.map((ev, i) => (
+                          <div key={ev.id} style={{ display: 'flex', gap: 12, paddingBottom: 16 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 16 }}>
+                              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#2C4433', marginTop: 3, flexShrink: 0 }} />
+                              {i < history.length - 1 && <div style={{ width: 2, flex: 1, background: '#E8EFE9', marginTop: 3 }} />}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{historyLabel(ev)}</div>
+                              {ev.note && <div style={{ fontSize: 11, color: '#888', marginTop: 3, fontStyle: 'italic' }}>"{ev.note}"</div>}
+                              <div style={{ fontSize: 10, color: '#bbb', marginTop: 4 }}>
+                                {new Date(ev.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : <div style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>No subscription activity yet.</div>
+                  )}
                 </div>
               )}
             </>
