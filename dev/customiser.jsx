@@ -38,6 +38,11 @@ const apiClient = {
     const d = SAMPLE_DESIGNS.find(x => x.id === id);
     return { id: `p-${id}-x`, key: `storefront/gallery/${id}.webp`, url: d?.thumbnail_url };
   },
+  // Hero snapshot: copies the design thumbnail and returns { key, url } (no photo row).
+  addStorefrontImageFromTemplate: async (id) => {
+    const d = SAMPLE_DESIGNS.find(x => x.id === id);
+    return { key: `storefront/gallery/hero-${id}.webp`, url: d?.thumbnail_url };
+  },
 };
 
 function Harness() {

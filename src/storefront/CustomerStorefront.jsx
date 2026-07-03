@@ -222,6 +222,9 @@ export default function CustomerStorefront({
   // explicit wide/lifestyle hero image. (The old dark "designer" hero fallback was removed — it was
   // the thing that reappeared when a baker had no gallery photos.)
   const heroImage = baker.storefront_customizations?.hero_image || null;   // baker-set wide/lifestyle hero photo
+  // Baker-picked cake DESIGN shown AS the hero cake (a 2D thumbnail) — replaces the generic 3D cake in
+  // the branded hero, keeping band/tagline/CTA. Distinct from hero_image (the full-bleed photo hero).
+  const heroDesign = baker.storefront_customizations?.hero_design_image || null;
   // HERO TYPE (Phase 1 — pluggable heroes): a baker's wide hero photo overrides to the 'photo' hero;
   // otherwise the TEMPLATE declares its hero (tokens.hero.type; default 'centered-cake'). The renderer
   // dispatches through HERO_RENDERERS below — adding a hero is a new renderer + a template `hero.type`,
@@ -288,7 +291,7 @@ export default function CustomerStorefront({
       {/* ── HERO ── the template picks the type (tokens.hero.type); a baker hero photo overrides to
           the photo hero. ONE dispatch through the registry — no per-type branch here. */}
       {(HERO_RENDERERS[heroType] ?? HERO_RENDERERS['centered-cake'])({
-        s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroImage,
+        s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroImage, heroDesign,
       })}
 
       {/* Body = ordered, toggleable sections (storefront_customizations.sections). Wavy bands
@@ -625,7 +628,14 @@ function Centered({ children, rootRef }) {
 // template picks the type via tokens.hero.type; a baker hero photo overrides to 'photo'. Adding a hero
 // = a new function here + a HERO_RENDERERS entry + a template's `hero.type`. No branch in the renderer.
 // The message + CTA in a LEFT column, a big rotating cake bleeding off the right on a soft gradient.
-function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide }) {
+// The hero's cake: the baker's picked DESIGN as a 2D image if set, else the live 3D cake. One helper
+// for all hero renderers so the design/3D swap lives in ONE place (no per-hero branch). The design
+// thumbnail is a transparent render, so it drops into the same slot as the 3D canvas.
+function HeroCakeMedia({ heroDesign, baker, height, ...cakeProps }) {
+  if (heroDesign) return <img src={heroDesign} alt={baker?.name || 'Cake design'} style={{ width: '100%', height, objectFit: 'contain', display: 'block' }} />;
+  return <HeroCake3D height={height} {...cakeProps} />;
+}
+function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, heroDesign }) {
   return (
     <section style={s.gradHero}>
       <div style={s.gradInner}>
@@ -646,14 +656,14 @@ function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLa
       {/* Big cake, anchored right and pushed off-edge so only ~half shows (section clips it).
           Draggable to rotate; NO studio grid so it floats cleanly on the gradient. */}
       <div style={s.gradMedia}>
-        <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : 400} spin={0.4} drip dripColor={pal.drip} />
+        <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : 400} spin={0.4} drip dripColor={pal.drip} />
       </div>
     </section>
   );
 }
 // The signature centred cake on a brand-tinted band with a wavy bottom (split on wide, stacked curve
 // on mobile). The 3D cake floats on the band (transparent canvas) inside the studio grid.
-function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg }) {
+function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroDesign }) {
   return wide ? (
     <section style={s.curveHero}>
       <div style={s.splitBand}>
@@ -672,7 +682,7 @@ function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLa
             )}
           </div>
           <div style={s.splitMedia}>
-            <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+            <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
           </div>
         </div>
         <svg style={s.splitWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
@@ -686,7 +696,7 @@ function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLa
         <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
         {txt('hero_subtitle') && <p style={s.curveSub}>{txt('hero_subtitle')}</p>}
         <div style={s.curveCake}>
-          <HeroCake3D primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
         </div>
         <svg style={s.curveWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
           <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />

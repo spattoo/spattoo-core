@@ -49,7 +49,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // The baker's cake-design templates — an authoritative image source for the gallery (baker picks
   // from these OR uploads). Fetched on open; picking snapshots the design's thumbnail as a photo.
   const [designs, setDesigns] = useState([]);
-  const [designPickerOpen, setDesignPickerOpen] = useState(false);
+  const [designPicker, setDesignPicker] = useState(null);   // which control opened it: null | 'gallery' | 'hero'
   const [uploadingGallery, setUploadingGallery] = useState(0);
   // Testimonials: [{ id, quote, author, occasion }]
   const [testimonials, setTestimonials] = useState([]);
@@ -154,6 +154,18 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       setGallery(g => g.filter(it => it.id !== tempId));   // roll back so a failed add doesn't linger
     } finally {
       setUploadingGallery(n => n - 1);
+    }
+  }
+  // Set the hero cake FROM a design (single value in storefront_customizations, not a photo row): the
+  // server snapshots the thumbnail and returns its URL, which we store as hero_design_image.
+  async function setHeroFromDesign(design) {
+    setDesignPicker(null);
+    if (!apiClient?.addStorefrontImageFromTemplate) return;
+    try {
+      const r = await apiClient.addStorefrontImageFromTemplate(design.id);
+      if (r?.url) setText('hero_design_image', r.url);
+    } catch (err) {
+      console.error('Set hero from design failed', err);
     }
   }
   const removePhoto = id => {
@@ -311,6 +323,27 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       <Swatch label="Hero & button text" value={customizations.cta_color || TEMPLATES[themeKey]?.defaults?.ctaColor || primary} onChange={v => setText('cta_color', v)} />
       <p style={s.hlHint}>Sets the headline, subtitle and button text. Buttons themselves use your band (primary) colour.</p>
     </>),
+    hero: () => (<>
+      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Hero cake</div>
+      <p style={s.hlHint}>Show one of your cake designs as the hero, or keep the branded 3D cake.</p>
+      <div style={s.heroCtrlRow}>
+        <div style={s.heroCtrlThumb}>
+          {customizations.hero_design_image
+            ? <img src={customizations.hero_design_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            : <span style={s.heroCtrlNone}>Branded 3D cake</span>}
+        </div>
+        <div style={s.heroCtrlBtns}>
+          {designs.length > 0 && apiClient?.addStorefrontImageFromTemplate && (
+            <button type="button" style={s.pickDesigns} onClick={() => setDesignPicker('hero')}>
+              <CakeGlyph /> Choose from your designs
+            </button>
+          )}
+          {customizations.hero_design_image && (
+            <button type="button" style={s.heroCtrlClear} onClick={() => setText('hero_design_image', '')}>Use branded cake</button>
+          )}
+        </div>
+      </div>
+    </>),
     font: () => (<>
       <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Font</div>
       <div style={s.fontList}>
@@ -415,7 +448,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           Shown only when the baker HAS designs to pick from AND the host supports the snapshot endpoint
           (capability gate) — so a host without addStorefrontPhotoFromTemplate never shows a dead button. */}
       {designs.length > 0 && apiClient?.addStorefrontPhotoFromTemplate && (
-        <button type="button" style={s.pickDesigns} onClick={() => setDesignPickerOpen(true)}>
+        <button type="button" style={s.pickDesigns} onClick={() => setDesignPicker('gallery')}>
           <CakeGlyph /> Choose from your designs
         </button>
       )}
@@ -543,21 +576,26 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         </div>
       )}
 
-      {/* "Choose from your designs" picker — a grid of the baker's cake-design thumbnails. Tapping one
-          snapshots it into the gallery (stays open for multi-add). Authoritative image source. */}
-      {designPickerOpen && (
-        <div style={s.pickerOverlay} onClick={() => setDesignPickerOpen(false)}>
+      {/* ONE design picker, reused by the gallery (multi-add) and the hero (single pick) controls —
+          the opener sets the mode, which chooses the action + copy. No second picker. */}
+      {designPicker && (
+        <div style={s.pickerOverlay} onClick={() => setDesignPicker(null)}>
           <div style={s.pickerPanel} onClick={e => e.stopPropagation()}>
             <div style={s.pickerHead}>
               <span style={s.pickerTitle}>Your cake designs</span>
-              <button type="button" aria-label="Close" style={s.pickerClose} onClick={() => setDesignPickerOpen(false)}>×</button>
+              <button type="button" aria-label="Close" style={s.pickerClose} onClick={() => setDesignPicker(null)}>×</button>
             </div>
-            <p style={s.pickerHint}>Tap a design to add its picture to your gallery. You can add more than one.</p>
+            <p style={s.pickerHint}>
+              {designPicker === 'hero'
+                ? 'Tap a design to show it as your hero cake.'
+                : 'Tap a design to add its picture to your gallery. You can add more than one.'}
+            </p>
             <div style={s.pickerGrid}>
               {designs.map(d => {
                 const thumb = d.thumbnail_url || d.thumbnail || d.url;
                 return (
-                  <button key={d.id} type="button" style={s.pickerCard} onClick={() => addFromDesign(d)} title={`Add “${d.name || 'design'}”`}>
+                  <button key={d.id} type="button" style={s.pickerCard} title={d.name || 'design'}
+                    onClick={() => (designPicker === 'hero' ? setHeroFromDesign(d) : addFromDesign(d))}>
                     <div style={s.pickerThumb}><img src={thumb} alt={d.name || 'Cake design'} style={s.pickerImg} loading="lazy" /></div>
                     <span style={s.pickerName}>{d.name || 'Cake design'}</span>
                   </button>
@@ -750,6 +788,12 @@ const s = {
   addPhotos: { display: 'block', width: '100%', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
   // "Choose from your designs" — the authoritative (solid) action; upload is the dashed secondary one.
   pickDesigns: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', marginTop: 10, padding: '10px', borderRadius: 10, border: 'none', background: '#2C4433', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
+  // Hero control — current hero preview + pick/clear buttons.
+  heroCtrlRow: { display: 'flex', gap: 12, marginTop: 10, alignItems: 'stretch' },
+  heroCtrlThumb: { width: 78, flexShrink: 0, borderRadius: 12, border: '1px solid #E3E8E4', background: 'linear-gradient(160deg, #F3F7F4, #E8EFE9)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  heroCtrlNone: { fontSize: 10.5, fontWeight: 700, color: '#9BB5A2', textAlign: 'center', padding: 4, lineHeight: 1.3 },
+  heroCtrlBtns: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
+  heroCtrlClear: { width: '100%', marginTop: 8, padding: '9px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', color: '#6B8C74', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT },
   // Design picker modal.
   pickerOverlay: { position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(20,14,16,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
   pickerPanel: { width: 'min(560px, 100%)', maxHeight: '84vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 16, boxShadow: '0 24px 70px rgba(20,14,16,0.4)', overflow: 'hidden' },
