@@ -323,6 +323,15 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const endDate    = billing?.next_billing_at ? new Date(billing.next_billing_at) : null;
   const daysLeft   = endDate ? Math.max(0, Math.ceil((endDate - Date.now()) / 86400000)) : null;
 
+  // A deferred downgrade ALSO sets cancel_at_period_end on the current row — distinguish it from a
+  // real cancellation so the UI reads "moving to X", not "won't renew".
+  const scheduledTo          = billing?.scheduled_downgrade_to ?? null;
+  const isDowngradeScheduled = !!scheduledTo;
+  const realCancel           = cancelScheduled && !isDowngradeScheduled;
+  // Spark is the free baseline — a PAID baker can't re-select it (returning to free = Cancel). A baker
+  // still on Spark keeps seeing it. Shared PlanCards (onboarding) is unaffected — this filters here only.
+  const selectablePlans = (isActive && !isOnSpark) ? plans.filter(p => p.name !== 'spark') : plans;
+
   // Rank + display name come from the DB catalog (sort_order is the tier rank).
   const planByName   = Object.fromEntries(plans.map(p => [p.name, p]));
   const rankOf       = name => planByName[name]?.sort_order ?? 0;
@@ -404,13 +413,19 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                     <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a' }}>
                       {labelOf(billing.tier)}
                     </div>
-                    {endDate && isActive && (
-                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: (cancelScheduled || daysLeft <= 7) ? '#DC2626' : '#6B7280' }}>
-                        {cancelScheduled ? 'Ends' : isOnSpark ? 'Expires' : 'Renews'}{' '}
+                    {endDate && isActive && !isDowngradeScheduled && (
+                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: (realCancel || daysLeft <= 7) ? '#DC2626' : '#6B7280' }}>
+                        {realCancel ? 'Ends' : isOnSpark ? 'Expires' : 'Renews'}{' '}
                         {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        {cancelScheduled
+                        {realCancel
                           ? ' · won’t renew'
                           : daysLeft <= 7 ? ` · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left` : ''}
+                      </div>
+                    )}
+                    {endDate && isActive && isDowngradeScheduled && (
+                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: '#6B7280' }}>
+                        Until {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        {' · then '}<span style={{ fontWeight: 800, color: '#1a1a1a' }}>{labelOf(scheduledTo)}</span>
                       </div>
                     )}
                     {billing.status === 'expired' && (
@@ -422,13 +437,17 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   <StatusBadge status={billing.status} />
                 </div>
 
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: cancelScheduled ? 'flex-start' : 'flex-end', gap: 12 }}>
-                  {cancelScheduled ? (
-                    // Grace notice — ONLY after a standalone cancellation (cancel_at_period_end).
-                    // An upgrade supersedes the old plan instead of setting this flag, so this never
-                    // shows in the upgrade case. Active plans show just the Cancel button (no pre-hint).
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled) ? 'flex-start' : 'flex-end', gap: 12 }}>
+                  {realCancel ? (
+                    // Grace notice — a REAL cancellation (cancel_at_period_end with NO scheduled downgrade).
+                    // An upgrade supersedes the old plan instead of setting this flag; a downgrade sets the
+                    // flag too but is handled by the branch below (it's a plan change, not a cancel).
                     <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 700 }}>
                       Cancellation scheduled — you'll keep access until this period ends.
+                    </div>
+                  ) : isDowngradeScheduled ? (
+                    <div style={{ fontSize: 11, color: '#6B7280', fontWeight: 700 }}>
+                      Moving to {labelOf(scheduledTo)} on {endDate?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} — you keep {labelOf(billing.tier)} until then.
                     </div>
                   ) : (
                     <button
@@ -496,7 +515,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
 
                 {/* Shared select-to-expand plan cards (same component as onboarding). */}
                 <PlanCards
-                  plans={plans}
+                  plans={selectablePlans}
                   periods={periods}
                   selectedPeriod={selectedPeriod}
                   selected={selectedTier}
