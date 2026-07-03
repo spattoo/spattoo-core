@@ -5879,7 +5879,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Order + Save Template bar ── */}
       {selectedEl?.type !== 'text' && (
-        <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : {}), display: 'flex', gap: 8 }}>
+        <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : { maxWidth: 680, margin: '0 auto', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }), display: 'flex', gap: 8 }}>
           <button
             style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
             onClick={handleOrder}>
