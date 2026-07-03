@@ -34,9 +34,10 @@ const EVENT_LABELS = {
   renewed:             'Subscription renewed',
   expired:             'Subscription expired',
   cancelled:           'Subscription cancelled',
-  reactivated:         'Subscription reactivated',
-  payment_failed:      'Payment failed',
-  admin_override:      'Updated by admin',
+  reactivated:            'Subscription reactivated',
+  payment_method_changed: 'Payment method updated',
+  payment_failed:         'Payment failed',
+  admin_override:         'Updated by admin',
 };
 
 // Plan catalog (display names, taglines, feature bullets, prices, popular flag) now comes from
@@ -62,7 +63,7 @@ function StatusBadge({ status }) {
 }
 
 
-function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', onConfirm, onCancel, danger = false }) {
+function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Keep subscription', onConfirm, onCancel, danger = false }) {
   if (!open) return null;
   return (
     <div style={{
@@ -88,7 +89,7 @@ function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', onConfi
               fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#6B7280',
             }}
           >
-            Keep subscription
+            {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
@@ -223,6 +224,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [cancelling,     setCancelling]     = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showChangeConfirm, setShowChangeConfirm] = useState(false);   // reactivation / downgrade confirm
+  const [showMethodConfirm, setShowMethodConfirm] = useState(false);   // update-payment-method confirm
   const [error,          setError]          = useState(null);
   const [entitlements,   setEntitlements]   = useState(null);
   const [paymentsInfo,   setPaymentsInfo]   = useState(null);   // { payments:[latest], total }
@@ -277,6 +279,35 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Open Razorpay Checkout for a just-created subscription and reconcile from the server afterwards.
+  // Shared by every paid flow (subscribe / upgrade / downgrade / reactivate / payment-method change) so
+  // the Checkout wiring lives in ONE place — the only thing that differs upstream is what createSubscription
+  // was called with. `data` is the /billing/subscribe response.
+  async function runCheckout(data) {
+    if (data.mock || !data.key_id) {
+      // TODO: remove this branch once Razorpay is live — open checkout instead
+      await reload();
+      return;
+    }
+    if (!window.Razorpay) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    await new Promise(resolve => {
+      const rzp = new window.Razorpay({
+        key: data.key_id, subscription_id: data.subscription_id,
+        name: 'Spattoo', theme: { color: primaryColor },
+        handler: () => { resolve(); reloadUntilSettled(); },   // reconcile from the server (webhook is async)
+        modal: { ondismiss: resolve },
+      });
+      rzp.open();
+    });
+  }
+
   async function handleSubscribe() {
     setSubscribing(true); setError(null);
     try {
@@ -286,30 +317,20 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
         return;
       }
       const periodObj = periods.find(p => inferPeriodType(p.display_name) === selectedPeriod) ?? periods[0];
-      const data = await apiClient.createSubscription(selectedTier, periodObj?.id);
+      await runCheckout(await apiClient.createSubscription(selectedTier, periodObj?.id));
+    } catch (e) { setError(e.message); }
+    finally { setSubscribing(false); }
+  }
 
-      if (data.mock || !data.key_id) {
-        // TODO: remove this branch once Razorpay is live — open checkout instead
-        await reload();
-      } else {
-        if (!window.Razorpay) {
-          await new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-            s.onload = resolve; s.onerror = reject;
-            document.head.appendChild(s);
-          });
-        }
-        await new Promise(resolve => {
-          const rzp = new window.Razorpay({
-            key: data.key_id, subscription_id: data.subscription_id,
-            name: 'Spattoo', theme: { color: primaryColor },
-            handler: () => { resolve(); reloadUntilSettled(); },   // reconcile from the server (webhook is async)
-            modal: { ondismiss: resolve },
-          });
-          rzp.open();
-        });
-      }
+  // Update payment method (e.g. UPI→card): re-authorize a NEW mandate on the SAME plan + period. It's a
+  // deferred recreate — the new method takes over at the next renewal, no double charge. Same Checkout
+  // path as a normal subscribe, just with intent='change_method' + the current tier/period.
+  async function handleUpdatePaymentMethod() {
+    setSubscribing(true); setError(null);
+    try {
+      const curPeriod = inferPeriodType(billing?.billing_period);
+      const periodObj = periods.find(p => inferPeriodType(p.display_name) === curPeriod) ?? periods[0];
+      await runCheckout(await apiClient.createSubscription(billing.tier, periodObj?.id, { intent: 'change_method' }));
     } catch (e) { setError(e.message); }
     finally { setSubscribing(false); }
   }
@@ -398,6 +419,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       case 'upgraded':            return to   ? `Upgraded to ${to}`              : EVENT_LABELS.upgraded;
       case 'downgraded':          return to   ? `Downgraded to ${to}`            : EVENT_LABELS.downgraded;
       case 'reactivated':         return to   ? `Reactivated — ${to}`            : EVENT_LABELS.reactivated;
+      case 'payment_method_changed': return EVENT_LABELS.payment_method_changed;
       case 'downgrade_scheduled': return to   ? `Downgrade to ${to} scheduled`   : EVENT_LABELS.downgrade_scheduled;
       case 'renewed':             return to   ? `Renewed — ${to}`                : EVENT_LABELS.renewed;
       case 'expired':             return to   ? `${to} expired`                  : EVENT_LABELS.expired;
@@ -504,19 +526,38 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                       Moving to {labelOf(scheduledTo)} on {endDate?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} — you keep {labelOf(billing.tier)} until then.
                     </div>
                   ) : (
-                    <button
-                      onClick={handleCancel}
-                      disabled={cancelling}
-                      style={{
-                        flexShrink: 0,
-                        background: '#fff', border: '1.5px solid #FCA5A5', borderRadius: 8,
-                        padding: '7px 16px', cursor: cancelling ? 'not-allowed' : 'pointer',
-                        fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
-                        color: cancelling ? '#ccc' : '#DC2626', opacity: cancelling ? 0.6 : 1,
-                      }}
-                    >
-                      {cancelling ? 'Cancelling…' : 'Cancel subscription'}
-                    </button>
+                    <>
+                      {/* Update payment method — a healthy PAID sub only (Spark has no mandate). Re-auths a
+                          new method on the same plan; deferred, takes over at next renewal. */}
+                      {isActive && !isOnSpark && (
+                        <button
+                          onClick={() => setShowMethodConfirm(true)}
+                          disabled={subscribing || cancelling}
+                          style={{
+                            flexShrink: 0,
+                            background: '#fff', border: '1.5px solid #E5E7EB', borderRadius: 8,
+                            padding: '7px 16px', cursor: (subscribing || cancelling) ? 'not-allowed' : 'pointer',
+                            fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                            color: '#374151', opacity: (subscribing || cancelling) ? 0.6 : 1,
+                          }}
+                        >
+                          Update payment method
+                        </button>
+                      )}
+                      <button
+                        onClick={handleCancel}
+                        disabled={cancelling}
+                        style={{
+                          flexShrink: 0,
+                          background: '#fff', border: '1.5px solid #FCA5A5', borderRadius: 8,
+                          padding: '7px 16px', cursor: cancelling ? 'not-allowed' : 'pointer',
+                          fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                          color: cancelling ? '#ccc' : '#DC2626', opacity: cancelling ? 0.6 : 1,
+                        }}
+                      >
+                        {cancelling ? 'Cancelling…' : 'Cancel subscription'}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -664,6 +705,16 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
         confirmLabel="Continue"
         onConfirm={() => { setShowChangeConfirm(false); handleSubscribe(); }}
         onCancel={() => setShowChangeConfirm(false)}
+      />
+
+      <ConfirmDialog
+        open={showMethodConfirm}
+        title="Update payment method?"
+        message={`You’ll re-authorize your payment method now. Your ${labelOf(billing?.tier)} plan continues${endDate ? ` — the new method takes over at your next renewal on ${endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}` : ' and the new method takes over at your next renewal'}.`}
+        confirmLabel="Continue"
+        cancelLabel="Not now"
+        onConfirm={() => { setShowMethodConfirm(false); handleUpdatePaymentMethod(); }}
+        onCancel={() => setShowMethodConfirm(false)}
       />
     </>
   );
