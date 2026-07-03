@@ -26,3 +26,25 @@ export function captureThumbnailBlob(canvas, { quality = THUMB_QUALITY, timeoutM
 export function blobExt(blob) {
   return blob?.type === 'image/webp' ? 'webp' : 'png';
 }
+
+// Upload a captured thumbnail blob to R2 via a signed URL → the stored key, or null on ANY failure
+// (a missing thumbnail is always non-fatal). `folder` must be an allowed sign-upload folder. This is
+// the ONE copy of the signed-PUT block that order placement, template save, and share-the-draft all
+// used to inline — the extension, the type passed to sign-upload, and the PUT header all agree.
+export async function uploadThumbnail(blob, apiClient, folder) {
+  if (!blob || !apiClient?.getSignedUploadUrl) return null;
+  try {
+    const filename = `${crypto.randomUUID()}.${blobExt(blob)}`;
+    const { url, key } = await apiClient.getSignedUploadUrl(folder, filename, blob.type);
+    await fetch(url, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob });
+    return key;
+  } catch {
+    return null;   // non-fatal — caller proceeds without a thumbnail
+  }
+}
+
+// Convenience: capture the off-screen canvas AND upload in one step → the stored key (or null).
+export async function captureAndUploadThumbnail(canvas, apiClient, folder) {
+  const blob = await captureThumbnailBlob(canvas);
+  return uploadThumbnail(blob, apiClient, folder);
+}

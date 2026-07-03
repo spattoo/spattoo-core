@@ -15,7 +15,8 @@ import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
-import { captureThumbnailBlob, blobExt } from './utils/thumbnail.js';
+import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail } from './utils/thumbnail.js';
+import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
@@ -1520,44 +1521,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setSaving(true);
     setSaveMsg(null);
 
-    // Capture from the off-screen thumbnail canvas (no floor, transparent bg) as a compact WebP
+    // Capture from the off-screen thumbnail canvas (no floor, transparent bg) as a compact WebP.
+    // Keep the blob here — the onSaveTemplate callback path hands the raw blob to the host.
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
 
-    // Derive the cake shape from the design (bottom tier): rect with equal sides = square.
-    const t0 = design.tiers[0];
-    const cakeShape = t0?.shape === 'rect'
-      ? (Math.abs((t0.width ?? 0) - (t0.depth ?? 0)) < 1e-3 ? 'square' : 'rectangle')
-      : 'round';
-
-    // Build design JSON (tiers carry shape/width/depth so a sheet round-trips on reload)
-    const designJson = {
-      shape: cakeShape,
-      tiers: design.tiers.map(t => ({
-        color:        t.color,
-        topPipings:    t.topPipings    ?? [],
-        bottomPipings: t.bottomPipings ?? [],
-        decorations:  [],
-        texts:        [],
-        ages:         [],
-        ...(t.radius != null && { radius: t.radius }),
-        ...(t.height != null && { height: t.height }),
-        ...(t.shape   != null && { shape: t.shape }),
-        ...(t.width   != null && { width: t.width }),
-        ...(t.depth   != null && { depth: t.depth }),
-        ...(t.cornerR != null && { cornerR: t.cornerR }),
-        // Per-tier wall treatments — were being dropped on order (lost on snapshot
-        // + reload): gradient fill, luster dust, gold-leaf foil.
-        ...(t.gradient != null && { gradient: t.gradient }),
-        ...(t.dusting  != null && { dusting: t.dusting }),
-        ...(t.foil     != null && { foil: t.foil }),
-      })),
-      texts:    design.texts,
-      ages:     design.ages,
-      stickers: design.stickers,
-      writing:  design.writing ?? null,
-      piping:   design.piping ?? [],
-    };
+    // Same shared serializer as order + share (tiers carry shape/width/depth so a sheet
+    // round-trips on reload). cakeShape is echoed onto the template row below.
+    const designJson = buildDesignSnapshot(design);
+    const cakeShape  = designJson.shape;
 
     try {
     if (onSaveTemplate) {
@@ -1582,16 +1554,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       return;
     }
 
-    // Upload thumbnail to R2 via signed URL
-    let thumbnail_url = null;
-    if (thumbnailBlob && apiClient?.getSignedUploadUrl) {
-      try {
-        const filename = `${crypto.randomUUID()}.${blobExt(thumbnailBlob)}`;
-        const { url, key } = await apiClient.getSignedUploadUrl('templates/thumbnails', filename, thumbnailBlob.type);
-        await fetch(url, { method: 'PUT', headers: { 'Content-Type': thumbnailBlob.type }, body: thumbnailBlob });
-        thumbnail_url = key;
-      } catch (_) { /* thumbnail upload failure is non-fatal */ }
-    }
+    // Upload thumbnail to R2 via signed URL (shared helper).
+    const thumbnail_url = await uploadThumbnail(thumbnailBlob, apiClient, 'templates/thumbnails');
 
     const { data: { user } } = await supabase.auth.getUser();
     const { data: bakerUser } = await supabase
@@ -3123,51 +3087,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   async function handleOrderSubmit(formData) {
+    // Thumbnail → R2 (never base64 in the JSON body) + the full design snapshot, via the
+    // shared helpers so order / template / share all serialise identically.
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
-
-    // Upload thumbnail directly to R2 via signed URL — never send base64 in JSON body
-    let designThumbnailKey = null;
-    if (thumbnailBlob && apiClient?.getSignedUploadUrl) {
-      try {
-        const filename = `${crypto.randomUUID()}.${blobExt(thumbnailBlob)}`;
-        const { url, key } = await apiClient.getSignedUploadUrl('orders/thumbnails', filename, thumbnailBlob.type);
-        await fetch(url, { method: 'PUT', headers: { 'Content-Type': thumbnailBlob.type }, body: thumbnailBlob });
-        designThumbnailKey = key;
-      } catch (_) { /* thumbnail upload failure is non-fatal */ }
-    }
-
-    const ot0 = design.tiers[0];
-    const orderShape = ot0?.shape === 'rect'
-      ? (Math.abs((ot0.width ?? 0) - (ot0.depth ?? 0)) < 1e-3 ? 'square' : 'rectangle')
-      : 'round';
-    const designSnapshot = {
-      shape: orderShape,
-      tiers: design.tiers.map(t => ({
-        color:        t.color,
-        topPipings:    t.topPipings    ?? [],
-        bottomPipings: t.bottomPipings ?? [],
-        decorations:  [],
-        texts:        [],
-        ages:         [],
-        ...(t.radius != null && { radius: t.radius }),
-        ...(t.height != null && { height: t.height }),
-        ...(t.shape   != null && { shape: t.shape }),
-        ...(t.width   != null && { width: t.width }),
-        ...(t.depth   != null && { depth: t.depth }),
-        ...(t.cornerR != null && { cornerR: t.cornerR }),
-        // Per-tier wall treatments — were being dropped on order (lost on snapshot
-        // + reload): gradient fill, luster dust, gold-leaf foil.
-        ...(t.gradient != null && { gradient: t.gradient }),
-        ...(t.dusting  != null && { dusting: t.dusting }),
-        ...(t.foil     != null && { foil: t.foil }),
-      })),
-      texts:    design.texts,
-      ages:     design.ages,
-      stickers: design.stickers,
-      writing:  design.writing ?? null,   // typed cream lettering — was being dropped on order
-      piping:   design.piping ?? [],       // freehand cream-pen strokes
-    };
+    const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
+    const designSnapshot = buildDesignSnapshot(design);
 
     if (editingOrder) {
       const payload = { designSnapshot, designThumbnailKey, comment: formData.comment };
