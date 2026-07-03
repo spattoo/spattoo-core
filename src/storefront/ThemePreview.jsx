@@ -325,7 +325,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     </>),
     hero: () => (<>
       <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Hero cake</div>
-      <p style={s.hlHint}>Show one of your cake designs as the hero, or keep the branded 3D cake.</p>
+      <p style={s.hlHint}>Show one of your templates as the hero, or keep the branded 3D cake.</p>
       <div style={s.heroCtrlRow}>
         <div style={s.heroCtrlThumb}>
           {customizations.hero_design_image
@@ -335,7 +335,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         <div style={s.heroCtrlBtns}>
           {designs.length > 0 && apiClient?.addStorefrontImageFromTemplate && (
             <button type="button" style={s.pickDesigns} onClick={() => setDesignPicker('hero')}>
-              <CakeGlyph /> Choose from your designs
+              Choose from templates
             </button>
           )}
           {customizations.hero_design_image && (
@@ -449,7 +449,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           (capability gate) — so a host without addStorefrontPhotoFromTemplate never shows a dead button. */}
       {designs.length > 0 && apiClient?.addStorefrontPhotoFromTemplate && (
         <button type="button" style={s.pickDesigns} onClick={() => setDesignPicker('gallery')}>
-          <CakeGlyph /> Choose from your designs
+          Choose from templates
         </button>
       )}
       <label style={s.addPhotos}>
@@ -582,13 +582,13 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         <div style={s.pickerOverlay} onClick={() => setDesignPicker(null)}>
           <div style={s.pickerPanel} onClick={e => e.stopPropagation()}>
             <div style={s.pickerHead}>
-              <span style={s.pickerTitle}>Your cake designs</span>
+              <span style={s.pickerTitle}>Your templates</span>
               <button type="button" aria-label="Close" style={s.pickerClose} onClick={() => setDesignPicker(null)}>×</button>
             </div>
             <p style={s.pickerHint}>
               {designPicker === 'hero'
-                ? 'Tap a design to show it as your hero cake.'
-                : 'Tap a design to add its picture to your gallery. You can add more than one.'}
+                ? 'Tap a template to show it as your hero cake.'
+                : 'Tap a template to add its picture to your gallery. You can add more than one.'}
             </p>
             <div style={s.pickerGrid}>
               {designs.map(d => {
@@ -609,14 +609,6 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   );
 }
 
-// Small cake glyph for the "Choose from your designs" action (no emoji — SVG per the UI rules).
-function CakeGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 21h16v-7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3z" /><path d="M4 15c1.5 1.4 2.5 1.4 4 0s2.5-1.4 4 0 2.5 1.4 4 0 2.5-1.4 4 0" /><path d="M12 8V4" /><circle cx="12" cy="3" r="1" />
-    </svg>
-  );
-}
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
