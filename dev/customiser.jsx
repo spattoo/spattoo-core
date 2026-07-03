@@ -19,10 +19,30 @@ const SAMPLE_TESTIMONIALS = [
   { id: 't2', quote: 'Tasted as good as it looked. Ordering again!',    author: 'Rohan', occasion: 'Anniversary' },
 ];
 
-// Stub apiClient — the customiser only needs read fetches to render; uploads/saves are no-ops here.
+// Sample cake designs (templates) the baker can pick gallery images from.
+const SAMPLE_DESIGNS = [
+  { id: 'd1', name: 'Classic three-tier', thumbnail_url: '/sample-cake-1.png' },
+  { id: 'd2', name: 'Floral buttercream',  thumbnail_url: '/sample-cake-2.png' },
+  { id: 'd3', name: 'Chocolate drip',      thumbnail_url: '/sample-cake-3.png' },
+  { id: 'd4', name: 'Ivory & gold',        thumbnail_url: '/sample-cake-1.png' },
+];
+
+// Stub apiClient — read fetches to render; the from-design snapshot returns a fake persisted row.
 const apiClient = {
   fetchStorefrontPhotos: async () => ({ photos: SAMPLE_GALLERY }),
   fetchTestimonials:     async () => ({ testimonials: SAMPLE_TESTIMONIALS }),
+  fetchTemplates:        async () => ({ templates: SAMPLE_DESIGNS }),
+  // Real endpoint copies the design's thumbnail into the gallery folder + inserts a row; the stub
+  // just echoes a row so the picker flow (optimistic add → reconcile) can be verified end-to-end.
+  addStorefrontPhotoFromTemplate: async (id) => {
+    const d = SAMPLE_DESIGNS.find(x => x.id === id);
+    return { id: `p-${id}-x`, key: `storefront/gallery/${id}.webp`, url: d?.thumbnail_url };
+  },
+  // Hero snapshot: copies the design thumbnail and returns { key, url } (no photo row).
+  addStorefrontImageFromTemplate: async (id) => {
+    const d = SAMPLE_DESIGNS.find(x => x.id === id);
+    return { key: `storefront/gallery/hero-${id}.webp`, url: d?.thumbnail_url };
+  },
 };
 
 function Harness() {

@@ -75,7 +75,7 @@ const AURORA_TOKENS = {
 // Which customiser controls a template exposes, in order. The customiser (ThemePreview) renders the
 // left panel from this list; omit it → DEFAULT_CONTROLS (all). This is how a template hides
 // irrelevant knobs (e.g. a photo-hero template would swap in a hero-photo uploader).
-export const DEFAULT_CONTROLS = ['brandColors', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
+export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
 
 export const TEMPLATES = {
   spotlight: {
