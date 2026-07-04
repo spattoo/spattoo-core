@@ -153,8 +153,10 @@ export function buildContent(baker) {
   return {
     steps: [
       { n: '01', title: 'Design it in 3D', body: 'Start from a template or a blank cake — add tiers, colours, toppers and a message, live in 3D.' },
-      { n: '02', title: 'Send your order', body: `Happy with it? Share your design with ${baker.name}, with your date and any details.` },
-      { n: '03', title: 'Pickup or delivery', body: `${baker.name} bakes it to match your design, ready exactly when you need it.` },
+      { n: '02', title: 'Request a quote', body: `Happy with it? Send your design to ${baker.name} with your date and any details.` },
+      { n: '03', title: 'Get your quote', body: `${baker.name} reviews the design and sends you a price.` },
+      { n: '04', title: 'Approve & order', body: 'Approve the price and place your order.' },
+      { n: '05', title: 'Bake & collect', body: `${baker.name} bakes it and lets you know when it's ready.` },
     ],
     testimonials: [
       { quote: "The 3D designer let me get exactly the cake I pictured for my daughter's birthday — and it looked even better in person!", author: 'Priya S.', occasion: 'Birthday' },

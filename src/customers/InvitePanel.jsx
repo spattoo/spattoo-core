@@ -45,6 +45,18 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
     e.preventDefault();
     if (!form.firstName.trim())                   return setError('First name is required');
     if (!form.email.trim() && !form.phone.trim()) return setError('Email or phone is required');
+    // Light instant checks (the server does the authoritative libphonenumber /max + email validation and
+    // returns a clear error). Kept lenient so we never reject what the server would accept — just catch
+    // obvious garbage (letters in a phone, too few digits, a malformed email).
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      return setError('Enter a valid email address');
+    }
+    if (form.phone.trim()) {
+      const digits = form.phone.replace(/\D/g, '');
+      if (!/^\+?[\d\s()-]+$/.test(form.phone.trim()) || digits.length < 8) {
+        return setError('Enter a valid phone number');
+      }
+    }
     sendInvite({
       firstName: form.firstName.trim(),
       lastName:  form.lastName.trim() || undefined,

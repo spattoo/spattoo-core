@@ -427,6 +427,7 @@ export default function CustomerStorefront({
           logo={logo}
           primary={primary}
           accent={accent}
+          pal={pal}
           onClose={() => setWelcomeOpen(false)}
         />
       )}
@@ -448,7 +449,7 @@ export default function CustomerStorefront({
           <div style={s.howCard} onClick={e => e.stopPropagation()}>
             <button type="button" aria-label="Close" style={s.howClose} onClick={() => setHowOpen(false)}>×</button>
             <div style={s.eyebrow}>How it works</div>
-            <h2 style={s.howTitle}>From idea to cake in 3 steps</h2>
+            <h2 style={s.howTitle}>From idea to cake</h2>
             {steps.map(st => (
               <div key={st.n} style={s.howStep}>
                 <div style={s.stepNum}>{st.n}</div>
@@ -516,8 +517,8 @@ function Section({ id, eyebrow, title, s, children }) {
 // The first thing an invited customer sees. Blurs the storefront and orients them,
 // then OK closes it so they can browse the baker's story + gallery before designing
 // (the sticky "Start designing" CTA is always there when they're ready).
-function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, onClose }) {
-  const m = welcomeStyles(primary, accent);
+function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, pal, onClose }) {
+  const m = welcomeStyles(primary, accent, pal);
   const cakePhrase = occasion ? `your ${occasion} cake` : 'your dream cake';
   return (
     <div style={m.overlay} role="dialog" aria-modal="true" aria-label={`Invitation from ${bakerName}`}>
@@ -938,7 +939,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
   };
 }
 
-function welcomeStyles(primary, accent) {
+function welcomeStyles(primary, accent, pal) {
   const heading = mix(primary, '#2b2228', 0.42);
   const muted   = mix(primary, '#8d878a', 0.5);
   return {
