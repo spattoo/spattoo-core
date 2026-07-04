@@ -3443,6 +3443,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       thumb: /\.(glb|gltf)(\?|$)/i.test(cEl?.image_url ?? '') ? (cEl?.thumbnail_url ?? null) : (cEl?.image_url ?? cEl?.thumbnail_url ?? null),
     });
   }
+  // Tool finishes (luster dust, freehand cream pen) — their editor is the Tools composer (a placement
+  // MODE), but the applied result is a persistent finish just like foil/cream. So they get a persistent
+  // card here that reappears whenever the cake carries the finish; clicking it reopens the composer
+  // (selectDecorationCard → type 'tool'). This is the always-present re-entry the composer's ✕ collapses
+  // back to — so closing the composer is never a dead-end. type 'tool' never expands inline (isCardSelected
+  // is false for it), it only launches the composer.
+  if ((selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust') || design.tiers.some(t => t.dusting?.splashes?.length)) {
+    decorationCards.unshift({ key: 'luster-dust', type: 'tool', tool: 'luster-dust', name: 'Luster Dust', thumb: null });
+  }
+  if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
+    decorationCards.unshift({ key: 'cream-pen', type: 'tool', tool: 'pen', name: 'Cream Pen', thumb: null });
+  }
   // The element stack is ONE persistent right-side editor holding every editable
   // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
   // single accordion. It stays open as long as the cake carries any of them and no
@@ -3468,8 +3480,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : card.type === 'foil' ? true
          : card.type === 'cream' ? true
+         : card.type === 'tool' ? selectedEl.tool === card.tool
          : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
+    // Tool finishes (luster dust / freehand cream pen) expand INLINE like every other card — selecting
+    // the tool renders its editor body (renderDustBody / renderPenBody) inside the card. Its placement
+    // mode (dustMode / penDrawMode) is gated on this selection. Collapse = click the header again
+    // (clearAllSelections). No ✕ — consistent with the piping/foil/cream/writing cards.
+    if (card.type === 'tool') {
+      setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false);
+      setSelectedEl({ type: 'tool', tool: card.tool });
+      return;
+    }
     setColorOpen(false);
     setExpandedPipingId(null);   // collapse any expanded piping card — single expansion
     if (card.type === 'decorEl') {
@@ -4489,6 +4511,128 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  // Cream Pen (freehand) editor body — rendered inline as the expanded body of its stack card (like
+  // renderWritingEditor / renderFoilBody), NOT in a floating popup. Dismiss = collapse the card; no ✕.
+  function renderPenBody() {
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.
+        </div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Cream colour</div>
+        <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
+          cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={152} />
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
+        <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
+        <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
+
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
+          {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <button onClick={removeStroke} disabled={!design.piping.length}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
+              color: design.piping.length ? '#1a1a1a' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+            ↶ Undo
+          </button>
+          <button onClick={clearPiping} disabled={!design.piping.length}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
+              color: design.piping.length ? '#b56' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+            Clear all
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // Luster Dust editor body — inline expanded body of its stack card (like the cream pen above).
+  function renderDustBody() {
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Add a flick, then drag its dot on the cake to position it. Use Direction &amp; Spread to aim.
+        </div>
+
+        {design.tiers.length > 1 && (
+          <>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Tier</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {design.tiers.map((t, i) => (
+                <button key={i} onClick={() => { setDustTier(i); setDustSel(0); }}
+                  style={{ padding: '5px 11px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                    border: dustTier === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
+                    background: dustTier === i ? '#3D5A44' : '#fff', color: dustTier === i ? '#fff' : '#3D5A44' }}>
+                  Tier {i + 1}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <button onClick={() => addDustToTier(dustTier)}
+          style={{ width: '100%', marginTop: 10, padding: '10px 0', borderRadius: 8, border: 'none', background: '#3D5A44', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+          + Add dust flick
+        </button>
+
+        {dustSplashes.length > 0 && (
+          <>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Flicks</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {dustSplashes.map((sp, i) => (
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 16, overflow: 'hidden',
+                  border: dustSel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
+                  background: dustSel === i ? '#3D5A44' : '#fff', color: dustSel === i ? '#fff' : '#3D5A44' }}>
+                  <button onClick={() => setDustSel(i)} style={{ padding: '5px 6px 5px 11px', border: 'none', background: 'transparent', color: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Flick {i + 1}</button>
+                  <button onClick={() => { removeDustSplash(dustTier, i); setDustSel(s => Math.max(0, s - (i <= s ? 1 : 0))); }} style={{ padding: '5px 9px', border: 'none', background: 'transparent', color: 'inherit', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>×</button>
+                </span>
+              ))}
+            </div>
+
+            {dustSplashes[dustSel] && (
+              <div style={{ marginTop: 8 }}>
+                <PenSlider label="Position"  value={dustSplashes[dustSel].u}      min={0}    max={1}   step={0.01} onChange={v => updateDustSplash(dustTier, dustSel, { u: v })}      fmt={v => v.toFixed(2)} />
+                <PenSlider label="Height"    value={dustSplashes[dustSel].v}      min={0}    max={1}   step={0.01} onChange={v => updateDustSplash(dustTier, dustSel, { v })}         fmt={v => v.toFixed(2)} />
+                <PenSlider label="Direction" value={dustSplashes[dustSel].dir}    min={0}    max={360} step={5}    onChange={v => updateDustSplash(dustTier, dustSel, { dir: v })}    fmt={v => `${Math.round(v)}°`} />
+                <PenSlider label="Spread"    value={dustSplashes[dustSel].spread} min={0.15} max={2}   step={0.05} onChange={v => updateDustSplash(dustTier, dustSel, { spread: v })} fmt={v => v.toFixed(2)} />
+              </div>
+            )}
+
+            {/* Density / Fleck size / Glow apply to the whole dusting on this tier, not one flick. */}
+            <div style={{ marginTop: 8 }}>
+              <PenSlider label="Density"    value={design.tiers[dustTier]?.dusting?.density   ?? 2} min={1}   max={8} step={1}   onChange={v => updateDusting(dustTier, { density: v })}   fmt={v => `${Math.round(v)}`} />
+              <PenSlider label="Fleck size" value={design.tiers[dustTier]?.dusting?.fleckSize ?? 4} min={1.5} max={9} step={0.5} onChange={v => updateDusting(dustTier, { fleckSize: v })} fmt={v => v.toFixed(1)} />
+              <PenSlider label="Glow"       value={design.tiers[dustTier]?.dusting?.glow      ?? 0} min={0}   max={0.6} step={0.05} onChange={v => updateDusting(dustTier, { glow: v })}      fmt={v => v.toFixed(2)} />
+            </div>
+          </>
+        )}
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Dust colour</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="color" value={dustColor} onChange={e => setAllDustColor(e.target.value)}
+            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
+          {DUST_COLORS.map(d => (
+            <button key={d.color} onClick={() => setAllDustColor(d.color)}
+              style={{ padding: '5px 11px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                border: dustColor.toLowerCase() === d.color.toLowerCase() ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
+                background: dustColor.toLowerCase() === d.color.toLowerCase() ? '#3D5A44' : '#fff',
+                color: dustColor.toLowerCase() === d.color.toLowerCase() ? '#fff' : '#3D5A44' }}>
+              {d.label}
+            </button>
+          ))}
+        </div>
+
+        {dustSplashCount > 0 && (
+          <button onClick={() => design.tiers.forEach((t, i) => t.dusting && clearDusting(i))}
+            style={{ width: '100%', marginTop: 10, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer', fontFamily: 'inherit' }}>
+            Clear all dust
+          </button>
+        )}
+      </>
+    );
+  }
+
   if (!bakerReady) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f4f4f5', fontFamily: "'Quicksand', sans-serif" }}>
@@ -4810,7 +4954,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!elemSearch.trim() && (
               <>
                 <button
-                  onClick={() => { focusEditor('tools'); setToolsOpen(true); setActiveTool('pen'); setElementsOpen(false); }}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'tool', tool: 'pen' }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0 }} />
                   <div style={{ textAlign: 'left' }}>
@@ -4819,7 +4963,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
-                  onClick={() => { focusEditor('tools'); setToolsOpen(true); setActiveTool('luster-dust'); setElementsOpen(false); }}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'tool', tool: 'luster-dust' }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: 'radial-gradient(circle at 35% 35%, #f0cf63, #9a7b2e)', flexShrink: 0 }} />
                   <div style={{ textAlign: 'left' }}>
@@ -4859,146 +5003,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
 
-        {/* ── Cream Pen / Texts editor — a RIGHT-side popup (desktop) like the cream-piping
-              popup, so the Decorations panel stays open on the left and the pen can be used
-              alongside other cream elements. On mobile it stays a bottom sheet. ── */}
-        {toolsOpen && (<>
-          {/* Right-side popup on every viewport (was a bottom sheet on mobile). A bottom
-              sheet grew upward over the cake as its controls expanded; a right popup scrolls
-              within a fixed column, consistent with the piping/edit popups. */}
-          <div style={{ ...s.flyout, left: 'auto', right: 10, top: 12, bottom: 'auto',
-            width: isMobile ? 252 : 272, margin: 0, borderRadius: 16,
-            maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))' }}>
-            <div style={s.flyoutHeader}>
-              <span style={s.flyoutTitle}>{activeTool === 'luster-dust' ? 'Luster Dust' : 'Cream Pen'}</span>
-              <button style={s.iconBtn} onClick={() => { setToolsOpen(false); setActiveTool(null); }}>✕</button>
-            </div>
-
-            <div style={s.flyoutScroll}>
-              {/* Cream Pen (freehand) editor */}
-              {activeTool === 'pen' && (
-                <>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
-                    Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.
-                  </div>
-
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Cream colour</div>
-                  <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
-                    cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={208} />
-
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
-                  <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
-                  <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
-
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
-                    {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                    <button onClick={removeStroke} disabled={!design.piping.length}
-                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
-                        color: design.piping.length ? '#1a1a1a' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
-                      ↶ Undo
-                    </button>
-                    <button onClick={clearPiping} disabled={!design.piping.length}
-                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
-                        color: design.piping.length ? '#b56' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
-                      Clear all
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* Luster Dust (flicked metallic dust) editor — add a flick, then aim it with the sliders
-                  (no cake-tapping, so normal tier editing is untouched). */}
-              {activeTool === 'luster-dust' && (
-                <>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
-                    Add a flick, then drag its dot on the cake to position it. Use Direction &amp; Spread to aim.
-                  </div>
-
-                  {design.tiers.length > 1 && (
-                    <>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Tier</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {design.tiers.map((t, i) => (
-                          <button key={i} onClick={() => { setDustTier(i); setDustSel(0); }}
-                            style={{ padding: '5px 11px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                              border: dustTier === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
-                              background: dustTier === i ? '#3D5A44' : '#fff', color: dustTier === i ? '#fff' : '#3D5A44' }}>
-                            Tier {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  <button onClick={() => addDustToTier(dustTier)}
-                    style={{ width: '100%', marginTop: 10, padding: '10px 0', borderRadius: 8, border: 'none', background: '#3D5A44', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    + Add dust flick
-                  </button>
-
-                  {dustSplashes.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Flicks</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {dustSplashes.map((sp, i) => (
-                          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 16, overflow: 'hidden',
-                            border: dustSel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
-                            background: dustSel === i ? '#3D5A44' : '#fff', color: dustSel === i ? '#fff' : '#3D5A44' }}>
-                            <button onClick={() => setDustSel(i)} style={{ padding: '5px 6px 5px 11px', border: 'none', background: 'transparent', color: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Flick {i + 1}</button>
-                            <button onClick={() => { removeDustSplash(dustTier, i); setDustSel(s => Math.max(0, s - (i <= s ? 1 : 0))); }} style={{ padding: '5px 9px', border: 'none', background: 'transparent', color: 'inherit', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>×</button>
-                          </span>
-                        ))}
-                      </div>
-
-                      {dustSplashes[dustSel] && (
-                        <div style={{ marginTop: 8 }}>
-                          <PenSlider label="Position"  value={dustSplashes[dustSel].u}      min={0}    max={1}   step={0.01} onChange={v => updateDustSplash(dustTier, dustSel, { u: v })}      fmt={v => v.toFixed(2)} />
-                          <PenSlider label="Height"    value={dustSplashes[dustSel].v}      min={0}    max={1}   step={0.01} onChange={v => updateDustSplash(dustTier, dustSel, { v })}         fmt={v => v.toFixed(2)} />
-                          <PenSlider label="Direction" value={dustSplashes[dustSel].dir}    min={0}    max={360} step={5}    onChange={v => updateDustSplash(dustTier, dustSel, { dir: v })}    fmt={v => `${Math.round(v)}°`} />
-                          <PenSlider label="Spread"    value={dustSplashes[dustSel].spread} min={0.15} max={2}   step={0.05} onChange={v => updateDustSplash(dustTier, dustSel, { spread: v })} fmt={v => v.toFixed(2)} />
-                        </div>
-                      )}
-
-                      {/* Density / Fleck size / Glow apply to the whole dusting on this tier, not one flick. */}
-                      <div style={{ marginTop: 8 }}>
-                        <PenSlider label="Density"    value={design.tiers[dustTier]?.dusting?.density   ?? 2} min={1}   max={8} step={1}   onChange={v => updateDusting(dustTier, { density: v })}   fmt={v => `${Math.round(v)}`} />
-                        <PenSlider label="Fleck size" value={design.tiers[dustTier]?.dusting?.fleckSize ?? 4} min={1.5} max={9} step={0.5} onChange={v => updateDusting(dustTier, { fleckSize: v })} fmt={v => v.toFixed(1)} />
-                        <PenSlider label="Glow"       value={design.tiers[dustTier]?.dusting?.glow      ?? 0} min={0}   max={0.6} step={0.05} onChange={v => updateDusting(dustTier, { glow: v })}      fmt={v => v.toFixed(2)} />
-                      </div>
-                    </>
-                  )}
-
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Dust colour</div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <input type="color" value={dustColor} onChange={e => setAllDustColor(e.target.value)}
-                      style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
-                    {DUST_COLORS.map(d => (
-                      <button key={d.color} onClick={() => setAllDustColor(d.color)}
-                        style={{ padding: '5px 11px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                          border: dustColor.toLowerCase() === d.color.toLowerCase() ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
-                          background: dustColor.toLowerCase() === d.color.toLowerCase() ? '#3D5A44' : '#fff',
-                          color: dustColor.toLowerCase() === d.color.toLowerCase() ? '#fff' : '#3D5A44' }}>
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {dustSplashCount > 0 && (
-                    <button onClick={() => design.tiers.forEach((t, i) => t.dusting && clearDusting(i))}
-                      style={{ width: '100%', marginTop: 10, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      Clear all dust
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* The Texts (typed-cream) editor now lives in the unified element stack as
-                  the writing card — see renderWritingEditor(). The tools drawer is freehand
-                  Cream Pen only. */}
-            </div>{/* end flyoutScroll */}
-          </div>
-        </>)}
+        {/* Cream Pen (freehand) and Luster Dust editors now live INLINE in the element stack as their
+            own cards (renderPenBody / renderDustBody), exactly like the piping and Texts cards — no
+            floating popup, no ✕. Dismiss = collapse the card. */}
 
         {/* ── Templates flyout ── */}
         {templatesOpen && (
@@ -5153,10 +5160,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onWritingClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); setElementsOpen(false); }}
               onWritingMove={moves => setWriting(moves)}
               writingSelected={selectedEl?.type === 'writing'}
-              penDrawMode={toolsOpen && activeTool === 'pen'}
+              penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen'}
               penStyle={penStyle}
               onAddStroke={addStroke}
-              dustMode={toolsOpen && activeTool === 'luster-dust'}
+              dustMode={selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust'}
               dustSelected={{ tier: dustTier, idx: dustSel }}
               onDustMove={(tier, idx, u, v) => updateDustSplash(tier, idx, { u, v })}
               onDustSelect={(tier, idx) => { setDustTier(tier); setDustSel(idx); }}
@@ -5495,6 +5502,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'cluster' ? renderClusterBody(card)
                            : card.type === 'foil' ? renderFoilBody(card)
                            : card.type === 'cream' ? renderCreamBody()
+                           : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
                       )}
