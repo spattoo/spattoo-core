@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import PlanCards from '../billing/PlanCards.jsx';
+import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
+
+// GSTIN format (client-side, immediate feedback). The server does the authoritative checksum validation;
+// here we only gate the obviously-malformed so the button can enable/disable as the baker types.
+const GSTIN_FORMAT_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
 function useIsMobile() {
   const [m, setM] = useState(() => window.innerWidth < 768);
@@ -102,6 +107,73 @@ function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelL
             }}
           >
             {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Checkout review — base + GST breakup + GSTIN capture, shown before Razorpay Checkout ──────────
+// Razorpay's subscription checkout doesn't itemise base+GST, so we show it. A SINGLE flat GST line (no
+// CGST/SGST/IGST split — that's the invoice's / accounting system's job). GSTIN is optional and saved to
+// the profile on continue so automatic renewals reuse it.
+function CheckoutReview({ open, planLabel, periodLabel, breakup, timingNote, currency, primaryColor, accentColor, initialGstin, saving, error, onCancel, onContinue }) {
+  const [gstin, setGstin] = useState(initialGstin ?? '');
+  useEffect(() => { if (open) setGstin(initialGstin ?? ''); }, [open, initialGstin]);
+  if (!open) return null;
+  const normalized = gstin.trim().toUpperCase();
+  const formatBad  = normalized !== '' && !GSTIN_FORMAT_RE.test(normalized);
+  const row = (label, value, strong) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+      fontSize: strong ? 15 : 13, fontWeight: strong ? 800 : 600, color: strong ? '#1a1a1a' : '#6B7280' }}>
+      <span>{label}</span><span>{value}</span>
+    </div>
+  );
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'center',
+      justifyContent: 'center', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)', fontFamily: "'Quicksand', sans-serif" }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: '26px 26px 22px', width: 380,
+        maxWidth: 'calc(100vw - 40px)', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>Review &amp; pay</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#2C4433' }}>{planLabel} · {periodLabel}</div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, background: '#F8FAF9', borderRadius: 12, padding: '14px 16px' }}>
+          {row('Base', formatPlanPrice(breakup.base, { currency }))}
+          {row(`GST (${breakup.ratePct}%)`, formatPlanPrice(breakup.gst, { currency }))}
+          <div style={{ height: 1, background: '#E8EFE9', margin: '2px 0' }} />
+          {row('Total', formatPlanPrice(breakup.total, { currency }), true)}
+        </div>
+
+        {timingNote && <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', lineHeight: 1.6 }}>{timingNote}</div>}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>GSTIN <span style={{ color: '#9BB5A2', fontWeight: 600 }}>(optional — for input tax credit)</span></label>
+          <input
+            value={gstin}
+            onChange={e => setGstin(e.target.value.toUpperCase())}
+            placeholder="e.g. 36ABCDE1234F1Z5"
+            maxLength={15}
+            style={{ padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${formatBad ? '#FCA5A5' : '#E5E7EB'}`,
+              fontFamily: 'inherit', fontSize: 14, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: '#1a1a1a' }}
+          />
+          {formatBad && <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>That doesn’t look like a valid GSTIN (15 characters).</div>}
+          {error && <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>{error}</div>}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 2 }}>
+          <button onClick={onCancel} disabled={saving} style={{ padding: '9px 20px', borderRadius: 10, border: '1.5px solid #E5E7EB',
+            background: '#fff', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#6B7280' }}>
+            Cancel
+          </button>
+          <button
+            onClick={() => onContinue(normalized === '' ? null : normalized)}
+            disabled={saving || formatBad}
+            style={{ padding: '9px 22px', borderRadius: 10, border: 'none',
+              background: (saving || formatBad) ? '#E2E8E4' : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+              cursor: (saving || formatBad) ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+              color: (saving || formatBad) ? '#9BB5A2' : '#fff' }}>
+            {saving ? 'Saving…' : 'Continue to payment'}
           </button>
         </div>
       </div>
@@ -224,7 +296,9 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [subscribing,    setSubscribing]    = useState(false);
   const [cancelling,     setCancelling]     = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [showChangeConfirm, setShowChangeConfirm] = useState(false);   // reactivation / downgrade confirm
+  const [showCheckoutReview, setShowCheckoutReview] = useState(false); // base+GST breakup + GSTIN, before Checkout
+  const [savingGstin,    setSavingGstin]    = useState(false);
+  const [checkoutError,  setCheckoutError]  = useState(null);
   const [showMethodConfirm, setShowMethodConfirm] = useState(false);   // update-payment-method confirm
   const [error,          setError]          = useState(null);
   const [entitlements,   setEntitlements]   = useState(null);
@@ -324,6 +398,20 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       await runCheckout(await apiClient.createSubscription(selectedTier, periodObj?.id, opts));
     } catch (e) { setError(e.message); }
     finally { setSubscribing(false); }
+  }
+
+  // Checkout review "Continue": persist the GSTIN (only if changed) so renewals reuse it, then proceed to
+  // Checkout. A rejected GSTIN (server checksum) keeps the review open with the error — we never pay with a
+  // bad GSTIN on record. gstin is normalized or null (cleared).
+  async function confirmCheckout(gstin) {
+    setSavingGstin(true); setCheckoutError(null);
+    try {
+      const changed = (gstin ?? null) !== (billing?.gstin ?? null);
+      if (changed && apiClient.updateTaxProfile) await apiClient.updateTaxProfile(gstin);
+      setShowCheckoutReview(false);
+      await handleSubscribe();
+    } catch (e) { setCheckoutError(e.message || 'Could not save your GSTIN — please check and retry.'); }
+    finally { setSavingGstin(false); }
   }
 
   // Update payment method (e.g. UPI→card): re-authorize a NEW mandate on the SAME plan + period. It's a
@@ -645,7 +733,11 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
 
                 {/* Subscribe / Upgrade button — always visible */}
                 <button
-                  onClick={isSameTierSamePeriod ? undefined : (needsChangeConfirm ? () => setShowChangeConfirm(true) : handleSubscribe)}
+                  onClick={
+                    isSameTierSamePeriod ? undefined
+                    : selectedTier === 'spark' ? handleSubscribe   // free — no charge, no GST, skip review
+                    : () => { setCheckoutError(null); setShowCheckoutReview(true); }
+                  }
                   disabled={subscribing || isSameTierSamePeriod}
                   style={{
                     padding: '15px', borderRadius: 14, border: 'none',
@@ -727,13 +819,19 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
         onCancel={() => setShowCancelConfirm(false)}
       />
 
-      <ConfirmDialog
-        open={showChangeConfirm}
-        title={isIntervalSwitch ? 'Switch billing interval?' : windingDown ? 'Reactivate subscription?' : 'Switch plan?'}
-        message={changeConfirmMessage()}
-        confirmLabel="Continue"
-        onConfirm={() => { setShowChangeConfirm(false); handleSubscribe(); }}
-        onCancel={() => setShowChangeConfirm(false)}
+      <CheckoutReview
+        open={showCheckoutReview}
+        planLabel={labelOf(selectedTier)}
+        periodLabel={PERIOD_SHORT[selectedPeriod] ?? selectedPeriod}
+        breakup={gstBreakup(periodPrice(planByName[selectedTier], periods.find(p => p.name === selectedPeriod) || { name: selectedPeriod, months: 1, discount_pct: 0 }))}
+        timingNote={needsChangeConfirm ? changeConfirmMessage() : null}
+        primaryColor={primaryColor}
+        accentColor={accentColor}
+        initialGstin={billing?.gstin ?? ''}
+        saving={savingGstin || subscribing}
+        error={checkoutError}
+        onCancel={() => setShowCheckoutReview(false)}
+        onContinue={confirmCheckout}
       />
 
       <ConfirmDialog
