@@ -2299,6 +2299,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setActiveGroupKey(null);
   }
 
+  // Clear the transient right-side editor UI: the piping-card stack + tools composer + open popups.
+  // Decoration cards are DERIVED from `design` (so a reset/replace of the design clears them on its
+  // own); piping cards + tools are independent UI state and must be cleared explicitly, else they
+  // linger as orphaned cards after the design underneath them is gone. Used by every full design swap
+  // (New Cake, template load) so no stale cards survive it.
+  function resetEditors() {
+    setPipingCards([]);
+    setExpandedPipingId(null);
+    setToolsOpen(false);
+    setActiveTool(null);
+    closeAllPopups();
+  }
+
   // One right-side editor active at a time. Opening any of the three editors —
   // the decoration accordion, the piping stack, or the tools composer — collapses
   // the other two, so a newly opened element is the sole expanded popup (the rule
@@ -3075,6 +3088,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleNewCake() {
     resetDesign();
     clearAllSelections();
+    resetEditors();
     setEditingOrder(null);
     setElementsOpen(false);
     setTemplatesOpen(false);
@@ -5077,6 +5091,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     loadDesign(templateDesign);
                     setTemplatesOpen(false);
                     clearAllSelections();
+                    resetEditors();
                   }
                 }}
               >
