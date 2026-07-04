@@ -36,6 +36,7 @@ const EVENT_LABELS = {
   cancelled:           'Subscription cancelled',
   reactivated:            'Subscription reactivated',
   payment_method_changed: 'Payment method updated',
+  interval_changed:       'Billing interval changed',
   payment_failed:         'Payment failed',
   admin_override:         'Updated by admin',
 };
@@ -317,7 +318,10 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
         return;
       }
       const periodObj = periods.find(p => inferPeriodType(p.display_name) === selectedPeriod) ?? periods[0];
-      await runCheckout(await apiClient.createSubscription(selectedTier, periodObj?.id));
+      // Interval switch (same tier, monthly↔yearly) is tagged so the timeline/logging read clearly; the
+      // server independently confirms it by comparing periods, so this intent never gates the flow.
+      const opts = isIntervalSwitch ? { intent: 'switch_interval' } : undefined;
+      await runCheckout(await apiClient.createSubscription(selectedTier, periodObj?.id, opts));
     } catch (e) { setError(e.message); }
     finally { setSubscribing(false); }
   }
@@ -359,11 +363,16 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const endDate    = billing?.next_billing_at ? new Date(billing.next_billing_at) : null;
   const daysLeft   = endDate ? Math.max(0, Math.ceil((endDate - Date.now()) / 86400000)) : null;
 
-  // cancel_at_period_end is set by BOTH a real cancel AND a scheduled change (downgrade / reactivation),
-  // so distinguish them for the copy. `scheduled_downgrade_to` = the plan that takes over at period end.
+  // cancel_at_period_end is set by BOTH a real cancel AND a scheduled change (downgrade / reactivation /
+  // interval switch), so distinguish them for the copy. `scheduled_downgrade_to` = the plan that takes
+  // over at period end; `scheduled_period` = the period it moves to (set only for a same-tier interval switch).
+  const currentPeriodType    = inferPeriodType(billing?.billing_period);
   const scheduledTo          = billing?.scheduled_downgrade_to ?? null;
-  const isReactivateSame     = !!scheduledTo && scheduledTo === billing?.tier;   // resubscribed to same plan → renews
-  const isDowngradeScheduled = !!scheduledTo && !isReactivateSame;               // scheduled change to a different plan
+  const scheduledPeriod      = billing?.scheduled_period ?? null;                // period the baker moves to (interval switch)
+  // Same tier + a different scheduled period = an armed interval switch (NOT a plain reactivate/renew).
+  const isIntervalScheduled  = !!scheduledTo && scheduledTo === billing?.tier && !!scheduledPeriod && scheduledPeriod !== currentPeriodType;
+  const isReactivateSame     = !!scheduledTo && scheduledTo === billing?.tier && !isIntervalScheduled;   // resubscribed to same plan → renews
+  const isDowngradeScheduled = !!scheduledTo && scheduledTo !== billing?.tier;   // scheduled change to a different tier
   const realCancel           = cancelScheduled && !scheduledTo;                  // a true cancel (no pending change)
   const windingDown          = isActive && realCancel;                           // cancelled + in grace → reactivatable
   // Spark is the free baseline — a PAID baker can't re-select it (returning to free = Cancel). A baker
@@ -377,31 +386,40 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const currentRank  = rankOf(billing?.tier);
   const selectedRank = rankOf(selectedTier);
   // Same tier is only "current" when NOT winding down — while cancelled, picking the same tier = reactivate.
-  const isSameTier   = billing && selectedTier === billing.tier && !windingDown;
+  const isSameTier = billing && selectedTier === billing.tier && !windingDown;
+  // The TRUE no-op = same tier AND same period (disables the CTA). Same tier + a DIFFERENT period is an
+  // interval switch (monthly↔yearly) — a real, deferred change, not a no-op.
+  const isSameTierSamePeriod = isSameTier && selectedPeriod === currentPeriodType;
+  const isIntervalSwitch     = isSameTier && isActive && !isOnSpark && selectedPeriod !== currentPeriodType;
 
   function ctaLabel() {
     if (subscribing) return 'Processing…';
     if (windingDown) return selectedTier === billing.tier ? `Reactivate ${labelOf(selectedTier)}` : `Switch to ${labelOf(selectedTier)}`;
-    if (isSameTier) return `${labelOf(selectedTier)} — Current Plan`;
+    if (isSameTierSamePeriod) return `${labelOf(selectedTier)} — Current Plan`;
+    if (isIntervalSwitch) return `Switch to ${PERIOD_SHORT[selectedPeriod]} billing`;
     if (selectedTier === 'spark') return 'Switch to Spark — Free';
     if (!isActive || isOnSpark || selectedRank > currentRank) return `Upgrade to ${labelOf(selectedTier)}`;
     return `Switch to ${labelOf(selectedTier)}`;
   }
 
-  // Reactivation or a downgrade defers the change to period-end — confirm first so the baker sees it.
-  const needsChangeConfirm = billing && !isSameTier && selectedTier !== 'spark'
-    && (windingDown || (isActive && !isOnSpark && selectedRank < currentRank));
+  // A reactivation, downgrade, or interval switch defers to period-end — confirm first so the baker sees it.
+  const needsChangeConfirm = billing && !isSameTierSamePeriod && selectedTier !== 'spark'
+    && (windingDown || isIntervalSwitch || (isActive && !isOnSpark && selectedRank < currentRank));
   function changeConfirmMessage() {
     const cur = labelOf(billing?.tier), next = labelOf(selectedTier);
     const dateStr = endDate ? endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : 'the end of your current period';
-    const reauth = windingDown ? ' You’ll re-authorize your payment method now.' : '';
+    const reauth = ' You’ll re-authorize your payment method now.';
+    if (isIntervalSwitch) {   // same tier, monthly↔yearly — deferred to cycle end, fresh mandate now
+      return `You’ll keep ${PERIOD_SHORT[currentPeriodType]} billing until ${dateStr}, then switch to ${PERIOD_SHORT[selectedPeriod]} billing.${reauth}`;
+    }
     if (windingDown && selectedRank > currentRank) {   // reactivate to a higher tier = immediate upgrade
       return `You’ll upgrade to ${next} now.${reauth}`;
     }
     if (windingDown && selectedTier === billing?.tier) {   // reactivate the same plan = it just renews
       return `Your subscription will continue — you keep access until ${dateStr}, then it renews as ${next}.${reauth}`;
     }
-    return `You’ll keep ${cur} until ${dateStr}, then move to ${next}.${reauth}`;   // downgrade / reactivate-lower
+    const dgReauth = windingDown ? reauth : '';
+    return `You’ll keep ${cur} until ${dateStr}, then move to ${next}.${dgReauth}`;   // downgrade / reactivate-lower
   }
 
   function getDiscount(pk) {
@@ -420,6 +438,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       case 'downgraded':          return to   ? `Downgraded to ${to}`            : EVENT_LABELS.downgraded;
       case 'reactivated':         return to   ? `Reactivated — ${to}`            : EVENT_LABELS.reactivated;
       case 'payment_method_changed': return EVENT_LABELS.payment_method_changed;
+      case 'interval_changed':    return EVENT_LABELS.interval_changed;
       case 'downgrade_scheduled': return to   ? `Downgrade to ${to} scheduled`   : EVENT_LABELS.downgrade_scheduled;
       case 'renewed':             return to   ? `Renewed — ${to}`                : EVENT_LABELS.renewed;
       case 'expired':             return to   ? `${to} expired`                  : EVENT_LABELS.expired;
@@ -489,7 +508,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                     <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a' }}>
                       {labelOf(billing.tier)}
                     </div>
-                    {endDate && isActive && !isDowngradeScheduled && (
+                    {endDate && isActive && !isDowngradeScheduled && !isIntervalScheduled && (
                       <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: (realCancel || daysLeft <= 7) ? '#DC2626' : '#6B7280' }}>
                         {realCancel ? 'Ends' : isOnSpark ? 'Expires' : 'Renews'}{' '}
                         {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -504,6 +523,12 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                         {' · then '}<span style={{ fontWeight: 800, color: '#1a1a1a' }}>{labelOf(scheduledTo)}</span>
                       </div>
                     )}
+                    {endDate && isActive && isIntervalScheduled && (
+                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: '#6B7280' }}>
+                        {PERIOD_SHORT[currentPeriodType]} until {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        {' · then '}<span style={{ fontWeight: 800, color: '#1a1a1a' }}>{PERIOD_SHORT[scheduledPeriod]} billing</span>
+                      </div>
+                    )}
                     {billing.status === 'expired' && (
                       <div style={{ fontSize: 12, color: '#DC2626', fontWeight: 600, marginTop: 4 }}>
                         Subscription expired — choose a plan below
@@ -513,7 +538,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   <StatusBadge status={billing.status} />
                 </div>
 
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled) ? 'flex-start' : 'flex-end', gap: 12 }}>
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled || isIntervalScheduled) ? 'flex-start' : 'flex-end', gap: 12 }}>
                   {realCancel ? (
                     // Grace notice — a REAL cancellation (cancel_at_period_end with NO scheduled downgrade).
                     // An upgrade supersedes the old plan instead of setting this flag; a downgrade sets the
@@ -524,6 +549,10 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   ) : isDowngradeScheduled ? (
                     <div style={{ fontSize: 11, color: '#6B7280', fontWeight: 700 }}>
                       Moving to {labelOf(scheduledTo)} on {endDate?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} — you keep {labelOf(billing.tier)} until then.
+                    </div>
+                  ) : isIntervalScheduled ? (
+                    <div style={{ fontSize: 11, color: '#6B7280', fontWeight: 700 }}>
+                      Switching to {PERIOD_SHORT[scheduledPeriod]} billing on {endDate?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} — you keep {PERIOD_SHORT[currentPeriodType]} billing until then.
                     </div>
                   ) : (
                     <>
@@ -616,17 +645,17 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
 
                 {/* Subscribe / Upgrade button — always visible */}
                 <button
-                  onClick={isSameTier ? undefined : (needsChangeConfirm ? () => setShowChangeConfirm(true) : handleSubscribe)}
-                  disabled={subscribing || isSameTier}
+                  onClick={isSameTierSamePeriod ? undefined : (needsChangeConfirm ? () => setShowChangeConfirm(true) : handleSubscribe)}
+                  disabled={subscribing || isSameTierSamePeriod}
                   style={{
                     padding: '15px', borderRadius: 14, border: 'none',
-                    cursor: (subscribing || isSameTier) ? 'default' : 'pointer',
-                    background: (subscribing || isSameTier)
+                    cursor: (subscribing || isSameTierSamePeriod) ? 'default' : 'pointer',
+                    background: (subscribing || isSameTierSamePeriod)
                       ? '#E2E8E4'
                       : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
-                    color: (subscribing || isSameTier) ? '#9BB5A2' : '#fff',
+                    color: (subscribing || isSameTierSamePeriod) ? '#9BB5A2' : '#fff',
                     fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
-                    boxShadow: (subscribing || isSameTier) ? 'none' : `0 6px 20px ${primaryColor}40`,
+                    boxShadow: (subscribing || isSameTierSamePeriod) ? 'none' : `0 6px 20px ${primaryColor}40`,
                     transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   }}
                 >
@@ -700,7 +729,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
 
       <ConfirmDialog
         open={showChangeConfirm}
-        title={windingDown ? 'Reactivate subscription?' : 'Switch plan?'}
+        title={isIntervalSwitch ? 'Switch billing interval?' : windingDown ? 'Reactivate subscription?' : 'Switch plan?'}
         message={changeConfirmMessage()}
         confirmLabel="Continue"
         onConfirm={() => { setShowChangeConfirm(false); handleSubscribe(); }}
