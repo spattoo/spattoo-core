@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import ThemePreview from '../storefront/ThemePreview.jsx';
+import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -512,6 +513,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   </Field>
                 )}
               </Section>
+
+              {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
+                  Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
+              <PrivacyDataSection apiClient={apiClient} />
 
               {/* Save */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>

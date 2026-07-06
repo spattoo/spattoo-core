@@ -5714,8 +5714,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         Anchored to the left of the tapped Color dot, clamped to the viewport. */}
                     {pipingColorKey === `${card.cardId}-${zone}-${tierIndex}` && pipingColorAnchor && createPortal(
                       (() => {
-                        const PW = 216, EST_H = 400, PAD = 14;
-                        const left = Math.max(8, pipingColorAnchor.left - PW - 2 * PAD - 18);
+                        const PAD = 14, EST_H = 400;
+                        // Wheel shrinks to fit narrow / pinch-zoomed viewports so the popup box
+                        // (wheel + padding) never exceeds the screen; box below caps it too.
+                        const vw = window.innerWidth;
+                        const wheelW = Math.max(150, Math.min(216, vw - 2 * PAD - 16));
+                        const popupW = wheelW + 2 * PAD;
+                        // Prefer the popup to the LEFT of the tapped dot; if it won't fit there,
+                        // flip to the right of the 26px dot — then clamp fully on-screen.
+                        let left = pipingColorAnchor.left - popupW - 18;
+                        if (left < 8) left = pipingColorAnchor.left + 26 + 18;
+                        left = Math.min(Math.max(left, 8), vw - popupW - 8);
                         const top  = Math.max(8, Math.min(pipingColorAnchor.top - 48, window.innerHeight - EST_H));
                         // Gradient eligibility is CONFIG only — the piping element's allowed_actions.gradient.
                         // Stops/mode live on the ring layer (p.gradient); `color` is the solid/stop-0 fallback.
@@ -5732,6 +5741,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         };
                         return (
                           <div style={{ position: 'fixed', top, left, zIndex: 4000, background: '#fff',
+                            width: popupW, boxSizing: 'border-box', maxWidth: 'calc(100vw - 16px)',
                             borderRadius: 16, padding: PAD, boxShadow: '0 12px 44px rgba(0,0,0,0.24)',
                             border: '1px solid #eadde2' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -5741,6 +5751,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             <ColorWheel
                               color={wheelColor}
                               onChange={onWheel}
+                              width={wheelW}
                               cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== color.toLowerCase())}
                             />
                             {gradEligible && (
