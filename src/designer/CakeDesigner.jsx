@@ -15,6 +15,8 @@ import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
+import { useDesignSession } from './hooks/useDesignSession';
+import SessionBar from './SessionBar.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
@@ -1168,7 +1170,7 @@ function OrderDesignViewer({ order, onClose }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, enableLive = false, liveSessionId = null }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
@@ -1432,6 +1434,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // this only hides controls a principal can't use.
   const hasCap = (cap) => !capabilities || !cap || capabilities.includes('*') || capabilities.includes(cap);
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
+
+  // Live co-design (Phase 1) — opt-in; fully inert unless enableLive/liveSessionId is set, so the
+  // normal app is unchanged. Shares the single `design` atom over Supabase Realtime: the pen holder
+  // broadcasts, everyone else applies via loadDesign (echo-guarded inside the hook).
+  const codesign = useDesignSession({
+    supabase, apiClient, design, loadDesign,
+    initialSessionId: liveSessionId,
+    role,
+    displayName: userData ? `${userData.firstName ?? ''} ${userData.lastName ?? ''}`.trim() || null : null,
+    enabled: enableLive || !!liveSessionId,
+  });
 
   useEffect(() => {
     if (apiClient?.fetchBakerSettings) {
@@ -4746,6 +4759,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Main ── */}
       <div style={{ ...s.main, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
+        <SessionBar
+          live={codesign.live}
+          canHost={enableLive}
+          sessionId={codesign.sessionId}
+          connected={codesign.connected}
+          isEditor={codesign.isEditor}
+          participants={codesign.participants}
+          holderUserId={codesign.holderUserId}
+          myUserId={codesign.myUserId}
+          onGoLive={() => codesign.start()}
+          onTakePen={codesign.takePen}
+          onReleasePen={codesign.releasePen}
+          onGrant={codesign.grantPen}
+          onEnd={codesign.end}
+        />
 
         {/* ── Left column: logo + sidebar ── */}
         {!isMobile && <div style={s.leftCol}>

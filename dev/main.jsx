@@ -132,6 +132,12 @@ function createApiClient(supabaseClient) {
       authFetch('/api/billing/cancel', { method: 'POST' }),
     signOut: () => supabaseClient.auth.signOut(),
     changePassword: (newPassword) => supabaseClient.auth.updateUser({ password: newPassword }),
+    // Live co-design sessions (Phase 1)
+    createDesignSession: (body) => authFetch('/api/design-sessions', { method: 'POST', body: JSON.stringify(body) }),
+    getDesignSession: (id) => authFetch(`/api/design-sessions/${id}`),
+    putDesignSessionDesign: (id, design) => authFetch(`/api/design-sessions/${id}/design`, { method: 'PUT', body: JSON.stringify({ design }) }),
+    penDesignSession: (id, body) => authFetch(`/api/design-sessions/${id}/pen`, { method: 'POST', body: JSON.stringify(body) }),
+    endDesignSession: (id) => authFetch(`/api/design-sessions/${id}/end`, { method: 'POST' }),
   };
 }
 
@@ -156,7 +162,7 @@ const storefrontSlug = subdomainSlug
 function CustomerApp({ slug, inviteId }) {
   const [authed, setAuthed] = React.useState(false);
   if (authed) {
-    return <CakeDesigner apiClient={apiClient} supabase={supabase} onOrder={({ design }) => console.log('Order:', design)} />;
+    return <CakeDesigner apiClient={apiClient} supabase={supabase} onOrder={({ design }) => console.log('Order:', design)} enableLive={params.get('live') === '1'} liveSessionId={params.get('session') || null} />;
   }
   return (
     <CustomerStorefront
@@ -194,6 +200,8 @@ function Root() {
       apiClient={apiClient}
       supabase={supabase}
       onOrder={({ design }) => console.log('Order:', design)}
+      enableLive={params.get('live') === '1'}
+      liveSessionId={params.get('session') || null}
     />
   );
 }
