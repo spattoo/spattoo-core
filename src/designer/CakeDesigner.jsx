@@ -16,7 +16,7 @@ import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } fro
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
-import SessionBar from './SessionBar.jsx';
+import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
@@ -727,6 +727,17 @@ function ShareIcon({ size = 20 }) {
   );
 }
 
+function CoDesignIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20a6 6 0 0 1 12 0" />
+      <circle cx="17.5" cy="9.5" r="2.2" />
+      <path d="M15.6 20a5 5 0 0 1 6.4-4.8" />
+    </svg>
+  );
+}
+
 // ── Spatula silhouette ─────────────────────────────────────────────────────────
 // The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
 // long straight handle (stretches to the column height), then an asymmetric
@@ -1170,7 +1181,7 @@ function OrderDesignViewer({ order, onClose }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, enableLive = false, liveSessionId = null }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
@@ -1443,8 +1454,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     initialSessionId: liveSessionId,
     role,
     displayName: userData ? `${userData.firstName ?? ''} ${userData.lastName ?? ''}`.trim() || null : null,
-    enabled: enableLive || !!liveSessionId,
+    enabled: true,   // available whenever the host app wires the session apiClient methods
   });
+  // "Design Together" share/control panel (right-side), opened from the sidebar. Auto-opens
+  // for someone who arrived on a join link so they see the live status immediately.
+  const [codesignPanelOpen, setCodesignPanelOpen] = useState(!!liveSessionId);
 
   useEffect(() => {
     if (apiClient?.fetchBakerSettings) {
@@ -4759,21 +4773,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Main ── */}
       <div style={{ ...s.main, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
-        <SessionBar
-          live={codesign.live}
-          canHost={enableLive}
-          sessionId={codesign.sessionId}
-          connected={codesign.connected}
-          isEditor={codesign.isEditor}
-          participants={codesign.participants}
-          holderUserId={codesign.holderUserId}
-          myUserId={codesign.myUserId}
-          onGoLive={() => codesign.start()}
-          onTakePen={codesign.takePen}
-          onReleasePen={codesign.releasePen}
-          onGrant={codesign.grantPen}
-          onEnd={codesign.end}
-        />
+        {codesign.live && codesign.sessionId && !codesignPanelOpen && (
+          <button
+            onClick={() => setCodesignPanelOpen(true)}
+            style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 44,
+              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999,
+              border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.92)',
+              boxShadow: '0 4px 18px rgba(0,0,0,0.12)', fontFamily: "'Quicksand',sans-serif",
+              fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: codesign.connected ? '#2ecc71' : '#f1c40f' }} />
+            Live · {codesign.participants.length} here
+          </button>
+        )}
+        <SessionPanel open={codesignPanelOpen} onClose={() => setCodesignPanelOpen(false)} codesign={codesign} />
 
         {/* ── Left column: logo + sidebar ── */}
         {!isMobile && <div style={s.leftCol}>
@@ -4799,8 +4811,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
+              ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
             ].filter(item => hasCap(item.requires)).map(({ id, label, icon }) => {
-              const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
+              const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
               const isNew  = id === 'new';
               return (
                 <button key={id} style={s.navItem}
@@ -4814,6 +4827,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     if (id === 'customers') setCustomersPanelOpen(true);
                     if (id === 'invite')    { setShareDraftDesign(null); setInvitePanelOpen(true); }
                     if (id === 'share')     onShareStore?.();
+                    if (id === 'codesign')  setCodesignPanelOpen(true);
                   }}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
@@ -5981,8 +5995,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
             { id: 'invite',     icon: <InviteIcon size={20} />,    requires: 'customer:manage' },
             { id: 'share',      icon: <ShareIcon size={20} />,     requires: 'design:create' },
+            ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
           ].filter(item => hasCap(item.requires)).map(({ id, icon }) => {
-            const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : false;
+            const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
             return (
               <button key={id}
                 style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
@@ -5995,6 +6010,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   if (id === 'customers') setCustomersPanelOpen(true);
                   if (id === 'invite')    { setShareDraftDesign(null); setInvitePanelOpen(true); }
                   if (id === 'share')     onShareStore?.();
+                  if (id === 'codesign')  setCodesignPanelOpen(true);
                 }}>
                 {icon}
               </button>

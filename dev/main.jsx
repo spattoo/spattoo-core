@@ -162,7 +162,7 @@ const storefrontSlug = subdomainSlug
 function CustomerApp({ slug, inviteId }) {
   const [authed, setAuthed] = React.useState(false);
   if (authed) {
-    return <CakeDesigner apiClient={apiClient} supabase={supabase} onOrder={({ design }) => console.log('Order:', design)} enableLive={params.get('live') === '1'} liveSessionId={params.get('session') || null} />;
+    return <CakeDesigner apiClient={apiClient} supabase={supabase} onOrder={({ design }) => console.log('Order:', design)} liveSessionId={params.get('session') || null} />;
   }
   return (
     <CustomerStorefront
@@ -200,7 +200,6 @@ function Root() {
       apiClient={apiClient}
       supabase={supabase}
       onOrder={({ design }) => console.log('Order:', design)}
-      enableLive={params.get('live') === '1'}
       liveSessionId={params.get('session') || null}
     />
   );
