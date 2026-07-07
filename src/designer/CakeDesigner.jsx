@@ -1483,6 +1483,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // "Design Together" share/control panel (right-side), opened from the sidebar. Auto-opens
   // for someone who arrived on a join link so they see the live status immediately.
   const [codesignPanelOpen, setCodesignPanelOpen] = useState(!!liveSessionId);
+  // When the InvitePanel is opened FROM a live session, this carries the session id so the
+  // invite binds the customer to it and the link routes them into the live room. Null = a
+  // normal (non-live) invite.
+  const [inviteLiveSessionId, setInviteLiveSessionId] = useState(null);
 
   useEffect(() => {
     if (apiClient?.fetchBakerSettings) {
@@ -3171,6 +3175,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   async function handleShareDraft() {
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
+    setInviteLiveSessionId(null);
     setShareDraftDesign({ designSnapshot: buildDesignSnapshot(design), designThumbnailKey });
     setInvitePanelOpen(true);
   }
@@ -4809,7 +4814,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Live · {codesign.participants.length} here
           </button>
         )}
-        <SessionPanel open={codesignPanelOpen} onClose={() => setCodesignPanelOpen(false)} codesign={codesign} />
+        <SessionPanel
+          open={codesignPanelOpen}
+          onClose={() => setCodesignPanelOpen(false)}
+          codesign={codesign}
+          onInvite={() => {
+            // Invite the customer INTO this live session: attach the current design + the
+            // session id, then open the (reused) invite picker in live mode.
+            setInviteLiveSessionId(codesign.sessionId);
+            setShareDraftDesign({ designSnapshot: buildDesignSnapshot(design), designThumbnailKey: null });
+            setCodesignPanelOpen(false);
+            setInvitePanelOpen(true);
+          }}
+        />
 
         {/* ── Left column: logo + sidebar ── */}
         {!isMobile && <div style={s.leftCol}>
@@ -4849,7 +4866,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     if (id === 'dashboard') setDashboardOpen(true);
                     if (id === 'orders')    setOrdersPanelOpen(true);
                     if (id === 'customers') setCustomersPanelOpen(true);
-                    if (id === 'invite')    { setShareDraftDesign(null); setInvitePanelOpen(true); }
+                    if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
                     if (id === 'share')     onShareStore?.();
                     if (id === 'codesign')  setCodesignPanelOpen(true);
                   }}>
@@ -6058,7 +6075,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   if (id === 'dashboard') setDashboardOpen(true);
                   if (id === 'orders')    setOrdersPanelOpen(true);
                   if (id === 'customers') setCustomersPanelOpen(true);
-                  if (id === 'invite')    { setShareDraftDesign(null); setInvitePanelOpen(true); }
+                  if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
                   if (id === 'share')     onShareStore?.();
                   if (id === 'codesign')  setCodesignPanelOpen(true);
                 }}>
@@ -6266,10 +6283,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* ── Invite panel ── */}
       <InvitePanel
         open={invitePanelOpen}
-        onClose={() => { setInvitePanelOpen(false); setShareDraftDesign(null); }}
+        onClose={() => { setInvitePanelOpen(false); setShareDraftDesign(null); setInviteLiveSessionId(null); }}
         apiClient={apiClient}
         primaryColor={primaryColor}
         attachedDesign={shareDraftDesign}
+        liveSessionId={inviteLiveSessionId}
       />
 
       {/* ── Read-only 3D viewer for locked (confirmed+) orders ── */}

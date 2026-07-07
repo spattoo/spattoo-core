@@ -10,7 +10,10 @@ import CustomerSearch from './CustomerSearch.jsx';
 // `attachedDesign` (optional): { designSnapshot, designThumbnailKey } from the designer's "Share the
 // draft" flow. When present, the invite carries this starting design so the customer resumes straight
 // into it — the design rides on the invite (design_snapshot), not a template row.
-export default function InvitePanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', attachedDesign = null }) {
+// `liveSessionId` (optional): when set, this invite joins the customer into a LIVE co-design
+// session — the id is passed to the API, which binds the customer to the session and carries
+// `&session=<id>` in the storefront link so they land straight in the live room after OTP.
+export default function InvitePanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', attachedDesign = null, liveSessionId = null }) {
   const empty = { firstName: '', lastName: '', email: '', phone: '', note: '' };
   const [form, setForm]     = useState(empty);
   const [mode, setMode]     = useState('search'); // 'search' (existing) | 'new'
@@ -29,10 +32,12 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
     if (!apiClient?.inviteCustomer) return setError('Invite is not available');
     setSaving(true); setError(null);
     try {
-      // Attach the shared design (if any) so the invite carries a starting snapshot.
-      const res = await apiClient.inviteCustomer(attachedDesign
-        ? { ...payload, designSnapshot: attachedDesign.designSnapshot, designThumbnailKey: attachedDesign.designThumbnailKey }
-        : payload);
+      // Attach the shared design (if any) + the live session id (if this is a live invite).
+      const res = await apiClient.inviteCustomer({
+        ...payload,
+        ...(attachedDesign ? { designSnapshot: attachedDesign.designSnapshot, designThumbnailKey: attachedDesign.designThumbnailKey } : {}),
+        ...(liveSessionId ? { sessionId: liveSessionId } : {}),
+      });
       setResult(res);
     } catch (err) {
       setError(err.message);
@@ -84,6 +89,13 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
     try { await navigator.clipboard.writeText(result.link); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
   }
 
+  function shareWhatsApp() {
+    const text = liveSessionId
+      ? `Let's design your cake together — join live: ${result.link}`
+      : `Design your cake here: ${result.link}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  }
+
   return (
     <>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');`}</style>
@@ -99,14 +111,16 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
         {/* Top bar */}
         <div style={{ height: 56, padding: '0 20px', background: '#fff', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
           <button onClick={onClose} style={st.close}>✕</button>
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>Invite for design</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{liveSessionId ? 'Invite to design together' : 'Invite for design'}</span>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           <div style={{ maxWidth: 460, margin: '0 auto' }}>
             {!result ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <p style={st.lead}>Invite a customer to design their own cake. They'll get a link and log in with a one-time code — no account needed.</p>
+                <p style={st.lead}>{liveSessionId
+                  ? "Invite your customer into this live session. They'll get a link, log in with a one-time code, and join you in real time — no account needed."
+                  : "Invite a customer to design their own cake. They'll get a link and log in with a one-time code — no account needed."}</p>
 
                 {attachedDesign && (
                   <div style={st.attachBanner}>
@@ -141,7 +155,7 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
                       <Field label="Note (optional)"><input style={st.inp} value={form.note} onChange={set('note')} placeholder="e.g. Riya's birthday cake" /></Field>
                       {error && <div style={st.err}>{error}</div>}
                       <button type="button" onClick={inviteExisting} disabled={saving} style={{ ...st.primary, background: saving ? '#9BB5A2' : primaryColor }}>
-                        {saving ? 'Sending…' : 'Invite to a design session'}
+                        {saving ? 'Sending…' : liveSessionId ? 'Send live invite' : 'Invite to a design session'}
                       </button>
                     </>
                   )
@@ -158,20 +172,21 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
                     <p style={st.hint}>Provide at least an email or a phone — the code is sent there.</p>
                     {error && <div style={st.err}>{error}</div>}
                     <button type="submit" disabled={saving} style={{ ...st.primary, background: saving ? '#9BB5A2' : primaryColor }}>
-                      {saving ? 'Sending…' : 'Invite to a design session'}
+                      {saving ? 'Sending…' : liveSessionId ? 'Send live invite' : 'Invite to a design session'}
                     </button>
                   </form>
                 )}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={st.successBadge}>Invite created</div>
+                <div style={st.successBadge}>{liveSessionId ? 'Live invite sent' : 'Invite created'}</div>
                 <Field label="Invite link">
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input style={{ ...st.inp, fontFamily: 'monospace', fontSize: 12 }} readOnly value={result.link} onFocus={e => e.target.select()} />
                     <button type="button" onClick={copyLink} style={{ ...st.secondary }}>{copied ? 'Copied' : 'Copy'}</button>
                   </div>
                 </Field>
+                <button type="button" onClick={shareWhatsApp} style={{ ...st.primary, background: '#25D366', marginTop: 0 }}>Share on WhatsApp</button>
                 <div style={st.deliveryRow}>
                   Email: {result.delivery?.email?.queued
                     ? <b style={{ color: '#2E7D32' }}>on its way</b>
