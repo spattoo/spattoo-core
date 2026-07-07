@@ -118,8 +118,29 @@ is exactly where they hide.
 (Cautionary tales: "✨ Create automatic cluster" → plain "Create cluster"; the 🎂 order-preview
 placeholder → plain "No preview" / `PhotoGlyph`.)
 
+## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
+The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
+so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —
+never constants you may assume.** Any quantity that must sit correctly on the wall (a lift/relief
+height, an offset, a bevel, a curve radius, a gap) MUST be expressed **relative to the actual cake
+dimension** it rides on — a **dimensionless fraction of the live `surfaceR`/`radius`/`height`** —
+and multiplied by that live value at render. NEVER:
+- hardcode a world-space length tuned for one cake size (e.g. `lift = 0.07` because "the tier is ~1.2");
+- scale between two frames by a ratio of two fixed radii (e.g. `coreR / 1.2`) — both numbers are
+  assumptions that break the moment a new cake size ships;
+- carry an **absolute** value authored in one tool's coordinate frame (e.g. the Relief Studio's
+  `TIER_R = 1.2`) straight into a differently-scaled cake — re-express it as a fraction of that
+  tool's radius, and let each renderer multiply by ITS OWN live radius.
+Reason: a value that looks right on today's cake pokes off the silhouette / floats / clips the instant
+the same element is placed on a bigger or smaller tier. Model the fraction, apply the live radius.
+(Lesson: the ported relief `lift` was an absolute `0.07` from the studio's 1.2-radius tier; on the
+smaller designer cake `0.07 / R` was ~2.7× too tall and the sticker floated off the wall at the
+tangent. Fixed by treating lift as a fraction of the live wall radius.)
+
 ## Definition of Done (run through this before saying "done")
 - [ ] No new `=== '<slug>'` / type branch in render or popup code (config instead).
+- [ ] No hardcoded world dimension that assumes a fixed cake radius/size — value is a fraction of the
+      live `surfaceR`/`radius`/`height` (#8).
 - [ ] No emojis in any UI text; controls use real styles (a button looks like a button) (#7).
 - [ ] No branch on zone (`rim`/`board`/…) to decide picker interaction, clickability, or which popup
       opens — the panel treats every element identically (#6).

@@ -704,6 +704,11 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
   }
   // Raised fondant cut-out (placement_config.relief): real GPU displacement + normal detail + a fondant
   // finish on the dense mesh. Config-gated; a flat sticker falls through to the standard decal material.
+  // `relief.lift` is a FRACTION of the sticker's own size, NOT an absolute world length — displacement is
+  // applied in the mesh's local (STICKER_SIZE) space and the group scale carries it to world, so the raised
+  // thickness auto-scales with the sticker (and thus the cake). Never bake in a fixed cake radius here — the
+  // studio authored `lift` on its 1.2-radius tier, but the cake is any size (INVARIANTS.md #8). The old
+  // absolute value floated off the wall at the tangent on the smaller designer cake.
   if (reliefOn) {
     return (
       <mesh geometry={geo}>
@@ -711,7 +716,7 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
           map={texture}
           transparent alphaTest={0.5} alphaToCoverage
           normalMap={reliefMaps.normalMap} normalScale={reliefNScale}
-          displacementMap={reliefMaps.displacementMap} displacementScale={(relief.lift ?? 0.07) / (stickerScale || 1)}
+          displacementMap={reliefMaps.displacementMap} displacementScale={(relief.lift ?? 0.07) * STICKER_SIZE}
           roughness={relief.roughness ?? 0.7} metalness={0}
           sheen={relief.sheen ?? 0.12} sheenColor={'#ffffff'} sheenRoughness={0.85}
           envMapIntensity={relief.envIntensity ?? 0.4}
