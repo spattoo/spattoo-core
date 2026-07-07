@@ -639,6 +639,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.
           recolor:       element.placement_config?.recolor ?? null,
+          // Raised-fondant relief for a 2D image sticker (placement_config.relief) — present → the renderer
+          // bakes displacement + normal maps from the image and lifts it into a 3D cut-out (rounded bevel,
+          // real shadow) on a subdivided mesh. Absent → the sticker renders flat.
+          relief:        element.placement_config?.relief ?? null,
           // Photo-cake frame (config-gated on placement_config.photo.mask, no element-type branch): the
           // MASK is the shape (heart/circle/square…) and drives both the photo clip and the procedural
           // border. The customer's photo (photoUrl) is clipped to it; the border is a colour ring of
