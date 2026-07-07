@@ -738,6 +738,29 @@ function CoDesignIcon({ size = 20 }) {
   );
 }
 
+function MoreIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="5" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="12" cy="19" r="1.7" />
+    </svg>
+  );
+}
+
+// One shared upward popover for the mobile baker action bar (so the item styling / overlay live in ONE
+// place). align 'left' | 'right' | 'center' positions it against its anchor and keeps it on-screen.
+const SHEET_ITEM = { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '12px', fontSize: 14, color: '#1a1a1a', cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap' };
+function ActionSheet({ open, onClose, align = 'left', children }) {
+  if (!open) return null;
+  const pos = align === 'center' ? { left: '50%', transform: 'translateX(-50%)' } : { [align]: 0 };
+  return (<>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 39 }} />
+    <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', ...pos, minWidth: 210, background: '#fff', borderRadius: 12, boxShadow: '0 10px 34px rgba(0,0,0,0.20)', padding: 6, zIndex: 40 }}>
+      {children}
+    </div>
+  </>);
+}
 // ── Spatula silhouette ─────────────────────────────────────────────────────────
 // The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
 // long straight handle (stretches to the column height), then an asymmetric
@@ -1402,6 +1425,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // When set, the invite panel opens with the CURRENT design attached (the "Share the draft" flow):
   // { designSnapshot, designThumbnailKey }. Null = a plain invite (blank start).
   const [shareDraftDesign,    setShareDraftDesign]    = useState(null);
+  const [actionsMenuOpen,     setActionsMenuOpen]     = useState(false);   // mobile baker/staff ⋮ actions menu
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
@@ -5953,25 +5977,51 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
       </div>{/* end main */}
 
-      {/* ── Order + Save Template bar ── */}
+      {/* ── Order + actions bar ── */}
       {selectedEl?.type !== 'text' && (
-        <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : { maxWidth: 680, margin: '0 auto', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }), display: 'flex', gap: 8 }}>
-          <button
-            style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
-            onClick={handleOrder}>
-            {editingOrder ? 'Update Design' : orderMode === 'customer' ? 'Request a Quote' : 'Order This Cake'}
-          </button>
-          {hasCap('template:manage') && <button
-            style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
-            onClick={() => setSaveModal(true)}>
-            Save as Template
-          </button>}
-          {hasCap('customer:manage') && <button
-            style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
-            onClick={handleShareDraft}>
-            Share the draft
-          </button>}
-        </div>
+        (hasCap('template:manage') || hasCap('customer:manage')) && isMobile ? (
+          /* Baker/staff on mobile: a compact ⋮ actions menu + Share, so the bar doesn't crowd the canvas.
+             Customers (no manage caps) fall through to the prominent CTA below. */
+          <div style={{ ...s.orderBar, padding: '6px 16px 10px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <button
+                style={{ ...s.orderBtn, ...brandBtn, width: 'auto', padding: '10px 20px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}
+                onClick={() => setActionsMenuOpen(o => !o)}>
+                Actions <MoreIcon size={17} />
+              </button>
+              <ActionSheet open={actionsMenuOpen} onClose={() => setActionsMenuOpen(false)} align="center">
+                <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); handleOrder(); }}>
+                  {editingOrder ? 'Update Design' : 'Create order for customer'}
+                </button>
+                {hasCap('template:manage') && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); setSaveModal(true); }}>
+                  Save as Template
+                </button>}
+                {hasCap('customer:manage') && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); handleShareDraft(); }}>
+                  Share draft to customer
+                </button>}
+              </ActionSheet>
+            </div>
+          </div>
+        ) : (
+          /* Customer prominent CTA, and the full desktop button row — unchanged. */
+          <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : { maxWidth: 680, margin: '0 auto', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }), display: 'flex', gap: 8 }}>
+            <button
+              style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+              onClick={handleOrder}>
+              {editingOrder ? 'Update Design' : orderMode === 'customer' ? 'Request a Quote' : 'Order This Cake'}
+            </button>
+            {hasCap('template:manage') && <button
+              style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+              onClick={() => setSaveModal(true)}>
+              Save as Template
+            </button>}
+            {hasCap('customer:manage') && <button
+              style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+              onClick={handleShareDraft}>
+              Share the draft
+            </button>}
+          </div>
+        )
       )}
 
       {/* ── Mobile bottom nav ── */}
