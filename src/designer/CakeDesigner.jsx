@@ -3025,6 +3025,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     };
     window.__setStickerGradient = (sid, mode, colors) => { updateSticker(sid, { gradient: { mode, colors } }); return true; };
     window.__updateSticker = (sid, changes) => { updateSticker(sid, changes); return true; };  // test hook: scale / groupColors
+    // Relief visual check: place a SIDE sticker whose image is a local (same-origin) URL and whose config
+    // carries `relief` — so it mounts with a loadable image + relief from the start (headless can't fetch R2).
+    window.__placeReliefTest = (imageUrl, relief) => {
+      const base = [...elementById.values()].find(e => (e.allowed_zones ?? []).includes('side')) ?? [...elementById.values()][0];
+      if (!base) return null;
+      const e = { ...base, image_url: imageUrl,
+        placement_config: { ...(base.placement_config ?? {}), ...(relief ? { relief } : {}) },
+        allowed_actions: { ...(base.allowed_actions ?? {}), color: true } };
+      return addSticker(e, 'side', 0, 'hug', { zone: 'side', tierIndex: 0, x: 0, z: 0 });
+    };
   }
 
   function handleElementDrop(element, hit) {
