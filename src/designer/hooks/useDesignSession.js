@@ -50,6 +50,7 @@ export function useDesignSession({
   const joinedHydratedRef = useRef(false);   // apply the joined session's snapshot exactly once
   const throttleRef = useRef({ timer: null, last: 0, pending: null });
   const persistRef = useRef({ timer: null });
+  const remoteRef = useRef({ raf: 0, pending: null });   // receiver: coalesce incoming updates to one apply/frame
 
   const isEditor = !!myUserId && holderUserId === myUserId;
 
@@ -92,8 +93,20 @@ export function useDesignSession({
 
     channel.on('broadcast', { event: 'design:update' }, ({ payload }) => {
       if (!payload?.design) return;
-      applyingRemoteRef.current = true;
-      try { loadDesign(payload.design); } catch (e) { console.error('[codesign] apply remote failed', e); }
+      // Coalesce bursts: keep only the LATEST design and apply it once per animation frame.
+      // A full loadDesign → re-render → 3D rebuild is heavy; without this, a slow receiver
+      // queues every message and drifts seconds behind. Dropping superseded frames keeps it
+      // current (the final state always arrives, since the newest wins).
+      const r = remoteRef.current;
+      r.pending = payload.design;
+      if (r.raf) return;
+      r.raf = requestAnimationFrame(() => {
+        r.raf = 0;
+        const d = r.pending; r.pending = null;
+        if (!d) return;
+        applyingRemoteRef.current = true;
+        try { loadDesign(d); } catch (e) { console.error('[codesign] apply remote failed', e); }
+      });
     });
 
     channel.on('broadcast', { event: 'control' }, ({ payload }) => {
@@ -124,6 +137,7 @@ export function useDesignSession({
       setConnected(false);
       if (throttleRef.current.timer) { clearTimeout(throttleRef.current.timer); throttleRef.current.timer = null; }
       if (persistRef.current.timer) { clearTimeout(persistRef.current.timer); persistRef.current.timer = null; }
+      if (remoteRef.current.raf) { cancelAnimationFrame(remoteRef.current.raf); remoteRef.current.raf = 0; }
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
