@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { recolorImageData, rgbToHsl } from './imageRecolor.js';
+import { recolorImageData, recolorRegions, extractRegions, rgbToHsl } from './imageRecolor.js';
 
 // Build a 1×N RGBA buffer from [r,g,b] triples (alpha 255).
 const buf = (...pixels) => {
@@ -61,5 +61,41 @@ describe('recolorImageData — blue_gt_green region (wing fill only)', () => {
     const d = buf(px);
     recolorImageData(d, 1, 1, '#22aa44', null);
     expect([d[0], d[1], d[2]]).toEqual(px);
+  });
+});
+
+describe('hue_regions — multi-region extract + recolour', () => {
+  // A buffer that is `frac` orange (hue ~26), some yellow (hue ~50), rest transparent.
+  const twoTone = (n = 4000) => {
+    const d = new Uint8ClampedArray(n * 4);
+    let i = 0;
+    const set = (r, g, b) => { d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = b; d[i * 4 + 3] = 255; };
+    for (; i < n * 0.75; i++) set(245, 130, 45);   // orange body
+    for (; i < n * 0.90; i++) set(245, 210, 40);   // yellow belly
+    for (; i < n; i++) { d[i * 4 + 3] = 0; }        // transparent
+    return d;
+  };
+
+  it('extracts two regions (orange + yellow), sorted by share', () => {
+    const regions = extractRegions(twoTone(), 100, 40);
+    expect(regions.length).toBe(2);
+    expect(regions[0].share).toBeGreaterThan(regions[1].share);         // orange first
+    expect(regions[0].hue).toBeGreaterThan(15); expect(regions[0].hue).toBeLessThan(40);  // ~orange
+    expect(regions[1].hue).toBeGreaterThan(40); expect(regions[1].hue).toBeLessThan(65);  // ~yellow
+  });
+
+  it('recolours each region independently (orange→blue keeps yellow yellow)', () => {
+    const d = twoTone();
+    const regions = extractRegions(d, 100, 40);
+    recolorRegions(d, 100, 40, regions.map(r => r.hue), ['#2244cc', null]);   // orange→blue, yellow untouched
+    expect(hueOf(d, 0)).toBeGreaterThan(180);                 // orange pixel → blue-ish
+    const yi = Math.floor(4000 * 0.80) * 4;                   // a yellow pixel
+    expect(hueOf(d, yi)).toBeGreaterThan(40); expect(hueOf(d, yi)).toBeLessThan(65);  // still yellow
+  });
+
+  it('single-colour image yields ONE region (no over-split)', () => {
+    const n = 2000, d = new Uint8ClampedArray(n * 4);
+    for (let i = 0; i < n; i++) { d[i * 4] = 45; d[i * 4 + 1] = 180; d[i * 4 + 2] = 200; d[i * 4 + 3] = 255; }  // teal
+    expect(extractRegions(d, 50, 40).length).toBe(1);
   });
 });

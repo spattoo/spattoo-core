@@ -22,7 +22,7 @@ import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantText
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
-import { recolorImageData } from '../shared/color/imageRecolor.js';
+import { recolorImageData, extractRegions, recolorRegions } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
 import { frostingAllowsStyles } from '../frostings.js';
@@ -431,11 +431,13 @@ function requestStickerSeatHalf(imageUrl, { spine = 0.5, rise = 0 } = {}, cb) {
 // `recolor` region descriptor (placement_config.recolor). useTexture still owns loading/suspense/
 // caching; we derive a recoloured CanvasTexture from the loaded image only when asked. A tainted
 // canvas (CORS) falls back to the original — recolour silently off, sticker still renders.
-function useStickerImageTexture(imageUrl, recolor, color) {
+function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
   const base = useTexture(imageUrl);
   base.colorSpace = THREE.SRGBColorSpace;
+  const isMulti = recolor?.method === 'hue_regions';   // per-region colours via groupColors (keyed by region index)
+  const gcKey = isMulti ? JSON.stringify(groupColors ?? null) : null;
   const recoloured = useMemo(() => {
-    if (!recolor || !color) return base;
+    if (!recolor || (!isMulti && !color)) return base;
     const img = base.image;
     const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
     if (!w || !h) return base;
@@ -445,7 +447,16 @@ function useStickerImageTexture(imageUrl, recolor, color) {
       const ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0, w, h);
       const id = ctx.getImageData(0, 0, w, h);
-      recolorImageData(id.data, w, h, color, recolor);
+      if (isMulti) {
+        // Auto colour regions: cluster the image's hues, recolour each to its groupColors[index] (an
+        // untouched region → null → left as-is). Regions derive deterministically so index keys are stable.
+        const regions = extractRegions(id.data, w, h, { minSat: recolor.sat, maxRegions: recolor.maxRegions });
+        const targets = regions.map((_, i) => groupColors?.[i] ?? null);
+        if (!targets.some(Boolean)) return base;                          // nothing recoloured yet → original
+        recolorRegions(id.data, w, h, regions.map(r => r.hue), targets, { minSat: recolor.sat });
+      } else {
+        recolorImageData(id.data, w, h, color, recolor);
+      }
       ctx.putImageData(id, 0, 0);
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -455,7 +466,7 @@ function useStickerImageTexture(imageUrl, recolor, color) {
     } catch (_) {
       return base;   // tainted canvas → original texture (no recolour)
     }
-  }, [base, recolor, color]);
+  }, [base, recolor, color, isMulti, gcKey]);
   // Free the derived GPU texture when colour changes / unmounts (the cached `base` is left alone).
   useEffect(() => () => { if (recoloured !== base) recoloured.dispose(); }, [recoloured, base]);
   return recoloured;
@@ -615,8 +626,8 @@ function OverlayMesh({ geo, url, selected }) {
   );
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, roughness = null, metalness = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
-  const texture = useStickerImageTexture(imageUrl, recolor, color);
+function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, roughness = null, metalness = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+  const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors);
   // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
   // wide butterfly on a square canvas doesn't float. When standing (standUp) the wings rise in a V,
   // so the seat must account for that rise — the spine/body becomes the true lowest point.
@@ -975,7 +986,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} color={color} roughness={roughness} metalness={metalness} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
         }
       </Suspense>
     </TextureErrorBoundary>

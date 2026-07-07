@@ -20,6 +20,7 @@ import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
+import { useImageRegions } from './shared/color/useImageRegions.js';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
@@ -1381,6 +1382,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const selectedAgeId   = selectedEl?.type === 'age'     ? selectedEl.id    : null;
   const selectedAge     = design.ages.find(a => a.id === selectedAgeId) ?? null;
   const selectedStickerId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
+  // For a selected `hue_regions` sticker, derive its colour regions (from the image) once — the toolbar
+  // feeds them into the shared "Customise colours" swatches (one per region). No-op for other elements.
+  const selRecolorInst = useMemo(() => {
+    if (!selectedEl) return null;
+    if (selectedEl.type === 'sticker') return design.stickers.find(s => s.id === selectedEl.id) ?? null;
+    if (selectedEl.type === 'decorEl') return design.stickers.find(s => s.elementId === selectedEl.elementId) ?? null;
+    return null;
+  }, [selectedEl, design.stickers]);
+  const hueRegionsCfg = selRecolorInst?.recolor?.method === 'hue_regions' ? selRecolorInst.recolor : null;
+  const hueRegions = useImageRegions(hueRegionsCfg ? selRecolorInst.imageUrl : null, hueRegionsCfg);
   const STICKER_CAPS = { resize: true, delete: true, color: false, duplicate: true };
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
@@ -4165,7 +4176,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const inst = el.type === 'sticker'
         ? design.stickers.find(s => s.id === el.id)
         : design.stickers.find(s => s.elementId === el.elementId);
-      const editGroups = inst?.groups ?? [];
+      // GLB part-groups (inst.groups) OR — for a 2D `hue_regions` sticker — one group per detected colour
+      // (index-keyed; default = the region's detected hex). Same swatch UI + groupColors path for both.
+      const editGroups = inst?.groups?.length
+        ? inst.groups
+        : (inst?.recolor?.method === 'hue_regions'
+            ? hueRegions.map((r, i) => ({ key: i, label: `Colour ${i + 1}`, default: r.hex }))
+            : []);
       if (editGroups.length) {
         groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
           <div key="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>

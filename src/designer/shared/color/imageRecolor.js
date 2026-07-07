@@ -67,11 +67,13 @@ function matcher(region) {
 }
 
 // The recolour methods, for admin authoring UIs (label + which param it takes). Keep in sync
-// with `matcher` above — adding a method here AND there is all it takes.
+// with `matcher` above — adding a method here AND there is all it takes. `multi: true` marks a
+// technique that yields MANY recolourable regions (per-region colours via groupColors), not one.
 export const RECOLOR_METHODS = [
   { value: 'opaque',        label: 'Whole image',        param: null },
   { value: 'saturated',     label: 'Coloured fill (keep black/white lines)', param: 'sat' },
   { value: 'blue_gt_green', label: 'Blue-dominant fill (keep gold/white)',   param: 'guard' },
+  { value: 'hue_regions',   label: 'Auto colour regions (recolour each hue)', param: 'sat', multi: true },
 ];
 
 // Recolour the matched region of an RGBA buffer (mutates in place) to `targetHex`, preserving each
@@ -96,6 +98,87 @@ export function recolorImageData(data, width, height, targetHex, region) {
     const ll = rgbToHsl(data[i], data[i + 1], data[i + 2])[2];
     const nl = Math.min(1, Math.max(0, tL + (ll - refL)));
     const [r, g, b] = hslToRgb(tH, tS, nl);
+    data[i] = r; data[i + 1] = g; data[i + 2] = b;
+  }
+}
+
+// ── Multi-region recolour (method: 'hue_regions') ─────────────────────────────────────────────
+// The `saturated`/`blue_gt_green` methods above recolour ONE region to ONE colour. `hue_regions`
+// instead CLUSTERS the coloured pixels by hue and exposes each dominant colour as its own
+// recolourable region — so a two-tone sticker (orange body + yellow belly) gets a colour per part.
+// The designer feeds these into the SAME groupColors/"Customise colours" path GLB part-groups use.
+// Clustering is by HUE only, so same-hue/different-lightness areas group together (brown ⊂ orange).
+
+export function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(x => Math.max(0, Math.min(255, x | 0)).toString(16).padStart(2, '0')).join('');
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+const nearestHue = (hue, hues) => { let k = 0, bd = Infinity; for (let j = 0; j < hues.length; j++) { const dd = hueDist(hue, hues[j]); if (dd < bd) { bd = dd; k = j; } } return k; };
+
+// Detect the image's dominant colours → [{ hue, hex, share }] sorted by share desc. `hex` is the
+// region's average colour (the swatch). Peaks are read off the RAW hue histogram (NOT smoothed —
+// smoothing spreads a dominant colour's skirt over an adjacent minority colour and hides it); one
+// colour spread across adjacent bins is re-joined by the 16° merge. Deterministic for a given image.
+export function extractRegions(data, width, height, { minSat = 0.18, minAlpha = 8, maxRegions = 5, minShare = 0.02 } = {}) {
+  const BINS = 36, span = 360 / BINS;
+  const hist = new Float64Array(BINS);
+  let total = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < minAlpha) continue;
+    const [hue, sat] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+    if (sat < minSat) continue;
+    hist[Math.min(BINS - 1, Math.floor(hue / span))]++; total++;
+  }
+  if (!total) return [];
+  const thresh = total * 0.02;                             // a peak must hold ≥2% of coloured pixels (absolute)
+  const peaks = [];
+  for (let b = 0; b < BINS; b++) {
+    if (hist[b] < thresh) continue;
+    if (hist[b] >= hist[(b + BINS - 1) % BINS] && hist[b] >= hist[(b + 1) % BINS]) peaks.push({ hue: (b + 0.5) * span, weight: hist[b] });
+  }
+  peaks.sort((a, b) => b.weight - a.weight);
+  const hues = [];                                         // strongest peaks ≥16° apart (distinct hues)
+  for (const p of peaks) { if (hues.every(h => hueDist(h, p.hue) >= 16)) hues.push(p.hue); if (hues.length >= maxRegions) break; }
+  if (!hues.length) return [];
+
+  const sr = new Float64Array(hues.length), sg = new Float64Array(hues.length), sb = new Float64Array(hues.length), cnt = new Uint32Array(hues.length);
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < minAlpha) continue;
+    const [hue, sat] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+    if (sat < minSat) continue;
+    const k = nearestHue(hue, hues);
+    sr[k] += data[i]; sg[k] += data[i + 1]; sb[k] += data[i + 2]; cnt[k]++;
+  }
+  return hues
+    .map((hue, k) => ({ hue, hex: rgbToHex(sr[k] / Math.max(cnt[k], 1), sg[k] / Math.max(cnt[k], 1), sb[k] / Math.max(cnt[k], 1)), share: cnt[k] / total }))
+    .filter(r => r.share >= minShare)
+    .sort((a, b) => b.share - a.share);
+}
+
+// Recolour each hue cluster (peakHues[k], in the extractRegions order) to targetsHex[k], mutating in
+// place. Pixel→region labels are computed ONCE from the ORIGINAL pixels, so recolouring one region
+// can't re-capture another's already-changed pixels. Luminance-preserving per region. A null/empty
+// target leaves that region as-is (so a region the customer hasn't touched renders unchanged).
+export function recolorRegions(data, width, height, peakHues, targetsHex, { minSat = 0.18, minAlpha = 8 } = {}) {
+  if (!peakHues?.length) return;
+  const K = peakHues.length, n = data.length / 4;
+  const label = new Int16Array(n).fill(-1), sumL = new Float64Array(K), cnt = new Uint32Array(K);
+  for (let p = 0; p < n; p++) {
+    const i = p * 4;
+    if (data[i + 3] < minAlpha) continue;
+    const [hue, sat, li] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+    if (sat < minSat) continue;
+    const k = nearestHue(hue, peakHues);
+    label[p] = k; sumL[k] += li; cnt[k]++;
+  }
+  const refL = Array.from({ length: K }, (_, k) => (cnt[k] ? sumL[k] / cnt[k] : 0.5));
+  const t = targetsHex.map(hex => (hex ? rgbToHsl(...hexToRgb(hex)) : null));   // null → leave region as-is
+  for (let p = 0; p < n; p++) {
+    const k = label[p]; if (k < 0 || !t[k]) continue;
+    const i = p * 4;
+    const ll = rgbToHsl(data[i], data[i + 1], data[i + 2])[2];
+    const nl = Math.min(1, Math.max(0, t[k][2] + (ll - refL[k])));
+    const [r, g, b] = hslToRgb(t[k][0], t[k][1], nl);
     data[i] = r; data[i + 1] = g; data[i + 2] = b;
   }
 }
