@@ -26,6 +26,7 @@ import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale
 import { recolorImageData, extractRegions, recolorRegions, dominantColor } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
+import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
 import { frostingAllowsStyles } from '../frostings.js';
@@ -826,22 +827,14 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
         const c = document.createElement('canvas'); c.width = iw; c.height = ih;
         const ctx = c.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(img, 0, 0);
-        wallHex = dominantColor(ctx.getImageData(0, 0, iw, ih).data, iw, ih, { mul: 0.88 }) || wallHex;
+        wallHex = dominantColor(ctx.getImageData(0, 0, iw, ih).data, iw, ih, { mul: 1.0 }) || wallHex;
       }
     } catch (_) { /* tainted canvas → neutral fallback */ }
-    // Fondant SURFACE, not plastic: the same grain normal the cake wall carries (getFondantNormalMap),
-    // cloned so setting repeat here can't mutate the shared cake-wall texture. High roughness + low
-    // envMapIntensity kill the specular sheen that made the smooth slab read as plastic. The walls keep
-    // ExtrudeGeometry's world-space UVs (see solidRelief), so the grain tiles along them.
-    const wallNormal = getFondantNormalMap().clone();
-    wallNormal.wrapS = wallNormal.wrapT = THREE.RepeatWrapping;
-    wallNormal.repeat.set(3, 3);
-    wallNormal.needsUpdate = true;
-    const wall = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(wallHex),
-      normalMap: wallNormal, normalScale: new THREE.Vector2(0.6, 0.6),
-      roughness: 0.97, metalness: 0, envMapIntensity: 0.3, side: THREE.DoubleSide,
-    });
+    // Side/back walls: the dominant colour + the author-chosen FINISH (fondant/chocolate/…) built by the
+    // ONE shared factory the studio also uses (surface feel only; colour stays the print's). Its cloned
+    // grain normal, if any, is disposed in the cleanup below. Walls keep ExtrudeGeometry's world-space UVs
+    // (see solidRelief) so a grain tiles along them.
+    const wall = buildSolidWallMaterial(relief.solidFinish, wallHex, printFinish?.emissive ?? DECAL_EMISSIVE);
     return [front, wall];
   }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, color]);
   // Dispose the wall's CLONED fondant normal (index 1) — not the front's shared reliefMaps.normalMap.

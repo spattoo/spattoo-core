@@ -30,6 +30,9 @@ export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from
 // Solid relief slab geometry — exported so the admin Relief Sticker Studio previews the SAME extruded
 // solid the designer renders for placement_config.relief.solid (one builder, no drift).
 export { buildSolidReliefGeometry } from './designer/geometry/solidRelief.js';
+// Solid-slab side-wall FINISHES (fondant/chocolate/…) + the shared wall-material factory — the studio
+// authors relief.solidFinish from this ONE registry and previews the identical material (no drift).
+export { SOLID_FINISHES, SOLID_FINISH_ORDER, DEFAULT_SOLID_FINISH, buildSolidWallMaterial } from './designer/geometry/solidFinishes.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 // Shared fondant-grain normal — the SAME matte surface the cake wall carries, reused by the Relief
 // Studio so the solid-slab side walls preview identically to the designer (one texture, no drift).
