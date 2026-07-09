@@ -23,7 +23,7 @@ import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantText
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
-import { recolorImageData, extractRegions, recolorRegions } from '../shared/color/imageRecolor.js';
+import { recolorImageData, extractRegions, recolorRegions, dominantColor } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
@@ -59,6 +59,18 @@ function SceneLights({ shadows = false }) {
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
     </>
   );
+}
+
+// The ONE environment rule for every cake scene (live designer, snapshot capture, preview). The cake
+// wall is a `meshPhysicalMaterial` and is image-based-lighting dependent — with NO env map it loses
+// all IBL fill and reads its raw warm base under directional-only light (a taupe/brown wall). So when
+// no HDRI URL is configured (local dev, no `cfAssetsBase`), fall back to the neutral `apartment`
+// preset. IBL only — no `background` prop — so the snapshot capture stays transparent. Shared so the
+// live scene and CakeThumbnailScene can never drift (they browned differently on dev before this).
+function SceneEnv() {
+  return envMapUrl()
+    ? <SafeEnvironment files={envMapUrl()} />
+    : <SafeEnvironment preset="apartment" />;
 }
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
@@ -734,6 +746,7 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
         thickness,
         curveRadius: (curved && curveRadius) ? curveRadius : null,   // null → flat slab (top surface / sheet wall)
         scale: stickerScale,
+        edgeRadius: relief.solidEdge ?? 0,   // 0..1 of depth → rounded fondant rim (0 = sharp edge)
       });
     } catch (_) { return null; }
   }, [solidOn, base, relief, reliefRadius, stickerScale, curved, curveRadius]);
@@ -802,13 +815,37 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
       emissiveIntensity: printFinish?.emissive ?? DECAL_EMISSIVE,
       side: THREE.DoubleSide,
     });
+    // Side/back walls take the print's DOMINANT ("major") colour, a touch darker, so the cut-out reads as
+    // one solid fondant colour that matches the front — not plain white. Read off the final albedo (includes
+    // recolour + saturation boost); a tainted/greyscale image → the explicit colour or a neutral fondant tone.
+    let wallHex = color || '#efe6da';
+    try {
+      const img = texture.image;
+      const iw = img?.naturalWidth || img?.width, ih = img?.naturalHeight || img?.height;
+      if (iw && ih) {
+        const c = document.createElement('canvas'); c.width = iw; c.height = ih;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        wallHex = dominantColor(ctx.getImageData(0, 0, iw, ih).data, iw, ih, { mul: 0.88 }) || wallHex;
+      }
+    } catch (_) { /* tainted canvas → neutral fallback */ }
+    // Fondant SURFACE, not plastic: the same grain normal the cake wall carries (getFondantNormalMap),
+    // cloned so setting repeat here can't mutate the shared cake-wall texture. High roughness + low
+    // envMapIntensity kill the specular sheen that made the smooth slab read as plastic. The walls keep
+    // ExtrudeGeometry's world-space UVs (see solidRelief), so the grain tiles along them.
+    const wallNormal = getFondantNormalMap().clone();
+    wallNormal.wrapS = wallNormal.wrapT = THREE.RepeatWrapping;
+    wallNormal.repeat.set(3, 3);
+    wallNormal.needsUpdate = true;
     const wall = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(color || '#efe6da'),
-      roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
+      color: new THREE.Color(wallHex),
+      normalMap: wallNormal, normalScale: new THREE.Vector2(0.6, 0.6),
+      roughness: 0.97, metalness: 0, envMapIntensity: 0.3, side: THREE.DoubleSide,
     });
     return [front, wall];
   }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, color]);
-  useEffect(() => () => { solidMats?.forEach(m => m.dispose()); }, [solidMats]);
+  // Dispose the wall's CLONED fondant normal (index 1) — not the front's shared reliefMaps.normalMap.
+  useEffect(() => () => { if (solidMats) { solidMats[1]?.normalMap?.dispose?.(); solidMats.forEach(m => m.dispose()); } }, [solidMats]);
   // Photo-cake frame (config-gated on photoMask, no element-type branch): the shape is the mask, the
   // border is procedural (or a decorative overlay), and the customer photo is clipped to the mask.
   // The plain image_url mesh is NOT drawn for a frame — the mask is the shape, not a visible image.
@@ -1856,9 +1893,7 @@ function CakeScene({
     <>
       <SceneLights shadows />
       <color attach="background" args={['#f4f4f5']} />
-      {envMapUrl()
-        ? <SafeEnvironment files={envMapUrl()} />
-        : <SafeEnvironment preset="apartment" backgroundBlurriness={1} />}
+      <SceneEnv />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); onDeselect(); }}>
@@ -2111,10 +2146,10 @@ function CakeThumbnailScene({ config }) {
   return (
     <>
       <SceneLights />
-      {/* Same R2 HDRI the studio uses, so the captured snapshot's metallics render
-          gold instead of black (the env adds the rest of the light). No `background`
-          prop → the capture stays transparent. */}
-      {envMapUrl() && <SafeEnvironment files={envMapUrl()} />}
+      {/* Same env rule as the live scene (SceneEnv): the configured HDRI, else the neutral
+          `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
+          no `background` prop — so the capture stays transparent. */}
+      <SceneEnv />
       {tierData.map((tier, i) => (
         <CakeTier
           key={i}

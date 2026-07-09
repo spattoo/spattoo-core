@@ -19,7 +19,7 @@ export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer
 export { makePipingLayer, pipingPlacementFromConfig } from './designer/piping/pipingLayer.js';
 // 2D image pixel-recolour (the SAME function the designer runs) + the method registry — exported
 // so the admin recolour tester / element authoring use the exact runtime logic, never a copy.
-export { recolorImageData, RECOLOR_METHODS } from './designer/shared/color/imageRecolor.js';
+export { recolorImageData, RECOLOR_METHODS, dominantColor } from './designer/shared/color/imageRecolor.js';
 // Cream finish/texture registry + the wall-geometry algorithms — exported so the admin texture
 // calibrator authors against the SAME code the designer renders (no duplicated displacement maths).
 export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';
@@ -31,6 +31,9 @@ export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from
 // solid the designer renders for placement_config.relief.solid (one builder, no drift).
 export { buildSolidReliefGeometry } from './designer/geometry/solidRelief.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
+// Shared fondant-grain normal — the SAME matte surface the cake wall carries, reused by the Relief
+// Studio so the solid-slab side walls preview identically to the designer (one texture, no drift).
+export { getFondantNormalMap } from './designer/shared/textures/fondantTexture.js';
 export { getWeaveNormalMap, makeWeaveField, weaveTiles } from './designer/shared/textures/weaveStencilTexture.js';
 export { makeLusterDustMaps, LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from './designer/shared/textures/lusterDust.js';
 export { makeParticleFinishMaps } from './designer/shared/textures/particleFinish.js';

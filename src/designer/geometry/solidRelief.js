@@ -196,7 +196,7 @@ function signedArea(pts) {
  * @param {number} opts.work       - trace resolution (image long edge).
  * @returns {THREE.BufferGeometry|null}
  */
-export function buildSolidReliefGeometry(maskImage, { size, thickness, curveRadius = null, scale = 1, work = DEFAULT_WORK } = {}) {
+export function buildSolidReliefGeometry(maskImage, { size, thickness, curveRadius = null, scale = 1, edgeRadius = 0, work = DEFAULT_WORK } = {}) {
   if (!maskImage) return null;
   const iw = maskImage.naturalWidth || maskImage.width, ih = maskImage.naturalHeight || maskImage.height;
   if (!iw || !ih) return null;
@@ -222,18 +222,35 @@ export function buildSolidReliefGeometry(maskImage, { size, thickness, curveRadi
 
   // 3) extrude the silhouette (flat front cap, side walls, flat back cap). ExtrudeGeometry groups
   //    caps (index 0) vs. walls (index 1) so the material array shades the print vs. the fondant sides.
+  //    edgeRadius (0..1 of depth) → a bevel that rounds the sharp front/back rim. The straight run is
+  //    shortened by the bevel so the front cap still tops out at ≈depth (protrusion unchanged, #8). The
+  //    bevel faces belong to the SIDE group, so the rounded rim reads in the fondant wall colour.
+  const bevel = Math.max(0, Math.min(1, edgeRadius)) * depth;
+  const bevelEnabled = bevel > 1e-5;
   const shape = new THREE.Shape(pts);
-  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: bevelEnabled ? Math.max(1e-4, depth - bevel) : depth,
+    bevelEnabled, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, steps: 1,
+  });
 
-  // 4) UVs = normalized local XY (front-cap albedo registration, matching createCurvedPlane) computed
-  //    from the LOCAL position BEFORE bending. Applied to every vertex; only the front cap reads a map,
-  //    so wall/back UVs are harmless. Then bend around the cylinder (rho-form, = bendStickerScene).
+  // 4) UVs. Only the CAP vertices (group materialIndex 0 = front+back lids) take the normalized local-XY
+  //    front-print registration (matching createCurvedPlane). The SIDE-WALL vertices (group 1, incl. the
+  //    bevel) KEEP ExtrudeGeometry's own world-space UVs so a tiled fondant-grain normal map reads on
+  //    them — overwriting every UV (as the shell path could) would collapse the wall UVs and flatten the
+  //    grain. Caps and walls own separate vertices, so there's no conflict. Then bend around the cylinder.
+  const capVerts = new Set();
+  for (const grp of geo.groups) {
+    if (grp.materialIndex !== 0) continue;
+    const end = grp.start + grp.count;
+    for (let k = grp.start; k < end; k++) capVerts.add(geo.index ? geo.index.getX(k) : k);
+  }
+  const capOnly = capVerts.size > 0;   // fall back to overwrite-all if grouping is unexpectedly absent
   const pos = geo.attributes.position;
   const uv = geo.attributes.uv;
   const R = (curveRadius && Number.isFinite(curveRadius)) ? curveRadius / (scale || 1) : null;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    uv.setXY(i, x / size + 0.5, y / size + 0.5);
+    if (!capOnly || capVerts.has(i)) uv.setXY(i, x / size + 0.5, y / size + 0.5);
     if (R !== null) {
       const a = x / R, rho = R + z;
       pos.setXYZ(i, rho * Math.sin(a), y, rho * Math.cos(a) - R);

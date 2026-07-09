@@ -9,6 +9,31 @@
 //     (green > blue) and white highlights (blue ≈ green) are excluded structurally.
 // New methods (baked mask, hue band, …) slot in via `matcher` without touching callers.
 
+// Dominant ("major") colour of an image's OPAQUE, colourful pixels — used for the solid-relief side walls
+// so a cut-out reads as one fondant colour that matches the print, instead of plain white. Coarse 16³ RGB
+// histogram over pixels with alpha ≥ minAlpha and HSV-saturation ≥ minSat (skips the transparent margin +
+// near-grey/white/black), then the MEAN colour of the most-populous bucket, optionally scaled by `mul`
+// (< 1 = a touch darker, for fondant-edge shadow). Returns '#rrggbb', or null when nothing qualifies
+// (caller falls back to a neutral fondant tone). Pure/shared — core render + admin studio use the one copy.
+export function dominantColor(data, width, height, { minAlpha = 128, minSat = 0.18, mul = 1 } = {}) {
+  const buckets = new Map();
+  for (let i = 0; i < width * height; i++) {
+    if (data[i * 4 + 3] < minAlpha) continue;
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx === 0 || (mx - mn) / mx < minSat) continue;            // skip greys / whites / blacks
+    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    let e = buckets.get(key);
+    if (!e) { e = { n: 0, r: 0, g: 0, b: 0 }; buckets.set(key, e); }
+    e.n++; e.r += r; e.g += g; e.b += b;
+  }
+  let best = null;
+  for (const e of buckets.values()) if (!best || e.n > best.n) best = e;
+  if (!best) return null;
+  const to = v => Math.max(0, Math.min(255, Math.round(v * mul))).toString(16).padStart(2, '0');
+  return '#' + to(best.r / best.n) + to(best.g / best.n) + to(best.b / best.n);
+}
+
 export function hexToRgb(hex) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? '');
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
