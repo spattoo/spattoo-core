@@ -473,7 +473,8 @@ function saturateRGB(d, mul) {
 // above ~0.35). Was 0.12; lifted to offset the lit-render dulling. ROADMAP: per-element placement_config override.
 const DECAL_EMISSIVE = 0.22;
 
-function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
+function useStickerImageTexture(imageUrl, recolor, color, groupColors, saturation) {
+  const sat = saturation ?? DECAL_SAT;   // placement_config.print_finish.saturation → per-element override; else the module default
   const base = useTexture(corsUrl(imageUrl));
   base.colorSpace = THREE.SRGBColorSpace;
   // A decal is viewed at a grazing angle all round the wall, where isotropic mip filtering smears it.
@@ -484,7 +485,7 @@ function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
   const gcKey = isMulti ? JSON.stringify(groupColors ?? null) : null;
   const recoloured = useMemo(() => {
     const needsRecolor = !!(recolor && (isMulti || color));
-    const needsBoost = DECAL_SAT !== 1;
+    const needsBoost = sat !== 1;
     if (!needsRecolor && !needsBoost) return base;                        // nothing to do → cached original
     const img = base.image;
     const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
@@ -506,7 +507,7 @@ function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
           recolorImageData(id.data, w, h, color, recolor);
         }
       }
-      saturateRGB(id.data, DECAL_SAT);   // pre-boost chroma to survive the lit-render wash (see DECAL_SAT note)
+      saturateRGB(id.data, sat);   // pre-boost chroma to survive the lit-render wash (see DECAL_SAT note)
       ctx.putImageData(id, 0, 0);
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -516,7 +517,7 @@ function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
     } catch (_) {
       return base;   // tainted canvas → original texture (no recolour/boost)
     }
-  }, [base, recolor, color, isMulti, gcKey]);
+  }, [base, recolor, color, isMulti, gcKey, sat]);
   // Free the derived GPU texture when colour changes / unmounts (the cached `base` is left alone).
   useEffect(() => () => { if (recoloured !== base) recoloured.dispose(); }, [recoloured, base]);
   return recoloured;
@@ -681,18 +682,33 @@ function OverlayMesh({ geo, url, selected }) {
 function useReliefMaps(imageUrl, relief) {
   // Same qualified URL as the albedo above, so drei's cache serves ONE fetch for both.
   const base = useTexture(corsUrl(imageUrl));
+  // Authored flat-mask (placement_config.relief.flatMask): an inline data-URI PNG (black = flush). Decode it
+  // ASYNC — a data URI needs no crossOrigin — then rebuild the maps with it. Absent → the sync path is
+  // untouched. Keeping the decoded image in state (keyed on the data-URI) makes the maps re-derive on load.
+  const flatMaskUri = relief?.flatMask ?? null;
+  const [flatMaskImg, setFlatMaskImg] = useState(null);
+  useEffect(() => {
+    if (!flatMaskUri) { setFlatMaskImg(null); return; }
+    let alive = true;
+    const img = new Image();
+    img.onload = () => { if (alive) setFlatMaskImg(img); };
+    img.onerror = () => { if (alive) setFlatMaskImg(null); };
+    img.src = flatMaskUri;
+    return () => { alive = false; };
+  }, [flatMaskUri]);
   const maps = useMemo(() => {
     if (!relief) return null;
     const img = base.image;
     if (!img || !(img.naturalWidth || img.width)) return null;
-    try { return buildReliefMaps(img, relief.bake ?? {}); } catch (_) { return null; }
-  }, [base, relief]);
+    // Pass the mask only once it has decoded; until then build fully-raised (as before) and re-derive on load.
+    try { return buildReliefMaps(img, relief.bake ?? {}, flatMaskImg); } catch (_) { return null; }
+  }, [base, relief, flatMaskImg]);
   useEffect(() => () => { maps?.normalMap?.dispose?.(); maps?.displacementMap?.dispose?.(); }, [maps]);
   return maps;
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
-  const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors);
+function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+  const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors, printFinish?.saturation);
   const reliefMaps = useReliefMaps(imageUrl, relief);
   const reliefOn = !!(relief && reliefMaps);
   // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
@@ -814,7 +830,7 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
           // saturation survive). Without it a raised sticker renders duller than the flat one beside it.
           emissive={'#ffffff'}
           emissiveMap={texture}
-          emissiveIntensity={DECAL_EMISSIVE}
+          emissiveIntensity={printFinish?.emissive ?? DECAL_EMISSIVE}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -840,7 +856,7 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
         toneMapped={false}
         emissive={'#ffffff'}
         emissiveMap={texture}
-        emissiveIntensity={DECAL_EMISSIVE}
+        emissiveIntensity={printFinish?.emissive ?? DECAL_EMISSIVE}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
@@ -1118,7 +1134,7 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
   );
 }
 
-function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -1130,7 +1146,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -1213,7 +1229,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1354,7 +1370,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -2087,7 +2103,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+                <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
               </group>
             </group>
           );
@@ -2109,7 +2125,7 @@ function CakeThumbnailScene({ config }) {
                 <group position={[0, -seatLiftPv, 0]}>
                   <group rotation={[tiltXPv, 0, 0]}>
                     <group position={[0, seatLiftPv, 0]}>
-                      <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+                      <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
                     </group>
                   </group>
                 </group>
@@ -2119,7 +2135,7 @@ function CakeThumbnailScene({ config }) {
         }
         return (
           <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+            <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
           </group>
         );
       })}

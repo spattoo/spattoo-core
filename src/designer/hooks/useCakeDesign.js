@@ -643,6 +643,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // bakes displacement + normal maps from the image and lifts it into a 3D cut-out (rounded bevel,
           // real shadow) on a subdivided mesh. Absent → the sticker renders flat.
           relief:        element.placement_config?.relief ?? null,
+          // Per-element print finish for a 2D image sticker (placement_config.print_finish): { saturation,
+          // emissive } — an albedo chroma pre-boost + decal self-illumination so the print survives the lit
+          // render wash. Applies to BOTH flat and relief 2D stickers (not nested under relief). Absent → the
+          // renderer's module defaults (DECAL_SAT / DECAL_EMISSIVE).
+          printFinish:   element.placement_config?.print_finish ?? null,
           // Photo-cake frame (config-gated on placement_config.photo.mask, no element-type branch): the
           // MASK is the shape (heart/circle/square…) and drives both the photo clip and the procedural
           // border. The customer's photo (photoUrl) is clipped to it; the border is a colour ring of

@@ -60,12 +60,23 @@ function imageToFields(img) {
 // H = displacement height (rounded-bevel coverage × slab↔dome). Hn = normal height (H + a luminance
 // high-pass so spots/eyes read as detail, + optional fondant grain). Grain is added to Hn only, so it
 // shades like a powdery satin surface without actually moving geometry.
-function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur = 34, edgeRound = 16, grain = 0.5 }) {
+// `flattenThin` (0 = off) and `flatMask` (optional per-pixel 0..1, 1/absent = no effect) control WHICH parts
+// of the sticker stay flush on the wall — both COLOUR-INDEPENDENT (never keyed off brightness):
+//   • flattenThin — SHAPE: erode the silhouette so THIN protrusions (spikes, thin edges) drop out of the
+//     RAISED area and hug the wall, while the thick body stays raised. A feature narrower than ~2× the radius
+//     is removed; the author tunes the radius. Automatic, no per-element painting.
+//   • flatMask — EXPLICIT: an authored paint mask (black = flush) the author draws over the exact parts to
+//     keep flat, ignoring both shape and colour. Multiplies on top of flattenThin.
+function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur = 34, edgeRound = 16, grain = 0.5, flattenThin = 0, flatMask = null }) {
   const N = w * h;
   const domeRaw = boxBlur(mask, w, h, domeBlur, 2);
   let dmx = 1e-4; for (let i = 0; i < N; i++) if (mask[i] > 0.5 && domeRaw[i] > dmx) dmx = domeRaw[i];
   const cov = boxBlur(mask, w, h, edgeRound, 2);
   const lumBlur = boxBlur(lum, w, h, 2, 1);
+  // Thin-feature erosion: a blurred silhouette thresholded at ~0.5 removes features thinner than the radius
+  // (their blur never reaches 0.5) while the thick body stays ~1. Radius scales with flattenThin.
+  const thinR = flattenThin > 0 ? Math.max(2, Math.round(flattenThin * 55)) : 0;
+  const thinCov = thinR ? boxBlur(mask, w, h, thinR, 2) : null;
   let grainF = null;
   if (grain > 0) {
     const raw = new Float32Array(N);
@@ -76,8 +87,11 @@ function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur =
   for (let i = 0; i < N; i++) {
     const coverage = smoothstep(0.30, 0.85, cov[i]);         // rounded shoulder 0..1
     const dome = clamp(domeRaw[i] / dmx, 0, 1);
-    const macro = coverage * ((1 - puff) + puff * dome);      // slab ↔ dome
+    const thin = thinCov ? smoothstep(0.50, 0.66, thinCov[i]) : 1;   // thin protrusion → 0 (flush on wall)
+    const authored = flatMask ? flatMask[i] : 1;                     // painted mask: 0 = flush, 1 = raised
+    const macro = coverage * ((1 - puff) + puff * dome) * thin * authored;
     H[i] = macro;
+    // Detail high-pass still shades the flattened region so it reads as detailed-but-flush, not blank.
     let hn = macro + (lum[i] - lumBlur[i]) * detail * coverage;
     if (grainF) hn += grainF[i] * grain * 0.09 * coverage;
     Hn[i] = clamp(hn, 0, 1.4);
@@ -104,8 +118,25 @@ function dispTexture(H, w, h) {
 
 // Bake { normalMap, displacementMap } for an <img>. `bake` = placement_config.relief.bake. The normal's
 // gain (slope 4) matches the studio at WORK resolution; material.normalScale tunes it per instance.
-export function buildReliefMaps(img, bake = {}) {
-  const f = buildFields(imageToFields(img), bake);
+// `flatMaskImg` (optional, a decoded image of placement_config.relief.flatMask — the authored black=flush
+// paint-mask) is sampled to the field grid and fed to buildFields as `flatMask`; absent = fully raised
+// (behaves exactly as before). It is a RELIEF-level sibling of `bake`, layered on top of `bake.flattenThin`.
+export function buildReliefMaps(img, bake = {}, flatMaskImg = null) {
+  const fields = imageToFields(img);
+  let flatMask = null;
+  if (flatMaskImg) {
+    const { w, h } = fields;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    // Draw with the SAME vertical flip imageToFields applies, so the authored mask (painted in upright
+    // image space in the studio) lines up with the flipped displacement/normal fields.
+    ctx.translate(0, h); ctx.scale(1, -1);
+    ctx.drawImage(flatMaskImg, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    flatMask = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) flatMask[i] = d[i * 4] / 255;   // RED channel: 0 = flush, 1 = raised
+  }
+  const f = buildFields(fields, { ...bake, flatMask });
   return {
     normalMap: heightfieldToNormalMap(f.Hn, f.w, f.h, 4),
     displacementMap: dispTexture(f.H, f.w, f.h),
