@@ -89,6 +89,15 @@ function dispTexture(H, w, h) {
   const data = new Uint8Array(w * h * 4);
   for (let i = 0; i < w * h; i++) { const g = Math.round(clamp(H[i], 0, 1) * 255); data[i * 4] = g; data[i * 4 + 1] = g; data[i * 4 + 2] = g; data[i * 4 + 3] = 255; }
   const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  // DataTexture defaults to NearestFilter, which stair-steps the lift across the 96x96 grid. Linear so the
+  // displacement interpolates smoothly between texels.
+  // NO mipmaps here, deliberately: displacement is sampled in the VERTEX shader, where there are no
+  // derivatives and the LOD is always 0 — mipmaps would never be read. Worse, a mipmapped minFilter with
+  // no mipmaps generated leaves the texture INCOMPLETE, which samples as black and silently kills the lift.
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.NoColorSpace;      // a height field is DATA — an sRGB decode would warp the lift
   tex.needsUpdate = true;
   return tex;
 }

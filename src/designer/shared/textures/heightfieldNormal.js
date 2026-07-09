@@ -28,6 +28,22 @@ export function heightfieldToNormalMap(H, w, h, slope) {
   }
   const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  // THREE.DataTexture defaults to NearestFilter on BOTH filters with generateMipmaps=false — unlike
+  // CanvasTexture/TextureLoader, which inherit Texture's Linear + LinearMipmapLinear + mipmaps. A normal
+  // map is sampled in the FRAGMENT shader and is heavily minified whenever the surface is small on screen,
+  // so point-sampling makes each pixel snap to one arbitrary texel: the high-frequency normals scatter the
+  // specular/sheen incoherently and average into a desaturated grey haze. Mipmaps + linear + anisotropy is
+  // what makes a normal map read as a surface rather than as dust.
+  //
+  // (Lesson: the raised-fondant sticker looked flat and "dusty" in the designer but crisp in the admin
+  // Relief Studio. Same maps, same material — but the studio builds CanvasTextures (mipmapped by default,
+  // anisotropy 8) and renders the decal ~2x larger. Core point-sampled a 1024x1024 grain-baked normal map
+  // minified ~17x. Nothing was wrong with the relief; it was being sampled to death.)
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 8;                       // matches goldLeafTexture.js; the GPU clamps to its max
+  tex.colorSpace = THREE.NoColorSpace;      // a normal map is DATA, never sRGB — never let it be decoded
   tex.needsUpdate = true;
   return tex;
 }

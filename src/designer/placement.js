@@ -1,6 +1,6 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
-import { ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants.js';
+import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC } from './constants.js';
 import { topClamp, snapToRim } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
@@ -89,6 +89,15 @@ export function edgeSeatSeed(placementConfig, shp, mode) {
 // normalized to stickerSize, then multiplied by this scale).
 export function hugScale(wallHeight, stickerSize, fill = DEFAULT_HUG_FILL) {
   return (wallHeight * fill) / stickerSize;
+}
+
+// How far a side decal's base sheet sits off the tier wall, in WORLD units, for a tier of the
+// given live radius. The seat is a fraction of that radius, so `off / radius` is the SAME on every
+// cake size — a decal hugs a 0.45 tier exactly as it hugs a 1.2 one (INVARIANTS.md #8). Pure, and
+// the ONE place the seat is computed: the side sticker, the snapshot pass and the topper preview
+// all call this rather than re-deriving it (the old absolute constant was pasted at 4 sites).
+export function sideSeatOffset(radius) {
+  return (Number.isFinite(radius) && radius > 0 ? radius : 0) * SIDE_STICKER_SEAT_FRAC;
 }
 
 // Keep a side decal's CENTRE y so its (scaled) bottom edge never crosses the tier base into the

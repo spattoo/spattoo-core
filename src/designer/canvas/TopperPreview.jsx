@@ -3,7 +3,8 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, useGLTF, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { rectSidePlacement } from '../geometry/surface.js';
-import { SIDE_STICKER_SURFACE_OFFSET, STICKER_SIZE } from '../constants.js';
+import { STICKER_SIZE } from '../constants.js';
+import { sideSeatOffset } from '../placement.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
 import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { SceneLoader } from './CakeSpinner.jsx';
@@ -44,7 +45,7 @@ function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, 
     );
 
     if (placement === 'side') {
-      const off = SIDE_STICKER_SURFACE_OFFSET;
+      const off = sideSeatOffset(bottom.radius);
       const yMid = bottom.baseY + bottom.height / 2;
       let x = 0, z = bottom.radius + off, yaw = 0;
       if (bottom.shp.kind === 'rect') {
@@ -82,7 +83,7 @@ function PreviewImage({ url, placement, target, bottom }) {
   const h = w / (aspect || 1);
 
   if (placement === 'side') {
-    const off = SIDE_STICKER_SURFACE_OFFSET;
+    const off = sideSeatOffset(bottom.radius);
     const yMid = bottom.baseY + bottom.height / 2;
     let x = 0, z = bottom.radius + off, yaw = 0;
     if (bottom.shp.kind === 'rect') {

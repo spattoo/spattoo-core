@@ -137,6 +137,22 @@ the same element is placed on a bigger or smaller tier. Model the fraction, appl
 smaller designer cake `0.07 / R` was ~2.7× too tall and the sticker floated off the wall at the
 tangent. Fixed by treating lift as a fraction of the live wall radius.)
 
+### 8a. Geometry built in LOCAL space must be pre-divided by the group's scale
+A sticker's mesh is built in local space and then rendered inside `<group scale={effScale}>`. So **every
+world-space target a local geometry must hit has to be divided by that scale when the geometry is built**
+— otherwise the group silently multiplies it. If a decal must curve at the live wall radius `surfaceR`,
+build it at local radius `surfaceR / effScale` (this is what the GLB `bendRadius` has always done). The
+same applies to `displacementScale`, which THREE applies along the object-space normal *before* the model
+matrix: `worldLift = displacementScale × effScale`, so a world lift of `L` needs `displacementScale = L / effScale`.
+NEVER clamp or cap a local-space radius against a world-space constant (the old `Math.min(curveRadius, 0.3)`):
+the cap is in the wrong coordinate frame, and the error grows with the element's scale.
+(Lesson: a 3× relief sticker's decal was built at local radius `0.3` → world curve radius `0.9` pressed
+against a `0.445` wall — a far flatter arc than the wall, so its edges bowed **0.089 world units off the
+cake** at the silhouette tangent and you saw the board through the gap. This was a base-geometry bug
+affecting FLAT decals too; relief only made it visible. Three successive displacement-magnitude "fixes"
+failed because the displacement was never the cause. Verify curved decals at **scale 3, at the tangent** —
+scale 1 tucks the edges slightly *inward* and hides the bug.)
+
 ## Definition of Done (run through this before saying "done")
 - [ ] No new `=== '<slug>'` / type branch in render or popup code (config instead).
 - [ ] No hardcoded world dimension that assumes a fixed cake radius/size — value is a fraction of the

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac } from './placement.js';
+import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
 // for the real types; if a type ever diverges, a shared assertion here breaks. Guards the exact
@@ -33,6 +34,35 @@ describe('placementSlots — one slot per (tier × surface)', () => {
   });
   it('top-only element offers only a Top slot', () => {
     expect(placementSlots(heroTopOnly, 3).map(s => s.key)).toEqual(['top']);
+  });
+});
+
+// INVARIANTS.md #8. The question that has to be asked of any world dimension: "does this still
+// hold on a cake of a different radius?" For the seat gap the answer must be YES — the decal has to
+// hug a 0.45 tier exactly as it hugs a 1.2 one. An ABSOLUTE gap fails this: 0.025 world is 2.1% of
+// a 1.2 radius but 5.6% of a 0.45 radius, so the decal floated further off the smaller the cake and
+// you saw the board through the slot at the silhouette tangent. Pin the ratio, not the length.
+describe('sideSeatOffset — the seat is a FRACTION of the live radius, never an absolute length', () => {
+  it('holds the same gap-to-radius ratio on every tier size', () => {
+    const ratios = TIER_RADII.map(r => sideSeatOffset(r) / r);
+    for (const ratio of ratios) expect(ratio).toBeCloseTo(ratios[0], 12);
+  });
+
+  it('scales linearly with radius (a 2x cake gets a 2x gap)', () => {
+    expect(sideSeatOffset(2.4)).toBeCloseTo(2 * sideSeatOffset(1.2), 12);
+    expect(sideSeatOffset(0.45)).toBeCloseTo(0.375 * sideSeatOffset(1.2), 12);
+  });
+
+  it('matches the Relief Studio frame it was authored in (TIER_R 1.2 -> 0.004)', () => {
+    expect(sideSeatOffset(1.2)).toBeCloseTo(0.004, 12);
+  });
+
+  it('is NOT the old absolute constant', () => {
+    expect(sideSeatOffset(1.2)).not.toBeCloseTo(0.025, 3);
+  });
+
+  it('degrades safely on a missing/invalid radius rather than inventing a world length', () => {
+    for (const bad of [0, -1, NaN, Infinity, undefined]) expect(sideSeatOffset(bad)).toBe(0);
   });
 });
 

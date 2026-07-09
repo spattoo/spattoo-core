@@ -15,13 +15,14 @@ import {
   STICKER_SIZE, SELECTION_COLOR,
   PICKER_ORIGIN_X, PICKER_STEP_X, PICKER_ORIGIN_Z, PICKER_STEP_Z,
   CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
-  SIDE_STICKER_SURFACE_OFFSET, FLAT_STICKER_Y_OFFSET,
+  FLAT_STICKER_Y_OFFSET,
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
+import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
@@ -305,6 +306,13 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
 const glbXRadiusCache = {};
 
 
+// Grid resolution of a RELIEF decal's mesh (per axis). Displacement is per-VERTEX, so this bounds how
+// finely the baked height field can be sculpted. Tried at 192 (matching the admin studio's ~210 verts per
+// world unit, vs 96's ~114) to see whether an under-resolved `edgeRound` shoulder was flattening the bevel:
+// it made NO visible difference, so it isn't the constraint — the normal map carries the shoulder's shading,
+// not the geometry. Kept at 96: 193² = 37,249 verts per relief sticker vs 97² = 9,409, for nothing.
+const RELIEF_SEGMENTS = 96;
+
 // Builds a flat-strip geometry that curves around a cylinder of the given radius.
 // In the sticker's local space the cylinder axis is at z = -curveRadius, so the
 // strip follows the cake surface naturally.
@@ -400,12 +408,14 @@ function computeSeatHalf(img, spine, rise) {
   return minY < Infinity ? -minY : STICKER_SIZE / 2;
 }
 
-// Load the asset for MEASURING in its own CORS image with a cache-bust, so the pixel read can't hit
-// a cache entry poisoned by a non-CORS <img> (e.g. a picker thumbnail) — which would taint the canvas
-// and silently fall the seat back to half-plane (→ float). One fetch per URL, then cached.
-const seatImgCache = {};   // bustUrl → { img, loaded, cbs }
+// Load the asset for MEASURING in its own CORS image, so the pixel read can't hit a cache entry
+// poisoned by a non-CORS <img> (e.g. a picker thumbnail) — which would taint the canvas and silently
+// fall the seat back to half-plane (→ float). One fetch per URL, then cached. Uses the SAME `corsUrl`
+// qualifier as every other loader (it used to hand-roll `?cors=seat`, which was a second copy of the
+// rule AND a second cache entry — the identical bytes fetched twice).
+const seatImgCache = {};   // corsUrl → { img, loaded, cbs }
 function loadSeatImage(imageUrl, cb) {
-  const url = imageUrl + (imageUrl.includes('?') ? '&' : '?') + 'cors=seat';
+  const url = corsUrl(imageUrl);
   const e = seatImgCache[url];
   if (e) { e.loaded ? cb(e.img) : e.cbs.push(cb); return; }
   const entry = { img: null, loaded: false, cbs: [cb] };
@@ -434,13 +444,48 @@ function requestStickerSeatHalf(imageUrl, { spine = 0.5, rise = 0 } = {}, cb) {
 // `recolor` region descriptor (placement_config.recolor). useTexture still owns loading/suspense/
 // caching; we derive a recoloured CanvasTexture from the loaded image only when asked. A tainted
 // canvas (CORS) falls back to the original — recolour silently off, sticker still renders.
+// The lit decal render desaturates the print: the diffuse+specular of the scene lights lifts the darkest
+// channel off zero, so a vivid artwork (measured source saturation ~0.96) renders at ~0.78 on the wall —
+// visibly duller than the same file previewed big/head-on in the admin Relief Studio. This is NOT a material,
+// asset, or relief bug (all ruled out by measurement: the identical file + identical flat material render
+// vivid in the studio's scene); it is the rendering CONTEXT — the decal is drawn small, curved, and often at
+// a raking wall angle where a fixed specular white-wash is a larger fraction of the signal. Since per-pixel
+// saturation IS the perceived "dullness" (confirmed: desaturating the studio to ~0.75 made it read dull), we
+// pre-boost the albedo's chroma so the print survives that wash and reads as vivid as the studio preview.
+// Modest by default (garish/posterized above ~1.2 on already-vivid art). ROADMAP: becomes a per-element
+// placement_config override with this as the fallback — see src/designer/DECAL_FINISH_ROADMAP.md.
+const DECAL_SAT = 1.12;
+// Push chroma away from per-pixel luma by `mul` (>1 = more saturated), clamped, alpha untouched. In place.
+function saturateRGB(d, mul) {
+  if (mul === 1) return;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    d[i]     = Math.max(0, Math.min(255, y + (r - y) * mul));
+    d[i + 1] = Math.max(0, Math.min(255, y + (g - y) * mul));
+    d[i + 2] = Math.max(0, Math.min(255, y + (b - y) * mul));
+  }
+}
+
+// Sticker self-illumination (emissive #fff × emissiveMap = the artwork × intensity): brightens AND
+// re-saturates JUST the decal — the print reads vivid without re-lighting (and washing out) the cake, the
+// way a global ambient lift would. Modest by default (glowy/flat — the print stops taking the cake's shading —
+// above ~0.35). Was 0.12; lifted to offset the lit-render dulling. ROADMAP: per-element placement_config override.
+const DECAL_EMISSIVE = 0.22;
+
 function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
-  const base = useTexture(imageUrl);
+  const base = useTexture(corsUrl(imageUrl));
   base.colorSpace = THREE.SRGBColorSpace;
+  // A decal is viewed at a grazing angle all round the wall, where isotropic mip filtering smears it.
+  // 8 matches the Relief Studio's albedo (and goldLeafTexture); the GPU clamps to its own max. The
+  // recoloured CanvasTexture below copies this off `base`, so both paths stay in step.
+  base.anisotropy = 8;
   const isMulti = recolor?.method === 'hue_regions';   // per-region colours via groupColors (keyed by region index)
   const gcKey = isMulti ? JSON.stringify(groupColors ?? null) : null;
   const recoloured = useMemo(() => {
-    if (!recolor || (!isMulti && !color)) return base;
+    const needsRecolor = !!(recolor && (isMulti || color));
+    const needsBoost = DECAL_SAT !== 1;
+    if (!needsRecolor && !needsBoost) return base;                        // nothing to do → cached original
     const img = base.image;
     const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
     if (!w || !h) return base;
@@ -450,16 +495,18 @@ function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
       const ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0, w, h);
       const id = ctx.getImageData(0, 0, w, h);
-      if (isMulti) {
-        // Auto colour regions: cluster the image's hues, recolour each to its groupColors[index] (an
-        // untouched region → null → left as-is). Regions derive deterministically so index keys are stable.
-        const regions = extractRegions(id.data, w, h, { minSat: recolor.sat, maxRegions: recolor.maxRegions });
-        const targets = regions.map((_, i) => groupColors?.[i] ?? null);
-        if (!targets.some(Boolean)) return base;                          // nothing recoloured yet → original
-        recolorRegions(id.data, w, h, regions.map(r => r.hue), targets, { minSat: recolor.sat });
-      } else {
-        recolorImageData(id.data, w, h, color, recolor);
+      if (needsRecolor) {
+        if (isMulti) {
+          // Auto colour regions: cluster the image's hues, recolour each to its groupColors[index] (an
+          // untouched region → null → left as-is). Regions derive deterministically so index keys are stable.
+          const regions = extractRegions(id.data, w, h, { minSat: recolor.sat, maxRegions: recolor.maxRegions });
+          const targets = regions.map((_, i) => groupColors?.[i] ?? null);
+          if (targets.some(Boolean)) recolorRegions(id.data, w, h, regions.map(r => r.hue), targets, { minSat: recolor.sat });
+        } else {
+          recolorImageData(id.data, w, h, color, recolor);
+        }
       }
+      saturateRGB(id.data, DECAL_SAT);   // pre-boost chroma to survive the lit-render wash (see DECAL_SAT note)
       ctx.putImageData(id, 0, 0);
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -467,7 +514,7 @@ function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
       tex.flipY = base.flipY;
       return tex;
     } catch (_) {
-      return base;   // tainted canvas → original texture (no recolour)
+      return base;   // tainted canvas → original texture (no recolour/boost)
     }
   }, [base, recolor, color, isMulti, gcKey]);
   // Free the derived GPU texture when colour changes / unmounts (the cached `base` is left alone).
@@ -485,7 +532,7 @@ function useStickerImageTexture(imageUrl, recolor, color, groupColors) {
 // nothing → a square photo/border. Here we copy alpha → RGB (opaque), so green encodes the shape and
 // alphaMap clips correctly to any outline. Canvas-derived (CORS-clean now); cached per mask texture.
 function useMaskAlpha(maskUrl) {
-  const mask = useTexture(maskUrl);
+  const mask = useTexture(corsUrl(maskUrl));
   return useMemo(() => {
     const img = mask.image;
     const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
@@ -562,7 +609,7 @@ function PlaceholderBacking({ geo, maskUrl }) {
 }
 
 function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
-  const photo = useTexture(photoUrl);
+  const photo = useTexture(corsUrl(photoUrl));
   const mask  = useMaskAlpha(maskUrl);        // clips by the mask's shape (alpha→green), any outline
   photo.colorSpace = THREE.SRGBColorSpace;
   const imgAspect = useMemo(() => {
@@ -611,7 +658,7 @@ function BorderBacking({ geo, maskUrl, color, width }) {
 // Optional decorative border art (glitter, piped cream, watercolour) — a baked PNG drawn on top of
 // the photo. When present it IS the border (the procedural ring is suppressed); fixed thickness.
 function OverlayMesh({ geo, url, selected }) {
-  const tex = useTexture(url);
+  const tex = useTexture(corsUrl(url));
   tex.colorSpace = THREE.SRGBColorSpace;
   return (
     <mesh geometry={geo} renderOrder={1} frustumCulled={false}>
@@ -632,7 +679,8 @@ function OverlayMesh({ geo, url, selected }) {
 // Bake the relief displacement + normal maps from the loaded sticker image (placement_config.relief).
 // Reuses the drei-cached image; null when the element has no relief. Disposed on change/unmount.
 function useReliefMaps(imageUrl, relief) {
-  const base = useTexture(imageUrl);
+  // Same qualified URL as the albedo above, so drei's cache serves ONE fetch for both.
+  const base = useTexture(corsUrl(imageUrl));
   const maps = useMemo(() => {
     if (!relief) return null;
     const img = base.image;
@@ -643,7 +691,7 @@ function useReliefMaps(imageUrl, relief) {
   return maps;
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, roughness = null, metalness = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
   const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors);
   const reliefMaps = useReliefMaps(imageUrl, relief);
   const reliefOn = !!(relief && reliefMaps);
@@ -668,19 +716,25 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
   }, [texture, imageUrl, onSeat, seatRise, seatSpine]);
   // Geometry is config-driven: a foldable element hinges into a folded plane (the fold wins over
   // wall-curving). Standing → wings rise UP in a V from the spine (riseRad = fold), so the body is
-  // the support; laid flat / on a wall → hinge into Z-depth (foldRad). curveRadius is capped at 0.3
-  // world units so the bend is visible (the physical tier radius ~1.2 → only ~0.008-unit depth).
+  // the support; laid flat / on a wall → hinge into Z-depth (foldRad).
   const geo = useMemo(() => {
     if (foldable) {
       const f = (fold ?? DEFAULT_FOLD_DEG) * Math.PI / 180, sp = spine ?? DEFAULT_SPINE;
       return standUp ? createFoldedPlane(STICKER_SIZE, f, sp, f)
                      : createFoldedPlane(STICKER_SIZE, f, sp, 0);
     }
+    // The decal must curve at the WALL radius in WORLD space, but the parent group scales the mesh by
+    // `stickerScale` — so build at local radius `curveRadius / stickerScale`, exactly as the GLB path
+    // does (`bendRadius`). The old `Math.min(curveRadius, 0.3)` cap predates element scaling: it
+    // exaggerated the bend so a decal on a wide tier didn't look flat, but the group's scale then
+    // multiplied the world curve radius (0.3 × 3 = 0.9 against a ~0.45 wall), so the decal was a much
+    // flatter arc than the wall and its edges bowed off it at the silhouette tangent — worse the bigger
+    // the element. That is a BASE-geometry bug, not a relief one; relief only made it easy to see.
     // Relief needs a DENSE grid so the displacement map can sculpt real lift; flat stickers stay low-poly.
     return (curved && curveRadius)
-      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, Math.min(curveRadius, 0.3), reliefOn ? 96 : 16, reliefOn ? 96 : 1)
-      : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE, reliefOn ? 96 : 1, reliefOn ? 96 : 1);
-  }, [foldable, fold, spine, standUp, curved, curveRadius, reliefOn]);
+      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, curveRadius / (stickerScale || 1), reliefOn ? RELIEF_SEGMENTS : 16, reliefOn ? RELIEF_SEGMENTS : 1)
+      : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE, reliefOn ? RELIEF_SEGMENTS : 1, reliefOn ? RELIEF_SEGMENTS : 1);
+  }, [foldable, fold, spine, standUp, curved, curveRadius, stickerScale, reliefOn]);
   // Relief normal strength → Vector2; a negative Y is the "flip green" toggle (bake.flipY) at the material.
   const reliefNScale = useMemo(() => {
     const ns = relief?.normalScale ?? 0.8;
@@ -704,24 +758,63 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
   }
   // Raised fondant cut-out (placement_config.relief): real GPU displacement + normal detail + a fondant
   // finish on the dense mesh. Config-gated; a flat sticker falls through to the standard decal material.
-  // `relief.lift` is a FRACTION of the sticker's own size, NOT an absolute world length — displacement is
-  // applied in the mesh's local (STICKER_SIZE) space and the group scale carries it to world, so the raised
-  // thickness auto-scales with the sticker (and thus the cake). Never bake in a fixed cake radius here — the
-  // studio authored `lift` on its 1.2-radius tier, but the cake is any size (INVARIANTS.md #8). The old
-  // absolute value floated off the wall at the tangent on the smaller designer cake.
   if (reliefOn) {
+    // `relief.lift` is a FRACTION of the LIVE wall/tier radius (`reliefRadius`), NOT an absolute world
+    // length and NOT tied to the sticker's size. THREE applies displacement along the object-space normal
+    // *before* the model matrix, so the group's `scale` would multiply it — divide it back out here and the
+    // world lift is exactly `lift * reliefRadius`: independent of the element's scale (a 3× sticker can't
+    // balloon the lift) and of the cake size (INVARIANTS.md #8/#8a; never hardcode a radius — the studio
+    // authored `lift` on its 1.2-radius tier, but the cake is any size). Both predecessors were wrong: the
+    // absolute value ignored cake size, the fraction-of-sticker-size cancelled against `scale`.
+    // `reliefRadius` is a LIVE cake dimension — every call site passes its tier's radius. There is no valid
+    // world-space constant to substitute if it's missing (that is precisely the bug #8 forbids), so a
+    // non-finite value means a wiring bug: shout in dev and render flat rather than fake a plausible-but-
+    // wrong thickness that nobody notices.
+    const liveR = Number.isFinite(reliefRadius) && reliefRadius > 0 ? reliefRadius : null;
+    if (liveR === null && import.meta.env?.DEV) {
+      console.error('[relief] reliefRadius must be the live tier radius; got', reliefRadius, '— rendering flat.');
+    }
+    const reliefDisp = (relief.lift ?? 0.07) * (liveR ?? 0) / (stickerScale || 1);
     return (
       <mesh geometry={geo}>
         <meshPhysicalMaterial
           map={texture}
           transparent alphaTest={0.5} alphaToCoverage
           normalMap={reliefMaps.normalMap} normalScale={reliefNScale}
-          displacementMap={reliefMaps.displacementMap} displacementScale={(relief.lift ?? 0.07) * STICKER_SIZE}
-          roughness={relief.roughness ?? 0.7} metalness={0}
-          sheen={relief.sheen ?? 0.12} sheenColor={'#ffffff'} sheenRoughness={0.85}
+          displacementMap={reliefMaps.displacementMap} displacementScale={reliefDisp}
+          // MATTE and SHEENLESS by default, exactly like the flat decal below — a raised fondant cut-out IS
+          // fondant, and the two paths must not disagree about what fondant looks like.
+          //
+          // Both terms add WHITE on top of the albedo, and additive white is what desaturates a print (it
+          // lifts the darkest channel off zero; it does not clip — measured 0% pinned). Measured on the real
+          // decal, texture saturation 0.907:
+          //     baseline (roughness 0.7, sheen 0.12) → 0.345   (62% lost)
+          //     sheen 0                              → 0.397
+          //     roughness 0.95                       → 0.479
+          //     both, no specular                    → 0.607   ← matches a flat decal (0.629)
+          // Note it is NOT the HDRI: envMapIntensity 0 changes the result by literally nothing. The white is
+          // the DIRECT specular from the two directional lights, which envMapIntensity does not scale.
+          // ~33% loss (0.907 → 0.61) is irreducible — light times albedo, plus thin edges blending into the
+          // cake. The other ~44% was this material, and only this material.
+          //
+          // The flat path learned the same lesson once already (0.75 → 0.95, see its note). The relief path
+          // was cloned from it and took `roughness`/`sheen` from the Relief Studio's sliders (0.7 / 0.12).
+          // Fixing the defaults is only half the job: every element authored there carries EXPLICIT values
+          // that override these, so placement_config.relief.{roughness,sheen} must be dropped/re-authored.
+          roughness={relief.roughness ?? 0.95} metalness={0}
+          sheen={relief.sheen ?? 0} sheenColor={'#ffffff'} sheenRoughness={0.85}
           envMapIntensity={relief.envIntensity ?? 0.4}
+          // TEMP: selection no longer changes the material. The additive violet SELECTION_COLOR emissive
+          // corrupts a saturated albedo by construction (orange → magenta — B pushed hard, G barely), and
+          // tone-mapping-while-selected didn't compress it enough. Verified: a freshly-placed = selected
+          // sticker rendered magenta; deselecting snapped it back to true orange. A non-destructive cue
+          // (rectangular border/outline) is coming to replace this; until then the toolbar is the cue.
           toneMapped={relief.toneMapped ?? false}
-          emissive={selected ? SELECTION_COLOR : '#000000'} emissiveIntensity={selected ? 0.25 : 0}
+          // `emissiveMap` = the albedo, so this adds 12% of the ARTWORK back as self-illumination (hue and
+          // saturation survive). Without it a raised sticker renders duller than the flat one beside it.
+          emissive={'#ffffff'}
+          emissiveMap={texture}
+          emissiveIntensity={DECAL_EMISSIVE}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -742,11 +835,12 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
         envMapIntensity={0.4}
         // The print bypasses the scene's ACES tone mapping (which desaturates) so the decal shows its
         // true colours — the cake stays filmic, the artwork stays vivid. A little emissive still lifts
-        // it in shadow. Selection swaps to a flat SELECTION_COLOR tint (no map) as the highlight cue.
-        toneMapped={!selected ? false : true}
-        emissive={selected ? SELECTION_COLOR : '#ffffff'}
-        emissiveMap={selected ? null : texture}
-        emissiveIntensity={selected ? 0.2 : 0.12}
+        // it in shadow. TEMP: selection no longer tints the material (the additive violet SELECTION_COLOR
+        // corrupted saturated albedos — see the relief path note); a border/outline cue will replace it.
+        toneMapped={false}
+        emissive={'#ffffff'}
+        emissiveMap={texture}
+        emissiveIntensity={DECAL_EMISSIVE}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
@@ -1024,7 +1118,7 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
   );
 }
 
-function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -1036,7 +1130,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -1072,9 +1166,12 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     ? frameSideMaxScale(height, (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)))
     : Infinity;
   const effScale = Math.min(rawScale, sideFrameMax);
-  // Base seat = fixed gap off the BASE wall. The drag hit-test (below) projects onto this base cylinder;
-  // the visible position adds the live surface relief so the decor rests on the displaced wall.
-  const off    = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+  // Base seat = a gap off the BASE wall PROPORTIONAL to this tier's live radius, so the decal hugs
+  // identically on every cake size (INVARIANTS.md #8 — an absolute gap is a bigger slot the smaller
+  // the tier). The drag hit-test (below) projects onto this base cylinder; the visible position adds
+  // the live surface relief so the decor rests on the displaced wall.
+  // `radialOffset` is the customer's "Depth" nudge — still an absolute world value on top (see #8 TODO).
+  const off    = sideSeatOffset(radius) + (sticker.radialOffset ?? 0);
   // Round: angle theta around the cylinder, decal curved to the wall. Rect: perimeter
   // fraction u along the rounded-rect wall, decal flat (the wall is flat).
   let cx, cz, yaw, curveRadius;
@@ -1116,7 +1213,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1257,7 +1354,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1968,7 +2065,7 @@ function CakeThumbnailScene({ config }) {
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
         if (isSide) {
           const tshp = tierShape(tier);
-          const off = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+          const off = sideSeatOffset(tier.radius) + (sticker.radialOffset ?? 0);
           const sampler = tierReliefSampler(tier);
           const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
           let px, pz, yaw, r = 0;
@@ -1990,7 +2087,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+                <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
               </group>
             </group>
           );

@@ -66,8 +66,20 @@ export const CAMERA_FOV             = 42;
 export const CAKE_TOP_CAP_H = 0.02;
 
 // ── Sticker surface offsets ───────────────────────────────────────────────────
-export const SIDE_STICKER_SURFACE_OFFSET = 0.025;  // gap between cake wall and sticker face
-export const FLAT_STICKER_Y_OFFSET       = 0.025;  // lift above cake top surface
+// How far a side decal's base sheet sits off the wall, as a DIMENSIONLESS FRACTION of the live
+// tier radius — never an absolute world length (INVARIANTS.md #8). Apply via `sideSeatOffset()`.
+//
+// Derived, not invented: the Relief Sticker Studio seats its decal at `TIER_R + 0.004` on its
+// own 1.2-radius tier. Re-expressing that absolute value as a fraction of THAT tool's radius is
+// exactly what #8 prescribes, so the designer can multiply by ITS OWN live radius. Written as the
+// original quotient so the provenance survives — do not "simplify" it to a bare number.
+//
+// (Lesson: this was `0.025` world. On the 1.2 tier that's 2.1% of the radius — 6.25x the studio's
+// 0.33% — so every side decal floated a visible slot off the wall, and you saw the board through
+// the gap at the silhouette tangent. On a 0.45 tier the same constant is 5.6%: worse the smaller
+// the cake, which is the signature of a hardcoded world length.)
+export const SIDE_STICKER_SEAT_FRAC = 0.004 / 1.2;
+export const FLAT_STICKER_Y_OFFSET  = 0.025;  // lift above cake top surface — TODO: same #8 smell, still absolute
 
 // ── Domain enums ──────────────────────────────────────────────────────────────
 // Single source of truth for the string identifiers used across the designer and
