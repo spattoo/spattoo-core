@@ -67,7 +67,7 @@ function imageToFields(img) {
 //     is removed; the author tunes the radius. Automatic, no per-element painting.
 //   • flatMask — EXPLICIT: an authored paint mask (black = flush) the author draws over the exact parts to
 //     keep flat, ignoring both shape and colour. Multiplies on top of flattenThin.
-function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur = 34, edgeRound = 16, grain = 0.5, flattenThin = 0, flatMask = null }) {
+function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur = 34, edgeRound = 16, grain = 0.5, flattenThin = 0, flatMask = null, flatTop = 0 }) {
   const N = w * h;
   const domeRaw = boxBlur(mask, w, h, domeBlur, 2);
   let dmx = 1e-4; for (let i = 0; i < N; i++) if (mask[i] > 0.5 && domeRaw[i] > dmx) dmx = domeRaw[i];
@@ -77,6 +77,11 @@ function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur =
   // (their blur never reaches 0.5) while the thick body stays ~1. Radius scales with flattenThin.
   const thinR = flattenThin > 0 ? Math.max(2, Math.round(flattenThin * 55)) : 0;
   const thinCov = thinR ? boxBlur(mask, w, h, thinR, 2) : null;
+  // Flat-top plaque (bake.flatTop, 0 = off): blend the per-pixel domed form toward a UNIFORM plateau — the
+  // whole silhouette (thin parts INCLUDED) at one flat height, only a small rounded outer edge — so the relief
+  // reads as a flat lifted plaque, not a sculpted uneven mound. Uses a SMALL edge radius (vs `edgeRound`, which
+  // weights thin features down) so spikes/limbs reach full height too. Normal-map detail still shades on top.
+  const plateauCov = flatTop > 0 ? boxBlur(mask, w, h, Math.max(2, Math.round(edgeRound * 0.35)), 2) : null;
   let grainF = null;
   if (grain > 0) {
     const raw = new Float32Array(N);
@@ -87,12 +92,17 @@ function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur =
   for (let i = 0; i < N; i++) {
     const coverage = smoothstep(0.30, 0.85, cov[i]);         // rounded shoulder 0..1
     const dome = clamp(domeRaw[i] / dmx, 0, 1);
+    let form = coverage * ((1 - puff) + puff * dome);        // domed ↔ slab sculpted form
+    if (plateauCov) form = form * (1 - flatTop) + smoothstep(0.35, 0.65, plateauCov[i]) * flatTop;  // → flat plaque
     const thin = thinCov ? smoothstep(0.50, 0.66, thinCov[i]) : 1;   // thin protrusion → 0 (flush on wall)
     const authored = flatMask ? flatMask[i] : 1;                     // painted mask: 0 = flush, 1 = raised
-    const macro = coverage * ((1 - puff) + puff * dome) * thin * authored;
+    const macro = form * thin * authored;
     H[i] = macro;
-    // Detail high-pass still shades the flattened region so it reads as detailed-but-flush, not blank.
-    let hn = macro + (lum[i] - lumBlur[i]) * detail * coverage;
+    // flatTop ALSO fades out the image-derived surface detail (spots/eye/feature bumps) so a flat plaque reads
+    // truly flat — the print still shows via the albedo, just no 3D relief. detailN = 1 at flatTop 0 (unchanged).
+    // Grain keeps its own slider (a uniform fondant texture, not "raised points").
+    const detailN = 1 - flatTop;
+    let hn = macro + (lum[i] - lumBlur[i]) * detail * coverage * detailN;
     if (grainF) hn += grainF[i] * grain * 0.09 * coverage;
     Hn[i] = clamp(hn, 0, 1.4);
   }

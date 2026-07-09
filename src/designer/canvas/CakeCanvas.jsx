@@ -25,6 +25,7 @@ import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
+import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
 import { frostingAllowsStyles } from '../frostings.js';
@@ -711,6 +712,32 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
   const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors, printFinish?.saturation);
   const reliefMaps = useReliefMaps(imageUrl, relief);
   const reliefOn = !!(relief && reliefMaps);
+  // Solid relief SLAB (placement_config.relief.solid): render the sticker as a REAL extruded solid
+  // (flat printed front + side walls + flat back, bent around the wall) instead of a displaced shell,
+  // so it reads solid from a grazing angle. Config-gated ONLY on relief.solid — no element-type branch.
+  // The silhouette comes from the sticker's own loaded image alpha; `base` is the SAME drei-cached
+  // texture useStickerImageTexture/useReliefMaps already fetched (one download), and Suspense guarantees
+  // its image is decoded here — so the geometry builds synchronously.
+  const base = useTexture(corsUrl(imageUrl));
+  const solidOn = !!(relief?.solid && reliefOn);
+  const solidGeo = useMemo(() => {
+    if (!solidOn) return null;
+    const liveR = Number.isFinite(reliefRadius) && reliefRadius > 0 ? reliefRadius : 0;
+    // thickness = the SAME lift→world formula the displaced path feeds displacementScale (see below), so
+    // the solid's raised height matches the old shell exactly on any cake size / sticker scale (#8).
+    const thickness = (relief.lift ?? 0.07) * liveR / (stickerScale || 1);
+    const img = base?.image;
+    if (!img || !(img.naturalWidth || img.width)) return null;
+    try {
+      return buildSolidReliefGeometry(img, {
+        size: STICKER_SIZE,
+        thickness,
+        curveRadius: (curved && curveRadius) ? curveRadius : null,   // null → flat slab (top surface / sheet wall)
+        scale: stickerScale,
+      });
+    } catch (_) { return null; }
+  }, [solidOn, base, relief, reliefRadius, stickerScale, curved, curveRadius]);
+  useEffect(() => () => solidGeo?.dispose?.(), [solidGeo]);
   // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
   // wide butterfly on a square canvas doesn't float. When standing (standUp) the wings rise in a V,
   // so the seat must account for that rise — the spine/body becomes the true lowest point.
@@ -756,6 +783,32 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
     const ns = relief?.normalScale ?? 0.8;
     return new THREE.Vector2(ns, relief?.bake?.flipY ? -ns : ns);
   }, [relief]);
+  // Solid-slab materials as an EXPLICIT array (not two `attach="material-N"` children): on a plain
+  // <mesh> whose default `material` is a single Material, `attach="material-0"` writes index 0/1 onto
+  // that object instead of building an array — so the mesh silently keeps its default white material
+  // and the albedo never lands on the front cap. Passing `material={[front, side]}` sets the array
+  // directly. [0] = printed albedo on the caps (the relief physical material minus displacement — the
+  // geometry IS the lift now), [1] = matte fondant on the side walls. Disposed on change/unmount.
+  const solidMats = useMemo(() => {
+    if (!solidOn) return null;
+    const front = new THREE.MeshPhysicalMaterial({
+      map: texture,
+      normalMap: reliefMaps.normalMap, normalScale: reliefNScale,
+      roughness: relief.roughness ?? 0.95, metalness: 0,
+      sheen: relief.sheen ?? 0, sheenColor: new THREE.Color('#ffffff'), sheenRoughness: 0.85,
+      envMapIntensity: relief.envIntensity ?? 0.4,
+      toneMapped: relief.toneMapped ?? false,
+      emissive: new THREE.Color('#ffffff'), emissiveMap: texture,
+      emissiveIntensity: printFinish?.emissive ?? DECAL_EMISSIVE,
+      side: THREE.DoubleSide,
+    });
+    const wall = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(color || '#efe6da'),
+      roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
+    });
+    return [front, wall];
+  }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, color]);
+  useEffect(() => () => { solidMats?.forEach(m => m.dispose()); }, [solidMats]);
   // Photo-cake frame (config-gated on photoMask, no element-type branch): the shape is the mask, the
   // border is procedural (or a decorative overlay), and the customer photo is clipped to the mask.
   // The plain image_url mesh is NOT drawn for a frame — the mask is the shape, not a visible image.
@@ -771,6 +824,17 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
           : <PlaceholderBacking geo={geo} maskUrl={photoMask} />}
       </>
     );
+  }
+  // Solid relief SLAB (placement_config.relief.solid): the extruded silhouette — flat printed front,
+  // side walls, flat back, bent around the wall — with a two-material array: [0] the printed albedo on
+  // the caps (reusing the relief physical material minus displacement — the geometry IS the lift now),
+  // [1] a matte fondant on the side walls. Reads solid from every angle. Falls back to the displaced
+  // shell below if the geometry couldn't build (e.g. a CORS-tainted image → alpha unreadable).
+  if (solidOn && solidGeo && solidMats) {
+    // Two-material array (see solidMats): caps (group 0) = printed albedo — opaque, since the extrude
+    // silhouette already IS the alpha shape (no transparent margin maps onto the cap, so no alphaTest is
+    // needed → a clean solid edge). Side walls (group 1) = matte fondant, the depth the slab shows edge-on.
+    return <mesh geometry={solidGeo} material={solidMats} />;
   }
   // Raised fondant cut-out (placement_config.relief): real GPU displacement + normal detail + a fondant
   // finish on the dense mesh. Config-gated; a flat sticker falls through to the standard decal material.

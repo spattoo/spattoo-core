@@ -27,6 +27,9 @@ export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from '.
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
+// Solid relief slab geometry — exported so the admin Relief Sticker Studio previews the SAME extruded
+// solid the designer renders for placement_config.relief.solid (one builder, no drift).
+export { buildSolidReliefGeometry } from './designer/geometry/solidRelief.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 export { getWeaveNormalMap, makeWeaveField, weaveTiles } from './designer/shared/textures/weaveStencilTexture.js';
 export { makeLusterDustMaps, LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from './designer/shared/textures/lusterDust.js';
