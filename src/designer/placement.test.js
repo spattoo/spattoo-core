@@ -216,6 +216,36 @@ describe('wallClampY — a side decal never dips below the tier base into the bo
     expect(y).toBe(baseY + halfH);                       // bottom pinned to base
     expect(y - halfH).toBeGreaterThanOrEqual(baseY);     // bottom never below the board line
   });
+
+  describe('asymmetric extent — a banner clamps by its flags, not its transparent square', () => {
+    // A bunting image: flags in the vertical middle, empty margin above AND below. Content reaches
+    // 0.1 above the centre and 0.1 below, though the square half is 0.35.
+    const up = 0.1, down = 0.1, squareHalf = 0.35;
+
+    it('lets the visible content climb until its TOP touches the rim', () => {
+      // Old symmetric clamp (squareHalf) stopped the centre at baseY+wall-0.35 = 1.45.
+      const yOld = wallClampY(5, baseY, wall, squareHalf);
+      const yNew = wallClampY(5, baseY, wall, down, up);
+      expect(yNew).toBeGreaterThan(yOld);                 // it can go higher now…
+      expect(yNew + up).toBeCloseTo(baseY + wall, 6);     // …until the flags' top is at the rim
+    });
+
+    it('lets the visible content drop until its BOTTOM touches the base', () => {
+      const yNew = wallClampY(0, baseY, wall, down, up);
+      expect(yNew - down).toBeCloseTo(baseY, 6);          // flags' bottom at the base
+    });
+
+    it('is unchanged for a margin-free asset (content fills the square)', () => {
+      expect(wallClampY(5, baseY, wall, squareHalf, squareHalf))
+        .toBe(wallClampY(5, baseY, wall, squareHalf));    // same as the single-arg (symmetric) form
+    });
+
+    it('the reported banner: empty top margin no longer blocks upward travel', () => {
+      // The transparent square would stop the centre 0.25 short of where the flags allow.
+      const gained = wallClampY(5, baseY, wall, down, up) - wallClampY(5, baseY, wall, squareHalf);
+      expect(gained).toBeCloseTo(squareHalf - up, 6);     // exactly the empty top margin, recovered
+    });
+  });
 });
 
 describe('stickerSizeControl — the ONE size field + bounds for a sticker', () => {

@@ -117,6 +117,16 @@ those genuinely do intercept clicks over a neighbour and showing that is the bor
 perch/verge that deliberately overhangs the rim is not base-seated (its underside hangs in air, not
 in cake) and keeps its full square.
 
+The mirror rule for MOVEMENT: a side-wall element's vertical **clamp** (`wallClampY`) uses its
+VISIBLE content extent (`down`/`up` = lowest/highest opaque pixel), not the transparent square. A
+banner with empty margin above and below its flags must be draggable until its flags touch the rim,
+not stopped short by the empty square. `down`/`up` come from the SAME one alpha scan as the seat
+(`scanContentV`, reported up via `onVExtent`); a GLB fills its box so reports a symmetric half-height
+(unchanged behaviour); unmeasured falls back to the full square. Note this is the OPPOSITE trade-off
+from the hit plane: the plane/border stay the full square (they must reveal what steals clicks), while
+the clamp shrinks to the content (empty margin must not block travel). Two different questions —
+"what did I click?" vs "how far can I drag?" — so two different boxes, deliberately.
+
 ### 5b. ONE size path — `stickerSizeControl` decides the field, the value and the bounds
 `ResizeHandles` (the corner grips on a selected element) and the edit popup's `SizeDial` are two
 INPUTS to the same control, not two controls. Both read `stickerSizeControl(element, sticker, tier)`

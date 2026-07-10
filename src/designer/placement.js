@@ -103,9 +103,17 @@ export function sideSeatOffset(radius) {
 // Keep a side decal's CENTRE y so its (scaled) bottom edge never crosses the tier base into the
 // board. If the decal is taller than the wall (enlarged a lot), let it overflow UPWARD only —
 // never down into the board. halfH = half the rendered sticker height.
-export function wallClampY(y, baseY, wallHeight, halfH) {
-  const lo = baseY + halfH;
-  const hi = baseY + wallHeight - halfH;
+// Keep a side-wall element's CENTRE where its VISIBLE content stays on the wall band [baseY, baseY+
+// wallHeight]. `down`/`up` are the content's extent below/above the centre (scaled) — its lowest and
+// highest opaque pixel, NOT the transparent square. Passing the same value for both (the square's
+// half-height) reproduces the old symmetric clamp, so a margin-free asset is unchanged; a banner with
+// empty margin above and below its flags can now climb until the flags touch the rim instead of being
+// stopped short by the empty square. When the content is taller than the wall, pin its top to the rim.
+export function wallClampY(y, baseY, wallHeight, down, up = down) {
+  const lo = baseY + down;
+  const hi = baseY + wallHeight - up;
+  // Content taller than the wall: pin its BASE to the tier base (bottom seated, top overflows) —
+  // the same fallback as the symmetric clamp.
   return hi >= lo ? Math.min(Math.max(y, lo), hi) : lo;
 }
 
