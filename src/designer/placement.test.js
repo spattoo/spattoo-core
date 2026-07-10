@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -215,5 +215,85 @@ describe('wallClampY — a side decal never dips below the tier base into the bo
     const y = wallClampY(5, baseY, wall, halfH);
     expect(y).toBe(baseY + halfH);                       // bottom pinned to base
     expect(y - halfH).toBeGreaterThanOrEqual(baseY);     // bottom never below the board line
+  });
+});
+
+describe('stickerSizeControl — the ONE size field + bounds for a sticker', () => {
+  const plain = { placement_config: {} };
+  const tier  = { radius: 1, height: 0.8 };
+
+  it('an ordinary sticker sizes by absolute `scale`, on the default range', () => {
+    const c = stickerSizeControl(plain, { scale: 1.4, zone: 'top_surface' }, tier);
+    expect(c).toEqual({ key: 'scale', value: 1.4, ...STICKER_SCALE_RANGE });
+  });
+
+  it('reads placement_config.scale bounds rather than hard-coding them', () => {
+    const el = { placement_config: { scale: { min: 0.5, max: 1.2, step: 0.1 } } };
+    const c = stickerSizeControl(el, { scale: 1, zone: 'side' }, tier);
+    expect(c).toMatchObject({ key: 'scale', min: 0.5, max: 1.2, step: 0.1 });
+  });
+
+  it('a hero hug sizes by `hugMul`, NOT scale — and ignores placement_config.scale', () => {
+    const el = { placement_config: { scale: { min: 0.5, max: 1.2 } } };
+    const hug = { singlePerSlot: true, placementMode: 'hug', hugMul: 1.5, scale: 99 };
+    expect(isDynamicHug(hug)).toBe(true);
+    expect(stickerSizeControl(el, hug, tier)).toEqual({ key: 'hugMul', value: 1.5, ...HUG_MUL_RANGE });
+  });
+
+  it('defaults each missing value rather than throwing', () => {
+    expect(stickerSizeControl(undefined, undefined, null))
+      .toEqual({ key: 'scale', value: 1, ...STICKER_SCALE_RANGE });
+  });
+
+  it('caps a photo frame on the SIDE so it cannot outgrow the wall', () => {
+    const frame = { scale: 1, zone: 'side', photoMask: 'm.png', photoFill: 1 };
+    const c = stickerSizeControl(plain, frame, { radius: 1, height: 0.8 });
+    expect(c.max).toBeLessThan(STICKER_SCALE_RANGE.max);   // capped by geometry, not the raw range
+    expect(c.max).toBeGreaterThan(c.min);
+  });
+
+  it("a frame's border ring counts against its cap (thicker border → smaller max)", () => {
+    const base = { scale: 1, zone: 'side', photoMask: 'm.png', photoFill: 1 };
+    const thin = stickerSizeControl(plain, base, tier).max;
+    const thick = stickerSizeControl(plain, { ...base, borderWidth: 0.3 }, tier).max;
+    expect(thick).toBeLessThan(thin);
+  });
+
+  it('a non-frame sticker is never capped by cake geometry', () => {
+    const c = stickerSizeControl(plain, { scale: 1, zone: 'side' }, tier);
+    expect(c.max).toBe(STICKER_SCALE_RANGE.max);
+  });
+
+  it('a cap never squeezes the control below one step of travel', () => {
+    const frame = { scale: 1, zone: 'side', photoMask: 'm.png', photoFill: 1 };
+    const c = stickerSizeControl(plain, frame, { radius: 1, height: 0 });   // zero-height wall
+    expect(c.max).toBeGreaterThan(c.min);
+  });
+});
+
+describe('clampSizeValue — a handle drag can never reach a size the dial refuses', () => {
+  const range = { min: 0.25, max: 2, step: 0.05 };
+
+  it('clamps below the floor and above the ceiling', () => {
+    expect(clampSizeValue(-5, range)).toBe(0.25);
+    expect(clampSizeValue(99, range)).toBe(2);
+  });
+
+  it('snaps onto the control increment', () => {
+    expect(clampSizeValue(1.023, range)).toBe(1);
+    expect(clampSizeValue(1.04, range)).toBe(1.05);
+  });
+
+  it('honours a coarse step', () => {
+    expect(clampSizeValue(1.4, { min: 0.5, max: 3, step: 0.5 })).toBe(1.5);
+  });
+
+  it('degrades to a plain clamp when step is absent or invalid', () => {
+    expect(clampSizeValue(1.234, { min: 0, max: 2, step: 0 })).toBe(1.234);
+  });
+
+  it('never returns a float-noise value like 1.0500000000000003', () => {
+    const v = clampSizeValue(1.0499999, range);
+    expect(Number.isInteger(v * 10000)).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import FinishHandles from './FinishHandles.jsx';
 import SelectionBox from './SelectionBox.jsx';
+import ResizeHandles from './ResizeHandles.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
   STICKER_SIZE,
@@ -1232,7 +1233,7 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
 }
 
 
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -1309,8 +1310,17 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onDepth={setDepth} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
-          customer why the decoration underneath won't respond. */}
+          customer why the decoration underneath won't respond. Corner grips resize it, through the
+          same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
       {selected && <SelectionBox width={STICKER_SIZE} height={STICKER_SIZE} z={depth} />}
+      {selected && resize && sticker.allowedActions?.resize !== false && (() => {
+        const c = resize.controlFor(sticker);
+        return c ? (
+          <ResizeHandles width={STICKER_SIZE} height={STICKER_SIZE} z={depth}
+            value={c.value} bounds={c} onOrbitEnable={onOrbitEnable}
+            onResize={v => resize.onResize(sticker, v)} />
+        ) : null;
+      })()}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -1404,7 +1414,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   );
 }
 
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -1455,8 +1465,17 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} onDepth={setDepth} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
-          customer why the decoration underneath won't respond. */}
+          customer why the decoration underneath won't respond. Corner grips resize it, through the
+          same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
       {selected && <SelectionBox width={STICKER_SIZE} height={STICKER_SIZE} z={depth} />}
+      {selected && resize && sticker.allowedActions?.resize !== false && (() => {
+        const c = resize.controlFor(sticker);
+        return c ? (
+          <ResizeHandles width={STICKER_SIZE} height={STICKER_SIZE} z={depth}
+            value={c.value} bounds={c} onOrbitEnable={onOrbitEnable}
+            onResize={v => resize.onResize(sticker, v)} />
+        ) : null;
+      })()}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -1816,6 +1835,9 @@ function CakeScene({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
+  // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
+  // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
+  stickerResize = null,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
@@ -2088,6 +2110,7 @@ function CakeScene({
               allStickers={stickers}
               onOrbitEnable={orbitEnable}
               toolbar={isSelected ? stickerToolbar : null}
+              resize={stickerResize}
             />
           );
         }
@@ -2110,6 +2133,7 @@ function CakeScene({
             allStickers={stickers}
             onOrbitEnable={orbitEnable}
             toolbar={isSelected ? stickerToolbar : null}
+            resize={stickerResize}
           />
         );
       })}
@@ -2354,6 +2378,9 @@ export default function CakeCanvas({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
+  // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
+  // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
+  stickerResize = null,
   hitTestRef,
   snapCameraRef,
   cameraPosition = CAMERA_POSITION,
@@ -2474,6 +2501,7 @@ export default function CakeCanvas({
         onGroupMove={onGroupMove}
         onMoveMany={onMoveMany}
         stickerToolbar={stickerToolbar}
+        stickerResize={stickerResize}
         onWritingClick={onWritingClick}
         onWritingMove={onWritingMove}
         writingSelected={writingSelected}

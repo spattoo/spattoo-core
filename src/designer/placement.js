@@ -1,7 +1,7 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
 import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC } from './constants.js';
-import { topClamp, snapToRim } from './geometry/surface.js';
+import { topClamp, snapToRim, tierShape } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
 // element via placement_config.hug_fill.
@@ -159,6 +159,49 @@ export function frameTopMaxScale(shp, frameShape, fill = 1, stickerSize = STICKE
 export function frameSideMaxScale(wallHeight, fill = 1, stickerSize = STICKER_SIZE) {
   const ext = stickerSize * (fill > 0 ? fill : 1);   // shape full height at scale 1
   return Math.max(0.3, wallHeight / ext);
+}
+
+// ── The ONE answer to "how big is this sticker, and how big may it get?" ──────
+// Every size control — the SizeDial in the edit popup AND the corner resize handles on the canvas —
+// reads its field, value and bounds from here, so a drag and a dial can never disagree (INVARIANTS
+// #3: a rule used in two places lives in one pure function). It resolves three things the callers
+// used to each re-derive inline, and one of them got wrong (a hard-coded 0.25–3 range that ignored
+// placement_config.scale entirely):
+//   1. WHICH field carries size. A hero hug sizes by `hugMul` (a nudge on a wall-derived scale),
+//      everything else by absolute `scale`. Flag-driven via isDynamicHug — never an element type.
+//   2. The config bounds — placement_config.scale { min, max, step } (INVARIANTS #1).
+//   3. The cake-geometry cap — a photo frame may only grow until it (and its border ring) reaches
+//      the rim / wall edges. Config-gated on photoMask, no element-type branch.
+export const STICKER_SCALE_RANGE = Object.freeze({ min: 0.25, max: 8, step: 0.05 });
+export const HUG_MUL_RANGE       = Object.freeze({ min: 0.3,  max: 3, step: 0.05 });
+
+export function stickerSizeControl(element, sticker, tier = null) {
+  if (isDynamicHug(sticker)) {
+    return { key: 'hugMul', value: sticker?.hugMul ?? 1, ...HUG_MUL_RANGE };
+  }
+  const { min, max, step } = scaleRangeOf(
+    element, STICKER_SCALE_RANGE.min, STICKER_SCALE_RANGE.max, STICKER_SCALE_RANGE.step);
+
+  let capped = max;
+  if (sticker?.photoMask && tier) {
+    const fill = (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0));
+    // Never cap below one step above the floor, or the control would have no travel.
+    const floor = min + step;
+    if (sticker.zone === ZONES.TOP_SURFACE) {
+      capped = Math.max(floor, frameTopMaxScale(tierShape(tier), sticker.photoShape, fill));
+    } else if (sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER) {
+      capped = Math.max(floor, frameSideMaxScale(tier?.height ?? 0, fill));
+    }
+  }
+  return { key: 'scale', value: sticker?.scale ?? 1, min, max: capped, step };
+}
+
+// Snap a continuous size (a handle drag) onto the control's increment and clamp it to the control's
+// bounds, so dragging can't reach a size the dial refuses to show.
+export function clampSizeValue(value, { min, max, step }) {
+  if (!(step > 0)) return Math.min(max, Math.max(min, value));
+  const snapped = Math.round(value / step) * step;
+  return +Math.min(max, Math.max(min, snapped)).toFixed(4);
 }
 
 // ── Facing-offset unit normalization ─────────────────────────────────────────

@@ -106,6 +106,24 @@ on top of it. Don't "improve" this into an alpha‑tight box.
 Only `z` is measured (via `onDepth`, mirroring `onSeat`): how far the element stands proud of its hit
 plane, so a deep GLB or a raised relief doesn't swallow the border.
 
+### 5b. ONE size path — `stickerSizeControl` decides the field, the value and the bounds
+`ResizeHandles` (the corner grips on a selected element) and the edit popup's `SizeDial` are two
+INPUTS to the same control, not two controls. Both read `stickerSizeControl(element, sticker, tier)`
+(`placement.js`) and both write through `resizeSticker` (`CakeDesigner.jsx`). Never re-derive a size
+range at a call site. That helper owns three rules, each of which a caller previously got wrong:
+- **Which field** carries size — a hero hug sizes by `hugMul`, everything else by absolute `scale`.
+  Flag-driven (`isDynamicHug`), never an element type.
+- **The config bounds** — `placement_config.scale { min, max, step }` (rule #1). A hand-rolled slider
+  once hard-coded `0.25–3.0` and silently ignored config; the old canvas handle did the same.
+- **The cake-geometry cap** — a photo frame (and its border ring) may only grow until it reaches the
+  rim / wall edges. Config-gated on `photoMask`.
+
+A grip drag is clamped through `clampSizeValue`, so dragging can never reach a size the dial refuses.
+Resize is **centre-anchored** (an element's position IS its centre), so it grows symmetrically.
+Grips hold a constant APPARENT size (re-derived per frame from camera distance) — a fixed world-size
+grip becomes an untappable dot on a phone. Edge pills are deliberately absent: `scale` is a scalar,
+and a pill that silently resized uniformly would be a lie.
+
 ## 6. The Decorations panel is type‑agnostic — ONE way onto the cake
 The element picker (Decorations panel) has exactly one job: bring **any** element onto the cake
 through its right‑side popup (#3a). It MUST NOT branch on element type, slug, or zone.

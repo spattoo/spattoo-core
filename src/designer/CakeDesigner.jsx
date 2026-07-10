@@ -8,7 +8,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, frameTopMaxScale, frameSideMaxScale, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac, stickerSizeControl } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -2848,6 +2848,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const seat = manualSeat(st.x ?? 0, st.z ?? 0, selfR, balls, topY);
     updateSticker(id, { scale, x: seat.x, z: seat.z, yOffset: seat.y - topY - selfR });
   }
+  // ── The ONE size path for a placed sticker ───────────────────────────────────
+  // `sizeControlOf` answers "which field, what value, what bounds"; `resizeSticker` performs the
+  // write. The edit popup's SizeDial and the canvas corner grips both go through these, so a drag
+  // and a dial can never disagree (INVARIANTS #3). The bounds themselves — config range, hero-hug
+  // hugMul, photo-frame cake cap — live in ONE pure helper, `stickerSizeControl` (placement.js).
+  const tierOfSticker = st => canvasConfig.tiers[st?.tierIndex] ?? canvasConfig.tiers[0];
+  const sizeControlOf = st => (st ? stickerSizeControl(elementById.get(st.elementId), st, tierOfSticker(st)) : null);
+
+  function resizeSticker(sticker, value) {
+    if (!sticker) return;
+    // A hero hug is sized by its wall-derived nudge, never by an absolute scale — and it is
+    // single-per-slot, so it has no multi-select or cluster semantics to honour.
+    if (sizeControlOf(sticker)?.key === 'hugMul') { updateSticker(sticker.id, { hugMul: value }); return; }
+    // Multi-selection → set the same size on all selected (so a pattern's parts stay equal).
+    if (selectedStickerIds.size > 1 && selectedStickerIds.has(sticker.id)) scaleStickers([...selectedStickerIds], value);
+    else if (sticker.clusterBall) resizeClusterBall(sticker.id, value);   // re-settle so it can't grow into others
+    else updateSticker(sticker.id, { scale: value });
+  }
+
+  // Handed to CakeCanvas so a selected element can show corner resize grips.
+  const stickerResize = { controlFor: sizeControlOf, onResize: resizeSticker };
+
   // The cluster's CURRENT palette = the distinct ball colours in placement order (reconstructs what
   // the customer chose, so a re-pack / re-read can reapply it).
   function clusterPaletteOf(clusterId) {
@@ -4306,30 +4328,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
     if (c.resize && el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
-      // Same SizeDial as piping + the hero chooser — one Size control everywhere.
-      const scRange = scaleRangeOf(elementById.get(sticker?.elementId), 0.25, 8, 0.05);
-      // A photo frame is bounded to the cake: on TOP it grows until its shape reaches the rim/edges
-      // (fills when frame & cake shapes match, inscribes otherwise); on the SIDE it fills the wall
-      // height. The border ring is included in the bound so nothing overflows. Config-driven.
-      let scMax = scRange.max;
-      if (sticker?.photoMask) {
-        const tier = canvasConfig.tiers[sticker.tierIndex] ?? canvasConfig.tiers[0];
-        const effFill = (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0));
-        if (sticker.zone === 'top_surface') {
-          scMax = Math.max(scRange.min + scRange.step, frameTopMaxScale(tierShape(tier), sticker.photoShape, effFill));
-        } else if (sticker.zone === 'side' || sticker.zone === 'middle_tier') {
-          scMax = Math.max(scRange.min + scRange.step, frameSideMaxScale(tier?.height ?? 0, effFill));
-        }
-      }
+      // Same SizeDial as piping + the hero chooser — one Size control everywhere. Field, value and
+      // bounds (config range, hero-hug hugMul, photo-frame cake cap) come from the ONE helper the
+      // canvas resize grips also read, so the dial and a drag can never disagree.
+      const ctl = sizeControlOf(sticker);
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
-        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scMax} step={scRange.step}
-          onChange={v => {
-            // Multi-selection → set the same size on all selected (so a pattern's parts stay equal);
-            // otherwise just this sticker.
-            if (selectedStickerIds.size > 1 && selectedStickerIds.has(el.id)) scaleStickers([...selectedStickerIds], v);
-            else if (sticker?.clusterBall) resizeClusterBall(el.id, v);   // re-settle so it can't grow into others
-            else updateSticker(el.id, { scale: v });
-          }} />,
+        <SizeDial key="sc-dial" size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
+          onChange={v => resizeSticker(sticker, v)} />,
       ] });
       const isGlbTop = sticker?.zone === 'top_surface' && /\.(glb|gltf)(\?|$)/i.test(sticker?.imageUrl ?? '');
       if (isGlbTop) {
@@ -5288,6 +5293,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onGroupMove={handleGroupMove}
               onMoveMany={handleMoveMany}
               stickerToolbar={null}
+              stickerResize={stickerResize}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
@@ -5527,43 +5533,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 );
               })()}
 
-              {/* Resize slider — regular stickers */}
+              {/* Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the
+                  canvas resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range
+                  that ignored placement_config.scale and a photo frame's cake cap (INVARIANTS #1/#3). */}
               {caps?.resize && selectedEl?.type === 'sticker' && (() => {
-                const sticker = design.stickers.find(s => s.id === selectedEl.id);
-                if (!sticker) return null;
+                const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
+                const ctl = sizeControlOf(sticker);
+                if (!sticker || !ctl) return null;
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
-                    {(() => {
-                      const pct = ((Math.round(sticker.scale * 100) - 25) / 275) * 100;
-                      return (
-                        <div
-                          style={{ width: 200, position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
-                          onPointerDown={e => {
-                            e.stopPropagation();
-                            e.currentTarget.setPointerCapture(e.pointerId);
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                            updateSticker(sticker.id, { scale: (25 + Math.round(ratio * 275 / 5) * 5) / 100 });
-                          }}
-                          onPointerMove={e => {
-                            if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-                            e.stopPropagation();
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                            updateSticker(sticker.id, { scale: (25 + Math.round(ratio * 275 / 5) * 5) / 100 });
-                          }}
-                          onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-                          onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
-                        >
-                          <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                            <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
-                          </div>
-                          <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#1a1a1a', pointerEvents: 'none' }} />
-                        </div>
-                      );
-                    })()}
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(sticker.scale * 100)}%</span>
+                    <SizeDial size={ctl.value} min={ctl.min} max={ctl.max} step={ctl.step}
+                      onChange={v => resizeSticker(sticker, v)} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(ctl.value * 100)}%</span>
                   </div>
                 );
               })()}
