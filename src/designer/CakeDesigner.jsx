@@ -4187,7 +4187,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!c) return null;
     const groups = [];
 
-    if (c.color || c.gradient) {
+    // A hue_regions sticker recolours PER REGION (the "Customise colours" swatches below); its single
+    // `sticker.color` is ignored by the render, so the generic wheel does nothing — skip it and let the
+    // per-region swatches be the only colour control. BUT only when regions actually loaded: if detection
+    // returned empty (CORS taint, greyscale image) there are no swatches either, so keep the wheel rather
+    // than leave the element with no colour control at all. GLB tint / opaque / saturated keep the wheel.
+    const hueRegionsReplacesWheel = !!hueRegionsCfg && hueRegions.length > 0;
+    if ((c.color || c.gradient) && !hueRegionsReplacesWheel) {
       groups.push({ key: 'color', divider: true, panelLabel: 'Colour', controls: [
         <button key="color"
           style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: (colorOpen && !activeGroupKey) ? '2.5px solid #6c47ff' : 'none' }}
@@ -4213,7 +4219,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const editGroups = inst?.groups?.length
         ? inst.groups
         : (inst?.recolor?.method === 'hue_regions'
-            ? hueRegions.map((r, i) => ({ key: i, label: `Colour ${i + 1}`, default: r.hex }))
+            // No label: auto-detected regions have no meaningful name (unlike a GLB's "Shoes"/"Eyes"), and
+            // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
+            ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
             : []);
       if (editGroups.length) {
         groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
@@ -4222,13 +4230,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               const cur = inst?.groupColors?.[g.key] ?? g.default ?? '#ffffff';
               const on = colorOpen && activeGroupKey === g.key;
               return (
-                <div key={g.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: 54 }}>
+                <div key={g.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: g.label ? 54 : 'auto' }}>
                   <button
                     style={{ ...s.swatchBtn, padding: 3, border: on ? '2.5px solid #6c47ff' : '1px solid #cdccd3' }}
                     onClick={() => { const opening = !on; closeAllPopups(); if (opening) { setActiveGroupKey(g.key); setColorOpen(true); } }}>
                     <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: cur }} />
                   </button>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: on ? '#1a1a1a' : '#8a7a80', textAlign: 'center', lineHeight: 1.1, fontFamily: "'Quicksand',sans-serif" }}>{g.label ?? g.key}</span>
+                  {g.label && <span style={{ fontSize: 9, fontWeight: 700, color: on ? '#1a1a1a' : '#8a7a80', textAlign: 'center', lineHeight: 1.1, fontFamily: "'Quicksand',sans-serif" }}>{g.label}</span>}
                 </div>
               );
             })}
