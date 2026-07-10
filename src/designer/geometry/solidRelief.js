@@ -33,6 +33,12 @@ import * as THREE from 'three';
 const DEFAULT_WORK = 512;   // trace resolution (image long edge): higher → the pixel stair-steps are finer,
                             // so after smoothing + simplify the outline reads clean on the cake. Cheap (O(N)).
 
+// How far INSIDE the silhouette the side walls sample the print for their local colour, as a fraction of
+// the sticker's local `size`. Big enough to clear the alpha-antialiased rim (and the dark outline many
+// stickers are drawn with), small enough that a narrow feature — a tree trunk, a leaf tip — still samples
+// its OWN colour rather than a neighbouring part's. ~2% of the plane ≈ 20px on the 1024 normalized master.
+const WALL_SAMPLE_INSET = 0.02;
+
 // Decode the image alpha to a binary foreground grid at `work` resolution (alpha > 0.5 = solid).
 function alphaGrid(img, work) {
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
@@ -248,6 +254,35 @@ export function buildSolidReliefGeometry(maskImage, { size, thickness, curveRadi
   const pos = geo.attributes.position;
   const uv = geo.attributes.uv;
   const R = (curveRadius && Number.isFinite(curveRadius)) ? curveRadius / (scale || 1) : null;
+
+  // 4a) `uv1` — a SECOND UV set carrying the front-print registration for the WALL vertices, so the wall
+  // material can sample the print's LOCAL colour there (a tree's trunk edge reads brown, its leaf edges
+  // green) instead of one flat dominant hue. Read via `map.channel = 1`, which leaves the wall's own `uv`
+  // (channel 0) free for the tiling fondant grain — overwriting that would collapse the grain.
+  //
+  // Sample INWARD, never at the silhouette itself: the outermost pixels are the alpha-antialiased rim, so
+  // sampling there paints the wall with a dark halo rather than the body colour. Vertex normals on the
+  // UNBENT extrude point straight out in XY for wall vertices, giving the exact local inward direction —
+  // `-n.xy`. (Offsetting toward the shape's centroid instead breaks on any concave silhouette: on this
+  // tree the leaf tips would sample across empty space.) So: normals first, uv1, THEN bend.
+  geo.computeVertexNormals();
+  const nrm = geo.attributes.normal;
+  const inset = WALL_SAMPLE_INSET * size;
+  const uv1 = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    let sx = pos.getX(i), sy = pos.getY(i);
+    if (capOnly && !capVerts.has(i)) {
+      // Wall vertex: step inward along the outward normal's XY. A degenerate (front/back-facing) normal
+      // leaves the point where it is rather than pushing it in a meaningless direction.
+      const nx = nrm.getX(i), ny = nrm.getY(i);
+      const len = Math.hypot(nx, ny);
+      if (len > 1e-6) { sx -= (nx / len) * inset; sy -= (ny / len) * inset; }
+    }
+    uv1[i * 2] = sx / size + 0.5;
+    uv1[i * 2 + 1] = sy / size + 0.5;
+  }
+  geo.setAttribute('uv1', new THREE.BufferAttribute(uv1, 2));
+
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     if (!capOnly || capVerts.has(i)) uv.setXY(i, x / size + 0.5, y / size + 0.5);
@@ -259,7 +294,7 @@ export function buildSolidReliefGeometry(maskImage, { size, thickness, curveRadi
   }
   pos.needsUpdate = true;
   uv.needsUpdate = true;
-  geo.computeVertexNormals();
+  geo.computeVertexNormals();   // again: the bend above moved every position
   geo.computeBoundingBox();
   geo.computeBoundingSphere();
   return geo;

@@ -847,15 +847,29 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
     // A tainted/greyscale image makes the sample null → the instance colour, else a neutral fondant tone.
     const autoHex = dominantColorOfImage(texture.image, { mul: 1.0 });
     const wallHex = (recolor ? null : relief.solidColor) || autoHex || color || '#efe6da';
+    // `relief.solidWallColor: 'print'` samples the print at each point of the silhouette instead of painting
+    // the walls one flat hue — the tree's trunk edge brown, its leaf edges green. Absent/'dominant' keeps the
+    // flat wall, so every already-authored element renders exactly as before. An authored `solidColor` is an
+    // explicit flat override and still wins (on a recolourable element it's ignored, as ever — see above).
+    const flatOverride = !recolor && !!relief.solidColor;
+    const printWalls = relief.solidWallColor === 'print' && !flatOverride;
     // Side/back walls: the dominant colour + the author-chosen FINISH (fondant/chocolate/…) built by the
     // ONE shared factory the studio also uses (surface feel only; colour stays the print's). Its cloned
     // grain normal, if any, is disposed in the cleanup below. Walls keep ExtrudeGeometry's world-space UVs
     // (see solidRelief) so a grain tiles along them.
-    const wall = buildSolidWallMaterial(relief.solidFinish, wallHex, printFinish?.emissive ?? DECAL_EMISSIVE);
+    const wall = buildSolidWallMaterial(relief.solidFinish, wallHex, printFinish?.emissive ?? DECAL_EMISSIVE,
+      { printMap: printWalls ? texture : null });
     return [front, wall];
   }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, color, recolor]);
-  // Dispose the wall's CLONED fondant normal (index 1) — not the front's shared reliefMaps.normalMap.
-  useEffect(() => () => { if (solidMats) { solidMats[1]?.normalMap?.dispose?.(); solidMats.forEach(m => m.dispose()); } }, [solidMats]);
+  // Dispose the wall's CLONES (index 1) — its fondant normal and, in `local` wall mode, its print-map clone
+  // (a distinct GPU upload keyed to uv1). NEVER the front's shared reliefMaps.normalMap / `texture`, which
+  // are owned by the drei cache and other meshes. `map === emissiveMap` on the wall, so dispose once.
+  useEffect(() => () => {
+    if (!solidMats) return;
+    solidMats[1]?.normalMap?.dispose?.();
+    solidMats[1]?.map?.dispose?.();
+    solidMats.forEach(m => m.dispose());
+  }, [solidMats]);
   // Photo-cake frame (config-gated on photoMask, no element-type branch): the shape is the mask, the
   // border is procedural (or a decorative overlay), and the customer photo is clipped to the mask.
   // The plain image_url mesh is NOT drawn for a frame — the mask is the shape, not a visible image.
