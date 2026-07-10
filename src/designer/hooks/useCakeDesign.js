@@ -140,6 +140,27 @@ const SECOND_CREAM_LAYER_DEFAULT = {
 // that stored decoration type 'swirl_ring'/'base_border' instead of piping objects.
 const LEGACY_PIPING_SLUG = 'elements/3D-images/piping-cream4.glb';
 
+// The colour a newly-placed instance starts at. Pure + exported so the rule is pinned by tests — it is
+// subtle and getting it wrong repaints artwork nobody asked to repaint.
+//
+// A `recolor` descriptor means "the customer MAY change these pixels", NOT "repaint this now". So a
+// recolourable 2D sticker starts from its OWN artwork (colour null → the renderer's `needsRecolor` is
+// false → the image is drawn as-is), and only `recolor.default` opts it into an at-load repaint — e.g.
+// `Cream layer`, whose artwork is pink but which ships cream.
+//
+// Everything WITHOUT a recolor descriptor still seeds from the element's `default_color`, which has
+// other jobs: GLB material tint, and the procedural border colour on a photo frame.
+//
+// (Before this, the two unrelated fields were coupled: any element with `recolor` AND a `default_color`
+// was repainted the instant it was placed. A palm tree with a green default_color rendered uniformly
+// green — trunk, leaves and flower — because `opaque` repaints every pixel and keeps only brightness.)
+export function initialStickerColor(element, extra = {}) {
+  if (extra.color != null) return extra.color;                 // an explicit choice always wins (re-pack, clone)
+  const recolor = element?.placement_config?.recolor;
+  if (recolor) return recolor.default ?? null;                 // absent → artwork's own colours
+  return element?.default_color ?? null;
+}
+
 // Normalise a saved/template design into the editor's design shape: array-format
 // pipings tagged with layerIds, legacy piping + topper→sticker migrations, and
 // per-tier defaults. Exported so READ-ONLY consumers (the order 3D viewer) feed
@@ -689,7 +710,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Mirror this instance across its own vertical axis (a pattern's symmetric second
           // part — e.g. the right unicorn eye from the same GLB). Applied as a -X scale in render.
           flipX:            extra.flipX ?? false,
-          color:         extra.color ?? element.default_color ?? null,
+          // See initialStickerColor: `recolor` = the customer MAY change these colours, not "repaint now".
+          color:         initialStickerColor(element, extra),
           // GLB Recompose: customer-recolourable part groups. `placement_config._model.groups` (the
           // editable controls) is the source of truth; copy the editable ones onto the instance and
           // seed each group's current colour from its default. Render recolours meshes by
