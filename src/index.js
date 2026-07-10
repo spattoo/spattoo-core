@@ -20,6 +20,10 @@ export { makePipingLayer, pipingPlacementFromConfig } from './designer/piping/pi
 // 2D image pixel-recolour (the SAME function the designer runs) + the method registry — exported
 // so the admin recolour tester / element authoring use the exact runtime logic, never a copy.
 export { recolorImageData, RECOLOR_METHODS, dominantColor, dominantColorOfImage } from './designer/shared/color/imageRecolor.js';
+// CORS-qualified asset URL — every canvas/WebGL read of an R2 asset must go through this or a
+// non-CORS cache entry can poison the fetch (see utils/assetUrl.js). Exported so admin authoring
+// surfaces that pixel-read an element's image use the ONE qualifier the designer uses, not a copy.
+export { corsUrl } from './designer/utils/assetUrl.js';
 // Cream finish/texture registry + the wall-geometry algorithms — exported so the admin texture
 // calibrator authors against the SAME code the designer renders (no duplicated displacement maths).
 export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';
