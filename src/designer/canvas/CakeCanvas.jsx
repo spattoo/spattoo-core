@@ -10,9 +10,10 @@ import CreamWriting from './CreamWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import FinishHandles from './FinishHandles.jsx';
+import SelectionBox from './SelectionBox.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
-  STICKER_SIZE, SELECTION_COLOR,
+  STICKER_SIZE,
   PICKER_ORIGIN_X, PICKER_STEP_X, PICKER_ORIGIN_Z, PICKER_STEP_Z,
   CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
   FLAT_STICKER_Y_OFFSET,
@@ -154,14 +155,15 @@ function glyphAdvance(char) {
 
 // One 3D letter (face + extruded side materials). Shared by the round (arc) and
 // rect (flat) text layouts so both render identical glyphs.
-function Glyph({ char, fs, faceColor, sideColor, selected }) {
+// Selection is drawn by SelectionBox around the whole word, never tinted into the glyph material —
+// the violet emissive was additive and shifted the customer's chosen text colour.
+function Glyph({ char, fs, faceColor, sideColor }) {
   return (
     <Center disableY disableZ>
       <Text3D font={helvetikerBold} size={fs} height={fs * 0.22} curveSegments={10}
         bevelEnabled bevelThickness={fs * 0.05} bevelSize={fs * 0.04} bevelSegments={5}>
         {char}
-        <meshStandardMaterial attach="material-0" color={faceColor} roughness={0.78} metalness={0.0}
-          emissive={selected ? SELECTION_COLOR : '#000000'} emissiveIntensity={selected ? 0.10 : 0} />
+        <meshStandardMaterial attach="material-0" color={faceColor} roughness={0.78} metalness={0.0} />
         <meshStandardMaterial attach="material-1" color={sideColor} roughness={0.88} metalness={0.0} />
       </Text3D>
     </Center>
@@ -205,10 +207,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
   const totalWidth = charWidths.reduce((s, w) => s + w, 0);
   const hitW = Math.max(0.5, totalWidth + fs * 0.4);
 
-  const boxGeom = useMemo(
-    () => new THREE.EdgesGeometry(new THREE.PlaneGeometry(hitW + 0.12, fs * 1.6)),
-    [hitW, fs]
-  );
+
 
   // Cumulative centre offset of each glyph along the baseline.
   const charOffset = i => {
@@ -224,7 +223,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
         const angle = textEl.theta + charOffset(i) / surfaceR;
         return (
           <group key={i} position={[surfaceR * Math.sin(angle), textEl.y, surfaceR * Math.cos(angle)]} rotation={[0, angle, 0]}>
-            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} selected={selected} />
+            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} />
           </group>
         );
       })}
@@ -233,14 +232,11 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
         {/* Sheet cake: letters laid flat along the wall, in the anchor's local frame. */}
         {isRect && chars.map((char, i) => (
           <group key={i} position={[charOffset(i), 0, 0]}>
-            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} selected={selected} />
+            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} />
           </group>
         ))}
-        {selected && (
-          <lineSegments position={[0, 0, 0.02]} geometry={boxGeom}>
-            <lineBasicMaterial color={SELECTION_COLOR} />
-          </lineSegments>
-        )}
+        {/* Traces the text's hit plane (below), exactly as a decoration's border does. */}
+        {selected && <SelectionBox width={hitW} height={fs * 1.4} z={fs * 0.22} />}
         {selected && toolbar && (
           <Html position={[0, fs * 1.4 + 0.15, 0.05]} center zIndexRange={[200, 0]}>
             {toolbar}
@@ -672,7 +668,9 @@ function BorderBacking({ geo, maskUrl, color, width }) {
 
 // Optional decorative border art (glitter, piped cream, watercolour) — a baked PNG drawn on top of
 // the photo. When present it IS the border (the procedural ring is suppressed); fixed thickness.
-function OverlayMesh({ geo, url, selected }) {
+// Selection is drawn by SelectionBox, never mixed into this material — an additive emissive tint
+// corrupts the overlay's own colours (see the decal note below).
+function OverlayMesh({ geo, url }) {
   const tex = useTexture(corsUrl(url));
   tex.colorSpace = THREE.SRGBColorSpace;
   return (
@@ -682,8 +680,6 @@ function OverlayMesh({ geo, url, selected }) {
         transparent
         alphaTest={0.05}
         roughness={0.75}
-        emissive={selected ? SELECTION_COLOR : '#000000'}
-        emissiveIntensity={selected ? 0.2 : 0}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
@@ -721,10 +717,30 @@ function useReliefMaps(imageUrl, relief) {
   return maps;
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+// Front-most local Z of a rendered geometry — how far the selection border must stand off so it
+// clears the element it outlines (a curved decal dips away from the viewer, a solid slab pushes
+// toward them). `extraLift` covers lift the geometry does not carry: relief displacement is applied
+// in the vertex shader, so it is absent from the bounding box.
+function frontZOf(geometry, extraLift = 0) {
+  if (!geometry) return extraLift;
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  return (geometry.boundingBox?.max?.z ?? 0) + extraLift;
+}
+
+function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat, onDepth }) {
   const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors, printFinish?.saturation);
   const reliefMaps = useReliefMaps(imageUrl, relief);
   const reliefOn = !!(relief && reliefMaps);
+  // The live tier radius the relief is bent around. `reliefRadius` is Infinity for a flat top
+  // surface / sheet wall, so guard with isFinite — a raw `> 0` would sail straight through.
+  const liveReliefRadius = Number.isFinite(reliefRadius) && reliefRadius > 0 ? reliefRadius : 0;
+  // ONE lift→world formula, shared by the displaced shell (its displacementScale), the solid slab
+  // (its extrude thickness) and the selection border (its clearance). Three copies of this rule
+  // drifted apart once already; it lives here now.
+  const reliefLift = useMemo(
+    () => (relief ? (relief.lift ?? 0.07) * liveReliefRadius / (stickerScale || 1) : 0),
+    [relief, liveReliefRadius, stickerScale],
+  );
   // Solid relief SLAB (placement_config.relief.solid): render the sticker as a REAL extruded solid
   // (flat printed front + side walls + flat back, bent around the wall) instead of a displaced shell,
   // so it reads solid from a grazing angle. Config-gated ONLY on relief.solid — no element-type branch.
@@ -735,22 +751,20 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
   const solidOn = !!(relief?.solid && reliefOn);
   const solidGeo = useMemo(() => {
     if (!solidOn) return null;
-    const liveR = Number.isFinite(reliefRadius) && reliefRadius > 0 ? reliefRadius : 0;
-    // thickness = the SAME lift→world formula the displaced path feeds displacementScale (see below), so
-    // the solid's raised height matches the old shell exactly on any cake size / sticker scale (#8).
-    const thickness = (relief.lift ?? 0.07) * liveR / (stickerScale || 1);
     const img = base?.image;
     if (!img || !(img.naturalWidth || img.width)) return null;
     try {
       return buildSolidReliefGeometry(img, {
         size: STICKER_SIZE,
-        thickness,
+        // The solid's raised height is the SAME lift→world value the displaced path feeds
+        // displacementScale, so it matches the old shell on any cake size / sticker scale (#8).
+        thickness: reliefLift,
         curveRadius: (curved && curveRadius) ? curveRadius : null,   // null → flat slab (top surface / sheet wall)
         scale: stickerScale,
         edgeRadius: relief.solidEdge ?? 0,   // 0..1 of depth → rounded fondant rim (0 = sharp edge)
       });
     } catch (_) { return null; }
-  }, [solidOn, base, relief, reliefRadius, stickerScale, curved, curveRadius]);
+  }, [solidOn, base, relief, reliefLift, stickerScale, curved, curveRadius]);
   useEffect(() => () => solidGeo?.dispose?.(), [solidGeo]);
   // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
   // wide butterfly on a square canvas doesn't float. When standing (standUp) the wings rise in a V,
@@ -792,6 +806,13 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
       ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, curveRadius / (stickerScale || 1), reliefOn ? RELIEF_SEGMENTS : 16, reliefOn ? RELIEF_SEGMENTS : 1)
       : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE, reliefOn ? RELIEF_SEGMENTS : 1, reliefOn ? RELIEF_SEGMENTS : 1);
   }, [foldable, fold, spine, standUp, curved, curveRadius, stickerScale, reliefOn]);
+  // How far this element stands proud of its hit plane, so the selection border clears it. A flat
+  // decal is flush (0); a solid slab carries its thickness in the geometry; a displaced relief adds
+  // its lift in the vertex shader, after the bounding box was computed.
+  useEffect(() => {
+    const drawn = (solidOn && solidGeo) ? solidGeo : geo;
+    onDepth?.(frontZOf(drawn, (reliefOn && !solidOn) ? reliefLift : 0));
+  }, [onDepth, geo, solidGeo, solidOn, reliefOn, reliefLift]);
   // Relief normal strength → Vector2; a negative Y is the "flip green" toggle (bake.flipY) at the material.
   const reliefNScale = useMemo(() => {
     const ns = relief?.normalScale ?? 0.8;
@@ -841,7 +862,7 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
     return (
       <>
         {photoOverlay
-          ? <OverlayMesh geo={geo} url={photoOverlay} selected={selected} />
+          ? <OverlayMesh geo={geo} url={photoOverlay} />
           : ((borderWidth ?? 0) > 0 &&
               <BorderBacking geo={geo} maskUrl={photoMask} color={color} width={borderWidth} />)}
         {photoUrl
@@ -875,18 +896,16 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
     // world-space constant to substitute if it's missing (that is precisely the bug #8 forbids), so a
     // non-finite value means a wiring bug: shout in dev and render flat rather than fake a plausible-but-
     // wrong thickness that nobody notices.
-    const liveR = Number.isFinite(reliefRadius) && reliefRadius > 0 ? reliefRadius : null;
-    if (liveR === null && import.meta.env?.DEV) {
+    if (!liveReliefRadius && import.meta.env?.DEV) {
       console.error('[relief] reliefRadius must be the live tier radius; got', reliefRadius, '— rendering flat.');
     }
-    const reliefDisp = (relief.lift ?? 0.07) * (liveR ?? 0) / (stickerScale || 1);
     return (
       <mesh geometry={geo}>
         <meshPhysicalMaterial
           map={texture}
           transparent alphaTest={0.5} alphaToCoverage
           normalMap={reliefMaps.normalMap} normalScale={reliefNScale}
-          displacementMap={reliefMaps.displacementMap} displacementScale={reliefDisp}
+          displacementMap={reliefMaps.displacementMap} displacementScale={reliefLift}
           // MATTE and SHEENLESS by default, exactly like the flat decal below — a raised fondant cut-out IS
           // fondant, and the two paths must not disagree about what fondant looks like.
           //
@@ -909,11 +928,10 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
           roughness={relief.roughness ?? 0.95} metalness={0}
           sheen={relief.sheen ?? 0} sheenColor={'#ffffff'} sheenRoughness={0.85}
           envMapIntensity={relief.envIntensity ?? 0.4}
-          // TEMP: selection no longer changes the material. The additive violet SELECTION_COLOR emissive
-          // corrupts a saturated albedo by construction (orange → magenta — B pushed hard, G barely), and
-          // tone-mapping-while-selected didn't compress it enough. Verified: a freshly-placed = selected
-          // sticker rendered magenta; deselecting snapped it back to true orange. A non-destructive cue
-          // (rectangular border/outline) is coming to replace this; until then the toolbar is the cue.
+          // Selection never changes the material. The additive violet SELECTION_COLOR emissive corrupted a
+          // saturated albedo by construction (orange → magenta — B pushed hard, G barely), and tone-mapping-
+          // while-selected didn't compress it enough. The cue is SelectionBox, a border drawn beside the
+          // element — non-destructive, so the print keeps its true colour while selected.
           toneMapped={relief.toneMapped ?? false}
           // `emissiveMap` = the albedo, so this adds 12% of the ARTWORK back as self-illumination (hue and
           // saturation survive). Without it a raised sticker renders duller than the flat one beside it.
@@ -940,8 +958,8 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
         envMapIntensity={0.4}
         // The print bypasses the scene's ACES tone mapping (which desaturates) so the decal shows its
         // true colours — the cake stays filmic, the artwork stays vivid. A little emissive still lifts
-        // it in shadow. TEMP: selection no longer tints the material (the additive violet SELECTION_COLOR
-        // corrupted saturated albedos — see the relief path note); a border/outline cue will replace it.
+        // it in shadow. Selection does not tint the material (the additive violet SELECTION_COLOR corrupted
+        // saturated albedos — see the relief path note); SelectionBox draws the cue beside the element.
         toneMapped={false}
         emissive={'#ffffff'}
         emissiveMap={texture}
@@ -1026,7 +1044,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, onSeat }) {
+function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, onSeat, onDepth }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -1149,26 +1167,16 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
     [clonedScene, scale, center, bendRadius, depthScaled, seatProud],
   );
 
-  // Selection = a white outline (inverted hull), NOT a colour tint — a tint reads as "recoloured".
-  // A clone of the rendered scene with white BACK-side material, scaled slightly larger, peeks out
-  // around the silhouette. Built lazily; only mounted while selected.
-  const outlineScene = useMemo(() => {
-    const src = bentScene ?? clonedScene;
-    const o = src.clone(true);
-    o.traverse(obj => {
-      if (!obj.isMesh) return;
-      obj.material = new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide, toneMapped: false });
-      obj.raycast = () => {};
-    });
-    return o;
-  }, [clonedScene, bentScene]);
-  const bentCenter = useMemo(() => {
-    if (!bentScene) return null;
-    const c = new THREE.Vector3();
-    new THREE.Box3().setFromObject(bentScene).getCenter(c);
-    return c;
-  }, [bentScene]);
-  const OUTLINE_K = 1.025;   // hull enlargement → outline thickness (thin: detailed figurines look haloed at 1.07)
+  // How far this model stands proud of its hit plane, so the selection border clears it. A bent model
+  // wraps the wall, so it is measured in the bent frame it actually renders in; a flat one is
+  // re-centred on the origin by `scale`/`position`, so it reaches forward by half its depth. This
+  // replaces the old inverted-hull outline (a white BackSide clone scaled to 1.025), which haloed
+  // detailed figurines and gave GLB elements a different selection cue from every other element.
+  const bentFrontZ = useMemo(
+    () => (bentScene ? new THREE.Box3().setFromObject(bentScene).max.z : null),
+    [bentScene],
+  );
+  useEffect(() => { onDepth?.(bentFrontZ ?? depthScaled / 2); }, [onDepth, bentFrontZ, depthScaled]);
 
   // GLB Recompose: when the instance carries per-group colours, recolour each mesh by its authored
   // userData.group (set in admin), leaving untagged meshes at their baked colour. The single `color`
@@ -1196,34 +1204,11 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
     });
   }, [clonedScene, color, gradient, gradBBox, groupColors, hasGroups]);
 
-  if (bentScene) {
-    return (
-      <group>
-        <primitive object={bentScene} />
-        {selected && bentCenter && (
-          <group position={[bentCenter.x, bentCenter.y, bentCenter.z]}>
-            <group scale={OUTLINE_K}>
-              <group position={[-bentCenter.x, -bentCenter.y, -bentCenter.z]}>
-                <primitive object={outlineScene} />
-              </group>
-            </group>
-          </group>
-        )}
-      </group>
-    );
-  }
-  return (
-    <group>
-      <primitive object={clonedScene} scale={scale} position={position} />
-      {selected && (
-        <primitive object={outlineScene} scale={scale * OUTLINE_K}
-          position={[-center.x * scale * OUTLINE_K, -center.y * scale * OUTLINE_K, -center.z * scale * OUTLINE_K]} />
-      )}
-    </group>
-  );
+  if (bentScene) return <primitive object={bentScene} />;
+  return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat, onDepth }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -1234,8 +1219,8 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
     <TextureErrorBoundary screen="CakeCanvas">
       <Suspense fallback={<LoadingPing />}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
+          ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} onDepth={onDepth} />
+          : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} onDepth={onDepth} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -1256,6 +1241,9 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const groupStart        = useRef(null);
   const pointerDownTime   = useRef(0);
   const pressedRef        = useRef(false);
+  // How far the element stands proud of its hit plane, reported up by StickerFace — the selection
+  // border clears this so a deep GLB or a raised relief doesn't swallow it.
+  const [depth, setDepth] = useState(0);
 
   const isRect = shp.kind === 'rect';
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
@@ -1318,8 +1306,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
-      {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onDepth={setDepth} />
+      {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
+          that actually intercepts pointer events, transparent margin included. That is what tells a
+          customer why the decoration underneath won't respond. */}
+      {selected && <SelectionBox width={STICKER_SIZE} height={STICKER_SIZE} z={depth} />}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -1439,6 +1430,8 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
   // float is opt-in via yOffset (the Height control) / config. Fallback to the constant pre-measure.
   const [seatHalf, setSeatHalf] = useState(null);
+  // How far the element stands proud of its hit plane (see DraggableSideSticker).
+  const [depth, setDepth] = useState(0);
   // Verge seat anchor is config-driven (placement_config.verge.seat → instance.vergeSeat): 'center'
   // (default) rests the MID-SPINE on the rim edge so the body drapes over the lip; 'base' seats the
   // BODY base on the surface and leans from there. Other modes are unaffected.
@@ -1459,8 +1452,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} />
-      {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} onDepth={setDepth} />
+      {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
+          that actually intercepts pointer events, transparent margin included. That is what tells a
+          customer why the decoration underneath won't respond. */}
+      {selected && <SelectionBox width={STICKER_SIZE} height={STICKER_SIZE} z={depth} />}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -2190,7 +2186,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+                <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
               </group>
             </group>
           );
@@ -2212,7 +2208,7 @@ function CakeThumbnailScene({ config }) {
                 <group position={[0, -seatLiftPv, 0]}>
                   <group rotation={[tiltXPv, 0, 0]}>
                     <group position={[0, seatLiftPv, 0]}>
-                      <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+                      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
                     </group>
                   </group>
                 </group>
@@ -2222,7 +2218,7 @@ function CakeThumbnailScene({ config }) {
         }
         return (
           <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+            <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
           </group>
         );
       })}

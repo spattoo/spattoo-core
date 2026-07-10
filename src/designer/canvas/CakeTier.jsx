@@ -16,7 +16,7 @@ import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/c
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
-import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
+import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
@@ -845,7 +845,7 @@ function SelectionOutline({ shp, yBase, height }) {
 
   return (
     <lineSegments position={[0, yBase + height / 2, 0]} geometry={geometry}>
-      <lineBasicMaterial color="#6c47ff" linewidth={2} />
+      <lineBasicMaterial color={SELECTION_COLOR} linewidth={2} />
     </lineSegments>
   );
 }

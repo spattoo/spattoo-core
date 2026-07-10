@@ -85,6 +85,27 @@ member *inside the card* — reuse the `decor_pattern` card path, never build a 
 state machine — that's a legitimate switch. It is NOT the same as branching on an element's
 DB type/slug. Don't conflate the two when reading rule #1.
 
+### 5a. Selection is a BORDER tracing the HIT PLANE — never a tint on the element's material
+The selection cue is `SelectionBox`, a rectangle drawn as a **sibling** of the element. **Never**
+express selection by mutating the element's material (`emissive`, colour, tone‑mapping). An emissive
+highlight is ADDITIVE, so it corrupts the very albedo it advertises — a saturated orange decal
+rendered **magenta** while selected (blue pushed hard, green barely), and deselecting snapped it back.
+Three separate cues had grown — an emissive tint on decals, a white inverted‑hull outline on GLB
+models, an ad‑hoc rectangle on text — so what "selected" looked like depended on the asset kind.
+There is now ONE.
+
+**The border traces the element's HIT PLANE, not its artwork's silhouette.** The hit plane
+(`isStickerHitPlane`, `STICKER_SIZE` square) is the ONLY thing that receives pointer events — a GLB's
+own meshes have `raycast` disabled — so it, not the visible art, is what the customer grabs and what
+steals a click from a neighbour. A heart on a square PNG intercepts clicks across its whole
+transparent margin. A border hugging the art would be prettier and would **hide the one fact the
+customer needs** when a decoration underneath won't respond: another element's invisible half is lying
+on top of it. Don't "improve" this into an alpha‑tight box.
+
+`SelectionBox` is handed `width`/`height`/`z` and nothing else — no type, slug or zone reaches it.
+Only `z` is measured (via `onDepth`, mirroring `onSeat`): how far the element stands proud of its hit
+plane, so a deep GLB or a raised relief doesn't swallow the border.
+
 ## 6. The Decorations panel is type‑agnostic — ONE way onto the cake
 The element picker (Decorations panel) has exactly one job: bring **any** element onto the cake
 through its right‑side popup (#3a). It MUST NOT branch on element type, slug, or zone.
