@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { extractRegions } from './imageRecolor.js';
+import { corsUrl } from '../../utils/assetUrl.js';
 
 // Load a sticker image and extract its recolourable colour regions for the `hue_regions` recolour method,
 // so the designer can show one "Customise colours" swatch per detected colour. Returns [] until loaded (and
@@ -16,6 +17,12 @@ export function useImageRegions(imageUrl, recolor) {
     let cancelled = false;
     const img = new Image();
     img.crossOrigin = 'anonymous';
+    // MUST match the render half's URL (useStickerImageTexture → useTexture(corsUrl(...))): a plain
+    // crossOrigin load of the RAW url shares a cache entry with any non-CORS <img> of the same asset (an
+    // element-picker thumbnail), and R2 omits `Access-Control-Allow-Origin` on that non-CORS response — so
+    // the canvas taints, getImageData throws, and this hook silently returns [] → the hue_regions swatches
+    // vanish and the designer falls back to the single colour wheel. corsUrl gives it its own cache entry
+    // (and lines the regions up with the texture, which the comment above promises). See utils/assetUrl.js.
     img.onload = () => {
       try {
         const w = img.naturalWidth, h = img.naturalHeight;
@@ -28,7 +35,7 @@ export function useImageRegions(imageUrl, recolor) {
       } catch { if (!cancelled) setRegions([]); }   // tainted canvas / decode error → no regions (recolour off)
     };
     img.onerror = () => { if (!cancelled) setRegions([]); };
-    img.src = imageUrl;
+    img.src = corsUrl(imageUrl);
     return () => { cancelled = true; };
   }, [active, imageUrl, recolor?.sat, recolor?.maxRegions]);
   return regions;
