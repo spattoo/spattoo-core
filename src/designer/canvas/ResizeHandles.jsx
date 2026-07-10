@@ -18,7 +18,8 @@ import { clampSizeValue } from '../placement.js';
 // It is depth-tested like the border, so a grip on the far side of the cake hides behind it — an
 // Html overlay would float over the frosting and disagree with the border it belongs to.
 //
-// RESIZE IS CENTRE-ANCHORED: the element's position IS its centre (x/z on top, theta/y on a wall),
+// RESIZE IS ORIGIN-ANCHORED: the element's position IS its origin (x/z on top, theta/y on a wall) and
+// it scales about that point, so `rootRef` stays at the origin even when the box is offset (centerY).
 // so it grows symmetrically and never drifts. Dragging scales by the ratio of the pointer's distance
 // from that centre, in screen space — the same math the original handle used, but clamped through
 // `clampSizeValue` so a drag can never reach a size the SizeDial refuses. It never decides WHAT to
@@ -51,7 +52,7 @@ const CORNERS = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
 // sticker hit plane (`isStickerHitPlane`), and `raycast={null}` would make three call null there.
 const noRaycast = () => null;
 
-export default function ResizeHandles({ width, height, z = 0, value, bounds, onResize, onOrbitEnable }) {
+export default function ResizeHandles({ width, height, centerY = 0, z = 0, value, bounds, onResize, onOrbitEnable }) {
   const { camera, gl } = useThree();
   const rootRef = useRef();
   // The drawn disc may shrink below its constant screen size (BOX_CAP) so it never dominates a small
@@ -130,7 +131,7 @@ export default function ResizeHandles({ width, height, z = 0, value, bounds, onR
   return (
     <group ref={rootRef}>
       {CORNERS.map(([sx, sy], i) => (
-        <group key={i} position={[sx * width / 2, sy * height / 2, z + LIFT]}>
+        <group key={i} position={[sx * width / 2, centerY + sy * height / 2, z + LIFT]}>
           {/* Tap target — invisible, wider than the disc so a thumb lands on it, and held at a
               constant screen size even when the disc shrinks to fit a small element. */}
           <group ref={touchRefs[i]}>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -295,5 +295,55 @@ describe('clampSizeValue — a handle drag can never reach a size the dial refus
   it('never returns a float-noise value like 1.0500000000000003', () => {
     const v = clampSizeValue(1.0499999, range);
     expect(Number.isInteger(v * 10000)).toBe(true);
+  });
+});
+
+describe('seatedHitBox — a base-seated element\'s box stops at its seat, never inside the cake', () => {
+  const S = 0.28, half = S / 2;
+  const bottomOf = b => b.centerY - b.height / 2;
+  const topOf    = b => b.centerY + b.height / 2;
+
+  it('a NON base-seated element keeps the full square, centred on its origin', () => {
+    expect(seatedHitBox({ standSeat: false, seatHalf: 0.05, size: S }))
+      .toEqual({ width: S, height: S, centerY: 0 });
+  });
+
+  it('trims exactly the strip below a base-seated element\'s contact point', () => {
+    const b = seatedHitBox({ standSeat: true, seatHalf: 0.105, size: S });   // 0.75 × half
+    expect(bottomOf(b)).toBeCloseTo(-0.105, 6);   // bottom sits ON the seat…
+    expect(topOf(b)).toBeCloseTo(half, 6);        // …and the top margin is untouched
+    expect(b.width).toBe(S);                      // …and so are the side margins
+  });
+
+  it('is a no-op when the artwork already fills the plane (seatHalf === half)', () => {
+    expect(seatedHitBox({ standSeat: true, seatHalf: half, size: S }))
+      .toEqual({ width: S, height: S, centerY: 0 });
+  });
+
+  it('falls back to the full square while the asset is still being measured', () => {
+    expect(seatedHitBox({ standSeat: true, seatHalf: null, size: S }))
+      .toEqual({ width: S, height: S, centerY: 0 });
+    expect(seatedHitBox({ standSeat: true, size: S })).toEqual({ width: S, height: S, centerY: 0 });
+  });
+
+  it('never inverts or overshoots on a nonsense seat', () => {
+    for (const seatHalf of [-1, 0, 99]) {
+      const b = seatedHitBox({ standSeat: true, seatHalf, size: S });
+      expect(b.height).toBeGreaterThan(0);
+      expect(bottomOf(b)).toBeGreaterThanOrEqual(-half - 1e-9);
+      expect(topOf(b)).toBeCloseTo(half, 6);
+    }
+  });
+
+  it('reproduces the palm-tree screenshot: 12.5% of the square was buried', () => {
+    // Measured: border 224px wide, seatHalf 84px against a 112px half-square.
+    const b = seatedHitBox({ standSeat: true, seatHalf: half * (84 / 112), size: S });
+    const buried = half - (-bottomOf(b));      // how much the old square hung below the seat
+    expect(buried / S).toBeCloseTo(0.125, 3);
+    expect(bottomOf(b)).toBeCloseTo(-half * 0.75, 6);
+  });
+
+  it('defaults to STICKER_SIZE when no size is given', () => {
+    expect(seatedHitBox({}).width).toBeCloseTo(0.28, 6);
   });
 });

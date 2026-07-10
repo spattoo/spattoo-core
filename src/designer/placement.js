@@ -161,6 +161,32 @@ export function frameSideMaxScale(wallHeight, fill = 1, stickerSize = STICKER_SI
   return Math.max(0.3, wallHeight / ext);
 }
 
+// ── The element's clickable/drawn box, in its own local frame ────────────────
+// A placed element's hit plane is a `size` square centred on its origin. But a BASE-SEATED element
+// (stand / base-verge / a folded card on a perch) is lifted by `seatHalf` — the distance from its
+// origin down to its lowest OPAQUE pixel — so its visible base rests on the surface rather than the
+// empty bottom of its transparent margin. When the artwork has empty space below it,
+// `seatHalf < size/2`, and the square's bottom edge ends up BELOW the contact point — buried in the
+// cake. That strip is not merely ugly: the hit plane billboards toward the camera, so it sits NEARER
+// than the cake behind it and wins the raycast — clicking the bare cake in front of a palm tree
+// selects the palm tree.
+//
+// So a base-seated element's box stops at its seat. Only the strip BELOW the seat is trimmed: the
+// side and top margins stay, because they genuinely do intercept clicks over a neighbour and the
+// border exists to show that (INVARIANTS #5a). The sub-seat strip is inside the cake, where it can
+// reveal nothing and only steals clicks from the tier.
+//
+// Flag-driven off the placement mode, never an element type. A perch/verge that deliberately
+// overhangs the rim is NOT base-seated — its underside hangs in air, not in cake — so it keeps the
+// full square. GLBs self-correct: their `seatHalf` is half the model's height.
+export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKER_SIZE } = {}) {
+  const half = size / 2;
+  // Unmeasured (asset still loading) → the full square, exactly as before.
+  const seat = seatHalf == null ? half : Math.min(Math.max(seatHalf, 0), half);
+  const bottom = standSeat ? -seat : -half;
+  return { width: size, height: half - bottom, centerY: (half + bottom) / 2 };
+}
+
 // ── The ONE answer to "how big is this sticker, and how big may it get?" ──────
 // Every size control — the SizeDial in the edit popup AND the corner resize handles on the canvas —
 // reads its field, value and bounds from here, so a drag and a dial can never disagree (INVARIANTS

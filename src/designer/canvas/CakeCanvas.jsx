@@ -24,7 +24,7 @@ import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -1313,6 +1313,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const clampWallY = y => wallClampY(y, baseY, height, halfH);
   const posY = clampWallY(sticker.y);
 
+  // Same box rule as the top sticker, from the one helper. A wall element is never base-seated
+  // (wallClampY already keeps its whole square on the wall), so this is the full square — but the
+  // rule lives in exactly one place.
+  const hitBox = seatedHitBox({ size: STICKER_SIZE });
+
   return (
     <group
       position={[cx, posY, cz]}
@@ -1326,11 +1331,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
           same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
-      {selected && <SelectionBox width={STICKER_SIZE} height={STICKER_SIZE} z={depth} />}
+      {selected && <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />}
       {selected && resize && sticker.allowedActions?.resize !== false && (() => {
         const c = resize.controlFor(sticker);
         return c ? (
-          <ResizeHandles width={STICKER_SIZE} height={STICKER_SIZE} z={depth}
+          <ResizeHandles width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth}
             value={c.value} bounds={c} onOrbitEnable={onOrbitEnable}
             onResize={v => resize.onResize(sticker, v)} />
         ) : null;
@@ -1342,7 +1347,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       )}
       <mesh
         userData={{ isStickerHitPlane: true }}
-        position={[0, 0, 0.001]}
+        position={[0, hitBox.centerY, 0.001]}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
@@ -1420,7 +1425,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
         }}
         onClick={e => e.stopPropagation()}
       >
-        <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+        <planeGeometry args={[hitBox.width, hitBox.height]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       </group>
@@ -1473,6 +1478,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
 
+  // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
+  // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
+  // being billboarded toward the camera, win the raycast against the tier behind it.
+  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE });
+
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
@@ -1481,11 +1491,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
           same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
-      {selected && <SelectionBox width={STICKER_SIZE} height={STICKER_SIZE} z={depth} />}
+      {selected && <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />}
       {selected && resize && sticker.allowedActions?.resize !== false && (() => {
         const c = resize.controlFor(sticker);
         return c ? (
-          <ResizeHandles width={STICKER_SIZE} height={STICKER_SIZE} z={depth}
+          <ResizeHandles width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth}
             value={c.value} bounds={c} onOrbitEnable={onOrbitEnable}
             onResize={v => resize.onResize(sticker, v)} />
         ) : null;
@@ -1495,11 +1505,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           {toolbar}
         </Html>
       )}
-      <mesh userData={{ isStickerHitPlane: true }} position={[0, 0, 0.001]}
+      <mesh userData={{ isStickerHitPlane: true }} position={[0, hitBox.centerY, 0.001]}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e_onDown} onClick={e => e.stopPropagation()}>
-        <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+        <planeGeometry args={[hitBox.width, hitBox.height]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
     </>

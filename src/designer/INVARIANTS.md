@@ -102,9 +102,20 @@ transparent margin. A border hugging the art would be prettier and would **hide 
 customer needs** when a decoration underneath won't respond: another element's invisible half is lying
 on top of it. Don't "improve" this into an alpha‑tight box.
 
-`SelectionBox` is handed `width`/`height`/`z` and nothing else — no type, slug or zone reaches it.
-Only `z` is measured (via `onDepth`, mirroring `onSeat`): how far the element stands proud of its hit
-plane, so a deep GLB or a raised relief doesn't swallow the border.
+`SelectionBox` is handed `width`/`height`/`centerY`/`z` and nothing else — no type, slug or zone
+reaches it. Only `z` is measured (via `onDepth`, mirroring `onSeat`): how far the element stands proud
+of its hit plane, so a deep GLB or a raised relief doesn't swallow the border.
+
+**The hit plane itself stops at a base-seated element's SEAT** — `seatedHitBox` (`placement.js`) is
+the one source for the plane, the border and the grips. A stand/base-verge element is lifted by
+`seatHalf` (its lowest opaque pixel) so its visible base rests on the surface; if the artwork has
+empty space below it, the square's bottom edge would hang below that contact point, buried in the
+cake. That strip is not merely ugly: the hit plane billboards toward the camera, so it is NEARER than
+the tier behind it and **wins the raycast** — clicking the bare cake in front of a standing element
+would select the element. Trim ONLY the strip below the seat; the side and top margins stay, because
+those genuinely do intercept clicks over a neighbour and showing that is the border's whole job. A
+perch/verge that deliberately overhangs the rim is not base-seated (its underside hangs in air, not
+in cake) and keeps its full square.
 
 ### 5b. ONE size path — `stickerSizeControl` decides the field, the value and the bounds
 `ResizeHandles` (the corner grips on a selected element) and the edit popup's `SizeDial` are two

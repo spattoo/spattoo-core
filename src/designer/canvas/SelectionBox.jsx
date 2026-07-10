@@ -20,14 +20,16 @@ import { SELECTION_COLOR } from '../constants.js';
 // wall, the rim or the board. It is depth-tested, so an element rotated to the back of the cake has
 // its border hidden by the cake exactly as the element itself is.
 //
-// `width`/`height` are the hit plane's own dimensions and `z` clears the element's front-most point
+// `width`/`height`/`centerY` are the hit plane's own dimensions and offset (a base-seated element's
+// plane stops at its seat, so it is not centred on the origin — see seatedHitBox), and `z` clears the
+// element's front-most point
 // (a solid slab or a deep GLB stands proud of its hit plane). No element type, slug or zone reaches
 // this component (INVARIANTS #1, #2, #6). The rectangle is centred on the element's origin, so a
 // flipX-mirrored element needs no special handling — its hit plane is symmetric.
 
 const LIFT = 0.006;   // local units clear of the element's front-most point (z-fight guard)
 
-export default function SelectionBox({ width, height, z = 0 }) {
+export default function SelectionBox({ width, height, centerY = 0, z = 0 }) {
   const geometry = useMemo(
     () => new THREE.EdgesGeometry(new THREE.PlaneGeometry(width, height)),
     [width, height],
@@ -35,7 +37,7 @@ export default function SelectionBox({ width, height, z = 0 }) {
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   return (
-    <lineSegments position={[0, 0, z + LIFT]} geometry={geometry} renderOrder={1}>
+    <lineSegments position={[0, centerY, z + LIFT]} geometry={geometry} renderOrder={1}>
       <lineBasicMaterial color={SELECTION_COLOR} toneMapped={false} depthWrite={false} />
     </lineSegments>
   );
