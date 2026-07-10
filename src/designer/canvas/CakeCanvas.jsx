@@ -23,7 +23,7 @@ import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantText
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
-import { recolorImageData, extractRegions, recolorRegions, dominantColor } from '../shared/color/imageRecolor.js';
+import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
@@ -816,27 +816,22 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
       emissiveIntensity: printFinish?.emissive ?? DECAL_EMISSIVE,
       side: THREE.DoubleSide,
     });
-    // Side/back walls take the print's DOMINANT ("major") colour, a touch darker, so the cut-out reads as
-    // one solid fondant colour that matches the front — not plain white. Read off the final albedo (includes
-    // recolour + saturation boost); a tainted/greyscale image → the explicit colour or a neutral fondant tone.
-    let wallHex = color || '#efe6da';
-    try {
-      const img = texture.image;
-      const iw = img?.naturalWidth || img?.width, ih = img?.naturalHeight || img?.height;
-      if (iw && ih) {
-        const c = document.createElement('canvas'); c.width = iw; c.height = ih;
-        const ctx = c.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0);
-        wallHex = dominantColor(ctx.getImageData(0, 0, iw, ih).data, iw, ih, { mul: 1.0 }) || wallHex;
-      }
-    } catch (_) { /* tainted canvas → neutral fallback */ }
+    // Side/back walls read as ONE solid fondant colour matching the front — not plain white. Two sources,
+    // chosen by config (never by element type):
+    //   • RECOLOURABLE element (`recolor` present) → always auto-sample the FINAL albedo, which already
+    //     carries the customer's recolour + saturation boost. The customer recolours the print and the slab
+    //     follows; an authored `solidColor` must NOT freeze the walls against the hue they just picked.
+    //   • Otherwise → the author's `relief.solidColor` wins (explicit intent), else the auto-sample.
+    // A tainted/greyscale image makes the sample null → the instance colour, else a neutral fondant tone.
+    const autoHex = dominantColorOfImage(texture.image, { mul: 1.0 });
+    const wallHex = (recolor ? null : relief.solidColor) || autoHex || color || '#efe6da';
     // Side/back walls: the dominant colour + the author-chosen FINISH (fondant/chocolate/…) built by the
     // ONE shared factory the studio also uses (surface feel only; colour stays the print's). Its cloned
     // grain normal, if any, is disposed in the cleanup below. Walls keep ExtrudeGeometry's world-space UVs
     // (see solidRelief) so a grain tiles along them.
     const wall = buildSolidWallMaterial(relief.solidFinish, wallHex, printFinish?.emissive ?? DECAL_EMISSIVE);
     return [front, wall];
-  }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, color]);
+  }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, color, recolor]);
   // Dispose the wall's CLONED fondant normal (index 1) — not the front's shared reliefMaps.normalMap.
   useEffect(() => () => { if (solidMats) { solidMats[1]?.normalMap?.dispose?.(); solidMats.forEach(m => m.dispose()); } }, [solidMats]);
   // Photo-cake frame (config-gated on photoMask, no element-type branch): the shape is the mask, the

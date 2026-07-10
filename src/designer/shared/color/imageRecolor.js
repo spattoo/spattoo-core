@@ -34,6 +34,20 @@ export function dominantColor(data, width, height, { minAlpha = 128, minSat = 0.
   return '#' + to(best.r / best.n) + to(best.g / best.n) + to(best.b / best.n);
 }
 
+// `dominantColor` over a decoded <img>/canvas — the one copy of "sample the image, read its major hue".
+// Browser-only (needs a 2D canvas), unlike the pure pixel fns around it. A CORS-tainted image throws on
+// getImageData; that and an unreadable/greyscale image both return null so the caller picks its fallback.
+export function dominantColorOfImage(img, { mul = 1, ...opts } = {}) {
+  const iw = img?.naturalWidth || img?.width, ih = img?.naturalHeight || img?.height;
+  if (!iw || !ih) return null;
+  try {
+    const c = document.createElement('canvas'); c.width = iw; c.height = ih;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    return dominantColor(ctx.getImageData(0, 0, iw, ih).data, iw, ih, { mul, ...opts });
+  } catch (_) { return null; }
+}
+
 export function hexToRgb(hex) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? '');
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
