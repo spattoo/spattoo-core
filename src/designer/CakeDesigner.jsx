@@ -26,6 +26,7 @@ import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig } from './frostings.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
+import { applyTextStyleConfig } from './textStyles.js';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
@@ -1551,6 +1552,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (apiClient?.fetchTextures) {
       apiClient.fetchTextures()
         .then(rows => { if (rows?.length) { applyTextureConfig(rows); setTextureVersion(v => v + 1); } })
+        .catch(() => {});
+    }
+  }, [apiClient]);
+
+  // Overlay DB-authored text styles (the look of an editable {name}/{number} placeholder) onto the
+  // in-code seed. Same seed+overlay contract as textures: a host with no fetchTextStyles — or an empty
+  // table — keeps rendering off the seed, so a placeholder never silently loses its value.
+  useEffect(() => {
+    if (apiClient?.fetchTextStyles) {
+      apiClient.fetchTextStyles()
+        .then(rows => { if (rows?.length) { applyTextStyleConfig(rows); setTextureVersion(v => v + 1); } })
         .catch(() => {});
     }
   }, [apiClient]);
@@ -4357,6 +4369,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <SizeDial key="bw-dial" size={bw} min={0} max={0.4} step={0.02} onChange={v => updateSticker(el.id, { borderWidth: v })} />,
           ] });
         }
+      }
+
+      // Editable text placeholders — one field per slot the artwork declares. Gated on the instance
+      // carrying text_slots (config-driven, placement_config.text_slots), never on element type/slug
+      // (INVARIANTS #1/#6) — exactly like the photo frame's Upload above. The value is composited into
+      // the sticker's texture, so what the customer types is what renders on the cake.
+      if (inst?.textSlots?.length) {
+        const vals = inst.textValues ?? {};
+        const setVal = (key, v) => updateSticker(el.id, { textValues: { ...vals, [key]: v } });
+        groups.push({
+          key: 'textslots',
+          divider: true,
+          panelLabel: inst.textSlots.length === 1 ? (inst.textSlots[0].label || 'Text') : 'Text',
+          controls: inst.textSlots.map(sl => (
+            <div key={sl.key} style={{ width: '100%', marginBottom: 6 }}>
+              {inst.textSlots.length > 1 && (
+                <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', display: 'block', marginBottom: 3 }}>
+                  {sl.label || sl.key}
+                </span>
+              )}
+              <input
+                type="text"
+                value={vals[sl.key] ?? ''}
+                maxLength={sl.maxLen ?? 24}
+                inputMode={sl.kind === 'number' ? 'numeric' : 'text'}
+                placeholder={sl.label || sl.key}
+                onChange={e => {
+                  const raw = e.target.value;
+                  // A 'number' slot takes digits only — the artwork's box is sized for them.
+                  setVal(sl.key, sl.kind === 'number' ? raw.replace(/[^0-9]/g, '') : raw);
+                }}
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: 8,
+                  border: '1.5px solid #ddd', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                  textAlign: 'center',
+                }}
+              />
+            </div>
+          )),
+        });
       }
     }
 

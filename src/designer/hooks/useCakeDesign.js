@@ -681,6 +681,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1, rot: 0 },   // pan (UV fraction) + zoom + 2D rotation (deg); cover-fit baseline at zoom 1
+          // Editable text placeholders (config-gated on placement_config.text_slots, no element-type
+          // branch): the artwork carries named slots ({number}, {name}, …) whose VALUES the customer
+          // types. The value is composited into the texture at design time, so it is never an asset —
+          // the same element serves "2", "47" and "Amara". Absent → renders as a plain decal.
+          textSlots:      element.placement_config?.text_slots ?? null,
+          // Seeded from each slot's authored default, then owned by the customer (like photoUrl).
+          textValues:     Object.fromEntries(
+                            (element.placement_config?.text_slots ?? []).map(sl => [sl.key, sl.default ?? '']),
+                          ),
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         seatTheta,            // round side: seat angle around the wall
           y:             seatY,                // side: seat height on the wall

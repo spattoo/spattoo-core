@@ -37,6 +37,15 @@ export { buildSolidReliefGeometry } from './designer/geometry/solidRelief.js';
 // Solid-slab side-wall FINISHES (fondant/chocolate/…) + the shared wall-material factory — the studio
 // authors relief.solidFinish from this ONE registry and previews the identical material (no drift).
 export { SOLID_FINISHES, SOLID_FINISH_ORDER, DEFAULT_SOLID_FINISH, buildSolidWallMaterial } from './designer/geometry/solidFinishes.js';
+// Editable text placeholders ({name}/{number} on a template topper) — the ONE renderer. The designer
+// composites the customer's value with it and the admin Text Topper Studio previews + bakes the artwork
+// with the very same functions, so the authoring preview and the cake can never disagree.
+export {
+  TEXT_SLOT_KINDS, DEFAULT_TEXT_STYLE, ALGORITHMS as TEXT_ALGORITHMS, resolveStyle as resolveTextStyle,
+  loadStyleFont, loadSlotFonts, renderTextSlot, drawTextSlots, composeTextTopper,
+  applyPatches, coverPatches, bakeArtwork, findCleanSource,
+} from './designer/shared/textures/textSlots.js';
+export { TEXT_STYLES, applyTextStyleConfig, textStyleOf } from './designer/textStyles.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 // Shared fondant-grain normal — the SAME matte surface the cake wall carries, reused by the Relief
 // Studio so the solid-slab side walls preview identically to the designer (one texture, no drift).
