@@ -121,3 +121,16 @@ export const ELEMENT_SLUGS = Object.freeze({
   PICKS:           'picks',
   IMAGE_TOPPER:    'image_topper',
 });
+
+// Human names for the cake surfaces. Shared: the element popup labels a zone with these, and so does
+// the upload studio's zone picker — one vocabulary, so a baker who reads "Side" in one place reads
+// "Side" in the other.
+export const ZONE_LABELS = Object.freeze({
+  top_edge:     'Top',
+  bottom_board: 'Base',
+  top_surface:  'Top surface',
+  side:         'Side',
+  side_edge:    'Side edge',
+  middle_tier:  'Middle tier',
+  board:        'Board',
+});

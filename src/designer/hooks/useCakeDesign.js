@@ -717,10 +717,20 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // seed each group's current colour from its default. Render recolours meshes by
           // userData.group; absent/empty → the single-colour `color` path is used (unchanged).
           groups:        (element.placement_config?._model?.groups ?? []).filter(g => g.editable),
-          groupColors:   Object.fromEntries(
-                           (element.placement_config?._model?.groups ?? [])
-                             .filter(g => g.editable)
-                             .map(g => [g.key, g.default ?? '#ffffff'])),
+          // Seed each group's colour from its default. TWO sources, ONE path:
+          //   • a GLB part-group carries its default on the group itself (_model.groups[].default)
+          //   • a hue_regions sticker carries them on the recolour descriptor
+          //     (recolor.group_defaults, index-keyed) — this is how an uploaded decoration renders in
+          //     the colours its uploader chose, WITHOUT baking them into the pixels. The artwork stays
+          //     original; the colours stay data; and the customer can still change them (unless the
+          //     uploader locked them). Absent/empty → the artwork's own colours, unchanged.
+          groupColors:   {
+                           ...Object.fromEntries(
+                             (element.placement_config?._model?.groups ?? [])
+                               .filter(g => g.editable)
+                               .map(g => [g.key, g.default ?? '#ffffff'])),
+                           ...(element.placement_config?.recolor?.group_defaults ?? {}),
+                         },
           // Shared fondant surface: opt-in per element (absent → use the GLB's own texture/material).
           useSharedFondantTexture: element.placement_config?.useSharedFondantTexture === true,
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the

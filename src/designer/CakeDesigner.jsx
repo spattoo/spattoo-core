@@ -21,6 +21,8 @@ import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail } from
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
+import PreviewTile from './shared/PreviewTile.jsx';
+import MyDecorationStudio from './decorations/MyDecorationStudio.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
@@ -342,13 +344,6 @@ function collectElementColors(design) {
 }
 
 // ── Zone label map ────────────────────────────────────────────────────────────
-const ZONE_LABELS = {
-  top_edge:     'Top',
-  bottom_board: 'Base',
-  top_surface:  'Top surface',
-  side:         'Side',
-  side_edge:    'Side edge',
-};
 
 
 // ── Filter ────────────────────────────────────────────────────────────────────
@@ -450,22 +445,6 @@ function supportsTopAndSide(el) {
 // ONE preview tile shared by the cream-piping popup AND the placement chooser: a full-width
 // 3D preview (passed as children) with a corner add/remove checkbox and a centred name label
 // BELOW it (no overlay strip). Keeps both popups visually identical and on one implementation.
-function PreviewTile({ checked, onToggle, label, height = 104, children }) {
-  return (
-    <div>
-      <div style={{ position: 'relative', width: '100%', height, borderRadius: 10, overflow: 'hidden', border: `1.5px solid ${checked ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
-        {children}
-        <label title={checked ? 'Remove from cake' : 'Add to cake'} onPointerDown={e => e.stopPropagation()}
-          style={{ position: 'absolute', top: 5, left: 5, width: 22, height: 22, borderRadius: 6, background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <input type="checkbox" checked={checked} onChange={onToggle} style={{ accentColor: '#1a1a1a', width: 15, height: 15, cursor: 'pointer', margin: 0 }} />
-        </label>
-      </div>
-      {label && (
-        <span style={{ display: 'block', marginTop: 7, fontSize: 11, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.25, textAlign: 'center' }}>{label}</span>
-      )}
-    </div>
-  );
-}
 
 // Tilt stepper (−/°/+) — decor-specific (piping has no tilt); paired with the shared SizeDial.
 function TiltRow({ tiltAngle, onChange }) {
@@ -1222,6 +1201,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }, [initialDesign]);
 
   const [elementsOpen, setElementsOpen] = useState(false);
+  // "Add your own decoration" — the upload studio (decorations/MyDecorationStudio.jsx). Same screen for
+  // a baker and a customer; the API decides who ends up owning the result.
+  const [decorStudioOpen, setDecorStudioOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
   // Luster dust: colour for new flicks, which tier is being dusted, and the selected splash to aim.
@@ -1739,8 +1721,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     }
   }, []);
 
-  async function loadElementsIfNeeded() {
-    if (elementById.size > 0) return;
+  // `force` re-reads the catalog even though it's already loaded — used after the user uploads their
+  // own decoration, which adds a row the in-memory copy doesn't know about.
+  async function loadElementsIfNeeded(force = false) {
+    if (!force && elementById.size > 0) return;
     setElementTypesLoading(true);
     let rows = [];
     if (apiClient) {
@@ -4242,9 +4226,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         : design.stickers.find(s => s.elementId === el.elementId);
       // GLB part-groups (inst.groups) OR — for a 2D `hue_regions` sticker — one group per detected colour
       // (index-keyed; default = the region's detected hex). Same swatch UI + groupColors path for both.
+      // `recolor.locked` — the uploader of a custom decoration said "these colours must not change"
+      // (a logo, a brand mark). The element still RENDERS in the colours they chose (groupColors is
+      // seeded from recolor.group_defaults), it simply offers no swatches to change them. Config, not
+      // a type branch.
       const editGroups = inst?.groups?.length
         ? inst.groups
-        : (inst?.recolor?.method === 'hue_regions'
+        : (inst?.recolor?.method === 'hue_regions' && !inst.recolor.locked
             // No label: auto-detected regions have no meaningful name (unlike a GLB's "Shoes"/"Eyes"), and
             // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
             ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
@@ -5090,13 +5078,56 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     scatteredDecorElements={filterEl(scatteredDecorDb)}
                     picksElements={filterEl(picksDb)}
                     imageTopperElements={filterEl(imageTopperDb)}
-                    otherElements={filterEl(otherElementsDb[et.id] ?? [])}
+                    // Global elements only — anything with a baker_id is the caller's OWN and lives in
+                    // the "My Decorations" section below, so it appears exactly once in the picker.
+                    otherElements={filterEl((otherElementsDb[et.id] ?? []).filter(el => !el.baker_id))}
                     onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
                     onElementTap={(el) => tapPlaceElement(el)}
                     cfAssetsBase={cfAssetsBase}
                   />
               ));
             })()}
+
+            {/* ── My Decorations ────────────────────────────────────────────────────────────────
+                The caller's OWN uploaded decorations. This is an OWNERSHIP filter over elements
+                already loaded (baker_id is set = mine), NOT a new element type — an uploaded topper
+                must stay a topper, or it loses the placement rules its type gives it. The API decides
+                what "mine" means: a baker sees their bakery's library, a customer additionally sees
+                their own private uploads and never another customer's. */}
+            {!elemSearch.trim() && hasCap('element:manage') && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', margin: '14px 0 8px' }}>
+                  My decorations
+                </div>
+                {(() => {
+                  const mine = filterEl(Object.values(otherElementsDb).flat().filter(el => el.baker_id));
+                  return mine.length ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
+                      {mine.map(el => (
+                        <button key={el.id} onClick={() => tapPlaceElement(el)} style={{ ...s.elementCard, padding: 6, cursor: 'pointer' }}>
+                          <img src={el.thumbnail_url || el.image_url} alt={el.name}
+                            style={{ width: '100%', height: 54, objectFit: 'contain' }} />
+                          <div style={{ fontSize: 9.5, fontWeight: 700, color: '#555', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{el.name}</div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#9a939a', fontWeight: 600, marginBottom: 10, lineHeight: 1.45 }}>
+                      Nothing here yet. Upload a picture of a decoration and use it on your cakes.
+                    </div>
+                  );
+                })()}
+                <button
+                  onClick={() => { setElementsOpen(false); setDecorStudioOpen(true); }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 300, color: '#888' }}>+</div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Add your own</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Upload a decoration and put it on the cake</div>
+                  </div>
+                </button>
+              </>
+            )}
 
             {/* Cream pen + texts — code-level decoration sections (not DB element types), shown
                 last. Tapping opens the editor in the same flyout slot; its back arrow returns here. */}
@@ -6216,6 +6247,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Add User modal ── */}
       {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} brandBtn={brandBtn} apiClient={apiClient} />}
+
+      {/* Upload your own decoration. `tiers` is passed so the zone picker can render the user's own
+          artwork ON the actual cake they're designing — the only honest way to explain "a zone".
+          On save, reload the catalog so the new decoration appears in My Decorations immediately. */}
+      {decorStudioOpen && (
+        <MyDecorationStudio
+          apiClient={apiClient}
+          tiers={canvasConfig.tiers}
+          elementTypes={elementTypes}
+          onClose={() => setDecorStudioOpen(false)}
+          onSaved={async () => {
+            setDecorStudioOpen(false);
+            await loadElementsIfNeeded(true);        // the catalog has a new row
+
+            setElementsOpen(true);
+          }}
+        />
+      )}
 
       {/* ── Change Password modal ── */}
       {changePasswordModal && (
