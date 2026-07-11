@@ -1363,6 +1363,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // null when editing the element's single colour. Set when a per-group swatch / on-canvas dot is
   // tapped; the wheel then reads/writes sticker.groupColors[activeGroupKey] instead of sticker.color.
   const [activeGroupKey, setActiveGroupKey] = useState(null);
+  // "Is a group being edited?" is a question about PRESENCE, not truthiness — and it must be asked
+  // through this flag, never as `if (activeGroupKey)`.
+  //
+  // GLB part-groups are keyed by NAME ("Shoes", "Eyes"), which is always truthy, so truthiness worked
+  // by accident. `hue_regions` reuses this same path (correctly — one groupColors path, not two) but
+  // keys its groups by REGION INDEX, and index 0 is FALSY. Every `if (activeGroupKey)` therefore read
+  // the first region as "no group selected" and wrote the picked colour to sticker.color — which the
+  // hue_regions render path ignores entirely. Result: the first (and on a single-colour sticker, the
+  // ONLY) swatch silently did nothing.
+  const hasActiveGroup = activeGroupKey != null;
   // Which gradient stop the colour wheel is currently editing (0-based). Only meaningful when the
   // selected element is gradient-eligible (caps.gradient) and has ≥2 stops.
   const [gradStop, setGradStop] = useState(0);
@@ -1392,6 +1402,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }, [selectedEl, design.stickers]);
   const hueRegionsCfg = selRecolorInst?.recolor?.method === 'hue_regions' ? selRecolorInst.recolor : null;
   const hueRegions = useImageRegions(hueRegionsCfg ? selRecolorInst.imageUrl : null, hueRegionsCfg);
+  // The colour the ACTIVE group starts from when the customer hasn't set one yet — for a hue region,
+  // the hue actually detected in the artwork. Without this the wheel opens on the instance's colour
+  // (or white) while the swatch beside it shows the detected hue, so the picker disagrees with the
+  // thing it is editing. Array lookup, so a GLB group's NAME key simply misses → null → unchanged
+  // behaviour for GLB (its groups carry their own colours).
+  const activeGroupDefault = hasActiveGroup ? (hueRegions[activeGroupKey]?.hex ?? null) : null;
+  // Title above the colour wheel while a group is being edited. A GLB part-group has a NAME ("Shoes")
+  // worth showing. A hue region has only an index — and it is labelless on purpose (see the swatch
+  // panel: "Colour 1/2/3" is noise, the swatch already shows the colour), so it must NOT fall back to
+  // printing a bare "0" at the customer. Null here → the caller shows the element's own name.
+  const activeGroupLabel = hasActiveGroup
+    ? (selRecolorInst?.groups?.find(g => g.key === activeGroupKey)?.label
+       ?? (typeof activeGroupKey === 'string' ? activeGroupKey : null))
+    : null;
   const STICKER_CAPS = { resize: true, delete: true, color: false, duplicate: true };
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
@@ -2288,15 +2312,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (selectedEl.type === 'text') return selectedText?.color ?? '#ffffff';
     if (selectedEl.type === 'sticker') {
       const st = design.stickers.find(s => s.id === selectedEl.id);
-      // Editing a recompose part-group → that group's colour; else the element's single colour.
-      if (activeGroupKey && st?.groupColors?.[activeGroupKey]) return st.groupColors[activeGroupKey];
+      // Editing a part-group / hue region → that group's colour, falling back to the colour the group
+      // ACTUALLY IS (a hue region's detected hex) before the element's single colour.
+      if (hasActiveGroup) return st?.groupColors?.[activeGroupKey] ?? activeGroupDefault ?? st?.color ?? '#ffffff';
       return st?.color ?? '#ffffff';
     }
     if (selectedEl.type === 'scatter') return design.stickers.find(s => s.elementId === selectedEl.elementId)?.color ?? '#ffffff';
     // Single-per-slot topper (decorEl card): read the recompose group colour off any instance.
     if (selectedEl.type === 'decorEl') {
       const st = design.stickers.find(s => s.elementId === selectedEl.elementId);
-      if (activeGroupKey && st?.groupColors?.[activeGroupKey]) return st.groupColors[activeGroupKey];
+      if (hasActiveGroup) return st?.groupColors?.[activeGroupKey] ?? activeGroupDefault ?? st?.color ?? '#ffffff';
       return st?.color ?? '#ffffff';
     }
     return '#f5b8c8';
@@ -2313,9 +2338,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
     if (selectedEl.type === 'text') updateText(selectedEl.id, { color: c });
     if (selectedEl.type === 'sticker') {
-      if (activeGroupKey) {
-        // Recolour one recompose part-group on this instance; render matches every mesh whose
-        // userData.group === activeGroupKey (both shoes, both eyes, …). Leaves sticker.color alone.
+      if (hasActiveGroup) {
+        // Recolour ONE group on this instance — a GLB part-group (render matches every mesh whose
+        // userData.group === activeGroupKey: both shoes, both eyes) or a hue region (render recolours
+        // every pixel clustered into that region). Leaves sticker.color alone.
         const st = design.stickers.find(s => s.id === selectedEl.id);
         updateSticker(selectedEl.id, { groupColors: { ...(st?.groupColors ?? {}), [activeGroupKey]: c } });
       } else {
@@ -2325,7 +2351,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Single-per-slot topper: apply the group recolour to every placed instance of this element.
     if (selectedEl.type === 'decorEl') {
       const insts = design.stickers.filter(s => s.elementId === selectedEl.elementId);
-      if (activeGroupKey) insts.forEach(st => updateSticker(st.id, { groupColors: { ...(st.groupColors ?? {}), [activeGroupKey]: c } }));
+      if (hasActiveGroup) insts.forEach(st => updateSticker(st.id, { groupColors: { ...(st.groupColors ?? {}), [activeGroupKey]: c } }));
       else insts.forEach(st => updateSticker(st.id, { color: c }));
     }
     // Scatter shares ONE colour across all its packed instances.
@@ -3397,7 +3423,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     ? gradStops.length                                   // the placeholder slot
     : Math.min(gradStop, Math.max(0, gradStops.length - 1));
   // The colour the wheel edits: the active stop when eligible, else the normal single colour.
-  const wheelColor = (gradientEligible && !activeGroupKey) ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
+  const wheelColor = (gradientEligible && !hasActiveGroup) ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
 
   function writeGradient(colors, mode = gradMode, balance = gradBalance) {
     const clean = colors.filter(Boolean);
@@ -3412,7 +3438,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   function handleWheelChange(c) {
     // Editing a recompose part-group is always a solid per-group colour, never a gradient.
-    if (activeGroupKey) { handleColorChange(c); return; }
+    if (hasActiveGroup) { handleColorChange(c); return; }
     if (!gradientEligible) { handleColorChange(c); return; }
     // Filling a pending (empty) stop: append it now — this is what turns a solid colour into a
     // gradient, or adds a 3rd stop. No colour is ever auto-copied.
@@ -3454,7 +3480,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const showRightPanel = tierPanelVisible
     || ((caps?.color || caps?.gradient) && colorOpen)
     // Recompose per-group editing is gated on the group's `editable` flag, not allowed_actions.color.
-    || (activeGroupKey && colorOpen);
+    || (hasActiveGroup && colorOpen);
 
   // ── Decoration edit stack ────────────────────────────────────────────────
   // Every editable decoration (sticker + topper + text) is a card in a right-side
@@ -4196,8 +4222,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if ((c.color || c.gradient) && !hueRegionsReplacesWheel) {
       groups.push({ key: 'color', divider: true, panelLabel: 'Colour', controls: [
         <button key="color"
-          style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: (colorOpen && !activeGroupKey) ? '2.5px solid #6c47ff' : 'none' }}
-          onClick={() => { const opening = !(colorOpen && !activeGroupKey); closeAllPopups(); if (opening) setColorOpen(true); }}>
+          style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: (colorOpen && !hasActiveGroup) ? '2.5px solid #6c47ff' : 'none' }}
+          onClick={() => { const opening = !(colorOpen && !hasActiveGroup); closeAllPopups(); if (opening) setColorOpen(true); }}>
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>
       ] });
@@ -5421,11 +5447,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
                   : selectedEl?.type === 'piping'  ? `${TIER_LABELS[selectedEl.tierIndex]} ${selectedEl.zone === 'top' ? 'Top' : 'Base'}`
                   : selectedEl?.type === 'text'    ? 'Text Color'
-                  : selectedEl?.type === 'sticker' ? (
-                      activeGroupKey
-                        ? (design.stickers.find(s => s.id === selectedEl.id)?.groups?.find(g => g.key === activeGroupKey)?.label ?? activeGroupKey)
-                        : (design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker'))
-                  : selectedEl?.type === 'decorEl' && activeGroupKey ? activeGroupKey
+                  : selectedEl?.type === 'sticker'
+                      ? (activeGroupLabel ?? design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker')
+                  : selectedEl?.type === 'decorEl' ? (activeGroupLabel ?? '')
                   : ''}
                 </span>
                 <button style={s.iconBtn} onClick={() => {
@@ -5435,7 +5459,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
 
               {/* Color wheel — tier (always), piping/text (when colorOpen) */}
-              {((caps?.color || caps?.gradient) || activeGroupKey) && (tierPanelVisible || colorOpen) && (() => {
+              {((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen) && (() => {
                 // Offer same-material colors so a reused hue renders exactly: tier → other
                 // tier colors (matte), any element → other element colors (sheened). The
                 // current selection's own color is dropped (no point reoffering it).
@@ -5454,7 +5478,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
               {/* Gradient controls — config-gated (allowed_actions.gradient). Reuses the shared
                   GradientControls component (also used by the piping popup). */}
-              {gradientEligible && (colorOpen || tierPanelVisible) && !activeGroupKey && (
+              {gradientEligible && (colorOpen || tierPanelVisible) && !hasActiveGroup && (
                 <GradientControls
                   stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
                   onSelectStop={selectGradStop}
