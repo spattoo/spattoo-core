@@ -24,6 +24,11 @@ export { recolorImageData, RECOLOR_METHODS, dominantColor, dominantColorOfImage 
 // non-CORS cache entry can poison the fetch (see utils/assetUrl.js). Exported so admin authoring
 // surfaces that pixel-read an element's image use the ONE qualifier the designer uses, not a copy.
 export { corsUrl } from './designer/utils/assetUrl.js';
+// Print exposure — the ONE rule that decides how bright a 2D print renders. Exported so the admin studios
+// build their preview material from the SAME function the cake does: a studio that computes its own print
+// brightness WILL drift from the designer, and that drift is the original "vivid in the studio, dull on the
+// cake" bug. Import it; never re-derive it.
+export { printExposure, PRINT_NEUTRAL, REFERENCE_LIGHT, SHADING, SATURATION } from './designer/shared/printExposure.js';
 // Cream finish/texture registry + the wall-geometry algorithms — exported so the admin texture
 // calibrator authors against the SAME code the designer renders (no duplicated displacement maths).
 export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';

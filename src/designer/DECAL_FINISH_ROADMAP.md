@@ -1,11 +1,38 @@
 # Decal print finish — config-driven roadmap
 
-**Status:** Phase 0 shipped (global defaults + dev dials). Phases 1–3 are the plan to move it to
-`placement_config`, admin-authored, per element. Not built yet.
+> # ⛔ SUPERSEDED — 2026-07-12. READ THIS BOX BEFORE ANYTHING BELOW.
+>
+> **The root cause diagnosed in this document was WRONG, and acting on it caused a second bug.**
+> Everything below is kept as a record of how we got it wrong — not as guidance. The live design is
+> **`shared/printExposure.js`** (pure, unit-tested) and the `print_finish` row in `PLACEMENT_CONFIG.md`.
+>
+> **What this doc concluded:** a print reads dull because of the rendering *context* (small, curved, raking
+> wall angle), so compensate — disable tone mapping, pre-boost chroma (`DECAL_SAT 1.12`), add
+> self-illumination (`DECAL_EMISSIVE 0.22`), and eventually expose those per element.
+>
+> **What was actually true:** a print was drawn as an ordinary lit PBR surface with tone mapping off —
+> `screen = albedo × whatever light hits it` — with **no rolloff and nothing tying it to the artwork**. It
+> had **no defined exposure**. The compensations stacked to **1.4× the artwork** (measured on the real
+> cake), and with no rolloff every pale colour clipped to white. The *same* defect produced both
+> complaints: **"dull"** was it under ACES (which compresses *and* desaturates), **"over-bright"** was it
+> after the fix for dull. Two symptoms, opposite signs, one missing invariant.
+>
+> **The lesson, which is the point of keeping this file:** each round of this bug was closed by adding a
+> hand-tuned constant, and each constant *became* the next round's bug. A knob cannot fix a missing
+> invariant — it only moves the error to whichever element or zone you didn't test. The fix was to define
+> what a print *should* be (`print == artwork`, by construction) and make the renderer meet it.
+>
+> **Two measurement traps that cost real time here** — the table below is honest about the first:
+> - **`envMapIntensity 0` "changed nothing"** (row 4). True for the *bright* pixels it was eyeballed on, and
+>   it sent the investigation away from additive light. The env/specular reflection is an **additive white**
+>   that is not multiplied by the albedo — so it wrecks the **dark** pixels specifically (measured: browns
+>   1.19× while pale areas sat at 1.03×). Both are now **off** on a print: a print is INK.
+> - **Ratios were compared in sRGB.** They are meaningless there. Compare in **linear** light. Deriving the
+>   light rig on paper gave 1.16; the real value measured **1.54**. The render is the authority.
 
 ---
 
-## 1. Why this exists (root cause, measured)
+## 1. Why this exists (root cause, measured) — ⛔ THIS SECTION'S CONCLUSION IS WRONG; see the box above
 
 A vivid 2D print (`elements/files/2D/*.webp`, measured **source saturation ≈ 0.96**) renders **dull on the
 cake — ≈ 0.78 saturation** — while the *same file* previewed in the admin Relief Sticker Studio reads vivid

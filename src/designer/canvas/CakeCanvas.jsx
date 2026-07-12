@@ -10,6 +10,7 @@ import CreamWriting from './CreamWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import FinishHandles from './FinishHandles.jsx';
+import { printExposure } from '../shared/printExposure.js';
 import SelectionBox from './SelectionBox.jsx';
 import ResizeHandles from './ResizeHandles.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
@@ -468,17 +469,9 @@ function requestStickerContentV(imageUrl, { spine = 0.5, rise = 0 } = {}, cb) {
 // `recolor` region descriptor (placement_config.recolor). useTexture still owns loading/suspense/
 // caching; we derive a recoloured CanvasTexture from the loaded image only when asked. A tainted
 // canvas (CORS) falls back to the original — recolour silently off, sticker still renders.
-// The lit decal render desaturates the print: the diffuse+specular of the scene lights lifts the darkest
-// channel off zero, so a vivid artwork (measured source saturation ~0.96) renders at ~0.78 on the wall —
-// visibly duller than the same file previewed big/head-on in the admin Relief Studio. This is NOT a material,
-// asset, or relief bug (all ruled out by measurement: the identical file + identical flat material render
-// vivid in the studio's scene); it is the rendering CONTEXT — the decal is drawn small, curved, and often at
-// a raking wall angle where a fixed specular white-wash is a larger fraction of the signal. Since per-pixel
-// saturation IS the perceived "dullness" (confirmed: desaturating the studio to ~0.75 made it read dull), we
-// pre-boost the albedo's chroma so the print survives that wash and reads as vivid as the studio preview.
-// Modest by default (garish/posterized above ~1.2 on already-vivid art). ROADMAP: becomes a per-element
-// placement_config override with this as the fallback — see src/designer/DECAL_FINISH_ROADMAP.md.
-const DECAL_SAT = 1.12;
+// How bright a print renders is decided by ONE rule, in ONE pure module: shared/printExposure.js.
+// A print reads as its ARTWORK by construction (see that file for why the old "dull" and "over-bright"
+// bugs were the same defect — a decal with no defined exposure — and why knobs could never close it).
 // Push chroma away from per-pixel luma by `mul` (>1 = more saturated), clamped, alpha untouched. In place.
 function saturateRGB(d, mul) {
   if (mul === 1) return;
@@ -491,11 +484,18 @@ function saturateRGB(d, mul) {
   }
 }
 
-// Sticker self-illumination (emissive #fff × emissiveMap = the artwork × intensity): brightens AND
-// re-saturates JUST the decal — the print reads vivid without re-lighting (and washing out) the cake, the
-// way a global ambient lift would. Modest by default (glowy/flat — the print stops taking the cake's shading —
-// above ~0.35). Was 0.12; lifted to offset the lit-render dulling. ROADMAP: per-element placement_config override.
-const DECAL_EMISSIVE = 0.22;
+// The exposure model's two material terms, as THREE colours. Both are MULTIPLIERS ON THE ALBEDO (never an
+// additive white — additive white is what desaturates a print), so:
+//     screen = diffuse × albedo × sceneLight  +  selfLit × albedo
+// which at the reference light sums to exactly the artwork. Greys are built with `new THREE.Color(v,v,v)`,
+// which writes the LINEAR working space directly (no sRGB transfer) — the space the shader multiplies in.
+function printMaterialTerms(printFinish) {
+  const { diffuse, selfLit } = printExposure(printFinish);
+  return {
+    color:    new THREE.Color(diffuse, diffuse, diffuse),
+    emissive: new THREE.Color(selfLit, selfLit, selfLit),
+  };
+}
 
 // A style's typeface is an uploaded webfont, and `ctx.fillText` with an unloaded FontFace SILENTLY
 // falls back to sans-serif — which would then be BAKED into the texture. So the composite must wait for
@@ -512,7 +512,7 @@ function useSlotFontsReady(textSlots) {
 }
 
 function useStickerImageTexture(imageUrl, recolor, color, groupColors, saturation, textSlots, textValues) {
-  const sat = saturation ?? DECAL_SAT;   // placement_config.print_finish.saturation → per-element override; else the module default
+  const sat = printExposure({ saturation }).saturation;   // print_finish.saturation; neutral (1) by default
   const base = useTexture(corsUrl(imageUrl));
   const fontsTick = useSlotFontsReady(textSlots);
   base.colorSpace = THREE.SRGBColorSpace;
@@ -859,6 +859,9 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
     const ns = relief?.normalScale ?? 0.8;
     return new THREE.Vector2(ns, relief?.bake?.flipY ? -ns : ns);
   }, [relief]);
+  // Print exposure (shared/printExposure.js) — the SAME two terms drive every printed surface below (flat
+  // decal, displaced relief, solid front cap), so a print reads as its artwork whichever one it lands on.
+  const print = useMemo(() => printMaterialTerms(printFinish), [printFinish]);
   // Solid-slab materials as an EXPLICIT array (not two `attach="material-N"` children): on a plain
   // <mesh> whose default `material` is a single Material, `attach="material-0"` writes index 0/1 onto
   // that object instead of building an array — so the mesh silently keeps its default white material
@@ -869,13 +872,14 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
     if (!solidOn) return null;
     const front = new THREE.MeshPhysicalMaterial({
       map: texture,
+      color: print.color.clone(),
       normalMap: reliefMaps.normalMap, normalScale: reliefNScale,
       roughness: relief.roughness ?? 0.95, metalness: 0,
       sheen: relief.sheen ?? 0, sheenColor: new THREE.Color('#ffffff'), sheenRoughness: 0.85,
       envMapIntensity: relief.envIntensity ?? 0.4,
       toneMapped: relief.toneMapped ?? false,
-      emissive: new THREE.Color('#ffffff'), emissiveMap: texture,
-      emissiveIntensity: printFinish?.emissive ?? DECAL_EMISSIVE,
+      emissive: print.emissive.clone(), emissiveMap: texture,
+      emissiveIntensity: 1,   // the strength lives in `emissive` (the exposure model's selfLit term)
       side: THREE.DoubleSide,
     });
     // Side/back walls read as ONE solid fondant colour matching the front — not plain white. Two sources,
@@ -897,10 +901,10 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
     // ONE shared factory the studio also uses (surface feel only; colour stays the print's). Its cloned
     // grain normal, if any, is disposed in the cleanup below. Walls keep ExtrudeGeometry's world-space UVs
     // (see solidRelief) so a grain tiles along them.
-    const wall = buildSolidWallMaterial(relief.solidFinish, wallHex, printFinish?.emissive ?? DECAL_EMISSIVE,
+    const wall = buildSolidWallMaterial(relief.solidFinish, wallHex, printExposure(printFinish).selfLit,
       { printMap: printWalls ? texture : null });
     return [front, wall];
-  }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, color, recolor]);
+  }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, print, color, recolor]);
   // Dispose the wall's CLONES (index 1) — its fondant normal and, in `local` wall mode, its print-map clone
   // (a distinct GPU upload keyed to uv1). NEVER the front's shared reliefMaps.normalMap / `texture`, which
   // are owned by the drei cache and other meshes. `map === emissiveMap` on the wall, so dispose once.
@@ -958,6 +962,8 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
       <mesh geometry={geo}>
         <meshPhysicalMaterial
           map={texture}
+          // Print exposure — shared/printExposure.js. `color` is the light-driven share of the albedo.
+          color={print.color}
           transparent alphaTest={0.5} alphaToCoverage
           normalMap={reliefMaps.normalMap} normalScale={reliefNScale}
           displacementMap={reliefMaps.displacementMap} displacementScale={reliefLift}
@@ -988,11 +994,13 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
           // while-selected didn't compress it enough. The cue is SelectionBox, a border drawn beside the
           // element — non-destructive, so the print keeps its true colour while selected.
           toneMapped={relief.toneMapped ?? false}
-          // `emissiveMap` = the albedo, so this adds 12% of the ARTWORK back as self-illumination (hue and
-          // saturation survive). Without it a raised sticker renders duller than the flat one beside it.
-          emissive={'#ffffff'}
+          // `emissiveMap` = the albedo, so this is the ARTWORK itself as self-illumination (hue and chroma
+          // survive — it is a MULTIPLIER on the albedo, not an additive white). It carries the orientation-
+          // INDEPENDENT share of the exposure, which is what stops a raised sticker blowing out where it
+          // faces the light, or reading dull where it doesn't. Strength lives in the colour; intensity is 1.
+          emissive={print.emissive}
           emissiveMap={texture}
-          emissiveIntensity={printFinish?.emissive ?? DECAL_EMISSIVE}
+          emissiveIntensity={1}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -1000,8 +1008,16 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
   }
   return (
     <mesh geometry={geo}>
-      <meshStandardMaterial
+      <meshPhysicalMaterial
         map={texture}
+        // Print exposure — shared/printExposure.js. `color` is the light-driven share of the albedo.
+        color={print.color}
+        // A print is INK, and ink has no specular highlight of its own. The dielectric specular is an
+        // ADDITIVE WHITE that is not multiplied by the albedo, so it cannot be scaled by the exposure model
+        // — and being additive it wrecks exactly the DARK pixels (measured: it lifted the artwork's browns
+        // 1.19× while leaving pale areas at 1.03×, i.e. it flattens contrast and desaturates). Sheen belongs
+        // to the CAKE's surface, not to the picture printed on it. 0 = the print renders as its artwork.
+        specularIntensity={0}
         transparent
         alphaTest={0.05}
         // Matte by default (fondant-like) so the bright environment doesn't reflect a whitish sheen
@@ -1010,15 +1026,18 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
         // envMapIntensity damps how much the HDRI lifts/desaturates the albedo.
         roughness={roughness ?? 0.95}
         metalness={metalness ?? 0}
-        envMapIntensity={0.4}
+        // Same reason as specularIntensity: the HDRI's reflection is additive white on top of the print.
+        envMapIntensity={0}
         // The print bypasses the scene's ACES tone mapping (which desaturates) so the decal shows its
         // true colours — the cake stays filmic, the artwork stays vivid. A little emissive still lifts
         // it in shadow. Selection does not tint the material (the additive violet SELECTION_COLOR corrupted
         // saturated albedos — see the relief path note); SelectionBox draws the cue beside the element.
         toneMapped={false}
-        emissive={'#ffffff'}
+        // The orientation-INDEPENDENT share of the exposure: the artwork as self-illumination (emissiveMap
+        // = the albedo), so it cannot be blown out by where the decal sits. Strength is in the colour.
+        emissive={print.emissive}
         emissiveMap={texture}
-        emissiveIntensity={printFinish?.emissive ?? DECAL_EMISSIVE}
+        emissiveIntensity={1}
         side={THREE.DoubleSide}
         depthWrite={false}
       />

@@ -665,9 +665,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // real shadow) on a subdivided mesh. Absent → the sticker renders flat.
           relief:        element.placement_config?.relief ?? null,
           // Per-element print finish for a 2D image sticker (placement_config.print_finish): { saturation,
-          // emissive } — an albedo chroma pre-boost + decal self-illumination so the print survives the lit
-          // render wash. Applies to BOTH flat and relief 2D stickers (not nested under relief). Absent → the
-          // renderer's module defaults (DECAL_SAT / DECAL_EMISSIVE).
+          // emissive, gain } — an albedo chroma pre-boost + decal self-illumination so the print survives the
+          // lit render wash, plus a print EXPOSURE scale for the opposite case (an upright topper faces the key
+          // light head-on and OVER-exposes, where neither of the other two can dim it). Applies to BOTH flat
+          // and relief 2D stickers (not nested under relief). Absent → the renderer's module defaults
+          // (DECAL_SAT / DECAL_EMISSIVE / DECAL_GAIN).
           printFinish:   element.placement_config?.print_finish ?? null,
           // Photo-cake frame (config-gated on placement_config.photo.mask, no element-type branch): the
           // MASK is the shape (heart/circle/square…) and drives both the photo clip and the procedural
