@@ -39,6 +39,8 @@ import DashboardPanel from '../dashboard/DashboardPanel';
 import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
 import BillingPanel from '../settings/BillingPanel';
+import RightsAttestation from '../legal/RightsAttestation.jsx';
+import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
@@ -1213,7 +1215,7 @@ function OrderDesignViewer({ order, onClose }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, legalBase = DEFAULT_LEGAL_BASE }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
@@ -1441,6 +1443,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templateMinAge, setTemplateMinAge] = useState('');
   const [templateMaxAge, setTemplateMaxAge] = useState('');
   const [templateOccasionIds, setTemplateOccasionIds] = useState(new Set());
+  // Rights attestation — a template is PUBLIC, so it cannot be published until the baker affirms
+  // they may. Unticked by default and reset with the rest of the form after each save; the API
+  // rejects a create without it (see spattoo-api POST /api/baker/templates).
+  const [templateRights, setTemplateRights] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -1639,8 +1645,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Saving a design as a template PUBLISHES it (it feeds the storefront gallery + hero pickers),
+  // so it goes through the host — never straight to the DB.
+  //
+  // There used to be a fallback here that inserted into cake_templates directly from the browser,
+  // resolving baker_id client-side. It was REMOVED: it let the client pick its own tenant, and —
+  // because it never touched the API — it could publish a template with no record of who vouched
+  // for its content rights. A host that wants templates must supply onSaveTemplate, which writes
+  // the row and the attestation together or not at all (spattoo-api POST /api/baker/templates).
+  // Fail closed: no host callback, no publish.
   async function handleSaveTemplate() {
-    if (!templateName.trim()) return;
+    if (!templateName.trim() || !templateRights) return;
+    if (!onSaveTemplate) {
+      setSaveMsg({ ok: false, text: 'Saving templates is unavailable here.' });
+      return;
+    }
     setSaving(true);
     setSaveMsg(null);
 
@@ -1650,76 +1669,28 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
 
     // Same shared serializer as order + share (tiers carry shape/width/depth so a sheet
-    // round-trips on reload). cakeShape is echoed onto the template row below.
+    // round-trips on reload).
     const designJson = buildDesignSnapshot(design);
-    const cakeShape  = designJson.shape;
 
     try {
-    if (onSaveTemplate) {
-      try {
-        await onSaveTemplate({
-          name:         templateName.trim(),
-          offering:     templateOffering,
-          tierCount:    design.tiers.length,
-          designJson,
-          thumbnailBlob,
-          weightKg:     templateWeight !== '' ? parseFloat(templateWeight) : null,
-          minAge:       templateMinAge !== '' ? parseInt(templateMinAge, 10) : null,
-          maxAge:       templateMaxAge !== '' ? parseInt(templateMaxAge, 10) : null,
-          occasionTagIds: [...templateOccasionIds],
-        });
-        setSaveMsg({ ok: true, text: 'Template saved!' });
-        setTimeout(() => { setSaveModal(false); setSaveMsg(null); setTemplateName(''); setTemplateWeight(''); setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set()); }, 1200);
-      } catch (err) {
-        setSaveMsg({ ok: false, text: err.message });
-      }
-      setSaving(false);
-      return;
-    }
-
-    // Upload thumbnail to R2 via signed URL (shared helper).
-    const thumbnail_url = await uploadThumbnail(thumbnailBlob, apiClient, 'templates/thumbnails');
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: bakerUser } = await supabase
-      .from('baker_appusers').select('baker_id').eq('auth_user_id', user?.id).maybeSingle();
-
-    const { data: newTpl, error } = await supabase.from('cake_templates').insert({
-      name: templateName.trim(),
-      shape: cakeShape,
-      tier_count: design.tiers.length,
-      offering: templateOffering,
-      design: designJson,
-      thumbnail_url,
-      baker_id: bakerUser?.baker_id ?? null,
-      is_active: true,
-      sort_order: 0,
-    }).select('id').single();
-
-    if (!error && newTpl) {
-      const hasAttrs = templateWeight !== '' || templateMinAge !== '' || templateMaxAge !== '';
-      if (hasAttrs) {
-        const { error: attrsErr } = await supabase.from('cake_template_attrs').upsert({
-          template_id:   newTpl.id,
-          min_weight_kg: templateWeight  !== '' ? parseFloat(templateWeight)      : null,
-          min_age:       templateMinAge  !== '' ? parseInt(templateMinAge, 10)    : null,
-          max_age:       templateMaxAge  !== '' ? parseInt(templateMaxAge, 10)    : null,
-        }, { onConflict: 'template_id' });
-        if (attrsErr) throw new Error(`Attrs save failed: ${attrsErr.message}`);
-      }
-      if (templateOccasionIds.size > 0) {
-        const rows = [...templateOccasionIds].map(tag_id => ({ template_id: newTpl.id, tag_id, source: 'manual' }));
-        const { error: tagsErr } = await supabase.from('template_tags').insert(rows);
-        if (tagsErr) throw new Error(`Tags save failed: ${tagsErr.message}`);
-      }
-    }
-
-    if (error) {
-      setSaveMsg({ ok: false, text: error.message });
-    } else {
+      await onSaveTemplate({
+        name:         templateName.trim(),
+        offering:     templateOffering,
+        tierCount:    design.tiers.length,
+        designJson,
+        thumbnailBlob,
+        weightKg:     templateWeight !== '' ? parseFloat(templateWeight) : null,
+        minAge:       templateMinAge !== '' ? parseInt(templateMinAge, 10) : null,
+        maxAge:       templateMaxAge !== '' ? parseInt(templateMaxAge, 10) : null,
+        occasionTagIds: [...templateOccasionIds],
+        rightsAttested: templateRights,   // the baker's own answer — never defaulted
+      });
       setSaveMsg({ ok: true, text: 'Template saved!' });
-      setTimeout(() => { setSaveModal(false); setSaveMsg(null); setTemplateName(''); setTemplateWeight(''); setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set()); }, 1200);
-    }
+      setTimeout(() => {
+        setSaveModal(false); setSaveMsg(null); setTemplateName(''); setTemplateWeight('');
+        setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set());
+        setTemplateRights(false);   // never carry an attestation over to the next template
+      }, 1200);
     } catch (err) {
       setSaveMsg({ ok: false, text: err.message });
     } finally {
@@ -6288,15 +6259,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
             )}
 
+            {/* Publishing gate — the one shared attestation, not a second copy (ThemePreview's
+                gallery upload renders the same component). */}
+            <RightsAttestation
+              apiClient={apiClient}
+              checked={templateRights}
+              onChange={setTemplateRights}
+              primaryColor={primaryColor}
+              disabled={saving}
+            />
+
             {saveMsg && (
               <div style={{ fontSize: 12, fontWeight: 600, color: saveMsg.ok ? '#4caf50' : '#e53935', marginTop: 8 }}>
                 {saveMsg.text}
               </div>
             )}
             <button
-              style={{ ...s.orderBtn, ...brandBtn, marginTop: 14, opacity: saving || !templateName.trim() ? 0.6 : 1 }}
+              style={{ ...s.orderBtn, ...brandBtn, marginTop: 14, opacity: saving || !templateName.trim() || !templateRights ? 0.6 : 1 }}
               onClick={handleSaveTemplate}
-              disabled={saving || !templateName.trim()}
+              disabled={saving || !templateName.trim() || !templateRights}
             >
               {saving ? 'Saving...' : 'Save as Template'}
             </button>
@@ -6448,6 +6429,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           }}
           onSubmit={handleOrderSubmit}
           editingOrder={editingOrder}
+          legalBase={legalBase}
           apiClient={apiClient}
           supabase={supabase}
           bakerId={bakerData?.id}

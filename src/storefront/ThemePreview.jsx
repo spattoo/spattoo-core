@@ -3,6 +3,7 @@ import CustomerStorefront from './CustomerStorefront.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
 import { TEMPLATES } from './templates.js';
+import RightsAttestation from '../legal/RightsAttestation.jsx';
 
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
@@ -46,6 +47,10 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // Gallery: [{ id, key, url, caption }] — key is the R2 key to persist (null while uploading).
   const [gallery, setGallery] = useState([]);
   const [galleryDirty, setGalleryDirty] = useState(false);
+  // Rights attestation for gallery uploads (public surface). Unticked by default; the API
+  // rejects an add without it. Deliberately NOT reset per file — one tick covers the batch the
+  // baker is uploading right now, which is the act they are actually affirming.
+  const [galleryRights, setGalleryRights] = useState(false);
   // The baker's cake-design templates — an authoritative image source for the gallery (baker picks
   // from these OR uploads). Fetched on open; picking snapshots the design's thumbnail as a photo.
   const [designs, setDesigns] = useState([]);
@@ -110,6 +115,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     const files = [...(e.target.files || [])];
     e.target.value = '';
     if (!files.length || !apiClient?.getSignedUploadUrl) return;
+    if (!galleryRights) return;   // no attestation, no upload — the API refuses it anyway
     setGalleryDirty(true);
     for (const file of files) {
       const id = `n${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -124,7 +130,8 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           // Persist a DB row immediately so the photo is tracked + manageable (no orphans).
           let dbId = id;
           if (apiClient.addStorefrontPhoto) {
-            const row = await apiClient.addStorefrontPhoto(key, '');
+            // The baker's real answer from the attestation checkbox — never hardcoded true.
+            const row = await apiClient.addStorefrontPhoto(key, '', galleryRights);
             dbId = row?.id ?? id;
           }
           setGallery(g => g.map(it => (it.id === id ? { ...it, id: dbId, key } : it)));
@@ -452,8 +459,19 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           Choose from templates
         </button>
       )}
-      <label style={s.addPhotos}>
-        <input type="file" accept="image/*" multiple onChange={addPhotos} style={{ display: 'none' }} />
+      {/* Publishing gate — the gallery is PUBLIC, so an uploaded photo carries the baker's rights
+          attestation exactly like a template. Same shared component as the designer's save-template
+          modal (src/legal/RightsAttestation.jsx) — one wording, one rule, not a second copy.
+          "Choose from templates" above is deliberately NOT gated: that design was already attested
+          when it was saved. */}
+      <RightsAttestation
+        apiClient={apiClient}
+        checked={galleryRights}
+        onChange={setGalleryRights}
+        primaryColor={primary}
+      />
+      <label style={{ ...s.addPhotos, opacity: galleryRights ? 1 : 0.5, cursor: galleryRights ? 'pointer' : 'not-allowed' }}>
+        <input type="file" accept="image/*" multiple onChange={addPhotos} disabled={!galleryRights} style={{ display: 'none' }} />
         + Upload photos
       </label>
     </>),

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
@@ -188,6 +189,7 @@ export default function OrderModal({
   editingOrder = null,
   onViewOrder = null,
   mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
+  legalBase = DEFAULT_LEGAL_BASE,   // host's marketing origin — where /terms + /privacy are served
 }) {
   const isMobile = useIsMobile();
 
@@ -775,6 +777,23 @@ export default function OrderModal({
               </>
             )}
           </div>
+
+          {/* Customer consent, captured at the moment of the affirmative act (DPDP "Layer 2").
+              Submitting the quote IS the acceptance — so this is a passive notice, not a checkbox:
+              a customer sending their own photo to their baker should not be made to tick a box,
+              and asking once here is what lets us NOT ask on every upload. The consent EVENT is
+              written server-side by POST /api/customer/orders (source 'quote'), so it cannot be
+              skipped by the client. Customer mode only — a baker placing an order already accepted
+              at signup/gate. Sits directly above the submit button so it is unmissable. */}
+          {mode === 'customer' && isLastStep && (
+            <div style={{ fontSize: 11, lineHeight: 1.45, color: '#888', textAlign: 'center', padding: isMobile ? '10px 20px 0' : '10px 0 0', fontFamily: "'Quicksand',sans-serif" }}>
+              By requesting a quote you agree to the{' '}
+              <a href={`${legalBase}/terms`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Terms of Service</a>
+              {' '}and{' '}
+              <a href={`${legalBase}/privacy`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Privacy Policy</a>.
+              {' '}Cartoon characters and brand themes are usually protected — your baker may not be able to use them.
+            </div>
+          )}
 
           {/* Sticky footer */}
           <div style={{ display:'flex', gap:10, flexShrink:0, padding: isMobile ? '12px 20px 0' : '12px 0 0', borderTop:'1px solid #999999' }}>
