@@ -39,7 +39,6 @@ import DashboardPanel from '../dashboard/DashboardPanel';
 import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
 import BillingPanel from '../settings/BillingPanel';
-import RightsAttestation from '../legal/RightsAttestation.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -1443,10 +1442,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templateMinAge, setTemplateMinAge] = useState('');
   const [templateMaxAge, setTemplateMaxAge] = useState('');
   const [templateOccasionIds, setTemplateOccasionIds] = useState(new Set());
-  // Rights attestation — a template is PUBLIC, so it cannot be published until the baker affirms
-  // they may. Unticked by default and reset with the rest of the form after each save; the API
-  // rejects a create without it (see spattoo-api POST /api/baker/templates).
-  const [templateRights, setTemplateRights] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -1645,17 +1640,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Saving a design as a template PUBLISHES it (it feeds the storefront gallery + hero pickers),
-  // so it goes through the host — never straight to the DB.
+  // Saving a design as a template goes through the HOST — never straight to the DB.
   //
   // There used to be a fallback here that inserted into cake_templates directly from the browser,
-  // resolving baker_id client-side. It was REMOVED: it let the client pick its own tenant, and —
-  // because it never touched the API — it could publish a template with no record of who vouched
-  // for its content rights. A host that wants templates must supply onSaveTemplate, which writes
-  // the row and the attestation together or not at all (spattoo-api POST /api/baker/templates).
-  // Fail closed: no host callback, no publish.
+  // resolving baker_id CLIENT-side. It was REMOVED: it let the caller pick its own tenant. A host
+  // that wants templates must supply onSaveTemplate, which posts to an API route that resolves the
+  // tenant from the token. Fail closed: no host callback, no save.
+  //
+  // No rights attestation here: a template is the baker's design library, seen only by their own
+  // invited customers. The IP gate is the storefront Publish button (ThemePreview) — the one moment
+  // content becomes world-visible.
   async function handleSaveTemplate() {
-    if (!templateName.trim() || !templateRights) return;
+    if (!templateName.trim()) return;
     if (!onSaveTemplate) {
       setSaveMsg({ ok: false, text: 'Saving templates is unavailable here.' });
       return;
@@ -1683,13 +1679,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         minAge:       templateMinAge !== '' ? parseInt(templateMinAge, 10) : null,
         maxAge:       templateMaxAge !== '' ? parseInt(templateMaxAge, 10) : null,
         occasionTagIds: [...templateOccasionIds],
-        rightsAttested: templateRights,   // the baker's own answer — never defaulted
       });
       setSaveMsg({ ok: true, text: 'Template saved!' });
       setTimeout(() => {
         setSaveModal(false); setSaveMsg(null); setTemplateName(''); setTemplateWeight('');
         setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set());
-        setTemplateRights(false);   // never carry an attestation over to the next template
       }, 1200);
     } catch (err) {
       setSaveMsg({ ok: false, text: err.message });
@@ -6259,25 +6253,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
             )}
 
-            {/* Publishing gate — the one shared attestation, not a second copy (ThemePreview's
-                gallery upload renders the same component). */}
-            <RightsAttestation
-              apiClient={apiClient}
-              checked={templateRights}
-              onChange={setTemplateRights}
-              primaryColor={primaryColor}
-              disabled={saving}
-            />
-
             {saveMsg && (
               <div style={{ fontSize: 12, fontWeight: 600, color: saveMsg.ok ? '#4caf50' : '#e53935', marginTop: 8 }}>
                 {saveMsg.text}
               </div>
             )}
             <button
-              style={{ ...s.orderBtn, ...brandBtn, marginTop: 14, opacity: saving || !templateName.trim() || !templateRights ? 0.6 : 1 }}
+              style={{ ...s.orderBtn, ...brandBtn, marginTop: 14, opacity: saving || !templateName.trim() ? 0.6 : 1 }}
               onClick={handleSaveTemplate}
-              disabled={saving || !templateName.trim() || !templateRights}
+              disabled={saving || !templateName.trim()}
             >
               {saving ? 'Saving...' : 'Save as Template'}
             </button>

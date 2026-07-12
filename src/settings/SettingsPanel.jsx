@@ -192,7 +192,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   }
 
   // Publish from the theme preview/customiser — persists theme + brand colours immediately.
-  async function publishStorefront({ storefront_theme_id, primary_color, accent_color, portrait_key, storefront_customizations }) {
+  // rights_attested comes from the publish confirmation in ThemePreview — the baker's affirmation
+  // that they may publish this content (content_attestations). Passed straight through: the API
+  // refuses to take a storefront live without it, and it must never be defaulted here.
+  async function publishStorefront({ storefront_theme_id, primary_color, accent_color, portrait_key, storefront_customizations, rights_attested }) {
     const payload = {
       storefront_theme_id, primary_color, accent_color,
       instagram_handle: profile.instagram_handle, website_url: profile.website_url, tagline: profile.tagline,
@@ -200,7 +203,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
     if (portrait_key !== undefined) payload.portrait_url = portrait_key;  // new portrait (R2 key) or null to clear
     if (storefront_customizations) payload.storefront_customizations = storefront_customizations;
     await apiClient.updateBakerProfile(payload);
-    if (apiClient.publishStorefront) await apiClient.publishStorefront();   // take it live
+    if (apiClient.publishStorefront) await apiClient.publishStorefront(rights_attested);   // take it live
     // Pull back the canonical portrait_url (the public URL the server builds from the key) so it
     // shows when the customiser is reopened — the frontend only had the R2 key.
     let fresh = null;

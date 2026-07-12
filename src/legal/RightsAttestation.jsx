@@ -1,20 +1,21 @@
 import React, { useEffect, useState } from 'react';
 
 // ── Rights attestation (IP / copyright) ───────────────────────────────────────
-// The confirmation a baker ticks when PUBLISHING content to a public surface — saving a design
-// as a template, or adding a storefront gallery photo. Cake themes are overwhelmingly third-party
-// IP (cartoon characters, films, clubs, brands); Spattoo is an intermediary and does not
-// pre-screen, so liability sits with the baker who published (ToS 6.4 / B5.4-B5.6). This is where
-// they take it on, and the API records who vouched for what (content_attestations).
+// The confirmation a baker ticks when they PUBLISH their storefront. Cake themes are overwhelmingly
+// third-party IP (cartoon characters, films, clubs, brands); Spattoo is an intermediary and does not
+// pre-screen, so liability sits with the baker who published (ToS 6.4/6.5, B5.4-B5.6). This is where
+// they take it on, and the API records who vouched (content_attestations).
 //
-// ONE component, used by BOTH publish surfaces (CakeDesigner's save-template modal and
-// ThemePreview's gallery upload). It is deliberately not pasted per call site: the wording, the
-// unticked default, and the "must be an affirmative act" rule are a single rule, so they live in
-// a single unit. Adding a third publish surface means importing this — not copying it.
+// ASKED EXACTLY ONCE PER PUBLISH — nowhere else. Storefront publish is the ONLY moment content
+// becomes visible to the world: until then GET /api/storefront/:slug 404s, so templates, gallery
+// photos and the hero are all still baker<->customer, and the ToS already puts those on the baker.
+// It is deliberately NOT on "Save as Template" (that is the baker's design library — they save
+// constantly) nor on photo upload: a tick clicked fifty times becomes reflex, and a habituated tick
+// is WEAK evidence. The value of an attestation is that it was considered.
 //
-// NOT shown on upload. A customer sending their own photo to their baker is private and low-risk,
-// and prompting every upload is friction with no legal payoff — the blanket ToS warranty accepted
-// once at signup already covers it. Friction belongs at PUBLICATION, which is rare and deliberate.
+// Kept as its own component rather than inlined at the call site so that when a SECOND public
+// surface appears (a custom domain, a marketplace listing), it reuses this wording and this
+// unticked-by-default rule instead of growing a second, drifting copy.
 
 // Shown while the published statement loads, and if it can't be fetched. The RECORDED evidence is
 // always the server's current published version (the API resolves it itself and refuses to publish

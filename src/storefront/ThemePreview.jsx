@@ -47,10 +47,11 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // Gallery: [{ id, key, url, caption }] — key is the R2 key to persist (null while uploading).
   const [gallery, setGallery] = useState([]);
   const [galleryDirty, setGalleryDirty] = useState(false);
-  // Rights attestation for gallery uploads (public surface). Unticked by default; the API
-  // rejects an add without it. Deliberately NOT reset per file — one tick covers the batch the
-  // baker is uploading right now, which is the act they are actually affirming.
-  const [galleryRights, setGalleryRights] = useState(false);
+  // Content-rights attestation — asked ONCE, at Publish (the only moment the storefront becomes
+  // world-visible), never per photo. Unticked every time the confirm opens: an attestation is only
+  // worth something if it was an affirmative act.
+  const [publishConfirm, setPublishConfirm] = useState(false);
+  const [publishRights, setPublishRights] = useState(false);
   // The baker's cake-design templates — an authoritative image source for the gallery (baker picks
   // from these OR uploads). Fetched on open; picking snapshots the design's thumbnail as a photo.
   const [designs, setDesigns] = useState([]);
@@ -115,7 +116,6 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     const files = [...(e.target.files || [])];
     e.target.value = '';
     if (!files.length || !apiClient?.getSignedUploadUrl) return;
-    if (!galleryRights) return;   // no attestation, no upload — the API refuses it anyway
     setGalleryDirty(true);
     for (const file of files) {
       const id = `n${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -130,8 +130,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           // Persist a DB row immediately so the photo is tracked + manageable (no orphans).
           let dbId = id;
           if (apiClient.addStorefrontPhoto) {
-            // The baker's real answer from the attestation checkbox — never hardcoded true.
-            const row = await apiClient.addStorefrontPhoto(key, '', galleryRights);
+            const row = await apiClient.addStorefrontPhoto(key, '');
             dbId = row?.id ?? id;
           }
           setGallery(g => g.map(it => (it.id === id ? { ...it, id: dbId, key } : it)));
@@ -292,7 +291,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     setPublishing(true);
     try {
       // 1. appearance — theme / colours / portrait (PATCH /baker/profile via host)
-      const payload = { storefront_theme_id: themeId, primary_color: primary, accent_color: accent, storefront_customizations: customizations };
+      // rights_attested rides along to the host, which hands it to POST /baker/storefront/publish.
+      // The API REFUSES to go live without it, and records who vouched (content_attestations).
+      const payload = { storefront_theme_id: themeId, primary_color: primary, accent_color: accent, storefront_customizations: customizations, rights_attested: publishRights };
       if (portraitKey !== undefined) payload.portrait_key = portraitKey;   // new portrait (or null to clear)
       await onPublish?.(payload);
       // 2. photo captions + order for persisted rows (metadata only; add/remove already saved)
@@ -306,6 +307,8 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       }
       // 4. take the storefront live (host flips the flag + tracks state)
       setPublished(true);
+      setPublishConfirm(false);
+      setPublishRights(false);
       onClose?.();
     } finally {
       setPublishing(false);
@@ -459,19 +462,10 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           Choose from templates
         </button>
       )}
-      {/* Publishing gate — the gallery is PUBLIC, so an uploaded photo carries the baker's rights
-          attestation exactly like a template. Same shared component as the designer's save-template
-          modal (src/legal/RightsAttestation.jsx) — one wording, one rule, not a second copy.
-          "Choose from templates" above is deliberately NOT gated: that design was already attested
-          when it was saved. */}
-      <RightsAttestation
-        apiClient={apiClient}
-        checked={galleryRights}
-        onChange={setGalleryRights}
-        primaryColor={primary}
-      />
-      <label style={{ ...s.addPhotos, opacity: galleryRights ? 1 : 0.5, cursor: galleryRights ? 'pointer' : 'not-allowed' }}>
-        <input type="file" accept="image/*" multiple onChange={addPhotos} disabled={!galleryRights} style={{ display: 'none' }} />
+      {/* No attestation here — a photo isn't public until the storefront is. The rights gate is the
+          Publish button (see the confirm below). */}
+      <label style={s.addPhotos}>
+        <input type="file" accept="image/*" multiple onChange={addPhotos} style={{ display: 'none' }} />
         + Upload photos
       </label>
     </>),
@@ -515,7 +509,8 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {isWide && published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
-          <button type="button" style={{ ...s.publish, background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})`, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy} onClick={publish}>
+          <button type="button" style={{ ...s.publish, background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})`, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy}
+            onClick={() => { setPublishRights(false); setPublishConfirm(true); }}>
             {publishing ? 'Publishing…' : busy ? 'Uploading…' : published ? 'Update' : 'Publish'}
           </button>
         </div>
@@ -619,6 +614,45 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Publish confirmation — the ONE content-rights gate ──────────────────────────────────
+          This is the only moment the storefront becomes visible to the WORLD, and cake themes are
+          overwhelmingly third-party IP. Spattoo does not pre-screen, so the baker affirms here that
+          they may publish what they are publishing, and the API records it (content_attestations).
+          Asked at Publish — never per design save or per photo: a tick clicked fifty times is
+          reflex, not evidence. Re-publishing (the "Update" button) re-affirms, which is right —
+          the storefront now contains cakes that weren't there last time. */}
+      {publishConfirm && (
+        <div style={s.confirmOverlay} onClick={() => !publishing && setPublishConfirm(false)}>
+          <div style={s.confirmCard} onClick={e => e.stopPropagation()}>
+            <div style={s.confirmTitle}>{published ? 'Update your storefront' : 'Publish your storefront'}</div>
+            <p style={s.confirmBody}>
+              {published
+                ? 'Your changes will go live on your public storefront.'
+                : 'Your storefront will go live and anyone with the link can see it.'}
+            </p>
+            <RightsAttestation
+              apiClient={apiClient}
+              checked={publishRights}
+              onChange={setPublishRights}
+              primaryColor={primary}
+              disabled={publishing}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button type="button" style={s.confirmCancel} disabled={publishing}
+                onClick={() => setPublishConfirm(false)}>
+                Cancel
+              </button>
+              <button type="button"
+                style={{ ...s.publish, flex: 1, background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})`, opacity: (!publishRights || publishing) ? 0.5 : 1, cursor: (!publishRights || publishing) ? 'not-allowed' : 'pointer' }}
+                disabled={!publishRights || publishing}
+                onClick={publish}>
+                {publishing ? 'Publishing…' : published ? 'Update' : 'Publish'}
+              </button>
             </div>
           </div>
         </div>
@@ -795,6 +829,11 @@ const s = {
   galleryUploading: { position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.55)', backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' },
   galleryCaption: { flex: 1, minWidth: 0, padding: '7px 9px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12, fontFamily: FONT, color: '#2C4433', outline: 'none' },
   galleryRemove: { flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: '1px solid #E3D3D3', background: '#fff', color: '#C0392B', fontSize: 16, lineHeight: 1, cursor: 'pointer' },
+  confirmOverlay: { position: 'fixed', inset: 0, background: 'rgba(20,28,22,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 },
+  confirmCard: { background: '#fff', borderRadius: 18, padding: '22px 22px 18px', width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', fontFamily: FONT },
+  confirmTitle: { fontSize: 17, fontWeight: 800, color: '#2C4433' },
+  confirmBody: { fontSize: 13, lineHeight: 1.5, color: '#6B7A6F', margin: '8px 0 4px' },
+  confirmCancel: { padding: '11px 18px', borderRadius: 12, border: '1.5px solid #D9DED9', background: '#fff', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT, flexShrink: 0 },
   addPhotos: { display: 'block', width: '100%', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
   // "Choose from your designs" — the authoritative (solid) action; upload is the dashed secondary one.
   pickDesigns: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', marginTop: 10, padding: '10px', borderRadius: 10, border: 'none', background: '#2C4433', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
