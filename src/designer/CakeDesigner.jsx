@@ -451,14 +451,18 @@ function supportsTopAndSide(el) {
 // ONE preview tile shared by the cream-piping popup AND the placement chooser: a full-width
 // 3D preview (passed as children) with a corner add/remove checkbox and a centred name label
 // BELOW it (no overlay strip). Keeps both popups visually identical and on one implementation.
-function PreviewTile({ checked, onToggle, label, height = 104, children }) {
+// `locked` = this tile may be ADDED but not REMOVED (allowed_actions.delete === false). The checkbox is
+// the remove control on this path, so a lock has to reach it — otherwise "non-deletable" would still be
+// removable by unticking, and the flag would mean nothing. Config-gated by the caller; never a type branch.
+function PreviewTile({ checked, onToggle, label, height = 104, locked = false, children }) {
+  const frozen = checked && locked;
   return (
     <div>
       <div style={{ position: 'relative', width: '100%', height, borderRadius: 10, overflow: 'hidden', border: `1.5px solid ${checked ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
         {children}
-        <label title={checked ? 'Remove from cake' : 'Add to cake'} onPointerDown={e => e.stopPropagation()}
-          style={{ position: 'absolute', top: 5, left: 5, width: 22, height: 22, borderRadius: 6, background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <input type="checkbox" checked={checked} onChange={onToggle} style={{ accentColor: '#1a1a1a', width: 15, height: 15, cursor: 'pointer', margin: 0 }} />
+        <label title={frozen ? 'This decoration can’t be removed' : checked ? 'Remove from cake' : 'Add to cake'} onPointerDown={e => e.stopPropagation()}
+          style={{ position: 'absolute', top: 5, left: 5, width: 22, height: 22, borderRadius: 6, background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: frozen ? 'not-allowed' : 'pointer', opacity: frozen ? 0.55 : 1 }}>
+          <input type="checkbox" checked={checked} disabled={frozen} onChange={onToggle} style={{ accentColor: '#1a1a1a', width: 15, height: 15, cursor: frozen ? 'not-allowed' : 'pointer', margin: 0 }} />
         </label>
       </div>
       {label && (
@@ -485,7 +489,10 @@ function TiltRow({ tiltAngle, onChange }) {
 // an INDEPENDENT add/remove checkbox (check = place, uncheck = remove). A placed slot gets its own
 // Size dial + Tilt — the SAME SizeDial the cream-piping popup uses (no clamp; sizes freely).
 // `slots` = [{ key, placement, tierIndex, label, checked, sticker }]; `onUpdate(id, changes)` edits.
-function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], onToggle, onUpdate }) {
+// `locked` (allowed_actions.delete === false) → a slot may be ADDED but not un-ticked. Unticking a placed
+// slot removes the instance, so the lock has to reach the tile as well as the Remove button — otherwise a
+// "non-deletable" element is still removable here and the flag means nothing.
+function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], locked = false, onToggle, onUpdate }) {
   const cap = { fontSize: 8.5, fontWeight: 700, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 };
   return (
     <div style={{ width: '100%' }}>
@@ -493,7 +500,7 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {slots.map(slot => (
           <div key={slot.key}>
-            <PreviewTile checked={slot.checked} onToggle={() => onToggle(slot)} label={slot.label} height={116}>
+            <PreviewTile checked={slot.checked} onToggle={() => onToggle(slot)} label={slot.label} height={116} locked={locked}>
               <TopperPreview glbUrl={previewUrl} placement={slot.placement} mode={slot.mode} tiers={tiers} tierIndex={slot.tierIndex} baseRotation={baseRotation} />
             </PreviewTile>
             {slot.sticker && (
@@ -2265,6 +2272,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   // Add (at config defaults) or remove the current card's piping on a ring. isOn = the
   // ring currently has this element's layer (so the toggle removes it); else add it.
+  // Take this piping element OFF the cake entirely — every layer it has, on every tier and zone. The
+  // per-zone checkbox above is the fine-grained control; this is the card-level "Remove" that the sticker,
+  // cluster, foil and cream cards all have, so a piping element behaves like every other decoration.
+  // Gated by the caller on allowed_actions.delete (config, not element type).
+  function removePipingCard(cardId) {
+    design.tiers.forEach((t, i) => {
+      (t.topPipings    ?? []).forEach(p => { if (p.cardId === cardId) removePipingLayer(i, 'rim',   p.layerId); });
+      (t.bottomPipings ?? []).forEach(p => { if (p.cardId === cardId) removePipingLayer(i, 'board', p.layerId); });
+    });
+    dropPipingCard(cardId);
+    setExpandedPipingId(null);
+  }
+
   function togglePipingZone(tierIndex, zone, isOn) {
     if (isOn) {
       const existing = ringPiping(tierIndex, zone);
@@ -3051,6 +3071,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
     window.__getSelection = () => [...selectedStickerIds];
+    // Piping lives on the tiers, not in `stickers` — expose it so a test can assert what a piping
+    // element actually put on the cake (and that Remove took it off), not just what the popup shows.
+    window.__getPiping = () => design.tiers.flatMap((t, i) => [
+      ...(t.topPipings    ?? []).map(p => ({ tierIndex: i, zone: 'rim',   cardId: p.cardId, layerId: p.layerId })),
+      ...(t.bottomPipings ?? []).map(p => ({ tierIndex: i, zone: 'board', cardId: p.cardId, layerId: p.layerId })),
+    ]);
     window.__listElements = () => [...elementById.values()].map(e => ({
       id: e.id, name: e.name, mode: e.placement_config?.top_surface,
       glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
@@ -4055,7 +4081,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {surfaces.map(su => {
               const on = all.some(s => scatterGroupOf(s) === su.group);
               return (
-                <PreviewTile key={su.zone} checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={96}>
+                <PreviewTile key={su.zone} checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={96}
+                  locked={!(caps?.delete ?? true)}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
                   <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={el?.placement_config?.[su.zone]} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
                 </PreviewTile>
@@ -4106,8 +4133,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           </div>
         )}
-        <button onClick={() => { all.forEach(s => removeSticker(s.id)); clearAllSelections(); }}
-          style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove all</button>
+        {(caps?.delete ?? true) && (
+          <button onClick={() => { all.forEach(s => removeSticker(s.id)); clearAllSelections(); }}
+            style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove all</button>
+        )}
       </div>
     );
   }
@@ -4194,7 +4223,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     };
     return (
       <PlacementChooser key="place" previewUrl={srcEl.image_url} tiers={canvasConfig.tiers}
-        baseRotation={facingOffsetRadians(pc)} slots={slots} onToggle={onToggle} onUpdate={updateSticker} />
+        baseRotation={facingOffsetRadians(pc)} slots={slots} locked={!(srcEl.allowed_actions?.delete ?? true)}
+        onToggle={onToggle} onUpdate={updateSticker} />
     );
   }
 
@@ -5764,6 +5794,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               //    a tier's wall, so we offer it on EVERY tier's side. Non-adjustable board styles
               //    are plate rings, valid on the bottom tier only.
               const yAdjustable = !!pipingPopupEl.placement_config?.bottom_y_adjustable;
+              // Deletability is CONFIG — the element's allowed_actions.delete, exactly like gradient below.
+              // Default true, so an element that never set the flag behaves as it always has.
+              const pipingDeletable = pipingPopupEl.allowed_actions?.delete ?? true;
               const allowsBoard = allowed.includes('board');
               let rimFull = false;
               const candidates = [];
@@ -5837,6 +5870,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
                     {/* Shared preview tile (same component as the placement chooser). */}
                     <PreviewTile checked={!!applied} label={label}
+                      locked={!pipingDeletable}
                       onToggle={() => togglePipingZone(tierIndex, zone, !!applied)}>
                       <PipingPreview zone={zone} glbUrl={previewGlb} color={color} size={size}
                         tiers={canvasConfig.tiers} tierIndex={tierIndex}
@@ -6075,6 +6109,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })}
+              {/* Card-level Remove — takes the whole decoration off the cake (every tier × zone), the same
+                  action the sticker/cluster/foil/cream cards offer. The per-zone checkboxes above stay as
+                  the fine-grained control. Config-gated on allowed_actions.delete; hidden when it isn't
+                  on the cake at all (nothing to remove). */}
+              {pipingDeletable && candidates.some(c => ringPiping(c.tierIndex, c.zone)) && (
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
+                  <button
+                    onPointerDown={e => { e.stopPropagation(); removePipingCard(pipingPopupEl.cardId); }}
+                    style={{ fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>
+                    Remove
+                  </button>
+                </div>
+              )}
               </>);
               })()}
                   </div>

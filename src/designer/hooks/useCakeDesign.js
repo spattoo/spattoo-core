@@ -746,7 +746,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             duplicate: element.allowed_actions?.duplicate ?? true,
             color:     element.allowed_actions?.color     ?? false,
             gradient:  element.allowed_actions?.gradient  ?? false,
-            delete:    true,
+            // Was hardcoded `true`, which made admin's "deletable" checkbox DEAD CONFIG — the one
+            // capability that ignored the element. Defaults to true, so an element that never set the
+            // flag is deletable exactly as before; only an explicit `false` pins it to the cake.
+            delete:    element.allowed_actions?.delete    ?? true,
             move:      element.allowed_actions?.move      ?? false,
             tilt:      element.allowed_actions?.tilt      ?? true,
           },
