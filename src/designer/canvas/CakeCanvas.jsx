@@ -2441,7 +2441,9 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
 // SAME `toCanvasConfig` the live editor uses (one defaulting rule, INVARIANTS #3) and renders the
 // SAME `CakeThumbnailScene` as the thumbnail capture (one renderer, #2). Unlike CakeThumbnailCanvas
 // (fixed 400×400, parked off-screen for PNG capture) this fills its parent and is meant to be seen.
-export function CakePreview({ design, autoRotate = true, style }) {
+// `enableZoom` is opt-in and defaults OFF: every existing caller is a small inline preview tile where a
+// stray scroll must not resize the cake. A full-size stage (the Cake Shape Studio) turns it on.
+export function CakePreview({ design, autoRotate = true, style, enableZoom = false }) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
@@ -2454,7 +2456,7 @@ export function CakePreview({ design, autoRotate = true, style }) {
         <Suspense fallback={null}>
           <CakeThumbnailScene config={config} />
         </Suspense>
-        <OrbitControls enableZoom={false} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={[0, 2, 0]} />
+        <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={[0, 2, 0]} />
       </Canvas>
     </div>
   );

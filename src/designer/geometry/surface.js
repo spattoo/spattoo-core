@@ -10,27 +10,55 @@
 // angle, so the round path stays byte-identical to the old cos/sin math.
 
 import { SHEET_CORNER_RADIUS, SHEET_PIPING_CORNER_RADIUS } from '../constants.js';
+import { cakeShapeDef } from '../cakeShapes.js';
+import {
+  scaledOutline, polygonPerimeter, pointInPolygon, nearestOnPolygon, scalePolygon, polygonRadius,
+} from './shapes.js';
 
-// Round: { kind:'round', radius }.  Rect (sheet): { kind:'rect', halfW, halfD, cornerR, pipingCornerR }.
+// THREE kinds, and the third is the general case:
+//   { kind:'round',   radius }                                   — analytic circle (the cylinder path)
+//   { kind:'rect',    halfW, halfD, cornerR, pipingCornerR }     — analytic rounded rectangle (sheet)
+//   { kind:'outline', halfW, halfD, outline: [{x,z}…] }          — ANY footprint (heart, butterfly, …)
+//
+// Round and rect stay analytic on purpose: every cake that exists today must take exactly the code it
+// took before, so adding shapes cannot regress one. Everything else routes through the polygon ops,
+// which means a new shape is an outline — data — and no consumer of this module changes.
+//
 // Width (X) is the long side, depth (Z) the short side. `pipingCornerR` is the gentler corner
 // the piping ring follows (≥ body cornerR, capped so small cakes don't over-round).
 export function tierShape(tier) {
-  if (tier?.shape === 'rect') {
+  const def = cakeShapeDef(tier?.shape);        // unknown/absent key → round, never a crash
+
+  if (def.family === 'rounded_rect' || tier?.shape === 'rect') {
+    const square = !!def.config?.square;
     const halfW = (tier.width ?? 2.16) / 2;
-    const halfD = (tier.depth ?? 1.56) / 2;
+    const halfD = (square ? (tier.width ?? 2.16) : (tier.depth ?? 1.56)) / 2;
     const cornerR = tier.cornerR ?? SHEET_CORNER_RADIUS;
     return {
       kind: 'rect', halfW, halfD, cornerR,
       pipingCornerR: Math.max(cornerR, Math.min(SHEET_PIPING_CORNER_RADIUS, 0.55 * Math.min(halfW, halfD))),
     };
   }
+
+  if (def.family !== 'circle') {
+    // An outline shape is sized by the SAME two numbers a sheet cake uses, so one set of size
+    // controls drives every shape. Falls back to the tier's radius when width/depth aren't authored.
+    const r = tier.radius ?? 1.2;
+    const halfW = (tier.width ?? r * 2) / 2;
+    const halfD = (tier.depth ?? r * 2) / 2;
+    const outline = scaledOutline(def.family, def.config, halfW, halfD);
+    if (outline) return { kind: 'outline', halfW, halfD, outline };
+  }
+
   return { kind: 'round', radius: tier.radius ?? 1.2 };
 }
 
 // Largest horizontal half-extent — a "bounding radius" so radius-based incidental
-// placement (board size, toolbar offsets, topper scale) keeps working for both shapes.
+// placement (board size, toolbar offsets, topper scale) keeps working for every shape.
 export function boundingRadius(shape) {
-  return shape.kind === 'rect' ? Math.max(shape.halfW, shape.halfD) : shape.radius;
+  if (shape.kind === 'rect') return Math.max(shape.halfW, shape.halfD);
+  if (shape.kind === 'outline') return polygonRadius(shape.outline);
+  return shape.radius;
 }
 
 export function circlePerimeter(r) {
@@ -86,6 +114,7 @@ export function roundedRectPerimeter(halfW, halfD, cornerR) {
 
 // Perimeter for a shape descriptor (the common entry point for placement/hit-testing).
 export function perimeter(shape) {
+  if (shape.kind === 'outline') return polygonPerimeter(shape.outline);
   return shape.kind === 'rect'
     ? roundedRectPerimeter(shape.halfW, shape.halfD, shape.cornerR)
     : circlePerimeter(shape.radius);
@@ -95,6 +124,7 @@ export function perimeter(shape) {
 // around corners. Straight runs still sit on the body's faces (±halfW / ±halfD); only
 // the corner is rounded more.
 export function pipingPerimeter(shape) {
+  if (shape.kind === 'outline') return polygonPerimeter(shape.outline);
   return shape.kind === 'rect'
     ? roundedRectPerimeter(shape.halfW, shape.halfD, shape.pipingCornerR ?? shape.cornerR)
     : circlePerimeter(shape.radius);
@@ -106,6 +136,14 @@ export function pipingPerimeter(shape) {
 //   Rect:  clamp each axis independently to halfW·k / halfD·k, so a decoration can reach
 //          the rectangle's corners instead of being trapped in an inscribed circle.
 export function topClamp(shape, x, z, k = 0.92) {
+  if (shape.kind === 'outline') {
+    // The footprint shrunk by k, keeping its silhouette — a decoration on a heart stays inside the
+    // HEART, not inside some inscribed circle that would strand the lobes.
+    const inner = scalePolygon(shape.outline, k);
+    if (pointInPolygon(inner, x, z)) return { x, z };
+    const p = nearestOnPolygon(inner, x, z);
+    return { x: p.x, z: p.z };
+  }
   if (shape.kind === 'rect') {
     const mx = shape.halfW * k, mz = shape.halfD * k;
     return { x: Math.max(-mx, Math.min(mx, x)), z: Math.max(-mz, Math.min(mz, z)) };
@@ -121,6 +159,12 @@ export function topClamp(shape, x, z, k = 0.92) {
 // `stand` element (point base) passes margin 0 and can sit at the rim; a flat decal passes half its
 // size so its outer edge meets the rim. Mode/size-derived by the caller — never a config flag.
 export function topClampInset(shape, x, z, margin = 0) {
+  if (shape.kind === 'outline') {
+    // Absolute margin → the equivalent shrink factor on the shape's smaller half-extent, so the inset
+    // is (very nearly) `margin` all the way round without running a true polygon offset on the drag path.
+    const half = Math.max(1e-6, Math.min(shape.halfW, shape.halfD));
+    return topClamp(shape, x, z, Math.max(0, 1 - margin / half));
+  }
   if (shape.kind === 'rect') {
     const mx = Math.max(0, shape.halfW - margin), mz = Math.max(0, shape.halfD - margin);
     return { x: Math.max(-mx, Math.min(mx, x)), z: Math.max(-mz, Math.min(mz, z)) };
@@ -135,6 +179,10 @@ export function topClampInset(shape, x, z, margin = 0) {
 // (where a centre-seated element would bury its lower half in the cake). Round → project to the
 // radius; rect → nearest point on the rounded-rect perimeter (via nearestU).
 export function snapToRim(shape, x, z) {
+  if (shape.kind === 'outline') {
+    const p = nearestOnPolygon(shape.outline, x, z);
+    return { x: p.x, z: p.z };
+  }
   if (shape.kind !== 'rect') {
     const r = Math.hypot(x, z) || 1;
     return { x: (x / r) * shape.radius, z: (z / r) * shape.radius };
@@ -146,6 +194,7 @@ export function snapToRim(shape, x, z) {
 
 // Is (x,z) on the top surface (margin k)? Drives tap-to-place hit testing.
 export function topContains(shape, x, z, k = 1) {
+  if (shape.kind === 'outline') return pointInPolygon(k === 1 ? shape.outline : scalePolygon(shape.outline, k), x, z);
   return shape.kind === 'rect'
     ? Math.abs(x) <= shape.halfW * k && Math.abs(z) <= shape.halfD * k
     : Math.hypot(x, z) <= shape.radius * k;
