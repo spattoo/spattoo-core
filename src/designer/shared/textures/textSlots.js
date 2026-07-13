@@ -29,6 +29,11 @@ export const DEFAULT_TEXT_STYLE = Object.freeze({
   fill: '#5A3410',
   hatch: { color: '#F3E3C8', angle: -35, gap: 0.055, width: 0.014 }, // gap/width are fractions of glyph height
   outline: { color: '#3F230A', width: 0.05, wobble: 0.35 },          // width is a fraction of glyph height
+  // 'fondant' only: the shading that makes a glyph read as a rolled, puffy piece of icing. `bevel` is a
+  // fraction of the STROKE's own thickness (not of glyph height — see strokeThickness), so one style
+  // holds for a fat "4" and a thin "Amara" alike; the shadow lengths are fractions of glyph height;
+  // `light` is the direction the light comes FROM, in degrees.
+  fondant: { light: 135, bevel: 0.5, gloss: 0.55, ao: 0.45, shadow_blur: 0.08, shadow_dy: 0.04, shadow_alpha: 0.35 },
   tracking: 0,      // extra letter-spacing, fraction of glyph height
   fit: 0.92,        // how much of the slot the text fills
 });
@@ -37,7 +42,7 @@ export const DEFAULT_TEXT_STYLE = Object.freeze({
 // restating the whole preset. One level of nesting is all the shape has.
 export function resolveStyle(preset, override) {
   const out = { ...DEFAULT_TEXT_STYLE, ...(preset || {}), ...(override || {}) };
-  for (const k of ['font', 'hatch', 'outline']) {
+  for (const k of ['font', 'hatch', 'outline', 'fondant']) {
     out[k] = { ...DEFAULT_TEXT_STYLE[k], ...(preset?.[k] || {}), ...(override?.[k] || {}) };
   }
   return out;
@@ -178,7 +183,174 @@ function inkFlat(ctx, text, size, style) {
   eachGlyph(ctx, text, size, style, (ch, cx) => ctx.fillText(ch, cx, 0));
 }
 
-export const ALGORITHMS = Object.freeze({ scribble: inkScribble, flat: inkFlat });
+// ── 'fondant' — a rolled, puffy piece of icing ────────────────────────────────
+// Every ramp below is derived from the TYPED glyph's own mask, which is the whole point: the shading
+// follows the shape it is lighting, so the look transfers to a "7" or to "Amara". (Lifting the shading
+// out of the artwork's own baked-in numeral cannot: its highlights run along THAT numeral's strokes.)
+
+// A blurred, offset copy of `src` in a solid colour. Canvas-2D's drop shadow IS a gaussian blur, and it
+// is the only blur we may use: `ctx.filter` is absent on Safari 15.0–15.3 and our floor is Safari 15, so
+// filter-based bevels would silently vanish on real phones. Parking the source off-canvas and steering
+// the shadow back into frame renders the shadow ALONE.
+function softCopy(src, blurPx, dx, dy, color) {
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const x = c.getContext('2d');
+  const OFF = src.width + src.height;
+  x.shadowColor = color;
+  x.shadowBlur = Math.max(0.01, blurPx);
+  x.shadowOffsetX = OFF + dx;
+  x.shadowOffsetY = dy;
+  x.drawImage(src, -OFF, 0);
+  return c;
+}
+
+// `a` with `b` punched out of it — only b's ALPHA matters, so the pair below can carry any colour.
+function cutOut(a, b) {
+  const c = document.createElement('canvas');
+  c.width = a.width; c.height = a.height;
+  const x = c.getContext('2d');
+  x.drawImage(a, 0, 0);
+  x.globalCompositeOperation = 'destination-out';
+  x.drawImage(b, 0, 0);
+  return c;
+}
+
+// Shading is a TINT of the icing, never black/white: darkening yellow toward black gives olive, and
+// lifting it toward white gives chalk. Fondant lit by a warm kitchen light stays the colour it is.
+function shiftColor(hex, amount) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  const n = m ? parseInt(m[1], 16) : 0x808080;
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => (
+    amount >= 0 ? v + (255 - v) * amount : v * (1 + amount)
+  ));
+  return `rgb(${ch.map(v => Math.round(Math.max(0, Math.min(255, v)))).join(',')})`;
+}
+
+// The typed glyphs' stroke thickness in px, estimated as 2·area/perimeter. This is what makes the look
+// scale-free, and it is not a nicety: a bevel sized as a fraction of GLYPH HEIGHT swallows a thin
+// "Amara" whole while barely creasing a fat "4". Fondant is rolled to a thickness — the ramps follow the
+// STROKE, so a style tuned on one value survives every value a customer types.
+function strokeThickness(mask, ring, nominal) {
+  const area = alphaArea(mask);
+  const perimeter = alphaArea(ring) / Math.max(1, nominal);   // a ring of width `nominal` covers perim·nominal
+  if (!area || !perimeter) return nominal;
+  return Math.max(2, (2 * area) / perimeter);
+}
+
+function alphaArea(canvas) {
+  const x = canvas.getContext('2d', { willReadFrequently: true });
+  const d = x.getImageData(0, 0, canvas.width, canvas.height).data;
+  let n = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++;
+  return n;
+}
+
+function inkFondant(ctx, text, size, style) {
+  const f = { ...DEFAULT_TEXT_STYLE.fondant, ...(style.fondant || {}) };
+  const ow = (style.outline?.width || 0) * size;
+
+  const pad = Math.ceil(size * 0.5 + size * 0.35 + ow * 3);
+  const w = Math.max(1, Math.ceil(ctx.measureText(text).width + (style.tracking || 0) * size * text.length) + pad * 2);
+  const h = Math.max(1, Math.ceil(size * 2) + pad * 2);
+  const layer = () => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d');
+    x.font = ctx.font;
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    return [c, x];
+  };
+  const glyphs = (x, op) => {
+    x.save();
+    x.translate(w / 2, h / 2);
+    eachGlyph(x, text, size, style, (ch, cx) => op(x, ch, cx));
+    x.restore();
+  };
+
+  // The mask every ramp is derived from.
+  const [mask, mx] = layer();
+  mx.fillStyle = '#000';
+  glyphs(mx, (x, ch, cx) => x.fillText(ch, cx, 0));
+
+  // The silhouette, at a nominal width — it measures the perimeter, then it becomes the rim.
+  const nominal = Math.max(2, size * 0.04);
+  const [ring, rx] = layer();
+  rx.strokeStyle = '#000';
+  rx.lineJoin = 'round';
+  rx.lineCap = 'round';
+  rx.lineWidth = nominal;
+  glyphs(rx, (x, ch, cx) => x.strokeText(ch, cx, 0));
+
+  // Every ramp below is a fraction of the STROKE, not of the glyph — see strokeThickness.
+  const bev = Math.max(1, Math.max(0.05, Math.min(1, f.bevel ?? 0.5)) * strokeThickness(mask, ring, nominal) * 0.5);
+  const shade = shiftColor(style.fill, -0.55);
+  const lit = shiftColor(style.fill, 0.75);
+
+  // Light comes FROM `light`°. Canvas y grows downward, so the vertical component is negated.
+  const th = ((f.light ?? 135) * Math.PI) / 180;
+  const dx = Math.cos(th) * bev;
+  const dy = -Math.sin(th) * bev;
+
+  // The emboss pair: the mask pushed toward the light, and away from it. Where TOWARD survives but AWAY
+  // does not, the surface faces the light — the lit crescent. The reverse is the shaded far edge. This
+  // difference-of-offsets is what reads as roundness.
+  const toward = softCopy(mask, bev, dx, dy, lit);
+  const away = softCopy(mask, bev, -dx, -dy, shade);
+  const litBand = cutOut(toward, softCopy(mask, bev, -dx, -dy, '#000'));
+  const shadeBand = cutOut(away, softCopy(mask, bev, dx, dy, '#000'));
+
+  // The all-round inner rim: the silhouette blurred to the bevel width, of which only the inner half
+  // survives the source-atop clip. Without it a glyph reads as a flat sticker lit from one side.
+  const [rimSrc, rimX] = layer();
+  rimX.strokeStyle = '#000';
+  rimX.lineJoin = 'round';
+  rimX.lineCap = 'round';
+  rimX.lineWidth = bev * 1.1;
+  glyphs(rimX, (x, ch, cx) => x.strokeText(ch, cx, 0));
+  const rim = softCopy(rimSrc, bev * 0.8, 0, 0, shade);
+
+  // Build the icing on its own layer so every ramp clips to the glyph (source-atop) and never leaks onto
+  // the artwork.
+  const [lay, lx] = layer();
+  lx.fillStyle = style.fill;
+  glyphs(lx, (x, ch, cx) => x.fillText(ch, cx, 0));
+
+  const clamp01 = v => Math.max(0, Math.min(1, v ?? 0));
+  lx.globalCompositeOperation = 'source-atop';
+  lx.globalAlpha = clamp01(f.ao) * 0.5;
+  lx.drawImage(rim, 0, 0);
+  lx.globalAlpha = clamp01(f.ao);
+  lx.drawImage(shadeBand, 0, 0);
+  lx.globalAlpha = clamp01(f.gloss);
+  lx.drawImage(litBand, 0, 0);
+  lx.globalAlpha = 1;
+
+  // The outline sits UNDER the icing (only its outer half shows), exactly as in `scribble`.
+  if (ow > 0) {
+    ctx.save();
+    ctx.strokeStyle = style.outline.color;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = ow * 2;
+    eachGlyph(ctx, text, size, style, (ch, cx) => ctx.strokeText(ch, cx, 0));
+    ctx.restore();
+  }
+
+  // Stamped with a contact shadow — the piece sits ON the plaque rather than being printed on it.
+  ctx.save();
+  const sa = Math.max(0, Math.min(1, f.shadow_alpha ?? 0));
+  if (sa > 0) {
+    ctx.shadowColor = `rgba(0,0,0,${sa})`;
+    ctx.shadowBlur = (f.shadow_blur || 0) * size;
+    ctx.shadowOffsetY = (f.shadow_dy || 0) * size;
+  }
+  ctx.drawImage(lay, -w / 2, -h / 2);
+  ctx.restore();
+}
+
+export const ALGORITHMS = Object.freeze({ scribble: inkScribble, flat: inkFlat, fondant: inkFondant });
 
 // Render one slot's value into a W×H canvas context. `rect` is normalized (0..1), so the same slot
 // renders identically into the studio's 1024² frame and into whatever natural size the artwork has on
@@ -304,6 +476,68 @@ export function bakeArtwork(S, artworkImg, patches, slots) {
 // Rejects any candidate that (a) touches a transparent pixel — that's off the artwork — or (b) overlaps
 // the slot, which would sample the very value we're covering. Runs on a small analysis raster, so cost
 // is independent of the artwork's real resolution. Returns { x, y, s } (centre + side, normalized).
+// The colour of the value ALREADY PRINTED in the slot — the artwork's own baked-in "4". It is the one
+// thing about the reference numeral that transfers to a typed value (its shading cannot: that follows
+// the 4's own strokes). Seeded onto the slot on add, so a placeholder inherits the artwork's icing
+// instead of a brown that belongs to no cake.
+//
+// "Ink" = opaque pixels inside the box that are NOT the plaque it sits on. The plaque reference comes
+// from findCleanSource — the same ring-search that decides what gets cloned over the value — so the two
+// cannot disagree about which surface is the background. The dominant remaining colour wins (modal
+// bucket of a coarse quantization, then averaged within that bucket): a mean over all ink pixels would
+// blend a numeral's highlight and its shadow into a muddy midtone that appears nowhere in the art.
+export function findInkColor(img, rect, { A = 200, minPixels = 24 } = {}) {
+  const c = document.createElement('canvas');
+  c.width = A; c.height = A;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, A, A);
+  let d;
+  try { d = x.getImageData(0, 0, A, A).data; } catch { return null; }   // CORS-tainted → don't guess
+
+  const at = (px, py) => ((py * A) + px) * 4;
+
+  // The plaque's colour, averaged over the clean sample.
+  const src = findCleanSource(img, rect);
+  let pr = 0, pg = 0, pb = 0, pn = 0;
+  const half = Math.max(1, Math.round((src.s * A) / 2));
+  const scx = Math.round(src.x * A), scy = Math.round(src.y * A);
+  for (let py = Math.max(0, scy - half); py < Math.min(A, scy + half); py++) {
+    for (let px = Math.max(0, scx - half); px < Math.min(A, scx + half); px++) {
+      const i = at(px, py);
+      if (d[i + 3] < 250) continue;
+      pr += d[i]; pg += d[i + 1]; pb += d[i + 2]; pn++;
+    }
+  }
+  if (!pn) return null;
+  pr /= pn; pg /= pn; pb /= pn;
+
+  // Ink pixels inside the box, bucketed.
+  const x0 = Math.max(0, Math.round((rect.x - rect.w / 2) * A));
+  const x1 = Math.min(A, Math.round((rect.x + rect.w / 2) * A));
+  const y0 = Math.max(0, Math.round((rect.y - rect.h / 2) * A));
+  const y1 = Math.min(A, Math.round((rect.y + rect.h / 2) * A));
+  const buckets = new Map();
+  for (let py = y0; py < y1; py++) {
+    for (let px = x0; px < x1; px++) {
+      const i = at(px, py);
+      if (d[i + 3] < 250) continue;
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (Math.hypot(r - pr, g - pg, b - pb) < 48) continue;            // that's the plaque, not the value
+      const k = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);           // 12-bit quantization
+      const acc = buckets.get(k) || { n: 0, r: 0, g: 0, b: 0 };
+      acc.n++; acc.r += r; acc.g += g; acc.b += b;
+      buckets.set(k, acc);
+    }
+  }
+
+  let best = null;
+  for (const acc of buckets.values()) if (!best || acc.n > best.n) best = acc;
+  if (!best || best.n < minPixels) return null;                          // nothing printed there — keep the preset
+
+  const hex = v => Math.round(v).toString(16).padStart(2, '0');
+  return `#${hex(best.r / best.n)}${hex(best.g / best.n)}${hex(best.b / best.n)}`;
+}
+
 export function findCleanSource(img, rect, { A = 200, grid = 44 } = {}) {
   // Sample side: small enough to find, big enough to carry the paper's grain.
   const s = Math.min(0.10, Math.max(0.04, Math.min(rect.w, rect.h) / 3));

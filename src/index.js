@@ -48,7 +48,7 @@ export { SOLID_FINISHES, SOLID_FINISH_ORDER, DEFAULT_SOLID_FINISH, buildSolidWal
 export {
   TEXT_SLOT_KINDS, DEFAULT_TEXT_STYLE, ALGORITHMS as TEXT_ALGORITHMS, resolveStyle as resolveTextStyle,
   loadStyleFont, loadSlotFonts, renderTextSlot, drawTextSlots, composeTextTopper,
-  applyPatches, coverPatches, bakeArtwork, findCleanSource,
+  applyPatches, coverPatches, bakeArtwork, findCleanSource, findInkColor,
 } from './designer/shared/textures/textSlots.js';
 export { TEXT_STYLES, applyTextStyleConfig, textStyleOf } from './designer/textStyles.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
