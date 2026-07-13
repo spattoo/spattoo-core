@@ -23,6 +23,7 @@ import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeaf
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
 import MyDecorationStudio from './decorations/MyDecorationStudio.jsx';
+import MyAssetsPanel from './decorations/MyAssetsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
@@ -1209,6 +1210,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // "Add your own decoration" — the upload studio (decorations/MyDecorationStudio.jsx). Same screen for
   // a baker and a customer; the API decides who ends up owning the result.
   const [decorStudioOpen, setDecorStudioOpen] = useState(false);
+  // "My images" — everything this person uploaded (baker_uploads), private to them. `promoting` holds
+  // the upload a BAKER is releasing into his library: the studio reopens in promote mode to author its
+  // behaviour (kind, zones, hug/stand, colours). Null = the studio is in plain upload mode.
+  const [myAssetsOpen, setMyAssetsOpen] = useState(false);
+  const [promoting, setPromoting] = useState(null);
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
   // Luster dust: colour for new flicks, which tier is being dusted, and the selected splash to aim.
@@ -5183,6 +5189,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ fontSize: 10, color: '#888' }}>Upload a decoration and put it on the cake</div>
                   </div>
                 </button>
+
+                {/* Everything THIS person has uploaded — private to them (baker_uploads). It is a
+                    separate door from "Add your own" because an upload is not a decoration in the
+                    library: it is yours, it is usable straight away, and only a baker's deliberate
+                    "show in my decorations" ever offers one to anybody else. */}
+                <button
+                  onClick={() => { setElementsOpen(false); setMyAssetsOpen(true); }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#888' }}>◫</div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>My images</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Photos and decorations you’ve uploaded</div>
+                  </div>
+                </button>
               </>
             )}
 
@@ -6330,13 +6350,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           apiClient={apiClient}
           tiers={canvasConfig.tiers}
           elementTypes={elementTypes}
-          onClose={() => setDecorStudioOpen(false)}
+          mode={promoting ? 'promote' : 'upload'}
+          upload={promoting}
+          onClose={() => { setDecorStudioOpen(false); setPromoting(null); }}
           onSaved={async () => {
             setDecorStudioOpen(false);
-            await loadElementsIfNeeded(true);        // the catalog has a new row
-
-            setElementsOpen(true);
+            // Promotion put a row in the LIBRARY, so the catalog must be re-read. A plain upload did
+            // not — it is a private image, and lives in My images, which reloads itself.
+            if (promoting) { await loadElementsIfNeeded(true); setElementsOpen(true); }
+            else setMyAssetsOpen(true);
+            setPromoting(null);
           }}
+        />
+      )}
+
+      {/* My images — the uploads themselves. Tap one to put it on the cake (it borrows the placement
+          rules of the type flagged default_for_uploads — data, not a hardcoded slug). A baker can also
+          release one to his customers here, or take it back. */}
+      {myAssetsOpen && (
+        <MyAssetsPanel
+          apiClient={apiClient}
+          elementTypes={elementTypes}
+          canPromote={orderMode === 'baker'}
+          onPlace={(el) => {
+            // Rides the ORDINARY placement path: the upload was made element-shaped, so addSticker
+            // treats it like any library element — no parallel code path to drift.
+            const zone = el.allowed_zones?.[0];
+            if (!zone) return;
+            addSticker(el, zone, 0, el.placement_config?.[zone] ?? 'hug');
+          }}
+          onPromote={(u) => { setMyAssetsOpen(false); setPromoting(u); setDecorStudioOpen(true); }}
+          onClose={() => setMyAssetsOpen(false)}
         />
       )}
 
