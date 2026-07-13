@@ -626,6 +626,17 @@ function ElementsIcon({ size = 20 }) {
   );
 }
 
+// My images — a picture (frame + hill + sun), matching the stroke weight of the other rail icons.
+function MyImagesIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="8.5" cy="9.5" r="1.6" />
+      <path d="M21 15.5l-4.5-4.5L7 20.5" />
+    </svg>
+  );
+}
+
 function TextIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1207,8 +1218,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }, [initialDesign]);
 
   const [elementsOpen, setElementsOpen] = useState(false);
-  // "Add your own decoration" — the upload studio (decorations/MyDecorationStudio.jsx). Same screen for
-  // a baker and a customer; the API decides who ends up owning the result.
+  // The promote studio (decorations/MyDecorationStudio.jsx) — a BAKER giving one of his own images a
+  // behaviour (kind, zones, hug/stand, colours) as he releases it to his customers. Only reachable from
+  // My images; uploading itself happens there.
   const [decorStudioOpen, setDecorStudioOpen] = useState(false);
   // "My images" — everything this person uploaded (baker_uploads), private to them. `promoting` holds
   // the upload a BAKER is releasing into his library: the studio reopens in promote mode to author its
@@ -4964,19 +4976,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} />,  requires: 'order:view' },
               { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} />,  requires: 'design:create' },
               { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />, requires: 'design:create' },
+              // My images sits in the RAIL, not inside Decorations: it is a PLACE you go (your own
+              // images — photos, decorations), not a kind of decoration. It is also where uploading now
+              // happens, so burying it three taps deep inside another panel made no sense.
+              { id: 'myimages',   label: 'My images', icon: <MyImagesIcon size={20} />,  requires: 'element:manage' },
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view' },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
               ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
             ].filter(item => hasCap(item.requires)).map(({ id, label, icon }) => {
-              const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+              const active = id === 'elements' ? elementsOpen : id === 'myimages' ? myAssetsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
               const isNew  = id === 'new';
               return (
                 <button key={id} style={s.navItem}
                   onClick={() => {
                     if (id === 'new')       handleNewCake();
                     if (id === 'elements')  openElements();
+                    if (id === 'myimages')  setMyAssetsOpen(true);
                     if (id === 'tools')     openTools();
                     if (id === 'templates') openTemplates();
                     if (id === 'dashboard') setDashboardOpen(true);
@@ -5170,29 +5187,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     </div>
                   );
                 })()}
-                <button
-                  onClick={() => { setElementsOpen(false); setDecorStudioOpen(true); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 300, color: '#888' }}>+</div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Add your own</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Upload a decoration and put it on the cake</div>
-                  </div>
-                </button>
-
-                {/* Everything THIS person has uploaded — private to them (baker_uploads). It is a
-                    separate door from "Add your own" because an upload is not a decoration in the
-                    library: it is yours, it is usable straight away, and only a baker's deliberate
-                    "show in my decorations" ever offers one to anybody else. */}
-                <button
-                  onClick={() => { setElementsOpen(false); setMyAssetsOpen(true); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#888' }}>◫</div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>My images</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Photos and decorations you’ve uploaded</div>
-                  </div>
-                </button>
+                {/* "Add your own" and "My images" both used to live here. They are gone: My images is
+                    now a MAIN MENU entry (it is a place you go — your own images — not a kind of
+                    decoration), and uploading happens INSIDE it, so a second upload door here would be
+                    a second path to drift. This section is the LIBRARY only. */}
               </>
             )}
 
@@ -6335,21 +6333,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* Upload your own decoration. `tiers` is passed so the zone picker can render the user's own
           artwork ON the actual cake they're designing — the only honest way to explain "a zone".
           On save, reload the catalog so the new decoration appears in My Decorations immediately. */}
-      {decorStudioOpen && (
+      {decorStudioOpen && promoting && (
         <MyDecorationStudio
           apiClient={apiClient}
           tiers={canvasConfig.tiers}
           elementTypes={elementTypes}
-          mode={promoting ? 'promote' : 'upload'}
           upload={promoting}
           onClose={() => { setDecorStudioOpen(false); setPromoting(null); }}
           onSaved={async () => {
             setDecorStudioOpen(false);
-            // Promotion put a row in the LIBRARY, so the catalog must be re-read. A plain upload did
-            // not — it is a private image, and lives in My images, which reloads itself.
-            if (promoting) { await loadElementsIfNeeded(true); setElementsOpen(true); }
-            else setMyAssetsOpen(true);
+            await loadElementsIfNeeded(true);   // the LIBRARY has a new row — re-read the catalog
             setPromoting(null);
+            setElementsOpen(true);              // show them where it landed
           }}
         />
       )}

@@ -49,3 +49,23 @@ describe('MyAssetsPanel renders', () => {
     )).not.toThrow();
   });
 });
+
+// The promote studio: only ever reached WITH an upload (My images → "Show in my decorations").
+// Rendering it is the cheap guard against the class of bug that shipped last time.
+import MyDecorationStudio from './MyDecorationStudio.jsx';
+
+describe('MyDecorationStudio renders', () => {
+  const upload = { id: 7, name: 'Gold butterfly', url: 'https://x/7.png', uploadedBy: 'baker' };
+
+  it('in promote mode, without throwing', () => {
+    expect(() => renderToStaticMarkup(
+      <MyDecorationStudio apiClient={apiClient} tiers={[]} elementTypes={elementTypes} upload={upload} />,
+    )).not.toThrow();
+  });
+
+  it('with no uploadable kinds configured, without throwing', () => {
+    expect(() => renderToStaticMarkup(
+      <MyDecorationStudio apiClient={apiClient} tiers={[]} elementTypes={[]} upload={upload} />,
+    )).not.toThrow();
+  });
+});

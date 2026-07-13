@@ -101,6 +101,23 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
     }
   }
 
+  // Cut the background out. A TREATMENT of an image, not a step in a wizard — so it lives here, on the
+  // image, rather than only at upload. That matters most for a CUSTOMER: she cannot promote, so if
+  // cut-out only existed on the promote path her decoration would always carry its background and she
+  // would have no way to fix it. Runs server-side on the stored object; the row is updated in place, so
+  // every design already using the image picks up the cut version.
+  async function cutBg(u) {
+    setBusy(u.id); setError(null);
+    try {
+      await apiClient.removeUploadBg(u.id);
+      await load();
+    } catch (e) {
+      setError(e.message || 'Could not remove the background.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function unlink(u) {
     setBusy(u.id);
     try {
@@ -154,6 +171,14 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
                       Promote/delete would be a trapdoor next to the thing you actually meant to tap. */}
                   {!selectMode && (
                     <div style={S.actions}>
+                      {/* Cut-out is offered to EVERYONE, customer included — it is a treatment of your
+                          own image, not a library act. Offered even on a photo: it is their picture and
+                          their call (a cut-out portrait on a cake is a real thing people want). */}
+                      {apiClient?.removeUploadBg && (
+                        <button style={S.act} disabled={busy === u.id} onClick={() => cutBg(u)}>
+                          {busy === u.id ? 'Working…' : 'Remove background'}
+                        </button>
+                      )}
                       {/* Promotion is a BAKER's act, and only on his OWN uploads: a customer's image is
                           not his to offer to other customers (the API refuses it — ToS 6.2). Hiding the
                           button on hers is not the security boundary, only the courtesy: the server is. */}
