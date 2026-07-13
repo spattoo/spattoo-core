@@ -4,18 +4,30 @@ import TopperPreview from '../canvas/TopperPreview.jsx';
 import { useImageRegions } from '../shared/color/useImageRegions.js';
 import { ZONE_LABELS } from '../constants.js';
 
-// ── My Decoration Studio ─────────────────────────────────────────────────────────────────────────
-// Upload your own decoration and get it onto the cake. Used by BOTH the baker and the customer — the
-// screen is identical; the API decides who owns the result (a baker's is shared with their bakery, a
-// customer's is private to them).
+// ── My Decoration Studio — TWO STEPS, ONE SCREEN ─────────────────────────────────────────────────
 //
-// Four things happen here, and each one reuses machinery that already exists:
+// mode="upload"   → an IMAGE arrives. That is all. It lands in My Assets, private to whoever uploaded
+//                   it, and they can put it on their own cake straight away.
+// mode="promote"  → a baker RELEASES one of his own images into his library, where his other customers
+//                   can use it. This is where BEHAVIOUR is authored: what kind it is, which zones, how
+//                   it sits, which colours may be changed.
+//
+// WHY THE SPLIT. Those questions have no answer at upload time. A customer dropping her daughter's
+// photo into a photo-cake frame is not choosing "hug or stand" — the FRAME owns the placement, and
+// asking her is asking a question about nothing. The behaviour only becomes meaningful the moment the
+// image is offered to OTHER people, which is exactly what promotion is. So the upload path is now two
+// taps (pick, name) and every zone/colour control moved to promotion.
+//
+// ONE component, not two, because the promote step needs precisely the machinery the upload step used
+// to own — the zone tiles, the colour regions. Splitting it into two files would duplicate both.
+//
+// Each part still reuses what already exists:
 //
 //  1. BACKGROUND REMOVAL — apiClient.removeElementBg(). One chokepoint on the server, so the model
 //     behind it can change without touching this screen.
 //  2. WHAT KIND IS IT — the offered kinds are element_types with `baker_uploadable`, i.e. DATA. The
-//     kind decides where the decoration may go, because the upload INHERITS that type's
-//     placement_rules. The uploader never sees a zone matrix.
+//     kind decides where the decoration may go, because the element INHERITS that type's
+//     placement_rules. The baker never sees a zone matrix.
 //  3. WHERE ON THE CAKE — the honest answer to "what is a zone?" is to SHOW them: each zone tile is a
 //     real 3D render of THEIR artwork on a cake in that position (PreviewTile + TopperPreview, the same
 //     pair the element popup uses). No diagrams, no jargon.
@@ -24,17 +36,26 @@ import { ZONE_LABELS } from '../constants.js';
 //     the decoration renders in their colours AND stays recolourable in the designer afterwards — this
 //     screen's colour editor is a preview of the designer's own control, not a second implementation.
 //     "Let others change these colours" writes recolor.locked, for a logo that must not be repainted.
+//
+// NOT ASKED, ANYWHERE: permission. No rights checkbox, no review. Spattoo is an intermediary and the
+// baker has already accepted responsibility for what he publishes (ToS B5.4-B5.6); a tick clicked on
+// every promotion is the habituated tick that is worth nothing as evidence. The server RECORDS who
+// promoted what (promoted_by/at) and refuses only what no licence covers — a CUSTOMER's upload, which
+// is not the baker's to release (ToS 6.2).
 
 const MAX_REGIONS = 3;      // "show up to 3 existing colours" — the recolour engine takes this as config
 const REGION_SAT  = 0.25;   // ignore near-greys: black outlines and white highlights are not "a colour"
 
-export default function MyDecorationStudio({ apiClient, tiers, elementTypes = [], onClose, onSaved }) {
+export default function MyDecorationStudio({ apiClient, tiers, elementTypes = [], mode = 'upload', upload = null, onClose, onSaved }) {
+  const promoting = mode === 'promote';
   const [file, setFile]         = useState(null);
-  const [srcUrl, setSrcUrl]     = useState(null);   // blob: the image as uploaded
+  // In promote mode the image is already uploaded and public — there is nothing to pick, and the
+  // artwork is the upload's URL rather than a local blob.
+  const [srcUrl, setSrcUrl]     = useState(upload?.url ?? null);   // blob (upload) | public URL (promote)
   const [cutUrl, setCutUrl]     = useState(null);   // blob: background removed
   const [useCut, setUseCut]     = useState(true);
   const [cutting, setCutting]   = useState(false);
-  const [name, setName]         = useState('');
+  const [name, setName]         = useState(upload?.name ?? '');
   const [typeId, setTypeId]     = useState('');
   const [zones, setZones]       = useState([]);     // chosen subset of the type's zones
   const [colors, setColors]     = useState({});     // region index → hex (only what they changed)
@@ -90,37 +111,53 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
 
   const toggleZone = (z) => setZones(zs => (zs.includes(z) ? zs.filter(x => x !== z) : [...zs, z]));
 
-  async function save() {
-    if (!artUrl || !kind)   return setError('Choose an image and what kind of decoration it is.');
-    if (!name.trim())       return setError('Give it a name.');
-    if (!zones.length)      return setError('Choose at least one place on the cake.');
+  // UPLOAD — the image, and nothing else. It becomes a private row in My Assets (baker_uploads), usable
+  // on the uploader's own cake immediately. No kind, no zones, no colours: see the header.
+  async function saveUpload() {
+    if (!artUrl)      return setError('Choose an image.');
+    if (!name.trim()) return setError('Give it a name.');
     setBusy('Saving…'); setError(null);
     try {
       const blob = await (await fetch(artUrl)).blob();
       const key  = await apiClient.uploadElementImage(blob, `${crypto.randomUUID()}.png`);
+      const saved = await apiClient.registerUpload({ storage_key: key, name: name.trim() });
+      onSaved?.(saved);
+    } catch (e) {
+      setError(e.message || 'Could not save the image.');
+    } finally {
+      setBusy(null);
+    }
+  }
 
+  // PROMOTE — release one of MY OWN images into the library, WITH its behaviour. The server refuses a
+  // customer's upload here (no licence to re-offer her photo to other customers — ToS 6.2), so the
+  // error it returns is already human and is shown as-is.
+  async function savePromotion() {
+    if (!kind)         return setError('Choose what kind of decoration it is.');
+    if (!zones.length) return setError('Choose at least one place on the cake.');
+    setBusy('Adding…'); setError(null);
+    try {
       // The colour descriptor. `group_defaults` are index-keyed to match the regions the render half
       // derives — the same extractRegions call, so index N here IS index N there.
       const recolor = regions.length
         ? { ...recolorCfg, group_defaults: colors, locked }
         : null;
 
-      await apiClient.createMyElement({
-        name: name.trim(),
+      await apiClient.promoteUpload(upload.id, {
+        name: name.trim() || upload.name,
         element_type_id: kind.id,
-        image_url: key,
         allowed_zones: zones,
         placement_config: recolor ? { recolor } : {},
-        file_size: blob.size ?? null,
       });
       onSaved?.();
     } catch (e) {
-      // The API's ceiling message is already human — show it as-is rather than wrapping it.
-      setError(e.message || 'Could not save the decoration.');
+      setError(e.message || 'Could not add it to your decorations.');
     } finally {
       setBusy(null);
     }
   }
+
+  const save = promoting ? savePromotion : saveUpload;
 
   const full = quota && quota.remaining === 0;
 
@@ -128,22 +165,33 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
     <div style={S.scrim} onPointerDown={onClose}>
       <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
         <div style={S.head}>
-          <div style={S.title}>Add your own decoration</div>
+          <div style={S.title}>{promoting ? 'Show in my decorations' : 'Add your own image'}</div>
           <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <div style={S.body}>
-          {/* 1 — the image */}
-          <label style={S.drop}>
-            {artUrl
-              ? <img src={artUrl} alt="" style={S.art} />
-              : <span style={S.dropHint}>Tap to choose a photo of your decoration</span>}
-            <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pick(f); }} />
-          </label>
+          {promoting && (
+            <div style={S.hint}>
+              This image will be available to your customers when they design a cake. You can remove it
+              from your decorations at any time.
+            </div>
+          )}
+
+          {/* 1 — the image. In promote mode it is already uploaded: show it, don't offer to replace it. */}
+          {promoting ? (
+            <div style={S.drop}><img src={artUrl} alt="" style={S.art} /></div>
+          ) : (
+            <label style={S.drop}>
+              {artUrl
+                ? <img src={artUrl} alt="" style={S.art} />
+                : <span style={S.dropHint}>Tap to choose a photo of your decoration</span>}
+              <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pick(f); }} />
+            </label>
+          )}
 
           {cutting && <div style={S.note}>Removing the background…</div>}
-          {srcUrl && cutUrl && !cutting && (
+          {!promoting && srcUrl && cutUrl && !cutting && (
             <label style={S.check}>
               <input type="checkbox" checked={useCut} onChange={() => setUseCut(v => !v)} />
               <span>Remove the background</span>
@@ -155,7 +203,8 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
               <div style={S.label}>Name</div>
               <input style={S.input} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Gold butterfly" />
 
-              {/* 2 — what kind is it (this decides where it can go) */}
+              {/* 2-4 — BEHAVIOUR. Only at promotion: at upload these questions have no answer (header). */}
+              {promoting && (<>
               <div style={S.label}>What kind of decoration is it?</div>
               {kinds.length === 0 ? (
                 <div style={S.warn}>No decoration kinds are available for upload yet.</div>
@@ -215,6 +264,7 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
                   </div>
                 </>
               )}
+              </>)}
             </>
           )}
 
@@ -223,10 +273,16 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
         </div>
 
         <div style={S.foot}>
-          <button style={S.save(!artUrl || !kind || !zones.length || !!busy || full)}
-            onClick={save} disabled={!artUrl || !kind || !zones.length || !!busy || full}>
-            {busy ?? 'Save decoration'}
-          </button>
+          {/* Upload asks only for an image + a name. Promotion additionally needs a kind and a zone —
+              the behaviour it is being given. */}
+          {(() => {
+            const blocked = !artUrl || !!busy || full || (promoting && (!kind || !zones.length));
+            return (
+              <button style={S.save(blocked)} onClick={save} disabled={blocked}>
+                {busy ?? (promoting ? 'Show in my decorations' : 'Save image')}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>

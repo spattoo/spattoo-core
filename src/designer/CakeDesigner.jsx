@@ -4176,6 +4176,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Photo-cake frame: upload the customer's photo for one frame instance. Shows it instantly via a
   // local blob URL, uploads to R2 in the background (same signed-URL flow as every other upload), then
   // swaps in the persisted public URL so it survives a reload (stored inside the design JSON).
+  //
+  // AND REGISTERS IT. The design JSON keeps the URL — that is what renders, and it is why a photo keeps
+  // working even after the upload is unlinked or the library changes. But the URL alone leaves the R2
+  // object untracked: nobody could list it, nobody could delete it, and when its owner asks for erasure
+  // we would be scanning design JSON to find her daughter's photograph. The row is what makes it
+  // MANAGEABLE (baker_uploads). Same reason baker_storefront_photos writes a row on upload.
+  //
+  // Registration failing must NOT lose the photo — the cake still renders from the URL. It is logged and
+  // the design proceeds; an unregistered object is a gap in housekeeping, not a broken cake.
   async function pickFramePhoto(stickerId, file) {
     if (!file) return;
     updateSticker(stickerId, { photoUrl: URL.createObjectURL(file) });   // instant local preview
@@ -4183,9 +4192,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
       const filename = `${stickerId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-      const { url, publicUrl } = await apiClient.getSignedUploadUrl('customer/photos', filename, file.type);
+      const { url, publicUrl, key } = await apiClient.getSignedUploadUrl('customer/photos', filename, file.type);
       await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
       if (publicUrl) updateSticker(stickerId, { photoUrl: publicUrl });
+      try {
+        await apiClient.registerUpload?.({ storage_key: key ?? filename, name: file.name?.slice(0, 60) || 'Photo' });
+      } catch (regErr) {
+        console.error('Photo uploaded but not registered', regErr);
+      }
     } catch (err) {
       console.error('Frame photo upload failed', err);
     }
