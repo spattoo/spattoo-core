@@ -1215,6 +1215,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // behaviour (kind, zones, hug/stand, colours). Null = the studio is in plain upload mode.
   const [myAssetsOpen, setMyAssetsOpen] = useState(false);
   const [promoting, setPromoting] = useState(null);
+
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
   // Luster dust: colour for new flicks, which tier is being dusted, and the selected splash to aim.
@@ -1316,6 +1317,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [filterWeight,    setFilterWeight]    = useState('');
   const [filterAge,       setFilterAge]       = useState('');
   const [elemSearch,      setElemSearch]      = useState('');
+
+  // The decoration-grid filter: honour the search box, and hide pattern_only building blocks (a
+  // decor_pattern's individual parts) — they are placed via their parent pattern, never on their own.
+  //
+  // Defined HERE, at component scope, because BOTH the element-type grids and the "My decorations"
+  // section below use it. It used to live inside the grids' IIFE, so the second caller referenced a
+  // binding that was not in scope — a ReferenceError the moment the panel rendered. One definition,
+  // both callers: the same rule cannot be in two places (INVARIANTS.md).
+  const filterEl = (els) => {
+    const q = elemSearch.trim().toLowerCase();
+    return (els ?? []).filter(el => {
+      if (el.placement_config?.pattern_only === true) return false;
+      if (!q) return true;
+      return `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q);
+    });
+  };
+
   const [tmplSearch,      setTmplSearch]      = useState('');
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   // Accordion stack of opened piping elements. Each card edits one element (across
@@ -5122,15 +5140,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
             {/* All other element types */}
             {(() => {
-              const q = elemSearch.trim().toLowerCase();
-              // Hide pattern_only building blocks (e.g. a decor_pattern's individual parts) from
-              // every decor grid — they're placed via their parent pattern, never on their own.
-              const filterEl = els => (els ?? []).filter(el => {
-                if (el.placement_config?.pattern_only === true) return false;
-                if (!q) return true;
-                const hay = `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase();
-                return hay.includes(q);
-              });
               return elementTypes
                 .filter(et => et.slug !== 'cream_piping' && et.slug !== 'piping_pattern' && et.slug !== 'drip' && activeElementTypeIds.has(et.id))
                 .map(et => (
