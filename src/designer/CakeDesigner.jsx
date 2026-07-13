@@ -1215,6 +1215,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // behaviour (kind, zones, hug/stand, colours). Null = the studio is in plain upload mode.
   const [myAssetsOpen, setMyAssetsOpen] = useState(false);
   const [promoting, setPromoting] = useState(null);
+  // Which photo-frame sticker is waiting for an image. Non-null = My images opened to CHOOSE for that
+  // frame (rather than to place on the cake). One panel, two purposes — decided by the caller.
+  const [framePhotoFor, setFramePhotoFor] = useState(null);
 
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
@@ -4197,37 +4200,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
-  // Photo-cake frame: upload the customer's photo for one frame instance. Shows it instantly via a
-  // local blob URL, uploads to R2 in the background (same signed-URL flow as every other upload), then
-  // swaps in the persisted public URL so it survives a reload (stored inside the design JSON).
-  //
-  // AND REGISTERS IT. The design JSON keeps the URL — that is what renders, and it is why a photo keeps
-  // working even after the upload is unlinked or the library changes. But the URL alone leaves the R2
-  // object untracked: nobody could list it, nobody could delete it, and when its owner asks for erasure
-  // we would be scanning design JSON to find her daughter's photograph. The row is what makes it
-  // MANAGEABLE (baker_uploads). Same reason baker_storefront_photos writes a row on upload.
-  //
-  // Registration failing must NOT lose the photo — the cake still renders from the URL. It is logged and
-  // the design proceeds; an unregistered object is a gap in housekeeping, not a broken cake.
-  async function pickFramePhoto(stickerId, file) {
-    if (!file) return;
-    updateSticker(stickerId, { photoUrl: URL.createObjectURL(file) });   // instant local preview
-    if (!apiClient?.getSignedUploadUrl) return;
-    try {
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-      const filename = `${stickerId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-      const { url, publicUrl, key } = await apiClient.getSignedUploadUrl('customer/photos', filename, file.type);
-      await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-      if (publicUrl) updateSticker(stickerId, { photoUrl: publicUrl });
-      try {
-        await apiClient.registerUpload?.({ storage_key: key ?? filename, name: file.name?.slice(0, 60) || 'Photo' });
-      } catch (regErr) {
-        console.error('Photo uploaded but not registered', regErr);
-      }
-    } catch (err) {
-      console.error('Frame photo upload failed', err);
-    }
-  }
+  // Photo-cake frames get their image from My images (setFramePhotoFor -> MyAssetsPanel), which is
+  // ALSO where a new one is uploaded. There is deliberately no upload path here any more: a second
+  // one would drift from the first, and the old straight-to-frame input uploaded the same photo again
+  // for every frame that used it — a duplicate R2 object per use, and a baker who already had his
+  // customer's photo still had to re-upload it.
 
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
@@ -4348,12 +4325,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         const t = inst.photoTransform ?? { x: 0, y: 0, zoom: 1 };
         const setT = patch => updateSticker(el.id, { photoTransform: { ...t, ...patch } });
         const PAN = 0.04, clampPan = v => Math.max(-0.6, Math.min(0.6, +v.toFixed(3)));
+        // ONE way to get a photo into a frame: choose from My images — which is also where you upload
+        // a new one. Not two buttons. The old file input uploaded straight into the frame, so the same
+        // photo used in a second frame (or a second design) was uploaded, stored and paid for TWICE,
+        // and the baker who already has the photo his customer sent him would have had to upload it
+        // again. Now every photo is picked from the one place photos live.
         const controls = [
-          <label key="up" style={{ ...s.toolbarBtn, display: 'block', width: '100%', boxSizing: 'border-box', textAlign: 'center', cursor: 'pointer' }}>
-            {inst.photoUrl ? 'Change photo' : 'Upload photo'}
-            <input type="file" accept="image/*" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pickFramePhoto(el.id, f); }} />
-          </label>,
+          <button key="up" style={{ ...s.toolbarBtn, display: 'block', width: '100%', boxSizing: 'border-box', textAlign: 'center', cursor: 'pointer' }}
+            onClick={() => setFramePhotoFor(el.id)}>
+            {inst.photoUrl ? 'Change image' : 'Select image'}
+          </button>,
         ];
         if (inst.photoUrl) {
           controls.push(
@@ -6376,11 +6357,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* My images — the uploads themselves. Tap one to put it on the cake (it borrows the placement
           rules of the type flagged default_for_uploads — data, not a hardcoded slug). A baker can also
           release one to his customers here, or take it back. */}
-      {myAssetsOpen && (
+      {(myAssetsOpen || framePhotoFor != null) && (
         <MyAssetsPanel
           apiClient={apiClient}
           elementTypes={elementTypes}
-          canPromote={orderMode === 'baker'}
+          // Choosing FOR A FRAME is a different act from placing on the cake, so the panel is told
+          // which one it is and the caller supplies the meaning of a tap. The panel itself has no idea
+          // what a photo frame is — no branch, no second grid.
+          selectMode={framePhotoFor != null}
+          canPromote={orderMode === 'baker' && framePhotoFor == null}
+          onSelect={(u) => {
+            // Fills THIS frame's slot. Uploads nothing (the image already exists), creates no element,
+            // touches no library: a photo in a frame is design content, exactly as private as before.
+            // Replacing an image does NOT delete the old upload — it may be in another design, and
+            // deleting is an explicit act in My images, never a side-effect of changing your mind.
+            updateSticker(framePhotoFor, { photoUrl: u.url });
+            setFramePhotoFor(null);
+          }}
           onPlace={(el) => {
             // Rides the ORDINARY placement path: the upload was made element-shaped, so addSticker
             // treats it like any library element — no parallel code path to drift.
@@ -6389,7 +6382,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             addSticker(el, zone, 0, el.placement_config?.[zone] ?? 'hug');
           }}
           onPromote={(u) => { setMyAssetsOpen(false); setPromoting(u); setDecorStudioOpen(true); }}
-          onClose={() => setMyAssetsOpen(false)}
+          onClose={() => { setMyAssetsOpen(false); setFramePhotoFor(null); }}
         />
       )}
 
