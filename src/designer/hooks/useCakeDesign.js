@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape } from '../geometry/surface.js';
+import { cakeShapeDef } from '../cakeShapes.js';
 import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
@@ -36,13 +37,21 @@ const DEFAULT_DESIGN = {
 export function toCanvasConfig(design) {
   return {
     tiers: (design.tiers ?? []).map((t, i) => {
-      const isRect = t.shape === 'rect';
-      const width  = t.width ?? 2.16;   // default half-sheet footprint
-      const depth  = t.depth ?? 1.56;
+      // The tier's shape KEY is resolved through the catalog, not compared to a literal. Passing only
+      // `shape === 'rect'` through was the bug that made every authored shape (heart, hexagon…) arrive
+      // at the renderer as a plain cylinder: the key was silently dropped right here.
+      const family = cakeShapeDef(t.shape).family;
+      const isRound = family === 'circle';
+      const isRect  = family === 'rounded_rect';
+      const r = t.radius ?? TIER_RADII[i] ?? 0.35;
+      // A sheet defaults to the half-sheet footprint; any other non-round shape defaults to the round
+      // tier's own diameter, so switching a cake's shape doesn't also resize it.
+      const width  = t.width ?? (isRect ? 2.16 : r * 2);
+      const depth  = t.depth ?? (isRect ? 1.56 : r * 2);
       return {
-        // For rect, radius is the bounding half-extent so radius-based incidental
+        // For any non-round footprint, radius is the bounding half-extent so radius-based incidental
         // placement (board, toolbar offsets, topper scale) keeps working.
-        radius:       isRect ? Math.max(width, depth) / 2 : (t.radius ?? TIER_RADII[i] ?? 0.35),
+        radius:       isRound ? r : Math.max(width, depth) / 2,
         height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
         color:        t.color,
         gradient:     t.gradient ?? null,
@@ -54,7 +63,7 @@ export function toCanvasConfig(design) {
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
-        ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
+        ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
     texts:    design.texts ?? [],

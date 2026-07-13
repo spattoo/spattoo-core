@@ -703,7 +703,6 @@ function NakedLayers({ shp, yBase, height, flavour }) {
   const layers  = 3;
   const spongeH = (height * 0.62) / layers;
   const creamH  = (height * 0.38) / (layers - 1);
-  const isRect = shp.kind === 'rect';
 
   const stack = [];
   let y = yBase;
@@ -716,13 +715,25 @@ function NakedLayers({ shp, yBase, height, flavour }) {
     }
   }
 
+  // An outline tier's sponge is the OUTLINE extruded, one prism per layer — a bounding box would poke
+  // out through a heart's cleft and its lobes. Built once per (shape, layer heights) and disposed with
+  // them: these are real GPU buffers, not JSX.
+  const outlineGeos = useMemo(
+    () => (shp.kind === 'outline' ? stack.map(l => buildOutlinePrism(shp.outline, l.h)) : null),
+    [shp, spongeH, creamH],   // eslint-disable-line react-hooks/exhaustive-deps -- `stack` is derived from these
+  );
+  useEffect(() => () => outlineGeos?.forEach(g => g.dispose()), [outlineGeos]);
+
   return (
     <group>
       {stack.map((layer, i) => (
-        <mesh key={i} position={[0, layer.y + layer.h / 2, 0]} castShadow receiveShadow>
-          {isRect
-            ? <boxGeometry args={[shp.halfW * 2, layer.h, shp.halfD * 2]} />
-            : <cylinderGeometry args={[shp.radius, shp.radius, layer.h, 64]} />}
+        <mesh key={i} castShadow receiveShadow
+          position={[0, outlineGeos ? layer.y : layer.y + layer.h / 2, 0]}>
+          {outlineGeos
+            ? <primitive key={outlineGeos[i].uuid} object={outlineGeos[i]} attach="geometry" />
+            : shp.kind === 'rect'
+              ? <boxGeometry args={[shp.halfW * 2, layer.h, shp.halfD * 2]} />
+              : <cylinderGeometry args={[shp.radius, shp.radius, layer.h, 64]} />}
           <meshStandardMaterial color={layer.color} roughness={layer.rough} />
         </mesh>
       ))}
@@ -813,6 +824,19 @@ export function buildRoundedPrism(halfW, halfD, height, r) {
   return geo;
 }
 
+// Cake body for ANY authored footprint (heart, butterfly, hexagon…): the shape's own outline extruded
+// straight up. Identical operation to buildRoundedPrism — same ExtrudeGeometry, same axis fix-up — the
+// only difference being where the cross-section comes from, which is exactly why a new cake shape is an
+// outline (data) and not a new renderer.
+export function buildOutlinePrism(outline, height) {
+  const s = new THREE.Shape();
+  outline.forEach((p, i) => (i ? s.lineTo(p.x, p.z) : s.moveTo(p.x, p.z)));
+  s.closePath();
+  const geo = new THREE.ExtrudeGeometry(s, { depth: height, bevelEnabled: false, curveSegments: 8 });
+  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
+  return geo;
+}
+
 // Fondant-draped ROUND tier: a solid of revolution whose top edge is a rounded fillet (the fondant
 // sheet folds over the rim instead of a sharp 90° tin edge). Profile is revolved around Y, spanning
 // y ∈ [0, height]: flat bottom disk → straight wall → quarter-arc top edge → flat top disk. `fillet`
@@ -837,9 +861,12 @@ function buildRoundedTopCylinder(radius, height, fillet, radial = 64) {
 // ── Selection outline ─────────────────────────────────────────────────────────
 function SelectionOutline({ shp, yBase, height }) {
   const geometry = useMemo(() => {
-    const base = shp.kind === 'rect'
-      ? new THREE.BoxGeometry(shp.halfW * 2 + 0.05, height + 0.05, shp.halfD * 2 + 0.05)
-      : new THREE.CylinderGeometry(shp.radius + 0.05, shp.radius + 0.05, height + 0.05, 20);
+    // Round → a cylinder cage; every other footprint → its bounding box. The cue traces the tier's
+    // EXTENT, not its silhouette (same rule as the decoration SelectionBox), so an outline shape needs
+    // no case of its own — but it must not fall into the round branch, where `radius` is undefined.
+    const base = shp.kind === 'round'
+      ? new THREE.CylinderGeometry(shp.radius + 0.05, shp.radius + 0.05, height + 0.05, 20)
+      : new THREE.BoxGeometry(shp.halfW * 2 + 0.05, height + 0.05, shp.halfD * 2 + 0.05);
     return new THREE.EdgesGeometry(base);
   }, [shp, height]);
 
@@ -1065,18 +1092,32 @@ export default function CakeTier({
   const gradColors = effGradient?.colors?.filter(Boolean) ?? [];
   const capColor   = gradColors.length >= 2 ? gradColors[gradColors.length - 1] : color;
   const shp = useMemo(() => tierShape({ shape, width, depth, radius, cornerR }), [shape, width, depth, radius, cornerR]);
-  const isRect = shp.kind === 'rect';
+  // "Not round" — an extruded footprint (the sheet's rounded rect, or any authored outline). Every
+  // feature below that was gated on `!isPrism` was really gated on "this is the lathe/cylinder path":
+  // the cream wall styles, drip, festoons, luster and foil are all cylinder-unwrap maths. An outline
+  // shape belongs on the prism side of that line, so it inherits the gate rather than needing a branch.
+  const isPrism = shp.kind !== 'round';
   const prismGeo = useMemo(
-    () => isRect ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null,
-    [isRect, shp, height],
+    () => (shp.kind === 'rect' ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR)
+        :  shp.kind === 'outline' ? buildOutlinePrism(shp.outline, height)
+        :  null),
+    [shp, height],
+  );
+  // The wall's grain runs once around the tier, so its U extent is the PERIMETER. (Rect keeps its
+  // existing 2·(w+d) approximation so no sheet cake's texture shifts.)
+  const prismGrainU = useMemo(
+    () => (shp.kind === 'rect' ? 2 * (shp.halfW + shp.halfD)
+        :  shp.kind === 'outline' ? perimeter(shp).length
+        :  0),
+    [shp],
   );
   // Round fondant tiers get a draped, rounded-edge body (config-driven via the finish's
   // `edge: { kind:'round', frac }`). Other round tiers stay a plain cylinder + lid. null ⇒ cylinder.
   const roundedGeo = useMemo(
-    () => (!isRect && roundEdge)
+    () => (!isPrism && roundEdge)
       ? buildRoundedTopCylinder(radius, height, roundEdge.frac * Math.min(radius, height))
       : null,
-    [isRect, roundEdge?.frac, radius, height],
+    [isPrism, roundEdge?.frac, radius, height],
   );
   // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
   // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
@@ -1085,22 +1126,22 @@ export default function CakeTier({
   const styleVals = resolveStyleParams(frostingStyle, styleParams);
   const styleSig = JSON.stringify(styleVals);
   const styledGeo = useMemo(
-    () => (!isRect && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,
+    () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,
     // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
-    [isRect, roundEdge, wallKey, radius, height, styleSig],
+    [isPrism, roundEdge, wallKey, radius, height, styleSig],
   );
   // Normal-map STYLE (rustic): a surface texture on the plain wall instead of geometry. Built when the
   // style declares a surfaceMap; `depth` → normalScale, `scale` → tiling density.
   const surfaceMapKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).surfaceMap : null;
   const styleNormalMap = useMemo(
-    () => (surfaceMapKey && !isRect)
+    () => (surfaceMapKey && !isPrism)
       ? surfaceNormalMap(surfaceMapKey, {
           aroundLen: 2 * Math.PI * radius, upLen: height, density: (styleVals.scale ?? 9) / 9,
           radius, height, params: styleVals,
         })
       : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [surfaceMapKey, isRect, radius, height, styleSig],
+    [surfaceMapKey, isPrism, radius, height, styleSig],
   );
   const styleNormalScale = styleVals.depth ?? 1;
 
@@ -1117,26 +1158,26 @@ export default function CakeTier({
   const sideSig = `${dusting ? JSON.stringify(dusting) : ''}|${sideFoil ? JSON.stringify(sideFoil) : ''}`;
   const finishRef = useRef(null);   // reused canvases/textures across rebuilds (drag/add stay cheap)
   const finishMaps = useMemo(() => {
-    if (isRect || !(dusting?.splashes?.length || sideFoil?.flakes?.length)) { finishRef.current = null; return null; }
+    if (isPrism || !(dusting?.splashes?.length || sideFoil?.flakes?.length)) { finishRef.current = null; return null; }
     finishRef.current = makeParticleFinishMaps({
       surface: 'side', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
       dusting, foil: sideFoil, reuse: finishRef.current,
     });
     return finishRef.current;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRect, radius, height, color, mat.roughness, mat.metalness, sideSig]);
+  }, [isPrism, radius, height, color, mat.roughness, mat.metalness, sideSig]);
 
   const topSig = topFoil ? JSON.stringify(topFoil) : '';
   const topFinishRef = useRef(null);
   const topFinishMaps = useMemo(() => {
-    if (isRect || !topFoil?.flakes?.length) { topFinishRef.current = null; return null; }
+    if (isPrism || !topFoil?.flakes?.length) { topFinishRef.current = null; return null; }
     topFinishRef.current = makeParticleFinishMaps({
       surface: 'top_surface', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
       foil: topFoil, reuse: topFinishRef.current,
     });
     return topFinishRef.current;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRect, radius, height, color, mat.roughness, mat.metalness, topSig]);
+  }, [isPrism, radius, height, color, mat.roughness, mat.metalness, topSig]);
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
@@ -1211,7 +1252,7 @@ export default function CakeTier({
       <group onClick={handleClick}>
         {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
         <NakedLayers shp={shp} yBase={yBase} height={height} flavour={flavour} />
-        {!isRect && (
+        {!isPrism && (
           <mesh position={[0, topY + 0.01, 0]}>
             <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
             <meshStandardMaterial color="#fffdf5" roughness={0.5} />
@@ -1226,11 +1267,11 @@ export default function CakeTier({
   return (
     <group onClick={handleClick}>
       {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
-      {isRect ? (
-        // Rounded-rect prism: flat top, only the vertical corners rounded, full footprint.
-        // No separate top cap (a cap reads as a stray "board" on a rectangular cake).
+      {isPrism ? (
+        // An extruded footprint (sheet rect, or an authored outline): flat top, full footprint, no
+        // separate top cap (a cap reads as a stray "board" on a non-round cake).
         <TierBody position={[0, yBase, 0]} color={color} surf={mat}
-          grainExtent={[2 * (shp.halfW + shp.halfD), height]}
+          grainExtent={[prismGrainU, height]}
           gradient={effGradient} geoSig={prismGeo?.uuid} castShadow receiveShadow>
           <primitive object={prismGeo} attach="geometry" />
         </TierBody>
@@ -1268,11 +1309,11 @@ export default function CakeTier({
           </mesh>
         </>
       )}
-      {!isRect && (
+      {!isPrism && (
         <SecondCreamLayers layers={creamLayers ?? []} radius={radius} yBase={yBase} height={height}
           grainKey={mat.grain} grainDensity={mat.grainDensity} />
       )}
-      {!isRect && topFinishMaps && (
+      {!isPrism && topFinishMaps && (
         <TopFoilDecal maps={topFinishMaps} radius={radius - 0.02} y={topY + 0.02}
           foilColor={topFoil?.color} glow={topFoil?.finish?.glow ?? 0.35} env={topFoil?.finish?.env ?? 4.5} />
       )}
