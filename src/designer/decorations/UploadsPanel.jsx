@@ -25,11 +25,27 @@ const UPLOAD_QUALITY  = 0.85;
 // The object handed to onPlace is ELEMENT-SHAPED on purpose: addSticker() takes an element, and an
 // upload can be made to look like one. So placement rides the SAME path as every library element —
 // no parallel "place an upload" code path to drift (INVARIANTS.md).
+// Three dots — the grip that holds everything you can do to one image. Drawn, not a character: a
+// glyph scales with the button and cannot be substituted by a font that lacks it.
+function DotsGlyph({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+      {[3.5, 8, 12.5].map(cy => <circle key={cy} cx="8" cy={cy} r="1.4" fill="currentColor" />)}
+    </svg>
+  );
+}
+
 export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose }) {
   const [uploads, setUploads] = useState(null);   // null = loading
   const [busy, setBusy]       = useState(null);
   const [error, setError]     = useState(null);
   const [uploading, setUploading] = useState(false);
+  // The grid is a GRID — one tap target per image. Everything you can DO to an image lives behind its
+  // own menu, because three stacked buttons under every thumbnail turned the card into mostly chrome
+  // and pushed the images themselves off the screen.
+  const [menuFor, setMenuFor]     = useState(null);   // upload id whose menu is open
+  const [editing, setEditing]     = useState(null);   // the image being edited (its own screen)
+  const [confirming, setConfirming] = useState(null); // the image awaiting a delete confirmation
   // The ceiling is the SERVER's (env-tuned), read at runtime — never a copy that could drift from it.
   const { maxImageBytes } = useUploadLimits(apiClient);
 
@@ -105,17 +121,14 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     onClose?.();
   }
 
+  // Confirmed in the panel, not through window.confirm: a browser dialog in the middle of a branded
+  // app is jarring on a desktop and worse on a phone, and it cannot say WHAT deleting this one costs.
   async function remove(u) {
-    // Deleting an image the baker has promoted also takes it out of every customer's picker (the API
-    // cascades via source_upload_id). Say so BEFORE, not after — it is not obvious that removing your
-    // own image withdraws it from other people's cakes-in-progress.
-    const warn = u.promoted
-      ? 'Delete this image? It will also be removed from your decorations, so your customers can no longer use it.'
-      : 'Delete this image?';
-    if (!window.confirm(warn)) return;
-    setBusy(u.id);
+    setBusy(u.id); setError(null);
     try {
       await apiClient.deleteUpload(u.id);
+      setConfirming(null);
+      if (editing?.id === u.id) setEditing(null);
       await load();
     } catch (e) {
       setError(e.message || 'Could not delete it.');
@@ -132,7 +145,11 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   async function cutBg(u) {
     setBusy(u.id); setError(null);
     try {
-      await apiClient.removeUploadBg(u.id);
+      const updated = await apiClient.removeUploadBg(u.id);
+      // The row is updated in place, so the URL is the same object — bust the cache or the edit screen
+      // keeps showing the version WITH its background and the operator thinks nothing happened.
+      const fresh = updated?.url ?? u.url;
+      if (editing?.id === u.id) setEditing({ ...u, url: `${fresh}${fresh.includes('?') ? '&' : '?'}v=${Date.now()}` });
       await load();
     } catch (e) {
       setError(e.message || 'Could not remove the background.');
@@ -153,6 +170,58 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     }
   }
 
+  // ── Edit one image ────────────────────────────────────────────────────────────────────────────
+  // A screen, not a menu of verbs: the operator is working ON the picture, so the picture is the
+  // subject and the treatments sit under it. Crop belongs here next. "Use as a decoration" is offered
+  // as the natural NEXT step — you almost always want the background gone before you hand it to your
+  // customers — while remaining a first-class item in the card's own menu, because it is the one act
+  // here with consequences beyond this person and must not hide behind a benign label.
+  if (editing) {
+    const u = editing;
+    const mine = canPromote && u.uploadedBy === 'baker';
+    const working = busy === u.id;
+    return (
+      <div style={S.scrim} onPointerDown={onClose}>
+        <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
+          <div style={S.head}>
+            <button style={S.back} onClick={() => setEditing(null)} aria-label="Back to uploads">←</button>
+            <div style={S.title}>{u.name || 'Untitled'}</div>
+            <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
+          </div>
+
+          <div style={S.body}>
+            <div style={S.editArt}>
+              <img src={u.url} alt={u.name || ''} style={S.editImg} />
+            </div>
+
+            {apiClient?.removeUploadBg && (
+              <button style={S.editAct} disabled={working} onClick={() => cutBg(u)}>
+                {working ? 'Removing the background…' : 'Remove background'}
+              </button>
+            )}
+            <div style={S.hint}>
+              Cuts the subject out of the picture. Every cake already using this image picks up the
+              cut-out version.
+            </div>
+
+            {error && <div style={S.err}>{error}</div>}
+          </div>
+
+          {mine && !u.promoted && (
+            <div style={S.foot}>
+              <button style={S.primary} disabled={working} onClick={() => { setEditing(null); onPromote?.(u); }}>
+                Use as a decoration
+              </button>
+              <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
+                Your customers will be able to put it on their cakes.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={S.scrim} onPointerDown={onClose}>
       <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
@@ -160,6 +229,25 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
           <div style={S.title}>{selectMode ? 'Choose an image' : 'Uploads'}</div>
           <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
         </div>
+
+        {/* Deleting is confirmed HERE, in the panel — and it says what it costs. Withdrawing an image
+            you have promoted takes it out of every customer's picker, which is not obvious from the
+            word "delete". */}
+        {confirming && (
+          <div style={S.confirm}>
+            <div style={S.confirmText}>
+              {confirming.promoted
+                ? <>Delete <b>{confirming.name || 'this image'}</b>? It will also leave your decorations, so your customers can no longer use it.</>
+                : <>Delete <b>{confirming.name || 'this image'}</b>?</>}
+            </div>
+            <div style={S.confirmRow}>
+              <button style={S.confirmCancel} disabled={busy === confirming.id}
+                onClick={() => setConfirming(null)}>Keep it</button>
+              <button style={S.confirmDelete} disabled={busy === confirming.id}
+                onClick={() => remove(confirming)}>{busy === confirming.id ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        )}
 
         <div style={S.body}>
           {/* "A new one" is an ANSWER to "which image?", not a rival button elsewhere. Uploading here
@@ -181,40 +269,63 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 
           {uploads?.length > 0 && (
             <div style={S.grid}>
-              {uploads.map(u => (
+              {uploads.map(u => {
+                const mine = canPromote && u.uploadedBy === 'baker';
+                return (
                 <div key={u.id} style={S.card}>
-                  {/* The image IS the button. What a tap MEANS is the caller's business. */}
-                  <button style={S.thumbBtn} onClick={() => choose(u)}
-                    title={selectMode ? 'Use this image' : 'Put it on the cake'}>
-                    <img src={u.url} alt={u.name || ''} style={S.thumb} loading="lazy" />
-                  </button>
-                  <div style={S.name}>{u.name || 'Untitled'}</div>
+                  <div style={S.thumbWrap}>
+                    {/* The image IS the button. What a tap MEANS is the caller's business. */}
+                    <button style={S.thumbBtn} onClick={() => choose(u)}
+                      title={selectMode ? 'Use this image' : 'Put it on the cake'}>
+                      <img src={u.url} alt={u.name || ''} style={S.thumb} loading="lazy" />
+                    </button>
 
-                  {/* Managing images is not what this window is FOR when you came here to fill a frame.
-                      Promote/delete would be a trapdoor next to the thing you actually meant to tap. */}
-                  {!selectMode && (
-                    <div style={S.actions}>
-                      {/* Cut-out is offered to EVERYONE, customer included — it is a treatment of your
-                          own image, not a library act. Offered even on a photo: it is their picture and
-                          their call (a cut-out portrait on a cake is a real thing people want). */}
-                      {apiClient?.removeUploadBg && (
-                        <button style={S.act} disabled={busy === u.id} onClick={() => cutBg(u)}>
-                          {busy === u.id ? 'Working…' : 'Remove background'}
-                        </button>
-                      )}
-                      {/* Promotion is a BAKER's act, and only on his OWN uploads: a customer's image is
-                          not his to offer to other customers (the API refuses it — ToS 6.2). Hiding the
-                          button on hers is not the security boundary, only the courtesy: the server is. */}
-                      {canPromote && u.uploadedBy === 'baker' && (
-                        u.promoted
-                          ? <button style={S.act} disabled={busy === u.id} onClick={() => unlink(u)}>Remove from decorations</button>
-                          : <button style={S.act} disabled={busy === u.id} onClick={() => onPromote?.(u)}>Show in my decorations</button>
-                      )}
-                      <button style={S.actDanger} disabled={busy === u.id} onClick={() => remove(u)}>Delete</button>
-                    </div>
-                  )}
+                    {/* Everything you can DO to this image, behind one grip. Managing images is not what
+                        this window is FOR when you came here to fill a frame, so it is absent in
+                        selectMode — a trapdoor next to the thing you actually meant to tap. */}
+                    {!selectMode && (
+                      <button
+                        style={S.kebab}
+                        aria-label={`Options for ${u.name || 'this image'}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuFor === u.id}
+                        onClick={() => setMenuFor(menuFor === u.id ? null : u.id)}
+                      >
+                        <DotsGlyph />
+                      </button>
+                    )}
+
+                    {menuFor === u.id && (
+                      <>
+                        {/* Tapping anywhere else closes it — a menu you can only dismiss by re-tapping
+                            the grip is a trap on a phone. */}
+                        <div style={S.menuScrim} onPointerDown={() => setMenuFor(null)} />
+                        <div style={S.menu} role="menu">
+                          <button style={S.menuItem} role="menuitem"
+                            onClick={() => { setMenuFor(null); setEditing(u); }}>Edit</button>
+
+                          {/* Promotion is a BAKER's act, and only on his OWN uploads: a customer's image
+                              is not his to offer to other customers (the API refuses it — ToS 6.2).
+                              Hiding it on hers is courtesy, not the boundary: the server is. */}
+                          {mine && (u.promoted
+                            ? <button style={S.menuItem} role="menuitem" disabled={busy === u.id}
+                                onClick={() => { setMenuFor(null); unlink(u); }}>Remove from decorations</button>
+                            : <button style={S.menuItem} role="menuitem"
+                                onClick={() => { setMenuFor(null); onPromote?.(u); }}>Show in my decorations</button>
+                          )}
+
+                          <button style={{ ...S.menuItem, ...S.menuDanger }} role="menuitem"
+                            onClick={() => { setMenuFor(null); setConfirming(u); }}>Delete</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div style={S.name}>{u.name || 'Untitled'}</div>
+                  {u.promoted && <div style={S.badge}>In my decorations</div>}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -236,12 +347,34 @@ const S = {
   uploadBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '11px 0', marginBottom: 14, borderRadius: 10, border: '1.5px dashed #cfcdd6', background: '#faf9fb', color: '#444', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' },
   grid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 },
   card:  { display: 'flex', flexDirection: 'column', gap: 6 },
-  thumbBtn: { padding: 0, border: '1.5px solid #e2e0e6', borderRadius: 11, background: '#faf9fb', cursor: 'pointer', overflow: 'hidden', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  thumbWrap: { position: 'relative' },
+  thumbBtn: { width: '100%', padding: 0, border: '1.5px solid #e2e0e6', borderRadius: 11, background: '#faf9fb', cursor: 'pointer', overflow: 'hidden', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   thumb: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' },
+  // 32px of tap target, on a phone, sitting ON the image — big enough to hit with a thumb and small
+  // enough not to steal the taps meant for the picture underneath.
+  kebab: { position: 'absolute', top: 4, right: 4, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.16)', color: '#555', cursor: 'pointer' },
+  menuScrim: { position: 'fixed', inset: 0, zIndex: 1 },
+  // Spans the CARD, not a fixed width hanging off the grip: a 168px menu anchored to a 130px card in
+  // the first column hangs past the sheet's edge and gets clipped — half of "Delete" was missing.
+  menu:  { position: 'absolute', top: 38, left: 0, right: 0, zIndex: 2, background: '#fff', borderRadius: 11, border: '1px solid #e8e6ec', boxShadow: '0 8px 24px rgba(20,20,24,0.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  menuItem: { padding: '10px 11px', border: 'none', borderBottom: '1px solid #f4f2f6', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textAlign: 'left', lineHeight: 1.3, cursor: 'pointer' },
+  menuDanger: { color: '#C0392B', borderBottom: 'none' },
   name:  { fontSize: 11.5, fontWeight: 700, color: '#1a1a1a', textAlign: 'center', lineHeight: 1.3 },
-  actions: { display: 'flex', flexDirection: 'column', gap: 4 },
-  act:   { padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' },
-  actDanger: { padding: '6px 8px', borderRadius: 7, border: '1.5px solid #f0d8d8', background: '#fff', color: '#C0392B', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' },
+  badge: { alignSelf: 'center', padding: '2px 8px', borderRadius: 20, background: '#EEF6EE', color: '#2E7D32', fontSize: 9.5, fontWeight: 800 },
+
+  back:  { border: 'none', background: 'none', fontSize: 17, color: '#888', cursor: 'pointer', padding: 0, marginRight: 8, fontFamily: 'inherit' },
+  foot:  { padding: 14, borderTop: '1px solid #eee' },
+  editArt: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, borderRadius: 12, background: '#faf9fb', border: '1.5px solid #eeecf1', marginBottom: 14, overflow: 'hidden' },
+  editImg: { maxWidth: '100%', maxHeight: 260, objectFit: 'contain' },
+  editAct: { width: '100%', padding: '12px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
+  primary: { width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+  hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginTop: 8, lineHeight: 1.45 },
+
+  confirm: { padding: 14, borderBottom: '1px solid #eee', background: '#FFF7F6' },
+  confirmText: { fontSize: 12.5, fontWeight: 600, color: '#4a4a4a', lineHeight: 1.5 },
+  confirmRow: { display: 'flex', gap: 8, marginTop: 10 },
+  confirmCancel: { flex: 1, padding: '9px 0', borderRadius: 9, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 12, fontWeight: 800, cursor: 'pointer' },
+  confirmDelete: { flex: 1, padding: '9px 0', borderRadius: 9, border: 'none', background: '#C0392B', color: '#fff', fontFamily: 'inherit', fontSize: 12, fontWeight: 800, cursor: 'pointer' },
 
   note:  { fontSize: 12.5, fontWeight: 700, color: '#8a7a80' },
   empty: { fontSize: 12.5, fontWeight: 600, color: '#8a7a80', lineHeight: 1.5, textAlign: 'center', padding: '28px 12px' },

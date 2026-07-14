@@ -62,6 +62,27 @@ function createApiClient(supabaseClient) {
     // length, so every caller passes the .size of the very blob it is about to PUT.
     // The upload ceiling, as the API currently has it (env-tuned there — never a copy here).
     fetchUploadLimits: () => authFetch('/api/storage/limits'),
+
+    // ── Uploads (the Uploads panel + the promote studio) ──────────────────────────────────────────
+    // The harness speaks to the REAL routes. Without these the panel renders an empty state and the
+    // whole feature is unverifiable here — which is exactly how a shipped bug in it went unseen.
+    fetchUploads:    () => authFetch('/api/uploads').catch(() => []),
+    registerUpload:  (payload) => authFetch('/api/uploads', { method: 'POST', body: JSON.stringify(payload) }),
+    deleteUpload:    (id) => authFetch(`/api/uploads/${id}`, { method: 'DELETE' }),
+    promoteUpload:   (id, payload) => authFetch(`/api/uploads/${id}/promote`, { method: 'POST', body: JSON.stringify(payload) }),
+    unlinkUpload:    (id) => authFetch(`/api/uploads/${id}/promote`, { method: 'DELETE' }),
+    removeUploadBg:  (id) => authFetch(`/api/uploads/${id}/remove-bg`, { method: 'POST' }),
+    fetchElementQuota: () => authFetch('/api/elements/quota').catch(() => null),
+    // The exact sentence the baker attests to, as published + hashed server-side.
+    fetchAttestationStatement: () => authFetch('/api/legal/content-rights').catch(() => null),
+    uploadElementImage: async (blob, filename) => {
+      const { url, key } = await authFetch('/api/storage/sign-upload', {
+        method: 'POST',
+        body: JSON.stringify({ folder: 'elements/files/2D', filename, contentType: blob.type || 'image/png', contentLength: blob.size }),
+      });
+      await fetch(url, { method: 'PUT', headers: { 'Content-Type': blob.type || 'image/png' }, body: blob });
+      return key;
+    },
     getSignedUploadUrl: (folder, filename, contentType, contentLength) =>
       authFetch('/api/storage/sign-upload', {
         method: 'POST',

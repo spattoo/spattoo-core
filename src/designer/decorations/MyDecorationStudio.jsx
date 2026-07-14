@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import PreviewTile from '../shared/PreviewTile.jsx';
 import TopperPreview from '../canvas/TopperPreview.jsx';
 import { useImageRegions } from '../shared/color/useImageRegions.js';
+import RightsAttestation from '../../legal/RightsAttestation.jsx';
 import { ZONE_LABELS } from '../constants.js';
 
 // ── My Decoration Studio — TWO STEPS, ONE SCREEN ─────────────────────────────────────────────────
@@ -37,11 +38,25 @@ import { ZONE_LABELS } from '../constants.js';
 //     screen's colour editor is a preview of the designer's own control, not a second implementation.
 //     "Let others change these colours" writes recolor.locked, for a logo that must not be repainted.
 //
-// NOT ASKED, ANYWHERE: permission. No rights checkbox, no review. Spattoo is an intermediary and the
-// baker has already accepted responsibility for what he publishes (ToS B5.4-B5.6); a tick clicked on
-// every promotion is the habituated tick that is worth nothing as evidence. The server RECORDS who
-// promoted what (promoted_by/at) and refuses only what no licence covers — a CUSTOMER's upload, which
-// is not the baker's to release (ToS 6.2).
+//  5. RIGHTS — the baker attests that this is his to share, and the server records it against the
+//     exact wording he read (content_attestations, target_type = decoration). Reuses the SAME
+//     RightsAttestation component the storefront publish uses: one statement, one unticked-by-default
+//     rule, no second copy to drift.
+//
+// WHY ASK HERE. Promotion is a PUBLICATION: the image lands in the picker every customer of this
+// bakery designs from. Cake decorations are overwhelmingly other people's IP — the image a baker wants
+// to reuse across cakes is precisely the cartoon character or the brand logo — and Spattoo is an
+// intermediary (ToS 6.5), so liability must demonstrably rest with the baker who released it. When a
+// rights holder sends a notice naming that image, "our terms say so" is weak; "he ticked THIS sentence
+// on THIS date" is not.
+//
+// This is the third and last consent moment, after the ToS at onboarding and the storefront publish —
+// and it stays evidence rather than reflex precisely because it is rare and deliberate. It is NOT
+// asked at upload (a private image, seen by nobody else) and NOT on "save as template" (his own
+// library, his own invited customers). A tick clicked fifty times is worth nothing.
+//
+// The server refuses what no licence covers regardless — a CUSTOMER's upload is not the baker's to
+// release, tick or no tick (ToS 6.2).
 
 const MAX_REGIONS = 3;      // "show up to 3 existing colours" — the recolour engine takes this as config
 const REGION_SAT  = 0.25;   // ignore near-greys: black outlines and white highlights are not "a colour"
@@ -54,6 +69,9 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
   const [locked, setLocked] = useState(false);  // true = others may NOT recolour it
   const [busy, setBusy]     = useState(null);
   const [error, setError]   = useState(null);
+  // Unticked every time this opens, and never pre-ticked: an attestation is only evidence if it was an
+  // affirmative act. (The component itself enforces that; the state simply starts false.)
+  const [attested, setAttested] = useState(false);
 
   // Only the kinds admin has opted in. If none are, say so rather than showing an empty dropdown.
   const kinds = useMemo(() => elementTypes.filter(t => t.baker_uploadable), [elementTypes]);
@@ -81,6 +99,7 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
   async function save() {
     if (!kind)         return setError('Choose what kind of decoration it is.');
     if (!zones.length) return setError('Choose at least one place on the cake.');
+    if (!attested)     return setError('Confirm you have the right to share this decoration.');
     setBusy('Adding…'); setError(null);
     try {
       // The colour descriptor. `group_defaults` are index-keyed to match the regions the render half
@@ -91,6 +110,9 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
         element_type_id: kind.id,
         allowed_zones: zones,
         placement_config: recolor ? { recolor } : {},
+        // The API refuses the promotion without this, and records it against the wording he read —
+        // attest first, then expose (spattoo-api routes/uploads.js).
+        rights_attested: true,
       });
       onSaved?.();
     } catch (e) {
@@ -192,10 +214,19 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
         </div>
 
         <div style={S.foot}>
+          {/* The rights tick — the LAST thing above the button, because it is what the button means.
+              Same component, same wording and same unticked-by-default rule as the storefront publish. */}
+          <RightsAttestation
+            apiClient={apiClient}
+            checked={attested}
+            onChange={setAttested}
+            disabled={!!busy}
+          />
+
           {/* A kind and at least one zone: without them the element has no behaviour, and the API would
-              refuse it anyway. */}
+              refuse it anyway. And the tick: the server refuses an unattested promotion. */}
           {(() => {
-            const blocked = !artUrl || !!busy || !kind || !zones.length;
+            const blocked = !artUrl || !!busy || !kind || !zones.length || !attested;
             return (
               <button style={S.save(blocked)} onClick={save} disabled={blocked}>
                 {busy ?? 'Show in my decorations'}
