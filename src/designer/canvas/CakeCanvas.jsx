@@ -2443,20 +2443,28 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
 // (fixed 400×400, parked off-screen for PNG capture) this fills its parent and is meant to be seen.
 // `enableZoom` is opt-in and defaults OFF: every existing caller is a small inline preview tile where a
 // stray scroll must not resize the cake. A full-size stage (the Cake Shape Studio) turns it on.
-export function CakePreview({ design, autoRotate = true, style, enableZoom = false }) {
+//
+// The LENS is overridable for the same reason. The default (42°, close) is a portrait lens for a
+// thumbnail — flattering, but it splays a cake's near bottom edge outward, which reads as the cake
+// bulging at the base. Judging a SHAPE needs a long lens (small fov, camera pulled back) so the
+// silhouette on screen is the silhouette, not the perspective.
+export function CakePreview({
+  design, autoRotate = true, style, enableZoom = false,
+  fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = [0, 2, 0],
+}) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
       <Canvas
         gl={{ preserveDrawingBuffer: true, alpha: true }}
         onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
-        camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
+        camera={{ position: cameraPosition, fov }}
         style={{ width: '100%', height: '100%' }}
       >
         <Suspense fallback={null}>
           <CakeThumbnailScene config={config} />
         </Suspense>
-        <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={[0, 2, 0]} />
+        <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={target} />
       </Canvas>
     </div>
   );

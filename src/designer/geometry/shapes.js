@@ -28,17 +28,115 @@ const SEGMENTS = 160;
 // ── Family generators ─────────────────────────────────────────────────────────
 // Each takes its config and returns raw (unnormalised) points; `outlineOf` normalises.
 
-// A heart: the classic cardioid-ish parametric curve. `plump` fattens the lobes, `cleft` deepens the
-// notch between them — the two things that actually distinguish one baker's heart tin from another.
-function heartOutline({ plump = 1, cleft = 1 } = {}) {
+// A heart: the classic parametric curve. `plump` fattens the lobes, `cleft` deepens the valley between
+// them — the two things that actually distinguish one baker's heart tin from another.
+//
+// The POINT faces the front of the cake (+Z, toward the viewer) and the lobes sit at the back, which is
+// how a heart cake is served and photographed. The raw curve is the other way up, hence the negated z.
+//
+// The valley is then ROUNDED (relaxCusps). On paper the curve's cleft is a cusp — a zero-width notch
+// where the two lobes meet at a point — and a cusp has no inward direction, so the rolled rim's offset
+// crossed over itself there and left an X-shaped pinch on the cake. Real heart tins have a rounded
+// valley anyway; a cusp is a property of the equation, not of any cake anyone has baked.
+function heartOutline({ plump = 1, cleft = 1, tip: tipR = 0.12 } = {}) {
+  // How a heart TIN is actually made: two round lobes at the back, two straight sides running forward to
+  // a point, and a shallow valley where the lobes meet. (The textbook heart *equation* is a different
+  // animal — its lobes balloon and its cleft plunges to a cusp, which is what made the last one read as
+  // two blobs stuck together rather than a cake.)
+  const r = 0.58 * plump;                 // lobe radius
+  const bz = -0.30;                       // lobes sit at the BACK (−Z); the point faces the front (+Z)
+  // Half-gap between the lobe centres. The lobes OVERLAP, and the valley is where they cross — so a
+  // wider gap cuts the notch deeper (centres almost touching leaves barely any notch at all).
+  const c = r * Math.max(0.15, Math.min(0.97, 0.72 * cleft));
+  const tip = { x: 0, z: 1.15 };
+
+  // Where a straight side leaves the lobe: the tangent from the tip to the circle. Anything else would
+  // either cut the lobe or leave a kink where the side meets it.
+  const C = { x: c, z: bz };
+  const dx = tip.x - C.x, dz = tip.z - C.z;
+  const d = Math.hypot(dx, dz);
+  const beta = Math.acos(Math.min(1, r / d));
+  const phi = Math.atan2(dz, dx);
+  const tanAng = phi - beta;              // the OUTER tangent — the one on the lobe's own side
+
+  // The valley: where the two overlapping lobes cross. They cross TWICE — the front crossing is buried
+  // inside the cake where the lobes merge into the body; it is the BACK one that is the notch you can
+  // see between the humps. Taking the front one ran each lobe's arc straight through the other and left
+  // a lens-shaped hole through the middle of the heart.
+  const valleyZ = bz - Math.sqrt(Math.max(0, r * r - c * c));
+  const valleyAng = Math.atan2(valleyZ - bz, -c);               // that crossing, as an angle on the right lobe
+
   const pts = [];
-  for (let i = 0; i < SEGMENTS; i++) {
-    const t = (i / SEGMENTS) * Math.PI * 2;
-    const x = 16 * Math.sin(t) ** 3;
-    const z = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-    pts.push({ x: x * plump, z: z + (cleft - 1) * 3 * Math.max(0, Math.cos(t)) });
+  const ARC = 46, SIDE = 26, TIP = 12;
+
+  const T = { x: C.x + r * Math.cos(tanAng), z: C.z + r * Math.sin(tanAng) };
+
+  // ── The point, rounded ──────────────────────────────────────────────────────
+  // Where the two straight sides meet is a knife edge, and no cake has one — a tin's point carries a
+  // radius, and a sharp vertical crease is the first thing that reads as "computer". So the apex is a
+  // fillet arc tangent to both sides: cut back `L` along each side and swing an arc of radius `tipR`.
+  const sx = T.x - tip.x, sz = T.z - tip.z;
+  const sl = Math.hypot(sx, sz) || 1;
+  const d1 = { x: sx / sl, z: sz / sl };                  // tip → right side
+  const bis = { x: 0, z: -1 };                           // the bisector points back into the cake
+  const theta = Math.acos(Math.max(-1, Math.min(1, -d1.z)));   // half-angle between the two sides
+  const R = Math.max(0, Math.min(tipR, sl * 0.6));
+  const A = { x: tip.x + d1.x * (R / Math.tan(theta)), z: tip.z + d1.z * (R / Math.tan(theta)) };
+  const O = { x: tip.x + bis.x * (R / Math.sin(theta)), z: tip.z + bis.z * (R / Math.sin(theta)) };
+  const M = { x: O.x - bis.x * R, z: O.z - bis.z * R };  // the arc's foremost point, on the centre line
+
+  if (R > 1e-4) {
+    const aM = Math.atan2(M.z - O.z, M.x - O.x);
+    let aA = Math.atan2(A.z - O.z, A.x - O.x);
+    while (aA - aM > Math.PI) aA -= Math.PI * 2;
+    while (aM - aA > Math.PI) aA += Math.PI * 2;
+    for (let i = 0; i <= TIP; i++) {
+      const a = aM + (aA - aM) * (i / TIP);
+      pts.push({ x: O.x + R * Math.cos(a), z: O.z + R * Math.sin(a) });
+    }
+  } else {
+    pts.push({ ...tip });
   }
-  return pts;
+
+  // Right side: from where the tip fillet leaves off, up to the tangent point.
+  const start = pts[pts.length - 1];
+  for (let i = 1; i < SIDE; i++) {
+    const t = i / SIDE;
+    pts.push({ x: start.x + (T.x - start.x) * t, z: start.z + (T.z - start.z) * t });
+  }
+  // Right lobe: tangent point, round the outside, to the valley.
+  let a0 = tanAng, a1 = valleyAng;
+  while (a1 > a0) a1 -= Math.PI * 2;                             // sweep the OUTER way (clockwise here)
+  for (let i = 0; i <= ARC; i++) {
+    const a = a0 + (a1 - a0) * (i / ARC);
+    pts.push({ x: C.x + r * Math.cos(a), z: C.z + r * Math.sin(a) });
+  }
+  // The left half is the mirror, walked back out to the tip.
+  const half = pts.length;
+  for (let i = half - 1; i >= 1; i--) pts.push({ x: -pts[i].x, z: pts[i].z });
+
+  return relaxCusps(pts, 3);              // soften the valley's corner — a tin has a radius there, not a crease
+}
+
+// Round off any vertex whose turn is too sharp to be a cake, by pulling it toward its neighbours. Only
+// the offenders move, so the silhouette everywhere else is the curve as authored.
+function relaxCusps(pts, passes = 6, maxTurnDeg = 60) {
+  const n = pts.length;
+  const cosLimit = Math.cos((maxTurnDeg * Math.PI) / 180);
+  let cur = pts;
+  for (let k = 0; k < passes; k++) {
+    const next = cur.map((p, i) => {
+      const a = cur[(i - 1 + n) % n], b = cur[(i + 1) % n];
+      const ax = p.x - a.x, az = p.z - a.z;
+      const bx = b.x - p.x, bz = b.z - p.z;
+      const la = Math.hypot(ax, az) || 1, lb = Math.hypot(bx, bz) || 1;
+      const turn = (ax * bx + az * bz) / (la * lb);       // 1 = straight on, −1 = doubles back
+      if (turn > cosLimit) return p;                       // gentle enough — leave it exactly as authored
+      return { x: (a.x + b.x + p.x * 2) / 4, z: (a.z + b.z + p.z * 2) / 4 };
+    });
+    cur = next;
+  }
+  return cur;
 }
 
 // A butterfly: four wing lobes on the diagonals, the front pair a little larger than the hind pair,
