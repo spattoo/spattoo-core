@@ -69,6 +69,7 @@ function createApiClient(supabaseClient) {
     fetchUploads:    () => authFetch('/api/uploads').catch(() => []),
     registerUpload:  (payload) => authFetch('/api/uploads', { method: 'POST', body: JSON.stringify(payload) }),
     deleteUpload:    (id) => authFetch(`/api/uploads/${id}`, { method: 'DELETE' }),
+    renameUpload:    (id, name) => authFetch(`/api/uploads/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
     promoteUpload:   (id, payload) => authFetch(`/api/uploads/${id}/promote`, { method: 'POST', body: JSON.stringify(payload) }),
     unlinkUpload:    (id) => authFetch(`/api/uploads/${id}/promote`, { method: 'DELETE' }),
     removeUploadBg:  (id) => authFetch(`/api/uploads/${id}/remove-bg`, { method: 'POST' }),

@@ -37,7 +37,11 @@ function DotsGlyph({ size = 16 }) {
 
 export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose }) {
   const [uploads, setUploads] = useState(null);   // null = loading
-  const [busy, setBusy]       = useState(null);
+  const [busy, setBusy]       = useState(null);   // which image is mid-operation (disables its controls)
+  // WHAT that operation is. Without it every control on the card speaks for all of them — renaming an
+  // image made the background button announce "Removing the background…", which is a lie about what
+  // the app is doing, and the operator has no way to know it isn't true.
+  const [busyWhat, setBusyWhat] = useState(null);  // 'rename' | 'bg' | 'delete'
   const [error, setError]     = useState(null);
   const [uploading, setUploading] = useState(false);
   // The grid is a GRID — one tap target per image. Everything you can DO to an image lives behind its
@@ -46,6 +50,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   const [menuFor, setMenuFor]     = useState(null);   // upload id whose menu is open
   const [editing, setEditing]     = useState(null);   // the image being edited (its own screen)
   const [confirming, setConfirming] = useState(null); // the image awaiting a delete confirmation
+  const [rename, setRename] = useState('');           // the edit screen's name field
   // The ceiling is the SERVER's (env-tuned), read at runtime — never a copy that could drift from it.
   const { maxImageBytes } = useUploadLimits(apiClient);
 
@@ -124,7 +129,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   // Confirmed in the panel, not through window.confirm: a browser dialog in the middle of a branded
   // app is jarring on a desktop and worse on a phone, and it cannot say WHAT deleting this one costs.
   async function remove(u) {
-    setBusy(u.id); setError(null);
+    setBusy(u.id); setBusyWhat('delete'); setError(null);
     try {
       await apiClient.deleteUpload(u.id);
       setConfirming(null);
@@ -133,7 +138,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     } catch (e) {
       setError(e.message || 'Could not delete it.');
     } finally {
-      setBusy(null);
+      setBusy(null); setBusyWhat(null);
     }
   }
 
@@ -143,7 +148,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   // would have no way to fix it. Runs server-side on the stored object; the row is updated in place, so
   // every design already using the image picks up the cut version.
   async function cutBg(u) {
-    setBusy(u.id); setError(null);
+    setBusy(u.id); setBusyWhat('bg'); setError(null);
     try {
       const updated = await apiClient.removeUploadBg(u.id);
       // The row is updated in place, so the URL is the same object — bust the cache or the edit screen
@@ -154,19 +159,38 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     } catch (e) {
       setError(e.message || 'Could not remove the background.');
     } finally {
-      setBusy(null);
+      setBusy(null); setBusyWhat(null);
+    }
+  }
+
+  // A name is how you find your own picture again, and it arrives as whatever the file was called —
+  // "Screenshot 2026-07-14 at 10.42.59 AM" is a timestamp, not a name. Renaming does NOT re-title a
+  // decoration already promoted: that copy carries the name the baker gave it when he released it, and
+  // silently changing what his customers see is not what "rename my image" asks for.
+  async function saveName(u) {
+    const name = rename.trim();
+    if (!name || name === (u.name ?? '')) return;
+    setBusy(u.id); setBusyWhat('rename'); setError(null);
+    try {
+      const saved = await apiClient.renameUpload(u.id, name);
+      setEditing({ ...u, ...(saved ?? {}), name });
+      await load();
+    } catch (e) {
+      setError(e.message || 'Could not rename it.');
+    } finally {
+      setBusy(null); setBusyWhat(null);
     }
   }
 
   async function unlink(u) {
-    setBusy(u.id);
+    setBusy(u.id); setBusyWhat('unlink');
     try {
       await apiClient.unlinkUpload(u.id);   // is_active = false on the library copy; the image stays here
       await load();
     } catch (e) {
       setError(e.message || 'Could not remove it from your decorations.');
     } finally {
-      setBusy(null);
+      setBusy(null); setBusyWhat(null);
     }
   }
 
@@ -194,9 +218,33 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
               <img src={u.url} alt={u.name || ''} style={S.editImg} />
             </div>
 
+            {apiClient?.renameUpload && (
+              <>
+                <div style={S.label}>Name</div>
+                <div style={S.renameRow}>
+                  <input
+                    style={S.input}
+                    value={rename}
+                    maxLength={60}
+                    disabled={working}
+                    placeholder="e.g. Gold butterfly"
+                    onChange={e => setRename(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveName(u); }}
+                  />
+                  <button
+                    style={S.renameBtn(!rename.trim() || rename.trim() === (u.name ?? '') || working)}
+                    disabled={!rename.trim() || rename.trim() === (u.name ?? '') || working}
+                    onClick={() => saveName(u)}
+                  >
+                    {working && busyWhat === 'rename' ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </>
+            )}
+
             {apiClient?.removeUploadBg && (
-              <button style={S.editAct} disabled={working} onClick={() => cutBg(u)}>
-                {working ? 'Removing the background…' : 'Remove background'}
+              <button style={{ ...S.editAct, marginTop: 16 }} disabled={working} onClick={() => cutBg(u)}>
+                {working && busyWhat === 'bg' ? 'Removing the background…' : 'Remove background'}
               </button>
             )}
             <div style={S.hint}>
@@ -302,7 +350,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
                         <div style={S.menuScrim} onPointerDown={() => setMenuFor(null)} />
                         <div style={S.menu} role="menu">
                           <button style={S.menuItem} role="menuitem"
-                            onClick={() => { setMenuFor(null); setEditing(u); }}>Edit</button>
+                            onClick={() => { setMenuFor(null); setRename(u.name ?? ''); setEditing(u); }}>Edit</button>
 
                           {/* Promotion is a BAKER's act, and only on his OWN uploads: a customer's image
                               is not his to offer to other customers (the API refuses it — ToS 6.2).
@@ -369,6 +417,10 @@ const S = {
   editAct: { width: '100%', padding: '12px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
   primary: { width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
   hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginTop: 8, lineHeight: 1.45 },
+  label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
+  renameRow: { display: 'flex', gap: 8 },
+  input: { flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#1a1a1a', boxSizing: 'border-box' },
+  renameBtn: (d) => ({ padding: '0 16px', borderRadius: 9, border: 'none', background: d ? '#e6e4ea' : '#1a1a1a', color: d ? '#a9a5b0' : '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: d ? 'default' : 'pointer' }),
 
   confirm: { padding: 14, borderBottom: '1px solid #eee', background: '#FFF7F6' },
   confirmText: { fontSize: 12.5, fontWeight: 600, color: '#4a4a4a', lineHeight: 1.5 },
