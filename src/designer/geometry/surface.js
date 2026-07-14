@@ -61,45 +61,6 @@ export function boundingRadius(shape) {
   return shape.radius;
 }
 
-// The footprint as a 2D SVG path — the ONE place a shape becomes something you can DRAW rather than
-// extrude. Every shape picker (the New-cake grid, the tier's Shape row) draws from this, which is why it
-// hangs off tierShape: a silhouette that re-derived its own hearts would be a second definition of what
-// a heart is, free to drift from the cake the customer actually gets.
-//
-// A SILHOUETTE and not a 3D thumbnail, deliberately. The catalog GROWS — admin authors shapes without a
-// deploy — and a grid of live WebGL previews does not survive that: browsers cap concurrent contexts
-// (~16), so past a dozen shapes the tiles start blanking as the oldest context is dropped. A path costs
-// nothing at any N, and a footprint is precisely what is being chosen.
-//
-// Returned in the shape's own units (x → SVG x, z → SVG y, so the cake's FRONT sits at the bottom, which
-// is how you look down at a cake); `halfW`/`halfD` give the caller its viewBox.
-export function silhouettePath(tier) {
-  const shape = tierShape(tier);
-
-  if (shape.kind === 'round') {
-    const r = shape.radius;
-    // Two arcs, not a sampled polygon: a circle should be a circle at any zoom.
-    return { d: `M ${-r} 0 A ${r} ${r} 0 1 0 ${r} 0 A ${r} ${r} 0 1 0 ${-r} 0 Z`, halfW: r, halfD: r };
-  }
-
-  if (shape.kind === 'rect') {
-    const { halfW, halfD } = shape;
-    const r = Math.min(shape.cornerR, halfW, halfD);
-    const d = [
-      `M ${-halfW + r} ${-halfD}`,
-      `L ${halfW - r} ${-halfD}`, `A ${r} ${r} 0 0 1 ${halfW} ${-halfD + r}`,
-      `L ${halfW} ${halfD - r}`,  `A ${r} ${r} 0 0 1 ${halfW - r} ${halfD}`,
-      `L ${-halfW + r} ${halfD}`, `A ${r} ${r} 0 0 1 ${-halfW} ${halfD - r}`,
-      `L ${-halfW} ${-halfD + r}`,`A ${r} ${r} 0 0 1 ${-halfW + r} ${-halfD}`,
-      'Z',
-    ].join(' ');
-    return { d, halfW, halfD };
-  }
-
-  const d = `${shape.outline.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(4)} ${p.z.toFixed(4)}`).join(' ')} Z`;
-  return { d, halfW: shape.halfW, halfD: shape.halfD };
-}
-
 export function circlePerimeter(r) {
   return {
     length: 2 * Math.PI * r,

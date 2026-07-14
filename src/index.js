@@ -2,6 +2,12 @@ export { default as CakeDesigner } from './designer/CakeDesigner.jsx';
 export { default as PatternBuilder } from './designer/PatternBuilder.jsx';
 export { default as PatternBuilderCanvas, placementPosition, getOverlappingIds, ALL_TIER_GEOM } from './designer/canvas/PatternBuilderCanvas.jsx';
 export { default as CakeCanvas, CakeThumbnailCanvas, CakePreview } from './designer/canvas/CakeCanvas.jsx';
+// The shape picker's camera and its capture helper. Exported because the Cake Shape Studio SAVES a
+// thumbnail through this exact view and the picker falls back to a live tile through it — one camera, or
+// a shape would change appearance the moment somebody photographed it. captureThumbnailBlob is the ONE
+// canvas→blob path (the same one order placement and template save use), not a second copy in admin.
+export { SHAPE_VIEW } from './designer/controls/ShapePicker.jsx';
+export { captureThumbnailBlob } from './designer/utils/thumbnail.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 export { default as OrdersPanel } from './orders/OrdersPanel.jsx';

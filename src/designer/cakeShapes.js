@@ -40,6 +40,14 @@ export function applyCakeShapeConfig(rows) {
       label: row.label ?? row.key,
       family: row.family ?? CAKE_SHAPES[row.key]?.family ?? 'circle',
       config: row.config || {},
+      // The STACK this shape starts a cake with — [{width, depth, height}, …]. Empty means "one tier at
+      // the designer's default", which is what every row meant before shapes could be multi-tier, so an
+      // empty stack is an answer and not a gap. Every tier of a shape IS that shape: a two-tier heart is
+      // the heart outline stacked twice, so no entry carries a footprint of its own.
+      tiers: Array.isArray(row.tiers) ? row.tiers : [],
+      // A FRONT VIEW of this shape, rendered through the real designer renderer when it was saved. The
+      // picker draws this rather than a live 3D tile — an <img> costs nothing at any catalog size.
+      thumbnailKey: row.thumbnail_key ?? null,
     };
   }
 }

@@ -34,6 +34,35 @@ const DEFAULT_DESIGN = {
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
 };
 
+// The cake a shape STARTS you with — the ONE definition of "new cake, shape X". `New` resets the design
+// to this, and the shape picker previews a tile with it, so the cake in the grid is the cake you get.
+//
+// A shape is a form, not just an outline: if its catalog row authors a STACK, the starter cake is that
+// stack. That is the entire difference between "Cylinder" and "2T Cylinder" — the same footprint, a
+// different cake — and it did not exist while a row could only carry a curve. An empty stack means one
+// tier at the designer's default, which is what every shape meant before, so old rows are untouched.
+//
+// Sizes come from the row; colour/frosting/style stay the designer's defaults, because a shape authors
+// the cake's FORM, not its decoration.
+export function starterDesign(shape = 'round') {
+  const def = cakeShapeDef(shape);
+  const base = DEFAULT_DESIGN.tiers[0];
+  // A round tier is sized by RADIUS; every other footprint by width/depth (toCanvasConfig reads only the
+  // one its family uses and silently ignores the other). The authored stack speaks width/depth for all of
+  // them — the studio shows the same two sliders whatever the shape — so a circle's width is its diameter
+  // and must be translated here. Miss this and a 12-inch round seeds as the default 6-inch one, with
+  // nothing on screen to say why.
+  const isRound = def.family === 'circle';
+  const sized = t => (isRound
+    ? { radius: t.width / 2, height: t.height }
+    : { width: t.width, depth: t.depth, height: t.height });
+  const stack = def.tiers ?? [];
+  const tiers = stack.length
+    ? stack.map(t => ({ ...base, shape, ...sized(t) }))
+    : [{ ...base, shape }];
+  return { ...DEFAULT_DESIGN, tiers };
+}
+
 // Pure resolver: a design (authored shape, fields optional) → the canvas/scene config the
 // renderer consumes (radius/height/frosting defaults filled in). This is the SINGLE place tier
 // geometry defaults live — the live editor's `canvasConfig` useMemo and the read-only `CakePreview`
@@ -950,11 +979,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, piping: [] }));
   }
 
-  // Start over. `shape` is the footprint the new cake begins as — the one thing the customer chose
-  // before the blank canvas appeared (CakeDesigner's New flow). Defaulting it to round keeps every
-  // existing caller — resetDesign() with no argument — behaving exactly as it did.
+  // Start over as the shape the customer picked (CakeDesigner's New flow). Defaulting to round keeps
+  // every existing caller — resetDesign() with no argument — behaving exactly as it did.
+  //
+  // A shape is the cake you START with, not only the outline it is cut from: if its catalog row authors a
+  // STACK, the new cake is that stack. That is the whole difference between "Cylinder" and "2T Cylinder",
+  // which are the same footprint and were previously the same cake. An empty stack means one tier at the
+  // designer's default size — what every shape meant before this existed.
+  //
+  // Sizes come from the row; everything else (colour, frosting, style) is the designer's default, because
+  // a shape authors the CAKE'S FORM, not its decoration.
   function resetDesign(shape = 'round') {
-    setDesign({ ...DEFAULT_DESIGN, tiers: DEFAULT_DESIGN.tiers.map((t, i) => (i === 0 ? { ...t, shape } : t)) });
+    setDesign(starterDesign(shape));
   }
 
   function addStickerBatch(stickers) {
