@@ -125,7 +125,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         try {
           const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
           const filename = `${baker.slug || 'baker'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
-          const { url: signed, key } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type);
+          const { url: signed, key } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type, file.size);
           await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
           // Persist a DB row immediately so the photo is tracked + manageable (no orphans).
           let dbId = id;
@@ -196,7 +196,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const filename = `${baker.slug || 'baker'}-${Date.now()}.${ext}`;
-      const { url, key } = await apiClient.getSignedUploadUrl('portraits', filename, file.type);
+      const { url, key } = await apiClient.getSignedUploadUrl('portraits', filename, file.type, file.size);
       await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
       setPortraitKey(key);                        // persisted on Publish
     } catch (err) {
@@ -257,7 +257,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const filename = `${baker.slug || 'baker'}-hl-${Date.now()}.${ext}`;
-      const { url: signed, key, publicUrl } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type);
+      const { url: signed, key, publicUrl } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type, file.size);
       const put = await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
       if (!put.ok) throw new Error(`upload failed (${put.status})`);
       // Prefer the optimised WebP; if that endpoint errors/absent, fall back to the original so the

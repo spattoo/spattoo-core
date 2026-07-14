@@ -74,6 +74,14 @@ export { makeLusterDustMaps, LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from
 export { makeParticleFinishMaps } from './designer/shared/textures/particleFinish.js';
 export { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from './designer/shared/textures/goldLeafFlakes.js';
 export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStrokeTile, heightFieldFromImage, heightTextureFromField, normalTextureFromField } from './designer/shared/textures/imageNormalMap.js';
+// Image ingest — the ONE pipeline a picked image goes through before it reaches R2: the format
+// allowlist + size gate (validateImageFile), the photo compressor (aspect kept, long edge capped) and
+// the decoration normalizer (alpha-cropped, centred in a square). Exported because spattoo-admin's
+// element authoring runs the SAME functions: a baker's uploaded decoration and an admin-authored
+// element must be produced by identical code, or the two drift (they had — the admin copy honoured no
+// EXIF orientation and hung forever on a file it couldn't decode).
+export { ACCEPT_IMAGE, IMAGE_TYPES, MAX_IMAGE_BYTES, validateImageFile, imageExt, decodeImage, encodeWebp, compressImage, normalizeArtwork } from './shared/image.js';
+export { useUploadLimits } from './shared/useUploadLimits.js';
 // Vendor-neutral error telemetry. Host apps inject a Sentry-backed transport via
 // configureTelemetry(); until then it logs to the console. See src/telemetry/.
 export { reportError, reportMessage, setContext, configureTelemetry } from './telemetry/index.js';

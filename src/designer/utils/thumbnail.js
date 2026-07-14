@@ -5,9 +5,11 @@
 // surfaces load many images at once, so download size is the lever (ASSET_OPTIMIZATION_PLAN.md §3).
 //
 // Older browsers that can't encode WebP via canvas silently return PNG instead, so the caller must
-// derive the upload's file extension AND Content-Type from the REAL `blob.type` (see `blobExt`) —
-// the R2 signed PUT signs the content type, so the extension, the type passed to sign-upload, and
-// the PUT header must all agree. The ONE copy; both CakeDesigner call sites use it.
+// derive the upload's file extension AND Content-Type from the REAL `blob.type` (`imageExt`, shared
+// with every other upload path in shared/image.js) — the R2 signed PUT signs the content type, so the
+// extension, the type passed to sign-upload, and the PUT header must all agree.
+import { imageExt } from '../../shared/image.js';
+
 const THUMB_QUALITY = 0.85;
 
 export function captureThumbnailBlob(canvas, { quality = THUMB_QUALITY, timeoutMs = 4000 } = {}) {
@@ -22,11 +24,6 @@ export function captureThumbnailBlob(canvas, { quality = THUMB_QUALITY, timeoutM
   });
 }
 
-// File extension matching a captured blob's MIME (webp when supported, png on fallback).
-export function blobExt(blob) {
-  return blob?.type === 'image/webp' ? 'webp' : 'png';
-}
-
 // Upload a captured thumbnail blob to R2 via a signed URL → the stored key, or null on ANY failure
 // (a missing thumbnail is always non-fatal). `folder` must be an allowed sign-upload folder. This is
 // the ONE copy of the signed-PUT block that order placement, template save, and share-the-draft all
@@ -34,8 +31,8 @@ export function blobExt(blob) {
 export async function uploadThumbnail(blob, apiClient, folder) {
   if (!blob || !apiClient?.getSignedUploadUrl) return null;
   try {
-    const filename = `${crypto.randomUUID()}.${blobExt(blob)}`;
-    const { url, key } = await apiClient.getSignedUploadUrl(folder, filename, blob.type);
+    const filename = `${crypto.randomUUID()}.${imageExt(blob)}`;
+    const { url, key } = await apiClient.getSignedUploadUrl(folder, filename, blob.type, blob.size);
     await fetch(url, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob });
     return key;
   } catch {

@@ -23,7 +23,7 @@ import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeaf
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
 import MyDecorationStudio from './decorations/MyDecorationStudio.jsx';
-import MyAssetsPanel from './decorations/MyAssetsPanel.jsx';
+import UploadsPanel from './decorations/UploadsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
@@ -629,6 +629,17 @@ function ElementsIcon({ size = 20 }) {
   );
 }
 
+// Uploads — a picture (frame + hill + sun), matching the stroke weight of the other rail icons.
+function UploadsIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="8.5" cy="9.5" r="1.6" />
+      <path d="M21 15.5l-4.5-4.5L7 20.5" />
+    </svg>
+  );
+}
+
 function TextIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1210,14 +1221,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }, [initialDesign]);
 
   const [elementsOpen, setElementsOpen] = useState(false);
-  // "Add your own decoration" — the upload studio (decorations/MyDecorationStudio.jsx). Same screen for
-  // a baker and a customer; the API decides who ends up owning the result.
+  // The promote studio (decorations/MyDecorationStudio.jsx) — a BAKER giving one of his own images a
+  // behaviour (kind, zones, hug/stand, colours) as he releases it to his customers. Only reachable from
+  // Uploads; uploading itself happens there.
   const [decorStudioOpen, setDecorStudioOpen] = useState(false);
-  // "My images" — everything this person uploaded (baker_uploads), private to them. `promoting` holds
+  // "Uploads" — everything this person uploaded (baker_uploads), private to them. `promoting` holds
   // the upload a BAKER is releasing into his library: the studio reopens in promote mode to author its
   // behaviour (kind, zones, hug/stand, colours). Null = the studio is in plain upload mode.
-  const [myAssetsOpen, setMyAssetsOpen] = useState(false);
+  const [uploadsOpen, setUploadsOpen] = useState(false);
   const [promoting, setPromoting] = useState(null);
+  // Which photo-frame sticker is waiting for an image. Non-null = Uploads opened to CHOOSE for that
+  // frame (rather than to place on the cake). One panel, two purposes — decided by the caller.
+  const [framePhotoFor, setFramePhotoFor] = useState(null);
+
   const [toolsOpen, setToolsOpen]   = useState(false);
   const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen) · 'luster-dust'
   // Luster dust: colour for new flicks, which tier is being dusted, and the selected splash to aim.
@@ -1322,6 +1338,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [filterWeight,    setFilterWeight]    = useState('');
   const [filterAge,       setFilterAge]       = useState('');
   const [elemSearch,      setElemSearch]      = useState('');
+
+  // The decoration-grid filter: honour the search box, and hide pattern_only building blocks (a
+  // decor_pattern's individual parts) — they are placed via their parent pattern, never on their own.
+  //
+  // Defined HERE, at component scope, because BOTH the element-type grids and the "My decorations"
+  // section below use it. It used to live inside the grids' IIFE, so the second caller referenced a
+  // binding that was not in scope — a ReferenceError the moment the panel rendered. One definition,
+  // both callers: the same rule cannot be in two places (INVARIANTS.md).
+  const filterEl = (els) => {
+    const q = elemSearch.trim().toLowerCase();
+    return (els ?? []).filter(el => {
+      if (el.placement_config?.pattern_only === true) return false;
+      if (!q) return true;
+      return `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q);
+    });
+  };
+
   const [tmplSearch,      setTmplSearch]      = useState('');
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   // Accordion stack of opened piping elements. Each card edits one element (across
@@ -4214,37 +4247,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
-  // Photo-cake frame: upload the customer's photo for one frame instance. Shows it instantly via a
-  // local blob URL, uploads to R2 in the background (same signed-URL flow as every other upload), then
-  // swaps in the persisted public URL so it survives a reload (stored inside the design JSON).
-  //
-  // AND REGISTERS IT. The design JSON keeps the URL — that is what renders, and it is why a photo keeps
-  // working even after the upload is unlinked or the library changes. But the URL alone leaves the R2
-  // object untracked: nobody could list it, nobody could delete it, and when its owner asks for erasure
-  // we would be scanning design JSON to find her daughter's photograph. The row is what makes it
-  // MANAGEABLE (baker_uploads). Same reason baker_storefront_photos writes a row on upload.
-  //
-  // Registration failing must NOT lose the photo — the cake still renders from the URL. It is logged and
-  // the design proceeds; an unregistered object is a gap in housekeeping, not a broken cake.
-  async function pickFramePhoto(stickerId, file) {
-    if (!file) return;
-    updateSticker(stickerId, { photoUrl: URL.createObjectURL(file) });   // instant local preview
-    if (!apiClient?.getSignedUploadUrl) return;
-    try {
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-      const filename = `${stickerId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-      const { url, publicUrl, key } = await apiClient.getSignedUploadUrl('customer/photos', filename, file.type);
-      await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-      if (publicUrl) updateSticker(stickerId, { photoUrl: publicUrl });
-      try {
-        await apiClient.registerUpload?.({ storage_key: key ?? filename, name: file.name?.slice(0, 60) || 'Photo' });
-      } catch (regErr) {
-        console.error('Photo uploaded but not registered', regErr);
-      }
-    } catch (err) {
-      console.error('Frame photo upload failed', err);
-    }
-  }
+  // Photo-cake frames get their image from Uploads (setFramePhotoFor -> UploadsPanel), which is
+  // ALSO where a new one is uploaded. There is deliberately no upload path here any more: a second
+  // one would drift from the first, and the old straight-to-frame input uploaded the same photo again
+  // for every frame that used it — a duplicate R2 object per use, and a baker who already had his
+  // customer's photo still had to re-upload it.
 
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
@@ -4365,12 +4372,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         const t = inst.photoTransform ?? { x: 0, y: 0, zoom: 1 };
         const setT = patch => updateSticker(el.id, { photoTransform: { ...t, ...patch } });
         const PAN = 0.04, clampPan = v => Math.max(-0.6, Math.min(0.6, +v.toFixed(3)));
+        // ONE way to get a photo into a frame: choose from Uploads — which is also where you upload
+        // a new one. Not two buttons. The old file input uploaded straight into the frame, so the same
+        // photo used in a second frame (or a second design) was uploaded, stored and paid for TWICE,
+        // and the baker who already has the photo his customer sent him would have had to upload it
+        // again. Now every photo is picked from the one place photos live.
         const controls = [
-          <label key="up" style={{ ...s.toolbarBtn, display: 'block', width: '100%', boxSizing: 'border-box', textAlign: 'center', cursor: 'pointer' }}>
-            {inst.photoUrl ? 'Change photo' : 'Upload photo'}
-            <input type="file" accept="image/*" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pickFramePhoto(el.id, f); }} />
-          </label>,
+          <button key="up" style={{ ...s.toolbarBtn, display: 'block', width: '100%', boxSizing: 'border-box', textAlign: 'center', cursor: 'pointer' }}
+            onClick={() => setFramePhotoFor(el.id)}>
+            {inst.photoUrl ? 'Change image' : 'Select image'}
+          </button>,
         ];
         if (inst.photoUrl) {
           controls.push(
@@ -5000,19 +5011,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} />,  requires: 'order:view' },
               { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} />,  requires: 'design:create' },
               { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />, requires: 'design:create' },
+              // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own
+              // images — photos, decorations), not a kind of decoration. It is also where uploading now
+              // happens, so burying it three taps deep inside another panel made no sense.
+              { id: 'uploads',    label: 'Uploads',   icon: <UploadsIcon size={20} />,  requires: 'element:manage' },
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view' },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
               ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
             ].filter(item => hasCap(item.requires)).map(({ id, label, icon }) => {
-              const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+              const active = id === 'elements' ? elementsOpen : id === 'uploads' ? uploadsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
               const isNew  = id === 'new';
               return (
                 <button key={id} style={s.navItem}
                   onClick={() => {
                     if (id === 'new')       handleNewCake();
                     if (id === 'elements')  openElements();
+                    if (id === 'uploads')   setUploadsOpen(true);
                     if (id === 'tools')     openTools();
                     if (id === 'templates') openTemplates();
                     if (id === 'dashboard') setDashboardOpen(true);
@@ -5157,15 +5173,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
             {/* All other element types */}
             {(() => {
-              const q = elemSearch.trim().toLowerCase();
-              // Hide pattern_only building blocks (e.g. a decor_pattern's individual parts) from
-              // every decor grid — they're placed via their parent pattern, never on their own.
-              const filterEl = els => (els ?? []).filter(el => {
-                if (el.placement_config?.pattern_only === true) return false;
-                if (!q) return true;
-                const hay = `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase();
-                return hay.includes(q);
-              });
               return elementTypes
                 .filter(et => et.slug !== 'cream_piping' && et.slug !== 'piping_pattern' && et.slug !== 'drip' && activeElementTypeIds.has(et.id))
                 .map(et => (
@@ -5215,29 +5222,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     </div>
                   );
                 })()}
-                <button
-                  onClick={() => { setElementsOpen(false); setDecorStudioOpen(true); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 300, color: '#888' }}>+</div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Add your own</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Upload a decoration and put it on the cake</div>
-                  </div>
-                </button>
-
-                {/* Everything THIS person has uploaded — private to them (baker_uploads). It is a
-                    separate door from "Add your own" because an upload is not a decoration in the
-                    library: it is yours, it is usable straight away, and only a baker's deliberate
-                    "show in my decorations" ever offers one to anybody else. */}
-                <button
-                  onClick={() => { setElementsOpen(false); setMyAssetsOpen(true); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#888' }}>◫</div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>My images</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Photos and decorations you’ve uploaded</div>
-                  </div>
-                </button>
+                {/* "Add your own" and "Uploads" both used to live here. They are gone: Uploads is
+                    now a MAIN MENU entry (it is a place you go — your own images — not a kind of
+                    decoration), and uploading happens INSIDE it, so a second upload door here would be
+                    a second path to drift. This section is the LIBRARY only. */}
               </>
             )}
 
@@ -6409,33 +6397,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* Upload your own decoration. `tiers` is passed so the zone picker can render the user's own
           artwork ON the actual cake they're designing — the only honest way to explain "a zone".
           On save, reload the catalog so the new decoration appears in My Decorations immediately. */}
-      {decorStudioOpen && (
+      {decorStudioOpen && promoting && (
         <MyDecorationStudio
           apiClient={apiClient}
           tiers={canvasConfig.tiers}
           elementTypes={elementTypes}
-          mode={promoting ? 'promote' : 'upload'}
           upload={promoting}
           onClose={() => { setDecorStudioOpen(false); setPromoting(null); }}
           onSaved={async () => {
             setDecorStudioOpen(false);
-            // Promotion put a row in the LIBRARY, so the catalog must be re-read. A plain upload did
-            // not — it is a private image, and lives in My images, which reloads itself.
-            if (promoting) { await loadElementsIfNeeded(true); setElementsOpen(true); }
-            else setMyAssetsOpen(true);
+            await loadElementsIfNeeded(true);   // the LIBRARY has a new row — re-read the catalog
             setPromoting(null);
+            setElementsOpen(true);              // show them where it landed
           }}
         />
       )}
 
-      {/* My images — the uploads themselves. Tap one to put it on the cake (it borrows the placement
+      {/* Uploads — the uploads themselves. Tap one to put it on the cake (it borrows the placement
           rules of the type flagged default_for_uploads — data, not a hardcoded slug). A baker can also
           release one to his customers here, or take it back. */}
-      {myAssetsOpen && (
-        <MyAssetsPanel
+      {(uploadsOpen || framePhotoFor != null) && (
+        <UploadsPanel
           apiClient={apiClient}
           elementTypes={elementTypes}
-          canPromote={orderMode === 'baker'}
+          // Choosing FOR A FRAME is a different act from placing on the cake, so the panel is told
+          // which one it is and the caller supplies the meaning of a tap. The panel itself has no idea
+          // what a photo frame is — no branch, no second grid.
+          selectMode={framePhotoFor != null}
+          canPromote={orderMode === 'baker' && framePhotoFor == null}
+          onSelect={(u) => {
+            // Fills THIS frame's slot. Uploads nothing (the image already exists), creates no element,
+            // touches no library: a photo in a frame is design content, exactly as private as before.
+            // Replacing an image does NOT delete the old upload — it may be in another design, and
+            // deleting is an explicit act in Uploads, never a side-effect of changing your mind.
+            updateSticker(framePhotoFor, { photoUrl: u.url });
+            setFramePhotoFor(null);
+          }}
           onPlace={(el) => {
             // Rides the ORDINARY placement path: the upload was made element-shaped, so addSticker
             // treats it like any library element — no parallel code path to drift.
@@ -6443,8 +6440,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             if (!zone) return;
             addSticker(el, zone, 0, el.placement_config?.[zone] ?? 'hug');
           }}
-          onPromote={(u) => { setMyAssetsOpen(false); setPromoting(u); setDecorStudioOpen(true); }}
-          onClose={() => setMyAssetsOpen(false)}
+          onPromote={(u) => { setUploadsOpen(false); setPromoting(u); setDecorStudioOpen(true); }}
+          onClose={() => { setUploadsOpen(false); setFramePhotoFor(null); }}
         />
       )}
 
