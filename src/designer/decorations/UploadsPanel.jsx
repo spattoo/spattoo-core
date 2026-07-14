@@ -186,6 +186,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     setBusy(u.id); setBusyWhat('unlink');
     try {
       await apiClient.unlinkUpload(u.id);   // is_active = false on the library copy; the image stays here
+      if (editing?.id === u.id) setEditing({ ...u, promoted: false });
       await load();
     } catch (e) {
       setError(e.message || 'Could not remove it from your decorations.');
@@ -255,14 +256,30 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
             {error && <div style={S.err}>{error}</div>}
           </div>
 
-          {mine && !u.promoted && (
+          {/* The ONE place an image is offered to, or withdrawn from, the baker's customers. A customer
+              never sees it: a customer's image is not hers to release to other customers (the API
+              refuses it — ToS 6.2), and hiding it is the courtesy; the server is the boundary. */}
+          {mine && (
             <div style={S.foot}>
-              <button style={S.primary} disabled={working} onClick={() => { setEditing(null); onPromote?.(u); }}>
-                Use as a decoration
-              </button>
-              <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
-                Your customers will be able to put it on their cakes.
-              </div>
+              {u.promoted ? (
+                <>
+                  <button style={S.secondary} disabled={working} onClick={() => unlink(u)}>
+                    {working && busyWhat === 'unlink' ? 'Removing…' : 'Remove from decorations'}
+                  </button>
+                  <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
+                    It leaves your customers&rsquo; pickers. Cakes already designed with it keep it.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <button style={S.primary} disabled={working} onClick={() => { setEditing(null); onPromote?.(u); }}>
+                    Use as a decoration
+                  </button>
+                  <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
+                    Your customers will be able to put it on their cakes.
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -318,7 +335,6 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
           {uploads?.length > 0 && (
             <div style={S.grid}>
               {uploads.map(u => {
-                const mine = canPromote && u.uploadedBy === 'baker';
                 return (
                 <div key={u.id} style={S.card}>
                   <div style={S.thumbWrap}>
@@ -348,20 +364,14 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
                         {/* Tapping anywhere else closes it — a menu you can only dismiss by re-tapping
                             the grip is a trap on a phone. */}
                         <div style={S.menuScrim} onPointerDown={() => setMenuFor(null)} />
+                        {/* TWO items, and no more. Everything you can do TO the picture — rename it, cut
+                            its background out, hand it to your customers — is one screen (Edit), because
+                            they are one train of thought: you clean an image up and THEN release it.
+                            Promotion had a door here as well as in Edit, and two doors to the same room
+                            is not a choice, it is a question the operator has to answer twice. */}
                         <div style={S.menu} role="menu">
                           <button style={S.menuItem} role="menuitem"
                             onClick={() => { setMenuFor(null); setRename(u.name ?? ''); setEditing(u); }}>Edit</button>
-
-                          {/* Promotion is a BAKER's act, and only on his OWN uploads: a customer's image
-                              is not his to offer to other customers (the API refuses it — ToS 6.2).
-                              Hiding it on hers is courtesy, not the boundary: the server is. */}
-                          {mine && (u.promoted
-                            ? <button style={S.menuItem} role="menuitem" disabled={busy === u.id}
-                                onClick={() => { setMenuFor(null); unlink(u); }}>Remove from decorations</button>
-                            : <button style={S.menuItem} role="menuitem"
-                                onClick={() => { setMenuFor(null); onPromote?.(u); }}>Show in my decorations</button>
-                          )}
-
                           <button style={{ ...S.menuItem, ...S.menuDanger }} role="menuitem"
                             onClick={() => { setMenuFor(null); setConfirming(u); }}>Delete</button>
                         </div>
@@ -416,6 +426,7 @@ const S = {
   editImg: { maxWidth: '100%', maxHeight: 260, objectFit: 'contain' },
   editAct: { width: '100%', padding: '12px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
   primary: { width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+  secondary: { width: '100%', padding: '13px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer' },
   hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginTop: 8, lineHeight: 1.45 },
   label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
   renameRow: { display: 'flex', gap: 8 },
