@@ -1,0 +1,22 @@
+// The Edit screen after the collapse: rename field + Remove background + Use as a decoration.
+import { chromium } from 'playwright';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+const here = dirname(fileURLToPath(import.meta.url));
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ storageState: resolve(here, 'storageState.json'), viewport: { width: 1200, height: 1000 } });
+const page = await ctx.newPage();
+page.on('pageerror', e => console.log('  [pageerror]', String(e).slice(0, 140)));
+await page.goto('http://localhost:5173/', { waitUntil: 'domcontentloaded' });
+await page.waitForSelector('canvas', { timeout: 30000 });
+await page.waitForTimeout(2500);
+await page.getByText('Uploads', { exact: true }).first().click();
+await page.waitForTimeout(2500);
+await page.locator('button[aria-haspopup="menu"]').first().click();
+await page.waitForTimeout(400);
+await page.getByRole('menuitem', { name: 'Edit' }).click();
+await page.waitForTimeout(1200);
+console.log('edit screen buttons:', (await page.locator('div[role], button').allTextContents()).filter(t => /Save|Remove|decoration/.test(t)).join(' | '));
+console.log('name field value   :', await page.locator('input').last().inputValue());
+await page.screenshot({ path: resolve(here, '_edit-final.png') });
+await browser.close();

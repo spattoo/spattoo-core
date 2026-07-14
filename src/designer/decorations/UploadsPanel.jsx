@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { ACCEPT_IMAGE, validateImageFile, compressImage, imageExt } from '../../shared/image.js';
 import { useUploadLimits } from '../../shared/useUploadLimits.js';
+import { PUBLISH_LABEL, UNPUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
 
 // An upload is a picture whose USE is not yet decided — it may be placed as a decoration, or chosen as
 // a photo-cake frame photo, which the customer can pinch-zoom into on the cake. So the ceiling sits
@@ -25,11 +26,32 @@ const UPLOAD_QUALITY  = 0.85;
 // The object handed to onPlace is ELEMENT-SHAPED on purpose: addSticker() takes an element, and an
 // upload can be made to look like one. So placement rides the SAME path as every library element —
 // no parallel "place an upload" code path to drift (INVARIANTS.md).
+// Three dots — the grip that holds everything you can do to one image. Drawn, not a character: a
+// glyph scales with the button and cannot be substituted by a font that lacks it.
+function DotsGlyph({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+      {[3.5, 8, 12.5].map(cy => <circle key={cy} cx="8" cy={cy} r="1.4" fill="currentColor" />)}
+    </svg>
+  );
+}
+
 export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose }) {
   const [uploads, setUploads] = useState(null);   // null = loading
-  const [busy, setBusy]       = useState(null);
+  const [busy, setBusy]       = useState(null);   // which image is mid-operation (disables its controls)
+  // WHAT that operation is. Without it every control on the card speaks for all of them — renaming an
+  // image made the background button announce "Removing the background…", which is a lie about what
+  // the app is doing, and the operator has no way to know it isn't true.
+  const [busyWhat, setBusyWhat] = useState(null);  // 'rename' | 'bg' | 'delete'
   const [error, setError]     = useState(null);
   const [uploading, setUploading] = useState(false);
+  // The grid is a GRID — one tap target per image. Everything you can DO to an image lives behind its
+  // own menu, because three stacked buttons under every thumbnail turned the card into mostly chrome
+  // and pushed the images themselves off the screen.
+  const [menuFor, setMenuFor]     = useState(null);   // upload id whose menu is open
+  const [editing, setEditing]     = useState(null);   // the image being edited (its own screen)
+  const [confirming, setConfirming] = useState(null); // the image awaiting a delete confirmation
+  const [rename, setRename] = useState('');           // the edit screen's name field
   // The ceiling is the SERVER's (env-tuned), read at runtime — never a copy that could drift from it.
   const { maxImageBytes } = useUploadLimits(apiClient);
 
@@ -105,22 +127,19 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     onClose?.();
   }
 
+  // Confirmed in the panel, not through window.confirm: a browser dialog in the middle of a branded
+  // app is jarring on a desktop and worse on a phone, and it cannot say WHAT deleting this one costs.
   async function remove(u) {
-    // Deleting an image the baker has promoted also takes it out of every customer's picker (the API
-    // cascades via source_upload_id). Say so BEFORE, not after — it is not obvious that removing your
-    // own image withdraws it from other people's cakes-in-progress.
-    const warn = u.promoted
-      ? 'Delete this image? It will also be removed from your decorations, so your customers can no longer use it.'
-      : 'Delete this image?';
-    if (!window.confirm(warn)) return;
-    setBusy(u.id);
+    setBusy(u.id); setBusyWhat('delete'); setError(null);
     try {
       await apiClient.deleteUpload(u.id);
+      setConfirming(null);
+      if (editing?.id === u.id) setEditing(null);
       await load();
     } catch (e) {
       setError(e.message || 'Could not delete it.');
     } finally {
-      setBusy(null);
+      setBusy(null); setBusyWhat(null);
     }
   }
 
@@ -130,27 +149,147 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   // would have no way to fix it. Runs server-side on the stored object; the row is updated in place, so
   // every design already using the image picks up the cut version.
   async function cutBg(u) {
-    setBusy(u.id); setError(null);
+    setBusy(u.id); setBusyWhat('bg'); setError(null);
     try {
-      await apiClient.removeUploadBg(u.id);
+      const updated = await apiClient.removeUploadBg(u.id);
+      // The row is updated in place, so the URL is the same object — bust the cache or the edit screen
+      // keeps showing the version WITH its background and the operator thinks nothing happened.
+      const fresh = updated?.url ?? u.url;
+      if (editing?.id === u.id) setEditing({ ...u, url: `${fresh}${fresh.includes('?') ? '&' : '?'}v=${Date.now()}` });
       await load();
     } catch (e) {
       setError(e.message || 'Could not remove the background.');
     } finally {
-      setBusy(null);
+      setBusy(null); setBusyWhat(null);
+    }
+  }
+
+  // A name is how you find your own picture again, and it arrives as whatever the file was called —
+  // "Screenshot 2026-07-14 at 10.42.59 AM" is a timestamp, not a name. Renaming does NOT re-title a
+  // decoration already promoted: that copy carries the name the baker gave it when he released it, and
+  // silently changing what his customers see is not what "rename my image" asks for.
+  async function saveName(u) {
+    const name = rename.trim();
+    if (!name || name === (u.name ?? '')) return;
+    setBusy(u.id); setBusyWhat('rename'); setError(null);
+    try {
+      const saved = await apiClient.renameUpload(u.id, name);
+      setEditing({ ...u, ...(saved ?? {}), name });
+      await load();
+    } catch (e) {
+      setError(e.message || 'Could not rename it.');
+    } finally {
+      setBusy(null); setBusyWhat(null);
     }
   }
 
   async function unlink(u) {
-    setBusy(u.id);
+    setBusy(u.id); setBusyWhat('unlink');
     try {
       await apiClient.unlinkUpload(u.id);   // is_active = false on the library copy; the image stays here
+      if (editing?.id === u.id) setEditing({ ...u, promoted: false });
       await load();
     } catch (e) {
       setError(e.message || 'Could not remove it from your decorations.');
     } finally {
-      setBusy(null);
+      setBusy(null); setBusyWhat(null);
     }
+  }
+
+  // ── Edit one image ────────────────────────────────────────────────────────────────────────────
+  // A screen, not a menu of verbs: the operator is working ON the picture, so the picture is the
+  // subject and the treatments sit under it. Crop belongs here next. Publishing is offered
+  // as the natural NEXT step — you almost always want the background gone before you hand it to your
+  // customers — while remaining a first-class item in the card's own menu, because it is the one act
+  // here with consequences beyond this person and must not hide behind a benign label.
+  if (editing) {
+    const u = editing;
+    const mine = canPromote && u.uploadedBy === 'baker';
+    const working = busy === u.id;
+    return (
+      <div style={S.scrim} onPointerDown={onClose}>
+        <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
+          <div style={S.head}>
+            <button style={S.back} onClick={() => setEditing(null)} aria-label="Back to uploads">←</button>
+            <div style={S.title}>{u.name || 'Untitled'}</div>
+            <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
+          </div>
+
+          <div style={S.body}>
+            <div style={S.editArt}>
+              <img src={u.url} alt={u.name || ''} style={S.editImg} />
+            </div>
+
+            {apiClient?.renameUpload && (
+              <>
+                <div style={S.label}>Name</div>
+                <div style={S.renameRow}>
+                  <input
+                    style={S.input}
+                    value={rename}
+                    maxLength={60}
+                    disabled={working}
+                    placeholder="e.g. Gold butterfly"
+                    onChange={e => setRename(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveName(u); }}
+                  />
+                  <button
+                    style={S.renameBtn(!rename.trim() || rename.trim() === (u.name ?? '') || working)}
+                    disabled={!rename.trim() || rename.trim() === (u.name ?? '') || working}
+                    onClick={() => saveName(u)}
+                  >
+                    {working && busyWhat === 'rename' ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {apiClient?.removeUploadBg && (
+              <button style={{ ...S.editAct, marginTop: 16 }} disabled={working} onClick={() => cutBg(u)}>
+                {working && busyWhat === 'bg' ? 'Removing the background…' : 'Remove background'}
+              </button>
+            )}
+            <div style={S.hint}>
+              Cuts the subject out of the picture. Every cake already using this image picks up the
+              cut-out version.
+            </div>
+
+            {error && <div style={S.err}>{error}</div>}
+          </div>
+
+          {/* The ONE place an image is offered to, or withdrawn from, the baker's customers. A customer
+              never sees it: a customer's image is not hers to release to other customers (the API
+              refuses it — ToS 6.2), and hiding it is the courtesy; the server is the boundary. */}
+          {mine && (
+            <div style={S.foot}>
+              {u.promoted ? (
+                <>
+                  <button style={S.secondary} disabled={working} onClick={() => unlink(u)}>
+                    {working && busyWhat === 'unlink' ? 'Unpublishing…' : UNPUBLISH_LABEL}
+                  </button>
+                  <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
+                    It leaves your customers&rsquo; Decorations. Cakes already designed with it keep it.
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* WHAT THIS MEANS, before he decides — not on the next screen, after he already has.
+                      Publishing is the one act here whose consequences land on other people, and a baker
+                      should not have to discover them by doing it. */}
+                  <div style={S.pubLabel}>What this means</div>
+                  <ul style={S.pubNote}>
+                    {PUBLISH_NOTE.map(line => <li key={line} style={S.pubNoteItem}>{line}</li>)}
+                  </ul>
+                  <button style={S.primary} disabled={working} onClick={() => { setEditing(null); onPromote?.(u); }}>
+                    {PUBLISH_LABEL}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -160,6 +299,25 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
           <div style={S.title}>{selectMode ? 'Choose an image' : 'Uploads'}</div>
           <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
         </div>
+
+        {/* Deleting is confirmed HERE, in the panel — and it says what it costs. Withdrawing an image
+            you have promoted takes it out of every customer's picker, which is not obvious from the
+            word "delete". */}
+        {confirming && (
+          <div style={S.confirm}>
+            <div style={S.confirmText}>
+              {confirming.promoted
+                ? <>Delete <b>{confirming.name || 'this image'}</b>? It will also leave your decorations, so your customers can no longer use it.</>
+                : <>Delete <b>{confirming.name || 'this image'}</b>?</>}
+            </div>
+            <div style={S.confirmRow}>
+              <button style={S.confirmCancel} disabled={busy === confirming.id}
+                onClick={() => setConfirming(null)}>Keep it</button>
+              <button style={S.confirmDelete} disabled={busy === confirming.id}
+                onClick={() => remove(confirming)}>{busy === confirming.id ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        )}
 
         <div style={S.body}>
           {/* "A new one" is an ANSWER to "which image?", not a rival button elsewhere. Uploading here
@@ -181,40 +339,56 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 
           {uploads?.length > 0 && (
             <div style={S.grid}>
-              {uploads.map(u => (
+              {uploads.map(u => {
+                return (
                 <div key={u.id} style={S.card}>
-                  {/* The image IS the button. What a tap MEANS is the caller's business. */}
-                  <button style={S.thumbBtn} onClick={() => choose(u)}
-                    title={selectMode ? 'Use this image' : 'Put it on the cake'}>
-                    <img src={u.url} alt={u.name || ''} style={S.thumb} loading="lazy" />
-                  </button>
-                  <div style={S.name}>{u.name || 'Untitled'}</div>
+                  <div style={S.thumbWrap}>
+                    {/* The image IS the button. What a tap MEANS is the caller's business. */}
+                    <button style={S.thumbBtn} onClick={() => choose(u)}
+                      title={selectMode ? 'Use this image' : 'Put it on the cake'}>
+                      <img src={u.url} alt={u.name || ''} style={S.thumb} loading="lazy" />
+                    </button>
 
-                  {/* Managing images is not what this window is FOR when you came here to fill a frame.
-                      Promote/delete would be a trapdoor next to the thing you actually meant to tap. */}
-                  {!selectMode && (
-                    <div style={S.actions}>
-                      {/* Cut-out is offered to EVERYONE, customer included — it is a treatment of your
-                          own image, not a library act. Offered even on a photo: it is their picture and
-                          their call (a cut-out portrait on a cake is a real thing people want). */}
-                      {apiClient?.removeUploadBg && (
-                        <button style={S.act} disabled={busy === u.id} onClick={() => cutBg(u)}>
-                          {busy === u.id ? 'Working…' : 'Remove background'}
-                        </button>
-                      )}
-                      {/* Promotion is a BAKER's act, and only on his OWN uploads: a customer's image is
-                          not his to offer to other customers (the API refuses it — ToS 6.2). Hiding the
-                          button on hers is not the security boundary, only the courtesy: the server is. */}
-                      {canPromote && u.uploadedBy === 'baker' && (
-                        u.promoted
-                          ? <button style={S.act} disabled={busy === u.id} onClick={() => unlink(u)}>Remove from decorations</button>
-                          : <button style={S.act} disabled={busy === u.id} onClick={() => onPromote?.(u)}>Show in my decorations</button>
-                      )}
-                      <button style={S.actDanger} disabled={busy === u.id} onClick={() => remove(u)}>Delete</button>
-                    </div>
-                  )}
+                    {/* Everything you can DO to this image, behind one grip. Managing images is not what
+                        this window is FOR when you came here to fill a frame, so it is absent in
+                        selectMode — a trapdoor next to the thing you actually meant to tap. */}
+                    {!selectMode && (
+                      <button
+                        style={S.kebab}
+                        aria-label={`Options for ${u.name || 'this image'}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuFor === u.id}
+                        onClick={() => setMenuFor(menuFor === u.id ? null : u.id)}
+                      >
+                        <DotsGlyph />
+                      </button>
+                    )}
+
+                    {menuFor === u.id && (
+                      <>
+                        {/* Tapping anywhere else closes it — a menu you can only dismiss by re-tapping
+                            the grip is a trap on a phone. */}
+                        <div style={S.menuScrim} onPointerDown={() => setMenuFor(null)} />
+                        {/* TWO items, and no more. Everything you can do TO the picture — rename it, cut
+                            its background out, hand it to your customers — is one screen (Edit), because
+                            they are one train of thought: you clean an image up and THEN release it.
+                            Promotion had a door here as well as in Edit, and two doors to the same room
+                            is not a choice, it is a question the operator has to answer twice. */}
+                        <div style={S.menu} role="menu">
+                          <button style={S.menuItem} role="menuitem"
+                            onClick={() => { setMenuFor(null); setRename(u.name ?? ''); setEditing(u); }}>Edit</button>
+                          <button style={{ ...S.menuItem, ...S.menuDanger }} role="menuitem"
+                            onClick={() => { setMenuFor(null); setConfirming(u); }}>Delete</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div style={S.name}>{u.name || 'Untitled'}</div>
+                  {u.promoted && <div style={S.badge}>In my decorations</div>}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -228,7 +402,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 const S = {
   scrim: { position: 'fixed', inset: 0, background: 'rgba(20,20,24,0.45)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
   sheet: { width: '100%', maxWidth: 460, maxHeight: '92vh', background: '#fff', borderRadius: 18, display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Quicksand',sans-serif" },
-  head:  { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #eee' },
+  head:  { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #eee', flexShrink: 0 },
   title: { fontSize: 15, fontWeight: 800, color: '#1a1a1a' },
   x:     { border: 'none', background: 'none', fontSize: 16, color: '#888', cursor: 'pointer' },
   body:  { padding: 16, overflowY: 'auto', flex: 1 },
@@ -236,12 +410,45 @@ const S = {
   uploadBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '11px 0', marginBottom: 14, borderRadius: 10, border: '1.5px dashed #cfcdd6', background: '#faf9fb', color: '#444', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' },
   grid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 },
   card:  { display: 'flex', flexDirection: 'column', gap: 6 },
-  thumbBtn: { padding: 0, border: '1.5px solid #e2e0e6', borderRadius: 11, background: '#faf9fb', cursor: 'pointer', overflow: 'hidden', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  thumbWrap: { position: 'relative' },
+  thumbBtn: { width: '100%', padding: 0, border: '1.5px solid #e2e0e6', borderRadius: 11, background: '#faf9fb', cursor: 'pointer', overflow: 'hidden', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   thumb: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' },
+  // 32px of tap target, on a phone, sitting ON the image — big enough to hit with a thumb and small
+  // enough not to steal the taps meant for the picture underneath.
+  kebab: { position: 'absolute', top: 4, right: 4, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.16)', color: '#555', cursor: 'pointer' },
+  menuScrim: { position: 'fixed', inset: 0, zIndex: 1 },
+  // Spans the CARD, not a fixed width hanging off the grip: a 168px menu anchored to a 130px card in
+  // the first column hangs past the sheet's edge and gets clipped — half of "Delete" was missing.
+  menu:  { position: 'absolute', top: 38, left: 0, right: 0, zIndex: 2, background: '#fff', borderRadius: 11, border: '1px solid #e8e6ec', boxShadow: '0 8px 24px rgba(20,20,24,0.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  menuItem: { padding: '10px 11px', border: 'none', borderBottom: '1px solid #f4f2f6', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textAlign: 'left', lineHeight: 1.3, cursor: 'pointer' },
+  menuDanger: { color: '#C0392B', borderBottom: 'none' },
   name:  { fontSize: 11.5, fontWeight: 700, color: '#1a1a1a', textAlign: 'center', lineHeight: 1.3 },
-  actions: { display: 'flex', flexDirection: 'column', gap: 4 },
-  act:   { padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' },
-  actDanger: { padding: '6px 8px', borderRadius: 7, border: '1.5px solid #f0d8d8', background: '#fff', color: '#C0392B', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' },
+  badge: { alignSelf: 'center', padding: '2px 8px', borderRadius: 20, background: '#EEF6EE', color: '#2E7D32', fontSize: 9.5, fontWeight: 800 },
+
+  back:  { border: 'none', background: 'none', fontSize: 17, color: '#888', cursor: 'pointer', padding: 0, marginRight: 8, fontFamily: 'inherit' },
+  // flexShrink 0: the sheet is a flex COLUMN, so a tall footer will otherwise be compressed by the
+  // body above it — and the compression lands on the note, which ends up half-hidden behind the very
+  // button it is explaining.
+  foot:  { padding: 14, borderTop: '1px solid #eee', flexShrink: 0 },
+  editArt: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, borderRadius: 12, background: '#faf9fb', border: '1.5px solid #eeecf1', marginBottom: 14, overflow: 'hidden' },
+  editImg: { maxWidth: '100%', maxHeight: 260, objectFit: 'contain' },
+  editAct: { width: '100%', padding: '12px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
+  primary: { width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+  secondary: { width: '100%', padding: '13px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer' },
+  hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginTop: 8, lineHeight: 1.45 },
+  pubLabel: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
+  pubNote: { margin: '0 0 16px', padding: '0 0 0 16px', display: 'flex', flexDirection: 'column', gap: 6 },
+  pubNoteItem: { fontSize: 11.5, color: '#6f6a72', fontWeight: 600, lineHeight: 1.45 },
+  label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
+  renameRow: { display: 'flex', gap: 8 },
+  input: { flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#1a1a1a', boxSizing: 'border-box' },
+  renameBtn: (d) => ({ padding: '0 16px', borderRadius: 9, border: 'none', background: d ? '#e6e4ea' : '#1a1a1a', color: d ? '#a9a5b0' : '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: d ? 'default' : 'pointer' }),
+
+  confirm: { padding: 14, borderBottom: '1px solid #eee', background: '#FFF7F6' },
+  confirmText: { fontSize: 12.5, fontWeight: 600, color: '#4a4a4a', lineHeight: 1.5 },
+  confirmRow: { display: 'flex', gap: 8, marginTop: 10 },
+  confirmCancel: { flex: 1, padding: '9px 0', borderRadius: 9, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 12, fontWeight: 800, cursor: 'pointer' },
+  confirmDelete: { flex: 1, padding: '9px 0', borderRadius: 9, border: 'none', background: '#C0392B', color: '#fff', fontFamily: 'inherit', fontSize: 12, fontWeight: 800, cursor: 'pointer' },
 
   note:  { fontSize: 12.5, fontWeight: 700, color: '#8a7a80' },
   empty: { fontSize: 12.5, fontWeight: 600, color: '#8a7a80', lineHeight: 1.5, textAlign: 'center', padding: '28px 12px' },
