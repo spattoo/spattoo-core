@@ -42,6 +42,7 @@ function createApiClient(supabaseClient) {
     fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
     fetchTextures: () => authFetch('/api/textures'),     // designer overlays DB cream-style configs
     fetchMaterials: () => authFetch('/api/materials'),   // designer overlays DB material→style lists
+    fetchCakeShapes: () => authFetch('/api/cake-shapes'), // the footprints authored in the Cake Shape Studio
 
     fetchBakerProfile: () => authFetch('/api/baker/profile'),
     fetchStorefrontThemes: () => authFetch('/api/baker/storefront-themes'),
