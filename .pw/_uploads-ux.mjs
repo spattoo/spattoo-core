@@ -47,7 +47,10 @@ await page.waitForTimeout(400);
 // The promote studio — the rights tick, and the button it gates.
 await kebabs.first().click();
 await page.waitForTimeout(400);
-const promote = page.getByRole('menuitem', { name: 'Show in my decorations' });
+// the menu is Edit · Delete now — publishing lives in the Edit screen
+await page.getByRole('menuitem', { name: 'Edit' }).click();
+await page.waitForTimeout(1200);
+const promote = page.getByRole('button', { name: 'Publish to decorations' });
 if (await promote.count()) {
   await promote.click();
   await page.waitForTimeout(3000);
@@ -58,7 +61,7 @@ if (await promote.count()) {
   await page.waitForTimeout(2000);
   await page.screenshot({ path: resolve(here, '_ux-5-promote.png'), fullPage: true });
 
-  const save = page.getByRole('button', { name: /^Show in my decorations$/ }).last();
+  const save = page.getByRole('button', { name: /^Publish to decorations$/ }).last();
   console.log('save disabled BEFORE the tick :', await save.isDisabled());
   const tick = page.locator('input[type=checkbox]').last();
   await tick.check();

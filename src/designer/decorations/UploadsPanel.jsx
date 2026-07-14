@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { ACCEPT_IMAGE, validateImageFile, compressImage, imageExt } from '../../shared/image.js';
 import { useUploadLimits } from '../../shared/useUploadLimits.js';
+import { PUBLISH_LABEL, UNPUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
 
 // An upload is a picture whose USE is not yet decided — it may be placed as a decoration, or chosen as
 // a photo-cake frame photo, which the customer can pinch-zoom into on the cake. So the ceiling sits
@@ -197,7 +198,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 
   // ── Edit one image ────────────────────────────────────────────────────────────────────────────
   // A screen, not a menu of verbs: the operator is working ON the picture, so the picture is the
-  // subject and the treatments sit under it. Crop belongs here next. "Use as a decoration" is offered
+  // subject and the treatments sit under it. Crop belongs here next. Publishing is offered
   // as the natural NEXT step — you almost always want the background gone before you hand it to your
   // customers — while remaining a first-class item in the card's own menu, because it is the one act
   // here with consequences beyond this person and must not hide behind a benign label.
@@ -264,20 +265,24 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
               {u.promoted ? (
                 <>
                   <button style={S.secondary} disabled={working} onClick={() => unlink(u)}>
-                    {working && busyWhat === 'unlink' ? 'Removing…' : 'Remove from decorations'}
+                    {working && busyWhat === 'unlink' ? 'Unpublishing…' : UNPUBLISH_LABEL}
                   </button>
                   <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
-                    It leaves your customers&rsquo; pickers. Cakes already designed with it keep it.
+                    It leaves your customers&rsquo; Decorations. Cakes already designed with it keep it.
                   </div>
                 </>
               ) : (
                 <>
+                  {/* WHAT THIS MEANS, before he decides — not on the next screen, after he already has.
+                      Publishing is the one act here whose consequences land on other people, and a baker
+                      should not have to discover them by doing it. */}
+                  <div style={S.pubLabel}>What this means</div>
+                  <ul style={S.pubNote}>
+                    {PUBLISH_NOTE.map(line => <li key={line} style={S.pubNoteItem}>{line}</li>)}
+                  </ul>
                   <button style={S.primary} disabled={working} onClick={() => { setEditing(null); onPromote?.(u); }}>
-                    Use as a decoration
+                    {PUBLISH_LABEL}
                   </button>
-                  <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
-                    Your customers will be able to put it on their cakes.
-                  </div>
                 </>
               )}
             </div>
@@ -397,7 +402,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 const S = {
   scrim: { position: 'fixed', inset: 0, background: 'rgba(20,20,24,0.45)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
   sheet: { width: '100%', maxWidth: 460, maxHeight: '92vh', background: '#fff', borderRadius: 18, display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Quicksand',sans-serif" },
-  head:  { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #eee' },
+  head:  { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #eee', flexShrink: 0 },
   title: { fontSize: 15, fontWeight: 800, color: '#1a1a1a' },
   x:     { border: 'none', background: 'none', fontSize: 16, color: '#888', cursor: 'pointer' },
   body:  { padding: 16, overflowY: 'auto', flex: 1 },
@@ -421,13 +426,19 @@ const S = {
   badge: { alignSelf: 'center', padding: '2px 8px', borderRadius: 20, background: '#EEF6EE', color: '#2E7D32', fontSize: 9.5, fontWeight: 800 },
 
   back:  { border: 'none', background: 'none', fontSize: 17, color: '#888', cursor: 'pointer', padding: 0, marginRight: 8, fontFamily: 'inherit' },
-  foot:  { padding: 14, borderTop: '1px solid #eee' },
+  // flexShrink 0: the sheet is a flex COLUMN, so a tall footer will otherwise be compressed by the
+  // body above it — and the compression lands on the note, which ends up half-hidden behind the very
+  // button it is explaining.
+  foot:  { padding: 14, borderTop: '1px solid #eee', flexShrink: 0 },
   editArt: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, borderRadius: 12, background: '#faf9fb', border: '1.5px solid #eeecf1', marginBottom: 14, overflow: 'hidden' },
   editImg: { maxWidth: '100%', maxHeight: 260, objectFit: 'contain' },
   editAct: { width: '100%', padding: '12px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
   primary: { width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
   secondary: { width: '100%', padding: '13px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer' },
   hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginTop: 8, lineHeight: 1.45 },
+  pubLabel: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
+  pubNote: { margin: '0 0 16px', padding: '0 0 0 16px', display: 'flex', flexDirection: 'column', gap: 6 },
+  pubNoteItem: { fontSize: 11.5, color: '#6f6a72', fontWeight: 600, lineHeight: 1.45 },
   label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
   renameRow: { display: 'flex', gap: 8 },
   input: { flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#1a1a1a', boxSizing: 'border-box' },

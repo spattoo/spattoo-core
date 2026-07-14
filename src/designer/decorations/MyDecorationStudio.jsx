@@ -3,6 +3,7 @@ import PreviewTile from '../shared/PreviewTile.jsx';
 import TopperPreview from '../canvas/TopperPreview.jsx';
 import { useImageRegions } from '../shared/color/useImageRegions.js';
 import RightsAttestation from '../../legal/RightsAttestation.jsx';
+import { PUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
 import { ZONE_LABELS } from '../constants.js';
 
 // ── My Decoration Studio — TWO STEPS, ONE SCREEN ─────────────────────────────────────────────────
@@ -126,14 +127,15 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
     <div style={S.scrim} onPointerDown={onClose}>
       <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
         <div style={S.head}>
-          <div style={S.title}>Show in my decorations</div>
+          <div style={S.title}>{PUBLISH_LABEL}</div>
           <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <div style={S.body}>
+          {/* The SAME sentences the Edit screen showed him before he got here (decorationCopy.js).
+              The button he pressed and the screen it opened must agree about what he is doing. */}
           <div style={S.hint}>
-            This image will be available to your customers when they design a cake. You can remove it
-            from your decorations at any time.
+            {PUBLISH_NOTE.map(line => <div key={line} style={{ marginBottom: 4 }}>{line}</div>)}
           </div>
 
           {/* The image is already uploaded — show it. Replacing it, or cutting its background out, are
@@ -229,7 +231,7 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
             const blocked = !artUrl || !!busy || !kind || !zones.length || !attested;
             return (
               <button style={S.save(blocked)} onClick={save} disabled={blocked}>
-                {busy ?? 'Show in my decorations'}
+                {busy ?? PUBLISH_LABEL}
               </button>
             );
           })()}
