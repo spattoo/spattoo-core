@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadImage, renderFramedPhoto, renderCutGuide } from './framePhoto.js';
-import { buildA4Pdf } from './pdf.js';
+import { buildA4Pdf, downloadPdf } from './pdf.js';
 
 // ── Print sheet (A4) ─────────────────────────────────────────────────────────
 // Baker-facing layout tool for an order's customer photo-frames. Shows the photos exactly as the
@@ -150,10 +150,7 @@ export default function PhotoSheet({ order, onClose }) {
           ctx.drawImage(renderFramedPhoto(rec.photo, rec.mask, f.transform, sPx), x, y, sPx, sPx);
         }
       }, { dpi: 300, portrait: true });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `order-${order?.id ?? 'photos'}-sheet.pdf`; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      downloadPdf(blob, `order-${order?.id ?? 'photos'}-sheet.pdf`);
     } finally { setBusy(false); }
   }
 

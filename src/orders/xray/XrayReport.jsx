@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { computeTinPlan } from './tinHelper.js';
-import { harvestColors, harvestPiping } from './harvest.js';
-import { gelRecipeFor } from './gelLibrary.js';
+import { buildXrayReport } from './report.js';
+import { buildXrayPdf } from './xrayPdf.js';
+import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
 
@@ -16,6 +16,9 @@ const s = {
   header: { position: 'sticky', top: 0, zIndex: 2, background: '#fff', borderBottom: '1.5px solid #EFEAE3', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 15, fontWeight: 800, color: '#2C2A26' },
   close: { padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0DDD8', background: '#fff', fontSize: 13, fontWeight: 700, color: '#555', cursor: 'pointer', fontFamily: 'inherit' },
+  actions: { display: 'flex', alignItems: 'center', gap: 8 },
+  dl: (busy) => ({ padding: '8px 16px', borderRadius: 10, border: 'none', background: busy ? '#C9C4BC' : '#2C2A26', fontSize: 13, fontWeight: 700, color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }),
+  err: { fontSize: 12, fontWeight: 700, color: '#C0392B', padding: '0 20px 10px' },
   body: { maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px', display: 'flex', flexDirection: 'column', gap: 28 },
   sub: { fontSize: 12, fontWeight: 800, color: '#555', letterSpacing: 0.3, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 7 },
   dot: (c) => ({ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0 }),
@@ -33,70 +36,73 @@ const s = {
   },
 };
 
-function strengthOf(c) {
-  if (c == null) return null;
-  const pct = Math.round(c * 100);
-  if (c >= 0.85) return { label: 'Strong', pct };
-  if (c >= 0.65) return { label: 'Good', pct };
-  return { label: 'Possible', pct };
-}
-function formatTips(recs) {
-  const byBrand = {};
-  recs.forEach(r => { (byBrand[r.brand] ??= []).push(r.number); });
-  return Object.entries(byBrand).map(([b, nums]) => `${b} ${nums.join('/')}`).join('  ·  ');
-}
-
 export default function XrayReport({ order, apiClient, onClose }) {
   const design = order?.design_snapshot;
-  const tinPlan = useMemo(() => computeTinPlan(design?.tiers, order?.weight_kg), [order]);
-  const colors = useMemo(() => harvestColors(design), [design]);
-  const piping = useMemo(() => harvestPiping(design), [design]);
 
   const [guides, setGuides] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [baker, setBaker] = useState(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfErr, setPdfErr] = useState(null);
+
+  // Everything the report SAYS — one pure call, shared with the PDF (report.js). The screen decides
+  // only how it looks.
+  const report = useMemo(
+    () => buildXrayReport({ design, weightKg: order?.weight_kg, guides }),
+    [design, order?.weight_kg, guides],
+  );
+  const { tins: tinPlan, colors, elements: withNozzle, freehand, diagram: diagramItems } = report;
 
   useEffect(() => {
     let alive = true;
-    if (!piping.elementIds.length || !apiClient?.fetchCraftGuides) { setGuides({}); return; }
+    if (!report.elementIds.length || !apiClient?.fetchCraftGuides) { setGuides({}); return; }
     setLoading(true);
-    Promise.resolve(apiClient.fetchCraftGuides(piping.elementIds))
+    Promise.resolve(apiClient.fetchCraftGuides(report.elementIds))
       .then(rows => { if (!alive) return; const m = {}; (rows || []).forEach(r => { m[r.element_id] = r; }); setGuides(m); })
       .catch(() => { if (alive) setGuides({}); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [order?.id]); // eslint-disable-line
 
-  // Dedupe repeated instances of the same element/tier/zone.
-  const uniqueElements = [];
-  const seen = new Map();
-  for (const el of piping.elements) {
-    const k = `${el.elementId}|${el.tier}|${el.zone}`;
-    if (seen.has(k)) { seen.get(k).count++; continue; }
-    const item = { ...el, count: 1 };
-    seen.set(k, item); uniqueElements.push(item);
+  // The bakery's letterhead for the printed sheet. Only the PDF uses it, and a failure is not worth a
+  // word on screen — the sheet simply prints without the logo.
+  useEffect(() => {
+    let alive = true;
+    apiClient?.fetchBakerProfile?.()
+      .then(p => { if (alive) setBaker(p?.baker ?? p ?? null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient]);
+
+  // The sheet the baker takes to the bench. Built from the report ABOVE — the same data the screen is
+  // showing right now, so what he reads here and what he carries in cannot disagree.
+  async function download() {
+    if (pdfBusy) return;
+    setPdfBusy(true); setPdfErr(null);
+    try {
+      const blob = await buildXrayPdf({ order, report, baker });
+      downloadPdf(blob, `order-${order?.id ?? 'cake'}-xray.pdf`);
+    } catch (e) {
+      setPdfErr(e?.message || 'Could not make the PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
   }
-
-  const withNozzle = uniqueElements.map((el, i) => {
-    const recs = guides?.[el.elementId]?.nozzle_recs ?? [];
-    const primary = recs.filter(r => r.rank === 'primary');
-    const others = recs.filter(r => r.rank !== 'primary');
-    return { ...el, idx: i, primary, others, guide: guides?.[el.elementId], strength: strengthOf(primary[0]?.confidence) };
-  });
-
-  const diagramItems = withNozzle
-    .filter(e => e.primary.length)
-    .map(e => ({
-      key: `${e.elementId}-${e.tier}-${e.zone}-${e.idx}`,
-      tierIndex: e.tierIndex, tierCount: e.tierCount, zone: e.zone,
-      primaryLabel: formatTips(e.primary), strength: e.strength,
-    }));
 
   return (
     <div style={s.overlay}>
       <div style={s.header}>
         <div style={s.title}>X-Ray — how to make this cake</div>
-        <button style={s.close} onClick={onClose}>Close</button>
+        <div style={s.actions}>
+          {/* Disabled while the nozzle data is still loading: a sheet printed a second early would say
+              "No nozzle tagged yet" against every piping, and the baker would believe it. */}
+          <button style={s.dl(pdfBusy || loading)} onClick={download} disabled={pdfBusy || loading}>
+            {pdfBusy ? 'Making PDF…' : 'Download PDF'}
+          </button>
+          <button style={s.close} onClick={onClose}>Close</button>
+        </div>
       </div>
+      {pdfErr && <div style={s.err}>{pdfErr}</div>}
 
       <div style={s.body}>
         {/* Annotated cake */}
@@ -122,7 +128,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
             <div style={s.sub}><span style={s.dot('#C2569B')} /> Cream colours <span style={s.tag}>{colors.length}</span></div>
             <div style={s.card}>
               {colors.map((c, i) => {
-                const rec = gelRecipeFor(c.hex);
+                const rec = c.recipe;
                 return (
                   <div key={c.hex} style={{ ...s.row, alignItems: 'flex-start', borderBottom: i === colors.length - 1 ? 'none' : s.row.borderBottom }}>
                     <div style={s.swatch(c.hex)} />
@@ -143,9 +149,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
         )}
 
         {/* Piping & nozzles */}
-        {(uniqueElements.length > 0 || piping.freehand.length > 0) && (
+        {(withNozzle.length > 0 || freehand.length > 0) && (
           <div>
-            <div style={s.sub}><span style={s.dot('#1E7A35')} /> Piping &amp; nozzles <span style={s.tag}>{uniqueElements.length + piping.freehand.length}</span></div>
+            <div style={s.sub}><span style={s.dot('#1E7A35')} /> Piping &amp; nozzles <span style={s.tag}>{withNozzle.length + freehand.length}</span></div>
             <div style={s.card}>
               {loading && <div style={{ ...s.muted, paddingBottom: 8 }}>Loading nozzle suggestions…</div>}
 
@@ -158,13 +164,13 @@ export default function XrayReport({ order, apiClient, onClose }) {
                     </div>
                     {el.primary.length > 0 ? (
                       <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={s.tip('#F3FBF5', '#1E7A35')}>{formatTips(el.primary)}</span>
+                        <span style={s.tip('#F3FBF5', '#1E7A35')}>{el.primaryLabel}</span>
                         {el.strength && <span style={s.strength(el.strength.label)}>{el.strength.pct}% match</span>}
                       </div>
                     ) : (
                       <div style={{ ...s.muted, marginTop: 4 }}>{apiClient?.fetchCraftGuides ? 'No nozzle tagged yet' : 'Nozzle data not connected'}</div>
                     )}
-                    {el.others.length > 0 && <div style={{ ...s.muted, marginTop: 4 }}>Also: {formatTips(el.others)}</div>}
+                    {el.others.length > 0 && <div style={{ ...s.muted, marginTop: 4 }}>Also: {el.othersLabel}</div>}
                     {(el.guide?.consistency || el.guide?.technique) && (
                       <div style={{ ...s.muted, marginTop: 4 }}>
                         {el.guide.consistency && <b style={{ textTransform: 'capitalize' }}>{el.guide.consistency} cream. </b>}
@@ -175,7 +181,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
                 </div>
               ))}
 
-              {piping.freehand.map((f) => (
+              {freehand.map((f) => (
                 <div key={f.key} style={{ ...s.row, alignItems: 'flex-start' }}>
                   <div style={s.swatch(f.color)} />
                   <div style={{ flex: 1, minWidth: 0 }}>
