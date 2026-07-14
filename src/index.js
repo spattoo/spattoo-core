@@ -23,6 +23,12 @@ export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer
 // The cake's DEFAULT dimensions — the sizes core actually ships. Exported so a studio can start from
 // the real cake instead of inventing numbers to tune against.
 export { BOTTOM_H, TIER_HEIGHT_STEP, SHEET_SIZES, SHEET_DEFAULT_KEY, SHEET_INCH_TO_WORLD } from './designer/constants.js';
+// The camera the CUSTOMER looks through. Exported because a tool that exists to judge a cake's
+// proportions has to show them the way the customer will see them — and the Cake Shape Studio could not
+// reach these, so it invented a lens of its own (a long 18° from a low angle) and every cake read TALLER
+// there than on the cake it was authoring. Same class of bug as two definitions of a heart: a second
+// camera is a second opinion about what the cake looks like.
+export { CAMERA_FOV, CAMERA_POSITION } from './designer/constants.js';
 // Piping-layer factory + placement resolver — exported so the admin inspiration preview builds the
 // SAME tier topPipings/bottomPipings the live designer does (one factory, no drift — INVARIANTS #3).
 export { makePipingLayer, pipingPlacementFromConfig } from './designer/piping/pipingLayer.js';
