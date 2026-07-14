@@ -2448,6 +2448,24 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
 // thumbnail — flattering, but it splays a cake's near bottom edge outward, which reads as the cake
 // bulging at the base. Judging a SHAPE needs a long lens (small fov, camera pulled back) so the
 // silhouette on screen is the silhouette, not the perspective.
+// Keeps the live camera in step with the `fov`/`cameraPosition` props.
+//
+// R3F reads <Canvas camera={…}> ONCE, when it creates the default camera; later prop changes are
+// ignored. That is invisible while a preview shows one fixed cake, and a real bug the moment the cake
+// can change under a mounted Canvas: the Cake Shape Studio's capture stage stays mounted while the
+// operator switches shapes, so it kept the camera it was born with — framed for a one-tier round cake —
+// and photographed a two-tier stack with its top cut off. The saved thumbnail was wrong even though the
+// camera it asked for was right.
+function CameraRig({ fov, position }) {
+  const camera = useThree(s => s.camera);
+  useEffect(() => {
+    camera.position.set(...position);
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }, [camera, fov, position[0], position[1], position[2]]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
 export function CakePreview({
   design, autoRotate = true, style, enableZoom = false,
   fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = [0, 2, 0],
@@ -2461,6 +2479,7 @@ export function CakePreview({
         camera={{ position: cameraPosition, fov }}
         style={{ width: '100%', height: '100%' }}
       >
+        <CameraRig fov={fov} position={cameraPosition} />
         <Suspense fallback={null}>
           <CakeThumbnailScene config={config} />
         </Suspense>
