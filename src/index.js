@@ -75,6 +75,7 @@ export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStroke
 // element must be produced by identical code, or the two drift (they had — the admin copy honoured no
 // EXIF orientation and hung forever on a file it couldn't decode).
 export { ACCEPT_IMAGE, IMAGE_TYPES, MAX_IMAGE_BYTES, validateImageFile, imageExt, decodeImage, encodeWebp, compressImage, normalizeArtwork } from './shared/image.js';
+export { useUploadLimits } from './shared/useUploadLimits.js';
 // Vendor-neutral error telemetry. Host apps inject a Sentry-backed transport via
 // configureTelemetry(); until then it logs to the console. See src/telemetry/.
 export { reportError, reportMessage, setContext, configureTelemetry } from './telemetry/index.js';

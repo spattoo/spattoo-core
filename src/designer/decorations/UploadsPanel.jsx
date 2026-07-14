@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { ACCEPT_IMAGE, validateImageFile, compressImage, imageExt } from '../../shared/image.js';
+import { useUploadLimits } from '../../shared/useUploadLimits.js';
 
 // An upload is a picture whose USE is not yet decided — it may be placed as a decoration, or chosen as
 // a photo-cake frame photo, which the customer can pinch-zoom into on the cake. So the ceiling sits
@@ -29,6 +30,8 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   const [busy, setBusy]       = useState(null);
   const [error, setError]     = useState(null);
   const [uploading, setUploading] = useState(false);
+  // The ceiling is the SERVER's (env-tuned), read at runtime — never a copy that could drift from it.
+  const { maxImageBytes } = useUploadLimits(apiClient);
 
   // The type an upload behaves as when placed directly. If admin has flagged none, placement has no
   // rules to inherit — say so plainly rather than guessing a type and putting the image somewhere odd.
@@ -55,7 +58,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     // The REAL gate: `accept` on the input is advisory (it doesn't survive a drag-drop or an "All
     // files" pick), so a HEIC or an SVG is only refused here — with a sentence, rather than uploading
     // an object that renders as nothing. shared/image.js owns the allowlist; there is no second copy.
-    const bad = validateImageFile(f);
+    const bad = validateImageFile(f, { maxBytes: maxImageBytes });
     if (bad) return setError(bad);
     setUploading(true); setError(null);
     try {

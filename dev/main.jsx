@@ -59,6 +59,8 @@ function createApiClient(supabaseClient) {
       authFetch('/api/baker/testimonials', { method: 'PUT', body: JSON.stringify({ testimonials }) }),
     // contentLength is signed INTO the URL (the API's size ceiling) — R2 refuses a body of any other
     // length, so every caller passes the .size of the very blob it is about to PUT.
+    // The upload ceiling, as the API currently has it (env-tuned there — never a copy here).
+    fetchUploadLimits: () => authFetch('/api/storage/limits'),
     getSignedUploadUrl: (folder, filename, contentType, contentLength) =>
       authFetch('/api/storage/sign-upload', {
         method: 'POST',

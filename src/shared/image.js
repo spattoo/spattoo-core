@@ -31,10 +31,11 @@
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 export const ACCEPT_IMAGE = IMAGE_TYPES.join(',');
 
-// A phone photo is ~3-8MB; a DSLR raw export can be 30. The cap is a guard against the pathological
-// (a 200MB TIFF renamed .png) — anything legitimate is far under it, and what passes is downscaled
-// immediately afterwards anyway.
-export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+// The size ceiling is CONFIG, and it lives on the API (env `UPLOAD_MAX_IMAGE_MB`) — one number, read at
+// runtime via GET /api/storage/limits (see useUploadLimits.js). This constant is only the FALLBACK, for
+// a host that hasn't wired the fetch: it must stay in step with the API's default, because a client that
+// accepts more than the server will is a client that lets a user wait for an upload the server then 413s.
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 // Validate a picked File BEFORE decoding it. Returns a human sentence to SHOW, or null if it's fine.
 // The `accept` attribute is advisory only — it doesn't survive a drag-drop and it doesn't survive a
@@ -42,7 +43,12 @@ export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 export function validateImageFile(file, { maxBytes = MAX_IMAGE_BYTES } = {}) {
   if (!file) return 'Choose an image.';
   if (!IMAGE_TYPES.includes(file.type)) return 'That file isn’t a picture we can use. Choose a PNG, JPEG or WebP.';
-  if (file.size > maxBytes) return `That image is too large (max ${Math.round(maxBytes / (1024 * 1024))}MB).`;
+  // Say what to DO about it. A phone shooting at its highest resolution can exceed the limit on a single
+  // ordinary photo, and "too large" alone leaves her stuck with a picture she can plainly see is fine.
+  if (file.size > maxBytes) {
+    return `That image is too large (over ${Math.round(maxBytes / (1024 * 1024))}MB). Try a smaller photo, `
+         + `or your phone's standard quality setting.`;
+  }
   return null;
 }
 

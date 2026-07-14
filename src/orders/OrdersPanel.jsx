@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import XrayReport from './xray/XrayReport.jsx';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
+import { useUploadLimits } from '../shared/useUploadLimits.js';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
 const MAX_FINISHED_PHOTOS = 3;
@@ -345,6 +346,7 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
 function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
   const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
   const [pickError, setPickError] = useState(null);   // why a chosen file was refused
+  const { maxImageBytes } = useUploadLimits(apiClient);   // the server's ceiling, not a copy of it
   const uploading = photos.some(p => p.uploading);
   const atMax = photos.length >= MAX_FINISHED_PHOTOS;
 
@@ -363,7 +365,7 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
       // share) satisfies `image/*`, so it used to get this far, fail to decode, fall through as the
       // original file and then be refused by the API's content-type allowlist — surfacing to the
       // baker as a photo that just says "failed" with nothing to act on.
-      const bad = validateImageFile(file);
+      const bad = validateImageFile(file, { maxBytes: maxImageBytes });
       if (bad) { setPickError(bad); continue; }
       const id = `p${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const previewUrl = URL.createObjectURL(file);
