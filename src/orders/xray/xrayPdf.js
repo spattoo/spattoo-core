@@ -2,6 +2,7 @@ import { newA4Canvas, canvasesToPdfBlob } from '../pdf.js';
 import { layoutDiagram, DIAGRAM } from './xrayProject.js';
 import { strengthColor } from './report.js';
 import { loadImage } from '../framePhoto.js';
+import { corsUrl } from '../../designer/utils/assetUrl.js';
 
 // ── The X-Ray report, as a sheet of paper ────────────────────────────────────────────────────────
 // The screen version of this report is read at a desk. THIS one is carried to a bench, put down next
@@ -12,10 +13,15 @@ import { loadImage } from '../framePhoto.js';
 // It renders the SAME data (report.js) and the SAME diagram layout (xrayProject.js) as the screen —
 // only the drawing is different. Nothing here decides what the report SAYS.
 //
-// Text is rasterized (the page is one 300dpi JPEG — see pdf.js), which is why every size below is in
-// canvas pixels at 300dpi and looks large. At A4/300dpi, 1mm ≈ 11.8px.
-
-const PX_PER_MM = 300 / 25.4;
+// Text is rasterized (the page is one JPEG — see pdf.js), which is why every size below is in canvas
+// pixels and looks large: mm() converts millimetres of PAPER into pixels of canvas.
+//
+// The DPI is fixed at 300 and is deliberately NOT a parameter. Every dimension in this file is
+// derived from mm(), which bakes 300 in — so a caller passing a different dpi would get a page whose
+// canvas shrank while its content did not, and the report would silently spill across seven sheets
+// instead of two. A knob that quietly corrupts the layout is worse than no knob.
+const DPI = 300;
+const PX_PER_MM = DPI / 25.4;
 const mm = (v) => v * PX_PER_MM;
 
 const INK   = '#2C2A26';
@@ -29,15 +35,14 @@ const ACCENT = { tins: '#1B5FA8', colours: '#C2569B', piping: '#1E7A35' };
 // margin the painter starts a fresh page — so a cake with a dozen pipings simply flows onto sheet 2
 // instead of being silently cut off at the fold.
 class Sheet {
-  constructor({ dpi = 300 } = {}) {
-    this.dpi = dpi;
+  constructor() {
     this.pages = [];
     this.margin = mm(14);
     this.newPage();
   }
 
   newPage() {
-    const c = newA4Canvas({ dpi: this.dpi, portrait: true });
+    const c = newA4Canvas({ dpi: DPI, portrait: true });
     this.pages.push(c);
     this.c = c;
     this.ctx = c.getContext('2d');
@@ -88,9 +93,12 @@ class Sheet {
     this.ctx.stroke();
   }
 
-  heading(label, accent) {
+  // `keepWith` reserves room for what FOLLOWS the heading as well, so a section title can never be
+  // stranded at the foot of a page with its rows overleaf — on a printed sheet that reads as an empty
+  // section ("Piping & nozzles (7)" … nothing), and the baker turns the page only if he doubts it.
+  heading(label, accent, keepWith = mm(16)) {
     const size = mm(4);
-    this.space(size * 2.6);
+    this.space(size * 2.6 + keepWith);
     const cy = this.y + size * 0.45;
     const r = mm(1.3);
     this.ctx.fillStyle = accent;
@@ -114,11 +122,18 @@ class Sheet {
 
 // The kitchen needs the cake in front of it. The thumbnail is on R2 — a cross-origin image TAINTS the
 // canvas and makes toBlob throw, so it must load CORS-clean (framePhoto.loadImage sets crossOrigin).
-// A thumbnail that will not load is never fatal: the report's words are the point, the picture is the
-// comfort. Same for the baker's logo.
+//
+// And it MUST go through corsUrl(). The orders list renders this very thumbnail as a plain <img>, a
+// request that carries no Origin — so R2 answers it with no Access-Control-Allow-Origin and no Vary,
+// and Chrome then treats that response as valid for ANY later request to the same URL, including this
+// crossOrigin='anonymous' one. The load is blocked by a cache entry the *screen behind us* poisoned,
+// and it fails intermittently — the exact bug corsUrl exists to prevent (see utils/assetUrl.js). The
+// qualifier gives us a separate cache entry.
+//
+// A picture that will not load is never fatal: the words are the point, the picture is the comfort.
 async function tryLoad(url) {
   if (!url) return null;
-  try { return await loadImage(url); } catch { return null; }
+  try { return await loadImage(corsUrl(url)); } catch { return null; }
 }
 
 function drawHeader(sheet, { order, baker, logo }) {
@@ -148,7 +163,7 @@ function drawHeader(sheet, { order, baker, logo }) {
   // Which cake this is. On a bench with four orders on it, a build sheet that does not say whose cake
   // it is, is a hazard.
   const bits = [
-    order?.id != null ? `Order #${order.id}` : null,
+    shortRef(order) ? `Order ${shortRef(order)}` : null,
     customerName(order),
     order?.delivery_date ? `Delivery ${formatDate(order.delivery_date)}` : null,
   ].filter(Boolean);
@@ -157,6 +172,16 @@ function drawHeader(sheet, { order, baker, logo }) {
   sheet.y += mm(4);
   sheet.rule(sheet.y);
   sheet.y += mm(6);
+}
+
+// A cake needs an identity on paper, but the order id is a 36-character UUID the app never shows
+// anyone — printing it whole is noise a baker has to read past. The first segment is short enough to
+// read aloud over a bench and still matches what he'd search for.
+export function shortRef(order) {
+  const id = order?.id;
+  if (id == null) return null;
+  const first = String(id).split('-')[0];
+  return first.length > 10 ? first.slice(0, 8).toUpperCase() : first.toUpperCase();
 }
 
 function customerName(order) {
@@ -174,22 +199,58 @@ function formatDate(d) {
   }
 }
 
-// The annotated cake: the thumbnail with a leader line onto each piping and the nozzle in the margin.
-// Identical geometry to the screen (layoutDiagram) — fractions of the box, scaled into canvas px.
+// The cake — with a leader line onto each piping and the nozzle in the margin WHEN there is piping to
+// annotate. The picture is drawn either way: it is the first thing the baker looks for on the sheet
+// ("which cake is this?"), and a cake with no piping at all — a photo-cake, say — would otherwise have
+// printed with no cake on it, which is how this shipped and is plainly wrong. Annotations are an
+// enrichment of the picture, not the reason for it.
+//
+// Leader-line geometry is layoutDiagram's, identical to the screen's — fractions of the box, scaled
+// into canvas px here.
 function drawDiagram(sheet, { thumb, diagram, tiers }) {
+  if (!thumb) return;
   const all = layoutDiagram(diagram, tiers);
-  if (!thumb || !all.length) return;
 
-  const boxW = sheet.contentW;
-  const boxH = boxW / DIAGRAM.aspect;
+  // Nothing to point at → no margins to reserve for labels, so give the cake a plain centred block
+  // rather than stranding it in a third of the page.
+  if (!all.length) {
+    const h = mm(58);
+    const top = sheet.space(h + mm(6));
+    sheet.ctx.drawImage(thumb, sheet.margin + (sheet.contentW - h) / 2, top, h, h);
+    sheet.y = top + h + mm(6);
+    return;
+  }
+
+  const boxW = Math.min(sheet.contentW, mm(150));
+  const x0 = sheet.margin + (sheet.contentW - boxW) / 2;   // centred when capped
+  const cakeW = DIAGRAM.cakeW * boxW;                      // the thumbnail is SQUARE — this is its side
+
+  // Crop the square vertically to the band the cake and its labels actually occupy. The thumbnail is a
+  // fixed camera render, so the cake sits low in its own frame with a lot of sky above it — printed
+  // whole, a third of page one is empty. The band is derived from the projected anchors themselves
+  // (`ay`) and the label positions (`ly`), so it tracks the cake rather than assuming where it sits:
+  // a one-tier cake and a four-tier cake each get cropped to their own extent.
+  //
+  // The crop is a straight linear remap of the SAME fractions layoutDiagram produced, so every leader
+  // line still lands exactly where it did — it is a zoom, not a different projection.
+  const PAD = 0.08;
+  const ys = all.flatMap(it => [it.ay, it.ly]);
+  const cy0 = Math.max(0, Math.min(...ys) - PAD);
+  const cy1 = Math.min(1, Math.max(...ys) + PAD);
+  const vh  = Math.max(0.2, cy1 - cy0);          // fraction of the square kept
+
+  const boxH = cakeW * vh;
   const top = sheet.space(boxH + mm(4));
   const { ctx } = sheet;
-  const X = (fx) => sheet.margin + fx * boxW;
-  const Y = (fy) => top + fy * boxH;
+  const X = (fx) => x0 + fx * boxW;
+  const Y = (fy) => top + (fy - cy0) * cakeW;    // 1.0 of fraction = one square side, cropped
 
   const cakeX = X(DIAGRAM.cakeX);
-  const cakeW = DIAGRAM.cakeW * boxW;
-  ctx.drawImage(thumb, cakeX, top, cakeW, boxH);
+  ctx.drawImage(
+    thumb,
+    0, cy0 * thumb.height, thumb.width, vh * thumb.height,   // source: the cropped band
+    cakeX, top, cakeW, boxH,                                 // destination
+  );
 
   for (const it of all) {
     const isL = it.side === 'L';
@@ -356,22 +417,23 @@ function drawFooters(sheet, { order }) {
     ctx.font = `700 ${mm(2.8)}px Helvetica, Arial, sans-serif`;
     ctx.fillStyle = MUTED;
     const y = c.height - mm(11);
-    ctx.fillText(order?.id != null ? `Order #${order.id}` : 'X-Ray report', sheet.margin, y);
+    ctx.fillText(shortRef(order) ? `Order ${shortRef(order)}` : 'X-Ray report', sheet.margin, y);
     ctx.textAlign = 'right';
     ctx.fillText(`Sheet ${i + 1} of ${sheet.pages.length}`, c.width - sheet.margin, y);
     ctx.textAlign = 'left';
   });
 }
 
-// Build the whole report → a PDF Blob. `report` is buildXrayReport()'s output; `baker` is optional
-// (name + logo_url) and only affects the letterhead.
-export async function buildXrayPdf({ order, report, baker, dpi = 300 } = {}) {
+// Render the report → the page canvases. Split from the PDF wrapping below so the sheet can be LOOKED
+// AT — a layout you cannot see is a layout you are guessing at, and every bug so far in this file
+// (a missing cake, an orphaned heading) was one only the eye caught.
+export async function renderXrayPages({ order, report, baker } = {}) {
   const [thumb, logo] = await Promise.all([
     tryLoad(order?.design_thumbnail_url),
     tryLoad(baker?.logo_url),
   ]);
 
-  const sheet = new Sheet({ dpi });
+  const sheet = new Sheet();
   drawHeader(sheet, { order, baker, logo });
   drawDiagram(sheet, { thumb, diagram: report.diagram, tiers: order?.design_snapshot?.tiers });
   drawTins(sheet, report.tins);
@@ -379,5 +441,11 @@ export async function buildXrayPdf({ order, report, baker, dpi = 300 } = {}) {
   drawPiping(sheet, { elements: report.elements, freehand: report.freehand });
   drawFooters(sheet, { order });
 
-  return canvasesToPdfBlob(sheet.pages);
+  return sheet.pages;
+}
+
+// Build the whole report → a PDF Blob. `report` is buildXrayReport()'s output; `baker` is optional
+// (name + logo_url) and only affects the letterhead.
+export async function buildXrayPdf(opts = {}) {
+  return canvasesToPdfBlob(await renderXrayPages(opts));
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildXrayReport } from './report.js';
-import { buildXrayPdf } from './xrayPdf.js';
+import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
@@ -81,7 +81,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
     setPdfBusy(true); setPdfErr(null);
     try {
       const blob = await buildXrayPdf({ order, report, baker });
-      downloadPdf(blob, `order-${order?.id ?? 'cake'}-xray.pdf`);
+      downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
       setPdfErr(e?.message || 'Could not make the PDF.');
     } finally {
