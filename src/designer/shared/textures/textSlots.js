@@ -69,6 +69,8 @@ export function loadSlotFonts(slots, styleOf) {
   return Promise.all((slots || []).map(sl => loadStyleFont(resolveStyle(styleOf(sl), sl.style_override).font)));
 }
 
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0));
+
 function cssFont(style, px) {
   const f = style.font || {};
   return `${f.weight ?? 800} ${px}px ${JSON.stringify(f.family || 'sans-serif')}, sans-serif`;
@@ -238,12 +240,35 @@ function strokeThickness(mask, ring, nominal) {
   return Math.max(2, (2 * area) / perimeter);
 }
 
+// Covered area, in pixels of a SCALED-DOWN copy. Only ever consumed as a RATIO (area ÷ perimeter, in
+// strokeThickness), and both terms are measured the same way — so the scale cancels and the answer is
+// the same, at a fraction of the cost.
+//
+// It matters because this is a GPU→CPU readback (getImageData stalls the pipeline) followed by a JS
+// loop over every pixel, and it runs TWICE per render of a fondant glyph. Measured on the full layer,
+// a big numeral means two ~30MB arrays and two multi-million-iteration loops on the main thread, on
+// every frame of a drag. Measured on a 256px copy it is a fixed, trivial cost no matter how large the
+// glyph is.
+const AREA_SAMPLE = 256;
+
 function alphaArea(canvas) {
-  const x = canvas.getContext('2d', { willReadFrequently: true });
-  const d = x.getImageData(0, 0, canvas.width, canvas.height).data;
+  const s = Math.min(1, AREA_SAMPLE / Math.max(canvas.width, canvas.height));
+  const w = Math.max(1, Math.round(canvas.width * s));
+  const h = Math.max(1, Math.round(canvas.height * s));
+
+  const small = document.createElement('canvas');
+  small.width = w; small.height = h;
+  const x = small.getContext('2d', { willReadFrequently: true });
+  x.drawImage(canvas, 0, 0, w, h);
+
+  // Sum COVERAGE (alpha as a fraction) rather than counting pixels over a threshold. A threshold breaks
+  // under downscaling: the ring is a thin stroke, and once shrunk its antialiased pixels fall below the
+  // cutoff and simply stop being counted — the perimeter would read too small and every fondant glyph
+  // would come out with a fatter bevel than it should. Coverage is preserved by the resample.
+  const d = x.getImageData(0, 0, w, h).data;
   let n = 0;
-  for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++;
-  return n;
+  for (let i = 3; i < d.length; i += 4) n += d[i] / 255;
+  return n / (s * s);   // back to full-resolution pixels, so callers keep their units
 }
 
 function inkFondant(ctx, text, size, style) {
@@ -360,8 +385,19 @@ export function renderTextSlot(ctx, W, H, slot, text, style) {
   const value = String(text ?? '').trim();
   if (!value) return;
   const r = slot.rect || {};
-  const boxW = (r.w ?? 0.4) * W;
-  const boxH = (r.h ?? 0.4) * H;
+  // The box is NORMALIZED — a `w` above 1 is a box larger than the artwork it sits on, which is
+  // meaningless, and it is also dangerous: the ink algorithms build their layers at O(size²), and size
+  // is fitted to this box. A rect of 2.0 asks fondant for a ~30-megapixel layer (eleven of them, plus
+  // gaussian blurs and two full-image pixel scans) and takes the tab down with it — which is exactly
+  // what an unclamped resize handle in the Text Topper Studio did.
+  //
+  // So the RENDERER refuses it, not the caller. This is the one path both the studio and the designer
+  // ink through, and the designer's slots come from placement_config in the DATABASE: a single bad row
+  // — a migration, a future studio, a hand-edited config — would otherwise freeze a customer's phone
+  // mid-cake, and we would hear about it as "the site crashes", not as a text bug. Clamping here makes
+  // the cost bounded by the artwork's own size, whatever anyone hands us.
+  const boxW = clamp(r.w ?? 0.4, 0, 1) * W;
+  const boxH = clamp(r.h ?? 0.4, 0, 1) * H;
   if (boxW < 1 || boxH < 1) return;
 
   ctx.save();
