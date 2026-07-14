@@ -4,7 +4,7 @@ import TopperPreview from '../canvas/TopperPreview.jsx';
 import { useImageRegions } from '../shared/color/useImageRegions.js';
 import RightsAttestation from '../../legal/RightsAttestation.jsx';
 import { PUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
-import { ZONE_LABELS } from '../constants.js';
+import { ZONE_LABELS, ZONES } from '../constants.js';
 
 // ── My Decoration Studio — TWO STEPS, ONE SCREEN ─────────────────────────────────────────────────
 //
@@ -92,6 +92,11 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
   // Default the chosen zones to everything the kind allows — the common case is "wherever it fits".
   useEffect(() => { setZones(kindZones); }, [kindZones]);
 
+  // One kind → choose it for him. The question is only worth asking when there is something to decide.
+  useEffect(() => {
+    if (kinds.length === 1 && !typeId) setTypeId(kinds[0].id);
+  }, [kinds, typeId]);
+
   const toggleZone = (z) => setZones(zs => (zs.includes(z) ? zs.filter(x => x !== z) : [...zs, z]));
 
   // PROMOTE — release one of MY OWN images into the library, WITH its behaviour. The server refuses a
@@ -150,17 +155,23 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
               {/* BEHAVIOUR — what kind it is, where it can go, which colours may change. These
                   questions only have an answer HERE: an image is just an image until it is offered to
                   other people as a decoration. */}
-              <div style={S.label}>What kind of decoration is it?</div>
-              {kinds.length === 0 ? (
+              {/* A question with ONE answer is not a question, it is a speed bump — so when admin has
+                  flagged a single kind as baker_uploadable, it is chosen silently (see the effect
+                  above) and the baker is never shown a row of one button to press. */}
+              {kinds.length === 0 && (
                 <div style={S.warn}>No decoration kinds are available for upload yet.</div>
-              ) : (
-                <div style={S.kinds}>
-                  {kinds.map(k => (
-                    <button key={k.id} onClick={() => setTypeId(k.id)} style={S.kind(k.id === typeId)}>
-                      {k.name}
-                    </button>
-                  ))}
-                </div>
+              )}
+              {kinds.length > 1 && (
+                <>
+                  <div style={S.label}>What kind of decoration is it?</div>
+                  <div style={S.kinds}>
+                    {kinds.map(k => (
+                      <button key={k.id} onClick={() => setTypeId(k.id)} style={S.kind(k.id === typeId)}>
+                        {k.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
 
               {/* 3 — where on the cake. SHOW it, don't name it. */}
@@ -175,7 +186,7 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
                         <TopperPreview
                           glbUrl={artUrl}
                           tiers={tiers}
-                          placement={z}
+                          placement={z === ZONES.SIDE ? 'side' : 'top'}
                           mode={kind.placement_rules?.placement?.[z] ?? 'hug'}
                         />
                       </PreviewTile>

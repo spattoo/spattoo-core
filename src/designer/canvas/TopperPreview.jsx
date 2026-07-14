@@ -8,6 +8,7 @@ import { sideSeatOffset } from '../placement.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
 import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { SceneLoader } from './CakeSpinner.jsx';
+import { corsUrl } from '../utils/assetUrl.js';
 
 const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
 
@@ -20,7 +21,7 @@ const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
 // flips it across X (matches placePattern + StickerFace), and `r` sizes it to the real part size
 // instead of the cake-filling hero scale.
 function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, offset }) {
-  const { scene } = useGLTF(glbUrl);
+  const { scene } = useGLTF(corsUrl(glbUrl));
   const { clonedScene, box } = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);
@@ -76,8 +77,13 @@ function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, 
 
 // 2D-image decor preview — a textured plane standing on the top surface or mounted flat on
 // the side wall (for elements whose asset is a PNG rather than a GLB, e.g. some top&side decor).
-function PreviewImage({ url, placement, target, bottom }) {
-  const tex = useTexture(url);
+function PreviewImage({ url, placement, mode, target, bottom }) {
+  // corsUrl, or this silently renders NOTHING. R2 answers an Origin-less request with no
+  // Access-Control-Allow-Origin and no Vary — and the very panel that mounts this preview has just
+  // shown the same picture as a plain <img>, poisoning the cache with exactly that response. WebGL then
+  // asks for it CORS-clean, gets the cached copy, and is blocked. The cake renders, the artwork does
+  // not, and the baker is asked to choose between two tiles that show him nothing. (assetUrl.js.)
+  const tex = useTexture(corsUrl(url));
   const aspect = tex.image ? tex.image.width / tex.image.height : 1;
   const w = bottom.radius * 1.15;
   const h = w / (aspect || 1);
@@ -97,9 +103,19 @@ function PreviewImage({ url, placement, target, bottom }) {
       </mesh>
     );
   }
-  // 'top' — standing upright, centred on the top surface.
+  // 'top' — mode-driven, exactly as the GLB path and the real renderer do it: 'stand' = upright on the
+  // surface; anything else (hug) = laid FLAT on it. A preview that always stands the image up would lie
+  // about a hugging decoration, and the tile exists precisely so the baker does not have to guess.
+  if (mode === 'stand') {
+    return (
+      <mesh position={[0, target.topY + h / 2, 0]}>
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial map={tex} transparent alphaTest={0.05} side={THREE.DoubleSide} />
+      </mesh>
+    );
+  }
   return (
-    <mesh position={[0, target.topY + h / 2, 0]}>
+    <mesh position={[0, target.topY + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[w, h]} />
       <meshBasicMaterial map={tex} transparent alphaTest={0.05} side={THREE.DoubleSide} />
     </mesh>
