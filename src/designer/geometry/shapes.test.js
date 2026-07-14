@@ -52,6 +52,9 @@ describe('outlines are normalised, closed and outward-wound', () => {
 });
 
 describe('outline shapes plug into the generic surface ops', () => {
+  // A heart is an AUTHORED shape — a row, not a constant — so the test authors one, exactly as the
+  // studio does. Nothing but `round` and `rect` is seeded in code.
+  applyCakeShapeConfig([{ key: 'heart', label: 'Heart', family: 'heart', config: { plump: 1, cleft: 1 } }]);
   const heart = tierShape({ shape: 'heart', width: 2.4, depth: 2.4 });
 
   it('is an outline kind sized by width/depth', () => {
@@ -63,10 +66,12 @@ describe('outline shapes plug into the generic surface ops', () => {
 
   it('topContains follows the SILHOUETTE, not a bounding circle', () => {
     expect(topContains(heart, 0, 0)).toBe(true);
-    // The cleft between a heart's lobes is inside the bounding box but OUTSIDE the cake — a radius
-    // test would happily seat a decoration in thin air there.
-    const topEdge = heart.halfD * 0.98;
-    expect(topContains(heart, 0, topEdge)).toBe(false);
+    // The heart's POINT faces the front (+Z) and its lobes the back (−Z). The valley BETWEEN the lobes
+    // is inside the bounding box but OUTSIDE the cake — a radius test would happily seat a decoration
+    // in thin air there, which is the whole reason placement goes through the outline.
+    expect(topContains(heart, 0, -heart.halfD * 0.98)).toBe(false);
+    // …while the tip itself is cake.
+    expect(topContains(heart, 0, heart.halfD * 0.9)).toBe(true);
     expect(topContains(heart, 9, 9)).toBe(false);
   });
 
@@ -107,9 +112,21 @@ describe('the catalog is the data↔code seam', () => {
     expect(shp.outline.length).toBe(8);
   });
 
-  it('a DB row can retune a seeded shape without code', () => {
+  it('a row can be retuned without code', () => {
+    applyCakeShapeConfig([{ key: 'hexagon', label: 'Hexagon', family: 'polygon', config: { sides: 6 } }]);
+    expect(tierShape({ shape: 'hexagon', width: 2, depth: 2 }).outline.length).toBe(6);
     applyCakeShapeConfig([{ key: 'hexagon', label: 'Hexagon', family: 'polygon', config: { sides: 5 } }]);
     expect(tierShape({ shape: 'hexagon', width: 2, depth: 2 }).outline.length).toBe(5);
-    CAKE_SHAPES.hexagon = { label: 'Hexagon', family: 'polygon', config: { sides: 6, rotation: 0 } };  // restore the seed
+  });
+
+  it('the code seeds only the two shapes that MUST exist', async () => {
+    // Freshly imported, the catalog is exactly { round, rect } — the keys existing designs already
+    // store. A heart is authored (a row), never shipped as a constant, so the code has no opinion on
+    // what one looks like. (This module is re-imported because the tests above have authored into the
+    // live catalog, which is precisely how a real catalog gets its shapes.)
+    const fresh = await import('../cakeShapes.js?fresh');
+    expect(Object.keys(fresh.CAKE_SHAPES).sort()).toEqual(['rect', 'round']);
+    expect(fresh.CAKE_SHAPES.round.family).toBe('circle');
+    expect(fresh.CAKE_SHAPES.rect.family).toBe('rounded_rect');
   });
 });

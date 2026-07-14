@@ -7,20 +7,33 @@
 
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { CakePreview, cakeShapeList } from '../src/index.js';
+import { CakePreview, cakeShapeList, applyCakeShapeConfig } from '../src/index.js';
+
+// The bench shows the CURVES the code ships, at their default proportions — NOT the catalog, which is
+// authored in the admin studio and holds only `round` + `rect` until somebody makes a heart. So it
+// authors one of each locally, purely to look at them.
+applyCakeShapeConfig([
+  { key: 'square',    label: 'Square',    family: 'rounded_rect', config: { square: true } },
+  { key: 'heart',     label: 'Heart',     family: 'heart',        config: { plump: 1, cleft: 1 } },
+  { key: 'butterfly', label: 'Butterfly', family: 'butterfly',    config: { wing: 1 } },
+  { key: 'hexagon',   label: 'Hexagon',   family: 'polygon',      config: { sides: 6, rotation: 0 } },
+  { key: 'oval',      label: 'Oval',      family: 'oval',         config: {} },
+]);
 
 function Bench() {
   const [tiers, setTiers] = useState(2);
+  const [frosting, setFrosting] = useState('fondant');
   const shapes = cakeShapeList();
 
   const design = key => ({
     tiers: Array.from({ length: tiers }, (_, i) => ({
       shape: key,
       width:  2.4 - i * 0.6,
-      depth:  1.9 - i * 0.5,
+      depth:  2.4 - i * 0.6,
       radius: (2.4 - i * 0.6) / 2,
       height: i === 0 ? 1.45 : 1.0,
-      color: '#f5b8c8',
+      color: '#e0466b',
+      frostingType: frosting,
       topPipings: [], bottomPipings: [], creamLayers: [],
     })),
     texts: [], ages: [], stickers: [], writing: null, piping: [],
@@ -32,6 +45,13 @@ function Bench() {
       <label style={{ fontSize: 13 }}>
         Tiers: {tiers}{' '}
         <input type="range" min={1} max={4} value={tiers} onChange={e => setTiers(+e.target.value)} />
+      </label>{' '}
+      <label style={{ fontSize: 13 }}>
+        Frosting:{' '}
+        <select value={frosting} onChange={e => setFrosting(e.target.value)}>
+          <option value="fondant">fondant (rolled rim)</option>
+          <option value="buttercream">buttercream (sharp rim)</option>
+        </select>
       </label>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
         {shapes.map(sh => (

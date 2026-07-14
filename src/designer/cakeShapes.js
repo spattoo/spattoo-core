@@ -19,15 +19,16 @@
 // The seed keys `round` and `rect` are LOAD-BEARING — they are what existing designs already store
 // (`shape: 'rect'`, or absent ⇒ round). They must never be renamed or removed.
 
-// The seed. A host that cannot reach the API (or an empty table) still renders every shape here.
+// The seed is ONLY the two shapes that must exist: `round` and `rect` are what existing designs already
+// store (or nothing, which means round), so the code has to be able to render them with no DB at all.
+//
+// Every OTHER shape is AUTHORED — a row admin creates in the Cake Shape Studio from one of the curves
+// in geometry/shapes.js, saved when its proportions look right. The code ships the CURVES; it does not
+// ship a heart. Seeding a "Heart" here (or in the migration) would be the code deciding what a heart
+// looks like, which is a decision that belongs to whoever is looking at the cake.
 export const CAKE_SHAPES = {
-  round:     { label: 'Round',     family: 'circle',       config: {} },
-  rect:      { label: 'Rectangle', family: 'rounded_rect', config: {} },
-  square:    { label: 'Square',    family: 'rounded_rect', config: { square: true } },
-  heart:     { label: 'Heart',     family: 'heart',        config: { plump: 1, cleft: 1 } },
-  butterfly: { label: 'Butterfly', family: 'butterfly',    config: { wing: 1 } },
-  hexagon:   { label: 'Hexagon',   family: 'polygon',      config: { sides: 6, rotation: 0 } },
-  oval:      { label: 'Oval',      family: 'oval',         config: {} },
+  round: { label: 'Round',     family: 'circle',       config: {} },
+  rect:  { label: 'Rectangle', family: 'rounded_rect', config: {} },
 };
 
 // Overlay DB-authored rows onto the seed. An unknown key simply becomes a new entry — which is the
