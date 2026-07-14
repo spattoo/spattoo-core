@@ -879,14 +879,21 @@ export function buildOutlinePrism(outline, height, fillet = 0) {
       const ch = Math.cos(hi.slope), sh = Math.sin(hi.slope);
       const vl = lo.y / height, vh = hi.y / height;
 
-      // two triangles: (lo_i, lo_j, hi_j) and (lo_i, hi_j, hi_i)
+      // Two triangles: (lo_i, hi_j, lo_j) and (lo_i, hi_i, hi_j).
+      //
+      // The vertex ORDER is what the GPU culls on — the `normal` attribute above only lights the face,
+      // it cannot make a back-facing triangle visible. The outline is wound CCW in the (x, z) plane, and
+      // sweeping that order upward produces triangles whose winding normal points INWARD: the body was
+      // built inside-out, so FrontSide culling removed every near face and you saw through the cake to
+      // the inner surface of the far wall. Walking the quad the other way round puts the winding where
+      // the normals always claimed it was.
       push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
-      push(lp[j], lo.y, nx * cl, sl, nz * cl, u1, vl);
       push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
+      push(lp[j], lo.y, nx * cl, sl, nz * cl, u1, vl);
 
       push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
-      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
       push(hp[i], hi.y, nx * ch, sh, nz * ch, u0, vh);
+      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
     }
   }
 
@@ -898,7 +905,10 @@ export function buildOutlinePrism(outline, height, fillet = 0) {
     const faces = THREE.ShapeUtils.triangulateShape(contour, []);
     const ny = up ? 1 : -1;
     for (const t of faces) {
-      const tri = up ? t : [t[0], t[2], t[1]];           // flip winding so the base faces down
+      // triangulateShape winds CCW in the flat (x, z) contour it was handed; laid back into a y-up world
+      // that faces DOWN, so it is the TOP cap that needs reversing and the base that takes it as-is. The
+      // reverse of this was the same inside-out error the wall had: the lid faced into the cake.
+      const tri = up ? [t[0], t[2], t[1]] : t;
       for (const k of tri) {
         const p = pts[k];
         push(p, y, 0, ny, 0, 0.5 + p.x * 0.5, 0.5 + p.z * 0.5);

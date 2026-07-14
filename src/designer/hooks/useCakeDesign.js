@@ -19,9 +19,13 @@ export { FROSTING_TYPES };
 // of the balloon look. The Age popup lets the customer switch faces.
 const DEFAULT_AGE_FONT = 'ems_readability';
 
+// `shape` is written out explicitly even though 'round' is also what an ABSENT shape resolves to
+// (cakeShapeDef falls back to round). The absent case has to keep working — every design saved before
+// shapes existed omits it — but a design this code AUTHORS should say what it is rather than lean on a
+// fallback, so a reader of the JSON sees the shape and setTierShape has a field to overwrite.
 const DEFAULT_DESIGN = {
   tiers: [
-    { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] },
+    { shape: 'round', color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] },
   ],
   texts: [],
   ages: [],        // gold 3D balloon-number toppers standing on the cake top (see AgeNumber)
@@ -282,6 +286,20 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // The tier's footprint, by KEY. Shape is per-TIER, not per-cake: the geometry already resolves each
+  // tier's shape independently (surface.js/tierShape), so a heart on a round base costs no extra path —
+  // forbidding it would be a constraint invented in the state layer, not one the renderer has.
+  //
+  // Only the key is written. Size (radius/width/depth) is deliberately NOT reset: re-shaping a tier the
+  // customer already sized should change its outline, not silently shrink her cake — toCanvasConfig
+  // derives whatever the new family needs from the size that is already there.
+  function setTierShape(index, shape) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, shape } : t),
+    }));
+  }
+
   // Back-compat single-piping setters: replace the whole zone with [piping] (or clear it).
   // Preserve an existing layerId so repeated edits don't remount the GLB ring.
   function setTopPiping(index, piping) {
@@ -464,10 +482,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // A new tier INHERITS the shape of the one below it — stacking a round tier on a heart base is a
+  // deliberate act, not something that should happen because the customer pressed "add tier". She can
+  // still change it afterwards (setTierShape); the inheritance is the default, not a lock.
   function addTier() {
     setDesign(prev => {
       if (prev.tiers.length >= 4) return prev;
-      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] }] };
+      const below = prev.tiers[prev.tiers.length - 1];
+      return { ...prev, tiers: [...prev.tiers, { shape: below?.shape ?? 'round', color: '#ffffff', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] }] };
     });
   }
 
@@ -928,8 +950,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, piping: [] }));
   }
 
-  function resetDesign() {
-    setDesign(DEFAULT_DESIGN);
+  // Start over. `shape` is the footprint the new cake begins as — the one thing the customer chose
+  // before the blank canvas appeared (CakeDesigner's New flow). Defaulting it to round keeps every
+  // existing caller — resetDesign() with no argument — behaving exactly as it did.
+  function resetDesign(shape = 'round') {
+    setDesign({ ...DEFAULT_DESIGN, tiers: DEFAULT_DESIGN.tiers.map((t, i) => (i === 0 ? { ...t, shape } : t)) });
   }
 
   function addStickerBatch(stickers) {
@@ -944,7 +969,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,

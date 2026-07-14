@@ -30,6 +30,9 @@ import StyleControls from './controls/StyleControls.jsx';
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig } from './frostings.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { applyTextStyleConfig } from './textStyles.js';
+import { applyCakeShapeConfig, cakeShapeList, cakeShapeDef } from './cakeShapes.js';
+import ShapePicker from './controls/ShapePicker.jsx';
+import ChipPicker from './controls/ChipPicker.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
@@ -1194,7 +1197,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1226,6 +1229,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [foilTier, setFoilTier] = useState(0);
   const [foilSel, setFoilSel] = useState(0);
   const [foilSurface, setFoilSurface] = useState('side');   // which surface "Add foil" places onto
+  // The New-cake shape grid. Open = the customer pressed New and has not chosen yet; the current cake is
+  // still on screen and still intact behind it.
+  const [shapePickerOpen, setShapePickerOpen] = useState(false);
   // Second cream layer ("Cream layer" finish element) — which tier the card edits + which band is selected.
   const [creamTier, setCreamTier] = useState(0);
   const [creamSel, setCreamSel] = useState(0);
@@ -1558,6 +1564,25 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         .catch(() => {});
     }
   }, [apiClient]);
+
+  // Overlay DB-authored cake shapes — the footprints admin authored in the Cake Shape Studio — onto the
+  // in-code seed. Same seed+overlay contract as textures and text styles, but the stakes are the reverse
+  // way round: the seed carries ONLY `round` and `rect` (the keys existing designs already store), so a
+  // host with no fetchCakeShapes still renders every cake that exists — while every shape a customer can
+  // CHOOSE arrives from this fetch. A baker who has authored no shapes offers round and rectangle, which
+  // is the honest answer, not a broken one.
+  const [shapeVersion, setShapeVersion] = useState(0);
+  useEffect(() => {
+    if (apiClient?.fetchCakeShapes) {
+      apiClient.fetchCakeShapes()
+        .then(rows => { if (rows?.length) { applyCakeShapeConfig(rows); setShapeVersion(v => v + 1); } })
+        .catch(() => {});
+    }
+  }, [apiClient]);
+
+  // The ONE catalog both shape pickers read — the New-cake grid and the tier popup's Shape row. Two
+  // lists would be two chances to disagree about what shapes exist; recomputed when the overlay lands.
+  const shapeOptions = useMemo(() => cakeShapeList(), [shapeVersion]);
 
   // Overlay DB-authored materials (the per-material ordered style list) onto the in-code frostings seed.
   // Bumps the same version so the style picker re-reads the merged registry. Materials absent from the
@@ -3198,8 +3223,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }, [design.ages.length, selectedEl?.pending]);
 
 
+  // "New" asks for the SHAPE first, then clears the cake — deliberately in that order. The old flow wiped
+  // the design on click and always gave back a round cake, so the shapes a baker had authored were
+  // invisible unless the customer went hunting in a tier popup; and a mis-click was destructive with no
+  // step in between. Opening the picker is now the whole of the click: nothing is discarded until a shape
+  // is chosen, and closing the picker leaves the cake exactly as it was.
   function handleNewCake() {
-    resetDesign();
+    setShapePickerOpen(true);
+  }
+
+  function startNewCake(shape) {
+    setShapePickerOpen(false);
+    resetDesign(shape);
     clearAllSelections();
     resetEditors();
     setEditingOrder(null);
@@ -5601,6 +5636,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 />
               )}
 
+              {/* Shape (footprint) — tiers only, and PER tier: the geometry resolves each tier's shape on
+                  its own, so a round tier on a square base is just data. Offers the same catalog the New
+                  grid does. A chip row rather than silhouettes because it sits directly under Frosting and
+                  Style, which are chip rows — the customer chose visually when the cake was created. */}
+              {selectedEl?.type === 'tier' && shapeOptions.length > 1 && (
+                <ChipPicker
+                  label="Shape"
+                  options={shapeOptions.map(sh => ({ value: sh.key, label: sh.label }))}
+                  value={design.tiers[selectedEl.index]?.shape ?? 'round'}
+                  onChange={key => setTierShape(selectedEl.index, key)}
+                />
+              )}
+
               {/* Frosting type (material) — tiers only. Colour stays on the ColorWheel above;
                   this picks buttercream | whipped | fondant | naked, driving the frostings registry. */}
               {selectedEl?.type === 'tier' && (
@@ -5639,8 +5687,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 );
               })()}
 
-              {/* Corner radius — only for sheet (rectangular) tiers */}
-              {selectedEl?.type === 'tier' && design.tiers[selectedEl.index]?.shape === 'rect' && (() => {
+              {/* Corner radius — the rounded_rect FAMILY, which is what actually has corners to round; the
+                  analytic rect path is the only one that reads cornerR. Keyed off the family, not the key
+                  'rect', so a shape admin authors from that family (a Square, a tighter sheet) gets the
+                  control too — the old literal handed it to exactly one seeded row. */}
+              {selectedEl?.type === 'tier' && cakeShapeDef(design.tiers[selectedEl.index]?.shape).family === 'rounded_rect' && (() => {
                 const tier = design.tiers[selectedEl.index];
                 const w = tier.width ?? 2.16, d = tier.depth ?? 1.56, h = tier.height ?? 0.85;
                 const maxR = +(Math.min(w, d, h) / 2 * 0.9).toFixed(2);
@@ -5891,7 +5942,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const radial   = p.userRadialOffset ?? 0;
                 // "Radial" reads as a circle term; on a sheet (rect) cake the control insets the
                 // border perpendicularly from each straight edge, so label it "Inset" instead.
-                const isRectTier = canvasConfig.tiers[tierIndex]?.shape === 'rect';
+                // Round tiers measure a piping offset RADIALLY; every other footprint measures it as an
+                // inset from the edge. toCanvasConfig emits `shape` only for a non-round tier, so its mere
+                // presence is the test — comparing to 'rect' called a heart's offset "Radial", and would
+                // have called every shape authored after it that too.
+                const isNonRoundTier = !!canvasConfig.tiers[tierIndex]?.shape;
                 return (
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
                     {/* Shared preview tile (same component as the placement chooser). */}
@@ -6078,7 +6133,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           {/* Radial/inset — every ring except a wrap band, which auto-hugs the wall. */}
                           {!p.wrap && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
-                            <span style={{ ...lbl, flex: 1, minWidth: 0 }}>{isRectTier ? 'Inset' : 'Radial'}</span>
+                            <span style={{ ...lbl, flex: 1, minWidth: 0 }}>{isNonRoundTier ? 'Inset' : 'Radial'}</span>
                             <button
                               title="Move inward"
                               style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
@@ -6341,6 +6396,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Add User modal ── */}
       {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} brandBtn={brandBtn} apiClient={apiClient} />}
+
+      {/* ── New cake: pick the shape first ── */}
+      {shapePickerOpen && (
+        <ShapePicker
+          shapes={shapeOptions}
+          onPick={startNewCake}
+          onClose={() => setShapePickerOpen(false)}
+        />
+      )}
 
       {/* Upload your own decoration. `tiers` is passed so the zone picker can render the user's own
           artwork ON the actual cake they're designing — the only honest way to explain "a zone".
