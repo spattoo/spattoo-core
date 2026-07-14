@@ -1,15 +1,37 @@
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
 import { starterDesign } from '../hooks/useCakeDesign.js';
 
-// The camera a shape is judged from. Same view the Cake Shape Studio captures its thumbnail through — the
-// live tile below and the saved image must agree, or a shape would change appearance the moment somebody
+// The camera a shape is photographed from. The Cake Shape Studio captures its thumbnail through this and
+// the live tile renders through it — ONE camera, or a shape would change appearance the moment somebody
 // saved a picture of it.
 //
-// The front of the cake, LIFTED about 25°: dead-on, a heart is a slab with a notch and reads as a box —
-// the footprint, which is the entire thing being chosen, is the one thing a pure front view hides. Tilting
-// enough to see the top surface shows the outline AND keeps it a cake. Long lens (20°) pulled in close, so
-// the cake fills the tile without the wide-angle splay that makes a straight wall bulge at the base.
-export const SHAPE_VIEW = { fov: 20, cameraPosition: [0, 5.0, 7.4], target: [0, 0.45, 0] };
+// It FITS THE CAKE rather than being a fixed position, because a shape can now be a stack: a fixed camera
+// framed for one tier decapitates a two-tier cake, and a catalog holding 1-, 2- and 3-tier structures has
+// no single distance that flatters all of them. So the distance is derived from what is actually being
+// photographed — total height and widest footprint — and every cake fills its tile the same way.
+//
+// The front of the cake, LIFTED ~25°: dead-on, a heart is a slab with a notch and reads as a box, and the
+// footprint — the entire thing being chosen — is precisely what a pure front view hides. Long lens (20°)
+// so the cake doesn't splay outward at the base the way a wide angle makes a straight wall bulge.
+const SHAPE_FOV = 20;
+const SHAPE_ELEV = 25 * (Math.PI / 180);
+
+export function shapeView(design) {
+  const tiers = design?.tiers ?? [];
+  const dia = t => Math.max(t.width ?? (t.radius ?? 1.2) * 2, t.depth ?? (t.radius ?? 1.2) * 2);
+  const totalH = tiers.reduce((h, t) => h + (t.height ?? 1.45), 0) || 1.45;
+  const maxW = tiers.length ? Math.max(...tiers.map(dia)) : 2.4;
+
+  // Fit the LARGER of the cake's height and its width, with headroom for the board it stands on.
+  const fit = Math.max(totalH * 1.5, maxW * 1.25);
+  const dist = (fit / 2) / Math.tan((SHAPE_FOV / 2) * (Math.PI / 180));
+  const cy = totalH * 0.45;                       // aim at the cake's middle, not the board
+  return {
+    fov: SHAPE_FOV,
+    cameraPosition: [0, cy + dist * Math.sin(SHAPE_ELEV), dist * Math.cos(SHAPE_ELEV)],
+    target: [0, cy, 0],
+  };
+}
 
 // ── Shape tile — a cake, from the front ───────────────────────────────────────
 // A cake, NOT a footprint. The first version of this drew the top-down outline, and it was useless on
@@ -31,9 +53,10 @@ export function ShapeTile({ shape, size = 96 }) {
       />
     );
   }
+  const design = starterDesign(shape.key);
   return (
     <div style={{ width: size, height: size }}>
-      <CakePreview design={starterDesign(shape.key)} autoRotate={false} {...SHAPE_VIEW} />
+      <CakePreview design={design} autoRotate={false} {...shapeView(design)} />
     </div>
   );
 }
