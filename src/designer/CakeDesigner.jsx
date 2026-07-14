@@ -23,7 +23,7 @@ import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeaf
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
 import MyDecorationStudio from './decorations/MyDecorationStudio.jsx';
-import MyAssetsPanel from './decorations/MyAssetsPanel.jsx';
+import UploadsPanel from './decorations/UploadsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
@@ -626,8 +626,8 @@ function ElementsIcon({ size = 20 }) {
   );
 }
 
-// My images — a picture (frame + hill + sun), matching the stroke weight of the other rail icons.
-function MyImagesIcon({ size = 20 }) {
+// Uploads — a picture (frame + hill + sun), matching the stroke weight of the other rail icons.
+function UploadsIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="16" rx="2.5" />
@@ -1220,14 +1220,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [elementsOpen, setElementsOpen] = useState(false);
   // The promote studio (decorations/MyDecorationStudio.jsx) — a BAKER giving one of his own images a
   // behaviour (kind, zones, hug/stand, colours) as he releases it to his customers. Only reachable from
-  // My images; uploading itself happens there.
+  // Uploads; uploading itself happens there.
   const [decorStudioOpen, setDecorStudioOpen] = useState(false);
-  // "My images" — everything this person uploaded (baker_uploads), private to them. `promoting` holds
+  // "Uploads" — everything this person uploaded (baker_uploads), private to them. `promoting` holds
   // the upload a BAKER is releasing into his library: the studio reopens in promote mode to author its
   // behaviour (kind, zones, hug/stand, colours). Null = the studio is in plain upload mode.
-  const [myAssetsOpen, setMyAssetsOpen] = useState(false);
+  const [uploadsOpen, setUploadsOpen] = useState(false);
   const [promoting, setPromoting] = useState(null);
-  // Which photo-frame sticker is waiting for an image. Non-null = My images opened to CHOOSE for that
+  // Which photo-frame sticker is waiting for an image. Non-null = Uploads opened to CHOOSE for that
   // frame (rather than to place on the cake). One panel, two purposes — decided by the caller.
   const [framePhotoFor, setFramePhotoFor] = useState(null);
 
@@ -4212,7 +4212,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
-  // Photo-cake frames get their image from My images (setFramePhotoFor -> MyAssetsPanel), which is
+  // Photo-cake frames get their image from Uploads (setFramePhotoFor -> UploadsPanel), which is
   // ALSO where a new one is uploaded. There is deliberately no upload path here any more: a second
   // one would drift from the first, and the old straight-to-frame input uploaded the same photo again
   // for every frame that used it — a duplicate R2 object per use, and a baker who already had his
@@ -4337,7 +4337,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         const t = inst.photoTransform ?? { x: 0, y: 0, zoom: 1 };
         const setT = patch => updateSticker(el.id, { photoTransform: { ...t, ...patch } });
         const PAN = 0.04, clampPan = v => Math.max(-0.6, Math.min(0.6, +v.toFixed(3)));
-        // ONE way to get a photo into a frame: choose from My images — which is also where you upload
+        // ONE way to get a photo into a frame: choose from Uploads — which is also where you upload
         // a new one. Not two buttons. The old file input uploaded straight into the frame, so the same
         // photo used in a second frame (or a second design) was uploaded, stored and paid for TWICE,
         // and the baker who already has the photo his customer sent him would have had to upload it
@@ -4976,24 +4976,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} />,  requires: 'order:view' },
               { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} />,  requires: 'design:create' },
               { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />, requires: 'design:create' },
-              // My images sits in the RAIL, not inside Decorations: it is a PLACE you go (your own
+              // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own
               // images — photos, decorations), not a kind of decoration. It is also where uploading now
               // happens, so burying it three taps deep inside another panel made no sense.
-              { id: 'myimages',   label: 'My images', icon: <MyImagesIcon size={20} />,  requires: 'element:manage' },
+              { id: 'uploads',    label: 'Uploads',   icon: <UploadsIcon size={20} />,  requires: 'element:manage' },
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view' },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
               ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
             ].filter(item => hasCap(item.requires)).map(({ id, label, icon }) => {
-              const active = id === 'elements' ? elementsOpen : id === 'myimages' ? myAssetsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+              const active = id === 'elements' ? elementsOpen : id === 'uploads' ? uploadsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
               const isNew  = id === 'new';
               return (
                 <button key={id} style={s.navItem}
                   onClick={() => {
                     if (id === 'new')       handleNewCake();
                     if (id === 'elements')  openElements();
-                    if (id === 'myimages')  setMyAssetsOpen(true);
+                    if (id === 'uploads')   setUploadsOpen(true);
                     if (id === 'tools')     openTools();
                     if (id === 'templates') openTemplates();
                     if (id === 'dashboard') setDashboardOpen(true);
@@ -5187,7 +5187,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     </div>
                   );
                 })()}
-                {/* "Add your own" and "My images" both used to live here. They are gone: My images is
+                {/* "Add your own" and "Uploads" both used to live here. They are gone: Uploads is
                     now a MAIN MENU entry (it is a place you go — your own images — not a kind of
                     decoration), and uploading happens INSIDE it, so a second upload door here would be
                     a second path to drift. This section is the LIBRARY only. */}
@@ -6349,11 +6349,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
       )}
 
-      {/* My images — the uploads themselves. Tap one to put it on the cake (it borrows the placement
+      {/* Uploads — the uploads themselves. Tap one to put it on the cake (it borrows the placement
           rules of the type flagged default_for_uploads — data, not a hardcoded slug). A baker can also
           release one to his customers here, or take it back. */}
-      {(myAssetsOpen || framePhotoFor != null) && (
-        <MyAssetsPanel
+      {(uploadsOpen || framePhotoFor != null) && (
+        <UploadsPanel
           apiClient={apiClient}
           elementTypes={elementTypes}
           // Choosing FOR A FRAME is a different act from placing on the cake, so the panel is told
@@ -6365,7 +6365,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             // Fills THIS frame's slot. Uploads nothing (the image already exists), creates no element,
             // touches no library: a photo in a frame is design content, exactly as private as before.
             // Replacing an image does NOT delete the old upload — it may be in another design, and
-            // deleting is an explicit act in My images, never a side-effect of changing your mind.
+            // deleting is an explicit act in Uploads, never a side-effect of changing your mind.
             updateSticker(framePhotoFor, { photoUrl: u.url });
             setFramePhotoFor(null);
           }}
@@ -6376,8 +6376,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             if (!zone) return;
             addSticker(el, zone, 0, el.placement_config?.[zone] ?? 'hug');
           }}
-          onPromote={(u) => { setMyAssetsOpen(false); setPromoting(u); setDecorStudioOpen(true); }}
-          onClose={() => { setMyAssetsOpen(false); setFramePhotoFor(null); }}
+          onPromote={(u) => { setUploadsOpen(false); setPromoting(u); setDecorStudioOpen(true); }}
+          onClose={() => { setUploadsOpen(false); setFramePhotoFor(null); }}
         />
       )}
 

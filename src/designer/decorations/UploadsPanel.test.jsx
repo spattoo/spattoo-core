@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import MyAssetsPanel from './MyAssetsPanel.jsx';
+import UploadsPanel from './UploadsPanel.jsx';
 
 // WHY THIS EXISTS. The Decorations panel shipped with `ReferenceError: filterEl is not defined` — a
 // binding that was out of scope for one of its two callers. The build passed. 140 unit tests passed.
@@ -21,23 +21,23 @@ const elementTypes = [
     placement_rules: { zones: ['top_surface'], placement: { top_surface: 'stand' } } },
 ];
 
-describe('MyAssetsPanel renders', () => {
+describe('UploadsPanel renders', () => {
   it('as a baker, without throwing', () => {
     expect(() => renderToStaticMarkup(
-      <MyAssetsPanel apiClient={apiClient} elementTypes={elementTypes} canPromote />,
+      <UploadsPanel apiClient={apiClient} elementTypes={elementTypes} canPromote />,
     )).not.toThrow();
   });
 
   it('as a customer (no promote controls), without throwing', () => {
     expect(() => renderToStaticMarkup(
-      <MyAssetsPanel apiClient={apiClient} elementTypes={elementTypes} canPromote={false} />,
+      <UploadsPanel apiClient={apiClient} elementTypes={elementTypes} canPromote={false} />,
     )).not.toThrow();
   });
 
   // The photo-frame path: the panel is opened to CHOOSE an image, not to manage the library.
   it('in selectMode, without throwing', () => {
     expect(() => renderToStaticMarkup(
-      <MyAssetsPanel apiClient={apiClient} elementTypes={elementTypes} selectMode onSelect={() => {}} />,
+      <UploadsPanel apiClient={apiClient} elementTypes={elementTypes} selectMode onSelect={() => {}} />,
     )).not.toThrow();
   });
 
@@ -45,12 +45,12 @@ describe('MyAssetsPanel renders', () => {
   // the failure belongs at the moment of placing, with a message, not as a blank screen.
   it('with no default upload type configured, without throwing', () => {
     expect(() => renderToStaticMarkup(
-      <MyAssetsPanel apiClient={apiClient} elementTypes={[]} canPromote />,
+      <UploadsPanel apiClient={apiClient} elementTypes={[]} canPromote />,
     )).not.toThrow();
   });
 });
 
-// The promote studio: only ever reached WITH an upload (My images → "Show in my decorations").
+// The promote studio: only ever reached WITH an upload (Uploads → "Show in my decorations").
 // Rendering it is the cheap guard against the class of bug that shipped last time.
 import MyDecorationStudio from './MyDecorationStudio.jsx';
 

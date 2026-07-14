@@ -240,7 +240,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
       if (logoFile && apiClient.getSignedUploadUrl) {
         const ext = logoFile.name.split('.').pop();
         const filename = `${crypto.randomUUID()}.${ext}`;
-        const { url, key } = await apiClient.getSignedUploadUrl('logos', filename, logoFile.type);
+        const { url, key } = await apiClient.getSignedUploadUrl('logos', filename, logoFile.type, logoFile.size);
         await fetch(url, { method: 'PUT', headers: { 'Content-Type': logoFile.type }, body: logoFile });
         profilePayload.logo_url = key;
       }

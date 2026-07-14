@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import XrayReport from './xray/XrayReport.jsx';
 import PhotoSheet from './PhotoSheet.jsx';
-import { compressImageFile } from './imageCompress.js';
+import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
 const MAX_FINISHED_PHOTOS = 3;
@@ -344,6 +344,7 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
 // Photos are never required — "Mark as ready" works with zero.
 function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
   const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
+  const [pickError, setPickError] = useState(null);   // why a chosen file was refused
   const uploading = photos.some(p => p.uploading);
   const atMax = photos.length >= MAX_FINISHED_PHOTOS;
 
@@ -356,16 +357,22 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
   async function addFiles(e) {
     const files = [...(e.target.files || [])].slice(0, MAX_FINISHED_PHOTOS - photos.length);
     e.target.value = '';
+    setPickError(null);
     for (const file of files) {
+      // Refuse what we cannot use, WITH a reason. A HEIC (a Mac drag-drop, an untranscoded iPhone
+      // share) satisfies `image/*`, so it used to get this far, fail to decode, fall through as the
+      // original file and then be refused by the API's content-type allowlist — surfacing to the
+      // baker as a photo that just says "failed" with nothing to act on.
+      const bad = validateImageFile(file);
+      if (bad) { setPickError(bad); continue; }
       const id = `p${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const previewUrl = URL.createObjectURL(file);
       setPhotos(ps => [...ps, { id, previewUrl, key: null, uploading: true, failed: false }]);
       try {
-        const blob = await compressImageFile(file);
+        const blob = await compressImage(file);
         const ct = blob.type || file.type || 'image/jpeg';
-        const ext = ct === 'image/webp' ? 'webp' : (file.name.split('.').pop() || 'jpg').toLowerCase();
-        const filename = `${order.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
-        const { url, key } = await apiClient.getSignedUploadUrl('orders/photos', filename, ct);
+        const filename = `${order.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${imageExt(blob)}`;
+        const { url, key } = await apiClient.getSignedUploadUrl('orders/photos', filename, ct, blob.size);
         await fetch(url, { method: 'PUT', headers: { 'Content-Type': ct }, body: blob });
         setPhotos(ps => ps.map(p => (p.id === id ? { ...p, key, uploading: false } : p)));
       } catch (err) {
@@ -429,12 +436,13 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
               <span style={{ fontSize: 11, fontWeight: 700 }}>Add photo</span>
               {/* No `capture` attr: on phones this lets the baker choose Camera OR gallery; on
                   desktop (browser fallback) it's a plain file picker. */}
-              <input type="file" accept="image/*" multiple disabled={busy}
+              <input type="file" accept={ACCEPT_IMAGE} multiple disabled={busy}
                 onChange={addFiles} style={{ display: 'none' }} />
             </label>
           ))}
         </div>
 
+        {pickError && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{pickError}</p>}
         {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
 
         <div style={{ display: 'flex', gap: 10 }}>

@@ -60,9 +60,9 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
   const kind  = kinds.find(k => k.id === typeId) ?? null;
   const kindZones = useMemo(() => kind?.placement_rules?.zones ?? [], [kind]);
 
-  // The image is ALREADY uploaded (it came from My images), so the artwork is its public URL. There is
+  // The image is ALREADY uploaded (it came from Uploads), so the artwork is its public URL. There is
   // no file picker here and no background removal: both belong to the image, not to the library, and
-  // they live in My images — a customer who cannot promote must still be able to cut hers out.
+  // they live in Uploads — a customer who cannot promote must still be able to cut hers out.
   const artUrl = upload?.url ?? null;
 
   // The colours in that artwork. Same hook the designer's swatch panel uses, so the regions the baker
@@ -115,7 +115,7 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
           </div>
 
           {/* The image is already uploaded — show it. Replacing it, or cutting its background out, are
-              things you do to the IMAGE, in My images. Not here. */}
+              things you do to the IMAGE, in Uploads. Not here. */}
           <div style={S.drop}><img src={artUrl} alt="" style={S.art} /></div>
 
           {artUrl && (

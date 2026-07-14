@@ -1,6 +1,13 @@
 import { useEffect, useState, useMemo } from 'react';
+import { ACCEPT_IMAGE, validateImageFile, compressImage, imageExt } from '../../shared/image.js';
 
-// ── My Assets ────────────────────────────────────────────────────────────────────────────────────
+// An upload is a picture whose USE is not yet decided — it may be placed as a decoration, or chosen as
+// a photo-cake frame photo, which the customer can pinch-zoom into on the cake. So the ceiling sits
+// above what she can magnify to, and the aspect ratio is never touched.
+const UPLOAD_MAX_EDGE = 2048;
+const UPLOAD_QUALITY  = 0.85;
+
+// ── Uploads ─────────────────────────────────────────────────────────────────────────────────────
 // Every image THIS person has uploaded (baker_uploads). Private: a customer sees her own and nobody
 // else's — not another customer's of the same baker, and not the baker's. That is the whole safety
 // property of the model, and it is why none of this needs a consent gate.
@@ -17,7 +24,7 @@ import { useEffect, useState, useMemo } from 'react';
 // The object handed to onPlace is ELEMENT-SHAPED on purpose: addSticker() takes an element, and an
 // upload can be made to look like one. So placement rides the SAME path as every library element —
 // no parallel "place an upload" code path to drift (INVARIANTS.md).
-export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose }) {
+export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose }) {
   const [uploads, setUploads] = useState(null);   // null = loading
   const [busy, setBusy]       = useState(null);
   const [error, setError]     = useState(null);
@@ -32,7 +39,7 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
 
   const load = () => apiClient?.fetchUploads?.()
     .then(rows => setUploads(Array.isArray(rows) ? rows : []))
-    .catch(e => { setError(e.message || 'Could not load your images.'); setUploads([]); });
+    .catch(e => { setError(e.message || 'Could not load your uploads.'); setUploads([]); });
 
   useEffect(() => { load(); }, [apiClient]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -45,10 +52,23 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
   // photograph — nobody wants their daughter cut out of her own birthday picture).
   async function uploadNew(f) {
     if (!f) return;
+    // The REAL gate: `accept` on the input is advisory (it doesn't survive a drag-drop or an "All
+    // files" pick), so a HEIC or an SVG is only refused here — with a sentence, rather than uploading
+    // an object that renders as nothing. shared/image.js owns the allowlist; there is no second copy.
+    const bad = validateImageFile(f);
+    if (bad) return setError(bad);
     setUploading(true); setError(null);
     try {
-      const key = await apiClient.uploadElementImage(f, `${crypto.randomUUID()}.${(f.name.split('.').pop() || 'png').toLowerCase()}`);
-      const saved = await apiClient.registerUpload({ storage_key: key, name: f.name?.replace(/\.[^.]+$/, '').slice(0, 40) || 'My image' });
+      // Optimize BEFORE it reaches R2 — a phone photo arrives at 4032×3024 and several MB, and until
+      // now went up whole. compressImage, NOT normalizeArtwork (the alpha-crop-into-a-square an element's
+      // artwork gets): an upload here may end up as a photo-cake FRAME photo, and squaring a birthday
+      // photograph would distort the framing its owner chose. 2048 because she can pinch-zoom into a
+      // frame photo on the cake, so the ceiling must sit above what she can magnify to. The extension
+      // comes from the blob's REAL type — a browser with no WebP encoder gets the original back, and the
+      // filename must not lie about that (the signed PUT signs the content type).
+      const blob = await compressImage(f, { maxEdge: UPLOAD_MAX_EDGE, quality: UPLOAD_QUALITY });
+      const key = await apiClient.uploadElementImage(blob, `${crypto.randomUUID()}.${imageExt(blob)}`);
+      const saved = await apiClient.registerUpload({ storage_key: key, name: f.name?.replace(/\.[^.]+$/, '').slice(0, 40) || 'Untitled' });
       // Picking a file WAS the choice — don't make them tap it again in the grid they just left.
       if (selectMode && saved?.url) onSelect?.(saved);
       else await load();
@@ -71,7 +91,7 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
     if (!defaultType) return setError('Uploads can’t be placed yet — no decoration kind is set up for them.');
     onPlace?.({
       id:               `upload:${u.id}`,
-      name:             u.name || 'My image',
+      name:             u.name || 'Untitled',
       image_url:        u.url,
       thumbnail_url:    u.url,
       element_type_id:  defaultType.id,
@@ -134,7 +154,7 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
     <div style={S.scrim} onPointerDown={onClose}>
       <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
         <div style={S.head}>
-          <div style={S.title}>{selectMode ? 'Choose an image' : 'My images'}</div>
+          <div style={S.title}>{selectMode ? 'Choose an image' : 'Uploads'}</div>
           <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
         </div>
 
@@ -143,7 +163,7 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
               keeps the frame's photo on the same registered path as everything else. */}
           <label style={{ ...S.uploadBtn, ...(uploading ? { opacity: 0.6, cursor: 'default' } : null) }}>
             {uploading ? 'Uploading…' : '+  Upload a new image'}
-            <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} disabled={uploading}
+            <input type="file" accept={ACCEPT_IMAGE} style={{ display: 'none' }} disabled={uploading}
               onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadNew(f); }} />
           </label>
 
@@ -165,7 +185,7 @@ export default function MyAssetsPanel({ apiClient, elementTypes = [], canPromote
                     title={selectMode ? 'Use this image' : 'Put it on the cake'}>
                     <img src={u.url} alt={u.name || ''} style={S.thumb} loading="lazy" />
                   </button>
-                  <div style={S.name}>{u.name || 'My image'}</div>
+                  <div style={S.name}>{u.name || 'Untitled'}</div>
 
                   {/* Managing images is not what this window is FOR when you came here to fill a frame.
                       Promote/delete would be a trapdoor next to the thing you actually meant to tap. */}
