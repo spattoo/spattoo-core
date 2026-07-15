@@ -1,5 +1,5 @@
 import { tierShape } from '../geometry/surface.js';
-import { buildRoundedPrism } from './CakeTier.jsx';
+import { buildRoundedPrism, buildNumberPrism, buildOutlinePrism } from './CakeTier.jsx';
 import { TIER_RADII, BOTTOM_H } from '../constants.js';
 
 // Shared mini-cake scaffold for the small inline 3D previews (PipingPreview, TopperPreview).
@@ -17,7 +17,12 @@ export function buildPreviewTiers(tiers) {
     const radius = t?.radius ?? TIER_RADII[0];
     const height = t?.height ?? BOTTOM_H;
     const shp = tierShape({ shape: t?.shape, shapeFamily: t?.shapeFamily, shapeConfig: t?.shapeConfig, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
-    const prismGeo = shp.kind === 'rect' ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null;
+    // The preview body uses the SAME builders as the real cake, so a number/heart previews as itself
+    // (not a round stand-in). Only the analytic circle has no prism — it stays a cylinder below.
+    const prismGeo = shp.kind === 'rect'    ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR)
+                   : shp.kind === 'number'  ? buildNumberPrism(shp.shapes, height)
+                   : shp.kind === 'outline' ? buildOutlinePrism(shp.outline, height)
+                   : null;
     return { radius, height, shp, prismGeo, color: t?.color };
   });
   let acc = 0;
@@ -32,7 +37,7 @@ export function PreviewCakeMeshes({ placed }) {
   const R0 = bottom.radius;
   return (
     <>
-      {bottom.shp.kind === 'rect' ? (
+      {(bottom.shp.kind === 'rect' || bottom.shp.kind === 'number') ? (
         <mesh position={[0, -0.04, 0]}>
           <boxGeometry args={[bottom.shp.halfW * 2 * 1.28, 0.08, bottom.shp.halfD * 2 * 1.28]} />
           <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
@@ -50,7 +55,7 @@ export function PreviewCakeMeshes({ placed }) {
         const capColor  = t.color ?? PREVIEW_CAP_COLOR;
         return (
         <group key={i}>
-          {t.shp.kind === 'rect' ? (
+          {t.prismGeo ? (
             <mesh geometry={t.prismGeo} position={[0, t.baseY, 0]}>
               <meshStandardMaterial color={bodyColor} roughness={0.85} />
             </mesh>
