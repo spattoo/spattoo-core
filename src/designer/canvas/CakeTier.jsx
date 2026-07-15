@@ -241,20 +241,37 @@ function perimeterSinglePos({ perim, off, baseY, angle }) {
 // in from the edge (off<0) along the outward normal, facing out. Relies on the perimeter being wound so
 // its normals point OUTWARD (CCW-in-xz — see numberShape/scaledOutline).
 function perimeterRing(perim, off, step, baseY) {
-  const N = Math.max(6, Math.round(perim.length / (step || perim.length)));
-  // Inset shells CROWD where the outline pinches inward — a digit's tight concave curves. Place by arc
-  // length, then drop any shell landing within ~0.55·step of the last KEPT one, so a concavity thins out
-  // instead of piling shells on top of each other. (A convex shape's shells sit ≥ step apart, so nothing
-  // is dropped — round/rect are unaffected; this only bites the concavities number/heart introduce.)
-  const minGap2 = (step * 0.55) ** 2;
+  // Place shells EVENLY along the OFFSET path — not by offsetting an evenly-spaced original. That
+  // distinction is the whole fix: the top rim insets (off<0), the board border outsets (off>0), and
+  // displacing an evenly-spaced original makes shells SPREAD on convex curves (a gappy bottom border on a
+  // "2"'s outer sweep) and PILE UP on concave ones. Walking the offset polyline at even `step` keeps the
+  // spacing right in either direction, and the shell count scales with the offset path's own length.
+  const dense = Math.max(32, Math.round((perim.length / step) * 4));   // fine samples of the offset polyline
+  const pts = [];
+  for (let i = 0; i < dense; i++) {
+    const p = perim.at((i / dense) * perim.length);
+    pts.push({ x: p.x + off * p.nx, z: p.z + off * p.nz });
+  }
+  const seg = [];
+  let total = 0;
+  for (let i = 0; i < dense; i++) {
+    const a = pts[i], b = pts[(i + 1) % dense];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    seg.push({ a, b, len, s0: total });
+    total += len;
+  }
+  const N = Math.max(6, Math.round(total / (step || total)));
   const out = [];
-  let lx = null, lz = null;
+  let k = 0;
   for (let i = 0; i < N; i++) {
-    const p = perim.at((i / N) * perim.length);
-    const x = p.x + off * p.nx, z = p.z + off * p.nz;
-    if (lx !== null && (x - lx) ** 2 + (z - lz) ** 2 < minGap2) continue;
-    lx = x; lz = z;
-    out.push({ pos: [x, baseY, z], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] });
+    const s = (i / N) * total;
+    while (k < seg.length - 1 && seg[k].s0 + seg[k].len < s) k++;
+    const g = seg[k];
+    const u = g.len ? (s - g.s0) / g.len : 0;
+    const x = g.a.x + (g.b.x - g.a.x) * u, z = g.a.z + (g.b.z - g.a.z) * u;
+    const tx = g.b.x - g.a.x, tz = g.b.z - g.a.z, tl = Math.hypot(tx, tz) || 1;
+    const nx = tz / tl, nz = -tx / tl;   // outward normal of the offset path (CCW) → shells face out
+    out.push({ pos: [x, baseY, z], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
   }
   return out;
 }
