@@ -255,6 +255,7 @@ function perimeterRing(perim, off, step, baseY) {
   const smp = [];
   for (let i = 0; i < dense; i++) smp.push(perim.at((i / dense) * perim.length));
   const pts = [];
+  const corners = [];   // one FORCED shell per sharp open corner — the even walk can step over the short arc
   for (let i = 0; i < dense; i++) {
     const a = smp[i], b = smp[(i + 1) % dense];
     pts.push({ x: a.x + off * a.nx, z: a.z + off * a.nz });
@@ -267,6 +268,8 @@ function perimeterRing(perim, off, step, baseY) {
         const ang = ang0 + turn * (k / arcSteps);        // arc of radius |off| around the corner vertex (≈ b)
         pts.push({ x: b.x + off * Math.cos(ang), z: b.z + off * Math.sin(ang) });
       }
+      const mid = ang0 + turn * 0.5;                     // the corner bisector — where a shell must sit
+      corners.push({ x: b.x + off * Math.cos(mid), z: b.z + off * Math.sin(mid), nx: Math.cos(mid), nz: Math.sin(mid) });
     }
   }
   const seg = [];
@@ -289,6 +292,15 @@ function perimeterRing(perim, off, step, baseY) {
     const tx = g.b.x - g.a.x, tz = g.b.z - g.a.z, tl = Math.hypot(tx, tz) || 1;
     const nx = tz / tl, nz = -tx / tl;   // outward normal of the offset path (CCW) → shells face out
     out.push({ pos: [x, baseY, z], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
+  }
+  // Guarantee a shell ON each sharp corner: the even walk can step across the short corner arc and leave
+  // it bare (the gap at the base rectangle's corners). Add the bisector shell only where the walk left a
+  // hole — within ~0.6·step means it's already covered.
+  const gap2 = (step * 0.6) ** 2;
+  for (const c of corners) {
+    if (!out.some(o => (o.pos[0] - c.x) ** 2 + (o.pos[2] - c.z) ** 2 < gap2)) {
+      out.push({ pos: [c.x, baseY, c.z], rotY: Math.atan2(c.nz, c.nx), tq: [0, 0, 0, 1] });
+    }
   }
   return out;
 }
