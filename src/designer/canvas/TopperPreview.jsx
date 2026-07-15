@@ -77,7 +77,7 @@ function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, 
 
 // 2D-image decor preview — a textured plane standing on the top surface or mounted flat on
 // the side wall (for elements whose asset is a PNG rather than a GLB, e.g. some top&side decor).
-function PreviewImage({ url, placement, mode, target, bottom }) {
+function PreviewImage({ url, placement, mode, target, bottom, r = null }) {
   // corsUrl, or this silently renders NOTHING. R2 answers an Origin-less request with no
   // Access-Control-Allow-Origin and no Vary — and the very panel that mounts this preview has just
   // shown the same picture as a plain <img>, poisoning the cache with exactly that response. WebGL then
@@ -85,8 +85,18 @@ function PreviewImage({ url, placement, mode, target, bottom }) {
   // not, and the baker is asked to choose between two tiles that show him nothing. (assetUrl.js.)
   const tex = useTexture(corsUrl(url));
   const aspect = tex.image ? tex.image.width / tex.image.height : 1;
-  const w = bottom.radius * 1.15;
-  const h = w / (aspect || 1);
+  // With an `r` (the placement scale the baker is choosing), size the plane so its LONGEST side is
+  // STICKER_SIZE × r — the exact world size the real sticker renderer gives it — so the tile shows how
+  // big it actually lands on the cake. Without `r` (other callers), keep the cake-filling hero preview.
+  let w, h;
+  if (r != null) {
+    const longest = STICKER_SIZE * r;
+    if ((aspect || 1) >= 1) { w = longest; h = longest / (aspect || 1); }
+    else                    { h = longest; w = longest * (aspect || 1); }
+  } else {
+    w = bottom.radius * 1.15;
+    h = w / (aspect || 1);
+  }
 
   if (placement === 'side') {
     const off = sideSeatOffset(bottom.radius);
@@ -126,7 +136,7 @@ function PreviewDecor(props) {
   return isGlbUrl(props.glbUrl) ? <PreviewTopper {...props} /> : <PreviewImage url={props.glbUrl} {...props} />;
 }
 
-export default function TopperPreview({ glbUrl, parts = null, placement = 'top', mode = null, tiers = null, tierIndex = 0, baseRotation = null }) {
+export default function TopperPreview({ glbUrl, parts = null, placement = 'top', mode = null, tiers = null, tierIndex = 0, baseRotation = null, r = null }) {
   const { placed, totalH } = useMemo(() => buildPreviewTiers(tiers), [tiers]);
 
   const target = placed[Math.min(tierIndex, placed.length - 1)] ?? placed[0];
@@ -164,7 +174,7 @@ export default function TopperPreview({ glbUrl, parts = null, placement = 'top',
             ? parts.map((pt, i) => (
                 <PreviewDecor key={i} glbUrl={pt.glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={pt.baseRotation} offset={pt} />
               ))
-            : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={baseRotation} />)}
+            : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={baseRotation} r={r} />)}
         </TextureErrorBoundary>
       </Suspense>
       <OrbitControls

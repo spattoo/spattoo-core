@@ -4,7 +4,7 @@ import TopperPreview from '../canvas/TopperPreview.jsx';
 import { useImageRegions } from '../shared/color/useImageRegions.js';
 import RightsAttestation from '../../legal/RightsAttestation.jsx';
 import { PUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
-import { ZONE_LABELS, ZONES } from '../constants.js';
+import { ZONE_LABELS, ZONES, DEFAULT_DECOR_R } from '../constants.js';
 
 // ── My Decoration Studio — TWO STEPS, ONE SCREEN ─────────────────────────────────────────────────
 //
@@ -62,11 +62,19 @@ import { ZONE_LABELS, ZONES } from '../constants.js';
 
 const MAX_REGIONS = 3;      // "show up to 3 existing colours" — the recolour engine takes this as config
 const REGION_SAT  = 0.25;   // ignore near-greys: black outlines and white highlights are not "a colour"
+// Bounds of the Size slider (placement_config.r). Wide enough to go from a small badge to a cake-filling
+// topper; the baker judges by the live tile, not the number, so the exact ends only cap the extremes.
+const DECOR_R_MIN = 1;
+const DECOR_R_MAX = 8;
 
 export default function MyDecorationStudio({ apiClient, tiers, elementTypes = [], upload, onClose, onSaved }) {
   const [name, setName]     = useState(upload?.name ?? '');
   const [typeId, setTypeId] = useState('');
   const [zones, setZones]   = useState([]);     // chosen subset of the type's zones
+  // The default SIZE this decoration lands at (placement_config.r). A promoted 2D image carries none of
+  // its own, so without this it falls to addSticker's bare `1` and lands as a tiny sticker. The baker
+  // sets it here and SEES it on the cake — the zone tiles below render at this exact scale.
+  const [size, setSize]     = useState(DEFAULT_DECOR_R);
   const [colors, setColors] = useState({});     // region index → hex (only what they changed)
   const [locked, setLocked] = useState(false);  // true = others may NOT recolour it
   const [busy, setBusy]     = useState(null);
@@ -140,7 +148,9 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
         name: name.trim() || upload.name,
         element_type_id: kind.id,
         allowed_zones: zones,
-        placement_config: recolor ? { recolor } : {},
+        // `r` is the default size the baker just tuned on the live preview; the promote route reads it
+        // (placement_config.r) so every placed instance lands at it instead of the tiny `1` fallback.
+        placement_config: { ...(recolor ? { recolor } : {}), r: size },
         // The API refuses the promotion without this, and records it against the wording he read —
         // attest first, then expose (spattoo-api routes/uploads.js).
         rights_attested: true,
@@ -222,10 +232,22 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
                           tiers={tiers}
                           placement={z === ZONES.SIDE ? 'side' : 'top'}
                           mode={kind.placement_rules?.placement?.[z] ?? 'hug'}
+                          r={size}
                         />
                       </PreviewTile>
                     ))}
                   </div>
+
+                  {/* SIZE — the default the decoration lands at. Not a number: the tiles above render at
+                      exactly this scale, so the baker drags and watches it grow or shrink on the cake. */}
+                  <div style={S.label}>Size</div>
+                  <input
+                    type="range" min={DECOR_R_MIN} max={DECOR_R_MAX} step={0.1} value={size}
+                    onChange={e => setSize(+e.target.value)}
+                    style={S.range}
+                    aria-label="Decoration size"
+                  />
+                  <div style={S.hint}>Drag to set how big it starts on the cake. Customers can still resize it.</div>
                 </>
               )}
 
@@ -303,6 +325,7 @@ const S = {
   label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 18, marginBottom: 6 },
   hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginBottom: 8, lineHeight: 1.45 },
   input: { width: '100%', padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, color: '#1a1a1a', boxSizing: 'border-box' },
+  range: { width: '100%', margin: '2px 0 4px', accentColor: '#1a1a1a', cursor: 'pointer' },
   check: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12.5, fontWeight: 700, color: '#444', cursor: 'pointer' },
 
   kinds: { display: 'flex', flexWrap: 'wrap', gap: 8 },

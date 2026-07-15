@@ -34,6 +34,13 @@ export const SHEET_PIPING_CORNER_RADIUS = 0;
 // ── Sticker ───────────────────────────────────────────────────────────────────
 export const STICKER_SIZE = 0.28;       // world-space side length of the hit plane
 
+// Default placement scale (`placement_config.r`) for an UPLOADED decoration that carries none of its
+// own. Without it a promoted/placed 2D image falls to the bare `1` scale in addSticker and lands as a
+// tiny sticker. The promote studio lets the baker tune this per decoration with a live cake preview;
+// this is the starting value there AND the default for a customer's direct-placed upload (which never
+// sees the studio). Tuned to read as a topper on the cake, not a postage stamp.
+export const DEFAULT_DECOR_R = 3.5;
+
 // ── Piping style picker layout ────────────────────────────────────────────────
 export const PICKER_ORIGIN_X = -0.5;
 export const PICKER_STEP_X   = -0.62;
