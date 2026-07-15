@@ -12,7 +12,12 @@
 // for both directions — buildDesignSnapshot (serialize) and normalizeDesign (hydrate) — so adding a
 // new tier treatment is one edit here, never two lists that silently drift (that drift is what
 // dropped writing/piping on order before).
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'width', 'depth', 'cornerR', 'gradient', 'dusting', 'foil'];
+// `shapeFamily` + `shapeConfig` make a tier's GEOMETRY self-contained: the outline generator and its
+// proportions travel WITH the design, so a saved cake renders identically forever even if its catalog
+// row is later retuned or retired (snapshot immutability), and a cake can mix shapes per tier without
+// every tier sharing one family. A design authored before these existed carries only the `shape` key
+// and resolves geometry through the catalog (see tierGeometry) — that fallback is why they stay optional.
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'gradient', 'dusting', 'foil'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {

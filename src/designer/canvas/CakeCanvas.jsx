@@ -2022,6 +2022,8 @@ function CakeScene({
             gradient={tier.gradient ?? null}
             yBase={tier.baseY}
             shape={tier.shape ?? 'round'}
+            shapeFamily={tier.shapeFamily ?? null}
+            shapeConfig={tier.shapeConfig ?? null}
             width={tier.width}
             depth={tier.depth}
             cornerR={tier.cornerR}
@@ -2258,6 +2260,8 @@ function CakeThumbnailScene({ config }) {
           gradient={tier.gradient ?? null}
           yBase={tier.baseY}
           shape={tier.shape ?? 'round'}
+          shapeFamily={tier.shapeFamily ?? null}
+          shapeConfig={tier.shapeConfig ?? null}
           width={tier.width}
           depth={tier.depth}
           cornerR={tier.cornerR}

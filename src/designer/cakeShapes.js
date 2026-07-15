@@ -31,25 +31,54 @@ export const CAKE_SHAPES = {
   rect:  { label: 'Rectangle', family: 'rounded_rect', config: {} },
 };
 
+// A design tier → the { width, depth, height } stack entry the studio sliders and starterDesign speak.
+// A round tier is sized by RADIUS (its diameter is the width); every other footprint by width/depth.
+function stackEntry(t) {
+  const dia = t?.radius != null ? t.radius * 2 : undefined;
+  return { width: t?.width ?? dia, depth: t?.depth ?? dia, height: t?.height };
+}
+
 // Overlay DB-authored rows onto the seed. An unknown key simply becomes a new entry — which is the
 // point: a new shape is a row, not a release.
+//
+// A row now carries a self-contained `design` (the SAME shape as a cake_templates.design) — its
+// geometry lives on the design's tiers (shapeFamily + shapeConfig), not in its own columns. We still
+// derive `family`/`config`/`tiers` onto the catalog entry so the studio and the legacy render fallback
+// read one field name regardless; rows that predate `design` fall back to their own columns unchanged.
 export function applyCakeShapeConfig(rows) {
   for (const row of rows || []) {
     if (!row?.key) continue;
+    const design = row.design ?? null;
+    const t0 = design?.tiers?.[0];
     CAKE_SHAPES[row.key] = {
       label: row.label ?? row.key,
-      family: row.family ?? CAKE_SHAPES[row.key]?.family ?? 'circle',
-      config: row.config || {},
+      family: t0?.shapeFamily ?? row.family ?? CAKE_SHAPES[row.key]?.family ?? 'circle',
+      config: t0?.shapeConfig ?? row.config ?? {},
       // The STACK this shape starts a cake with — [{width, depth, height}, …]. Empty means "one tier at
       // the designer's default", which is what every row meant before shapes could be multi-tier, so an
-      // empty stack is an answer and not a gap. Every tier of a shape IS that shape: a two-tier heart is
-      // the heart outline stacked twice, so no entry carries a footprint of its own.
-      tiers: Array.isArray(row.tiers) ? row.tiers : [],
+      // empty stack is an answer and not a gap.
+      tiers: design?.tiers ? design.tiers.map(stackEntry) : (Array.isArray(row.tiers) ? row.tiers : []),
       // A FRONT VIEW of this shape, rendered through the real designer renderer when it was saved. The
       // picker draws this rather than a live 3D tile — an <img> costs nothing at any catalog size.
       thumbnailKey: row.thumbnail_key ?? null,
+      // The whole self-contained starter design. "New cake → this shape" loads this exactly as a
+      // template would, so a starter authored with a stack/frosting comes back intact. Seed round/rect
+      // have none and are built on the fly by starterDesign.
+      design,
     };
   }
+}
+
+// The geometry a tier renders as — its family curve and that curve's proportions — read from the TIER
+// ITSELF, so a design describes its own shape and never depends on the catalog still holding (or still
+// agreeing with) the row it was cut from. A design authored before geometry was self-contained carries
+// only a `shape` KEY; that path resolves through the catalog (the seed + the DB overlay), which is why
+// both still exist. This is the ONE place the resolution lives — tierShape (surface.js) and
+// toCanvasConfig both call it, so the two can never drift.
+export function tierGeometry(tier) {
+  if (tier?.shapeFamily) return { family: tier.shapeFamily, config: tier.shapeConfig ?? {} };
+  const def = cakeShapeDef(tier?.shape);
+  return { family: def.family, config: def.config ?? {} };
 }
 
 // The definition a tier's `shape` key resolves to. An unknown key falls back to ROUND rather than

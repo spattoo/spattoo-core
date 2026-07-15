@@ -10,7 +10,7 @@
 // angle, so the round path stays byte-identical to the old cos/sin math.
 
 import { SHEET_CORNER_RADIUS, SHEET_PIPING_CORNER_RADIUS } from '../constants.js';
-import { cakeShapeDef } from '../cakeShapes.js';
+import { tierGeometry } from '../cakeShapes.js';
 import {
   scaledOutline, polygonPerimeter, pointInPolygon, nearestOnPolygon, scalePolygon, polygonRadius,
 } from './shapes.js';
@@ -27,10 +27,10 @@ import {
 // Width (X) is the long side, depth (Z) the short side. `pipingCornerR` is the gentler corner
 // the piping ring follows (≥ body cornerR, capped so small cakes don't over-round).
 export function tierShape(tier) {
-  const def = cakeShapeDef(tier?.shape);        // unknown/absent key → round, never a crash
+  const { family, config } = tierGeometry(tier);   // from the tier itself, else the catalog; never a crash
 
-  if (def.family === 'rounded_rect' || tier?.shape === 'rect') {
-    const square = !!def.config?.square;
+  if (family === 'rounded_rect' || tier?.shape === 'rect') {
+    const square = !!config?.square;
     const halfW = (tier.width ?? 2.16) / 2;
     const halfD = (square ? (tier.width ?? 2.16) : (tier.depth ?? 1.56)) / 2;
     const cornerR = tier.cornerR ?? SHEET_CORNER_RADIUS;
@@ -40,13 +40,13 @@ export function tierShape(tier) {
     };
   }
 
-  if (def.family !== 'circle') {
+  if (family !== 'circle') {
     // An outline shape is sized by the SAME two numbers a sheet cake uses, so one set of size
     // controls drives every shape. Falls back to the tier's radius when width/depth aren't authored.
     const r = tier.radius ?? 1.2;
     const halfW = (tier.width ?? r * 2) / 2;
     const halfD = (tier.depth ?? r * 2) / 2;
-    const outline = scaledOutline(def.family, def.config, halfW, halfD);
+    const outline = scaledOutline(family, config, halfW, halfD);
     if (outline) return { kind: 'outline', halfW, halfD, outline };
   }
 

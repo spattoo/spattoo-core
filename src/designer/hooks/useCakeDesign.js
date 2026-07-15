@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape } from '../geometry/surface.js';
-import { cakeShapeDef } from '../cakeShapes.js';
+import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
 import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
@@ -56,10 +56,13 @@ export function starterDesign(shape = 'round') {
   const sized = t => (isRound
     ? { radius: t.width / 2, height: t.height }
     : { width: t.width, depth: t.depth, height: t.height });
+  // The shape's geometry is written ONTO each tier (not left to a catalog lookup), so the cake this
+  // starts is self-describing from the first frame — the same reason a saved snapshot carries it.
+  const geom = { shapeFamily: def.family, shapeConfig: def.config ?? {} };
   const stack = def.tiers ?? [];
   const tiers = stack.length
-    ? stack.map(t => ({ ...base, shape, ...sized(t) }))
-    : [{ ...base, shape }];
+    ? stack.map(t => ({ ...base, shape, ...geom, ...sized(t) }))
+    : [{ ...base, shape, ...geom }];
   return { ...DEFAULT_DESIGN, tiers };
 }
 
@@ -70,10 +73,13 @@ export function starterDesign(shape = 'round') {
 export function toCanvasConfig(design) {
   return {
     tiers: (design.tiers ?? []).map((t, i) => {
-      // The tier's shape KEY is resolved through the catalog, not compared to a literal. Passing only
-      // `shape === 'rect'` through was the bug that made every authored shape (heart, hexagon…) arrive
-      // at the renderer as a plain cylinder: the key was silently dropped right here.
-      const family = cakeShapeDef(t.shape).family;
+      // The tier's geometry is resolved from the tier itself (its shapeFamily/shapeConfig), falling back
+      // to the catalog by KEY for legacy designs. Passing only `shape === 'rect'` through was the bug that
+      // made every authored shape (heart, hexagon…) arrive at the renderer as a plain cylinder — the key
+      // was silently dropped right here. shapeFamily/shapeConfig are forwarded onto the canvas tier below
+      // so every downstream tierShape() call reads the same self-contained geometry.
+      const geom = tierGeometry(t);
+      const family = geom.family;
       const isRound = family === 'circle';
       const isRect  = family === 'rounded_rect';
       const r = t.radius ?? TIER_RADII[i] ?? 0.35;
@@ -82,6 +88,11 @@ export function toCanvasConfig(design) {
       const width  = t.width ?? (isRect ? 2.16 : r * 2);
       const depth  = t.depth ?? (isRect ? 1.56 : r * 2);
       return {
+        // Self-contained geometry forwarded onto the canvas tier, so tierShape() resolves the same
+        // family/config everywhere it's called downstream (CakeTier, CakeCanvas, placement) without a
+        // second catalog lookup.
+        shapeFamily:  geom.family,
+        shapeConfig:  geom.config,
         // For any non-round footprint, radius is the bounding half-extent so radius-based incidental
         // placement (board, toolbar offsets, topper scale) keeps working.
         radius:       isRound ? r : Math.max(width, depth) / 2,
@@ -990,7 +1001,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // Sizes come from the row; everything else (colour, frosting, style) is the designer's default, because
   // a shape authors the CAKE'S FORM, not its decoration.
   function resetDesign(shape = 'round') {
-    setDesign(starterDesign(shape));
+    // An authored row carries its own full, self-contained design (snapshot shape) — load it exactly as
+    // a template would, so a starter saved with a stack/frosting/decoration comes back intact and
+    // normalised. Seed round/rect (and any legacy row without a stored design) are built on the fly.
+    const def = cakeShapeDef(shape);
+    if (def.design) loadDesign(def.design);
+    else setDesign(starterDesign(shape));
   }
 
   function addStickerBatch(stickers) {

@@ -16,7 +16,7 @@ export function buildPreviewTiers(tiers) {
   const geo = (tiers?.length ? tiers : [{ radius: TIER_RADII[0], height: BOTTOM_H }]).map(t => {
     const radius = t?.radius ?? TIER_RADII[0];
     const height = t?.height ?? BOTTOM_H;
-    const shp = tierShape({ shape: t?.shape, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
+    const shp = tierShape({ shape: t?.shape, shapeFamily: t?.shapeFamily, shapeConfig: t?.shapeConfig, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
     const prismGeo = shp.kind === 'rect' ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null;
     return { radius, height, shp, prismGeo, color: t?.color };
   });

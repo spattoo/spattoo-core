@@ -53,7 +53,8 @@ export function ShapeTile({ shape, size = 96 }) {
       />
     );
   }
-  const design = starterDesign(shape.key);
+  // An authored row draws its own stored design; seed round/rect (no stored design) are built live.
+  const design = shape.design ?? starterDesign(shape.key);
   return (
     <div style={{ width: size, height: size }}>
       <CakePreview design={design} autoRotate={false} {...shapeView(design)} />

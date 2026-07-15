@@ -1170,7 +1170,7 @@ function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensi
 export default function CakeTier({
   radius, height, color, yBase,
   gradient = null,
-  shape = 'round', width, depth, cornerR,
+  shape = 'round', shapeFamily = null, shapeConfig = null, width, depth, cornerR,
   frostingType = 'buttercream',
   frostingStyle = DEFAULT_STYLE,
   styleParams = null,
@@ -1209,7 +1209,7 @@ export default function CakeTier({
   // otherwise. Mirrors the shader, which maps gt=1 (the cake top) to the final stop.
   const gradColors = effGradient?.colors?.filter(Boolean) ?? [];
   const capColor   = gradColors.length >= 2 ? gradColors[gradColors.length - 1] : color;
-  const shp = useMemo(() => tierShape({ shape, width, depth, radius, cornerR }), [shape, width, depth, radius, cornerR]);
+  const shp = useMemo(() => tierShape({ shape, shapeFamily, shapeConfig, width, depth, radius, cornerR }), [shape, shapeFamily, shapeConfig, width, depth, radius, cornerR]);
   // "Not round" — an extruded footprint (the sheet's rounded rect, or any authored outline). Every
   // feature below that was gated on `!isPrism` was really gated on "this is the lathe/cylinder path":
   // the cream wall styles, drip, festoons, luster and foil are all cylinder-unwrap maths. An outline
