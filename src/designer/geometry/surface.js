@@ -46,7 +46,7 @@ export function tierShape(tier) {
     // it renders as its OWN kind (a THREE.Shape[] extrude, holes and all) rather than the single-contour
     // outline prism. Sized by WIDTH; the digit's own aspect sets the depth, so it never distorts.
     const r = tier.radius ?? 1.2;
-    const g = numberGeometry(config?.digits, tier.width ?? r * 2);
+    const g = numberGeometry(config?.digits, tier.width ?? r * 2, config?.weight, config?.cornerR);
     return { kind: 'number', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD };
   }
 
@@ -66,8 +66,11 @@ export function tierShape(tier) {
 // Largest horizontal half-extent — a "bounding radius" so radius-based incidental
 // placement (board size, toolbar offsets, topper scale) keeps working for every shape.
 export function boundingRadius(shape) {
-  if (shape.kind === 'rect' || shape.kind === 'number') return Math.max(shape.halfW, shape.halfD);
-  if (shape.kind === 'outline') return polygonRadius(shape.outline);
+  if (shape.kind === 'rect') return Math.max(shape.halfW, shape.halfD);
+  // Any outline-bearing shape (heart, number, …) measures to its FARTHEST contour point, not the
+  // bounding-box half-extent — a "2" reaches toward its box corners, so max(halfW,halfD) leaves the
+  // digit overhanging a board/camera framed to it. polygonRadius is the true containing radius.
+  if (shape.outline) return polygonRadius(shape.outline);
   return shape.radius;
 }
 
@@ -122,9 +125,12 @@ export function roundedRectPerimeter(halfW, halfD, cornerR) {
   };
 }
 
-// Perimeter for a shape descriptor (the common entry point for placement/hit-testing).
+// Perimeter for a shape descriptor (the common entry point for placement/hit-testing). Every op below
+// keys off `shape.outline` — NOT the exact kind — so ANY shape that carries a contour (heart, polygon,
+// a number cake, whatever lands next) traces it generically; only the two ANALYTIC families (round,
+// rect) have no outline and keep their closed-form perimeter. Decoration is outline-driven, not per-shape.
 export function perimeter(shape) {
-  if (shape.kind === 'outline') return polygonPerimeter(shape.outline);
+  if (shape.outline) return polygonPerimeter(shape.outline);
   return shape.kind === 'rect'
     ? roundedRectPerimeter(shape.halfW, shape.halfD, shape.cornerR)
     : circlePerimeter(shape.radius);
@@ -134,7 +140,7 @@ export function perimeter(shape) {
 // around corners. Straight runs still sit on the body's faces (±halfW / ±halfD); only
 // the corner is rounded more.
 export function pipingPerimeter(shape) {
-  if (shape.kind === 'outline') return polygonPerimeter(shape.outline);
+  if (shape.outline) return polygonPerimeter(shape.outline);
   return shape.kind === 'rect'
     ? roundedRectPerimeter(shape.halfW, shape.halfD, shape.pipingCornerR ?? shape.cornerR)
     : circlePerimeter(shape.radius);
@@ -146,7 +152,7 @@ export function pipingPerimeter(shape) {
 //   Rect:  clamp each axis independently to halfW·k / halfD·k, so a decoration can reach
 //          the rectangle's corners instead of being trapped in an inscribed circle.
 export function topClamp(shape, x, z, k = 0.92) {
-  if (shape.kind === 'outline') {
+  if (shape.outline) {
     // The footprint shrunk by k, keeping its silhouette — a decoration on a heart stays inside the
     // HEART, not inside some inscribed circle that would strand the lobes.
     const inner = scalePolygon(shape.outline, k);
@@ -169,7 +175,7 @@ export function topClamp(shape, x, z, k = 0.92) {
 // `stand` element (point base) passes margin 0 and can sit at the rim; a flat decal passes half its
 // size so its outer edge meets the rim. Mode/size-derived by the caller — never a config flag.
 export function topClampInset(shape, x, z, margin = 0) {
-  if (shape.kind === 'outline') {
+  if (shape.outline) {
     // Absolute margin → the equivalent shrink factor on the shape's smaller half-extent, so the inset
     // is (very nearly) `margin` all the way round without running a true polygon offset on the drag path.
     const half = Math.max(1e-6, Math.min(shape.halfW, shape.halfD));
@@ -189,7 +195,7 @@ export function topClampInset(shape, x, z, margin = 0) {
 // (where a centre-seated element would bury its lower half in the cake). Round → project to the
 // radius; rect → nearest point on the rounded-rect perimeter (via nearestU).
 export function snapToRim(shape, x, z) {
-  if (shape.kind === 'outline') {
+  if (shape.outline) {
     const p = nearestOnPolygon(shape.outline, x, z);
     return { x: p.x, z: p.z };
   }
@@ -204,7 +210,7 @@ export function snapToRim(shape, x, z) {
 
 // Is (x,z) on the top surface (margin k)? Drives tap-to-place hit testing.
 export function topContains(shape, x, z, k = 1) {
-  if (shape.kind === 'outline') return pointInPolygon(k === 1 ? shape.outline : scalePolygon(shape.outline, k), x, z);
+  if (shape.outline) return pointInPolygon(k === 1 ? shape.outline : scalePolygon(shape.outline, k), x, z);
   return shape.kind === 'rect'
     ? Math.abs(x) <= shape.halfW * k && Math.abs(z) <= shape.halfD * k
     : Math.hypot(x, z) <= shape.radius * k;

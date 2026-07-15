@@ -30,9 +30,9 @@ import StyleControls from './controls/StyleControls.jsx';
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig } from './frostings.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { applyTextStyleConfig } from './textStyles.js';
-import { applyCakeShapeConfig, cakeShapeList, cakeShapeDef, tierGeometry } from './cakeShapes.js';
+import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
 import ShapePicker from './controls/ShapePicker.jsx';
-import ChipPicker from './controls/ChipPicker.jsx';
+import TierShapeControls from './controls/TierShapeControls.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
@@ -5624,33 +5624,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 />
               )}
 
-              {/* Shape (footprint) — tiers only, and PER tier: the geometry resolves each tier's shape on
-                  its own, so a round tier on a square base is just data. Offers the same catalog the New
-                  grid does. A chip row rather than silhouettes because it sits directly under Frosting and
-                  Style, which are chip rows — the customer chose visually when the cake was created. */}
-              {selectedEl?.type === 'tier' && shapeOptions.length > 1 && (
-                <ChipPicker
-                  label="Shape"
-                  options={shapeOptions.map(sh => ({ value: sh.key, label: sh.label }))}
-                  value={design.tiers[selectedEl.index]?.shape ?? 'round'}
-                  onChange={key => setTierShape(selectedEl.index, key)}
+              {/* Per-tier SHAPE controls (the Shape picker + each family's own config knob — a number's
+                  digits, a rounded_rect's corner radius) all live in ONE component, config-driven by the
+                  tier's family, so a new shape's control lands there, not another inline block here. */}
+              {selectedEl?.type === 'tier' && (
+                <TierShapeControls
+                  tier={design.tiers[selectedEl.index]}
+                  index={selectedEl.index}
+                  shapeOptions={shapeOptions}
+                  onShape={setTierShape}
+                  onShapeConfig={setTierShapeConfig}
+                  onCornerR={setTierCornerR}
                 />
-              )}
-
-              {/* Number cake — the customer TYPES the number their cake is shaped like. Shown only when
-                  this tier's geometry resolves to the `number` family (tierGeometry, not the key, so it
-                  works whether the tier carries shapeFamily or resolves through the catalog). A digit is a
-                  recipe, not a pre-made shape: whatever they type, the footprint regenerates. */}
-              {selectedEl?.type === 'tier' && tierGeometry(design.tiers[selectedEl.index]).family === 'number' && (
-                <div style={{ width: '100%', paddingTop: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#3a3a44', marginBottom: 6 }}>Number</div>
-                  <input
-                    inputMode="numeric" maxLength={4} placeholder="e.g. 4"
-                    value={design.tiers[selectedEl.index]?.shapeConfig?.digits ?? ''}
-                    onChange={e => setTierShapeConfig(selectedEl.index, { digits: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #d9d9e0', background: '#fff', fontSize: 20, fontWeight: 800, fontFamily: 'inherit', color: '#1a1a1a', textAlign: 'center', letterSpacing: 3 }}
-                  />
-                </div>
               )}
 
               {/* Frosting type (material) — tiers only. Colour stays on the ColorWheel above;
@@ -5691,42 +5676,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 );
               })()}
 
-              {/* Corner radius — the rounded_rect FAMILY, which is what actually has corners to round; the
-                  analytic rect path is the only one that reads cornerR. Keyed off the family, not the key
-                  'rect', so a shape admin authors from that family (a Square, a tighter sheet) gets the
-                  control too — the old literal handed it to exactly one seeded row. */}
-              {selectedEl?.type === 'tier' && cakeShapeDef(design.tiers[selectedEl.index]?.shape).family === 'rounded_rect' && (() => {
-                const tier = design.tiers[selectedEl.index];
-                const w = tier.width ?? 2.16, d = tier.depth ?? 1.56, h = tier.height ?? 0.85;
-                const maxR = +(Math.min(w, d, h) / 2 * 0.9).toFixed(2);
-                const val  = Math.min(tier.cornerR ?? 0, maxR);
-                const pct  = maxR > 0 ? (val / maxR) * 100 : 0;
-                const setFromEvent = e => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                  setTierCornerR(selectedEl.index, +(ratio * maxR).toFixed(3));
-                };
-                return (
-                  <div style={{ width: '100%', paddingTop: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: '#555', letterSpacing: 0.5 }}>Corner radius</span>
-                      <span style={{ fontSize: 10, color: '#888' }}>{val < 0.02 ? 'Sharp' : val.toFixed(2)}</span>
-                    </div>
-                    <div
-                      style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
-                      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFromEvent(e); }}
-                      onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); setFromEvent(e); }}
-                      onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-                      onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
-                    >
-                      <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
-                      </div>
-                      <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
-                    </div>
-                  </div>
-                );
-              })()}
 
               {/* Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the
                   canvas resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range

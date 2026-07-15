@@ -1241,8 +1241,8 @@ export default function CakeTier({
   // The wall's grain runs once around the tier, so its U extent is the PERIMETER. (Rect keeps its
   // existing 2·(w+d) approximation so no sheet cake's texture shifts.)
   const prismGrainU = useMemo(
-    () => (shp.kind === 'rect' || shp.kind === 'number' ? 2 * (shp.halfW + shp.halfD)
-        :  shp.kind === 'outline' ? perimeter(shp).length
+    () => (shp.kind === 'rect' ? 2 * (shp.halfW + shp.halfD)
+        :  shp.outline ? perimeter(shp).length   // heart, polygon, number — the real contour length
         :  0),
     [shp],
   );

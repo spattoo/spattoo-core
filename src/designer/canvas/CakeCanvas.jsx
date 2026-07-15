@@ -25,7 +25,7 @@ import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
@@ -1983,6 +1983,10 @@ function CakeScene({
   tierDataRef.current = tierData;
 
   const bottomTier = tierData[0];
+  // The round board must CONTAIN the bottom tier's footprint. For an outline/number shape that reaches
+  // toward its box corners, `bottomTier.radius` (max(w,d)/2) is too small and the cake overhangs the
+  // board — boundingRadius measures to the farthest contour point, so the drum always encloses the cake.
+  const boardRadius = boundingRadius(tierShape(bottomTier)) + 0.6;
   const minTextY = 0.1 + 0.18;
   const maxTextY = stackY - 0.18;
 
@@ -2006,7 +2010,7 @@ function CakeScene({
       ) : (
         <mesh position={[0, 0.05, 0]} castShadow receiveShadow
           onClick={e => { e.stopPropagation(); onDeselect(); }}>
-          <cylinderGeometry args={[bottomTier.radius + 0.6, bottomTier.radius + 0.6, 0.1, 64]} />
+          <cylinderGeometry args={[boardRadius, boardRadius, 0.1, 64]} />
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </mesh>
       )}
