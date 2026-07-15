@@ -842,7 +842,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             // flag is deletable exactly as before; only an explicit `false` pins it to the cake.
             delete:    element.allowed_actions?.delete    ?? true,
             move:      element.allowed_actions?.move      ?? false,
-            tilt:      element.allowed_actions?.tilt      ?? true,
+            // Opt-IN, matching how admin authors capabilities everywhere (ManageElements /
+            // PhotoFrameStudio default `tilt: false`). The old `?? true` contradicted that convention,
+            // so every element — including a promoted decoration whose type never asked for it — got a
+            // Tilt control in the popup. Tilt now appears only when a type explicitly enables it.
+            tilt:      element.allowed_actions?.tilt      ?? false,
           },
         }],
       };

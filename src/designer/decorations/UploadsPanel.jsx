@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { ACCEPT_IMAGE, validateImageFile, compressImage, imageExt } from '../../shared/image.js';
 import { useUploadLimits } from '../../shared/useUploadLimits.js';
 import { PUBLISH_LABEL, UNPUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
+import { DEFAULT_DECOR_R } from '../constants.js';
 
 // An upload is a picture whose USE is not yet decided — it may be placed as a decoration, or chosen as
 // a photo-cake frame photo, which the customer can pinch-zoom into on the cake. So the ceiling sits
@@ -140,7 +141,10 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
       thumbnail_url:    art,
       element_type_id:  defaultType.id,
       allowed_zones:    defaultType.placement_rules?.zones ?? [],
-      placement_config: defaultType.placement_rules?.placement ?? {},
+      // A directly-placed upload never sees the promote studio's Size slider, so it has no authored `r`
+      // and would fall to addSticker's tiny `1`. Seed the same sensible default the studio starts from,
+      // unless the type already specifies one.
+      placement_config: { r: DEFAULT_DECOR_R, ...(defaultType.placement_rules?.placement ?? {}) },
       allowed_actions:  defaultType.default_allowed_actions ?? { resize: true, duplicate: true, color: false, delete: true },
     });
     onClose?.();
