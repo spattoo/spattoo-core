@@ -30,7 +30,7 @@ import StyleControls from './controls/StyleControls.jsx';
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig } from './frostings.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { applyTextStyleConfig } from './textStyles.js';
-import { applyCakeShapeConfig, cakeShapeList, cakeShapeDef } from './cakeShapes.js';
+import { applyCakeShapeConfig, cakeShapeList, cakeShapeDef, tierGeometry } from './cakeShapes.js';
 import ShapePicker from './controls/ShapePicker.jsx';
 import ChipPicker from './controls/ChipPicker.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
@@ -1208,7 +1208,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -5635,6 +5635,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   value={design.tiers[selectedEl.index]?.shape ?? 'round'}
                   onChange={key => setTierShape(selectedEl.index, key)}
                 />
+              )}
+
+              {/* Number cake — the customer TYPES the number their cake is shaped like. Shown only when
+                  this tier's geometry resolves to the `number` family (tierGeometry, not the key, so it
+                  works whether the tier carries shapeFamily or resolves through the catalog). A digit is a
+                  recipe, not a pre-made shape: whatever they type, the footprint regenerates. */}
+              {selectedEl?.type === 'tier' && tierGeometry(design.tiers[selectedEl.index]).family === 'number' && (
+                <div style={{ width: '100%', paddingTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#3a3a44', marginBottom: 6 }}>Number</div>
+                  <input
+                    inputMode="numeric" maxLength={4} placeholder="e.g. 4"
+                    value={design.tiers[selectedEl.index]?.shapeConfig?.digits ?? ''}
+                    onChange={e => setTierShapeConfig(selectedEl.index, { digits: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #d9d9e0', background: '#fff', fontSize: 20, fontWeight: 800, fontFamily: 'inherit', color: '#1a1a1a', textAlign: 'center', letterSpacing: 3 }}
+                  />
+                </div>
               )}
 
               {/* Frosting type (material) — tiers only. Colour stays on the ColorWheel above;

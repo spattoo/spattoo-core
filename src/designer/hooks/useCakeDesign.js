@@ -340,6 +340,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // Patch a tier's self-contained shape geometry params (e.g. a number cake's typed digits). The customer
+  // authors these on their own cake, so it writes to the TIER's shapeConfig — tierGeometry prefers that
+  // over the catalog default, which is exactly what makes "type your number" a per-cake edit.
+  function setTierShapeConfig(index, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, shapeConfig: { ...(t.shapeConfig || {}), ...patch } } : t),
+    }));
+  }
+
   // Back-compat single-piping setters: replace the whole zone with [piping] (or clear it).
   // Preserve an existing layerId so repeated edits don't remount the GLB ring.
   function setTopPiping(index, piping) {
@@ -1021,7 +1031,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,

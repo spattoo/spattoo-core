@@ -824,6 +824,15 @@ export function buildRoundedPrism(halfW, halfD, height, r) {
   return geo;
 }
 
+// Cake body for a NUMBER cake: the digit glyph(s) — THREE.Shape[] with their counters attached — extruded
+// straight up, exactly like the sheet's rounded rect. ExtrudeGeometry honours each shape's `.holes`, so
+// the counter in 0/4/6/8/9 comes through, and it merges a multi-glyph array into one body.
+export function buildNumberPrism(shapes, height) {
+  const geo = new THREE.ExtrudeGeometry(shapes, { depth: height, bevelEnabled: false, curveSegments: 8 });
+  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
+  return geo;
+}
+
 // Cake body for ANY authored footprint (heart, butterfly, hexagon…): the shape's own outline swept up,
 // with the top edge rolled over by `fillet` — the same rounded rim the round path gets from the
 // frosting's `edge: {kind:'round'}` (that is where the fillet comes from; it is not a per-shape knob).
@@ -1217,6 +1226,7 @@ export default function CakeTier({
   const isPrism = shp.kind !== 'round';
   const prismGeo = useMemo(
     () => {
+      if (shp.kind === 'number') return buildNumberPrism(shp.shapes, height);
       if (shp.kind === 'rect') return buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR);
       if (shp.kind !== 'outline') return null;
       // The rolled top rim comes from the FROSTING's own edge config — the very same `roundEdge` the
@@ -1231,7 +1241,7 @@ export default function CakeTier({
   // The wall's grain runs once around the tier, so its U extent is the PERIMETER. (Rect keeps its
   // existing 2·(w+d) approximation so no sheet cake's texture shifts.)
   const prismGrainU = useMemo(
-    () => (shp.kind === 'rect' ? 2 * (shp.halfW + shp.halfD)
+    () => (shp.kind === 'rect' || shp.kind === 'number' ? 2 * (shp.halfW + shp.halfD)
         :  shp.kind === 'outline' ? perimeter(shp).length
         :  0),
     [shp],

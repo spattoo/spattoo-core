@@ -14,6 +14,7 @@ import { tierGeometry } from '../cakeShapes.js';
 import {
   scaledOutline, polygonPerimeter, pointInPolygon, nearestOnPolygon, scalePolygon, polygonRadius,
 } from './shapes.js';
+import { numberGeometry } from './numberShape.js';
 
 // THREE kinds, and the third is the general case:
 //   { kind:'round',   radius }                                   — analytic circle (the cylinder path)
@@ -40,6 +41,15 @@ export function tierShape(tier) {
     };
   }
 
+  if (family === 'number') {
+    // A cake shaped like the typed digits. The footprint comes from a font glyph (with its counters), so
+    // it renders as its OWN kind (a THREE.Shape[] extrude, holes and all) rather than the single-contour
+    // outline prism. Sized by WIDTH; the digit's own aspect sets the depth, so it never distorts.
+    const r = tier.radius ?? 1.2;
+    const g = numberGeometry(config?.digits, tier.width ?? r * 2);
+    return { kind: 'number', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD };
+  }
+
   if (family !== 'circle') {
     // An outline shape is sized by the SAME two numbers a sheet cake uses, so one set of size
     // controls drives every shape. Falls back to the tier's radius when width/depth aren't authored.
@@ -56,7 +66,7 @@ export function tierShape(tier) {
 // Largest horizontal half-extent — a "bounding radius" so radius-based incidental
 // placement (board size, toolbar offsets, topper scale) keeps working for every shape.
 export function boundingRadius(shape) {
-  if (shape.kind === 'rect') return Math.max(shape.halfW, shape.halfD);
+  if (shape.kind === 'rect' || shape.kind === 'number') return Math.max(shape.halfW, shape.halfD);
   if (shape.kind === 'outline') return polygonRadius(shape.outline);
   return shape.radius;
 }
