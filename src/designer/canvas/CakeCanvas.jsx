@@ -39,6 +39,23 @@ import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { toCanvasConfig } from '../hooks/useCakeDesign.js';
 
+// ── Board footprint ─────────────────────────────────────────────────────────────────────────────
+// The board under a cake, sized to CONTAIN the bottom tier. A number cake sits on a RECTANGULAR board (a
+// round drum leaves too much empty gold around a thin digit, and reference number cakes are rectangular),
+// sized to the digit's bounding box; a sheet keeps its rounded box; every other shape gets a round drum
+// sized to boundingRadius so an outline never overhangs. ONE definition so the visible mesh, cream writing
+// and cream pen all agree where the board edge is — they each used to recompute it and could drift.
+function boardOf(bottomTier) {
+  const shp = tierShape(bottomTier);
+  const isNumber = shp.kind === 'number';
+  const isRect = bottomTier.shape === 'rect' || isNumber;
+  const width = (isNumber ? shp.halfW * 2 : (bottomTier.width ?? 0)) + 0.9;
+  const depth = (isNumber ? shp.halfD * 2 : (bottomTier.depth ?? 0)) + 0.9;
+  return isRect
+    ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
+    : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
 // Image-based lighting (HDRI). We self-host the env map on R2 — the host supplies
 // the assets base (cfAssetsBase, an env var, dev/prod-specific); only this PATH is
 // a constant. We avoid drei's `preset` (a public CDN that 503s/400s and, on
@@ -1983,10 +2000,8 @@ function CakeScene({
   tierDataRef.current = tierData;
 
   const bottomTier = tierData[0];
-  // The round board must CONTAIN the bottom tier's footprint. For an outline/number shape that reaches
-  // toward its box corners, `bottomTier.radius` (max(w,d)/2) is too small and the cake overhangs the
-  // board — boundingRadius measures to the farthest contour point, so the drum always encloses the cake.
-  const boardRadius = boundingRadius(tierShape(bottomTier)) + 0.6;
+  const bottomShp = tierShape(bottomTier);
+  const board = boardOf(bottomTier);   // one board descriptor — visible mesh + writing + pen all use it
   const minTextY = 0.1 + 0.18;
   const maxTextY = stackY - 0.18;
 
@@ -2002,20 +2017,22 @@ function CakeScene({
         <meshStandardMaterial color="#fce8d5" roughness={0.85} />
       </mesh>
 
-      {bottomTier.shape === 'rect' ? (
-        <RoundedBox position={[0, 0.05, 0]} args={[bottomTier.width + 0.9, 0.1, bottomTier.depth + 0.9]} radius={0.06} smoothness={4} castShadow receiveShadow
+      {board.kind === 'rect' ? (
+        <RoundedBox position={[0, 0.05, 0]} args={[board.width, 0.1, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
           onClick={e => { e.stopPropagation(); onDeselect(); }}>
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </RoundedBox>
       ) : (
         <mesh position={[0, 0.05, 0]} castShadow receiveShadow
           onClick={e => { e.stopPropagation(); onDeselect(); }}>
-          <cylinderGeometry args={[boardRadius, boardRadius, 0.1, 64]} />
+          <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </mesh>
       )}
 
-      <FrontMarker frontZ={bottomTier.shape === 'rect' ? bottomTier.depth / 2 : bottomTier.radius} />
+      {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
+          own half-depth, round → its radius. */}
+      <FrontMarker frontZ={bottomTier.shape === 'rect' ? bottomTier.depth / 2 : bottomShp.kind === 'number' ? bottomShp.halfD : bottomTier.radius} />
 
       {tierData.map((tier, i) => (
         <group key={i}>
@@ -2069,12 +2086,6 @@ function CakeScene({
           if (enabled) orbitBlockSet.current.delete('__writing__'); else orbitBlockSet.current.add('__writing__');
           if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
         };
-        // Board geometry mirrors the board mesh drawn above (round: +0.6 r · rect: +0.9 each side).
-        const isRectBoard = bottomTier.shape === 'rect';
-        const boardRadius = isRectBoard ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2 : bottomTier.radius + 0.6;
-        const boardShp = isRectBoard
-          ? { kind: 'rect', halfW: (bottomTier.width + 0.9) / 2, halfD: (bottomTier.depth + 0.9) / 2 }
-          : { kind: 'round', radius: bottomTier.radius + 0.6 };
         return (
           <CreamWriting
             writing={writing}
@@ -2085,9 +2096,9 @@ function CakeScene({
             depth={topTier.depth}
             shp={tierShape(topTier)}
             tiers={tierData}
-            boardRadius={boardRadius}
+            boardRadius={board.radius}
             boardY={0.1}
-            boardShp={boardShp}
+            boardShp={board}
             onClick={onWritingClick}
             onMove={onWritingMove}
             onOrbitEnable={writingOrbitEnable}
@@ -2107,15 +2118,7 @@ function CakeScene({
         drawMode={penDrawMode}
         penStyle={penStyle}
         tierData={tierData}
-        board={{
-          shape: bottomTier.shape === 'rect' ? 'rect' : 'round',
-          radius: bottomTier.shape === 'rect'
-            ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2
-            : bottomTier.radius + 0.6,
-          width: (bottomTier.width ?? 0) + 0.9,
-          depth: (bottomTier.depth ?? 0) + 0.9,
-          y: 0.1,
-        }}
+        board={{ shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 }}
         onAddStroke={onAddStroke}
       />
 
@@ -2353,11 +2356,7 @@ function CakeThumbnailScene({ config }) {
       {writing?.text?.trim() && (() => {
         const topTier = tierData[tierData.length - 1];
         const bottomTier = tierData[0];
-        const isRectBoard = bottomTier.shape === 'rect';
-        const boardRadius = isRectBoard ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2 : bottomTier.radius + 0.6;
-        const boardShp = isRectBoard
-          ? { kind: 'rect', halfW: (bottomTier.width + 0.9) / 2, halfD: (bottomTier.depth + 0.9) / 2 }
-          : { kind: 'round', radius: bottomTier.radius + 0.6 };
+        const board = boardOf(bottomTier);
         return (
           <CreamWriting
             writing={writing}
@@ -2368,9 +2367,9 @@ function CakeThumbnailScene({ config }) {
             depth={topTier.depth}
             shp={tierShape(topTier)}
             tiers={tierData}
-            boardRadius={boardRadius}
+            boardRadius={board.radius}
             boardY={0.1}
-            boardShp={boardShp}
+            boardShp={board}
             selected={false}
           />
         );
