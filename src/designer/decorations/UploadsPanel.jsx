@@ -39,10 +39,9 @@ function DotsGlyph({ size = 16 }) {
 export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose }) {
   const [uploads, setUploads] = useState(null);   // null = loading
   const [busy, setBusy]       = useState(null);   // which image is mid-operation (disables its controls)
-  // WHAT that operation is. Without it every control on the card speaks for all of them — renaming an
-  // image made the background button announce "Removing the background…", which is a lie about what
-  // the app is doing, and the operator has no way to know it isn't true.
-  const [busyWhat, setBusyWhat] = useState(null);  // 'rename' | 'bg' | 'delete'
+  // WHAT that operation is, so a control never speaks for another — a card mid-rename must not announce
+  // "Preparing…", which is a lie about what the app is doing and the operator has no way to catch.
+  const [busyWhat, setBusyWhat] = useState(null);  // 'rename' | 'place' | 'delete' | 'unlink'
   const [error, setError]     = useState(null);
   const [uploading, setUploading] = useState(false);
   // The grid is a GRID — one tap target per image. Everything you can DO to an image lives behind its
@@ -112,13 +111,33 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   }
 
   // Make the upload look like an element, so it rides the ordinary placement path.
-  function place(u) {
+  //
+  // A placed decoration must carry the CUTOUT, not the uncut original — otherwise the image lands on the
+  // frosting inside a photo's worth of background. So this is a decoration context: ensure the cutout
+  // first (the same server chokepoint the promote studio uses), then place. The cut is cached, so once
+  // an image has been cut the list already carries `cutoutUrl` and this is instant; only the first
+  // placement of a given image waits. There is no cutout on the photo-cake frame path — that goes
+  // through onSelect (selectMode), never here.
+  async function place(u) {
     if (!defaultType) return setError('Uploads can’t be placed yet — no decoration kind is set up for them.');
+    let art = u.cutoutUrl;
+    if (!art && apiClient?.ensureCutout) {
+      setBusy(u.id); setBusyWhat('place'); setError(null);
+      try {
+        const cut = await apiClient.ensureCutout(u.id);
+        art = cut?.cutoutUrl ?? u.url;
+      } catch (e) {
+        setBusy(null); setBusyWhat(null);
+        return setError(e.message || 'Could not prepare that image.');
+      }
+      setBusy(null); setBusyWhat(null);
+    }
+    art = art ?? u.url;   // no cutout service (e.g. a minimal client): the original still places
     onPlace?.({
       id:               `upload:${u.id}`,
       name:             u.name || 'Untitled',
-      image_url:        u.url,
-      thumbnail_url:    u.url,
+      image_url:        art,
+      thumbnail_url:    art,
       element_type_id:  defaultType.id,
       allowed_zones:    defaultType.placement_rules?.zones ?? [],
       placement_config: defaultType.placement_rules?.placement ?? {},
@@ -138,27 +157,6 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
       await load();
     } catch (e) {
       setError(e.message || 'Could not delete it.');
-    } finally {
-      setBusy(null); setBusyWhat(null);
-    }
-  }
-
-  // Cut the background out. A TREATMENT of an image, not a step in a wizard — so it lives here, on the
-  // image, rather than only at upload. That matters most for a CUSTOMER: she cannot promote, so if
-  // cut-out only existed on the promote path her decoration would always carry its background and she
-  // would have no way to fix it. Runs server-side on the stored object; the row is updated in place, so
-  // every design already using the image picks up the cut version.
-  async function cutBg(u) {
-    setBusy(u.id); setBusyWhat('bg'); setError(null);
-    try {
-      const updated = await apiClient.removeUploadBg(u.id);
-      // The row is updated in place, so the URL is the same object — bust the cache or the edit screen
-      // keeps showing the version WITH its background and the operator thinks nothing happened.
-      const fresh = updated?.url ?? u.url;
-      if (editing?.id === u.id) setEditing({ ...u, url: `${fresh}${fresh.includes('?') ? '&' : '?'}v=${Date.now()}` });
-      await load();
-    } catch (e) {
-      setError(e.message || 'Could not remove the background.');
     } finally {
       setBusy(null); setBusyWhat(null);
     }
@@ -198,10 +196,11 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 
   // ── Edit one image ────────────────────────────────────────────────────────────────────────────
   // A screen, not a menu of verbs: the operator is working ON the picture, so the picture is the
-  // subject and the treatments sit under it. Crop belongs here next. Publishing is offered
-  // as the natural NEXT step — you almost always want the background gone before you hand it to your
-  // customers — while remaining a first-class item in the card's own menu, because it is the one act
-  // here with consequences beyond this person and must not hide behind a benign label.
+  // subject. Rename lives here; crop belongs here next. There is NO "remove background" button — a
+  // decoration's background is cut automatically the moment the image is USED as one (placed, or
+  // published), because an uncut decoration is simply broken and the cut is wrong for the photo-cake
+  // frame path. Publishing is offered as the natural next step, and stays a deliberate act with
+  // consequences beyond this person.
   if (editing) {
     const u = editing;
     const mine = canPromote && u.uploadedBy === 'baker';
@@ -243,16 +242,6 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
                 </div>
               </>
             )}
-
-            {apiClient?.removeUploadBg && (
-              <button style={{ ...S.editAct, marginTop: 16 }} disabled={working} onClick={() => cutBg(u)}>
-                {working && busyWhat === 'bg' ? 'Removing the background…' : 'Remove background'}
-              </button>
-            )}
-            <div style={S.hint}>
-              Cuts the subject out of the picture. Every cake already using this image picks up the
-              cut-out version.
-            </div>
 
             {error && <div style={S.err}>{error}</div>}
           </div>
@@ -344,10 +333,16 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
                 <div key={u.id} style={S.card}>
                   <div style={S.thumbWrap}>
                     {/* The image IS the button. What a tap MEANS is the caller's business. */}
-                    <button style={S.thumbBtn} onClick={() => choose(u)}
+                    <button style={S.thumbBtn} onClick={() => choose(u)} disabled={busy === u.id}
                       title={selectMode ? 'Use this image' : 'Put it on the cake'}>
                       <img src={u.url} alt={u.name || ''} style={S.thumb} loading="lazy" />
                     </button>
+
+                    {/* First placement of an image cuts its background out (server-side, cached), which
+                        takes a moment; after that the list carries the cutout and placing is instant. */}
+                    {busy === u.id && busyWhat === 'place' && (
+                      <div style={S.placing}>Preparing…</div>
+                    )}
 
                     {/* Everything you can DO to this image, behind one grip. Managing images is not what
                         this window is FOR when you came here to fill a frame, so it is absent in
@@ -413,6 +408,7 @@ const S = {
   thumbWrap: { position: 'relative' },
   thumbBtn: { width: '100%', padding: 0, border: '1.5px solid #e2e0e6', borderRadius: 11, background: '#faf9fb', cursor: 'pointer', overflow: 'hidden', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   thumb: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' },
+  placing: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 11, background: 'rgba(255,255,255,0.82)', color: '#555', fontSize: 11.5, fontWeight: 800, pointerEvents: 'none' },
   // 32px of tap target, on a phone, sitting ON the image — big enough to hit with a thumb and small
   // enough not to steal the taps meant for the picture underneath.
   kebab: { position: 'absolute', top: 4, right: 4, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.16)', color: '#555', cursor: 'pointer' },

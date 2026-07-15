@@ -25,8 +25,9 @@ import { ZONE_LABELS, ZONES } from '../constants.js';
 //
 // Each part still reuses what already exists:
 //
-//  1. BACKGROUND REMOVAL — apiClient.removeElementBg(). One chokepoint on the server, so the model
-//     behind it can change without touching this screen.
+//  1. BACKGROUND REMOVAL — the artwork shown here is the CUTOUT, prepared on open via
+//     apiClient.ensureCutout() (one server chokepoint, cached). There is no button: cutting a
+//     decoration is not optional, so it is implicit and happens exactly where a decoration is made.
 //  2. WHAT KIND IS IT — the offered kinds are element_types with `baker_uploadable`, i.e. DATA. The
 //     kind decides where the decoration may go, because the element INHERITS that type's
 //     placement_rules. The baker never sees a zone matrix.
@@ -79,10 +80,34 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
   const kind  = kinds.find(k => k.id === typeId) ?? null;
   const kindZones = useMemo(() => kind?.placement_rules?.zones ?? [], [kind]);
 
-  // The image is ALREADY uploaded (it came from Uploads), so the artwork is its public URL. There is
-  // no file picker here and no background removal: both belong to the image, not to the library, and
-  // they live in Uploads — a customer who cannot promote must still be able to cut hers out.
-  const artUrl = upload?.url ?? null;
+  // The artwork this studio works with is the CUTOUT — subject only, background gone — because
+  // EVERYTHING below reflects it: the preview, the zone tiles (a real render of it on a cake), and the
+  // colours we extract. Showing the uncut upload here is exactly the bug this fixes — a rectangle of
+  // sky-and-grass sitting on the frosting, and a colour picker that samples the sky.
+  //
+  // The cut is derived once and cached server-side (ensureCutout). If the list already carried it we use
+  // it immediately; otherwise we ask for it as the studio opens (idempotent) and show a brief loading
+  // state. The uncut original is NEVER published: on failure the studio blocks and offers a retry rather
+  // than quietly falling back — and the promote route cuts server-side too, so the library copy always
+  // carries the cutout regardless.
+  const [artUrl, setArtUrl]       = useState(upload?.cutoutUrl ?? null);
+  const [prepping, setPrepping]   = useState(false);
+  const [prepError, setPrepError] = useState(null);
+  const [retryTick, setRetryTick] = useState(0);
+
+  useEffect(() => {
+    if (upload?.cutoutUrl) { setArtUrl(upload.cutoutUrl); return; }
+    // No cutout service wired (a minimal client, or a test): fall back to the original so the studio
+    // still renders. In the real app ensureCutout is always present.
+    if (!upload?.id || !apiClient?.ensureCutout) { setArtUrl(upload?.url ?? null); return; }
+    let alive = true;
+    setPrepping(true); setPrepError(null);
+    apiClient.ensureCutout(upload.id)
+      .then(res => { if (alive) setArtUrl(res?.cutoutUrl ?? upload?.url ?? null); })
+      .catch(e => { if (alive) setPrepError(e.message || 'Could not prepare the image.'); })
+      .finally(() => { if (alive) setPrepping(false); });
+    return () => { alive = false; };
+  }, [upload?.id, upload?.cutoutUrl, upload?.url, apiClient, retryTick]);
 
   // The colours in that artwork. Same hook the designer's swatch panel uses, so the regions the baker
   // edits here are EXACTLY the regions a customer will later see swatches for.
@@ -143,9 +168,18 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
             {PUBLISH_NOTE.map(line => <div key={line} style={{ marginBottom: 4 }}>{line}</div>)}
           </div>
 
-          {/* The image is already uploaded — show it. Replacing it, or cutting its background out, are
-              things you do to the IMAGE, in Uploads. Not here. */}
-          <div style={S.drop}><img src={artUrl} alt="" style={S.art} /></div>
+          {/* The cutout — prepared as this screen opened. While it is being cut, or if that failed, the
+              frame says so instead of flashing the uncut original (the very thing we are removing). */}
+          <div style={S.drop}>
+            {prepping && <div style={S.dropHint}>Preparing your decoration…</div>}
+            {!prepping && prepError && (
+              <div style={S.dropHint}>
+                <div style={{ color: '#C0392B', marginBottom: 8 }}>{prepError}</div>
+                <button style={S.retry} onClick={() => setRetryTick(t => t + 1)}>Try again</button>
+              </div>
+            )}
+            {!prepping && !prepError && artUrl && <img src={artUrl} alt="" style={S.art} />}
+          </div>
 
           {artUrl && (
             <>
@@ -263,6 +297,7 @@ const S = {
 
   drop:  { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 170, borderRadius: 12, border: '2px dashed #d5d3da', background: '#faf9fb', cursor: 'pointer', overflow: 'hidden' },
   dropHint: { fontSize: 12.5, fontWeight: 700, color: '#8a7a80', textAlign: 'center', padding: '0 20px' },
+  retry: { padding: '8px 16px', borderRadius: 9, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' },
   art:   { maxWidth: '100%', maxHeight: 220, objectFit: 'contain' },
 
   label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 18, marginBottom: 6 },
