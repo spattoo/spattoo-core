@@ -15,7 +15,11 @@ const uploads = [
   { id: 2, name: 'Her photo',  url: 'https://x/2.png', uploadedBy: 'customer', promoted: false },
   { id: 3, name: 'Logo',       url: 'https://x/3.png', uploadedBy: 'baker',    promoted: true  },
 ];
-const apiClient = { fetchUploads: async () => uploads };
+const apiClient = {
+  fetchUploads: async () => uploads,
+  // Decorations get their background cut on use; the studio/placement asks for the cutout on open.
+  ensureCutout: async (id) => ({ id, cutoutUrl: `https://x/${id}-cut.png` }),
+};
 const elementTypes = [
   { id: 't1', name: 'Image topper', default_for_uploads: true, baker_uploadable: true,
     placement_rules: { zones: ['top_surface'], placement: { top_surface: 'stand' } } },
