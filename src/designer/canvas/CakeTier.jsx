@@ -246,16 +246,33 @@ function perimeterRing(perim, off, step, baseY) {
   // displacing an evenly-spaced original makes shells SPREAD on convex curves (a gappy bottom border on a
   // "2"'s outer sweep) and PILE UP on concave ones. Walking the offset polyline at even `step` keeps the
   // spacing right in either direction, and the shell count scales with the offset path's own length.
-  const dense = Math.max(32, Math.round((perim.length / step) * 4));   // fine samples of the offset polyline
+  //
+  // ROUND the corners the offset would otherwise leave OPEN (a convex corner when outsetting, a concave
+  // one when insetting): there the two offset edges don't meet, and a straight bevel across the gap drops
+  // a lone shell floating off the corner (the "came out of the pattern" corner). An arc of radius |off|
+  // around the vertex wraps shells evenly round it instead.
+  const dense = Math.max(48, Math.round((perim.length / step) * 6));   // fine samples of the offset polyline
+  const smp = [];
+  for (let i = 0; i < dense; i++) smp.push(perim.at((i / dense) * perim.length));
   const pts = [];
   for (let i = 0; i < dense; i++) {
-    const p = perim.at((i / dense) * perim.length);
-    pts.push({ x: p.x + off * p.nx, z: p.z + off * p.nz });
+    const a = smp[i], b = smp[(i + 1) % dense];
+    pts.push({ x: a.x + off * a.nx, z: a.z + off * a.nz });
+    const dot   = Math.max(-1, Math.min(1, a.nx * b.nx + a.nz * b.nz));
+    const cross = a.nx * b.nz - a.nz * b.nx;              // >0 ⇒ normal turns CCW (a convex vertex of a CCW poly)
+    if (off * cross > 1e-4 && dot < 0.966) {              // a corner the offset leaves open, turn > ~15°
+      const ang0 = Math.atan2(a.nz, a.nx), turn = Math.atan2(cross, dot);
+      const arcSteps = Math.ceil(Math.abs(turn) / 0.26); // ~15° per arc segment
+      for (let k = 1; k < arcSteps; k++) {
+        const ang = ang0 + turn * (k / arcSteps);        // arc of radius |off| around the corner vertex (≈ b)
+        pts.push({ x: b.x + off * Math.cos(ang), z: b.z + off * Math.sin(ang) });
+      }
+    }
   }
   const seg = [];
   let total = 0;
-  for (let i = 0; i < dense; i++) {
-    const a = pts[i], b = pts[(i + 1) % dense];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
     const len = Math.hypot(b.x - a.x, b.z - a.z);
     seg.push({ a, b, len, s0: total });
     total += len;
