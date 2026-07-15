@@ -236,70 +236,65 @@ function perimeterSinglePos({ perim, off, baseY, angle }) {
   return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
 }
 
-// Evenly-spaced shells around ANY perimeter (heart, number, …) by arc length — the generic counterpart
-// to rectEdgeRing (which special-cases a rounded rect's straight runs + corners). Each shell sits `off`
-// in from the edge (off<0) along the outward normal, facing out. Relies on the perimeter being wound so
-// its normals point OUTWARD (CCW-in-xz — see numberShape/scaledOutline).
+// Evenly-spaced shells around ANY perimeter (heart, number, …). The SAME model rectEdgeRing uses for the
+// sheet cake (which reads as a clean garland): split the outline at its SHARP corners into smooth RUNS,
+// place even shells CENTRED along each run, and exactly ONE shell on each corner's bisector. Nothing else
+// — the earlier arc + gap-fill machinery is what clumped shells into groups at the corners. A fully
+// smooth outline (no sharp corner, e.g. a rounded shape) is one even loop. `off` insets (off<0, top rim)
+// or outsets (off>0, board border); shells face out. Relies on the outline being wound CCW-in-xz so the
+// normals point OUTWARD (see numberShape / scaledOutline).
 function perimeterRing(perim, off, step, baseY) {
-  // Place shells EVENLY along the OFFSET path — not by offsetting an evenly-spaced original. That
-  // distinction is the whole fix: the top rim insets (off<0), the board border outsets (off>0), and
-  // displacing an evenly-spaced original makes shells SPREAD on convex curves (a gappy bottom border on a
-  // "2"'s outer sweep) and PILE UP on concave ones. Walking the offset polyline at even `step` keeps the
-  // spacing right in either direction, and the shell count scales with the offset path's own length.
-  //
-  // ROUND the corners the offset would otherwise leave OPEN (a convex corner when outsetting, a concave
-  // one when insetting): there the two offset edges don't meet, and a straight bevel across the gap drops
-  // a lone shell floating off the corner (the "came out of the pattern" corner). An arc of radius |off|
-  // around the vertex wraps shells evenly round it instead.
-  const dense = Math.max(48, Math.round((perim.length / step) * 6));   // fine samples of the offset polyline
-  const smp = [];
-  for (let i = 0; i < dense; i++) smp.push(perim.at((i / dense) * perim.length));
-  const pts = [];
-  const corners = [];   // one FORCED shell per sharp open corner — the even walk can step over the short arc
+  const dense = Math.max(72, Math.round((perim.length / step) * 8));
+  const s = [];
+  for (let i = 0; i < dense; i++) s.push(perim.at((i / dense) * perim.length));
+  const shell = (x, z, nx, nz) => {
+    const l = Math.hypot(nx, nz) || 1;
+    return { pos: [x + off * nx / l, baseY, z + off * nz / l], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] };
+  };
+
+  // Sharp corners: consecutive edge normals turning more than ~40° (the rectangle's 90° corners qualify;
+  // a font curve's gentle joints do not).
+  const CORNER = Math.cos(40 * Math.PI / 180);
+  const corner = [];
   for (let i = 0; i < dense; i++) {
-    const a = smp[i], b = smp[(i + 1) % dense];
-    pts.push({ x: a.x + off * a.nx, z: a.z + off * a.nz });
-    const dot   = Math.max(-1, Math.min(1, a.nx * b.nx + a.nz * b.nz));
-    const cross = a.nx * b.nz - a.nz * b.nx;              // >0 ⇒ normal turns CCW (a convex vertex of a CCW poly)
-    if (off * cross > 1e-4 && dot < 0.966) {              // a corner the offset leaves open, turn > ~15°
-      const ang0 = Math.atan2(a.nz, a.nx), turn = Math.atan2(cross, dot);
-      const arcSteps = Math.ceil(Math.abs(turn) / 0.26); // ~15° per arc segment
-      for (let k = 1; k < arcSteps; k++) {
-        const ang = ang0 + turn * (k / arcSteps);        // arc of radius |off| around the corner vertex (≈ b)
-        pts.push({ x: b.x + off * Math.cos(ang), z: b.z + off * Math.sin(ang) });
-      }
-      const mid = ang0 + turn * 0.5;                     // the corner bisector — where a shell must sit
-      corners.push({ x: b.x + off * Math.cos(mid), z: b.z + off * Math.sin(mid), nx: Math.cos(mid), nz: Math.sin(mid) });
-    }
+    const a = s[i], b = s[(i + 1) % dense];
+    if (a.nx * b.nx + a.nz * b.nz < CORNER) corner.push(i);   // a corner sits between sample i and i+1
   }
-  const seg = [];
-  let total = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i], b = pts[(i + 1) % pts.length];
-    const len = Math.hypot(b.x - a.x, b.z - a.z);
-    seg.push({ a, b, len, s0: total });
-    total += len;
-  }
-  const N = Math.max(6, Math.round(total / (step || total)));
   const out = [];
-  let k = 0;
-  for (let i = 0; i < N; i++) {
-    const s = (i / N) * total;
-    while (k < seg.length - 1 && seg[k].s0 + seg[k].len < s) k++;
-    const g = seg[k];
-    const u = g.len ? (s - g.s0) / g.len : 0;
-    const x = g.a.x + (g.b.x - g.a.x) * u, z = g.a.z + (g.b.z - g.a.z) * u;
-    const tx = g.b.x - g.a.x, tz = g.b.z - g.a.z, tl = Math.hypot(tx, tz) || 1;
-    const nx = tz / tl, nz = -tx / tl;   // outward normal of the offset path (CCW) → shells face out
-    out.push({ pos: [x, baseY, z], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
+
+  // No sharp corner → one even loop (heart, circle-ish).
+  if (corner.length === 0) {
+    const N = Math.max(6, Math.round(perim.length / step));
+    for (let i = 0; i < N; i++) { const p = perim.at((i / N) * perim.length); out.push(shell(p.x, p.z, p.nx, p.nz)); }
+    return out;
   }
-  // Guarantee a shell ON each sharp corner: the even walk can step across the short corner arc and leave
-  // it bare (the gap at the base rectangle's corners). Add the bisector shell only where the walk left a
-  // hole — within ~0.6·step means it's already covered.
-  const gap2 = (step * 0.6) ** 2;
-  for (const c of corners) {
-    if (!out.some(o => (o.pos[0] - c.x) ** 2 + (o.pos[2] - c.z) ** 2 < gap2)) {
-      out.push({ pos: [c.x, baseY, c.z], rotY: Math.atan2(c.nz, c.nx), tq: [0, 0, 0, 1] });
+
+  // One shell on each corner's bisector.
+  for (const i of corner) {
+    const a = s[i], b = s[(i + 1) % dense];
+    out.push(shell(a.x, a.z, a.nx + b.nx, a.nz + b.nz));
+  }
+  // Even shells centred along each run BETWEEN corners (like rectEdgeRing's edge()).
+  for (let c = 0; c < corner.length; c++) {
+    const from = (corner[c] + 1) % dense;                 // first sample after this corner
+    const to   = corner[(c + 1) % corner.length];         // last sample before the next corner
+    const run = [];
+    for (let i = from; ; i = (i + 1) % dense) { run.push(s[i]); if (i === to) break; }
+    const cum = [0];                                      // arc length of the run's OFFSET path
+    for (let k = 0; k < run.length - 1; k++) {
+      const a = run[k], b = run[k + 1];
+      cum.push(cum[k] + Math.hypot((b.x + off * b.nx) - (a.x + off * a.nx), (b.z + off * b.nz) - (a.z + off * a.nz)));
+    }
+    const len = cum[cum.length - 1];
+    const N = Math.max(1, Math.round(len / step));
+    for (let j = 0; j < N; j++) {
+      const t = ((j + 0.5) / N) * len;                    // centred within the run
+      let seg = 0;
+      while (seg < cum.length - 2 && cum[seg + 1] < t) seg++;
+      const a = run[seg], b = run[Math.min(seg + 1, run.length - 1)];
+      const d = cum[seg + 1] - cum[seg];
+      const u = d ? (t - cum[seg]) / d : 0;
+      out.push(shell(a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u, a.nx + (b.nx - a.nx) * u, a.nz + (b.nz - a.nz) * u));
     }
   }
   return out;
