@@ -236,6 +236,18 @@ function perimeterSinglePos({ perim, off, baseY, angle }) {
   return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
 }
 
+// Evenly-spaced shells around ANY perimeter (heart, number, …) by arc length — the generic counterpart
+// to rectEdgeRing (which special-cases a rounded rect's straight runs + corners). Each shell sits `off`
+// in from the edge (off<0) along the outward normal, facing out. Relies on the perimeter being wound so
+// its normals point OUTWARD (CCW-in-xz — see numberShape/scaledOutline).
+function perimeterRing(perim, off, step, baseY) {
+  const N = Math.max(6, Math.round(perim.length / (step || perim.length)));
+  return Array.from({ length: N }, (_, i) => {
+    const p = perim.at((i / N) * perim.length);
+    return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
+  });
+}
+
 // Local-space bbox of a geometry, in the frame the gradient shader reads (the `position`
 // attribute). Null when there's no gradient so non-gradient piping skips the work.
 function geomBBox(geometry, gradient) {
@@ -436,7 +448,7 @@ function TopPipingRingImpl({
     const r    = radius + off;
     const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
     // Rectangular (sheet) cakes walk a rounded-rect perimeter; round cakes keep the circle.
-    const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
+    const perim = (shape?.kind === 'rect' || shape?.outline) ? pipingPerimeter(shape) : null;
     if (arrangement === 'single') {
       const list = instances?.length ? instances : [{ angle: 0 }];
       return list.map(inst => {
@@ -446,7 +458,9 @@ function TopPipingRingImpl({
       });
     }
     if (perim) {
-      return rectEdgeRing(shape, off, step, topY + yOffset);
+      return shape.kind === 'rect'
+        ? rectEdgeRing(shape, off, step, topY + yOffset)               // sheet: clean straight runs + corners
+        : perimeterRing(perim, off, step, topY + yOffset);            // heart, number, …: even by arc length
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
@@ -563,7 +577,7 @@ function BottomPipingRingImpl({
     const off  = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
     const r    = radius + off;
     const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
-    const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
+    const perim = (shape?.kind === 'rect' || shape?.outline) ? pipingPerimeter(shape) : null;
     if (arrangement === 'single') {
       const list = instances?.length ? instances : [{ angle: 0 }];
       return list.map(inst => {
@@ -573,7 +587,9 @@ function BottomPipingRingImpl({
       });
     }
     if (perim) {
-      return rectEdgeRing(shape, off, step, yBase + yOffset);
+      return shape.kind === 'rect'
+        ? rectEdgeRing(shape, off, step, yBase + yOffset)              // sheet: clean straight runs + corners
+        : perimeterRing(perim, off, step, yBase + yOffset);          // heart, number, …: even by arc length
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });

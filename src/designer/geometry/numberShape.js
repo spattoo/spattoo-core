@@ -25,6 +25,8 @@ export const cleanDigits = d => (String(d ?? '').replace(/[^0-9]/g, '').slice(0,
 // Both act on the glyph's CONTOURS, independent of the tier's Width (which scales the whole footprint).
 const signedArea = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i].x * q.y - q.x * p[i].y; } return a / 2; };
 const toCCW = p => (signedArea(p) < 0 ? p.slice().reverse() : p);
+// Same, for world {x,z} points — CCW so polygonPerimeter's edge normals point OUTWARD.
+const ccwXZ = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i].x * q.z - q.x * p[i].z; } return a >= 0 ? p : p.slice().reverse(); };
 
 // Offset a closed CCW contour by a BEVEL join: d>0 moves INWARD (shrinks), d<0 OUTWARD (grows). Each
 // vertex emits TWO points — the offset ends of its two adjacent edges — so a sharp corner is chamfered,
@@ -116,10 +118,11 @@ export function numberGeometry(digits, worldW = 2, weight = 0, cornerR = 0) {
   });
 
   const worldH = gh * scale;
-  // Outer contour(s) in world XZ for board sizing + top-decor. Single digit ⇒ one clean polygon;
-  // multi-digit ⇒ concatenated per-glyph contours (fine for bounding-radius; precise per-glyph
-  // point-in-polygon is a Phase-2 concern).
-  const outline = shapes.flatMap(s => s.getPoints(CURVE_SEG).map(p => ({ x: p.x, z: -p.y })));
+  // Outer contour(s) in world XZ for board sizing + rim/top decor. The `z = -y` flip reverses the glyph's
+  // CCW winding, but `polygonPerimeter` only yields OUTWARD normals for a CCW-in-XZ polygon (what the rim
+  // shells ride) — so re-wind each glyph CCW. Single digit ⇒ one clean polygon; multi-digit ⇒ concatenated
+  // per-glyph contours (fine for bounding-radius; a single perimeter walk is a Phase-2 concern).
+  const outline = shapes.flatMap(s => ccwXZ(s.getPoints(CURVE_SEG).map(p => ({ x: p.x, z: -p.y }))));
   const out = { shapes, worldW, worldH, halfW: worldW / 2, halfD: worldH / 2, outline };
   cache.set(key, out);
   return out;
