@@ -32,7 +32,13 @@ import { CREAM_STYLES, DEFAULT_STYLE, styleDef } from './creamStyles.js';
 export const FROSTINGS = {
   buttercream: {
     label: 'Buttercream',
-    material: { roughness: 0.50, metalness: 0, sheen: 0.60, sheenRoughness: 0.55, sheenColor: '#fff3e0', clearcoat: 0.20, clearcoatRoughness: 0.45, envMapIntensity: 0.65, grain: 'cream', grainStrength: 0.50, grainDensity: 1.0 },
+    // envMapIntensity kept LOW: the apartment HDRI lifts + DESATURATES the albedo most on the surfaces
+    // that face its bright horizon — a cake's vertical WALLS — so at 0.65 the sides washed to a paler,
+    // warmer tint than the up-facing top (which sees the dim HDRI "ceiling"), on round and number alike.
+    // sheen trimmed for the same reason: a warm-white grazing sheen also lifts the walls. The cake now
+    // reads one colour top-to-side; the directional + ambient lights still shape it. (Tunable — this is
+    // pure look calibration, no persisted config.)
+    material: { roughness: 0.50, metalness: 0, sheen: 0.40, sheenRoughness: 0.55, sheenColor: '#fff3e0', clearcoat: 0.20, clearcoatRoughness: 0.45, envMapIntensity: 0.20, grain: 'cream', grainStrength: 0.50, grainDensity: 1.0 },
     edge: 'sharp',
     capabilities: { gradient: true },
     styles: ['wave', 'swirl', 'rustic'],

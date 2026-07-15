@@ -36,7 +36,7 @@ export function tierShape(tier) {
     const halfD = (square ? (tier.width ?? 2.16) : (tier.depth ?? 1.56)) / 2;
     const cornerR = tier.cornerR ?? SHEET_CORNER_RADIUS;
     return {
-      kind: 'rect', halfW, halfD, cornerR, flatFaced: true,
+      kind: 'rect', halfW, halfD, cornerR,
       pipingCornerR: Math.max(cornerR, Math.min(SHEET_PIPING_CORNER_RADIUS, 0.55 * Math.min(halfW, halfD))),
     };
   }
@@ -47,7 +47,7 @@ export function tierShape(tier) {
     // outline prism. Sized by WIDTH; the digit's own aspect sets the depth, so it never distorts.
     const r = tier.radius ?? 1.2;
     const g = numberGeometry(config?.digits, tier.width ?? r * 2, config?.weight, config?.cornerR);
-    return { kind: 'number', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD, flatFaced: true };
+    return { kind: 'number', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD };
   }
 
   if (family !== 'circle') {

@@ -1083,7 +1083,7 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, geoSig, dusting = null, foil = null, finishMaps = null, flat = false, children, castShadow = true, receiveShadow = false }) {
+                    gradient, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
@@ -1125,13 +1125,6 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   // reads on ANY base. `emissive` stays an optional faint dust glow. Gold leaf bumps envMapIntensity so
   // the metal shards reflect the room (the "shine"). The grain/style normal stays. (Map binding requires
   // the needsUpdate recompile above.)
-  // A FLAT-faced body (sheet, number) sits its whole wall at ONE angle, so the sheen + clearcoat + env
-  // reflection that reads as a thin highlight on a CURVED cake instead washes an entire face to a lighter,
-  // warmer colour — the "why are the sides pink" report. Round/heart curve away from the light so they keep
-  // their creamy sheen; a flat wall must go matte to stay one colour with the top. This adopts the same
-  // matte look the round cake's own top LID already uses (no sheen/clearcoat/env). Particle finishes
-  // (finishMaps: luster/foil) are excluded — their shine is the point.
-  const bodyMatte = flat && !finishMaps;
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
@@ -1144,11 +1137,11 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
         emissive={finishMaps ? (foil ? (foil.color ?? '#000000') : (dusting?.dustColor ?? '#000000')) : '#000000'}
         emissiveMap={finishMaps?.emissiveMap ?? null}
         emissiveIntensity={finishMaps ? (foil ? (foil.finish?.glow ?? 0.35) : (dusting?.glow ?? 0)) : 0}
-        sheen={bodyMatte ? 0 : (surf?.sheen ?? 0)} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
-        clearcoat={finishMaps ? 1 : (bodyMatte ? 0 : (surf?.clearcoat ?? 0))}
+        sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
+        clearcoat={finishMaps ? 1 : (surf?.clearcoat ?? 0)}
         clearcoatMap={finishMaps?.metalnessMap ?? null}
         clearcoatRoughness={finishMaps ? 0.12 : (surf?.clearcoatRoughness ?? 0.5)}
-        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 4.5) : (bodyMatte ? 0.15 : (surf?.envMapIntensity ?? 0.5))}
+        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 4.5) : (surf?.envMapIntensity ?? 0.5)}
         normalMap={normalMap ?? null}
         normalScale={[normalScale, normalScale]} />
     </mesh>
@@ -1480,7 +1473,7 @@ export default function CakeTier({
       {isPrism ? (
         // An extruded footprint (sheet rect, or an authored outline): flat top, full footprint, no
         // separate top cap (a cap reads as a stray "board" on a non-round cake).
-        <TierBody position={[0, yBase, 0]} color={color} surf={mat} flat={shp.flatFaced}
+        <TierBody position={[0, yBase, 0]} color={color} surf={mat}
           grainExtent={[prismGrainU, height]}
           gradient={effGradient} geoSig={prismGeo?.uuid} castShadow receiveShadow>
           <primitive object={prismGeo} attach="geometry" />
