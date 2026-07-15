@@ -242,10 +242,21 @@ function perimeterSinglePos({ perim, off, baseY, angle }) {
 // its normals point OUTWARD (CCW-in-xz — see numberShape/scaledOutline).
 function perimeterRing(perim, off, step, baseY) {
   const N = Math.max(6, Math.round(perim.length / (step || perim.length)));
-  return Array.from({ length: N }, (_, i) => {
+  // Inset shells CROWD where the outline pinches inward — a digit's tight concave curves. Place by arc
+  // length, then drop any shell landing within ~0.55·step of the last KEPT one, so a concavity thins out
+  // instead of piling shells on top of each other. (A convex shape's shells sit ≥ step apart, so nothing
+  // is dropped — round/rect are unaffected; this only bites the concavities number/heart introduce.)
+  const minGap2 = (step * 0.55) ** 2;
+  const out = [];
+  let lx = null, lz = null;
+  for (let i = 0; i < N; i++) {
     const p = perim.at((i / N) * perim.length);
-    return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
-  });
+    const x = p.x + off * p.nx, z = p.z + off * p.nz;
+    if (lx !== null && (x - lx) ** 2 + (z - lz) ** 2 < minGap2) continue;
+    lx = x; lz = z;
+    out.push({ pos: [x, baseY, z], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] });
+  }
+  return out;
 }
 
 // Local-space bbox of a geometry, in the frame the gradient shader reads (the `position`
