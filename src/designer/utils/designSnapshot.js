@@ -17,7 +17,12 @@
 // row is later retuned or retired (snapshot immutability), and a cake can mix shapes per tier without
 // every tier sharing one family. A design authored before these existed carries only the `shape` key
 // and resolves geometry through the catalog (see tierGeometry) — that fallback is why they stay optional.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'gradient', 'glaze', 'dusting', 'foil'];
+// `frostingType`/`frostingStyle`/`styleParams` are the tier's FINISH — as essential to the round-trip as
+// its gradient or dimensions. Without them a saved non-buttercream cake (fondant, whipped, GLAZE) reloads
+// with the finish absent → toCanvasConfig defaults it to buttercream and the finish is silently lost. They
+// were missing here; a glaze design would come back plain. (Backward-compatible: absent on an old snapshot
+// → still defaults, exactly as before; present on a new one → restored.)
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'glaze', 'dusting', 'foil'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {
