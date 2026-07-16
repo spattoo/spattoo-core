@@ -10,7 +10,8 @@ import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
-import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
+import { tierShape, pipingPerimeter, pipingPerimeters, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
+import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
@@ -236,66 +237,67 @@ function perimeterSinglePos({ perim, off, baseY, angle }) {
   return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
 }
 
-// Evenly-spaced shells around ANY perimeter (heart, number, …). The SAME model rectEdgeRing uses for the
-// sheet cake (which reads as a clean garland): split the outline at its SHARP corners into smooth RUNS,
-// place even shells CENTRED along each run, and exactly ONE shell on each corner's bisector. Nothing else
-// — the earlier arc + gap-fill machinery is what clumped shells into groups at the corners. A fully
-// smooth outline (no sharp corner, e.g. a rounded shape) is one even loop. `off` insets (off<0, top rim)
-// or outsets (off>0, board border); shells face out. Relies on the outline being wound CCW-in-xz so the
-// normals point OUTWARD (see numberShape / scaledOutline).
+// Evenly-spaced shells around ANY perimeter (heart, number, polygon…). Generalises rectEdgeRing's clean
+// garland to a free-form outline by doing what rectEdgeRing does for a rectangle: build a proper ROUND-
+// JOIN offset of the outline (the corners come out ROUNDED, like a rounded-rect), then walk that smooth
+// closed path at even arc length. Round joins are the whole trick — a sharp corner becomes an arc the
+// beads flow around continuously, so there is no gap, no self-intersection spike, and no corner pile, and
+// none of the corner-detection / spike-filter / corner-thin patches those failure modes used to need.
+// Relies on the outline being wound CCW-in-xz so the offset normals point OUTWARD (see numberShape).
 function perimeterRing(perim, off, step, baseY) {
-  const dense = Math.max(72, Math.round((perim.length / step) * 8));
-  const s = [];
-  for (let i = 0; i < dense; i++) s.push(perim.at((i / dense) * perim.length));
-  const shell = (x, z, nx, nz) => {
-    const l = Math.hypot(nx, nz) || 1;
-    return { pos: [x + off * nx / l, baseY, z + off * nz / l], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] };
-  };
+  const dense = Math.max(160, Math.round((perim.length / step) * 10));
+  const P = [];
+  for (let i = 0; i < dense; i++) { const p = perim.at((i / dense) * perim.length); P.push({ x: p.x, z: p.z }); }
+  // Outward normal of each edge (CCW winding ⇒ the right-hand perpendicular points out).
+  const nrm = [];
+  for (let i = 0; i < dense; i++) { const a = P[i], b = P[(i + 1) % dense], dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1; nrm.push({ x: dz / l, z: -dx / l }); }
 
-  // Sharp corners: consecutive edge normals turning more than ~40° (the rectangle's 90° corners qualify;
-  // a font curve's gentle joints do not).
-  const CORNER = Math.cos(40 * Math.PI / 180);
-  const corner = [];
+  // ROUND-JOIN offset: push each vertex out along its normal by `off`; where the normal swings sharply
+  // (a corner) sweep an ARC of radius |off| from the incoming normal to the outgoing one, rounding the
+  // corner. `nx,nz` is the outward direction at each offset point (the shell's facing).
+  const Q = [];
+  const ARC = 7 * Math.PI / 180, TURN = 8 * Math.PI / 180;
+  const put = (cx, cz, a) => Q.push({ x: cx + off * Math.cos(a), z: cz + off * Math.sin(a), nx: Math.cos(a), nz: Math.sin(a) });
   for (let i = 0; i < dense; i++) {
-    const a = s[i], b = s[(i + 1) % dense];
-    if (a.nx * b.nx + a.nz * b.nz < CORNER) corner.push(i);   // a corner sits between sample i and i+1
-  }
-  const out = [];
-
-  // No sharp corner → one even loop (heart, circle-ish).
-  if (corner.length === 0) {
-    const N = Math.max(6, Math.round(perim.length / step));
-    for (let i = 0; i < N; i++) { const p = perim.at((i / N) * perim.length); out.push(shell(p.x, p.z, p.nx, p.nz)); }
-    return out;
+    const np = nrm[(i - 1 + dense) % dense], nc = nrm[i];
+    const a0 = Math.atan2(np.z, np.x), a1 = Math.atan2(nc.z, nc.x);
+    let da = a1 - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+    if (Math.abs(da) > TURN) { const steps = Math.ceil(Math.abs(da) / ARC); for (let s = 0; s <= steps; s++) put(P[i].x, P[i].z, a0 + da * (s / steps)); }
+    else put(P[i].x, P[i].z, a0 + da * 0.5);
   }
 
-  // One shell on each corner's bisector.
-  for (const i of corner) {
-    const a = s[i], b = s[(i + 1) % dense];
-    out.push(shell(a.x, a.z, a.nx + b.nx, a.nz + b.nz));
+  // Thin-stroke collapse: where an inset stroke is narrower than 2·|off| its two sides cross to the wrong
+  // side of the outline. Keep only the points on the correct side (inside for an inset, outside for an
+  // outset); the crossed strip vanishes and the walk chords across it, thinning to one clean row.
+  const path = off === 0 ? Q : Q.filter(q => (off < 0) === pointInPolygon(P, q.x, q.z));
+  const use = path.length >= 3 ? path : Q;
+
+  // Even walk of the smooth offset path.
+  const n = use.length, cum = [0];
+  for (let i = 0; i < n; i++) { const a = use[i], b = use[(i + 1) % n]; cum.push(cum[i] + Math.hypot(b.x - a.x, b.z - a.z)); }
+  const len = cum[n], N = Math.max(6, Math.round(len / step)), raw = [];
+  for (let j = 0; j < N; j++) {
+    const t = (j / N) * len;
+    let seg = 0;
+    while (seg < n && cum[seg + 1] < t) seg++;
+    const a = use[seg], b = use[(seg + 1) % n], d = cum[seg + 1] - cum[seg], u = d ? (t - cum[seg]) / d : 0;
+    const nx = a.nx + (b.nx - a.nx) * u, nz = a.nz + (b.nz - a.nz) * u;
+    raw.push({ pos: [a.x + (b.x - a.x) * u, baseY, a.z + (b.z - a.z) * u], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
   }
-  // Even shells centred along each run BETWEEN corners (like rectEdgeRing's edge()).
-  for (let c = 0; c < corner.length; c++) {
-    const from = (corner[c] + 1) % dense;                 // first sample after this corner
-    const to   = corner[(c + 1) % corner.length];         // last sample before the next corner
-    const run = [];
-    for (let i = from; ; i = (i + 1) % dense) { run.push(s[i]); if (i === to) break; }
-    const cum = [0];                                      // arc length of the run's OFFSET path
-    for (let k = 0; k < run.length - 1; k++) {
-      const a = run[k], b = run[k + 1];
-      cum.push(cum[k] + Math.hypot((b.x + off * b.nx) - (a.x + off * a.nx), (b.z + off * b.nz) - (a.z + off * a.nz)));
-    }
-    const len = cum[cum.length - 1];
-    const N = Math.max(1, Math.round(len / step));
-    for (let j = 0; j < N; j++) {
-      const t = ((j + 0.5) / N) * len;                    // centred within the run
-      let seg = 0;
-      while (seg < cum.length - 2 && cum[seg + 1] < t) seg++;
-      const a = run[seg], b = run[Math.min(seg + 1, run.length - 1)];
-      const d = cum[seg + 1] - cum[seg];
-      const u = d ? (t - cum[seg]) / d : 0;
-      out.push(shell(a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u, a.nx + (b.nx - a.nx) * u, a.nz + (b.nz - a.nz) * u));
-    }
+
+  // Collapse dedup, tuned against the REAL ring capture (step≈0.49, off≈−0.26 — a big rosette on a "1"):
+  // drop a shell within 0.5·step of ANY kept shell. This removes genuine overlaps — a thin stroke folded
+  // onto itself, or a concave notch folding the path back on a non-adjacent part — while leaving a narrow
+  // stroke's two parallel rows (~0.6·step apart) intact. NO sequential/walk-adjacent rule: it can't tell a
+  // clean ROUNDED CORNER (where consecutive shells sit a full step apart by arc but a bit less by chord)
+  // from real bunching, so it culled the corner shells and opened GAPS at the top-right (and every rounded
+  // corner). A rounded corner reads best with its shells kept — slightly crowding is how piping turns a
+  // corner; a gap is not.
+  const out = [], glob2 = (0.5 * step) ** 2;
+  for (const sh of raw) {
+    const x = sh.pos[0], z = sh.pos[2];
+    if (out.some(q => (q.pos[0] - x) ** 2 + (q.pos[2] - z) ** 2 < glob2)) continue;
+    out.push(sh);
   }
   return out;
 }
@@ -510,9 +512,10 @@ function TopPipingRingImpl({
       });
     }
     if (perim) {
-      return shape.kind === 'rect'
-        ? rectEdgeRing(shape, off, step, topY + yOffset)               // sheet: clean straight runs + corners
-        : perimeterRing(perim, off, step, topY + yOffset);            // heart, number, …: even by arc length
+      if (shape.kind === 'rect') return rectEdgeRing(shape, off, step, topY + yOffset);  // sheet: clean straight runs + corners
+      // heart, number, …: even by arc length, EACH contour its OWN loop so a multi-digit number's
+      // digits are ringed separately and no shell bridges the gap between them.
+      return pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, topY + yOffset));
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
@@ -639,9 +642,10 @@ function BottomPipingRingImpl({
       });
     }
     if (perim) {
-      return shape.kind === 'rect'
-        ? rectEdgeRing(shape, off, step, yBase + yOffset)              // sheet: clean straight runs + corners
-        : perimeterRing(perim, off, step, yBase + yOffset);          // heart, number, …: even by arc length
+      if (shape.kind === 'rect') return rectEdgeRing(shape, off, step, yBase + yOffset);  // sheet: clean straight runs + corners
+      // heart, number, …: even by arc length, EACH contour its OWN loop so a multi-digit number's
+      // digits are ringed separately and no shell bridges the gap between them.
+      return pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, yBase + yOffset));
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });

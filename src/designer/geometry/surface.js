@@ -12,7 +12,8 @@
 import { SHEET_CORNER_RADIUS, SHEET_PIPING_CORNER_RADIUS } from '../constants.js';
 import { tierGeometry } from '../cakeShapes.js';
 import {
-  scaledOutline, polygonPerimeter, pointInPolygon, nearestOnPolygon, scalePolygon, polygonRadius,
+  scaledOutline, polygonPerimeter, multiPolygonPerimeter, asRings,
+  pointInPolygon, nearestOnPolygon, scalePolygon, polygonRadius,
 } from './shapes.js';
 import { numberGeometry } from './numberShape.js';
 
@@ -130,7 +131,7 @@ export function roundedRectPerimeter(halfW, halfD, cornerR) {
 // a number cake, whatever lands next) traces it generically; only the two ANALYTIC families (round,
 // rect) have no outline and keep their closed-form perimeter. Decoration is outline-driven, not per-shape.
 export function perimeter(shape) {
-  if (shape.outline) return polygonPerimeter(shape.outline);
+  if (shape.outline) return multiPolygonPerimeter(asRings(shape.outline));
   return shape.kind === 'rect'
     ? roundedRectPerimeter(shape.halfW, shape.halfD, shape.cornerR)
     : circlePerimeter(shape.radius);
@@ -138,12 +139,22 @@ export function perimeter(shape) {
 
 // Perimeter the piping ring walks — uses the gentler `pipingCornerR` so shells flow
 // around corners. Straight runs still sit on the body's faces (±halfW / ±halfD); only
-// the corner is rounded more.
+// the corner is rounded more. This COMBINED form (one arc-length coordinate over every ring) is for
+// single-shell placement; the garland ring walks each contour separately — see pipingPerimeters.
 export function pipingPerimeter(shape) {
-  if (shape.outline) return polygonPerimeter(shape.outline);
+  if (shape.outline) return multiPolygonPerimeter(asRings(shape.outline));
   return shape.kind === 'rect'
     ? roundedRectPerimeter(shape.halfW, shape.halfD, shape.pipingCornerR ?? shape.cornerR)
     : circlePerimeter(shape.radius);
+}
+
+// The piping GARLAND walks each CONTOUR as its own closed loop, so a multi-digit number's digits are
+// each ringed on their own and no shell ever bridges the gap between them (the "1—0" join). Round/rect
+// are a single loop; an outline is one loop per ring. The caller runs perimeterRing per loop and
+// concatenates — a single-ring shape (heart, single digit) yields exactly one loop, unchanged.
+export function pipingPerimeters(shape) {
+  if (shape.outline) return asRings(shape.outline).map(polygonPerimeter);
+  return [pipingPerimeter(shape)];
 }
 
 // ── Top-surface placement ─────────────────────────────────────────────────────

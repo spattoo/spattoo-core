@@ -28,11 +28,16 @@ const toCCW = p => (signedArea(p) < 0 ? p.slice().reverse() : p);
 // Same, for world {x,z} points — CCW so polygonPerimeter's edge normals point OUTWARD.
 const ccwXZ = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i].x * q.z - q.x * p[i].z; } return a >= 0 ? p : p.slice().reverse(); };
 
-// Offset a closed CCW contour by a BEVEL join: d>0 moves INWARD (shrinks), d<0 OUTWARD (grows). Each
-// vertex emits TWO points — the offset ends of its two adjacent edges — so a sharp corner is chamfered,
-// NEVER mitered. A miter join (moving the single vertex along its bisector) shoots a thin triangle out of
-// every stroke terminal (the end of a "2"'s top curve, a "3"'s arms) as the offset grows — those were the
-// spikes. Beveling the corner cannot spike, and the tiny chamfer it leaves is smoothed by cornerR anyway.
+// Offset a closed CCW contour: d>0 moves INWARD (shrinks), d<0 OUTWARD (grows). At each vertex the two
+// adjacent offset edges either DIVERGE (leaving a gap) or CONVERGE (crossing). The right join differs:
+//  • DIVERGE → BEVEL (emit the offset end of each edge, chamfering the corner). A miter here shoots a thin
+//    triangle off a stroke terminal (the end of a "2"'s top curve, a "3"'s arms) as the offset grows —
+//    those were the spikes, which is why terminals are beveled.
+//  • CONVERGE → MITER (the single intersection of the two offset edges). Here the bevel's two points cross
+//    PAST each other into an inward spike — that was the flag-notch artifact on a "1". The miter is the
+//    clean fill.
+// They converge exactly when `turn·d > 0`, where `turn` is the signed corner (>0 convex, <0 reflex for a
+// CCW contour): a convex terminal only spikes when SHRINKING, a reflex notch only when GROWING.
 function offsetContour(pts, d) {
   const n = pts.length;
   if (n < 3) return pts;
@@ -45,8 +50,31 @@ function offsetContour(pts, d) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const p = pts[i], prev = nrm[(i - 1 + n) % n], next = nrm[i];
-    out.push({ x: p.x - prev.x * d, y: p.y - prev.y * d });   // end of the previous edge, offset
-    out.push({ x: p.x - next.x * d, y: p.y - next.y * d });   // start of the next edge, offset
+    const turn = prev.x * next.y - prev.y * next.x;      // >0 convex, <0 reflex
+    const c = prev.x * next.x + prev.y * next.y;         // cos of the turn angle
+    if (turn * d > 1e-9 && 1 + c > 0.2) {                // converging (and not a near-cusp) → miter
+      const k = d / (1 + c);
+      out.push({ x: p.x - k * (prev.x + next.x), y: p.y - k * (prev.y + next.y) });
+    } else {                                             // diverging (or a cusp) → bevel, one point per edge
+      out.push({ x: p.x - prev.x * d, y: p.y - prev.y * d });
+      out.push({ x: p.x - next.x * d, y: p.y - next.y * d });
+    }
+  }
+  return out;
+}
+
+// Split every edge into pieces no longer than `maxSeg`. Chaikin rounds a corner by a fraction of its
+// ADJACENT EDGE lengths, so at a corner bounded by a LONG edge (a "1"'s stem where it meets the flag) it
+// chops a huge chamfer that slants the whole stem into a diagonal. Pre-splitting caps every edge, so the
+// cut is bounded to ~maxSeg everywhere instead of scaling with the stem's length. A straight run stays
+// straight (Chaikin preserves collinear points); only real corners round, and by a bounded amount.
+function densify(pts, maxSeg) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    out.push(a);
+    const k = Math.floor(Math.hypot(b.x - a.x, b.y - a.y) / maxSeg);
+    for (let j = 1; j <= k; j++) out.push({ x: a.x + (b.x - a.x) * j / (k + 1), y: a.y + (b.y - a.y) * j / (k + 1) });
   }
   return out;
 }
@@ -67,6 +95,12 @@ function chaikin(pts, passes) {
   return out;
 }
 
+// `Font.getPoints()` closes a contour by REPEATING its first point. That duplicate is a zero-length edge,
+// and offsetContour reads a 0/0 normal off it — which emits a spurious stair-step at that corner (the
+// bottom-right of a "1", the "small piece removed"). Drop any point coincident with the next so every
+// edge has a real direction. Also guards against font atlases that emit occasional duplicate knots.
+const dropDuplicates = (p) => p.filter((q, i) => { const r = p[(i + 1) % p.length]; return Math.hypot(q.x - r.x, q.y - r.y) > 1e-6; });
+
 // Weight thickens the STROKE (outer grows, counters shrink) so the digit stays the same overall width but
 // reads bolder; cornerR rounds the corners. All in em space so the look is consistent at any cake size.
 function reshape(outer, holes, weight, cornerR) {
@@ -74,9 +108,10 @@ function reshape(outer, holes, weight, cornerR) {
   // blob). The studio slider tops out lower still; this is the safety rail.
   const w = Math.max(0, Math.min(0.06, +weight || 0));
   const passes = Math.round(Math.max(0, Math.min(1, +cornerR || 0)) * 2);   // 0..2 Chaikin passes
-  let o = toCCW(outer), hs = holes.map(toCCW);
+  let o = toCCW(dropDuplicates(outer)), hs = holes.map(h => toCCW(dropDuplicates(h)));
   if (w > 1e-4) { o = offsetContour(o, -w); hs = hs.map(h => offsetContour(h, w)); }   // grow outer, shrink counters
-  if (passes > 0) { o = chaikin(o, passes); hs = hs.map(h => chaikin(h, passes)); }
+  // Round by a BOUNDED radius (∝ cornerR), not by edge length — so a long stem edge isn't halved.
+  if (passes > 0) { const seg = 0.03 + (Math.min(1, +cornerR || 0)) * 0.05; o = chaikin(densify(o, seg), passes); hs = hs.map(h => chaikin(densify(h, seg), passes)); }
   return { outer: o, holes: hs };
 }
 
@@ -118,11 +153,13 @@ export function numberGeometry(digits, worldW = 2, weight = 0, cornerR = 0) {
   });
 
   const worldH = gh * scale;
-  // Outer contour(s) in world XZ for board sizing + rim/top decor. The `z = -y` flip reverses the glyph's
-  // CCW winding, but `polygonPerimeter` only yields OUTWARD normals for a CCW-in-XZ polygon (what the rim
-  // shells ride) — so re-wind each glyph CCW. Single digit ⇒ one clean polygon; multi-digit ⇒ concatenated
-  // per-glyph contours (fine for bounding-radius; a single perimeter walk is a Phase-2 concern).
-  const outline = shapes.flatMap(s => ccwXZ(s.getPoints(CURVE_SEG).map(p => ({ x: p.x, z: -p.y }))));
+  // Outer contour(s) in world XZ for board sizing + rim/top decor, as a LIST OF RINGS (one per glyph) —
+  // NOT one flat array. A multi-digit number is several disjoint footprints ("10" = a "1" and a "0"); the
+  // generic polygon ops (asRings) walk each ring on its own, so piping traces each digit and never bridges
+  // a shell across the gap between them. Single digit ⇒ a one-element list (identical to the old single
+  // polygon). The `z = -y` flip reverses the glyph's CCW winding, but `polygonPerimeter` only yields
+  // OUTWARD normals for a CCW-in-XZ polygon (what the rim shells ride) — so re-wind each glyph CCW.
+  const outline = shapes.map(s => ccwXZ(s.getPoints(CURVE_SEG).map(p => ({ x: p.x, z: -p.y }))));
   const out = { shapes, worldW, worldH, halfW: worldW / 2, halfD: worldH / 2, outline };
   cache.set(key, out);
   return out;
