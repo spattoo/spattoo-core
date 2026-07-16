@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
 import { starterDesign } from '../hooks/useCakeDesign.js';
+import { tierGeometry } from '../cakeShapes.js';
+import DigitsInput from './DigitsInput.jsx';
 
 // The camera a shape is photographed from. The Cake Shape Studio captures its thumbnail through this and
 // the live tile renders through it — ONE camera, or a shape would change appearance the moment somebody
@@ -70,26 +73,50 @@ export function ShapeTile({ shape, size = 96 }) {
 //
 // Closing WITHOUT choosing leaves the cake alone: the caller discards nothing until onPick fires, so a
 // mis-tap on New costs nothing.
+//
+// A NUMBER cake is generic — one tile shapes itself to any number the customer types (a digit is a recipe,
+// not an asset, so per-number rows don't scale). So picking the number tile doesn't create the cake yet:
+// it asks for the number first — the defining choice — then hands it to `onPick(key, { digits })`. Detected
+// by the tier's resolved FAMILY (`tierGeometry`), never a key/label, so any authored number starter works.
 export default function ShapePicker({ shapes, onPick, onClose }) {
+  const [numShape, setNumShape] = useState(null);   // the number tile awaiting a number, or null (grid)
+  const [digits, setDigits] = useState('');
+
+  const isNumber = s => tierGeometry((s.design ?? starterDesign(s.key)).tiers?.[0] ?? {}).family === 'number';
+  const pick = s => (isNumber(s) ? (setDigits(''), setNumShape(s)) : onPick(s.key));
+  const createNumber = () => onPick(numShape.key, { digits });
+
   return (
     <div style={styles.scrim} onClick={onClose}>
       <div style={styles.sheet} onClick={e => e.stopPropagation()}>
         <div style={styles.head}>
           <div>
-            <div style={styles.title}>Start a new cake</div>
-            <div style={styles.sub}>Pick a shape — you can change it later</div>
+            <div style={styles.title}>{numShape ? 'Your number cake' : 'Start a new cake'}</div>
+            <div style={styles.sub}>{numShape ? 'Type your number — you can change it later' : 'Pick a shape — you can change it later'}</div>
           </div>
           <button style={styles.x} onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div style={styles.body}>
-          <div style={styles.grid}>
-            {shapes.map(s => (
-              <button key={s.key} style={styles.card} onClick={() => onPick(s.key)}>
-                <div style={styles.art}><ShapeTile shape={s} /></div>
-                <div style={styles.name}>{s.label}</div>
-              </button>
-            ))}
-          </div>
+          {numShape ? (
+            <div style={styles.numStep}>
+              <div style={styles.numArt}><ShapeTile shape={numShape} size={128} /></div>
+              <div style={styles.numLabel}>What number would you like your cake shaped as?</div>
+              <DigitsInput value={digits} onChange={setDigits} onEnter={createNumber} autoFocus placeholder="e.g. 21" />
+              <div style={styles.numRow}>
+                <button style={styles.backBtn} onClick={() => setNumShape(null)}>← Back</button>
+                <button style={styles.createBtn} onClick={createNumber}>Create cake</button>
+              </div>
+            </div>
+          ) : (
+            <div style={styles.grid}>
+              {shapes.map(s => (
+                <button key={s.key} style={styles.card} onClick={() => pick(s)}>
+                  <div style={styles.art}><ShapeTile shape={s} /></div>
+                  <div style={styles.name}>{s.label}</div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -109,4 +136,11 @@ const styles = {
   card:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: 10, border: '1.5px solid #e2e0e6', borderRadius: 12, background: '#faf9fb', cursor: 'pointer', fontFamily: 'inherit' },
   art:   { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 96, height: 96 },
   name:  { fontSize: 12, fontWeight: 700, color: '#1a1a1a', textAlign: 'center', lineHeight: 1.3 },
+
+  numStep:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '8px 4px' },
+  numArt:    { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 128, height: 128 },
+  numLabel:  { fontSize: 13, fontWeight: 700, color: '#3a3a44', textAlign: 'center', lineHeight: 1.35 },
+  numRow:    { display: 'flex', alignItems: 'center', gap: 10, width: '100%', marginTop: 2 },
+  backBtn:   { flex: '0 0 auto', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #d9d9e0', background: '#fff', color: '#555', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  createBtn: { flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
 };

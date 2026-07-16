@@ -3265,9 +3265,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setShapePickerOpen(true);
   }
 
-  function startNewCake(shape) {
+  function startNewCake(shape, opts) {
     setShapePickerOpen(false);
-    resetDesign(shape);
+    resetDesign(shape, opts);
     clearAllSelections();
     resetEditors();
     setEditingOrder(null);

@@ -1014,13 +1014,20 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   //
   // Sizes come from the row; everything else (colour, frosting, style) is the designer's default, because
   // a shape authors the CAKE'S FORM, not its decoration.
-  function resetDesign(shape = 'round') {
+  function resetDesign(shape = 'round', { digits } = {}) {
     // An authored row carries its own full, self-contained design (snapshot shape) — load it exactly as
     // a template would, so a starter saved with a stack/frosting/decoration comes back intact and
     // normalised. Seed round/rect (and any legacy row without a stored design) are built on the fly.
     const def = cakeShapeDef(shape);
-    if (def.design) loadDesign(def.design);
-    else setDesign(starterDesign(shape));
+    let design = def.design ?? starterDesign(shape);
+    // A number cake's digits are chosen at pick time (the New-cake prompt). Write them onto the bottom
+    // tier HERE, as part of the same design that loads, so the cake renders the customer's number on the
+    // first frame — not a second setState that would race the reset.
+    if (digits != null && digits !== '') {
+      design = { ...design, tiers: design.tiers.map((t, i) => i === 0 ? { ...t, shapeConfig: { ...(t.shapeConfig ?? {}), digits } } : t) };
+    }
+    if (def.design) loadDesign(design);
+    else setDesign(design);
   }
 
   function addStickerBatch(stickers) {
