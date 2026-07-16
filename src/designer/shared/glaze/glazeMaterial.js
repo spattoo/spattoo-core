@@ -19,6 +19,13 @@ import { GLAZE_VERT_COMMON, GLAZE_VERT_BEGIN, GLAZE_FRAG_COMMON, GLAZE_FRAG_COLO
 // customer knob) consumed by the drip layer (phase 2), kept here so the whole glaze config has one home.
 export const GLAZE_DEFAULTS = { colors: ['#5a3621'], flow: 2.6, warp: 1.1, contrast: 3.2, streak: 0.12, drip: 0.18 };
 
+// Overlay admin-authored glaze defaults (materials.config.glaze) onto the code SEED — so the palette +
+// pattern a new glaze tier starts from is retunable in the Glaze Studio without a release (INVARIANTS §1a).
+// Mutates the shared object in place, so every importer sees the merged defaults. Absent → the seed stands.
+export function applyGlazeDefaults(partial) {
+  if (partial && typeof partial === 'object') Object.assign(GLAZE_DEFAULTS, partial);
+}
+
 // The marble field only reads as a marble with ≥2 stops; one stop is a solid glaze (rendered by the
 // material's own `color`, no shader) exactly like a single-stop gradient falls back to the solid colour.
 export function isGlazeMarbleActive(glaze) {

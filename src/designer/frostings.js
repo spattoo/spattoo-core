@@ -28,6 +28,7 @@
 // live in a row); only the configurable list/label is overlaid.
 
 import { CREAM_STYLES, DEFAULT_STYLE, styleDef } from './creamStyles.js';
+import { applyGlazeDefaults } from './shared/glaze/glazeMaterial.js';
 
 export const FROSTINGS = {
   buttercream: {
@@ -121,18 +122,24 @@ export const frostingAllowsStyle = (type, style) =>
   stylesForFrosting(type).some(o => o.value === style);
 
 // Overlay the DB-authored `materials` rows onto the in-code seed. Each row: { key, label,
-// config:{ styles } }. Only the configurable list/label is overlaid — the material PHYSICS stay code.
-// Materials absent from the DB keep their seed (designer works offline / before the table is seeded).
+// config:{ styles, material?, glaze? } }. The shader RECIPE (grain/edge/render KEYS) stays code, but the
+// TUNING NUMBERS are overlaid so admin can retune a finish without a release (INVARIANTS §1a): label,
+// the style list, the MeshPhysical scalar knobs (config.material), and the glaze palette/pattern defaults
+// (config.glaze). Materials absent from the DB keep their seed (designer works offline / before seeding).
 export function applyMaterialConfig(rows) {
   if (!Array.isArray(rows)) return;
   for (const row of rows) {
     if (!row?.key) continue;
     const seed = FROSTINGS[row.key];
-    if (!seed) continue;                                  // material physics are code-only; ignore unknown keys
+    if (!seed) continue;                                  // the shader recipe is code-only; ignore unknown keys
     FROSTINGS[row.key] = {
       ...seed,
       label: row.label ?? seed.label,
       styles: Array.isArray(row.config?.styles) ? row.config.styles : seed.styles,
+      // Merge the authored scalar knobs onto the seed's material (a partial override keeps the rest).
+      material: row.config?.material ? { ...seed.material, ...row.config.material } : seed.material,
     };
+    // The glaze finish also carries its palette + pattern DEFAULTS (what a new glaze tier seeds from).
+    if (row.config?.glaze) applyGlazeDefaults(row.config.glaze);
   }
 }
