@@ -236,6 +236,14 @@ export function scaledOutline(family, config, halfW, halfD) {
 
 // ── Generic polygon operations ────────────────────────────────────────────────
 // These are what let placement/piping/hit-testing stop caring what shape a cake is.
+//
+// An outline is EITHER a single ring (`Point[]`) or a list of disjoint rings (`Point[][]`) — a
+// multi-digit number cake is several separate glyph contours (a "10" is a "1" ring and a "0" ring),
+// which must NEVER be joined into one loop (that bridges piping shells between the digits). `asRings`
+// normalises both forms to a list so every op below treats one ring and many the same way; a
+// single-ring shape (heart, polygon, single digit) is just a one-element list, so its output is
+// byte-identical to before.
+export const asRings = (outline) => (Array.isArray(outline?.[0]) ? outline : [outline]);
 
 // Arc-length parameterisation with OUTWARD unit normals — the same { length, at(s) } interface
 // circlePerimeter and roundedRectPerimeter expose, so every consumer of `perimeter(shape)` already
@@ -269,20 +277,42 @@ export function polygonPerimeter(pts) {
   };
 }
 
+// Several disjoint rings as ONE arc-length perimeter, for the few uses that want a single scalar
+// length or coordinate (wall-grain U, single-shell placement). Reuses polygonPerimeter per ring.
+// Piping does NOT use this — it walks each ring on its own (see pipingPerimeters) so shells never
+// bridge between contours.
+export function multiPolygonPerimeter(rings) {
+  const loops = rings.map(polygonPerimeter);
+  const length = loops.reduce((t, l) => t + l.length, 0) || 1;
+  return {
+    length,
+    at(s) {
+      let d = ((s % length) + length) % length;
+      for (const l of loops) { if (d <= l.length || l === loops[loops.length - 1]) return l.at(d); d -= l.length; }
+      return loops[0].at(0);
+    },
+  };
+}
+
 // Is (x,z) inside the outline? Ray-casting (crossing number) — exact for any simple polygon, which a
-// circle-radius test is not once the footprint has lobes or a cleft.
-export function pointInPolygon(pts, x, z) {
+// circle-radius test is not once the footprint has lobes or a cleft. Across multiple rings the
+// crossings accumulate (even-odd), so disjoint digits test independently and a hole would subtract.
+export function pointInPolygon(outline, x, z) {
   let inside = false;
-  for (let i = 0, n = pts.length, j = n - 1; i < n; j = i++) {
-    const a = pts[i], b = pts[j];
-    if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+  for (const pts of asRings(outline)) {
+    for (let i = 0, n = pts.length, j = n - 1; i < n; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+    }
   }
   return inside;
 }
 
-// Nearest point ON the outline to (x,z), with its outward normal — the general `snapToRim`.
-export function nearestOnPolygon(pts, x, z) {
+// Nearest point ON the outline to (x,z), with its outward normal — the general `snapToRim`. Scans
+// every ring so a point snaps to whichever digit/contour is closest.
+export function nearestOnPolygon(outline, x, z) {
   let best = null, bd = Infinity;
+  for (const pts of asRings(outline)) {
   for (let i = 0, n = pts.length; i < n; i++) {
     const a = pts[i], b = pts[(i + 1) % n];
     const dx = b.x - a.x, dz = b.z - a.z;
@@ -296,21 +326,25 @@ export function nearestOnPolygon(pts, x, z) {
       best = { x: px, z: pz, nx: dz / len, nz: -dx / len };
     }
   }
+  }
   return best;
 }
 
-// The outline scaled about its own centre — how an outline shape insets (a margin) or clamps (a
-// fraction k). Uniform scaling is an approximation of a true polygon offset, but it is the RIGHT one
-// here: it keeps the silhouette (a heart inset stays heart-shaped), which is what a baker means by
-// "keep the decoration a little in from the edge".
-export function scalePolygon(pts, k) {
-  return pts.map(p => ({ x: p.x * k, z: p.z * k }));
+// The outline scaled about the origin (the tier centre) — how an outline shape insets (a margin) or
+// clamps (a fraction k). Uniform scaling is an approximation of a true polygon offset, but it is the
+// RIGHT one here: it keeps the silhouette (a heart inset stays heart-shaped), which is what a baker
+// means by "keep the decoration a little in from the edge". Scaling about the shared origin also
+// keeps a multi-digit number's digits in proportion. Preserves the input's ring/flat structure so
+// the result feeds straight back into pointInPolygon / nearestOnPolygon.
+export function scalePolygon(outline, k) {
+  const scale = (ring) => ring.map(p => ({ x: p.x * k, z: p.z * k }));
+  return Array.isArray(outline?.[0]) ? outline.map(scale) : scale(outline);
 }
 
 // Largest distance from centre — the "bounding radius" incidental code (board size, camera framing,
-// topper scale) still wants.
-export function polygonRadius(pts) {
+// topper scale) still wants. Across rings it's the farthest point of any contour.
+export function polygonRadius(outline) {
   let r = 0;
-  for (const p of pts) r = Math.max(r, Math.hypot(p.x, p.z));
+  for (const pts of asRings(outline)) for (const p of pts) r = Math.max(r, Math.hypot(p.x, p.z));
   return r;
 }

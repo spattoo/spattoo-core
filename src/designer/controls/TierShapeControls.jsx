@@ -1,5 +1,6 @@
 import React from 'react';
 import ChipPicker from './ChipPicker.jsx';
+import DigitsInput from './DigitsInput.jsx';
 import { tierGeometry } from '../cakeShapes.js';
 
 // ── Per-tier SHAPE controls ──────────────────────────────────────────────────────────────────────
@@ -34,12 +35,7 @@ function NumberField({ tier, index, onShapeConfig }) {
   return (
     <div style={{ width: '100%', paddingTop: 12 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: '#3a3a44', marginBottom: 6 }}>Number</div>
-      <input
-        inputMode="numeric" maxLength={4} placeholder="e.g. 4"
-        value={tier?.shapeConfig?.digits ?? ''}
-        onChange={e => onShapeConfig(index, { digits: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })}
-        style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1.5px solid #d9d9e0', background: '#fff', fontSize: 20, fontWeight: 800, fontFamily: 'inherit', color: '#1a1a1a', textAlign: 'center', letterSpacing: 3 }}
-      />
+      <DigitsInput value={tier?.shapeConfig?.digits} onChange={d => onShapeConfig(index, { digits: d })} />
     </div>
   );
 }
