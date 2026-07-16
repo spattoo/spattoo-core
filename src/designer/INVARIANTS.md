@@ -35,6 +35,27 @@ An element's behavior comes entirely from its data:
 as `placement_config` and set it — ideally in admin, otherwise in the load‑time backfill in
 `CakeDesigner.loadElementsIfNeeded` (the ONE place type→config mapping is allowed).
 
+### 1a. "Config‑driven" ≠ "admin‑authorable" — every TUNABLE VALUE must be DB‑overlaid, not a hardcoded final
+These are TWO different rules and both must hold:
+- **Config‑driven** (this section) = behaviour flows from data/keys, never a type branch. A finish/style
+  ALGORITHM (a shader or geometry recipe) legitimately stays in code — it can't be a DB row — but is
+  reached through a KEY (`render`, `wall`, `grain`), never a literal‑name branch.
+- **Admin‑authorable** (CLAUDE.md "ADMIN AUTHORS MASTER DATA") = every VALUE an admin would tune — params,
+  **defaults**, palettes, material numbers, enabled set, labels — is master config and MUST be **DB‑overlaid
+  from day one** (seed‑in‑code + DB overlay via an API route), NEVER a hardcoded final. Being config‑driven
+  does NOT by itself make a value admin‑authorable: if an admin can't change it without a **deploy**, it's
+  in the wrong place. When you build an admin **Studio** for a finish, its output MUST land in that DB
+  overlay — a Studio whose result can only be pasted into code is not authoring, it's a mock‑up.
+- The pattern already exists: `cake_textures → applyTextureConfig` overlays cream‑STYLE params (incl.
+  defaults); `materials → applyMaterialConfig` overlays a frosting's label/styles. Extend that seam; do not
+  invent a parallel store, and never `localStorage`/in‑code‑final for authored config.
+- **KNOWN GAP (fix when touched):** frosting **material physics** are still code‑only (`applyMaterialConfig`
+  overlays only label/styles), and the **glaze** shipped the same way — its material params AND
+  `GLAZE_DEFAULTS` (palette + flow/warp/contrast/streak) are hardcoded, so admin can't retune the look the
+  Glaze Studio produced without a release. Cream STYLE params are already overlaid; frosting materials +
+  glaze are not. The correct fix is a DB overlay for finish material/pattern config (+ Studio persistence),
+  not more code constants.
+
 ## 2. ONE renderer for every placed element
 All placed decor — scattered, picks, image‑topper, topper, top&side — lives in
 `design.stickers` and renders through the generic path (`DraggableTopSticker` /
