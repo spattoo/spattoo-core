@@ -69,6 +69,19 @@ export function configureEnvMap(cfAssetsBase) {
 }
 function envMapUrl() { return _envMapUrl; }
 
+// Scene ENVIRONMENT config — data, with a default, so the look is tunable without a code change (the
+// host may override via configureSceneEnv). `intensity` is the global IBL/reflection brightness: a WET
+// finish (glaze) mirrors it back as its sheen, while a matte finish (buttercream) barely uses it — so
+// this is the knob that makes a poured glaze read wet. `presetFallback` is the dev env when no self-hosted
+// HDRI URL is configured. Per-finish reflection strength still layers on top via each material's own
+// envMapIntensity (frostings.js).
+export const SCENE_ENV = {
+  intensity: 1.25,                // environmentIntensity — brighter than three's default 1.0 so glossy
+                                  // finishes read wet; matte finishes are unaffected (they ignore IBL).
+  presetFallback: 'apartment',    // dev fallback when cfAssetsBase (the self-hosted HDRI) is absent
+};
+export function configureSceneEnv(partial) { if (partial) Object.assign(SCENE_ENV, partial); }
+
 // Shared three-point rig for every cake scene (live designer, snapshot capture, preview) so the look
 // — and the captured snapshot — stay identical. Softened from the original ambient 0.8 / key 1.5,
 // which overexposed the cake top + camera-facing wall and washed the diffuse colour toward white
@@ -92,8 +105,8 @@ function SceneLights({ shadows = false }) {
 // live scene and CakeThumbnailScene can never drift (they browned differently on dev before this).
 function SceneEnv() {
   return envMapUrl()
-    ? <SafeEnvironment files={envMapUrl()} />
-    : <SafeEnvironment preset="apartment" />;
+    ? <SafeEnvironment files={envMapUrl()} environmentIntensity={SCENE_ENV.intensity} />
+    : <SafeEnvironment preset={SCENE_ENV.presetFallback} environmentIntensity={SCENE_ENV.intensity} />;
 }
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
