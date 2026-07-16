@@ -191,11 +191,12 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
 //                chip and isn't a real stop, so direction/balance stay hidden until it's filled.
 const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear' };
 function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
-                            modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange, pending = false }) {
+                            modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange, pending = false,
+                            label = 'Gradient colors', maxStops = 3 }) {
   const realCount = stops.length - (pending ? 1 : 0);   // gradient is "real" only with ≥2 filled stops
   return (
     <div style={s.gradientBlock}>
-      <div style={s.gradientLabel}>Gradient colors</div>
+      <div style={s.gradientLabel}>{label}</div>
       <div style={s.gradientStops}>
         {stops.map((c, i) => {
           const isPlaceholder = pending && i === stops.length - 1;
@@ -215,7 +216,7 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
             </div>
           );
         })}
-        {!pending && stops.length < 3 && (
+        {!pending && stops.length < maxStops && (
           <button style={s.gradientStopAdd} title="Add color" onClick={onAddStop}>+</button>
         )}
       </div>
@@ -3094,7 +3095,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
     window.__placeTestPattern = placeTestPattern;
-    window.__addPipingRim = (id) => { const e = elementById.get(id); if (!e) return false; addPipingLayer(0, "rim", makePipingLayer(e, { isTop: true, glbUrl: e.image_url })); return true; };
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
     window.__getSelection = () => [...selectedStickerIds];
@@ -3479,12 +3479,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const tierGradientOk = selectedEl?.type !== 'tier'
     || frostingSupportsGradient(selectedTierObj?.frostingType ?? 'buttercream');
   const gradientEligible = !!caps?.gradient && !!gradTarget && tierGradientOk;
-  // The stops to show: the saved gradient if any, else a single chip = the solid colour.
-  const gradStops = gradientEligible
-    ? (gradTarget.gradient?.colors?.length
-        ? gradTarget.gradient.colors
-        : [gradTarget.color ?? '#ffffff'])
-    : [];
+  // A GLAZE tier edits its MARBLE palette (tier.glaze.colors, up to 5 stops) through the SAME stop editor
+  // as the ombre gradient — reuse, not a parallel control. Eligibility is config-driven off the finish's
+  // render KEY, never the literal frosting name (INVARIANTS #1/#6).
+  const isGlazeTier = selectedEl?.type === 'tier'
+    && frostingDef(selectedTierObj?.frostingType).render === 'glaze';
+  const stopsEligible = gradientEligible || isGlazeTier;
+  const maxStops = isGlazeTier ? 5 : 3;                   // glaze marble takes up to 5 stops; gradient 3
+  // The stops to show: the glaze palette / saved gradient if any, else a single chip = the solid colour.
+  const gradStops = isGlazeTier
+    ? (selectedTierObj?.glaze?.colors?.length ? selectedTierObj.glaze.colors : GLAZE_DEFAULTS.colors)
+    : gradientEligible
+      ? (gradTarget.gradient?.colors?.length ? gradTarget.gradient.colors : [gradTarget.color ?? '#ffffff'])
+      : [];
   // Tiers blend vertically (ombre up the wall); elements default to swirl. A saved mode always wins.
   const gradMode = gradTarget?.gradient?.mode ?? (isTierGradient ? 'vertical' : 'swirl');
   const gradBalance = gradTarget?.gradient?.balance ?? 0.5;
@@ -3498,10 +3505,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     ? gradStops.length                                   // the placeholder slot
     : Math.min(gradStop, Math.max(0, gradStops.length - 1));
   // The colour the wheel edits: the active stop when eligible, else the normal single colour.
-  const wheelColor = (gradientEligible && !hasActiveGroup) ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
+  const wheelColor = (stopsEligible && !hasActiveGroup) ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
 
   function writeGradient(colors, mode = gradMode, balance = gradBalance) {
     const clean = colors.filter(Boolean);
+    // Glaze marble palette lives on tier.glaze.colors (1 = solid, 2–5 = marble); route there first.
+    if (isGlazeTier) { setTierGlaze(selectedEl.index, { colors: clean.length ? clean : GLAZE_DEFAULTS.colors }); return; }
     // Tier and sticker share the model; route to the matching setter. Both drop the gradient and
     // keep the solid colour when fewer than 2 stops remain.
     if (isTierGradient) { setTierGradient(selectedEl.index, clean, mode, balance); return; }
@@ -3514,7 +3523,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleWheelChange(c) {
     // Editing a recompose part-group is always a solid per-group colour, never a gradient.
     if (hasActiveGroup) { handleColorChange(c); return; }
-    if (!gradientEligible) { handleColorChange(c); return; }
+    if (!stopsEligible) { handleColorChange(c); return; }
     // Filling a pending (empty) stop: append it now — this is what turns a solid colour into a
     // gradient, or adds a 3rd stop. No colour is ever auto-copied.
     if (gradPending) {
@@ -3526,8 +3535,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
     const next = gradStops.slice();
     next[activeStop] = c;
-    // 1 stop is just the solid colour; route through the normal colour path (tier or sticker).
-    if (next.length < 2) {
+    // 1 stop is just the solid colour; route through the normal colour path (tier or sticker). A glaze
+    // tier always writes through writeGradient (→ setTierGlaze), where 1 stop is the solid glaze.
+    if (next.length < 2 && !isGlazeTier) {
       if (isTierGradient) handleColorChange(c);
       else updateSticker(selectedEl.id, { color: c });
       return;
@@ -3535,7 +3545,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     writeGradient(next);
   }
   function addGradStop() {
-    if (gradStops.length >= 3 || gradPending) return;
+    if (gradStops.length >= maxStops || gradPending) return;
     // Show an empty placeholder stop and wait for the user to pick its colour (handleWheelChange) —
     // don't duplicate the last colour, which looked like "nothing happened".
     setGradPending(true);
@@ -5627,17 +5637,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
               {/* Gradient controls — config-gated (allowed_actions.gradient). Reuses the shared
                   GradientControls component (also used by the piping popup). */}
-              {gradientEligible && (colorOpen || tierPanelVisible) && !hasActiveGroup && (
+              {stopsEligible && (colorOpen || tierPanelVisible) && !hasActiveGroup && (
                 <GradientControls
                   stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
+                  label={isGlazeTier ? 'Glaze colors' : 'Gradient colors'} maxStops={maxStops}
                   onSelectStop={selectGradStop}
                   onAddStop={addGradStop}
                   onRemoveStop={removeGradStop}
                   onModeChange={m => writeGradient(gradStops, m)}
                   // Cake base blends vertically (bottom→top ombre); offer the balance slider so the
-                  // customer chooses which colour dominates.
-                  modes={isTierGradient ? ['vertical'] : undefined}
-                  balance={isTierGradient ? gradBalance : undefined}
+                  // customer chooses which colour dominates. A glaze marble has no direction/balance —
+                  // a single-entry `modes` hides the toggle, and omitting `balance` hides the slider.
+                  modes={isGlazeTier ? ['marble'] : (isTierGradient ? ['vertical'] : undefined)}
+                  balance={isGlazeTier ? undefined : (isTierGradient ? gradBalance : undefined)}
                   onBalanceChange={b => writeGradient(gradStops, gradMode, b)}
                 />
               )}
