@@ -66,7 +66,7 @@ export const FROSTINGS = {
     // values dialled in the admin Glaze Studio. The marble COLOUR is not here — it is a design-instance
     // field (tier.glaze) rendered by the object-space shader (shared/glaze/glazeMaterial.js), exactly as
     // the ombre gradient's colours live on the instance, not on the material.
-    material: { roughness: 0.12, metalness: 0, sheen: 0.00, sheenRoughness: 0.5, sheenColor: '#ffffff', clearcoat: 1.00, clearcoatRoughness: 0.05, envMapIntensity: 1.40 },
+    material: { roughness: 0.18, metalness: 0, sheen: 0.00, sheenRoughness: 0.5, sheenColor: '#ffffff', clearcoat: 1.00, clearcoatRoughness: 0.22, envMapIntensity: 1.15 },
     // Glaze rolls over its own edge: the SAME rounded-rim path fondant uses (buildRoundedTopCylinder /
     // buildOutlinePrism read this), so the rim auto-rounds on every shape — round, heart, number alike.
     edge: { kind: 'round', frac: 0.06 },

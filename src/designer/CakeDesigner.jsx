@@ -27,7 +27,8 @@ import UploadsPanel from './decorations/UploadsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
-import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig } from './frostings.js';
+import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig, frostingDef } from './frostings.js';
+import { GLAZE_DEFAULTS } from './shared/glaze/glazeMaterial.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { applyTextStyleConfig } from './textStyles.js';
 import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
@@ -1208,7 +1209,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -2344,7 +2345,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // ── Color helpers ─────────────────────────────────────────────────────────
   function getCurrentColor() {
     if (!selectedEl) return '#f5b8c8';
-    if (selectedEl.type === 'tier') return design.tiers[selectedEl.index]?.color ?? '#f5b8c8';
+    if (selectedEl.type === 'tier') {
+      const t = design.tiers[selectedEl.index];
+      // A glaze tier's colour is its marble BASE stop (glaze.colors[0]), not tier.color — so the shared
+      // wheel edits the glaze, config-driven off the finish's render KEY (never the literal name).
+      if (frostingDef(t?.frostingType).render === 'glaze') return t?.glaze?.colors?.[0] ?? GLAZE_DEFAULTS.colors[0];
+      return t?.color ?? '#f5b8c8';
+    }
     if (selectedEl.type === 'piping') {
       const t = design.tiers[selectedEl.tierIndex];
       const arr = selectedEl.zone === 'top' ? t?.topPipings : t?.bottomPipings;
@@ -2370,7 +2377,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function handleColorChange(c) {
     if (!selectedEl) return;
-    if (selectedEl.type === 'tier') { setTierColor(selectedEl.index, c); return; }
+    if (selectedEl.type === 'tier') {
+      const t = design.tiers[selectedEl.index];
+      // Glaze tier → set the marble BASE stop, preserving any further marble stops; other finishes → tier.color.
+      if (frostingDef(t?.frostingType).render === 'glaze') {
+        const rest = (t?.glaze?.colors ?? GLAZE_DEFAULTS.colors).slice(1);
+        setTierGlaze(selectedEl.index, { colors: [c, ...rest] });
+      } else {
+        setTierColor(selectedEl.index, c);
+      }
+      return;
+    }
     if (selectedEl.type === 'piping') {
       const { tierIndex, zone } = selectedEl;
       const z = zone === 'top' ? 'rim' : 'board';
@@ -3077,6 +3094,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
     window.__placeTestPattern = placeTestPattern;
+    window.__addPipingRim = (id) => { const e = elementById.get(id); if (!e) return false; addPipingLayer(0, "rim", makePipingLayer(e, { isTop: true, glbUrl: e.image_url })); return true; };
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
     window.__getSelection = () => [...selectedStickerIds];
