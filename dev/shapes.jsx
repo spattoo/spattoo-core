@@ -34,6 +34,9 @@ function Bench() {
       height: i === 0 ? 1.45 : 1.0,
       color: '#e0466b',
       frostingType: frosting,
+      // Chocolate-glaze marble palette (dark → milk → cream) so the bench shows the poured marble on
+      // every shape; a single colour would render a solid glaze. Only present for the glaze finish.
+      ...(frosting === 'glaze' && { glaze: { colors: ['#2a1810', '#8a5a30', '#efd9b8'], flow: 2.6, warp: 1.1, contrast: 3.2, streak: 0.12 } }),
       topPipings: [], bottomPipings: [], creamLayers: [],
     })),
     texts: [], ages: [], stickers: [], writing: null, piping: [],
@@ -51,6 +54,7 @@ function Bench() {
         <select value={frosting} onChange={e => setFrosting(e.target.value)}>
           <option value="fondant">fondant (rolled rim)</option>
           <option value="buttercream">buttercream (sharp rim)</option>
+          <option value="glaze">glaze marble (rolled rim)</option>
         </select>
       </label>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>

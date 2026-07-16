@@ -17,7 +17,7 @@
 // row is later retuned or retired (snapshot immutability), and a cake can mix shapes per tier without
 // every tier sharing one family. A design authored before these existed carries only the `shape` key
 // and resolves geometry through the catalog (see tierGeometry) — that fallback is why they stay optional.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'gradient', 'dusting', 'foil'];
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'gradient', 'glaze', 'dusting', 'foil'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {

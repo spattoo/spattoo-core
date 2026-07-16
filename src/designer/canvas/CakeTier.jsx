@@ -2,6 +2,7 @@ import { useMemo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textures/creamWaveTexture.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 import { getRusticNormalMap } from '../shared/textures/rusticTexture.js';
@@ -1083,7 +1084,7 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
+                    gradient, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
@@ -1097,14 +1098,15 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
     if (!matRef.current) return;
     let bb = null;
     const geo = meshRef.current?.geometry;
-    if (gradient && geo) {
+    if ((gradient || glaze) && geo) {
       if (!geo.boundingBox) geo.computeBoundingBox();
       const size = new THREE.Vector3();   geo.boundingBox.getSize(size);
       const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
       bb = { min: geo.boundingBox.min.clone(), size, center };
     }
     applyGradient(matRef.current, gradient, bb);
-  }, [gradient, geoSig]);
+    applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
+  }, [gradient, glaze, geoSig]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
@@ -1247,6 +1249,7 @@ function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensi
 export default function CakeTier({
   radius, height, color, yBase,
   gradient = null,
+  glaze = null,
   shape = 'round', shapeFamily = null, shapeConfig = null, width, depth, cornerR,
   frostingType = 'buttercream',
   frostingStyle = DEFAULT_STYLE,
@@ -1282,6 +1285,12 @@ export default function CakeTier({
   // Gradient is a cream technique only — ignore any (dormant) gradient on a finish that doesn't
   // support it (fondant/naked), so it always renders solid. The data is kept; just not rendered.
   const effGradient = frostingSupportsGradient(frostingType) ? gradient : null;
+  // Chocolate glaze: a render:'glaze' finish paints its body with the object-space marble shader. The
+  // palette lives on the instance (tier.glaze); absent → the default solid chocolate. Config-driven off
+  // the finish's `render` KEY, never the literal frosting name (INVARIANTS #1/#6). The glaze base colour
+  // is glaze.colors[0] (not tier.color, which is for cream finishes), so a solid glaze reads chocolate.
+  const effGlaze = fdef.render === 'glaze' ? (glaze ?? GLAZE_DEFAULTS) : null;
+  const bodyColor = effGlaze ? (effGlaze.colors?.[0] ?? color) : color;
   // Vertical gradient runs bottom→top, so the top lid takes the last (top-most) stop; solid colour
   // otherwise. Mirrors the shader, which maps gt=1 (the cake top) to the final stop.
   const gradColors = effGradient?.colors?.filter(Boolean) ?? [];
@@ -1473,17 +1482,17 @@ export default function CakeTier({
       {isPrism ? (
         // An extruded footprint (sheet rect, or an authored outline): flat top, full footprint, no
         // separate top cap (a cap reads as a stray "board" on a non-round cake).
-        <TierBody position={[0, yBase, 0]} color={color} surf={mat}
+        <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
           grainExtent={[prismGrainU, height]}
-          gradient={effGradient} geoSig={prismGeo?.uuid} castShadow receiveShadow>
+          gradient={effGradient} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
           <primitive object={prismGeo} attach="geometry" />
         </TierBody>
       ) : roundedGeo ? (
         // Fondant-draped round tier: one rounded-edge solid (spans y ∈ [0,height]), positioned at
         // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.
-        <TierBody position={[0, yBase, 0]} color={color} surf={mat}
+        <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
           grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
-          gradient={effGradient} geoSig={roundedGeo.uuid} castShadow receiveShadow>
+          gradient={effGradient} glaze={effGlaze} geoSig={roundedGeo.uuid} castShadow receiveShadow>
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
       ) : styledGeo ? (

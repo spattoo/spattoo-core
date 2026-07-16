@@ -59,13 +59,32 @@ export const FROSTINGS = {
     capabilities: { gradient: false },
     styles: [],
   },
+  glaze: {
+    label: 'Chocolate Glaze',
+    // A poured mirror/chocolate glaze — a WET, glossy coat: low roughness + a full clearcoat lacquer +
+    // a strong room reflection, no sheen, no micro-grain (a glaze is smooth, not creamy). These are the
+    // values dialled in the admin Glaze Studio. The marble COLOUR is not here — it is a design-instance
+    // field (tier.glaze) rendered by the object-space shader (shared/glaze/glazeMaterial.js), exactly as
+    // the ombre gradient's colours live on the instance, not on the material.
+    material: { roughness: 0.12, metalness: 0, sheen: 0.00, sheenRoughness: 0.5, sheenColor: '#ffffff', clearcoat: 1.00, clearcoatRoughness: 0.05, envMapIntensity: 1.40 },
+    // Glaze rolls over its own edge: the SAME rounded-rim path fondant uses (buildRoundedTopCylinder /
+    // buildOutlinePrism read this), so the rim auto-rounds on every shape — round, heart, number alike.
+    edge: { kind: 'round', frac: 0.06 },
+    // Its colours are the marble palette (tier.glaze.colors), NOT the cream ombre gradient — so the
+    // gradient capability stays off; a glaze is never a cream technique.
+    capabilities: { gradient: false },
+    // `render` KEY resolved by the render layer (CakeTier) → apply the glaze shader. This is the data↔code
+    // seam (like `grain`): the consumer keys off render:'glaze', never off the literal frosting name.
+    render: 'glaze',
+    styles: [],
+  },
   // 'naked' is deferred to v2 (needs its own design pass on which decorations a bare-sponge cake
   // allows). Its render path (NakedLayers in CakeTier) is kept dormant for reference; just not
   // offered in the picker. Re-add an entry here (with render:'sponge') to bring it back.
 };
 
 // Display order for pickers (drives the chip row sequence).
-export const FROSTING_ORDER = ['buttercream', 'whipped', 'fondant'];
+export const FROSTING_ORDER = ['buttercream', 'whipped', 'fondant', 'glaze'];
 
 // [{ value, label }] derived from the registry — labels live in ONE place.
 export const FROSTING_TYPES = FROSTING_ORDER.map(value => ({ value, label: FROSTINGS[value].label }));

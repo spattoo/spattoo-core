@@ -8,6 +8,7 @@ import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
+import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { pickTierFields } from '../utils/designSnapshot.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
@@ -99,6 +100,7 @@ export function toCanvasConfig(design) {
         height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
         color:        t.color,
         gradient:     t.gradient ?? null,
+        glaze:        t.glaze ?? null,          // chocolate-glaze marble palette + pattern (frostingType 'glaze')
         frostingType: t.frostingType ?? DEFAULT_FROSTING,
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
@@ -316,6 +318,19 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           ? { ...t, gradient: { mode, colors: clean, balance }, color: clean[0] }
           : { ...t, gradient: undefined, color: clean[0] ?? t.color };
       }),
+    }));
+  }
+
+  // Chocolate-glaze marble config per tier — the poured-glaze palette + pattern (colors / flow / warp /
+  // contrast / streak / drip). Sibling to tier.gradient: it lives on the INSTANCE and is rendered by the
+  // object-space glaze shader (shared/glaze/glazeMaterial.js). ≥2 colours = a marble; 1 = a solid glaze.
+  // Seeds from GLAZE_DEFAULTS (one chocolate) on first edit so a partial patch never drops sibling fields.
+  function setTierGlaze(index, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, glaze: { ...GLAZE_DEFAULTS, ...(t.glaze ?? {}), ...patch } }
+        : t),
     }));
   }
 
@@ -1035,7 +1050,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
