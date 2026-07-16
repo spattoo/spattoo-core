@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { perimeter } from '../../geometry/surface.js';
+import { mulberry32 } from '../../utils/random.js';   // the ONE canonical seeded PRNG (INVARIANTS #3)
 
 // ── Chocolate-glaze drip tendrils — the pendant fringe hanging off the bottom edge ─────────────────
 //
@@ -16,15 +17,6 @@ import { perimeter } from '../../geometry/surface.js';
 // multiplied by `height` here, so drips scale with any tier size. Profile = a gently wavy baseline (glaze
 // sheets down all the way round) + a few Gaussian tendrils (where it ran heavier); the Gaussian falloff
 // gives each tendril a naturally ROUNDED tip.
-
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 // Build the drip skirt for a tier. `shape` = tierShape() (round/rect/outline); `dripFrac` = fraction of
 // height the longest tendril hangs; `height` = tier height (world). Returns { geo, maxDepth } — geo in the
