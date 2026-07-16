@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
+import { buildGlazeDrip } from '../shared/glaze/glazeDrip.js';
 import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textures/creamWaveTexture.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 import { getRusticNormalMap } from '../shared/textures/rusticTexture.js';
@@ -1150,6 +1151,23 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   );
 }
 
+// ── Glaze drip fringe ─────────────────────────────────────────────────────────────
+// The pendant drip tendrils hanging off a glaze tier's bottom edge (geometry from glazeDrip.js, riding
+// perimeter(shape)). It wears the SAME glaze material as the body and is handed the BODY's bbox, so the
+// object-space marble shader continues off the edge and every tendril carries the streak above it. Placed
+// at the tier base in the body's LOCAL frame, so its local Y (0 → −depth) lines up beneath the wall.
+function GlazeDrip({ geo, surf, glaze, bodyBbox, yBase }) {
+  const matRef = useRef();
+  useEffect(() => { if (matRef.current) applyGlaze(matRef.current, glaze, bodyBbox); }, [glaze, bodyBbox, geo]);
+  return (
+    <mesh position={[0, yBase, 0]} geometry={geo} castShadow>
+      <meshPhysicalMaterial ref={matRef} color={glaze?.colors?.[0] ?? '#ffffff'} metalness={0}
+        roughness={surf?.roughness ?? 0.2} clearcoat={surf?.clearcoat ?? 1} clearcoatRoughness={surf?.clearcoatRoughness ?? 0.2}
+        envMapIntensity={surf?.envMapIntensity ?? 1.2} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
 // ── Top-surface foil decal ──────────────────────────────────────────────────────
 // Gold leaf on the flat TOP can't bake into the wall unwrap (different surface), so it rides a thin
 // transparent disk decal sitting just above the lid. The baked maps carry the shards; the emissive
@@ -1331,6 +1349,27 @@ export default function CakeTier({
       : null,
     [isPrism, roundEdge?.frac, radius, height],
   );
+  // Glaze DRIP fringe — the pendant tendrils off the bottom edge, only for a glaze finish. The geometry
+  // rides perimeter(shp) so it fits ANY shape; it shares the BODY geometry's bbox so the object-space
+  // marble shader continues off the edge and colours each tendril. `drip` is the finish's AUTHORED
+  // fraction of tier height (glaze.drip), not a customer knob.
+  const glazeBodyGeo = isPrism ? prismGeo : roundedGeo;
+  // Drip length is an AUTHORED finish property: use the instance's if present, else the finish default
+  // (GLAZE_DEFAULTS.drip, DB-overlaid) — never a customer knob.
+  const dripFrac = effGlaze ? (effGlaze.drip ?? GLAZE_DEFAULTS.drip) : 0;
+  const glazeDrip = useMemo(
+    () => (effGlaze && dripFrac > 0.001 ? buildGlazeDrip(shp, dripFrac, height, 1) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [!!effGlaze, dripFrac, shp, height],
+  );
+  const glazeBodyBbox = useMemo(() => {
+    const g = glazeBodyGeo;
+    if (!g) return null;
+    if (!g.boundingBox) g.computeBoundingBox();
+    const size = new THREE.Vector3();   g.boundingBox.getSize(size);
+    const center = new THREE.Vector3(); g.boundingBox.getCenter(center);
+    return { min: g.boundingBox.min.clone(), size, center };
+  }, [glazeBodyGeo]);
   // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
   // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
   // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
@@ -1479,6 +1518,11 @@ export default function CakeTier({
   return (
     <group onClick={handleClick}>
       {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
+      {/* Glaze drip tendrils off the bottom edge (glaze finish only) — same wet material as the body,
+          sharing its bbox so the object-space marble field flows unbroken off the edge onto each drip. */}
+      {glazeDrip && glazeBodyBbox && (
+        <GlazeDrip geo={glazeDrip.geo} surf={mat} glaze={effGlaze} bodyBbox={glazeBodyBbox} yBase={yBase} />
+      )}
       {isPrism ? (
         // An extruded footprint (sheet rect, or an authored outline): flat top, full footprint, no
         // separate top cap (a cap reads as a stray "board" on a non-round cake).
