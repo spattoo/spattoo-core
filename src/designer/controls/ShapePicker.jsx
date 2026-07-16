@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
 import { starterDesign } from '../hooks/useCakeDesign.js';
 import { tierGeometry } from '../cakeShapes.js';
+import { numberTierDims } from '../geometry/numberShape.js';
 import DigitsInput from './DigitsInput.jsx';
 
 // The camera a shape is photographed from. The Cake Shape Studio captures its thumbnail through this and
@@ -21,9 +22,15 @@ const SHAPE_ELEV = 25 * (Math.PI / 180);
 
 export function shapeView(design) {
   const tiers = design?.tiers ?? [];
-  const dia = t => Math.max(t.width ?? (t.radius ?? 1.2) * 2, t.depth ?? (t.radius ?? 1.2) * 2);
-  const totalH = tiers.reduce((h, t) => h + (t.height ?? 1.45), 0) || 1.45;
-  const maxW = tiers.length ? Math.max(...tiers.map(dia)) : 2.4;
+  // A number tier carries no honest width/height (its box is DERIVED from the digits + byCount), so ask the
+  // geometry for it — otherwise a "2027" tile frames as if it were one narrow digit. Every other family is
+  // sized by its own tier fields.
+  const box = t => (tierGeometry(t).family === 'number'
+    ? numberTierDims(t.shapeConfig)
+    : { width: t.width ?? (t.radius ?? 1.2) * 2, depth: t.depth ?? (t.radius ?? 1.2) * 2, height: t.height ?? 1.45 });
+  const boxes = tiers.map(box);
+  const totalH = boxes.reduce((h, b) => h + b.height, 0) || 1.45;
+  const maxW = boxes.length ? Math.max(...boxes.map(b => Math.max(b.width, b.depth))) : 2.4;
 
   // Fit the LARGER of the cake's height and its width, with headroom for the board it stands on.
   const fit = Math.max(totalH * 1.5, maxW * 1.25);

@@ -21,6 +21,44 @@ const CURVE_SEG = 10;                 // curve subdivisions — enough for a smo
 // Digits only; empty falls back to "1" so a fresh number cake always renders something.
 export const cleanDigits = d => (String(d ?? '').replace(/[^0-9]/g, '').slice(0, MAX_DIGITS) || '1');
 
+// ── Per-digit-count sizing ───────────────────────────────────────────────────────────────────────
+// A number cake is authored PER DIGIT COUNT (1/2/3/4), because a single big "5" and a four-digit "2027"
+// want different proportions — one config stretched to fit every number is exactly what made the height
+// vary by number. So the size (`height` = how tall the digits stand) and `thickness` (the extrusion depth)
+// are chosen by the customer's digit count. Within a count every number renders identically (numberGeometry
+// sizes by height); across counts the admin authors each independently in the Cake Shape Studio.
+export const NUMBER_COUNTS = [1, 2, 3, 4];
+export const numberDigitCount = (digits) => cleanDigits(digits).length;   // 1..4
+
+// Fallback sizing when a starter hasn't authored `byCount` yet (or a single count is missing) — so a
+// legacy number tier still renders. Wider counts default a touch shorter so a "2027" fits a sane board.
+export const NUMBER_SIZE_DEFAULTS = {
+  1: { height: 2.4, thickness: 0.7 },
+  2: { height: 2.2, thickness: 0.7 },
+  3: { height: 1.9, thickness: 0.7 },
+  4: { height: 1.6, thickness: 0.7 },
+};
+
+// The ONE seam the whole model hangs on: the { height, thickness } a number renders at, for a digit count.
+// `config` is the tier's shapeConfig (carries `byCount`); falls back to the defaults per count.
+export function numberSizeForCount(config, n) {
+  const count = Math.max(1, Math.min(4, n || 1));
+  const c = config?.byCount?.[count];
+  const d = NUMBER_SIZE_DEFAULTS[count];
+  return { height: +c?.height || d.height, thickness: +c?.thickness || d.thickness };
+}
+
+// The number tier's EFFECTIVE world box, for framing (camera + board) — NOT for the mesh, which the
+// extrude builds from the shapes directly. A number lies flat and is extruded UP, so its footprint is the
+// glyph's width×height (world X×Z) and its vertical extent is the extrusion `thickness` (world Y). Derived,
+// never stored: it always follows `byCount` + the typed digits, so it can't go stale. Cheap — numberGeometry
+// is cached — so callers (shapeView) can call per render.
+export function numberTierDims(config) {
+  const { height: targetH, thickness } = numberSizeForCount(config, numberDigitCount(config?.digits));
+  const g = numberGeometry(config?.digits, targetH, config?.weight, config?.cornerR);
+  return { width: g.halfW * 2, depth: g.halfD * 2, height: thickness };
+}
+
 // ── Stroke reshaping: weight (thicker digit) + corner rounding ──────────────────────────────────
 // Both act on the glyph's CONTOURS, independent of the tier's Width (which scales the whole footprint).
 const signedArea = p => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i].x * q.y - q.x * p[i].y; } return a / 2; };
@@ -121,9 +159,14 @@ function reshape(outer, holes, weight, cornerR) {
 // resulting worldH and the outer contour in world {x,z} (font y → world −z, matching the render's
 // rotateX(−90°)) for board sizing / hit-testing. Cached per (digits, worldW) — generateShapes is the
 // only real cost and it never changes for the same inputs.
-export function numberGeometry(digits, worldW = 2, weight = 0, cornerR = 0) {
+// Sized by the digit's HEIGHT, not its total width. Every glyph is cap-height, so scaling the whole
+// string so its Y extent = `targetH` makes EVERY number come out the same tall — a "1", a "21" and a
+// "2027" all stand `targetH` high, and the footprint just grows WIDER as digits are added. (Scaling by
+// total width did the opposite: a narrow "1" ballooned and a wide "2027" shrank, so what admin authored
+// for one number wasn't what a customer got for another — the calibration bug this fixes.)
+export function numberGeometry(digits, targetH = 2, weight = 0, cornerR = 0) {
   const text = cleanDigits(digits);
-  const key = `${text}@${(+worldW).toFixed(3)}:${(+weight).toFixed(3)}:${(+cornerR).toFixed(3)}`;
+  const key = `${text}@h${(+targetH).toFixed(3)}:${(+weight).toFixed(3)}:${(+cornerR).toFixed(3)}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -142,7 +185,8 @@ export function numberGeometry(digits, worldW = 2, weight = 0, cornerR = 0) {
     if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
   }
   const gw = (maxX - minX) || 1, gh = (maxY - minY) || 1;
-  const scale = worldW / gw;
+  const scale = targetH / gh;          // size by HEIGHT; the width follows from the digit count
+  const worldW = gw * scale;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
   const tx = p => new THREE.Vector2((p.x - cx) * scale, (p.y - cy) * scale);
 
@@ -152,7 +196,7 @@ export function numberGeometry(digits, worldW = 2, weight = 0, cornerR = 0) {
     return s;
   });
 
-  const worldH = gh * scale;
+  const worldH = targetH;              // by construction (scale = targetH / gh)
   // Outer contour(s) in world XZ for board sizing + rim/top decor, as a LIST OF RINGS (one per glyph) —
   // NOT one flat array. A multi-digit number is several disjoint footprints ("10" = a "1" and a "0"); the
   // generic polygon ops (asRings) walk each ring on its own, so piping traces each digit and never bridges

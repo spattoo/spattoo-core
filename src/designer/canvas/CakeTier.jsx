@@ -1325,7 +1325,7 @@ export default function CakeTier({
   const isPrism = shp.kind !== 'round';
   const prismGeo = useMemo(
     () => {
-      if (shp.kind === 'number') return buildNumberPrism(shp.shapes, height);
+      if (shp.kind === 'number') return buildNumberPrism(shp.shapes, shp.thickness ?? height);  // per-count extrusion depth
       if (shp.kind === 'rect') return buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR);
       if (shp.kind !== 'outline') return null;
       // The rolled top rim comes from the FROSTING's own edge config — the very same `roundEdge` the

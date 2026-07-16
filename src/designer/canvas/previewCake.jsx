@@ -15,8 +15,10 @@ export const PREVIEW_BOARD_COLOR = '#E8E4DD';   // light board/drum
 export function buildPreviewTiers(tiers) {
   const geo = (tiers?.length ? tiers : [{ radius: TIER_RADII[0], height: BOTTOM_H }]).map(t => {
     const radius = t?.radius ?? TIER_RADII[0];
-    const height = t?.height ?? BOTTOM_H;
     const shp = tierShape({ shape: t?.shape, shapeFamily: t?.shapeFamily, shapeConfig: t?.shapeConfig, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
+    // A number lies flat and is extruded UP by its own `thickness` (per digit-count), NOT by the tier's
+    // height — that governs how tall the SLAB is, so the mini-cake stacks and extrudes by the same value.
+    const height = shp.kind === 'number' ? (shp.thickness ?? t?.height ?? BOTTOM_H) : (t?.height ?? BOTTOM_H);
     // The preview body uses the SAME builders as the real cake, so a number/heart previews as itself
     // (not a round stand-in). Only the analytic circle has no prism — it stays a cylinder below.
     const prismGeo = shp.kind === 'rect'    ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR)

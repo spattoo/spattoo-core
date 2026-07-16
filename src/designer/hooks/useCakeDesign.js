@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape } from '../geometry/surface.js';
+import { numberTierDims } from '../geometry/numberShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
 import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
@@ -83,11 +84,16 @@ export function toCanvasConfig(design) {
       const family = geom.family;
       const isRound = family === 'circle';
       const isRect  = family === 'rounded_rect';
+      const isNumber = family === 'number';
       const r = t.radius ?? TIER_RADII[i] ?? 0.35;
+      // A number's footprint AND vertical thickness are DERIVED (from its digits + per-count byCount), not
+      // authored on the tier — so resolve them once here and every downstream reader (stacking, board,
+      // camera, cream) speaks the true box. The mesh extrudes by the same thickness (tierShape → CakeTier).
+      const numDims = isNumber ? numberTierDims(geom.config) : null;
       // A sheet defaults to the half-sheet footprint; any other non-round shape defaults to the round
       // tier's own diameter, so switching a cake's shape doesn't also resize it.
-      const width  = t.width ?? (isRect ? 2.16 : r * 2);
-      const depth  = t.depth ?? (isRect ? 1.56 : r * 2);
+      const width  = numDims ? numDims.width  : (t.width ?? (isRect ? 2.16 : r * 2));
+      const depth  = numDims ? numDims.depth  : (t.depth ?? (isRect ? 1.56 : r * 2));
       return {
         // Self-contained geometry forwarded onto the canvas tier, so tierShape() resolves the same
         // family/config everywhere it's called downstream (CakeTier, CakeCanvas, placement) without a
@@ -97,7 +103,7 @@ export function toCanvasConfig(design) {
         // For any non-round footprint, radius is the bounding half-extent so radius-based incidental
         // placement (board, toolbar offsets, topper scale) keeps working.
         radius:       isRound ? r : Math.max(width, depth) / 2,
-        height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
+        height:       numDims ? numDims.height : (t.height ?? (BOTTOM_H - i * TIER_HEIGHT_STEP)),
         color:        t.color,
         gradient:     t.gradient ?? null,
         glaze:        t.glaze ?? null,          // chocolate-glaze marble palette + pattern (frostingType 'glaze')
