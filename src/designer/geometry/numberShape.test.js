@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  numberGeometry, numberSizeForCount, numberTierDims, numberDigitCount,
-  NUMBER_SIZE_DEFAULTS,
+  numberGeometry, numberSize, numberTierDims, numberDigitCount,
+  NUMBER_SIZE_DEFAULT,
 } from './numberShape.js';
 import { tierShape, pipingPerimeters, boundingRadius } from './surface.js';
 import { asRings } from './shapes.js';
@@ -53,10 +53,11 @@ describe('number cake — multi-digit footprint is disjoint rings (no piping bri
   });
 });
 
-// A number cake is sized by HOW TALL THE DIGIT STANDS, chosen by digit count — NOT by a fixed width. This is
-// the whole point of the per-count model: within a count every number renders the same height (so a "1", an
-// "8" and a "21" that the customer types are on ONE calibration), and each count is authored independently.
-describe('number cake — sized by height, per digit count', () => {
+// A number cake is ONE size for every digit count: it's sized by HOW TALL THE DIGIT STANDS (`height`), and
+// the footprint just grows WIDER as digits are added. A "1", an "8", a "21" and a "2027" all stand the same
+// height on ONE calibration — the point of Option B (constant digit size keeps the absolute piping shells
+// proportional and matches real number-tin cakes).
+describe('number cake — ONE size for every digit count', () => {
   it('numberDigitCount counts the cleaned digits (1..4)', () => {
     expect(numberDigitCount('1')).toBe(1);
     expect(numberDigitCount('21')).toBe(2);
@@ -75,34 +76,27 @@ describe('number cake — sized by height, per digit count', () => {
     expect(wide.worldW).toBeGreaterThan(g.worldW);
   });
 
-  it('every number of a given count comes out the SAME height (one calibration)', () => {
-    // depth (world Z) == the authored stand-height, independent of WHICH digits, for a fixed count.
-    const d1 = numberTierDims({ digits: '1' }).depth;
-    const d8 = numberTierDims({ digits: '8' }).depth;
-    expect(d8).toBeCloseTo(d1, 6);
-    const d21 = numberTierDims({ digits: '21' }).depth;
-    const d99 = numberTierDims({ digits: '99' }).depth;
-    expect(d99).toBeCloseTo(d21, 6);
-    // 2-digit default height differs from 1-digit → the two counts are independently sized.
-    expect(d21).not.toBeCloseTo(d1, 3);
+  it('EVERY number comes out the same height, regardless of digit count', () => {
+    // depth (world Z) == the authored stand-height, independent of WHICH digits or HOW MANY.
+    const depths = ['1', '8', '21', '99', '2027'].map(d => numberTierDims({ digits: d }).depth);
+    for (const d of depths) expect(d).toBeCloseTo(depths[0], 6);
+    expect(depths[0]).toBeCloseTo(NUMBER_SIZE_DEFAULT.height, 6);   // and it's the single default
   });
 
-  it('numberSizeForCount reads byCount, clamps 1..4, and falls back to the defaults', () => {
-    const cfg = { byCount: { 1: { height: 3, thickness: 0.5 }, 3: { height: 1.1, thickness: 0.9 } } };
-    expect(numberSizeForCount(cfg, 1)).toEqual({ height: 3, thickness: 0.5 });
-    expect(numberSizeForCount(cfg, 3)).toEqual({ height: 1.1, thickness: 0.9 });
-    expect(numberSizeForCount(cfg, 2)).toEqual(NUMBER_SIZE_DEFAULTS[2]);   // count missing → default
-    expect(numberSizeForCount({}, 4)).toEqual(NUMBER_SIZE_DEFAULTS[4]);    // no byCount → default
-    expect(numberSizeForCount(cfg, 9)).toEqual(NUMBER_SIZE_DEFAULTS[4]);   // out-of-range count clamps to 4
+  it('numberSize reads { height, thickness } from the config and falls back to the default', () => {
+    expect(numberSize({ height: 3, thickness: 0.5 })).toEqual({ height: 3, thickness: 0.5 });
+    expect(numberSize({})).toEqual(NUMBER_SIZE_DEFAULT);            // nothing authored → default
+    expect(numberSize(undefined)).toEqual(NUMBER_SIZE_DEFAULT);
+    expect(numberSize({ height: 0 })).toEqual(NUMBER_SIZE_DEFAULT); // 0/NaN falls back, not sizes to zero
   });
 
-  it('the tier descriptor carries the resolved thickness, chosen by the typed count', () => {
-    const one   = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '1',    byCount: { 1: { height: 2, thickness: 0.4 }, 4: { height: 1.5, thickness: 1.1 } } } });
-    const four  = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '2027', byCount: { 1: { height: 2, thickness: 0.4 }, 4: { height: 1.5, thickness: 1.1 } } } });
+  it('the tier descriptor carries the resolved thickness (count-independent)', () => {
+    const one  = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '1',    height: 2, thickness: 0.4 } });
+    const four = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '2027', height: 2, thickness: 0.4 } });
     expect(one.kind).toBe('number');
     expect(one.thickness).toBeCloseTo(0.4, 6);
-    expect(four.thickness).toBeCloseTo(1.1, 6);     // 4-digit → the 4-count thickness
+    expect(four.thickness).toBeCloseTo(0.4, 6);    // same thickness whatever the digit count
     // numberTierDims agrees with the descriptor's vertical thickness.
-    expect(numberTierDims({ digits: '2027', byCount: { 4: { height: 1.5, thickness: 1.1 } } }).height).toBeCloseTo(1.1, 6);
+    expect(numberTierDims({ digits: '2027', thickness: 1.1 }).height).toBeCloseTo(1.1, 6);
   });
 });

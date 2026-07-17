@@ -22,7 +22,7 @@ const SHAPE_ELEV = 25 * (Math.PI / 180);
 
 export function shapeView(design) {
   const tiers = design?.tiers ?? [];
-  // A number tier carries no honest width/height (its box is DERIVED from the digits + byCount), so ask the
+  // A number tier carries no honest width/height (its box is DERIVED from the digits + size config), so ask the
   // geometry for it — otherwise a "2027" tile frames as if it were one narrow digit. Every other family is
   // sized by its own tier fields.
   const box = t => (tierGeometry(t).family === 'number'

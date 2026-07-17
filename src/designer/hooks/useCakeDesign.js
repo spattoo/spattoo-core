@@ -86,7 +86,7 @@ export function toCanvasConfig(design) {
       const isRect  = family === 'rounded_rect';
       const isNumber = family === 'number';
       const r = t.radius ?? TIER_RADII[i] ?? 0.35;
-      // A number's footprint AND vertical thickness are DERIVED (from its digits + per-count byCount), not
+      // A number's footprint AND vertical thickness are DERIVED (from its digits + its size config), not
       // authored on the tier — so resolve them once here and every downstream reader (stacking, board,
       // camera, cream) speaks the true box. The mesh extrudes by the same thickness (tierShape → CakeTier).
       const numDims = isNumber ? numberTierDims(geom.config) : null;
