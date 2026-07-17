@@ -21,31 +21,40 @@ const CURVE_SEG = 10;                 // curve subdivisions — enough for a smo
 // Digits only; empty falls back to "1" so a fresh number cake always renders something.
 export const cleanDigits = d => (String(d ?? '').replace(/[^0-9]/g, '').slice(0, MAX_DIGITS) || '1');
 
-// ── Sizing (ONE size for every digit count) ────────────────────────────────────────────────────────
-// A number cake is ONE size regardless of how many digits are typed: every digit stands `height` tall and
-// the FOOTPRINT just grows WIDER as digits are added (numberGeometry sizes by height and derives width from
-// the glyph aspect). This mirrors real number-TIN cakes — a longer number is a longer board, never smaller
-// digits — and it keeps the piping proportional: the garland shells are an ABSOLUTE size (from the piping
-// style, not the cake), so a constant digit height means they never look oversized on a "2027". `thickness`
-// is the extrusion (slab) depth. (Superseded the per-digit-count `byCount` model, which shrank multi-digit
-// numbers and made the absolute shells crowd the thin strokes.)
-export const numberDigitCount = (digits) => cleanDigits(digits).length;   // 1..4 — for labels/board, not sizing
-export const NUMBER_SIZE_DEFAULT = { height: 2.2, thickness: 0.7 };
+// ── Per-digit-count sizing ───────────────────────────────────────────────────────────────────────
+// A number cake is authored PER DIGIT COUNT (1/2/3/4), because a single big "5" and a four-digit "2027"
+// want different proportions — one config stretched to fit every number is exactly what made the height
+// vary by number. So the size (`height` = how tall the digits stand) and `thickness` (the extrusion depth)
+// are chosen by the customer's digit count. Within a count every number renders identically (numberGeometry
+// sizes by height); across counts the admin authors each independently in the Cake Shape Studio.
+export const NUMBER_COUNTS = [1, 2, 3, 4];
+export const numberDigitCount = (digits) => cleanDigits(digits).length;   // 1..4
 
-// The ONE seam the whole model hangs on: the { height, thickness } a number renders at. `config` is the
-// tier's shapeConfig; falls back to the default. Count-independent by design.
-export function numberSize(config) {
-  const d = NUMBER_SIZE_DEFAULT;
-  return { height: +config?.height || d.height, thickness: +config?.thickness || d.thickness };
+// Fallback sizing when a starter hasn't authored `byCount` yet (or a single count is missing) — so a
+// legacy number tier still renders. Wider counts default a touch shorter so a "2027" fits a sane board.
+export const NUMBER_SIZE_DEFAULTS = {
+  1: { height: 2.4, thickness: 0.7 },
+  2: { height: 2.2, thickness: 0.7 },
+  3: { height: 1.9, thickness: 0.7 },
+  4: { height: 1.6, thickness: 0.7 },
+};
+
+// The ONE seam the whole model hangs on: the { height, thickness } a number renders at, for a digit count.
+// `config` is the tier's shapeConfig (carries `byCount`); falls back to the defaults per count.
+export function numberSizeForCount(config, n) {
+  const count = Math.max(1, Math.min(4, n || 1));
+  const c = config?.byCount?.[count];
+  const d = NUMBER_SIZE_DEFAULTS[count];
+  return { height: +c?.height || d.height, thickness: +c?.thickness || d.thickness };
 }
 
 // The number tier's EFFECTIVE world box, for framing (camera + board) — NOT for the mesh, which the
 // extrude builds from the shapes directly. A number lies flat and is extruded UP, so its footprint is the
 // glyph's width×height (world X×Z) and its vertical extent is the extrusion `thickness` (world Y). Derived,
-// never stored: it always follows the size config + the typed digits, so it can't go stale. Cheap —
-// numberGeometry is cached — so callers (shapeView) can call per render.
+// never stored: it always follows `byCount` + the typed digits, so it can't go stale. Cheap — numberGeometry
+// is cached — so callers (shapeView) can call per render.
 export function numberTierDims(config) {
-  const { height: targetH, thickness } = numberSize(config);
+  const { height: targetH, thickness } = numberSizeForCount(config, numberDigitCount(config?.digits));
   const g = numberGeometry(config?.digits, targetH, config?.weight, config?.cornerR);
   return { width: g.halfW * 2, depth: g.halfD * 2, height: thickness };
 }

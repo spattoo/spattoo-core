@@ -15,7 +15,7 @@ import {
   scaledOutline, polygonPerimeter, multiPolygonPerimeter, asRings,
   pointInPolygon, nearestOnPolygon, scalePolygon, polygonRadius,
 } from './shapes.js';
-import { numberGeometry, numberSize } from './numberShape.js';
+import { numberGeometry, numberSizeForCount, numberDigitCount } from './numberShape.js';
 
 // THREE kinds, and the third is the general case:
 //   { kind:'round',   radius }                                   — analytic circle (the cylinder path)
@@ -45,10 +45,10 @@ export function tierShape(tier) {
   if (family === 'number') {
     // A cake shaped like the typed digits. The footprint comes from a font glyph (with its counters), so
     // it renders as its OWN kind (a THREE.Shape[] extrude, holes and all) rather than the single-contour
-    // outline prism. Sized by HEIGHT (numberSize) — ONE size for every digit count: every number comes out
-    // the same tall and just grows wider as digits are added, so the absolute piping shells stay proportional
-    // (see numberShape.js). `thickness` (the extrusion depth) rides on the descriptor to CakeTier.
-    const { height, thickness } = numberSize(config);
+    // outline prism. Sized by HEIGHT, chosen by the DIGIT COUNT (numberSizeForCount): every number of a
+    // given count comes out the same tall and just grows wider — so what admin authored per count is what
+    // the customer gets. `thickness` (the extrusion depth) rides on the descriptor to CakeTier.
+    const { height, thickness } = numberSizeForCount(config, numberDigitCount(config?.digits));
     const g = numberGeometry(config?.digits, height, config?.weight, config?.cornerR);
     return { kind: 'number', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD, thickness };
   }
