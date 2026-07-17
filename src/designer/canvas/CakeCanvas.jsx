@@ -1148,7 +1148,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, onSeat, onDepth, onVExtent }) {
+function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, surface = null, onSeat, onDepth, onVExtent }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -1197,17 +1197,39 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
         obj.material = Array.isArray(obj.material) ? next : next[0];
       });
     }
-    // Config-driven material finish (placement_config.roughness/metalness): override the GLB's baked
-    // values so one asset can read as metallic or matte from config. Clone the material per instance
-    // (never mutate the cached GLB); colour is still set by the recolour effect.
-    if (roughness != null || metalness != null) {
+    // Config-driven material finish. A decoration carries either a full `surface` finish (resolved from
+    // placement_config.material via the materials registry — roughness/sheen/clearcoat/anisotropy/…), OR the
+    // legacy simple placement_config.roughness/metalness overrides. Either overrides the GLB's baked material.
+    // Clone per instance (never mutate the cached GLB); colour is still set by the recolour effect. A finish
+    // with a sheen/clearcoat/anisotropy needs MeshPhysicalMaterial — a GLB usually loads as
+    // MeshStandardMaterial (no such lobes), so we upgrade it (copying the standard visual fields, NOT .copy()
+    // which mishandles the undefined physical fields on a Standard source). Anisotropy (the silk streak) needs
+    // the GLB to carry a TANGENT attribute (baked in the asset pipeline) or it falls back to screen-space and
+    // mottles.
+    const finish = surface ?? ((roughness != null || metalness != null) ? { roughness, metalness } : null);
+    const needsPhysical = !!finish && (finish.sheen != null || finish.clearcoat != null || finish.anisotropy != null);
+    if (finish) {
       clone.traverse(obj => {
         if (!obj.isMesh) return;
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         const next = mats.map(m => {
-          const nm = m.clone();
-          if (roughness != null) nm.roughness = roughness;
-          if (metalness != null) nm.metalness = metalness;
+          let nm;
+          if (needsPhysical && !m.isMeshPhysicalMaterial) {
+            nm = new THREE.MeshPhysicalMaterial();
+            THREE.MeshStandardMaterial.prototype.copy.call(nm, m);   // standard visual fields only
+          } else {
+            nm = m.clone();
+          }
+          if (finish.roughness != null)          nm.roughness = finish.roughness;
+          if (finish.metalness != null)          nm.metalness = finish.metalness;
+          if (finish.sheen != null)              nm.sheen = finish.sheen;
+          if (finish.sheenRoughness != null)     nm.sheenRoughness = finish.sheenRoughness;
+          if (finish.sheenColor != null)         nm.sheenColor = new THREE.Color(finish.sheenColor);
+          if (finish.clearcoat != null)          nm.clearcoat = finish.clearcoat;
+          if (finish.clearcoatRoughness != null) nm.clearcoatRoughness = finish.clearcoatRoughness;
+          if (finish.envMapIntensity != null)    nm.envMapIntensity = finish.envMapIntensity;
+          if (finish.anisotropy != null)         nm.anisotropy = finish.anisotropy;
+          if (finish.anisotropyRotation != null) nm.anisotropyRotation = finish.anisotropyRotation;
           nm.needsUpdate = true;
           return nm;
         });
@@ -1215,7 +1237,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
       });
     }
     return clone;
-  }, [scene, baseRotation, fondant, roughness, metalness]);
+  }, [scene, baseRotation, fondant, roughness, metalness, surface]);
 
   // Sync clip plane: set, update constant, or clear when clipY becomes undefined.
   useEffect(() => {
@@ -1314,7 +1336,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -1325,7 +1347,7 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
     <TextureErrorBoundary screen="CakeCanvas">
       <Suspense fallback={<LoadingPing />}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
+          ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
           : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
         }
       </Suspense>
@@ -1423,7 +1445,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
@@ -1583,7 +1605,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onDepth={setDepth} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
@@ -2327,7 +2349,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
+                <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
               </group>
             </group>
           );
@@ -2349,7 +2371,7 @@ function CakeThumbnailScene({ config }) {
                 <group position={[0, -seatLiftPv, 0]}>
                   <group rotation={[tiltXPv, 0, 0]}>
                     <group position={[0, seatLiftPv, 0]}>
-                      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
+                      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
                     </group>
                   </group>
                 </group>
@@ -2359,7 +2381,7 @@ function CakeThumbnailScene({ config }) {
         }
         return (
           <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
+            <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
           </group>
         );
       })}

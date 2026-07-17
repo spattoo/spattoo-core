@@ -28,6 +28,7 @@ import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig, frostingDef } from './frostings.js';
+import { applyDecorMaterialConfig } from './materials.js';
 import { GLAZE_DEFAULTS } from './shared/glaze/glazeMaterial.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { applyTextStyleConfig } from './textStyles.js';
@@ -1625,7 +1626,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   useEffect(() => {
     if (apiClient?.fetchMaterials) {
       apiClient.fetchMaterials()
-        .then(rows => { if (rows?.length) { applyMaterialConfig(rows); setTextureVersion(v => v + 1); } })
+        .then(rows => { if (rows?.length) { applyMaterialConfig(rows); applyDecorMaterialConfig(rows); setTextureVersion(v => v + 1); } })
         .catch(() => {});
     }
   }, [apiClient]);

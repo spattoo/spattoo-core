@@ -5,6 +5,7 @@ import { numberTierDims } from '../geometry/numberShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
 import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
+import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
@@ -853,6 +854,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // like the palette), the same precedence every field above uses.
           roughness:     extra.roughness ?? element.placement_config?.roughness ?? null,
           metalness:     extra.metalness ?? element.placement_config?.metalness ?? null,
+          // Surface FINISH for a 3D GLB decoration. Resolved from a MATERIAL TAG
+          // (placement_config.material: "satin") against the decoration-materials registry — the full
+          // MeshPhysical finish (roughness/sheen/clearcoat/anisotropy/…) lives ONCE in that registry, so
+          // many elements share it by name (DRY). `materialSurface` returns null for an unknown or body-only
+          // material (never lets a cake-body material land on a decoration). Falls back to an inline
+          // placement_config.surface object for a one-off. Applied on the GLB finish path (StickerModel);
+          // recolour still tints the base colour. Config-driven, no element-type branch.
+          surface:       extra.surface ?? materialSurface(element.placement_config?.material) ?? element.placement_config?.surface ?? null,
           allowedActions: {
             resize:    element.allowed_actions?.resize    ?? true,
             duplicate: element.allowed_actions?.duplicate ?? true,

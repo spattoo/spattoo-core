@@ -47,6 +47,7 @@ section below (§1–§4) is the authoritative detail for its keys.
   // ── GLB material / surface ──
   "roughness":               0.6,                     // GLB finish: override the baked material (matte ↑)
   "metalness":               0.0,                     // GLB finish: 0 = matte/plastic, ~0.9 = metallic
+  "material": "satin",                                // decoration surface finish → resolved from the materials registry (a KEY tag)
   "useSharedFondantTexture": false,                   // opt into the shared fondant surface
 
   // ── Folded sticker (2D image only, §1) ──
@@ -169,6 +170,7 @@ section below (§1–§4) is the authoritative detail for its keys.
 | `rotation` | `[x,y,z]` **degrees** | `null` | The GLB's authored facing offset, baked into geometry before render (e.g. toppers `[0, -90, 0]` to face front). **Authored in degrees** — the calibrator's convention, unified with piping's `top_/bottom_rotation`. Read ONLY via `facingOffsetRadians()` (`placement.js`), which converts to the radians THREE uses. |
 | `rotation_unit` | `'deg' \| 'rad'` | `'rad'` | Unit of `rotation`. `'deg'` = degrees (the standard). Absent/`'rad'` = legacy radians, passed through unchanged. **Rollout flag**: admin now always writes `'deg'`; DB rows migrated by `spattoo-api/migrations/008_rotation_unit_degrees.sql` (radians→deg, render-neutral). The absent/`'rad'` legacy branch in `facingOffsetRadians` is retained as a safety fallback **until that migration is confirmed applied in production**, then it (and this flag) can be dropped. |
 | `roughness` / `metalness` | number | `null` | **GLB only.** Config-driven material finish — when set, override the GLB's baked material (copied per instance in `cleanGlbScene`, never mutating the cached GLB). `metalness` ~0 + high `roughness` = matte; `metalness` ~0.9 + low `roughness` = metallic. Lets one sphere/asset read as matte or metallic from config (e.g. sugar pearls vs gold balls). `null`/absent = keep the GLB's own baked material. Colour is a separate path (`color` / recolour). |
+| `material` | string | `null` | **GLB decorations only.** A **material TAG** — the readable key of a decoration surface finish in the **materials registry** (`designer/materials.js` `DECOR_MATERIALS`, seed + `materials` DB overlay via `applyDecorMaterialConfig`). Resolved by `materialSurface(key)` → a `surface` finish (`{ roughness, metalness, sheen, sheenColor, sheenRoughness, clearcoat, clearcoatRoughness, envMapIntensity, anisotropy, anisotropyRotation }`, all optional) applied to the GLB's material in `StickerModel` (`canvas/CakeCanvas.jsx`). The finish lives ONCE in the registry, so many elements share it by name (DRY). **`applies_to` gate:** a decoration resolves only materials whose `applies_to` includes `"element"` — a body-only material (buttercream) can never land on a decoration, and satin can never land on the cake body. **`satin`** is the first entry (anisotropic silk — needs the GLB to carry a `TANGENT` attribute, baked in the asset pipeline, or the streak mottles). A GLB usually loads as `MeshStandardMaterial`; a finish with sheen/clearcoat/anisotropy upgrades it to `MeshPhysicalMaterial`. Recolour still tints the base colour on top. `null`/absent = the GLB's own baked material. Config-gated, no element-type branch. (An inline `surface` object may override for a one-off, but prefer the tag.) |
 
 ## 2. Placement modes (the value of a `<zone>` key)
 
@@ -313,6 +315,7 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
     // ── GLB material / surface ──
     "roughness":               0.6,
     "metalness":               0.0,
+    "material": "satin",                                // decoration surface finish → resolved from the materials registry (a KEY tag)
     "useSharedFondantTexture": false,
 
     // ── Folded sticker (2D image) ──

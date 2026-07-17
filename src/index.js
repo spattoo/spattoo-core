@@ -47,6 +47,9 @@ export { printExposure, PRINT_NEUTRAL, REFERENCE_LIGHT, SHADING, SATURATION } fr
 // Cream finish/texture registry + the wall-geometry algorithms — exported so the admin texture
 // calibrator authors against the SAME code the designer renders (no duplicated displacement maths).
 export { CREAM_STYLES, STYLE_ORDER, DEFAULT_STYLE, styleDef, styleParamSchema, userStyleParams, resolveStyleParams, frostingStyleTypes, applyTextureConfig } from './designer/creamStyles.js';
+// Decoration surface materials (satin, …) — the finish a PLACED decoration wears, resolved from
+// placement_config.material. Exported so the admin materials screen can author/list them (materialsFor).
+export { DECOR_MATERIALS, materialSurface, materialsFor, applyDecorMaterialConfig } from './designer/materials.js';
 // Cake shapes — the footprint catalog (seed + DB overlay) and the outline kernel every shape-dependent
 // operation derives from. The admin Cake Shape Studio authors rows against exactly these.
 export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from './designer/cakeShapes.js';
