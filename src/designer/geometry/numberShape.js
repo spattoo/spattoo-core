@@ -45,7 +45,10 @@ export function numberSizeForCount(config, n) {
   const count = Math.max(1, Math.min(4, n || 1));
   const c = config?.byCount?.[count];
   const d = NUMBER_SIZE_DEFAULTS[count];
-  return { height: +c?.height || d.height, thickness: +c?.thickness || d.thickness };
+  // `pipingScale` is PER DIGIT COUNT too: a wide 4-digit number wants smaller rosettes than a lone "1",
+  // so it rides alongside height/thickness in byCount (default 1). It scales the number's piping-shell
+  // reference in surface.js (shellRadius = digit half-height × pipingScale).
+  return { height: +c?.height || d.height, thickness: +c?.thickness || d.thickness, pipingScale: +c?.pipingScale || 1 };
 }
 
 // The number tier's EFFECTIVE world box, for framing (camera + board) — NOT for the mesh, which the

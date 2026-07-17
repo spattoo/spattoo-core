@@ -48,9 +48,20 @@ export function tierShape(tier) {
     // outline prism. Sized by HEIGHT, chosen by the DIGIT COUNT (numberSizeForCount): every number of a
     // given count comes out the same tall and just grows wider — so what admin authored per count is what
     // the customer gets. `thickness` (the extrusion depth) rides on the descriptor to CakeTier.
-    const { height, thickness } = numberSizeForCount(config, numberDigitCount(config?.digits));
+    const { height, thickness, pipingScale } = numberSizeForCount(config, numberDigitCount(config?.digits));
     const g = numberGeometry(config?.digits, height, config?.weight, config?.cornerR);
-    return { kind: 'number', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD, thickness };
+    // `shellRadius` — the reference the piping ring sizes its shells from (shell ≈ SHELL_HEIGHT_FRAC of it;
+    // see CakeTier.buildShellGeo). For round/rect the tier radius IS the body, so shells scale nicely; a
+    // number's tier radius is its bounding radius = HALF THE FOOTPRINT WIDTH (huge for a wide "2027"), so
+    // the same piping `size` renders a giant shell that swamps the thin digit strokes. The digit's
+    // HALF-HEIGHT (short axis, = height/2) is the honest body reference — it tracks how tall the digits
+    // stand, not how many there are — so shells stay proportional and a wider number just fits MORE of them
+    // (a real number-tin cake). `pipingScale` (PER DIGIT COUNT, from byCount, default 1) lets a starter tune
+    // it — a wide 4-digit number wants smaller rosettes than a "1". Round/rect never carry shellRadius, so
+    // they read `radius` unchanged (byte-identical). Placement is untouched — the ring walks the digit
+    // perimeter, not this radius.
+    const shellRadius = g.halfD * pipingScale;
+    return { kind: 'number', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD, thickness, shellRadius };
   }
 
   if (family !== 'circle') {

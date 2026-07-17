@@ -1451,7 +1451,7 @@ export default function CakeTier({
   // One <TopPipingRing>/<BottomPipingRing> per stacked layer. A layer is "selected"
   // by its layerId; legacy single-piping callers fall back to the boolean flags.
   const renderTops = () => tops.map((p, idx) => (
-    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={radius} glbPath={p.glbUrl} color={p.color}
+    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       topRotation={p.rotation ?? [0,0,0]}
@@ -1479,7 +1479,7 @@ export default function CakeTier({
   // does NOT react to layers added later, so an existing swag never jumps when something new is
   // placed; instead the new layer stacks around the swag's reported band.
   const renderBottoms = () => bottoms.map((p, idx) => (
-    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={radius} glbPath={p.glbUrl} color={p.color}
+    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       bottomRotation={p.bottomRotation ?? [0,0,0]}
