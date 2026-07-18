@@ -1911,7 +1911,8 @@ function CameraSnapper({ snapCameraRef, orbitRef }) {
 
 
 // `frontZ` is the cake's front-edge distance along +Z (the front is +Z for every shape):
-// round → radius, rect → depth/2. The label sits a fixed gap beyond that edge.
+// round → radius; every other shape (rect, number, outline) → halfD (outlines fill [-1,1]², so
+// the front-most point — a heart's tip — sits at halfD). The label sits a fixed gap beyond that edge.
 function FrontMarker({ frontZ }) {
   return (
     <Text
@@ -2070,7 +2071,7 @@ function CakeScene({
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
-      <FrontMarker frontZ={bottomTier.shape === 'rect' ? bottomTier.depth / 2 : bottomShp.kind === 'number' ? bottomShp.halfD : bottomTier.radius} />
+      <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />
 
       {tierData.map((tier, i) => (
         <group key={i}>
