@@ -1,5 +1,4 @@
 import React from 'react';
-import ChipPicker from './ChipPicker.jsx';
 import GlyphInput, { GLYPH_INPUT_PROPS } from './GlyphInput.jsx';
 import { GLYPH_FAMILIES, isGlyphFamily } from '../geometry/glyphShape.js';
 import { tierGeometry } from '../cakeShapes.js';
@@ -11,26 +10,19 @@ const GLYPH_FIELD = {
   letter: { label: 'Letters', ...GLYPH_INPUT_PROPS.letter },
 };
 
-// ── Per-tier SHAPE controls ──────────────────────────────────────────────────────────────────────
-// ONE home for everything that shapes a tier: the Shape picker plus each family's own config knob (a
-// number cake's digits, a rounded_rect's corner radius, …). Config-driven by the tier's RESOLVED family
-// (`tierGeometry`, so it works whether the tier carries shapeFamily or resolves through the catalog), so
-// a new shape's control is a branch HERE — not another block bolted into the 6k-line CakeDesigner. That
-// file was accreting a per-shape control every time a family gained a knob; this keeps shape UI in one
-// place, the same way the geometry lives in one place (geometry/shapes.js, geometry/numberShape.js).
-export default function TierShapeControls({ tier, index, shapeOptions, onShape, onShapeConfig, onCornerR }) {
+// ── Per-tier SHAPE config controls ─────────────────────────────────────────────────────────────────
+// ONE home for each family's own config knob (a glyph cake's typed characters, a rounded_rect's corner
+// radius, …). Config-driven by the tier's RESOLVED family (`tierGeometry`, so it works whether the tier
+// carries shapeFamily or resolves through the catalog), so a new shape's control is a branch HERE — not
+// another block bolted into the 6k-line CakeDesigner.
+//
+// There is deliberately NO shape SWITCHER here: a cake's shape is chosen when you start it ("New" →
+// ShapePicker), not swapped in place on an existing cake (which would silently reshape a design the
+// customer already built). This panel only tunes the CURRENT shape.
+export default function TierShapeControls({ tier, index, onShapeConfig, onCornerR }) {
   const family = tierGeometry(tier).family;
   return (
     <>
-      {shapeOptions.length > 1 && (
-        <ChipPicker
-          label="Shape"
-          options={shapeOptions.map(sh => ({ value: sh.key, label: sh.label }))}
-          value={tier?.shape ?? 'round'}
-          onChange={key => onShape(index, key)}
-        />
-      )}
-
       {isGlyphFamily(family) && <GlyphField family={family} tier={tier} index={index} onShapeConfig={onShapeConfig} />}
       {family === 'rounded_rect' && <CornerRadius tier={tier} index={index} onCornerR={onCornerR} />}
     </>
