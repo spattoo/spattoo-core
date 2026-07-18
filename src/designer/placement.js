@@ -321,3 +321,30 @@ export function occludedTopFrac(tiers, i) {
   const up = tierAbove(tiers, i)?.radius ?? 0;
   return (r > 0 && up && up < r) ? up / r : 0;
 }
+
+// ── Per-zone placement config ─────────────────────────────────────────────────────────────────
+// A zone's entry in `placement_config` is EITHER a mode string ("hug") or an object carrying
+// per-zone config ({ mode, seat, ... }). `zoneCfg` normalises both so callers never branch on the
+// shape, and it keeps the door open for future per-zone keys (a per-zone material, orientation, …)
+// which ride on the object and flow through this one seam.
+export function zoneCfg(placementConfig, zone) {
+  const v = placementConfig?.[zone];
+  return (v && typeof v === 'object') ? v : { mode: v };
+}
+
+// The placement MODE for a zone ("hug" | "stand" | "perch" | "verge"), from string or object form.
+export function zoneMode(placementConfig, zone, fallback) {
+  return zoneCfg(placementConfig, zone).mode ?? fallback;
+}
+
+// How DEEP an element seats in a zone: 'proud' (a solid body sits ON the surface, back flush against
+// it) or 'flush' (a thin decal centred on the surface). Only meaningful for wall-hug; verge/stand/
+// perch seat by their own logic and ignore it. An explicit zone-level `seat` wins; otherwise the
+// default is config-driven off the existing `scatter` flag — scattered decor nestles FLUSH (small
+// pieces read better tucked in), everything else solid seats PROUD (so a 3D piece isn't half-buried).
+// No element-type branch.
+export function zoneSeat(placementConfig, zone) {
+  const explicit = zoneCfg(placementConfig, zone).seat;
+  if (explicit === 'proud' || explicit === 'flush') return explicit;
+  return placementConfig?.scatter === true ? 'flush' : 'proud';
+}

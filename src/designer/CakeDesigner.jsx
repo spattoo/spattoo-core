@@ -8,7 +8,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac, stickerSizeControl } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -2684,7 +2684,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     parts.forEach((part, i) => {
       const partEl = elementById.get(part.element_id);
       if (!partEl) { console.warn(`[decor_pattern] part element_id not found: "${part.element_id}" — check the parts JSON`); return; }
-      const mode = partEl.placement_config?.[hit.zone];
+      const mode = zoneMode(partEl.placement_config, hit.zone);
       // Part offset is interpreted in the surface's own coordinates: on the TOP it's (x, z) in
       // cake units; on a WALL (side / middle tier) `dx` becomes an angular offset in radians so
       // the parts sit side-by-side around the wall (e.g. two unicorn eyes on the front face),
@@ -2781,7 +2781,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // `scale` (and `color` if given). The ONE generator used by initial drop, density +, and zone
   // change. Mode comes from the element's config for the zone (renders its art).
   function scatterInstances(el, zone, tierIndex, count, scale, taken = [], color) {
-    const mode = el.placement_config?.[zone] ?? 'hug';
+    const mode = zoneMode(el.placement_config, zone, 'hug');
     const minDist = STICKER_SIZE * scale;
     const baseId = Date.now();
     const ids = [];
@@ -2916,7 +2916,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!el) return;
     const zone = (el.allowed_zones ?? []).includes(seed.zone) ? seed.zone
       : (el.allowed_zones?.[0] ?? ZONES.TOP_SURFACE);
-    const mode = el.placement_config?.[zone] ?? 'stand';
+    const mode = zoneMode(el.placement_config, zone, 'stand');
     const newId = addSticker(el, zone, seed.tierIndex, mode, { x: seed.x, z: seed.z });
     setSelectedEl({ type: 'sticker', id: newId });
     setSelectedStickerIds(new Set([newId]));
@@ -3085,7 +3085,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!pool.length) { console.warn('[test-pattern] open Decorations first to load elements'); return false; }
     // Prefer a GLB that stands on the top (like the eyes will) so it renders via DraggableTopSticker.
     const isGlb = e => /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? '');
-    const a = pool.find(e => isGlb(e) && e.placement_config?.top_surface === 'stand')
+    const a = pool.find(e => isGlb(e) && zoneMode(e.placement_config, 'top_surface') === 'stand')
       ?? pool.find(e => isGlb(e) && e.placement_config?.single_per_slot)
       ?? pool.find(isGlb) ?? pool[0];
     const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)', allowed_zones: ['top_surface'],
@@ -3106,7 +3106,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ...(t.bottomPipings ?? []).map(p => ({ tierIndex: i, zone: 'board', cardId: p.cardId, layerId: p.layerId })),
     ]);
     window.__listElements = () => [...elementById.values()].map(e => ({
-      id: e.id, name: e.name, mode: e.placement_config?.top_surface,
+      id: e.id, name: e.name, mode: zoneMode(e.placement_config, 'top_surface'),
       glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
       top: (e.allowed_zones ?? []).includes('top_surface'),
     }));
@@ -3129,7 +3129,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const zones = e.allowed_zones ?? ['top_surface'];
       const zone = zones.includes('top_surface') ? 'top_surface' : zones[0];
       const ti = design.tiers.length - 1;
-      const newId = addSticker(e, zone, ti, e.placement_config?.[zone] ?? 'stand', { zone, tierIndex: ti, x: 0, z: 0 });
+      const newId = addSticker(e, zone, ti, zoneMode(e.placement_config, zone, 'stand'), { zone, tierIndex: ti, x: 0, z: 0 });
       updateSticker(newId, {
         gradient: { mode, colors },
         // force gradient (and colour) caps on so the popup controls show in dev verification
@@ -3178,7 +3178,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Density-scatter element (sprinkles): drop a packed batch as ONE scatter card. Config-driven.
     if (element.placement_config?.scatter === true) { placeScatter(element, hit); return; }
 
-    const placementMode = element.placement_config?.[hit.zone];
+    const placementMode = zoneMode(element.placement_config, hit.zone);
 
     const imageTopperTypeId = elementTypes.find(et => et.slug === ELEMENT_SLUGS.IMAGE_TOPPER)?.id;
     const isImageTopper = element.element_type_id === imageTopperTypeId;
@@ -4132,7 +4132,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <PreviewTile key={su.zone} checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={96}
                   locked={!(caps?.delete ?? true)}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
-                  <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={el?.placement_config?.[su.zone]} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
+                  <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
                 </PreviewTile>
               );
             })}
@@ -6434,7 +6434,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             // treats it like any library element — no parallel code path to drift.
             const zone = el.allowed_zones?.[0];
             if (!zone) return;
-            addSticker(el, zone, 0, el.placement_config?.[zone] ?? 'hug');
+            addSticker(el, zone, 0, zoneMode(el.placement_config, zone, 'hug'));
           }}
           onPromote={(u) => { setUploadsOpen(false); setPromoting(u); setDecorStudioOpen(true); }}
           onClose={() => { setUploadsOpen(false); setFramePhotoFor(null); }}

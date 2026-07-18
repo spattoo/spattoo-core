@@ -24,8 +24,10 @@ section below (§1–§4) is the authoritative detail for its keys.
 ```jsonc
 {
   // ── Zones × modes (§1 <zone>, §2) — one key per surface the element offers ──
+  // Value is a mode STRING, or an OBJECT { mode, seat, … } carrying per-zone config (both read via
+  // zoneCfg/zoneMode/zoneSeat). `seat` (wall-hug only) = "proud" | "flush"; default scatter?flush:proud.
   "top_surface": "stand",          // stand | hug | perch | verge
-  "side":        "hug",
+  "side":        { "mode": "hug", "seat": "proud" },   // solid piece sits ON the wall; or just "hug" (default proud)
   "middle_tier": "hug",
   "board":       "hug",
   "rim":         "hug",
@@ -154,7 +156,8 @@ section below (§1–§4) is the authoritative detail for its keys.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `<zone>` | string (a placement mode) | — | One key per surface the element sits on: `top_surface`, `side`, `middle_tier`, `board`, `rim`. The value is the **mode** for that surface — see §2. e.g. `{ "top_surface": "stand", "side": "hug" }`. |
+| `<zone>` | string **or** object | — | One key per surface the element sits on: `top_surface`, `side`, `middle_tier`, `board`, `rim`. The value is either the **mode** string for that surface (see §2) — `{ "side": "hug" }` — **or** an object carrying per-zone config: `{ "side": { "mode": "hug", "seat": "proud" } }`. Both forms are read through `placement.js` `zoneCfg()` (→ `{ mode, seat, … }`); every consumer uses `zoneMode()`/`zoneSeat()`, never the raw value, so the two forms are interchangeable and future per-zone keys ride on the object. Legacy string configs keep working unchanged. |
+| `<zone>.seat` | `"proud"` \| `"flush"` | `scatter ? "flush" : "proud"` | **Wall-hug seat DEPTH** for that zone (ignored by verge/stand/perch, which seat by their own logic). `proud` = a solid body's back sits ON the wall, whole body outside — a 3D piece (bow, topper, cluster ball) never half-buried. `flush` = centred on the wall (back half tucks in) — right for a thin 2D decal, and for **scatter** decor which nestles better tucked in. Default is config-driven off the `scatter` flag; an explicit value overrides it. The seat magnitude is **measured** (half the model's rendered depth, `geometry/seating.js` `seatHalfDepth` — the SAME rule piping uses to sit its shells on the rim). Read via `zoneSeat()` → the instance's `sideProud`; applied in the side bend path (`StickerModel`). No element-type branch. Supersedes the old top-level `side_proud` (still honored, now redundant under the proud default). |
 | `single_per_slot` | bool | `false` | Placement **style**, not mode. `true` = one instance per (tier×surface) slot, chosen via the checkbox chooser (topper, top&side decor). `false` = scatter freely (many independent stickers). Read by `isMultiSlotEl` (returns `false` when `cluster` is set). **Must not be inferred from `allowed_zones.length`.** |
 | `cluster` | object | `null` | Placement **style** (peer of `scatter`/`single_per_slot`, mutually exclusive). Present = a **packed faux-ball clump**: the element drops as ONE single ball (drag-to-place, no chooser); a per-card **Cluster** toggle grows it into a tangent, non-overlapping clump of mixed-size GLB spheres that clings top→rim→side. Multiple clusters per cake, each its own `clusterId`. Shape: `{ min, max, sizes, palette }` — `min`/`max` = ball-count slider bounds (default 3/30); `sizes` = `[largest, 2nd, 3rd, small]` relative scale multipliers (default `[1.6, 1.35, 0.85, 0.5]`); `palette` = default mix colours (the customer can recolour; default `[default_color ?? '#D4AF37']`). Read by `clusterConfigOf`; packed by `geometry/spherePacking.js`. A cluster ball is always seated **proud** on the side wall regardless of `side_proud`. |
 | `r` | number | GLB `2.5` / 2D `1` | Default scale for a freshly placed sticker (`stand`). Never hard-code a scale elsewhere. |

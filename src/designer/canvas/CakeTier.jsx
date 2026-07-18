@@ -15,6 +15,7 @@ import { buildStyledWall } from '../geometry/creamWall.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
+import { seatHalfDepth } from '../geometry/seating.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
@@ -499,7 +500,7 @@ function TopPipingRingImpl({
     // Rim sits ON the top surface: pull shells inward so their outer face is flush
     // with the edge. extraRadialOffset (incl. the user's radial control) may pull the
     // cream inward, but never push it past the edge — clamp the outer face to the rim.
-    const half = (A.bbDepth / 2) * A.shellScale;
+    const half = seatHalfDepth(A.bbDepth * A.shellScale);   // half the shell's measured depth (shared seat rule)
     const off  = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
     const r    = radius + off;
     const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)

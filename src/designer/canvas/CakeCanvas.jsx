@@ -31,6 +31,7 @@ import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
+import { seatHalfDepth } from '../geometry/seating.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -1291,7 +1292,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
   // depth, for deep toppers); flush hug (default) → centred on the wall (back half tucks into the
   // opaque wall, front half against it) so it doesn't stand off the silhouette. Config, not type.
   const bentScene = useMemo(
-    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, seatProud ? depthScaled / 2 : 0) : null),
+    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, seatProud ? seatHalfDepth(depthScaled) : 0) : null),
     [clonedScene, scale, center, bendRadius, depthScaled, seatProud],
   );
 

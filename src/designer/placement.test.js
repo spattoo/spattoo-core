@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -375,5 +375,44 @@ describe('seatedHitBox — a base-seated element\'s box stops at its seat, never
 
   it('defaults to STICKER_SIZE when no size is given', () => {
     expect(seatedHitBox({}).width).toBeCloseTo(0.28, 6);
+  });
+});
+
+// Per-zone placement config: a zone entry is a mode string OR an object { mode, seat, ... }.
+// zoneCfg normalises both; zoneMode/zoneSeat read through it. Backward compatibility (string form
+// keeps working) and the seat default rule (scatter→flush, else proud) are the contracts here.
+describe('zoneCfg / zoneMode', () => {
+  it('normalises a legacy string to { mode }', () => {
+    expect(zoneCfg({ side: 'hug' }, 'side')).toEqual({ mode: 'hug' });
+  });
+  it('passes an object entry through', () => {
+    expect(zoneCfg({ side: { mode: 'hug', seat: 'flush' } }, 'side')).toEqual({ mode: 'hug', seat: 'flush' });
+  });
+  it('absent zone → { mode: undefined }', () => {
+    expect(zoneCfg({}, 'side')).toEqual({ mode: undefined });
+    expect(zoneCfg(undefined, 'side')).toEqual({ mode: undefined });
+  });
+  it('zoneMode reads the mode from either form, with a fallback', () => {
+    expect(zoneMode({ side: 'hug' }, 'side', 'stand')).toBe('hug');
+    expect(zoneMode({ side: { mode: 'perch' } }, 'side', 'stand')).toBe('perch');
+    expect(zoneMode({}, 'side', 'stand')).toBe('stand');
+    expect(zoneMode({ side: 'verge' }, 'side')).toBe('verge');
+  });
+});
+
+describe('zoneSeat', () => {
+  it('defaults solid decor to proud', () => {
+    expect(zoneSeat({ side: 'hug' }, 'side')).toBe('proud');
+    expect(zoneSeat({}, 'side')).toBe('proud');
+  });
+  it('defaults scatter decor to flush', () => {
+    expect(zoneSeat({ scatter: true, side: 'hug' }, 'side')).toBe('flush');
+  });
+  it('an explicit per-zone seat overrides the default (both ways)', () => {
+    expect(zoneSeat({ side: { mode: 'hug', seat: 'flush' } }, 'side')).toBe('flush');
+    expect(zoneSeat({ scatter: true, side: { mode: 'hug', seat: 'proud' } }, 'side')).toBe('proud');
+  });
+  it('ignores an unknown seat value and falls back to the default', () => {
+    expect(zoneSeat({ side: { mode: 'hug', seat: 'sideways' } }, 'side')).toBe('proud');
   });
 });
