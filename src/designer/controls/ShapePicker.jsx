@@ -2,8 +2,14 @@ import { useState } from 'react';
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
 import { starterDesign } from '../hooks/useCakeDesign.js';
 import { tierGeometry } from '../cakeShapes.js';
-import { numberTierDims } from '../geometry/numberShape.js';
-import DigitsInput from './DigitsInput.jsx';
+import { isGlyphFamily, glyphTierDims, GLYPH_FAMILIES } from '../geometry/glyphShape.js';
+import GlyphInput, { GLYPH_INPUT_PROPS } from './GlyphInput.jsx';
+
+// Prompt copy per glyph family — the only per-family wording the picker carries.
+const GLYPH_COPY = {
+  number: { title: 'Your number cake', sub: 'Type your number — you can change it later', ask: 'What number would you like your cake shaped as?' },
+  letter: { title: 'Your letter cake', sub: 'Type your letters — you can change it later', ask: 'What letters would you like your cake shaped as?' },
+};
 
 // The camera a shape is photographed from. The Cake Shape Studio captures its thumbnail through this and
 // the live tile renders through it — ONE camera, or a shape would change appearance the moment somebody
@@ -22,12 +28,12 @@ const SHAPE_ELEV = 25 * (Math.PI / 180);
 
 export function shapeView(design) {
   const tiers = design?.tiers ?? [];
-  // A number tier carries no honest width/height (its box is DERIVED from the digits + byCount), so ask the
-  // geometry for it — otherwise a "2027" tile frames as if it were one narrow digit. Every other family is
-  // sized by its own tier fields.
-  const box = t => (tierGeometry(t).family === 'number'
-    ? numberTierDims(t.shapeConfig)
-    : { width: t.width ?? (t.radius ?? 1.2) * 2, depth: t.depth ?? (t.radius ?? 1.2) * 2, height: t.height ?? 1.45 });
+  // A glyph tier (number/letter) carries no honest width/height (its box is DERIVED from the typed
+  // characters + byCount), so ask the geometry for it — otherwise a "2027"/"ABC" tile frames as if it
+  // were one narrow glyph. Every other family is sized by its own tier fields.
+  const box = t => { const fam = tierGeometry(t).family; return isGlyphFamily(fam)
+    ? glyphTierDims(fam, t.shapeConfig)
+    : { width: t.width ?? (t.radius ?? 1.2) * 2, depth: t.depth ?? (t.radius ?? 1.2) * 2, height: t.height ?? 1.45 }; };
   const boxes = tiers.map(box);
   const totalH = boxes.reduce((h, b) => h + b.height, 0) || 1.45;
   const maxW = boxes.length ? Math.max(...boxes.map(b => Math.max(b.width, b.depth))) : 2.4;
@@ -81,37 +87,43 @@ export function ShapeTile({ shape, size = 96 }) {
 // Closing WITHOUT choosing leaves the cake alone: the caller discards nothing until onPick fires, so a
 // mis-tap on New costs nothing.
 //
-// A NUMBER cake is generic — one tile shapes itself to any number the customer types (a digit is a recipe,
-// not an asset, so per-number rows don't scale). So picking the number tile doesn't create the cake yet:
-// it asks for the number first — the defining choice — then hands it to `onPick(key, { digits })`. Detected
-// by the tier's resolved FAMILY (`tierGeometry`), never a key/label, so any authored number starter works.
+// A GLYPH cake (number or letter) is generic — one tile shapes itself to any string the customer types (a
+// character is a recipe, not an asset, so per-string rows don't scale). So picking a glyph tile doesn't
+// create the cake yet: it asks for the characters first — the defining choice — then hands them to
+// `onPick(key, { shapeConfig: { <digits|letters>: text } })`. Detected by the tier's resolved FAMILY
+// (`tierGeometry`), never a key/label, so any authored number/letter starter works.
 export default function ShapePicker({ shapes, onPick, onClose }) {
-  const [numShape, setNumShape] = useState(null);   // the number tile awaiting a number, or null (grid)
-  const [digits, setDigits] = useState('');
+  const [glyphShape, setGlyphShape] = useState(null);   // the glyph tile awaiting text, or null (grid)
+  const [glyphFam, setGlyphFam]     = useState(null);   // 'number' | 'letter' for that tile
+  const [text, setText] = useState('');
 
-  const isNumber = s => tierGeometry((s.design ?? starterDesign(s.key)).tiers?.[0] ?? {}).family === 'number';
-  const pick = s => (isNumber(s) ? (setDigits(''), setNumShape(s)) : onPick(s.key));
-  const createNumber = () => onPick(numShape.key, { digits });
+  const glyphFamilyOf = s => {
+    const f = tierGeometry((s.design ?? starterDesign(s.key)).tiers?.[0] ?? {}).family;
+    return isGlyphFamily(f) ? f : null;
+  };
+  const pick = s => { const f = glyphFamilyOf(s); if (f) { setText(''); setGlyphFam(f); setGlyphShape(s); } else onPick(s.key); };
+  const create = () => onPick(glyphShape.key, { shapeConfig: { [GLYPH_FAMILIES[glyphFam].textKey]: text } });
+  const copy = glyphFam ? GLYPH_COPY[glyphFam] : null;
 
   return (
     <div style={styles.scrim} onClick={onClose}>
       <div style={styles.sheet} onClick={e => e.stopPropagation()}>
         <div style={styles.head}>
           <div>
-            <div style={styles.title}>{numShape ? 'Your number cake' : 'Start a new cake'}</div>
-            <div style={styles.sub}>{numShape ? 'Type your number — you can change it later' : 'Pick a shape — you can change it later'}</div>
+            <div style={styles.title}>{copy ? copy.title : 'Start a new cake'}</div>
+            <div style={styles.sub}>{copy ? copy.sub : 'Pick a shape — you can change it later'}</div>
           </div>
           <button style={styles.x} onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div style={styles.body}>
-          {numShape ? (
+          {glyphShape ? (
             <div style={styles.numStep}>
-              <div style={styles.numArt}><ShapeTile shape={numShape} size={128} /></div>
-              <div style={styles.numLabel}>What number would you like your cake shaped as?</div>
-              <DigitsInput value={digits} onChange={setDigits} onEnter={createNumber} autoFocus placeholder="e.g. 21" />
+              <div style={styles.numArt}><ShapeTile shape={glyphShape} size={128} /></div>
+              <div style={styles.numLabel}>{copy.ask}</div>
+              <GlyphInput value={text} onChange={setText} onEnter={create} autoFocus {...GLYPH_INPUT_PROPS[glyphFam]} />
               <div style={styles.numRow}>
-                <button style={styles.backBtn} onClick={() => setNumShape(null)}>← Back</button>
-                <button style={styles.createBtn} onClick={createNumber}>Create cake</button>
+                <button style={styles.backBtn} onClick={() => setGlyphShape(null)}>← Back</button>
+                <button style={styles.createBtn} onClick={create}>Create cake</button>
               </div>
             </div>
           ) : (

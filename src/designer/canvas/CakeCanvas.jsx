@@ -25,7 +25,7 @@ import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius } from '../geometry/surface.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
@@ -48,10 +48,10 @@ import { toCanvasConfig } from '../hooks/useCakeDesign.js';
 // and cream pen all agree where the board edge is — they each used to recompute it and could drift.
 function boardOf(bottomTier) {
   const shp = tierShape(bottomTier);
-  const isNumber = shp.kind === 'number';
-  const isRect = bottomTier.shape === 'rect' || isNumber;
-  const width = (isNumber ? shp.halfW * 2 : (bottomTier.width ?? 0)) + 0.9;
-  const depth = (isNumber ? shp.halfD * 2 : (bottomTier.depth ?? 0)) + 0.9;
+  const isGlyph = shp.kind === 'glyph';   // number/letter — a rect board sized to the glyph bbox
+  const isRect = bottomTier.shape === 'rect' || isGlyph;
+  const width = (isGlyph ? shp.halfW * 2 : (bottomTier.width ?? 0)) + 0.9;
+  const depth = (isGlyph ? shp.halfD * 2 : (bottomTier.depth ?? 0)) + 0.9;
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
@@ -221,12 +221,12 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
     }
   }, [selected]);
 
-  const isRect = shp.kind === 'rect';
+  // A round wall wraps the cylinder (yaw = theta); EVERY faceted wall (rect + outline: heart, …)
+  // sits flat on the perimeter at fraction u (yaw = the face's outward direction).
+  const facetWall = !isRoundWall(shp);
   const surfaceR = radius + 0.015;
-  // Anchor + facing: round wraps the cylinder (yaw = theta); rect sits flat on the wall
-  // at perimeter fraction u (yaw = the face's outward direction).
   let cx, cz, yaw;
-  if (isRect) {
+  if (facetWall) {
     const pl = rectSidePlacement(shp, textEl.u ?? 0, 0.015);
     cx = pl.x; cz = pl.z; yaw = pl.yaw;
   } else {
@@ -254,7 +254,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
   return (
     <group>
       {/* Round cake: letters laid along the cylinder arc (each in world space). */}
-      {!isRect && chars.map((char, i) => {
+      {!facetWall && chars.map((char, i) => {
         const angle = textEl.theta + charOffset(i) / surfaceR;
         return (
           <group key={i} position={[surfaceR * Math.sin(angle), textEl.y, surfaceR * Math.cos(angle)]} rotation={[0, angle, 0]}>
@@ -264,8 +264,8 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
       })}
 
       <group position={[cx, textEl.y, cz]} rotation={[0, yaw, 0]}>
-        {/* Sheet cake: letters laid flat along the wall, in the anchor's local frame. */}
-        {isRect && chars.map((char, i) => (
+        {/* Faceted wall (sheet/heart/…): letters laid flat along the wall, in the anchor's local frame. */}
+        {facetWall && chars.map((char, i) => (
           <group key={i} position={[charOffset(i), 0, 0]}>
             <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} />
           </group>
@@ -300,7 +300,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
           didDrag.current      = false;
           startPos.current     = { x: e.clientX, y: e.clientY };
           dragR.current        = surfaceR;
-          startHit.current     = isRect
+          startHit.current     = facetWall
             ? boxHit(pointerRay(e, gl.domElement, camera), shp.halfW, shp.halfD)
             : cylinderHit(pointerRay(e, gl.domElement, camera), surfaceR);
           startTextPos.current = { theta: textEl.theta, y: textEl.y };
@@ -313,7 +313,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (!didDrag.current || !startHit.current) return;
-            if (isRect) {
+            if (facetWall) {
               const bh = boxHit(pointerRay(ev, gl.domElement, camera), shp.halfW, shp.halfD);
               if (bh) onMove_prop(textEl.id, { u: nearestU(shp, bh.x, bh.z), y: bh.y });
               return;
@@ -1378,7 +1378,10 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // measured → the clamp falls back to the full square.
   const [vext, setVext] = useState(null);
 
-  const isRect = shp.kind === 'rect';
+  // A round wall wraps a cylinder (theta); every faceted wall — rect AND any outline (heart,
+  // butterfly, number, …) — seats on the perimeter at fraction u. Branch on this, never on
+  // `=== 'rect'`, or an outline decal lands on an imaginary bounding-radius circle off the wall.
+  const facetWall = !isRoundWall(shp);
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
   // A hero hug (single_per_slot, hugging a side) sizes to THIS tier's wall height, so it shrinks
   // on smaller tiers automatically — r is the stand size only and is ignored here. Scattered decor
@@ -1398,10 +1401,10 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // the live surface relief so the decor rests on the displaced wall.
   // `radialOffset` is the customer's "Depth" nudge — still an absolute world value on top (see #8 TODO).
   const off    = sideSeatOffset(radius) + (sticker.radialOffset ?? 0);
-  // Round: angle theta around the cylinder, decal curved to the wall. Rect: perimeter
-  // fraction u along the rounded-rect wall, decal flat (the wall is flat).
+  // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
+  // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
   let cx, cz, yaw, curveRadius;
-  if (isRect) {
+  if (facetWall) {
     const pl = rectSidePlacement(shp, sticker.u ?? 0, off);
     cx = pl.x; cz = pl.z; yaw = pl.yaw; curveRadius = 0;
   } else {
@@ -1421,7 +1424,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
   // the true wall radius (bigger stickers span more arc → curve more).
-  const bendRadius = (isGlb && !isRect && curveRadius)
+  const bendRadius = (isGlb && !facetWall && curveRadius)
     ? curveRadius / (effScale || 1)
     : undefined;
 
@@ -1446,7 +1449,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
@@ -1478,16 +1481,16 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           didDrag.current      = false;
           pointerDownTime.current = Date.now();
           startPos.current     = { x: e.clientX, y: e.clientY };
-          startHit.current     = isRect
+          startHit.current     = facetWall
             ? boxHit(pointerRay(e, gl.domElement, camera), shp.halfW, shp.halfD)
             : cylinderHit(pointerRay(e, gl.domElement, camera), radius + off);
           startSticker.current = { theta: sticker.theta, y: sticker.y };
 
-          if (!isRect && moveSet && moveSet.length > 1) {
+          if (!facetWall && moveSet && moveSet.length > 1) {
             const setIds = new Set(moveSet);
             groupStart.current = {};
             allStickers.forEach(s => { if (setIds.has(s.id)) groupStart.current[s.id] = { theta: s.theta, y: s.y }; });
-          } else if (!isRect && sticker.groupId) {
+          } else if (!facetWall && sticker.groupId) {
             groupStart.current = {};
             allStickers.forEach(s => {
               if (s.groupId === sticker.groupId)
@@ -1504,8 +1507,8 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (!didDrag.current || !startHit.current) return;
-            if (isRect) {
-              // Rect wall: the sticker centre follows the cursor's perimeter point directly.
+            if (facetWall) {
+              // Faceted wall (rect/heart/…): the sticker centre follows the cursor's perimeter point.
               const bh = boxHit(pointerRay(ev, gl.domElement, camera), shp.halfW, shp.halfD);
               if (!bh) return;
               onMove(sticker.id, { u: nearestU(shp, bh.x, bh.z), y: clampY(bh.y) });
@@ -1909,7 +1912,8 @@ function CameraSnapper({ snapCameraRef, orbitRef }) {
 
 
 // `frontZ` is the cake's front-edge distance along +Z (the front is +Z for every shape):
-// round → radius, rect → depth/2. The label sits a fixed gap beyond that edge.
+// round → radius; every other shape (rect, number, outline) → halfD (outlines fill [-1,1]², so
+// the front-most point — a heart's tip — sits at halfD). The label sits a fixed gap beyond that edge.
 function FrontMarker({ frontZ }) {
   return (
     <Text
@@ -2068,7 +2072,7 @@ function CakeScene({
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
-      <FrontMarker frontZ={bottomTier.shape === 'rect' ? bottomTier.depth / 2 : bottomShp.kind === 'number' ? bottomShp.halfD : bottomTier.radius} />
+      <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />
 
       {tierData.map((tier, i) => (
         <group key={i}>
@@ -2332,7 +2336,7 @@ function CakeThumbnailScene({ config }) {
           const sampler = tierReliefSampler(tier);
           const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
           let px, pz, yaw, r = 0;
-          if (tshp.kind === 'rect') {
+          if (!isRoundWall(tshp)) {
             const pl = rectSidePlacement(tshp, sticker.u ?? 0, off);
             px = pl.x; pz = pl.z; yaw = pl.yaw;
           } else {
@@ -2350,7 +2354,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
+                <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} curved={!thumbIsGlb && isRoundWall(tshp)} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
               </group>
             </group>
           );
@@ -2589,7 +2593,9 @@ export default function CakeCanvas({
         }
 
         const shp = tierShape(tier);
-        if (shp.kind === 'rect') {
+        if (!isRoundWall(shp)) {
+          // Faceted wall (rect + any outline: heart, …): seed a perimeter fraction u, so the drop
+          // sits on the ACTUAL wall — a heart seeded with theta would land on a bounding circle.
           const bh = boxHit(ray, shp.halfW, shp.halfD);
           if (bh && bh.y >= tier.baseY && bh.y <= topY) {
             const dist = ray.origin.distanceTo(new THREE.Vector3(bh.x, bh.y, bh.z));

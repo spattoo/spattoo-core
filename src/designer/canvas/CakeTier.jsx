@@ -899,10 +899,11 @@ export function buildRoundedPrism(halfW, halfD, height, r) {
   return geo;
 }
 
-// Cake body for a NUMBER cake: the digit glyph(s) — THREE.Shape[] with their counters attached — extruded
-// straight up, exactly like the sheet's rounded rect. ExtrudeGeometry honours each shape's `.holes`, so
-// the counter in 0/4/6/8/9 comes through, and it merges a multi-glyph array into one body.
-export function buildNumberPrism(shapes, height) {
+// Cake body for a GLYPH cake (number OR letter): the glyph(s) — THREE.Shape[] with their counters
+// attached — extruded straight up, exactly like the sheet's rounded rect. ExtrudeGeometry honours each
+// shape's `.holes`, so the counter in 0/4/6/8/9 and A/B/D/O/P/Q/R comes through, and it merges a
+// multi-glyph array ("21", "MOM") into one body. Charset-agnostic — one builder for both families.
+export function buildGlyphPrism(shapes, height) {
   const geo = new THREE.ExtrudeGeometry(shapes, { depth: height, bevelEnabled: false, curveSegments: 8 });
   geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
   return geo;
@@ -1326,7 +1327,7 @@ export default function CakeTier({
   const isPrism = shp.kind !== 'round';
   const prismGeo = useMemo(
     () => {
-      if (shp.kind === 'number') return buildNumberPrism(shp.shapes, shp.thickness ?? height);  // per-count extrusion depth
+      if (shp.kind === 'glyph') return buildGlyphPrism(shp.shapes, shp.thickness ?? height);  // number/letter — per-count extrusion depth
       if (shp.kind === 'rect') return buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR);
       if (shp.kind !== 'outline') return null;
       // The rolled top rim comes from the FROSTING's own edge config — the very same `roundEdge` the
@@ -1342,7 +1343,7 @@ export default function CakeTier({
   // existing 2·(w+d) approximation so no sheet cake's texture shifts.)
   const prismGrainU = useMemo(
     () => (shp.kind === 'rect' ? 2 * (shp.halfW + shp.halfD)
-        :  shp.outline ? perimeter(shp).length   // heart, polygon, number — the real contour length
+        :  shp.outline ? perimeter(shp).length   // heart, polygon, glyph (number/letter) — the real contour length
         :  0),
     [shp],
   );
@@ -1452,7 +1453,7 @@ export default function CakeTier({
   // One <TopPipingRing>/<BottomPipingRing> per stacked layer. A layer is "selected"
   // by its layerId; legacy single-piping callers fall back to the boolean flags.
   const renderTops = () => tops.map((p, idx) => (
-    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={radius} glbPath={p.glbUrl} color={p.color}
+    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       topRotation={p.rotation ?? [0,0,0]}
@@ -1480,7 +1481,7 @@ export default function CakeTier({
   // does NOT react to layers added later, so an existing swag never jumps when something new is
   // placed; instead the new layer stacks around the swag's reported band.
   const renderBottoms = () => bottoms.map((p, idx) => (
-    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={radius} glbPath={p.glbUrl} color={p.color}
+    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       bottomRotation={p.bottomRotation ?? [0,0,0]}

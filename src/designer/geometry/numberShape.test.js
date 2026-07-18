@@ -87,19 +87,19 @@ describe('number cake — sized by height, per digit count', () => {
     expect(d21).not.toBeCloseTo(d1, 3);
   });
 
-  it('numberSizeForCount reads byCount, clamps 1..4, and falls back to the defaults', () => {
-    const cfg = { byCount: { 1: { height: 3, thickness: 0.5 }, 3: { height: 1.1, thickness: 0.9 } } };
-    expect(numberSizeForCount(cfg, 1)).toEqual({ height: 3, thickness: 0.5 });
-    expect(numberSizeForCount(cfg, 3)).toEqual({ height: 1.1, thickness: 0.9 });
-    expect(numberSizeForCount(cfg, 2)).toEqual(NUMBER_SIZE_DEFAULTS[2]);   // count missing → default
-    expect(numberSizeForCount({}, 4)).toEqual(NUMBER_SIZE_DEFAULTS[4]);    // no byCount → default
-    expect(numberSizeForCount(cfg, 9)).toEqual(NUMBER_SIZE_DEFAULTS[4]);   // out-of-range count clamps to 4
+  it('numberSizeForCount reads byCount (incl. per-count pipingScale), clamps 1..4, falls back to defaults', () => {
+    const cfg = { byCount: { 1: { height: 3, thickness: 0.5, pipingScale: 1.2 }, 3: { height: 1.1, thickness: 0.9 } } };
+    expect(numberSizeForCount(cfg, 1)).toEqual({ height: 3, thickness: 0.5, pipingScale: 1.2 });   // authored per count
+    expect(numberSizeForCount(cfg, 3)).toEqual({ height: 1.1, thickness: 0.9, pipingScale: 1 });   // pipingScale defaults to 1
+    expect(numberSizeForCount(cfg, 2)).toEqual({ ...NUMBER_SIZE_DEFAULTS[2], pipingScale: 1 });     // count missing → default
+    expect(numberSizeForCount({}, 4)).toEqual({ ...NUMBER_SIZE_DEFAULTS[4], pipingScale: 1 });      // no byCount → default
+    expect(numberSizeForCount(cfg, 9)).toEqual({ ...NUMBER_SIZE_DEFAULTS[4], pipingScale: 1 });     // out-of-range clamps to 4
   });
 
   it('the tier descriptor carries the resolved thickness, chosen by the typed count', () => {
     const one   = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '1',    byCount: { 1: { height: 2, thickness: 0.4 }, 4: { height: 1.5, thickness: 1.1 } } } });
     const four  = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '2027', byCount: { 1: { height: 2, thickness: 0.4 }, 4: { height: 1.5, thickness: 1.1 } } } });
-    expect(one.kind).toBe('number');
+    expect(one.kind).toBe('glyph');   // number + letter share ONE render kind
     expect(one.thickness).toBeCloseTo(0.4, 6);
     expect(four.thickness).toBeCloseTo(1.1, 6);     // 4-digit → the 4-count thickness
     // numberTierDims agrees with the descriptor's vertical thickness.

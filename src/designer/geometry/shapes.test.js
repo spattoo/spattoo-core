@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { outlineOf, scaledOutline, polygonPerimeter, pointInPolygon, nearestOnPolygon } from './shapes.js';
-import { tierShape, perimeter, topContains, topClamp, snapToRim, boundingRadius, nearestU, selfTest } from './surface.js';
+import { tierShape, perimeter, topContains, topClamp, snapToRim, boundingRadius, nearestU, isRoundWall, selfTest } from './surface.js';
 import { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef } from '../cakeShapes.js';
 
 // The contract that makes a new cake shape DATA rather than a branch. The first block is the one that
@@ -100,6 +100,16 @@ describe('outline shapes plug into the generic surface ops', () => {
     const perim = perimeter(heart);
     const a = perim.at(0), b = perim.at(perim.length);
     expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(1e-6);
+  });
+
+  // The bug this guards: side placement (CakeCanvas) chose the theta/cylinder path unless the wall was
+  // `=== 'rect'`, so a HEART fell through to the round branch and its stickers seated on a phantom
+  // bounding-radius circle off the wall. `isRoundWall` is the ONE predicate every side site now shares —
+  // only a true cylinder takes the theta path; rect AND every outline take the perimeter (u) path.
+  it('isRoundWall is true ONLY for the analytic cylinder — outline walls use the perimeter path', () => {
+    expect(isRoundWall(tierShape({ radius: 1.2 }))).toBe(true);            // round → theta
+    expect(isRoundWall(heart)).toBe(false);                                // heart → perimeter u
+    expect(isRoundWall(tierShape({ shape: 'rect', width: 2, depth: 1.4 }))).toBe(false);
   });
 });
 

@@ -5662,8 +5662,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <TierShapeControls
                   tier={design.tiers[selectedEl.index]}
                   index={selectedEl.index}
-                  shapeOptions={shapeOptions}
-                  onShape={setTierShape}
                   onShapeConfig={setTierShapeConfig}
                   onCornerR={setTierCornerR}
                 />

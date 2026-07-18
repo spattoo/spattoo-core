@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape } from '../geometry/surface.js';
-import { numberTierDims } from '../geometry/numberShape.js';
+import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
 import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat, zoneSeat } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
@@ -85,16 +85,17 @@ export function toCanvasConfig(design) {
       const family = geom.family;
       const isRound = family === 'circle';
       const isRect  = family === 'rounded_rect';
-      const isNumber = family === 'number';
+      const isGlyph = isGlyphFamily(family);
       const r = t.radius ?? TIER_RADII[i] ?? 0.35;
-      // A number's footprint AND vertical thickness are DERIVED (from its digits + its size config), not
-      // authored on the tier — so resolve them once here and every downstream reader (stacking, board,
-      // camera, cream) speaks the true box. The mesh extrudes by the same thickness (tierShape → CakeTier).
-      const numDims = isNumber ? numberTierDims(geom.config) : null;
+      // A glyph cake's (number/letter) footprint AND vertical thickness are DERIVED (from its typed
+      // characters + its size config), not authored on the tier — so resolve them once here and every
+      // downstream reader (stacking, board, camera, cream) speaks the true box. The mesh extrudes by the
+      // same thickness (tierShape → CakeTier).
+      const glyphDims = isGlyph ? glyphTierDims(family, geom.config) : null;
       // A sheet defaults to the half-sheet footprint; any other non-round shape defaults to the round
       // tier's own diameter, so switching a cake's shape doesn't also resize it.
-      const width  = numDims ? numDims.width  : (t.width ?? (isRect ? 2.16 : r * 2));
-      const depth  = numDims ? numDims.depth  : (t.depth ?? (isRect ? 1.56 : r * 2));
+      const width  = glyphDims ? glyphDims.width  : (t.width ?? (isRect ? 2.16 : r * 2));
+      const depth  = glyphDims ? glyphDims.depth  : (t.depth ?? (isRect ? 1.56 : r * 2));
       return {
         // Self-contained geometry forwarded onto the canvas tier, so tierShape() resolves the same
         // family/config everywhere it's called downstream (CakeTier, CakeCanvas, placement) without a
@@ -104,7 +105,7 @@ export function toCanvasConfig(design) {
         // For any non-round footprint, radius is the bounding half-extent so radius-based incidental
         // placement (board, toolbar offsets, topper scale) keeps working.
         radius:       isRound ? r : Math.max(width, depth) / 2,
-        height:       numDims ? numDims.height : (t.height ?? (BOTTOM_H - i * TIER_HEIGHT_STEP)),
+        height:       glyphDims ? glyphDims.height : (t.height ?? (BOTTOM_H - i * TIER_HEIGHT_STEP)),
         color:        t.color,
         gradient:     t.gradient ?? null,
         glaze:        t.glaze ?? null,          // chocolate-glaze marble palette + pattern (frostingType 'glaze')
@@ -1045,17 +1046,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   //
   // Sizes come from the row; everything else (colour, frosting, style) is the designer's default, because
   // a shape authors the CAKE'S FORM, not its decoration.
-  function resetDesign(shape = 'round', { digits } = {}) {
+  function resetDesign(shape = 'round', { shapeConfig } = {}) {
     // An authored row carries its own full, self-contained design (snapshot shape) — load it exactly as
     // a template would, so a starter saved with a stack/frosting/decoration comes back intact and
     // normalised. Seed round/rect (and any legacy row without a stored design) are built on the fly.
     const def = cakeShapeDef(shape);
     let design = def.design ?? starterDesign(shape);
-    // A number cake's digits are chosen at pick time (the New-cake prompt). Write them onto the bottom
-    // tier HERE, as part of the same design that loads, so the cake renders the customer's number on the
-    // first frame — not a second setState that would race the reset.
-    if (digits != null && digits !== '') {
-      design = { ...design, tiers: design.tiers.map((t, i) => i === 0 ? { ...t, shapeConfig: { ...(t.shapeConfig ?? {}), digits } } : t) };
+    // A glyph cake's characters (number `digits` / letter `letters`) are chosen at pick time (the New-cake
+    // prompt) and arrive as a `shapeConfig` patch. Merge it onto the bottom tier HERE, as part of the same
+    // design that loads, so the cake renders the customer's string on the first frame — not a second
+    // setState that would race the reset. Generic: any family's config key merges the same way.
+    if (shapeConfig && Object.keys(shapeConfig).length) {
+      design = { ...design, tiers: design.tiers.map((t, i) => i === 0 ? { ...t, shapeConfig: { ...(t.shapeConfig ?? {}), ...shapeConfig } } : t) };
     }
     if (def.design) loadDesign(design);
     else setDesign(design);
