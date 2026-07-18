@@ -77,6 +77,16 @@ export function tierShape(tier) {
   return { kind: 'round', radius: tier.radius ?? 1.2 };
 }
 
+// Does this wall wrap a single analytic cylinder? ONLY the round family does — its side is placed
+// and hit-tested by a polar angle (theta) against `radius`. EVERY other shape (rect AND any outline:
+// heart, butterfly, number…) has a non-circular wall walked by perimeter fraction `u` via
+// perimeter()/rectSidePlacement()/nearestU(). Side placement must branch on THIS, not on `=== 'rect'`
+// — treating "not rect" as round strands an outline decal on an imaginary bounding-radius circle
+// instead of on the actual wall. One predicate so the four side-placement sites can't drift apart.
+export function isRoundWall(shape) {
+  return !shape.outline && shape.kind !== 'rect';
+}
+
 // Largest horizontal half-extent — a "bounding radius" so radius-based incidental
 // placement (board size, toolbar offsets, topper scale) keeps working for every shape.
 export function boundingRadius(shape) {
