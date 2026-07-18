@@ -1,7 +1,15 @@
 import React from 'react';
 import ChipPicker from './ChipPicker.jsx';
-import DigitsInput from './DigitsInput.jsx';
+import GlyphInput, { GLYPH_INPUT_PROPS } from './GlyphInput.jsx';
+import { GLYPH_FAMILIES, isGlyphFamily } from '../geometry/glyphShape.js';
 import { tierGeometry } from '../cakeShapes.js';
+
+// A glyph family's per-tier edit field — the label, the config key it writes and the input charset all
+// come from the family, so number and letter share ONE field.
+const GLYPH_FIELD = {
+  number: { label: 'Number',  ...GLYPH_INPUT_PROPS.number },
+  letter: { label: 'Letters', ...GLYPH_INPUT_PROPS.letter },
+};
 
 // ── Per-tier SHAPE controls ──────────────────────────────────────────────────────────────────────
 // ONE home for everything that shapes a tier: the Shape picker plus each family's own config knob (a
@@ -23,19 +31,22 @@ export default function TierShapeControls({ tier, index, shapeOptions, onShape, 
         />
       )}
 
-      {family === 'number' && <NumberField tier={tier} index={index} onShapeConfig={onShapeConfig} />}
+      {isGlyphFamily(family) && <GlyphField family={family} tier={tier} index={index} onShapeConfig={onShapeConfig} />}
       {family === 'rounded_rect' && <CornerRadius tier={tier} index={index} onCornerR={onCornerR} />}
     </>
   );
 }
 
-// Number cake — the customer TYPES the number their cake is shaped like. A digit is a recipe, not a
-// pre-made shape: whatever they type, the footprint regenerates (weight/rounding are set on the starter).
-function NumberField({ tier, index, onShapeConfig }) {
+// Glyph cake (number or letter) — the customer TYPES the characters their cake is shaped like. A character
+// is a recipe, not a pre-made shape: whatever they type, the footprint regenerates (weight/rounding are
+// set on the starter). One field for both families, keyed by the family's config field + charset.
+function GlyphField({ family, tier, index, onShapeConfig }) {
+  const { label, ...inputProps } = GLYPH_FIELD[family];
+  const textKey = GLYPH_FAMILIES[family].textKey;
   return (
     <div style={{ width: '100%', paddingTop: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#3a3a44', marginBottom: 6 }}>Number</div>
-      <DigitsInput value={tier?.shapeConfig?.digits} onChange={d => onShapeConfig(index, { digits: d })} />
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#3a3a44', marginBottom: 6 }}>{label}</div>
+      <GlyphInput value={tier?.shapeConfig?.[textKey]} onChange={v => onShapeConfig(index, { [textKey]: v })} {...inputProps} />
     </div>
   );
 }

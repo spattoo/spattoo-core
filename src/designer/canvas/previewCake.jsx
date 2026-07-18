@@ -1,5 +1,5 @@
 import { tierShape } from '../geometry/surface.js';
-import { buildRoundedPrism, buildNumberPrism, buildOutlinePrism } from './CakeTier.jsx';
+import { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism } from './CakeTier.jsx';
 import { TIER_RADII, BOTTOM_H } from '../constants.js';
 
 // Shared mini-cake scaffold for the small inline 3D previews (PipingPreview, TopperPreview).
@@ -16,13 +16,14 @@ export function buildPreviewTiers(tiers) {
   const geo = (tiers?.length ? tiers : [{ radius: TIER_RADII[0], height: BOTTOM_H }]).map(t => {
     const radius = t?.radius ?? TIER_RADII[0];
     const shp = tierShape({ shape: t?.shape, shapeFamily: t?.shapeFamily, shapeConfig: t?.shapeConfig, width: t?.width, depth: t?.depth, radius, cornerR: t?.cornerR });
-    // A number lies flat and is extruded UP by its own `thickness` (per digit-count), NOT by the tier's
-    // height — that governs how tall the SLAB is, so the mini-cake stacks and extrudes by the same value.
-    const height = shp.kind === 'number' ? (shp.thickness ?? t?.height ?? BOTTOM_H) : (t?.height ?? BOTTOM_H);
-    // The preview body uses the SAME builders as the real cake, so a number/heart previews as itself
+    // A glyph cake (number/letter) lies flat and is extruded UP by its own `thickness` (per char-count),
+    // NOT by the tier's height — that governs how tall the SLAB is, so the mini-cake stacks and extrudes
+    // by the same value.
+    const height = shp.kind === 'glyph' ? (shp.thickness ?? t?.height ?? BOTTOM_H) : (t?.height ?? BOTTOM_H);
+    // The preview body uses the SAME builders as the real cake, so a glyph/heart previews as itself
     // (not a round stand-in). Only the analytic circle has no prism — it stays a cylinder below.
     const prismGeo = shp.kind === 'rect'    ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR)
-                   : shp.kind === 'number'  ? buildNumberPrism(shp.shapes, height)
+                   : shp.kind === 'glyph'   ? buildGlyphPrism(shp.shapes, height)
                    : shp.kind === 'outline' ? buildOutlinePrism(shp.outline, height)
                    : null;
     return { radius, height, shp, prismGeo, color: t?.color };
@@ -39,7 +40,7 @@ export function PreviewCakeMeshes({ placed }) {
   const R0 = bottom.radius;
   return (
     <>
-      {(bottom.shp.kind === 'rect' || bottom.shp.kind === 'number') ? (
+      {(bottom.shp.kind === 'rect' || bottom.shp.kind === 'glyph') ? (
         <mesh position={[0, -0.04, 0]}>
           <boxGeometry args={[bottom.shp.halfW * 2 * 1.28, 0.08, bottom.shp.halfD * 2 * 1.28]} />
           <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />

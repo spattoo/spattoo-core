@@ -54,10 +54,14 @@ export { DECOR_MATERIALS, materialSurface, materialsFor, applyDecorMaterialConfi
 // operation derives from. The admin Cake Shape Studio authors rows against exactly these.
 export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from './designer/cakeShapes.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
-// Number-cake sizing — the per-digit-count model (a "1" and a "21" size independently; every number of a
-// given count renders identically). Exported so the Cake Shape Studio authors byCount against the SAME
-// defaults + resolver the designer sizes with (one source, no drift), and previews the true footprint.
-export { NUMBER_COUNTS, NUMBER_SIZE_DEFAULTS, numberDigitCount, numberSizeForCount, numberTierDims } from './designer/geometry/numberShape.js';
+// Glyph-cake sizing — the per-character-count model shared by the `number` (digits) and `letter` (A–Z)
+// families (a "1"/"A" and a "21"/"AB" size independently; every string of a given count renders
+// identically). Exported so the Cake Shape Studio authors byCount against the SAME defaults + resolver the
+// designer sizes with (one source, no drift), and previews the true footprint.
+export {
+  NUMBER_COUNTS, NUMBER_SIZE_DEFAULTS, numberDigitCount, numberSizeForCount, numberTierDims,
+  LETTER_COUNTS, LETTER_SIZE_DEFAULTS, letterCount, letterSizeForCount, letterTierDims,
+} from './designer/geometry/glyphShape.js';
 export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './designer/geometry/surface.js';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code

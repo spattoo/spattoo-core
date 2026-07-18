@@ -47,10 +47,10 @@ import { toCanvasConfig } from '../hooks/useCakeDesign.js';
 // and cream pen all agree where the board edge is — they each used to recompute it and could drift.
 function boardOf(bottomTier) {
   const shp = tierShape(bottomTier);
-  const isNumber = shp.kind === 'number';
-  const isRect = bottomTier.shape === 'rect' || isNumber;
-  const width = (isNumber ? shp.halfW * 2 : (bottomTier.width ?? 0)) + 0.9;
-  const depth = (isNumber ? shp.halfD * 2 : (bottomTier.depth ?? 0)) + 0.9;
+  const isGlyph = shp.kind === 'glyph';   // number/letter — a rect board sized to the glyph bbox
+  const isRect = bottomTier.shape === 'rect' || isGlyph;
+  const width = (isGlyph ? shp.halfW * 2 : (bottomTier.width ?? 0)) + 0.9;
+  const depth = (isGlyph ? shp.halfD * 2 : (bottomTier.depth ?? 0)) + 0.9;
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };

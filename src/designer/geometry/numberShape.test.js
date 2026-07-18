@@ -99,7 +99,7 @@ describe('number cake — sized by height, per digit count', () => {
   it('the tier descriptor carries the resolved thickness, chosen by the typed count', () => {
     const one   = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '1',    byCount: { 1: { height: 2, thickness: 0.4 }, 4: { height: 1.5, thickness: 1.1 } } } });
     const four  = tierShape({ shapeFamily: 'number', shapeConfig: { digits: '2027', byCount: { 1: { height: 2, thickness: 0.4 }, 4: { height: 1.5, thickness: 1.1 } } } });
-    expect(one.kind).toBe('number');
+    expect(one.kind).toBe('glyph');   // number + letter share ONE render kind
     expect(one.thickness).toBeCloseTo(0.4, 6);
     expect(four.thickness).toBeCloseTo(1.1, 6);     // 4-digit → the 4-count thickness
     // numberTierDims agrees with the descriptor's vertical thickness.
