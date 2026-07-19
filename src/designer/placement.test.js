@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneSeatFields } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -436,5 +436,35 @@ describe('zoneSeatFields — placementMode + sideProud, config-driven, from eith
   });
   it('falls back to hug when the zone is unconfigured', () => {
     expect(zoneSeatFields({}, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+  });
+});
+
+describe('insertSeat — buried-and-angled seat: lean±jitter, fan spin, depth (config-driven, #8)', () => {
+  const D2R = Math.PI / 180;
+
+  it('no jitter → deterministic: tilt = lean, no fan, depth passes through', () => {
+    const s = insertSeat({ depth: 0.4, lean_deg: 20, jitter_deg: 0 });
+    expect(s.tiltAngle).toBeCloseTo(20 * D2R, 6);
+    expect(s.fanYaw).toBe(0);
+    expect(s.depthFrac).toBe(0.4);
+  });
+
+  it('falls back to defaults when fields are unauthored', () => {
+    const s = insertSeat({});
+    expect(s.tiltAngle).toBeCloseTo(DEFAULT_INSERT_LEAN_DEG * D2R, 6);
+    expect(s.depthFrac).toBe(DEFAULT_INSERT_DEPTH);
+    expect(s.fanYaw).toBe(0);
+    // null config (mode on, object absent) is safe too.
+    expect(insertSeat(undefined).depthFrac).toBe(DEFAULT_INSERT_DEPTH);
+  });
+
+  it('jitter spreads BOTH the lean and the fan yaw within ±jitter, seeded by the rng', () => {
+    // rng=1 → +jitter on both; rng=0 → −jitter.
+    const hi = insertSeat({ lean_deg: 10, jitter_deg: 30 }, () => 1);
+    expect(hi.tiltAngle).toBeCloseTo((10 + 30) * D2R, 6);
+    expect(hi.fanYaw).toBeCloseTo(30 * D2R, 6);
+    const lo = insertSeat({ lean_deg: 10, jitter_deg: 30 }, () => 0);
+    expect(lo.tiltAngle).toBeCloseTo((10 - 30) * D2R, 6);
+    expect(lo.fanYaw).toBeCloseTo(-30 * D2R, 6);
   });
 });

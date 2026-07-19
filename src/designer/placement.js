@@ -20,6 +20,14 @@ export const DEFAULT_SPINE    = 0.5;
 // placement_config.verge.angle_deg.
 export const DEFAULT_VERGE_ANGLE_DEG = 35;
 
+// Insert (placement_config.insert): an element's base is sunk INTO the surface and it stands at an
+// angle. `depth` = fraction of the element's LENGTH buried (the renderer multiplies by the measured
+// length, never a world constant — INVARIANTS #8); `lean_deg` = base tilt from the surface normal;
+// `jitter_deg` = random ± spread PER INSTANCE so a scattered batch fans out. Fallbacks when the mode is
+// on but a field isn't authored.
+export const DEFAULT_INSERT_DEPTH    = 0.3;
+export const DEFAULT_INSERT_LEAN_DEG = 12;
+
 // Nudge a seat so it doesn't land exactly on a coincident sibling — in the SURFACE's own coordinate
 // system. ONE rule, shared by placement (addSticker) and duplication (duplicateSticker), so the
 // "don't stack two copies" behaviour lives in a single place rather than per call-site. The branch is
@@ -81,6 +89,25 @@ export function edgeSeatSeed(placementConfig, shp, mode) {
     ? (cfg.angle_deg ?? DEFAULT_VERGE_ANGLE_DEG) * Math.PI / 180
     : (cfg.tilt_deg ?? 0) * Math.PI / 180;
   return { x: 0, z: edge - (cfg.edge_inset ?? 0), tiltAngle, yOffset: cfg.y_offset ?? 0 };
+}
+
+// Per-instance seat for an `insert` element (base sunk into the surface at an angle). Returns the
+// values BAKED onto the instance at add time: `tiltAngle` (base lean ± random jitter, radians),
+// `fanYaw` (a small random Y-spin so a scattered batch points different ways — the exploded look), and
+// `depthFrac` (fraction of the element's length to bury — the renderer scales by the measured length).
+// `rng` is a 0..1 source (default Math.random); the jitter is baked per instance so it persists and a
+// deterministic caller (test) can pin it. The ONE place the insert seat is computed — both addSticker
+// and the chooser-move path call this, so the two can't drift (see edgeSeatSeed / INVARIANTS.md).
+export function insertSeat(insertCfg, rng = Math.random) {
+  const cfg = insertCfg ?? {};
+  const lean   = (cfg.lean_deg   ?? DEFAULT_INSERT_LEAN_DEG) * Math.PI / 180;
+  const jitter = (cfg.jitter_deg ?? 0) * Math.PI / 180;
+  const rand = () => jitter ? (rng() * 2 - 1) * jitter : 0;   // ±jitter; a clean 0 when jitter is 0
+  return {
+    tiltAngle: lean + rand(),
+    fanYaw:    rand(),
+    depthFrac: cfg.depth ?? DEFAULT_INSERT_DEPTH,
+  };
 }
 
 // Render-time size for a side-hug hero decoration: it fills `fill` of the tier WALL HEIGHT,

@@ -8,7 +8,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneSeatFields } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneSeatFields } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -4262,6 +4262,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       } else {
         pos = { theta: 0, y: baseY + tierH * 0.45 };
       }
+      // Insert (top or side): re-bake the lean/fan/depth via the SAME helper the add path uses, so a
+      // moved insert doesn't lose its angle (the reset below zeroes tiltAngle/rotation).
+      if (mode === PLACEMENT_MODES.INSERT) {
+        const s = insertSeat(pc.insert);
+        pos = { ...pos, tiltAngle: s.tiltAngle, rotation: s.fanYaw, insertDepth: s.depthFrac };
+      }
       return { mode, pos };
     };
     const slots = placementSlots(srcEl, design.tiers.length).map(slot => {
@@ -4292,7 +4298,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         updateSticker(instance.id, {
           zone: slot.zone, tierIndex: slot.tierIndex,
           ...zoneSeatFields(pc, slot.zone),
-          x: 0, z: 0, tiltAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0,
+          x: 0, z: 0, tiltAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0, insertDepth: null,
           ...pos,
         });
         return;

@@ -27,7 +27,7 @@ import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac, seatedHitBox } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -1416,6 +1416,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // `=== 'rect'`, or an outline decal lands on an imaginary bounding-radius circle off the wall.
   const facetWall = !isRoundWall(shp);
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
+  // Insert on the side: the base is pushed INTO the wall (a negative radial seat) so the piece pokes
+  // out at an angle (the tilt is already applied by the sticker.tiltAngle group below). Best for a GLB
+  // bar oriented to extend along its outward face.
+  const isInsert = sticker.placementMode === 'insert';
+  const insertDepthFrac = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
   // A hero hug (single_per_slot, hugging a side) sizes to THIS tier's wall height, so it shrinks
   // on smaller tiers automatically — r is the stand size only and is ignored here. Scattered decor
   // (not single_per_slot) keeps its absolute r. `hugMul` is the per-instance +/- nudge (default 1);
@@ -1446,7 +1451,9 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     ? sidePipingClearance({ bands: pipingBands ?? [], yBottom: posY - down, yTop: posY + up })
     : 0;
   // `radialOffset` is the customer's "Depth" nudge — still an absolute world value on top (see #8 TODO).
-  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0);
+  // Insert sinks the base into the wall by `depth` of its size (fraction of the live sticker size — #8).
+  const insertSink = isInsert ? insertDepthFrac * STICKER_SIZE * effScale : 0;
+  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0) - insertSink;
   // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
   // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
   let cx, cz, yaw, curveRadius;
@@ -1616,6 +1623,10 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // the edge into the air (butterflies, flowers). Seats on its base like `stand` (no straddle); the
   // outward lean + edge contact is what makes part of it overhang. World-oriented, never billboarded.
   const isVerge = sticker.placementMode === 'verge';
+  // Insert: base sunk INTO the top surface, standing at an angle (chocolate bars). Upright + world-
+  // oriented like verge, but seated BELOW the surface by its burial depth (see py) rather than on it.
+  const isInsert = sticker.placementMode === 'insert';
+  const insertDepthFrac = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
   const isGlb2d = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
   // Seat the model's actual BOTTOM on the surface: lift by its measured half-height (reported by
   // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
@@ -1636,7 +1647,10 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     : Infinity;
   const effScale = Math.min(sticker.scale ?? 1, topFrameMax);
   const py = topY + (sticker.yOffset ?? 0) + (
-    standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
+    // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
+    // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
+    isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
+    : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
 
@@ -1648,7 +1662,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onDepth={setDepth} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
@@ -1804,14 +1818,17 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     // Lean/tilt must pivot about the BASE (the contact point), not the geometry centre — otherwise
     // leaning swings the base up off the cake. Translate down to the base, rotate, translate back
     // (cancels when untilted; no-op for perch where seatLift = 0).
-    const seatLift = standSeat ? (seatHalf ?? STICKER_SIZE / 2) : 0;
+    // Base-pivot the tilt for stand-seated modes AND insert (an inserted bar leans about its buried
+    // base, so the exposed part swings and the base stays put).
+    const seatLift = (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
     // Verge auto-orients radially OUTWARD: yaw so the element's local +Z points away from the cake
     // centre (re-derived from its x/z, so it reorients as it's dragged round the rim — round cakes
     // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that
     // outward +Z (+angle = lean over the edge). Stand/perch keep the caller's Y-spin and lean on −X.
+    // Insert keeps just its own Y-spin (the baked per-instance fan) — no radial auto-face.
     const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
     const yaw   = radialYaw + (sticker.rotation ?? 0);
-    const tiltX = isVerge ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+    const tiltX = (isVerge || isInsert) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
     const inner = (
       <group rotation={[0, yaw, 0]}>
         <group position={[0, -seatLift, 0]}>
@@ -1825,7 +1842,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     );
     return (
       <group position={[sticker.x, py, sticker.z]} scale={effScale}>
-        {(isGlb2d || isVerge) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
+        {(isGlb2d || isVerge || isInsert) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
   }
@@ -2374,9 +2391,14 @@ function CakeThumbnailScene({ config }) {
       {stickers.map(sticker => {
         const tier = tierData[sticker.tierIndex] ?? tierData[0];
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+        // Insert (base sunk into the surface at an angle) — mirror the interactive render (no measured
+        // seatHalf here, so use STICKER_SIZE/2 as the half-length).
+        const isInsertPv = sticker.placementMode === 'insert';
+        const insertDepthPv = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
         if (isSide) {
           const tshp = tierShape(tier);
-          const off = sideSeatOffset(tier.radius) + (sticker.radialOffset ?? 0);
+          const off = sideSeatOffset(tier.radius) + (sticker.radialOffset ?? 0)
+            - (isInsertPv ? insertDepthPv * STICKER_SIZE * (sticker.scale ?? 1) : 0);
           const sampler = tierReliefSampler(tier);
           const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
           let px, pz, yaw, r = 0;
@@ -2409,11 +2431,14 @@ function CakeThumbnailScene({ config }) {
         // Stand base-seats; perch & a centre-seat verge centre-seat (mid-spine on the rim edge, then
         // recline outward). A base-seat verge (verge.seat='base') base-seats like stand.
         const baseSeatedPv = sticker.placementMode === 'stand' || (isVergePv && sticker.vergeSeat === 'base');
-        const py   = topY + (sticker.yOffset ?? 0) + (baseSeatedPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : (isPerchPv || isVergePv) ? 0 : FLAT_STICKER_Y_OFFSET);
-        if (baseSeatedPv || isPerchPv || isVergePv) {
-          const seatLiftPv = baseSeatedPv ? STICKER_SIZE / 2 : 0;
+        const py   = topY + (sticker.yOffset ?? 0) + (
+          isInsertPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1) * (1 - 2 * insertDepthPv)
+          : baseSeatedPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1)
+          : (isPerchPv || isVergePv) ? 0 : FLAT_STICKER_Y_OFFSET);
+        if (baseSeatedPv || isPerchPv || isVergePv || isInsertPv) {
+          const seatLiftPv = (baseSeatedPv || isInsertPv) ? STICKER_SIZE / 2 : 0;
           const yawPv   = (isVergePv ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0) + (sticker.rotation ?? 0);
-          const tiltXPv = isVergePv ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+          const tiltXPv = (isVergePv || isInsertPv) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
           return (
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
               <group rotation={[0, yawPv, 0]}>

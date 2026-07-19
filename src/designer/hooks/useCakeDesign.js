@@ -3,7 +3,7 @@ import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_M
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
-import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat, zoneSeatFields } from '../placement.js';
+import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
@@ -671,6 +671,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       let px = position.x ?? 0;
       let seatTilt = 0, seatYOffset = 0;   // overridden by edgeSeatSeed for perch/verge below
+      let seatFanYaw = 0, seatInsertDepth = null;   // insert: per-instance fan spin + burial depth
       let pz = position.z ?? 0;
       // Seat angle/height for round side placements (hug/default). Resolved below so a re-added
       // instance never lands exactly on a coincident sibling.
@@ -700,6 +701,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         // perimeter via deOverlapSeat's rim branch).
         const siblings = prev.stickers.filter(s => s.placementMode === placementMode && s.tierIndex === (tierIndex ?? 0));
         ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.RIM, { x: px, z: pz }, siblings));
+      }
+      // Insert: base sunk into the surface at an angle. Placed at the drop/scatter position (NOT forced
+      // to the front edge like perch/verge); we only bake the per-instance lean (±jitter), a small fan
+      // spin and the burial depth. Scatter flows through addSticker unchanged, so each scattered piece
+      // gets its own jittered angle. Shared insertSeat helper (both add + chooser-move paths call it).
+      if (!exact && placementMode === PLACEMENT_MODES.INSERT) {
+        const seed = insertSeat(element.placement_config?.insert);
+        seatTilt        = seed.tiltAngle;
+        seatFanYaw      = seed.fanYaw;
+        seatInsertDepth = seed.depthFrac;
       }
       // De-overlap every OTHER scatter placement (hug / default mode): a re-added instance must
       // not stack exactly on a coincident sibling (they'd look like one). Geometry-driven by zone,
@@ -810,9 +821,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
           yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
-          rotation:      0,
+          rotation:      seatFanYaw,     // insert: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
-          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline (calibrated)
+          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert: lean±jitter
+          // Insert: fraction of the element's LENGTH sunk into the surface (render scales by measured
+          // length). null for every other mode. See placement.js insertSeat / PLACEMENT_CONFIG.md.
+          insertDepth:   seatInsertDepth,
           groupId:       null,
           // Ball-cluster membership: every ball in one packed clump shares a clusterId, so the UI
           // presents the set as ONE card (members abstracted) and they move/remove together — a

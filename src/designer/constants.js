@@ -110,6 +110,8 @@ export const PLACEMENT_MODES = Object.freeze({
   PERCH:            'perch',   // figure seated on the rim/top edge — straddles the edge, legs over
   VERGE:            'verge',   // rests its base on the rim lip and reclines radially OUTWARD, the rest
                               //   cantilevered over the edge into the air (butterflies, flowers)
+  INSERT:           'insert',  // base sunk INTO the surface, standing at an angle (chocolate bars,
+                              //   sparklers) — top: stands up out of the top; side: pokes out of the wall
 });
 
 // Internal element kinds the designer branches on (NOT the admin element-type slug).
