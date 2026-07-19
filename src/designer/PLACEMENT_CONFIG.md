@@ -26,7 +26,7 @@ section below (§1–§4) is the authoritative detail for its keys.
   // ── Zones × modes (§1 <zone>, §2) — one key per surface the element offers ──
   // Value is a mode STRING, or an OBJECT { mode, seat, … } carrying per-zone config (both read via
   // zoneCfg/zoneMode/zoneSeat). `seat` (wall-hug only) = "proud" | "flush"; default scatter?flush:proud.
-  "top_surface": "stand",          // stand | hug | perch | verge
+  "top_surface": "stand",          // stand | hug | perch | verge | insert
   "side":        { "mode": "hug", "seat": "proud" },   // solid piece sits ON the wall; or just "hug" (default proud)
   "middle_tier": "hug",
   "board":       "hug",
@@ -95,6 +95,9 @@ section below (§1–§4) is the authoritative detail for its keys.
   // ── Verge (rests on the rim lip, reclines radially OUTWARD over the edge) ──
   "verge": { "seat": "center", "angle_deg": 35, "y_offset": 0, "edge_inset": 0 },
 
+  // ── Insert (base sunk INTO the surface at an angle — chocolate bars, sparklers) ──
+  "insert": { "depth": 0.3, "lean_deg": 15, "jitter_deg": 20 },
+
   // ── GLB Recompose — customer-recolourable part groups ──
   "_model": {
     "groups":   [ { "key": "wings", "label": "Wings", "default": "#cc88ff", "editable": true } ],
@@ -147,8 +150,8 @@ section below (§1–§4) is the authoritative detail for its keys.
 ```
 
 > Keys present in the sample but not yet in dedicated tables below (`scatter`, `scatter_count`, `side_proud`,
-> `useSharedFondantTexture`, `perch`, `verge`, `_model`) are read by
-> `addSticker` / the GLB material path (`verge` is summarised in the §2 modes table) — tabulate them
+> `useSharedFondantTexture`, `perch`, `verge`, `insert`, `_model`) are read by
+> `addSticker` / the GLB material path (`verge` + `insert` are summarised in the §2 modes table) — tabulate them
 > when next touched.
 
 ---
@@ -185,6 +188,7 @@ From `PLACEMENT_MODES` in `constants.js`:
 | `stand` | `top_surface` | Stands upright on the surface; billboarded for 2D, full model for GLB. Size from `r`/scale. |
 | `hug` | `side`, `top_surface` | Lies flat against the surface; size derived from the wall (`hug_fill`), bends around round walls. |
 | `perch` | `rim` | A figure seated on the top edge — its centre straddles the edge (legs over the side, body above). Leans on world-X. Calibrated by `perch` (§ below). Legged 3D toppers. |
+| `insert` | `top_surface`, `side` | The element's base is **sunk into the surface** and it stands at an angle — chocolate bars, sparklers, wafer shards. The **zone drives orientation**: on `top_surface` it stands up out of the top; on `side` it pokes out of the wall (the designer inserts along that surface's normal — no zone-name branch, the mode is the config). Composes with `scatter` (each scattered piece inserted, for the exploded-bar cluster). Calibrated by `insert`: `{ depth, lean_deg, jitter_deg }` — **`depth`** = fraction of the element's length buried (0–1, default designer value); **`lean_deg`** = base tilt away from the surface normal (0 = straight in); **`jitter_deg`** = random ± spread added to the lean PER INSTANCE, so scattered pieces fan out instead of all leaning the same. All optional. _Authoring shipped in admin (AddElement/ManageElements); the designer render is a follow-up — until then an `insert` element falls back to the default seat._ |
 | `verge` | `rim` | Reclines radially **OUTWARD** by `verge.angle_deg` so the body cantilevers over the edge into the air. World-oriented (never billboarded); auto-faces outward, re-orienting as it's dragged round the rim. For butterflies, flowers. Conventionally `rim`, but like every mode it's a config value usable on any allowed surface. Calibrated by `verge`: `{ seat, angle_deg, y_offset, edge_inset }` — **`seat`** = `'center'` (default; the MID-SPINE/geometry centre rests on the rim edge and the body drapes over the lip) or `'base'` (the body BASE seats on the top surface and leans from there); **`angle_deg`** default-tilt in degrees (default 35; seeds the per-instance Tilt control); **`edge_inset`** radial pull-in from the rim (− pushes out over the lip); **`y_offset`** height nudge. Dragging an edge-seated element rim-locks it (snaps to the perimeter — never inward, so a centre-seat element can't bury itself); a base-seat verge drags freely on the top like `stand`. _Planned (with the faux-ball work): **`edge_drag`** = `'rim'` (default, locked to the perimeter) \| `'outward'` (may be dragged OUT over the lip for a "spill over the edge" look, while inward is always clamped to the rim — for faux balls)._ |
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).
