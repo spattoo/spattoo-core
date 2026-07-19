@@ -32,6 +32,7 @@ import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage 
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { seatHalfDepth } from '../geometry/seating.js';
+import { resolveSidePipingBands, sidePipingClearance } from './pipingMetrics.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -1361,7 +1362,7 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
 }
 
 
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -1399,8 +1400,21 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // identically on every cake size (INVARIANTS.md #8 — an absolute gap is a bigger slot the smaller
   // the tier). The drag hit-test (below) projects onto this base cylinder; the visible position adds
   // the live surface relief so the decor rests on the displaced wall.
+  // The decal's VISIBLE content band on the wall: sticker.y is its CENTRE, content reaches `down`
+  // below / `up` above (scaled). Until measured, fall back to the full square (old behaviour).
+  const down = (vext ? vext.down : STICKER_SIZE / 2) * effScale;
+  const up   = (vext ? vext.up   : STICKER_SIZE / 2) * effScale;
+  const clampWallY = y => wallClampY(y, baseY, height, down, up);
+  const posY = clampWallY(sticker.y);
+  // Auto cream-clearance: a PROUD solid (bow, topper) whose band overlaps an existing side piping
+  // band would interpenetrate it — the band projects off the wall too. Re-seat the decoration's back
+  // onto the deepest overlapping band's OUTER face (measured, config-driven off sideProud; the manual
+  // Depth nudge still stacks on top). Flat/flush decals and bare walls get 0 → unchanged.
+  const pipingClear = (sticker.sideProud === true)
+    ? sidePipingClearance({ bands: pipingBands ?? [], yBottom: posY - down, yTop: posY + up })
+    : 0;
   // `radialOffset` is the customer's "Depth" nudge — still an absolute world value on top (see #8 TODO).
-  const off    = sideSeatOffset(radius) + (sticker.radialOffset ?? 0);
+  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0);
   // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
   // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
   let cx, cz, yaw, curveRadius;
@@ -1428,13 +1442,6 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     ? curveRadius / (effScale || 1)
     : undefined;
 
-  // Keep the decal's VISIBLE content on the cake wall: sticker.y is its CENTRE, and its content
-  // reaches `down` below / `up` above (scaled). Clamp so the flags — not the transparent square —
-  // stay within the wall band. Until measured, fall back to the full square (old behaviour).
-  const down = (vext ? vext.down : STICKER_SIZE / 2) * effScale;
-  const up   = (vext ? vext.up   : STICKER_SIZE / 2) * effScale;
-  const clampWallY = y => wallClampY(y, baseY, height, down, up);
-  const posY = clampWallY(sticker.y);
 
   // Same box rule as the top sticker, from the one helper. A wall element is never base-seated
   // (wallClampY already keeps its whole square on the wall), so this is the full square — but the
@@ -2241,6 +2248,11 @@ function CakeScene({
               height={tier.height}
               shp={tierShape(tier)}
               reliefSampler={tierReliefSampler(tier)}
+              pipingBands={resolveSidePipingBands({
+                topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
+                bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
+                topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
+              })}
               selected={isSelected}
               onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
               onLongPress={onStickerLongPress}

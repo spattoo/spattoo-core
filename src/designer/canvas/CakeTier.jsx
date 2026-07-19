@@ -21,7 +21,7 @@ import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/sec
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
-import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
+import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 function extractGeo(scene) {
@@ -491,13 +491,19 @@ function TopPipingRingImpl({
   useEffect(() => {
     if (A && glbPath && radius) {
       const halfRaw = (A.bbDepth * A.shellScale) / 2;   // the render's positioning `half`
+      // `outerFrac` = how far the shell's OUTER face stands proud of the wall (radius fraction),
+      // INCLUDING its radial positioning — the reach a side decoration must clear. A rim shell is
+      // pulled inward (outer face ≤ edge) so this is ~0; a side/board shell projects out by ~its
+      // full depth. (radialOutFrac is reach-beyond-centre, for ring de-overlap — a different frame.)
+      const off = Math.min(-seatHalfDepth(A.bbDepth * A.shellScale) + extraRadialOffset, -seatHalfDepth(A.bbDepth * A.shellScale));
       setShellExtents(glbPath, flipTop, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
+        outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
       });
     }
-  }, [A, glbPath, flipTop, sizeFactor, radius]);
+  }, [A, glbPath, flipTop, sizeFactor, radius, extraRadialOffset]);
 
   const altActive = altEnabled && arrangement !== 'single';
 
@@ -630,13 +636,17 @@ function BottomPipingRingImpl({
   useEffect(() => {
     if (A && glbPath && radius) {
       const halfRaw = (A.bbDepth * A.shellScale) / 2;
+      // Outer-face reach INCLUDING positioning (see the top-ring note). A side/board shell's inner
+      // face sits on the wall (off = half + radial nudge), so it projects out by ~its full depth.
+      const off = halfRaw + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
       setShellExtents(glbPath, flipBottom, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
+        outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
       });
     }
-  }, [A, glbPath, flipBottom, sizeFactor, radius]);
+  }, [A, glbPath, flipBottom, sizeFactor, radius, extraRadialOffset]);
 
   const altActive = altEnabled && arrangement !== 'single';
 
@@ -706,13 +716,20 @@ function BottomPipingRingImpl({
   useEffect(() => {
     if (!festoonGeos?.length || !radius) return;
     const anchorY = yBase + yOffset;
-    let minY = Infinity, maxY = -Infinity;
+    let minY = Infinity, maxY = -Infinity, maxR = 0;
     festoonGeos.forEach(g => {
       g.computeBoundingBox?.();
-      if (g.boundingBox) { minY = Math.min(minY, g.boundingBox.min.y); maxY = Math.max(maxY, g.boundingBox.max.y); }
+      if (g.boundingBox) {
+        const bb = g.boundingBox;
+        minY = Math.min(minY, bb.min.y); maxY = Math.max(maxY, bb.max.y);
+        // Outward reach: the ring wraps the tier axis, so its furthest point from the axis is the
+        // outer face. bbox is symmetric about the axis, so the max |x|/|z| corner gives that radius.
+        maxR = Math.max(maxR, Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
+      }
     });
     if (minY < maxY) setFestoonExtents(glbPath, festoonSig({ size: sizeFactor, bendDepth, festoons, bendRing, bendTilt }), {
       bellyFrac: (anchorY - minY) / radius, topFrac: (maxY - anchorY) / radius,
+      outerFrac: Math.max(0, (maxR - radius) / radius),
     });
   }, [festoonGeos, yBase, yOffset, radius, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
 
@@ -726,6 +743,21 @@ function BottomPipingRingImpl({
       outset: 0.01 + extraRadialOffset, tilt: wrapTilt * DEG,
     });
   }, [wrap, scene, shape, radius, yBase, yOffset, sizeFactor, wrapSize, extraRadialOffset, wrapTilt]);
+
+  // Publish the wrap band's rendered extents (vertical reach relative to its anchor + outward reach),
+  // as radius fractions, so the side-clearance resolver treats it like any other band.
+  useEffect(() => {
+    if (!wrapGeo || !radius) return;   // buildWrapBand returns the BufferGeometry directly
+    wrapGeo.computeBoundingBox?.();
+    const bb = wrapGeo.boundingBox;
+    if (!bb) return;
+    const anchorY = yBase + yOffset;
+    const maxR = Math.max(Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
+    setWrapExtents(glbPath, sizeFactor, {
+      topFrac: (bb.max.y - anchorY) / radius, botFrac: (bb.min.y - anchorY) / radius,
+      outerFrac: Math.max(0, (maxR - radius) / radius),
+    });
+  }, [wrapGeo, radius, yBase, yOffset, glbPath, sizeFactor]);
 
   if (!A && !festoonGeos && !wrapGeo) return null;
 
