@@ -46,6 +46,7 @@ import InvitePanel from '../customers/InvitePanel';
 import DashboardPanel from '../dashboard/DashboardPanel';
 import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
+import TemplatesPanel from '../settings/TemplatesPanel';
 import BillingPanel from '../settings/BillingPanel';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
@@ -1500,6 +1501,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
+  const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
   const [bakerReady,          setBakerReady]          = useState(false);
@@ -4966,6 +4968,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div style={s.dropdownSection}>Settings</div>
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>Store Settings</button>}
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>Flavours</button>}
+                  {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>Templates</button>}
                   {hasCap('billing:manage') && <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>}
                   {hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add Staff</button>}
                 </div>
@@ -5124,6 +5127,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {hasCap('store:manage') && <button style={s.dropdownItem}
                     onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>
                     Flavours
+                  </button>}
+                  {hasCap('store:manage') && <button style={s.dropdownItem}
+                    onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>
+                    Templates
                   </button>}
                   {hasCap('billing:manage') && <button style={s.dropdownItem}
                     onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>
@@ -6453,6 +6460,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       <FlavoursPanel
         open={flavoursPanelOpen}
         onClose={() => setFlavoursPanelOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        accentColor={accentColor}
+      />
+
+      {/* ── Templates panel (hide/show Spattoo's global templates) ── */}
+      <TemplatesPanel
+        open={templatesPanelOpen}
+        onClose={() => setTemplatesPanelOpen(false)}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}
