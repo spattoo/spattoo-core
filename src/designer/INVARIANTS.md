@@ -116,16 +116,23 @@ models, an ad‑hoc rectangle on text — so what "selected" looked like depende
 There is now ONE.
 
 **The border traces the element's HIT PLANE, not its artwork's silhouette.** The hit plane
-(`isStickerHitPlane`, `STICKER_SIZE` square) is the ONLY thing that receives pointer events — a GLB's
-own meshes have `raycast` disabled — so it, not the visible art, is what the customer grabs and what
-steals a click from a neighbour. A heart on a square PNG intercepts clicks across its whole
-transparent margin. A border hugging the art would be prettier and would **hide the one fact the
-customer needs** when a decoration underneath won't respond: another element's invisible half is lying
-on top of it. Don't "improve" this into an alpha‑tight box.
+(`isStickerHitPlane`) is the ONLY thing that receives pointer events — a GLB's own meshes have
+`raycast` disabled — so it, not the visible art, is what the customer grabs and what steals a click
+from a neighbour. A heart on a square PNG intercepts clicks across its whole transparent margin. A
+border hugging the art would be prettier and would **hide the one fact the customer needs** when a
+decoration underneath won't respond: another element's invisible half is lying on top of it. For a
+**2D decal the plane is the full `STICKER_SIZE` square** — its transparent margin genuinely steals
+clicks and must be shown; don't "improve" that into an alpha‑tight box. A **GLB has no transparent
+margin**, so its plane narrows to the model's measured **per-axis footprint** (`StickerModel` reports
+`halfW`/`seatHalf`; `seatedHitBox` builds the rect): a tall‑narrow bow gets a tall‑narrow box, not a
+square. This is the SAME principle (trace the clickable region), applied to a tighter region — not the
+banned alpha‑tight box.
 
 `SelectionBox` is handed `width`/`height`/`centerY`/`z` and nothing else — no type, slug or zone
-reaches it. Only `z` is measured (via `onDepth`, mirroring `onSeat`): how far the element stands proud
-of its hit plane, so a deep GLB or a raised relief doesn't swallow the border.
+reaches it. `z` (via `onDepth`, mirroring `onSeat`) is how far the border sits proud so a deep GLB or
+raised relief doesn't swallow it — but a GLB uses **half** its proud depth (`boxZ`), not the full
+front face: a bent, proud model (a side bow) otherwise floats the flat border ~a full depth off the
+wall, and orbiting the cake then slides it off the decoration. Half‑depth keeps the border on the body.
 
 **The hit plane itself stops at a base-seated element's SEAT** — `seatedHitBox` (`placement.js`) is
 the one source for the plane, the border and the grips. A stand/base-verge element is lifted by

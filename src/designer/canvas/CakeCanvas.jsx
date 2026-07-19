@@ -1296,7 +1296,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position, center, depthScaled, seatHalf, gradBBox } = useMemo(() => {
+  const { scale, position, center, depthScaled, seatHalf, halfW, gradBBox } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -1305,8 +1305,11 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
     glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
     // The gradient blends in the model's local frame (same baked geometry the vertex shader reads),
-    // so it stays put regardless of placement/instance scale.
-    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc, seatHalf: (size.y * sc) / 2,
+    // so it stays put regardless of placement/instance scale. `halfW`/`seatHalf` are the model's
+    // PER-AXIS half-extents (width/height), so the selection hit-plane is a tight rectangle around a
+    // non-square model — a tall-narrow bow gets a tall-narrow box, not a STICKER_SIZE square.
+    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc,
+      seatHalf: (size.y * sc) / 2, halfW: (size.x * sc) / 2,
       gradBBox: { min: box.min.clone(), size: size.clone(), center: ctr.clone() } };
   }, [clonedScene, imageUrl]);
 
@@ -1316,7 +1319,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
   // ≈ STICKER_SIZE/2 and nothing changes; a flat model reports a small value and stops floating.
   // A GLB fills its own box (no transparent margin), so its visible vertical extent IS its half-
   // height, symmetric about the origin — the wall clamp then behaves exactly as the old full-square did.
-  useEffect(() => { onSeat?.(seatHalf); onVExtent?.({ down: seatHalf, up: seatHalf }); }, [seatHalf]);
+  useEffect(() => { onSeat?.(seatHalf); onVExtent?.({ down: seatHalf, up: seatHalf, halfW }); }, [seatHalf, halfW]);
 
   // On the side wall, bend the model around the tier so it hugs the curve. Seat its BACK on
   // the wall (push out by half its depth) so a deep model — e.g. a topper head — sits proud
@@ -1483,9 +1486,14 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
 
 
   // Same box rule as the top sticker, from the one helper. A wall element is never base-seated
-  // (wallClampY already keeps its whole square on the wall), so this is the full square — but the
-  // rule lives in exactly one place.
-  const hitBox = seatedHitBox({ size: STICKER_SIZE });
+  // (wallClampY already keeps its whole square on the wall). A GLB narrows the box to its measured
+  // dense footprint (tight, non-square); a 2D decal keeps the full square (INVARIANTS #5a).
+  const glbFoot = isGlb && vext?.halfW != null;
+  const hitBox = seatedHitBox({ size: STICKER_SIZE, ...(glbFoot ? { halfW: vext.halfW, halfH: vext.up } : {}) });
+  // The border sits at the model's MID-depth, not its proud front face: a deep GLB (a bent/proud bow)
+  // otherwise floats the flat border ~a full depth off the wall, so orbiting the cake slides it off
+  // the decoration. Half-depth keeps the border on the body while still clearing most of it.
+  const boxZ = isGlb ? depth * 0.5 : depth;
 
   return (
     <group
@@ -1500,11 +1508,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
           same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
-      {selected && <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />}
+      {selected && <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={boxZ} />}
       {selected && resize && sticker.allowedActions?.resize !== false && (() => {
         const c = resize.controlFor(sticker);
         return c ? (
-          <ResizeHandles width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth}
+          <ResizeHandles width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={boxZ}
             value={c.value} bounds={c} onOrbitEnable={onOrbitEnable}
             onResize={v => resize.onResize(sticker, v)} />
         ) : null;
@@ -1632,6 +1640,8 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
   // float is opt-in via yOffset (the Height control) / config. Fallback to the constant pre-measure.
   const [seatHalf, setSeatHalf] = useState(null);
+  // A GLB also reports its dense footprint half-WIDTH so the box narrows to a non-square model.
+  const [glbHalfW, setGlbHalfW] = useState(null);
   // How far the element stands proud of its hit plane (see DraggableSideSticker).
   const [depth, setDepth] = useState(0);
   // Verge seat anchor is config-driven (placement_config.verge.seat → instance.vergeSeat): 'center'
@@ -1657,12 +1667,14 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
   // being billboarded toward the camera, win the raycast against the tier behind it.
-  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE });
+  const glbFoot = isGlb2d && glbHalfW != null;
+  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE, ...(glbFoot ? { halfW: glbHalfW, halfH: seatHalf } : {}) });
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onVExtent={v => setGlbHalfW(v?.halfW ?? null)} onDepth={setDepth} />
+
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the

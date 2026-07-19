@@ -214,12 +214,18 @@ export function frameSideMaxScale(wallHeight, fill = 1, stickerSize = STICKER_SI
 // Flag-driven off the placement mode, never an element type. A perch/verge that deliberately
 // overhangs the rim is NOT base-seated — its underside hangs in air, not in cake — so it keeps the
 // full square. GLBs self-correct: their `seatHalf` is half the model's height.
-export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKER_SIZE } = {}) {
-  const half = size / 2;
+// A GLB passes its measured DENSE footprint (`halfW`/`halfH`, in STICKER_SIZE units) so the hit
+// plane hugs the model's real extent — a tall-narrow bow gets a tall-narrow box, not a square. 2D
+// stickers omit them and keep the full STICKER_SIZE square (their transparent margin genuinely does
+// steal clicks and must be shown — INVARIANTS #5a). The box still traces the hit plane; only the
+// plane's SIZE narrows to the art it actually intercepts.
+export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKER_SIZE, halfW = null, halfH = null } = {}) {
+  const hw  = halfW == null ? size / 2 : halfW;   // footprint half-width (GLB) or square half
+  const top = halfH == null ? size / 2 : halfH;   // footprint half-height (GLB) or square half
   // Unmeasured (asset still loading) → the full square, exactly as before.
-  const seat = seatHalf == null ? half : Math.min(Math.max(seatHalf, 0), half);
-  const bottom = standSeat ? -seat : -half;
-  return { width: size, height: half - bottom, centerY: (half + bottom) / 2 };
+  const seat = seatHalf == null ? top : Math.min(Math.max(seatHalf, 0), top);
+  const bottom = standSeat ? -seat : -top;
+  return { width: hw * 2, height: top - bottom, centerY: (top + bottom) / 2 };
 }
 
 // ── The ONE answer to "how big is this sticker, and how big may it get?" ──────
