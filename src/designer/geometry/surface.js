@@ -169,6 +169,14 @@ export function pipingPerimeters(shape) {
   return [pipingPerimeter(shape)];
 }
 
+// The COUNTER (hole) contours a piping ring also borders — the inner edges of an 8/0/A/…, so a shell
+// border frames every edge of a glyph, not just its silhouette. Empty for any shape without holes
+// (round, rect, heart, a digit like 1/7). The caller walks these with the OPPOSITE offset sign to the
+// outline (out INTO the material, away from the hole) so beads sit on the counter's edge, not in the gap.
+export function pipingHolePerimeters(shape) {
+  return (shape.holes ?? []).map(polygonPerimeter);
+}
+
 // ── Top-surface placement ─────────────────────────────────────────────────────
 // Clamp a top point (x,z) to within the tier footprint, scaled by margin k.
 //   Round: pull onto the inscribed circle of radius·k (matches the old r>maxR rescale).

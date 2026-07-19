@@ -12,7 +12,7 @@ import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
-import { tierShape, pipingPerimeter, pipingPerimeters, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
+import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { seatHalfDepth } from '../geometry/seating.js';
@@ -179,6 +179,12 @@ const PIPING_RADIAL_PLAY = 0.4;
 // the tier radius. The band's thickness follows from the ring's own cross-section aspect; the
 // size control scales both. Tuned so a size-1 band reads like a proper cream band on the wall.
 const PIPING_WRAP_HEIGHT_FRAC = 0.4;
+
+// GLYPH cakes: the ring's radial inset/outset is CLAMPED to this fraction of the glyph STROKE width, so
+// an absolute radial offset authored for a round cake (e.g. −0.17) can't push beads past the thin stroke
+// and collapse the border to the stroke centreline (which rings the counters). Radius-independent — the
+// bound tracks the live stroke width, per INVARIANTS #8.
+const GLYPH_PIPE_INSET_FRAC = 0.45;
 
 // Cap the user-scaled shell scale so its rendered radial depth (bbDepthZ × scale) never
 // exceeds PIPING_MAX_DEPTH_FRAC of the tier radius. The max() floor keeps a little growth
@@ -501,7 +507,9 @@ function TopPipingRingImpl({
     // with the edge. extraRadialOffset (incl. the user's radial control) may pull the
     // cream inward, but never push it past the edge — clamp the outer face to the rim.
     const half = seatHalfDepth(A.bbDepth * A.shellScale);   // half the shell's measured depth (shared seat rule)
-    const off  = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
+    let   off  = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
+    // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
+    if (shape?.strokeW) off = Math.max(off, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     const r    = radius + off;
     const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
     // Rectangular (sheet) cakes walk a rounded-rect perimeter; round cakes keep the circle.
@@ -517,8 +525,15 @@ function TopPipingRingImpl({
     if (perim) {
       if (shape.kind === 'rect') return rectEdgeRing(shape, off, step, topY + yOffset);  // sheet: clean straight runs + corners
       // heart, number, …: even by arc length, EACH contour its OWN loop so a multi-digit number's
-      // digits are ringed separately and no shell bridges the gap between them.
-      return pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, topY + yOffset));
+      // digits are ringed separately and no shell bridges the gap between them. A glyph's COUNTERS
+      // (holes) are ringed too, with the offset flipped (+off) so beads sit on the material side of the
+      // inner edge — a real number cake borders every edge, not just the silhouette.
+      return [
+        ...pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, topY + yOffset)),
+        // Counters: beads on the MATERIAL side of the hole edge — always a POSITIVE offset (into the
+        // material, away from the hole) regardless of the ring's own inset/outset sign.
+        ...pipingHolePerimeters(shape).flatMap(p => perimeterRing(p, Math.abs(off), step, topY + yOffset)),
+      ];
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
@@ -632,7 +647,9 @@ function BottomPipingRingImpl({
     // in/out; outward travel is capped at PIPING_RADIAL_PLAY of the radius so the border stays
     // attached rather than drifting onto the board. Inward travel is unrestricted.
     const half = (A.bbDepth / 2) * A.shellScale;
-    const off  = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
+    let   off  = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
+    // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
+    if (shape?.strokeW) off = Math.min(off, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     const r    = radius + off;
     const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
     const perim = (shape?.kind === 'rect' || shape?.outline) ? pipingPerimeter(shape) : null;
@@ -647,8 +664,13 @@ function BottomPipingRingImpl({
     if (perim) {
       if (shape.kind === 'rect') return rectEdgeRing(shape, off, step, yBase + yOffset);  // sheet: clean straight runs + corners
       // heart, number, …: even by arc length, EACH contour its OWN loop so a multi-digit number's
-      // digits are ringed separately and no shell bridges the gap between them.
-      return pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, yBase + yOffset));
+      // digits are ringed separately and no shell bridges the gap between them. Counters (holes) are
+      // ringed too, offset flipped (+off) onto the material side — see the top ring for the rationale.
+      return [
+        ...pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, yBase + yOffset)),
+        // Counters: beads on the material side of the hole edge — always a positive offset (see top ring).
+        ...pipingHolePerimeters(shape).flatMap(p => perimeterRing(p, Math.abs(off), step, yBase + yOffset)),
+      ];
     }
     if (swagCount > 0 && swagDepth > 0) {
       return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });

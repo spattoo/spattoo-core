@@ -193,7 +193,23 @@ export function glyphGeometry(text, targetH = 2, weight = 0, cornerR = 0) {
   // The `z = -y` flip reverses the glyph's CCW winding, but `polygonPerimeter` only yields OUTWARD normals
   // for a CCW-in-XZ polygon (what the rim shells ride) — so re-wind each glyph CCW.
   const outline = shapes.map(s => ccwXZ(s.getPoints(CURVE_SEG).map(p => ({ x: p.x, z: -p.y }))));
-  const out = { shapes, worldW, worldH, halfW: worldW / 2, halfD: worldH / 2, outline };
+  // The COUNTERS (the holes of 8/0/A/…), same world XZ + CCW winding as the outline, so the piping
+  // ring can border the inner edges too — a real number cake pipes every edge, not just the silhouette.
+  const holes = shapes.flatMap(s => (s.holes ?? []).map(h => ccwXZ(h.getPoints(CURVE_SEG).map(p => ({ x: p.x, z: -p.y })))));
+
+  // STROKE WIDTH — the honest local feature size (the pen thickness of the glyph), measured from the
+  // geometry, not the whole-glyph height. For a stroke-like shape area ≈ width × (perimeter/2), so
+  // width ≈ 2·area / perimeter; with counters, area is net (outer − holes) and perimeter is every edge.
+  // This is what the piping shell scales to, so beads run ALONG a stroke instead of swamping it and
+  // collapsing to its centreline (which rings the counters). Radius-independent (both terms scale with
+  // the glyph), so it stays correct at any authored size — INVARIANTS #8.
+  const areaXZ  = r => { let a = 0; for (let i = 0; i < r.length; i++) { const q = r[(i + 1) % r.length]; a += r[i].x * q.z - q.x * r[i].z; } return Math.abs(a) / 2; };
+  const perimXZ = r => { let L = 0; for (let i = 0; i < r.length; i++) { const q = r[(i + 1) % r.length]; L += Math.hypot(q.x - r[i].x, q.z - r[i].z); } return L; };
+  const netArea  = outline.reduce((s, r) => s + areaXZ(r), 0) - holes.reduce((s, r) => s + areaXZ(r), 0);
+  const totPerim = [...outline, ...holes].reduce((s, r) => s + perimXZ(r), 0);
+  const strokeW  = totPerim > 0 ? (2 * netArea) / totPerim : worldH;
+
+  const out = { shapes, worldW, worldH, halfW: worldW / 2, halfD: worldH / 2, outline, holes, strokeW };
   cache.set(key, out);
   return out;
 }
@@ -241,8 +257,20 @@ export function glyphDescriptor(family, config) {
   const text = cleanedTextOf(fam, config);
   const { height, thickness, pipingScale } = glyphSizeForCount(config, text.length, fam.counts, fam.defaults);
   const g = glyphGeometry(text, height, config?.weight, config?.cornerR);
-  return { kind: 'glyph', shapes: g.shapes, outline: g.outline, halfW: g.halfW, halfD: g.halfD, thickness, shellRadius: g.halfD * pipingScale };
+  // The piping ring's shell scales to the STROKE WIDTH, not the glyph half-height. Sizing to the
+  // half-height (~half a round cake) made a bead as deep as the stroke, so its seat-inset reached the
+  // stroke centreline and the border ringed the counters instead of hugging the outline. A bead ~the
+  // stroke width sits ALONG the edge. PIPING_STROKE_MUL is the one dimensionless dial (INVARIANTS #8).
+  return {
+    kind: 'glyph', shapes: g.shapes, outline: g.outline, holes: g.holes,
+    halfW: g.halfW, halfD: g.halfD, thickness, strokeW: g.strokeW,
+    shellRadius: g.strokeW * PIPING_STROKE_MUL * pipingScale,
+  };
 }
+
+// Bead size ≈ this × the glyph stroke width (fed as the ring's `radius`, off which the shell scale +
+// seat-inset derive). Tuned so a shell border hugs the stroke edges without collapsing to the centre.
+export const PIPING_STROKE_MUL = 1.4;
 
 // The glyph tier's EFFECTIVE world box, for framing (camera + board) — NOT for the mesh, which the extrude
 // builds from the shapes directly. A glyph lies flat and is extruded UP, so its footprint is the string's

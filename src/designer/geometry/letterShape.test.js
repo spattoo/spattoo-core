@@ -97,10 +97,14 @@ describe('letter cake — sized by height, per letter count', () => {
 describe('letter cake — renders as the shared glyph kind, on the perimeter wall', () => {
   const abc = tierShape({ shapeFamily: 'letter', shapeConfig: { letters: 'ABC', byCount: { 3: { height: 1.9, thickness: 0.8 } } } });
 
-  it('descriptor is kind:glyph with resolved thickness + shellRadius', () => {
+  it('descriptor is kind:glyph with resolved thickness + stroke-scaled shellRadius', () => {
     expect(abc.kind).toBe('glyph');
     expect(abc.thickness).toBeCloseTo(0.8, 6);
-    expect(abc.shellRadius).toBeCloseTo(abc.halfD, 6);   // pipingScale defaults to 1
+    // The piping bead scales to the STROKE width (so a shell border hugs the strokes), well below the
+    // glyph half-height it used to size to (which swamped thin strokes and ringed the counters).
+    expect(abc.strokeW).toBeGreaterThan(0);
+    expect(abc.shellRadius).toBeCloseTo(abc.strokeW * 1.4, 6);   // strokeW × PIPING_STROKE_MUL (pipingScale 1)
+    expect(abc.shellRadius).toBeLessThan(abc.halfD);
   });
 
   it('a letter wall is NOT a round cylinder (side decor traces the perimeter)', () => {

@@ -3,7 +3,7 @@ import {
   numberGeometry, numberSizeForCount, numberTierDims, numberDigitCount,
   NUMBER_SIZE_DEFAULTS,
 } from './numberShape.js';
-import { tierShape, pipingPerimeters, boundingRadius } from './surface.js';
+import { tierShape, pipingPerimeters, pipingHolePerimeters, boundingRadius } from './surface.js';
 import { asRings } from './shapes.js';
 
 // The multi-digit number cake: a "10" is a "1" and a "0" — two DISJOINT footprints. The piping garland
@@ -104,5 +104,27 @@ describe('number cake — sized by height, per digit count', () => {
     expect(four.thickness).toBeCloseTo(1.1, 6);     // 4-digit → the 4-count thickness
     // numberTierDims agrees with the descriptor's vertical thickness.
     expect(numberTierDims({ digits: '2027', byCount: { 4: { height: 1.5, thickness: 1.1 } } }).height).toBeCloseTo(1.1, 6);
+  });
+});
+
+// A shell border must ring a digit's COUNTERS (holes), not just its silhouette — an "8" has two, a
+// "0" one, a "7" none. The piping shell also sizes to the STROKE width, so beads run along the stroke
+// instead of collapsing to its centreline (the bug that ringed the counters with oversized beads).
+describe('number cake — counters are piped, and the shell sizes to the stroke', () => {
+  const shapeOf = digits => tierShape({ shapeFamily: 'number', shapeConfig: { digits } });
+
+  it('exposes one counter loop per hole (8→2, 0→1, 7→0)', () => {
+    expect(pipingHolePerimeters(shapeOf('8')).length).toBe(2);
+    expect(pipingHolePerimeters(shapeOf('0')).length).toBe(1);
+    expect(pipingHolePerimeters(shapeOf('7')).length).toBe(0);
+    // "10" — the 1 has no counter, the 0 has one.
+    expect(pipingHolePerimeters(shapeOf('10')).length).toBe(1);
+  });
+
+  it('shellRadius scales to the stroke width, far below the glyph half-height', () => {
+    const s = shapeOf('8');
+    expect(s.strokeW).toBeGreaterThan(0);
+    expect(s.strokeW).toBeLessThan(s.halfD);        // a stroke is thinner than half the digit
+    expect(s.shellRadius).toBeLessThan(s.halfD);    // so the bead no longer swamps the stroke
   });
 });
