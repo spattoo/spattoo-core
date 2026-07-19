@@ -2734,6 +2734,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const footprint = (STICKER_SIZE * scale) ** 2;
     return Math.max(12, Math.min(400, Math.floor((area / footprint) * 0.7)));
   }
+  // The count a NEW scatter seeds with — the element's admin-authored default
+  // (placement_config.scatter_count), falling back to SCATTER_DEFAULT_COUNT. Config-driven, never a
+  // hardcoded per-element number. Clamped to the surface's physical cap so a large default can't
+  // over-pack a small cake (the density slider's own max).
+  function scatterCountFor(element, zone, tierIndex, scale) {
+    const configured = element?.placement_config?.scatter_count;
+    const n = Number.isFinite(configured) && configured > 0 ? Math.round(configured) : SCATTER_DEFAULT_COUNT;
+    return Math.min(n, scatterMaxCount(zone, tierIndex, scale));
+  }
   // Deterministic scatter for the card's preview tile — a handful of the element spread on the
   // surface (golden-angle disk on top; an angular spread on the wall) so the tile shows a SCATTER,
   // not one piece. Same TopperPreview parts shape decor_pattern uses (glbUrl/baseRotation/r/dx/dz).
@@ -2800,9 +2809,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function takenSeatsOf(instances) {
     return instances.map(s => isSideZoneName(s.zone) ? { theta: s.theta, y: s.y } : { x: s.x, z: s.z });
   }
-  function placeScatter(element, hit, count = SCATTER_DEFAULT_COUNT) {
+  function placeScatter(element, hit, count) {
     const scale = scatterScaleFor(element);
-    scatterInstances(element, hit.zone, hit.tierIndex, count, scale, []);
+    const n = count ?? scatterCountFor(element, hit.zone, hit.tierIndex, scale);
+    scatterInstances(element, hit.zone, hit.tierIndex, n, scale, []);
     setElementsOpen(false);
     focusEditor('decoration');
     setMultiSelectMode(false);
@@ -3070,7 +3080,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (on) {
       if (all.some(s => scatterGroupOf(s) === grp)) return;   // already present
       const ref = all[0];                                     // share size/colour with the existing set
-      scatterInstances(el, zone, scatterTierForZone(zone), SCATTER_DEFAULT_COUNT, ref?.scale ?? scatterScaleFor(el), [], ref?.color ?? undefined);
+      const tierIndex = scatterTierForZone(zone);
+      const scale = ref?.scale ?? scatterScaleFor(el);
+      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], ref?.color ?? undefined);
     } else {
       all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
     }

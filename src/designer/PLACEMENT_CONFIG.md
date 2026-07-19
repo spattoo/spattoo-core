@@ -37,6 +37,7 @@ section below (§1–§4) is the authoritative detail for its keys.
   "scale":           { "min": 0.5, "max": 1.5, "step": 0.05 },  // size-dial bounds (optional)
   "single_per_slot": true,                            // hero: one per tier×surface (vs free scatter)
   "scatter":         false,                           // density scatter (sprinkles); excl. single_per_slot
+  "scatter_count":   12,                               // scatter: default instances seeded per surface (admin-authored; else 12, capped to fit)
   "cluster":         { "min": 3, "max": 30, "sizes": [1.6, 1.35, 0.85, 0.5], "palette": ["#D4AF37"] },
                                                       // packed faux-ball clump; excl. scatter/single_per_slot
   "hug_fill":        0.7,                             // `hug`: fraction of wall height filled
@@ -145,7 +146,7 @@ section below (§1–§4) is the authoritative detail for its keys.
 }
 ```
 
-> Keys present in the sample but not yet in dedicated tables below (`scatter`, `side_proud`,
+> Keys present in the sample but not yet in dedicated tables below (`scatter`, `scatter_count`, `side_proud`,
 > `useSharedFondantTexture`, `perch`, `verge`, `_model`) are read by
 > `addSticker` / the GLB material path (`verge` is summarised in the §2 modes table) — tabulate them
 > when next touched.
@@ -308,6 +309,7 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
     "scale":           { "min": 0.5, "max": 1.5, "step": 0.05 },
     "single_per_slot": true,
     "scatter":         false,
+    "scatter_count":   12,
     "hug_fill":        0.7,
     "side_proud":      false,
 
