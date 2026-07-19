@@ -128,11 +128,19 @@ margin**, so its plane narrows to the model's measured **per-axis footprint** (`
 square. This is the SAME principle (trace the clickable region), applied to a tighter region — not the
 banned alpha‑tight box.
 
-`SelectionBox` is handed `width`/`height`/`centerY`/`z` and nothing else — no type, slug or zone
-reaches it. `z` (via `onDepth`, mirroring `onSeat`) is how far the border sits proud so a deep GLB or
-raised relief doesn't swallow it — but a GLB uses **half** its proud depth (`boxZ`), not the full
-front face: a bent, proud model (a side bow) otherwise floats the flat border ~a full depth off the
-wall, and orbiting the cake then slides it off the decoration. Half‑depth keeps the border on the body.
+**A 2D decal gets a flat rectangle; a GLB with real DEPTH gets a 3D wireframe BOX.** A flat border
+only looks right head-on — a bent, proud model (a side bow) is a curved 3D object, so a flat plane
+placed in front of it *slides off the moment you orbit the cake* (no flat-plane placement fixes this;
+it's the wrong primitive). The GLB cue is therefore a **box enclosing the model's actual 3D bounds**,
+which wraps it from every camera angle. `StickerModel` measures the RENDERED model's `Box3` in its
+local frame — the meshes' OWN `geometry.boundingBox` union, NOT `setFromObject` (whose world matrices
+read effScale-scaled coords once the scene mounts, flip-flopping the size per render) — and reports
+`{ w, h, d, cy, cz }`; `SelectionBox` builds `EdgesGeometry(BoxGeometry)` at `centerZ`. The box inherits
+bend/tilt/proud-seat for free because it's a sibling in the element's local frame. `SelectionBox` still
+takes only geometry (`width`/`height`/`centerY`/`z`/`depth`/`centerZ`) — no type, slug or zone (#1/#2/#6).
+This supersedes the flat GLB rect (and the old inverted-hull outline). A 2D decal has no depth → `depth`
+0 → it keeps its flat rect at the full `STICKER_SIZE` square (its transparent margin genuinely steals
+clicks and must be shown; don't "improve" that into an alpha-tight box).
 
 **The hit plane itself stops at a base-seated element's SEAT** — `seatedHitBox` (`placement.js`) is
 the one source for the plane, the border and the grips. A stand/base-verge element is lifted by

@@ -1319,7 +1319,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
   // ≈ STICKER_SIZE/2 and nothing changes; a flat model reports a small value and stops floating.
   // A GLB fills its own box (no transparent margin), so its visible vertical extent IS its half-
   // height, symmetric about the origin — the wall clamp then behaves exactly as the old full-square did.
-  useEffect(() => { onSeat?.(seatHalf); onVExtent?.({ down: seatHalf, up: seatHalf, halfW }); }, [seatHalf, halfW]);
+  useEffect(() => { onSeat?.(seatHalf); }, [seatHalf]);
 
   // On the side wall, bend the model around the tier so it hugs the curve. Seat its BACK on
   // the wall (push out by half its depth) so a deep model — e.g. a topper head — sits proud
@@ -1332,16 +1332,27 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     [clonedScene, scale, center, bendRadius, depthScaled, seatProud],
   );
 
-  // How far this model stands proud of its hit plane, so the selection border clears it. A bent model
-  // wraps the wall, so it is measured in the bent frame it actually renders in; a flat one is
-  // re-centred on the origin by `scale`/`position`, so it reaches forward by half its depth. This
-  // replaces the old inverted-hull outline (a white BackSide clone scaled to 1.025), which haloed
-  // detailed figurines and gave GLB elements a different selection cue from every other element.
-  const bentFrontZ = useMemo(
-    () => (bentScene ? new THREE.Box3().setFromObject(bentScene).max.z : null),
-    [bentScene],
-  );
-  useEffect(() => { onDepth?.(bentFrontZ ?? depthScaled / 2); }, [onDepth, bentFrontZ, depthScaled]);
+  // The rendered model's 3D bounds, measured in the LOCAL frame it renders in — a sibling of the
+  // element, so the box inherits its position/facing/tilt/scale for free. A BENT model is measured in
+  // its bent frame (wraps the wall); a FLAT one is the scaled/centred bbox. Feeds the 3D selection box
+  // (so the cue wraps the model from every camera angle, not a flat plane that slides off a curve) and
+  // the grip depth. Replaces the old inverted-hull outline (a white BackSide clone) that haloed
+  // figurines. `frontZ` = the front-most point, so the resize grips clear a proud model.
+  const box3 = useMemo(() => {
+    if (bentScene) {
+      // Union the meshes' OWN geometry bounds (local frame) — NOT setFromObject, whose world matrices
+      // read effScale-scaled coords once the scene is mounted, flip-flopping the box's size per render.
+      const b = new THREE.Box3();
+      bentScene.traverse(o => { if (o.isMesh && o.geometry) { o.geometry.computeBoundingBox?.(); if (o.geometry.boundingBox) b.union(o.geometry.boundingBox); } });
+      if (!b.isEmpty()) {
+        const s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+        return { w: s.x, h: s.y, d: s.z, cy: c.y, cz: c.z, frontZ: b.max.z };
+      }
+    }
+    return { w: 2 * halfW, h: 2 * seatHalf, d: depthScaled, cy: 0, cz: 0, frontZ: depthScaled / 2 };
+  }, [bentScene, halfW, seatHalf, depthScaled]);
+  useEffect(() => { onDepth?.(box3.frontZ); }, [onDepth, box3]);
+  useEffect(() => { onVExtent?.({ down: seatHalf, up: seatHalf, halfW, box: box3 }); }, [seatHalf, halfW, box3]);
 
   // GLB Recompose: when the instance carries per-group colours, recolour each mesh by its authored
   // userData.group (set in admin), leaving untagged meshes at their baked colour. The single `color`
@@ -1508,7 +1519,9 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
           same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
-      {selected && <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={boxZ} />}
+      {selected && (glbFoot && vext?.box
+        ? <SelectionBox width={vext.box.w} height={vext.box.h} centerY={vext.box.cy} depth={vext.box.d} centerZ={vext.box.cz} />
+        : <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={boxZ} />)}
       {selected && resize && sticker.allowedActions?.resize !== false && (() => {
         const c = resize.controlFor(sticker);
         return c ? (
@@ -1642,6 +1655,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   const [seatHalf, setSeatHalf] = useState(null);
   // A GLB also reports its dense footprint half-WIDTH so the box narrows to a non-square model.
   const [glbHalfW, setGlbHalfW] = useState(null);
+  const [glbBox, setGlbBox] = useState(null);   // rendered 3D bounds → 3D selection box
   // How far the element stands proud of its hit plane (see DraggableSideSticker).
   const [depth, setDepth] = useState(0);
   // Verge seat anchor is config-driven (placement_config.verge.seat → instance.vergeSeat): 'center'
@@ -1673,13 +1687,15 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onVExtent={v => setGlbHalfW(v?.halfW ?? null)} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
           same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
-      {selected && <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />}
+      {selected && (glbFoot && glbBox
+        ? <SelectionBox width={glbBox.w} height={glbBox.h} centerY={glbBox.cy} depth={glbBox.d} centerZ={glbBox.cz} />
+        : <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />)}
       {selected && resize && sticker.allowedActions?.resize !== false && (() => {
         const c = resize.controlFor(sticker);
         return c ? (
