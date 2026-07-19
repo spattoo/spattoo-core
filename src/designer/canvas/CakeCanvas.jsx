@@ -31,6 +31,7 @@ import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
+import { makeRefCountedCache } from '../shared/refCountedCache.js';
 import { seatHalfDepth } from '../geometry/seating.js';
 import { resolveSidePipingBands, sidePipingClearance } from './pipingMetrics.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
@@ -758,8 +759,18 @@ function OverlayMesh({ geo, url }) {
   );
 }
 
+// Relief maps + solid-relief geometry are IDENTICAL across every instance of the same element at the
+// same size — only the per-instance position differs. Bake once per signature and SHARE the result
+// across all instances (24 scattered bows used to bake 24×). Ref-counted + idle-TTL so the shared
+// GPU resources are pinned while any instance is mounted and reclaimed once unused (see refCountedCache).
+const reliefMapsCache = makeRefCountedCache({
+  dispose: v => { v?.normalMap?.dispose?.(); v?.displacementMap?.dispose?.(); },
+});
+const solidGeoCache = makeRefCountedCache({ dispose: v => v?.dispose?.() });
+
 // Bake the relief displacement + normal maps from the loaded sticker image (placement_config.relief).
-// Reuses the drei-cached image; null when the element has no relief. Disposed on change/unmount.
+// Reuses the drei-cached image; null when the element has no relief. The bake is SHARED across
+// instances via reliefMapsCache (keyed by image + bake params + mask), so disposal is the cache's job.
 function useReliefMaps(imageUrl, relief) {
   // Same qualified URL as the albedo above, so drei's cache serves ONE fetch for both.
   const base = useTexture(corsUrl(imageUrl));
@@ -777,14 +788,24 @@ function useReliefMaps(imageUrl, relief) {
     img.src = flatMaskUri;
     return () => { alive = false; };
   }, [flatMaskUri]);
-  const maps = useMemo(() => {
-    if (!relief) return null;
-    const img = base.image;
-    if (!img || !(img.naturalWidth || img.width)) return null;
-    // Pass the mask only once it has decoded; until then build fully-raised (as before) and re-derive on load.
-    try { return buildReliefMaps(img, relief.bake ?? {}, flatMaskImg); } catch (_) { return null; }
-  }, [base, relief, flatMaskImg]);
-  useEffect(() => () => { maps?.normalMap?.dispose?.(); maps?.displacementMap?.dispose?.(); }, [maps]);
+  // Signature: same image + same bake config + same mask state ⇒ one shared bake. The mask-ready flag
+  // is in the key so the pre-mask (fully-raised) build and the post-mask build are DISTINCT entries —
+  // the mask still re-derives on load, it just doesn't overwrite the shared entry.
+  const img = base.image;
+  const ready = relief && img && (img.naturalWidth || img.width);
+  const key = ready
+    ? `${imageUrl}|${JSON.stringify(relief.bake ?? {})}|${flatMaskUri ?? ''}|${flatMaskImg ? '1' : '0'}`
+    : null;
+  const maps = useMemo(() => (
+    key ? reliefMapsCache.get(key, () => {
+      try { return buildReliefMaps(img, relief.bake ?? {}, flatMaskImg); } catch (_) { return null; }
+    }) : null
+  ), [key]);
+  useEffect(() => {
+    if (!key) return;
+    reliefMapsCache.retain(key);
+    return () => reliefMapsCache.release(key);
+  }, [key]);
   return maps;
 }
 
@@ -820,23 +841,34 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
   // its image is decoded here — so the geometry builds synchronously.
   const base = useTexture(corsUrl(imageUrl));
   const solidOn = !!(relief?.solid && reliefOn);
-  const solidGeo = useMemo(() => {
-    if (!solidOn) return null;
-    const img = base?.image;
-    if (!img || !(img.naturalWidth || img.width)) return null;
-    try {
-      return buildSolidReliefGeometry(img, {
-        size: STICKER_SIZE,
-        // The solid's raised height is the SAME lift→world value the displaced path feeds
-        // displacementScale, so it matches the old shell on any cake size / sticker scale (#8).
-        thickness: reliefLift,
-        curveRadius: (curved && curveRadius) ? curveRadius : null,   // null → flat slab (top surface / sheet wall)
-        scale: stickerScale,
-        edgeRadius: relief.solidEdge ?? 0,   // 0..1 of depth → rounded fondant rim (0 = sharp edge)
-      });
-    } catch (_) { return null; }
-  }, [solidOn, base, relief, reliefLift, stickerScale, curved, curveRadius]);
-  useEffect(() => () => solidGeo?.dispose?.(), [solidGeo]);
+  // Same silhouette (image) + same thickness/curve/scale/edge ⇒ one shared solid geometry across all
+  // instances (a flat-top variant and a side-curved variant per element). Cached + ref-counted like
+  // the relief maps, so disposal is the cache's job.
+  const solidImg = base?.image;
+  const solidReady = solidOn && solidImg && (solidImg.naturalWidth || solidImg.width);
+  const solidKey = solidReady
+    ? `${imageUrl}|${reliefLift}|${(curved && curveRadius) ? curveRadius : 'flat'}|${stickerScale}|${relief.solidEdge ?? 0}`
+    : null;
+  const solidGeo = useMemo(() => (
+    solidKey ? solidGeoCache.get(solidKey, () => {
+      try {
+        return buildSolidReliefGeometry(solidImg, {
+          size: STICKER_SIZE,
+          // The solid's raised height is the SAME lift→world value the displaced path feeds
+          // displacementScale, so it matches the old shell on any cake size / sticker scale (#8).
+          thickness: reliefLift,
+          curveRadius: (curved && curveRadius) ? curveRadius : null,   // null → flat slab (top surface / sheet wall)
+          scale: stickerScale,
+          edgeRadius: relief.solidEdge ?? 0,   // 0..1 of depth → rounded fondant rim (0 = sharp edge)
+        });
+      } catch (_) { return null; }
+    }) : null
+  ), [solidKey]);
+  useEffect(() => {
+    if (!solidKey) return;
+    solidGeoCache.retain(solidKey);
+    return () => solidGeoCache.release(solidKey);
+  }, [solidKey]);
   // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
   // wide butterfly on a square canvas doesn't float. When standing (standUp) the wings rise in a V,
   // so the seat must account for that rise — the spine/body becomes the true lowest point.
