@@ -402,7 +402,10 @@ export default function OrderModal({
 
   // Validation
   const canSearch   = searchPhone.trim().length >= 2 && !customersLoading;
-  const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim());
+  // A NEW customer needs a name AND a phone (the order's contact) — otherwise the
+  // create would fail server-side (phone/email required) after three steps. An EXISTING
+  // (found) customer already has their details, so no re-check.
+  const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim() && customer.phone.trim());
   const canSubmit   = deliveryMode === 'pickup' || deliveryAddress.trim();
 
   // Steps depend on mode: the customer is already known from their session, so the
@@ -711,9 +714,11 @@ export default function OrderModal({
                     </div>
 
                     <label style={field}>
-                      <span style={lbl}>Phone</span>
-                      <input style={{ ...inp, background:'#f9f9f9', color:'#555' }}
-                        type="tel" value={customer.phone} readOnly />
+                      <span style={lbl}>Phone *</span>
+                      <input style={inp} type="tel" value={customer.phone}
+                        placeholder="e.g. 98765 43210"
+                        onChange={e => setCustomer(c => ({ ...c, phone: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && canGoNext0 && setStep(1)} />
                     </label>
 
                     <label style={field}>
