@@ -1483,6 +1483,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
+  const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
   // Holds the quote result after a successful customer submit; read when the
   // OrderModal success screen is dismissed so the host can react (redirect to a
   // share screen). A ref so it survives the submit→close render gap.
@@ -3360,6 +3361,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Baker mode: places an order on behalf of the searched customer.
     if (apiClient?.placeOrder) return await apiClient.placeOrder(payload);
     if (onOrder)               return await onOrder(payload);
+  }
+
+  // "New Order" (manual): a baker creates an order WITHOUT the 3D designer — from a
+  // customer reference photo (or nothing). No design snapshot; the reference photo
+  // keys ride along and become the order's picture. Never touches the canvas.
+  async function handleManualOrderSubmit(formData) {
+    if (apiClient?.createManualOrder) return await apiClient.createManualOrder(formData);
+    if (onOrder)                      return await onOrder({ ...formData, mode: 'manual_order' });
   }
 
   const creamPipingType   = elementTypes.find(et => et.slug === 'cream_piping');
@@ -6530,6 +6539,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             try { loadDesign(order.design_snapshot); } catch (e) { console.error('loadDesign failed', e); }
           }
         }}
+        onNewOrder={hasCap('order:manage') ? () => { setOrdersPanelOpen(false); setManualOrderOpen(true); } : null}
         apiClient={apiClient}
         primaryColor={primaryColor}
         homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
@@ -6612,6 +6622,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onViewOrder={(id) => {
             setOrderModalOpen(false);
             setEditingOrder(null);
+            setNewOrderId(id);
+            setOrdersPanelOpen(true);
+          }}
+        />
+      )}
+
+      {/* ── New Order (manual) modal — reference photo / no-design order ── */}
+      {manualOrderOpen && (
+        <OrderModal
+          tierCount={1}
+          mode="baker"
+          manual
+          onClose={() => setManualOrderOpen(false)}
+          onSubmit={handleManualOrderSubmit}
+          apiClient={apiClient}
+          supabase={supabase}
+          bakerId={bakerData?.id}
+          bakerSlug={bakerData?.slug}
+          homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
+          storeHours={bakerSettings?.store_hours ?? null}
+          brandBtn={brandBtn}
+          primaryColor={primaryColor}
+          legalBase={legalBase}
+          onViewOrder={(id) => {
+            setManualOrderOpen(false);
             setNewOrderId(id);
             setOrdersPanelOpen(true);
           }}

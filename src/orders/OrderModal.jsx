@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
+import { ACCEPT_IMAGE, validateImageFile, compressImage } from '../shared/image.js';
+import { useUploadLimits } from '../shared/useUploadLimits.js';
+import { uploadThumbnail } from '../designer/utils/thumbnail.js';
+
+// Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
+const MAX_REFERENCE_PHOTOS = 3;
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
@@ -170,6 +176,70 @@ function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onS
   );
 }
 
+// Reference-photo picker for a manual order — the customer's reference image(s) that
+// stand in for a 3D design (up to 3). Reuses the shared ingest pipeline (validate +
+// compress) and the shared signed-PUT helper (uploadThumbnail), same as every other
+// upload surface; only the small gallery shell is local. Each accepted file is
+// compressed, uploaded to orders/reference/, and its returned R2 key kept in `keys`.
+function ReferenceUploader({ apiClient, keys, setKeys, maxImageBytes, isMobile, primaryColor, lbl }) {
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState(null);
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) return;
+    setError(null);
+    const room = MAX_REFERENCE_PHOTOS - keys.length;
+    if (room <= 0) { setError(`At most ${MAX_REFERENCE_PHOTOS} photos`); return; }
+    setBusy(true);
+    try {
+      for (const file of files.slice(0, room)) {
+        const bad = validateImageFile(file, { maxBytes: maxImageBytes });
+        if (bad) { setError(bad); continue; }
+        const blob = await compressImage(file);
+        const key = await uploadThumbnail(blob, apiClient, 'orders/reference');
+        if (key) setKeys(prev => [...prev, { key, preview: URL.createObjectURL(blob) }]);
+        else setError('Upload failed. Please try again.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function removeAt(i) {
+    setKeys(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  const canAdd = keys.length < MAX_REFERENCE_PHOTOS && !busy;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <span style={lbl}>Reference photo{keys.length !== 1 ? 's' : ''} (optional)</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {keys.map((k, i) => (
+          <div key={k.key} style={{ position: 'relative', width: 72, height: 72, borderRadius: 12, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#FAFAF8' }}>
+            <img src={k.preview} alt="reference" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <button type="button" onClick={() => removeAt(i)}
+              style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        ))}
+        {canAdd && (
+          <label style={{ width: 72, height: 72, borderRadius: 12, border: `1.5px dashed ${primaryColor}`, background: hexToRgba(primaryColor, 0.05), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer', color: primaryColor, fontSize: 11, fontWeight: 700 }}>
+            <span style={{ fontSize: 22, lineHeight: 1 }}>+</span>
+            {busy ? 'Adding…' : 'Add'}
+            <input type="file" accept={ACCEPT_IMAGE} multiple style={{ display: 'none' }}
+              onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+          </label>
+        )}
+      </div>
+      {error && <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>{error}</span>}
+      <span style={{ fontSize: isMobile ? 12 : 10, color: '#9CA3AF' }}>
+        The first photo becomes the order's thumbnail. Leave empty for an order with no image.
+      </span>
+    </div>
+  );
+}
+
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 function getSlotsForDate(dateStr, storeHours) {
@@ -189,9 +259,14 @@ export default function OrderModal({
   editingOrder = null,
   onViewOrder = null,
   mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
+  manual = false,   // baker's "New Order" — no 3D design; collect reference photo(s) instead
   legalBase = DEFAULT_LEGAL_BASE,   // host's marketing origin — where /terms + /privacy are served
 }) {
   const isMobile = useIsMobile();
+  const { maxImageBytes } = useUploadLimits(apiClient);
+
+  // Reference photos (manual orders only) — [{ key, preview }]; only `key` is sent.
+  const [referenceKeys, setReferenceKeys] = useState([]);
 
   // Step: 0=customer, 1=details, 2=delivery
   const [step, setStep] = useState(0);
@@ -347,6 +422,8 @@ export default function OrderModal({
       const result = await onSubmit({
         // Customer mode: identity comes from the session server-side — never send it.
         ...(mode === 'baker' ? { customer } : {}),
+        // Manual order: the reference photo keys stand in for a design snapshot.
+        ...(manual ? { referenceKeys: referenceKeys.map(k => k.key) } : {}),
         weightKg:            weightKg ? parseFloat(weightKg) : undefined,
         flavours:            flavours.filter(f => f.name.trim()),
         specialInstructions: specialInstructions.trim() || undefined,
@@ -527,7 +604,7 @@ export default function OrderModal({
 
           {/* Header */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink:0 }}>
-            <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>{mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}</span>
+            <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>{manual ? 'New Order' : mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}</span>
             <button style={{ background:'#f3f4f6', border:'none', cursor:'pointer', borderRadius:'50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize:13, color:'#333', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>✕</button>
           </div>
 
@@ -653,6 +730,18 @@ export default function OrderModal({
             {/* ── Step: Cake details ── */}
             {currentStepKey === 'details' && (
               <>
+                {manual && (
+                  <ReferenceUploader
+                    apiClient={apiClient}
+                    keys={referenceKeys}
+                    setKeys={setReferenceKeys}
+                    maxImageBytes={maxImageBytes}
+                    isMobile={isMobile}
+                    primaryColor={primaryColor}
+                    lbl={lbl}
+                  />
+                )}
+
                 <label style={field}>
                   <span style={lbl}>Cake weight (kg)</span>
                   <input style={inp} type="number" min="0.5" max="100" step="0.5"

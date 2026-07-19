@@ -469,28 +469,41 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
 }
 
 // Read-only strip of the finished-cake photos on a ready/completed order.
-function FinishedPhotosSection({ order, apiClient, refresh }) {
+// One gallery renders any order photo SET (finished-cake or reference) — same fetch +
+// grid, only the title and the loader differ. Hidden when the set is empty.
+function OrderPhotoGallery({ title, orderId, load, refresh }) {
   const [photos, setPhotos] = useState([]);
   useEffect(() => {
-    if (!apiClient?.fetchOrderPhotos) return;
+    if (!load) return;
     let live = true;
-    apiClient.fetchOrderPhotos(order.id)
+    load(orderId)
       .then(d => { if (live && Array.isArray(d)) setPhotos(d); })
       .catch(() => {});
     return () => { live = false; };
-  }, [order.id, refresh]);
+  }, [orderId, refresh, load]);
   if (!photos.length) return null;
   return (
-    <Section title="Finished cake photos">
+    <Section title={title}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {photos.map(p => (
-          <img key={p.id} src={p.url} alt="Finished cake" style={{
+          <img key={p.id} src={p.url} alt={title} style={{
             width: 96, height: 96, objectFit: 'cover', borderRadius: 10, border: '1.5px solid #E8E4DC',
           }} />
         ))}
       </div>
     </Section>
   );
+}
+
+function FinishedPhotosSection({ order, apiClient, refresh }) {
+  return <OrderPhotoGallery title="Finished cake photos" orderId={order.id} load={apiClient?.fetchOrderPhotos} refresh={refresh} />;
+}
+
+// Reference photos the baker took from the customer for a manual (no-design) order.
+// Only design-less orders have them — a designed order shows its 3D preview instead.
+function ReferencePhotosSection({ order, apiClient }) {
+  if (order.design_snapshot) return null;
+  return <OrderPhotoGallery title="Reference photos" orderId={order.id} load={apiClient?.fetchOrderReferencePhotos} />;
 }
 
 // ── Edit form ─────────────────────────────────────────────────────────────────
@@ -956,6 +969,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               )}
               <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} hideCancel />
               <CustomPhotosSection order={order} />
+              <ReferencePhotosSection order={order} apiClient={apiClient} />
               <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
@@ -1002,6 +1016,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
               <CustomPhotosSection order={order} />
+              <ReferencePhotosSection order={order} apiClient={apiClient} />
               <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
               <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} />
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
@@ -1152,7 +1167,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null }) {
   const isMobile = useIsMobile();
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1232,6 +1247,16 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
             <ArrowLeftIcon />
           </button>
           <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{topBarTitle}</span>
+          {onNewOrder && (!isMobile || !selected) && (
+            <button onClick={onNewOrder} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: primaryColor, color: '#fff', border: 'none',
+              borderRadius: 10, padding: '8px 14px', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+            }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New Order
+            </button>
+          )}
           {(!isMobile || !selected) && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{orders.length} total</span>
           )}
