@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 import { ACCEPT_IMAGE, validateImageFile, compressImage } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
+import { isValidEmail } from '../shared/validators.js';
 import { uploadThumbnail } from '../designer/utils/thumbnail.js';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
@@ -391,6 +392,19 @@ export default function OrderModal({
     setFoundCustomer(null);
   }
 
+  // Jump straight to the new-customer form without searching — for when the baker
+  // already knows it's a new customer. Prefills from whatever they typed (a phone if it
+  // looks like digits, otherwise a name) so the field isn't wasted.
+  function startNewCustomer() {
+    const query = searchPhone.trim();
+    const digits = query.replace(/\D/g, '');
+    setCustomer(digits.length >= 6
+      ? { firstName: '', lastName: '', email: '', phone: query }
+      : { firstName: query, lastName: '', email: '', phone: '' });
+    setFoundCustomer(null);
+    setSearchPhase('not_found');
+  }
+
   function setFlavour(tierIdx, flavourId) {
     const picked = availableFlavours.find(f => f.id === flavourId) ?? null;
     setFlavours(fs => fs.map(f =>
@@ -402,10 +416,12 @@ export default function OrderModal({
 
   // Validation
   const canSearch   = searchPhone.trim().length >= 2 && !customersLoading;
+  // If an email was entered, it must look like one (it's optional — blank is fine).
+  const emailOk     = !customer.email.trim() || isValidEmail(customer.email);
   // A NEW customer needs a name AND a phone (the order's contact) — otherwise the
   // create would fail server-side (phone/email required) after three steps. An EXISTING
   // (found) customer already has their details, so no re-check.
-  const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim() && customer.phone.trim());
+  const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim() && customer.phone.trim() && emailOk);
   const canSubmit   = deliveryMode === 'pickup' || deliveryAddress.trim();
 
   // Steps depend on mode: the customer is already known from their session, so the
@@ -671,6 +687,20 @@ export default function OrderModal({
                         ))}
                       </div>
                     )}
+
+                    {/* Skip the search — go straight to a new customer (baker already knows). */}
+                    <button
+                      type="button"
+                      onClick={startNewCustomer}
+                      style={{
+                        marginTop: 4, alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
+                        color: primaryColor, fontFamily: "'Quicksand', sans-serif",
+                        fontSize: isMobile ? 14 : 12, fontWeight: 700,
+                      }}
+                    >
+                      <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New customer
+                    </button>
                   </div>
                 )}
 
@@ -724,8 +754,12 @@ export default function OrderModal({
                     <label style={field}>
                       <span style={lbl}>Email (optional)</span>
                       <input style={inp} type="email" value={customer.email}
+                        placeholder="name@example.com"
                         onChange={e => setCustomer(c => ({ ...c, email: e.target.value }))}
                         onKeyDown={e => e.key === 'Enter' && canGoNext0 && setStep(1)} />
+                      {customer.email.trim() && !emailOk && (
+                        <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>Enter a valid email address.</span>
+                      )}
                     </label>
                   </>
                 )}

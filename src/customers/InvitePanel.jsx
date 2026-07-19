@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import CustomerSearch from './CustomerSearch.jsx';
+import { isValidEmail } from '../shared/validators.js';
 
 // InvitePanel — baker tool to invite a customer to a design session. Right-side
 // slide-in panel matching CustomersPanel/OrdersPanel. Calls apiClient.inviteCustomer
@@ -53,7 +54,7 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
     // Light instant checks (the server does the authoritative libphonenumber /max + email validation and
     // returns a clear error). Kept lenient so we never reject what the server would accept — just catch
     // obvious garbage (letters in a phone, too few digits, a malformed email).
-    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    if (form.email.trim() && !isValidEmail(form.email)) {
       return setError('Enter a valid email address');
     }
     if (form.phone.trim()) {
