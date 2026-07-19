@@ -3,7 +3,7 @@ import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_M
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
-import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat, zoneSeat } from '../placement.js';
+import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat, zoneSeatFields } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
@@ -743,12 +743,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Cluster-capable ball (placement_config.cluster): a single such ball pocket-snaps tangent to
           // its neighbours when dragged, so the customer can hand-build a cluster (manual mode).
           clusterBall:   !!element.placement_config?.cluster,
-          // Side seating depth, per zone (placement.js zoneSeat): 'proud' = back-on-wall so a solid
-          // body stands off the wall (bow, toppers, cluster balls); 'flush' = centred (thin decals,
-          // and scattered decor which nestles better tucked in). Default is config-driven off the
+          // Side seating depth, per zone (placement.js zoneSeatFields → zoneSeat): 'proud' = back-on-wall
+          // so a solid body stands off the wall (bow, toppers, cluster balls); 'flush' = centred (thin
+          // decals, and scattered decor which nestles better tucked in). Default is config-driven off the
           // `scatter` flag (scatter→flush, else proud) with an explicit per-zone `seat` override; no
-          // element-type branch. Only the side bend path reads this (verge/stand seat by their own logic).
-          sideProud:     zoneSeat(element.placement_config, zone) === 'proud',
+          // element-type branch. The SAME helper re-derives this on the chooser's zone-switch move, so an
+          // added and a moved instance seat identically. Only the side bend path reads it (verge/stand
+          // seat by their own logic).
+          sideProud:     zoneSeatFields(element.placement_config, zone).sideProud,
           hugFill:       element.placement_config?.hug_fill ?? null,
           // Folded sticker: a flat decal that splits at the body spine into two hinged wings
           // (e.g. a card butterfly). Capability is config-gated like parts_deletable — the

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneSeatFields } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -414,5 +414,27 @@ describe('zoneSeat', () => {
   });
   it('ignores an unknown seat value and falls back to the default', () => {
     expect(zoneSeat({ side: { mode: 'hug', seat: 'sideways' } }, 'side')).toBe('proud');
+  });
+});
+
+// The single source the add path AND the chooser's zone-switch move both use, so a placed and a
+// moved instance seat identically (regression: moving a proud element off the wall and back left it
+// flush/buried because the move never re-derived these — and could leak the raw { mode, seat } object
+// into placementMode).
+describe('zoneSeatFields — placementMode + sideProud, config-driven, from either config form', () => {
+  it('derives mode via zoneMode (never the raw object) and proud from the default', () => {
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+  });
+  it('reads the OBJECT form without leaking the object into placementMode', () => {
+    const f = zoneSeatFields({ side: { mode: 'hug', seat: 'proud' } }, 'side');
+    expect(f.placementMode).toBe('hug');           // NOT the { mode, seat } object
+    expect(f.sideProud).toBe(true);
+  });
+  it('honours an explicit flush seat and the scatter default', () => {
+    expect(zoneSeatFields({ side: { mode: 'hug', seat: 'flush' } }, 'side').sideProud).toBe(false);
+    expect(zoneSeatFields({ scatter: true, side: 'hug' }, 'side').sideProud).toBe(false);
+  });
+  it('falls back to hug when the zone is unconfigured', () => {
+    expect(zoneSeatFields({}, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
   });
 });

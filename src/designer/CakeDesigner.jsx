@@ -8,7 +8,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneSeatFields } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -4224,7 +4224,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       let baseY = 0.1;
       for (let i = 0; i < slot.tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
       const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
-      const mode = pc[slot.zone];
+      // Mode via zoneMode (never the raw value) so the { mode, seat } object form doesn't leak into
+      // placementMode / edgeSeatSeed — INVARIANTS #1.
+      const mode = zoneMode(pc, slot.zone, 'hug');
       // Rim: seed the front-edge seat + lean via the SAME helper addSticker uses, so the move path
       // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
       let pos;
@@ -4259,8 +4261,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (instance) {
         // Scatter: move THIS instance to the picked surface (single-select; can't unplace here).
         if (onSlot(instance, slot)) return;
-        const { mode, pos } = seatOnSlot(slot);
-        updateSticker(instance.id, { zone: slot.zone, tierIndex: slot.tierIndex, placementMode: mode, ...pos });
+        const { pos } = seatOnSlot(slot);
+        // Re-seat IDENTICALLY to a fresh add for the target zone (INVARIANTS #1/#3): derive the
+        // config-driven seat fields (placementMode via zoneMode, sideProud via zoneSeat — the same
+        // zoneSeatFields the add path uses) and clear the previous zone's seed fields so nothing
+        // leaks across. Without the sideProud re-derive, moving a proud element off the wall and back
+        // left it flush/buried; without the reset, a verge lean/height-nudge stuck to the side seat.
+        // `pos` re-seeds only the fields the new zone needs.
+        updateSticker(instance.id, {
+          zone: slot.zone, tierIndex: slot.tierIndex,
+          ...zoneSeatFields(pc, slot.zone),
+          x: 0, z: 0, tiltAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0,
+          ...pos,
+        });
         return;
       }
       // Hero: add/remove one instance on the slot.

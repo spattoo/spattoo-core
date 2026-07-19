@@ -348,3 +348,17 @@ export function zoneSeat(placementConfig, zone) {
   if (explicit === 'proud' || explicit === 'flush') return explicit;
   return placementConfig?.scatter === true ? 'flush' : 'proud';
 }
+
+// The config-driven, ZONE-DEPENDENT instance fields — the ONE place both the add path
+// (`addSticker`) and the chooser's zone-switch path derive them, so a placed instance and a
+// re-seated (moved) instance seat identically (INVARIANTS #1/#3). `placementMode` and the side
+// seat DEPTH (`sideProud`) both change when an element moves between zones; reading them here —
+// never from the raw `placement_config[zone]` value — keeps the string and `{ mode, seat }` object
+// forms interchangeable. (The move path previously set neither, so moving a proud element off the
+// wall and back left it flush/buried and could leak the raw object into `placementMode`.)
+export function zoneSeatFields(placementConfig, zone) {
+  return {
+    placementMode: zoneMode(placementConfig, zone, 'hug'),
+    sideProud:     zoneSeat(placementConfig, zone) === 'proud',
+  };
+}
