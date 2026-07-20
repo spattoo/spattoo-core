@@ -4591,6 +4591,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ] });
     }
 
+    // Bury (insert depth) — how far an INSERTED element's base sinks INTO the cake. Config-gated on
+    // the instance being inserted (`insertDepth != null` — the SAME signal the renderer's `isInsert`
+    // uses in CakeCanvas.jsx), never on element type/zone/mode. ORTHOGONAL to Height (vertical float
+    // on top / seat height on the wall) and the side Depth (radial off-wall nudge): those POSITION the
+    // piece, Bury sinks it in — so all three legitimately co-exist on an inserted side element. Value
+    // is a length-FRACTION buried (0 = flush/standing, 0.5 = half-buried), the same field the renderer
+    // already reads live; `updateSticker` re-seats it with no render change. Matches the local −/+
+    // stepper idiom (Height/Depth/Tilt/Fold).
+    if (el.type === 'sticker') {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      if (sticker?.insertDepth != null) {
+        const bd = sticker.insertDepth;
+        groups.push({ key: 'bury', divider: true, controls: [
+          <span key="bury-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Bury</span>,
+          <button key="bury-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { insertDepth: Math.max(0, +(bd - 0.05).toFixed(2)) })}>−</button>,
+          <span key="bury-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(bd * 100)}%</span>,
+          <button key="bury+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { insertDepth: Math.min(0.5, +(bd + 0.05).toFixed(2)) })}>+</button>,
+        ] });
+      }
+    }
+
     // Fold (wing dihedral) — a foldable sticker lets the customer adjust how far the two wings
     // hinge up. Config-gated on the instance's `foldable` (placement_config.foldable), never on
     // element type/slug; the render re-folds live via StickerTexture's createFoldedPlane.
