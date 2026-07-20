@@ -1835,30 +1835,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     });
 
     setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
-    const topperTypeId   = elementTypes.find(et => et.slug === 'topper')?.id;
-    const topSideTypeId  = elementTypes.find(et => et.slug === 'top_side_decors')?.id;
     // Match the food-foil type tolerantly (slug or name contains "foil") so routing fires regardless of
-    // the exact slug the admin chose (food-foil / food_foil / gold foil …). The one allowed type→config place.
+    // the exact slug the admin chose (food-foil / food_foil / gold foil …).
     const foilTypeId     = elementTypes.find(et => /foil/i.test(et.slug ?? '') || /foil/i.test(et.name ?? ''))?.id;
-    // Placement STYLE is config, not an allowed_zones guess. "Hero" elements (topper, top&side
-    // decor) are single-per-slot: ONE instance per (tier×surface), chosen via the checkbox
-    // chooser. Everything else (scattered, picks, image toppers) scatters freely as many
-    // dragged stickers. We backfill `single_per_slot` (+ the topper's stand/hug/facing) for the
-    // hero types so the generic engine reads it; existing config always wins via the spread.
+    // BEHAVIOUR IS CONFIG, NEVER ELEMENT TYPE. Placement STYLE ("hero" = `single_per_slot`, ONE instance
+    // per tier×surface via the checkbox chooser) and orientation (stand/hug/facing) are read straight
+    // from each element's OWN placement_config — authored in admin, and materialised into every existing
+    // row by the one-time migrate_topper_placement (2026-07-20). Element type is a LOGICAL CATEGORY only
+    // (it groups the picker below); it injects NO config. (Gold leaf is the ONE remaining type→config
+    // seed — a tier-finish whose kind/finish/colours aren't yet admin-authored; migrate it the same way
+    // when the Gold Leaf studio owns that config, then this last branch goes too.)
     rows = rows.map(r => {
-      if (r.element_type_id === topperTypeId) {
-        const rPc = r.placement_config ?? {};
-        // Default topper facing, authored in DEGREES (unified convention; [0,270,0]° ≡ [0,-π/2,0] rad).
-        // Inject it ONLY when the row carries no rotation of its own — otherwise the 'deg' unit would
-        // pair with that row's (possibly legacy-radians) rotation and be misread. The row always wins.
-        const facing = rPc.rotation != null ? {} : { rotation: [0, 270, 0], rotation_unit: 'deg' };
-        return { ...r,
-          allowed_zones: r.allowed_zones?.length ? r.allowed_zones : ['top_surface'],
-          placement_config: { single_per_slot: true, top_surface: 'stand', side: 'hug', ...facing, ...rPc } };
-      }
-      if (r.element_type_id === topSideTypeId) {
-        return { ...r, placement_config: { single_per_slot: true, ...(r.placement_config ?? {}) } };
-      }
       // Gold leaf ("food foil"): a tier-finish element. Seed kind:'tier_finish' + the studio-tuned
       // finish look and the two allowed colours; the row's own config always wins via the spread.
       if (r.element_type_id === foilTypeId) {
@@ -1875,8 +1862,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const picksTypeId          = elementTypes.find(et => et.slug === ELEMENT_SLUGS.PICKS)?.id;
     const imageTopperTypeId    = elementTypes.find(et => et.slug === ELEMENT_SLUGS.IMAGE_TOPPER)?.id;
     const pipingStampTypeId    = elementTypes.find(et => et.slug === 'piping_stamp')?.id;
-    // Note: topperTypeId is intentionally NOT in knownTypeIds — topper elements fall into the
-    // generic `others` bucket and render via the same draggable grid as every other type.
+    // Note: topper / top_side elements are intentionally NOT in knownTypeIds — they fall into the
+    // generic `others` bucket and render via the same draggable grid as every other type (their
+    // hero/stand behaviour is config, not type — see above).
     const knownTypeIds         = new Set([scatteredDecorTypeId, picksTypeId, imageTopperTypeId, pipingStampTypeId].filter(Boolean));
     setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
     setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
