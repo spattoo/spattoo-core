@@ -24,13 +24,15 @@ section below (§1–§4) is the authoritative detail for its keys.
 ```jsonc
 {
   // ── Zones × modes (§1 <zone>, §2) — one key per surface the element offers ──
-  // Value is a mode STRING, or an OBJECT { mode, seat, … } carrying per-zone config (both read via
-  // zoneCfg/zoneMode/zoneSeat). `seat` (wall-hug only) = "proud" | "flush"; default scatter?flush:proud.
-  "top_surface": "stand",          // stand | hug | perch | verge | insert
+  // Value is a mode STRING (the POSITION), or an OBJECT { mode, seat, insert, … } carrying per-zone
+  // MODIFIERS (read via zoneCfg/zoneMode/zoneSeat/zoneInsert). `seat` (wall-hug only) = "proud" |
+  // "flush" (default scatter?flush:proud). `insert` (stand/hug poses) = { depth, lean_deg, jitter_deg }
+  // — a base-buried MODIFIER, NOT a position (see §2). Modifiers compose: a zone can carry both.
+  "top_surface": { "mode": "stand", "insert": { "depth": 0.3, "lean_deg": 12 } },  // stands upright, base buried
   "side":        { "mode": "hug", "seat": "proud" },   // solid piece sits ON the wall; or just "hug" (default proud)
   "middle_tier": "hug",
   "board":       "hug",
-  "rim":         "hug",
+  "rim":         "hug",             // position string: stand | hug | perch | verge
 
   // ── Sizing & placement style (§1) ──
   "r":               1.0,                              // default scale for `stand`
@@ -95,8 +97,11 @@ section below (§1–§4) is the authoritative detail for its keys.
   // ── Verge (rests on the rim lip, reclines radially OUTWARD over the edge) ──
   "verge": { "seat": "center", "angle_deg": 35, "y_offset": 0, "edge_inset": 0 },
 
-  // ── Insert (base sunk INTO the surface at an angle — chocolate bars, sparklers) ──
-  "insert": { "depth": 0.3, "lean_deg": 15, "jitter_deg": 20 },
+  // ── Insert MODIFIER (base sunk INTO the surface at an angle — chocolate bars, sparklers) ──
+  // Rides the ZONE object as a per-zone key (like `seat`), e.g. "top_surface": { "mode": "stand",
+  // "insert": { "depth": 0.3, "lean_deg": 15, "jitter_deg": 20 } }. It is NOT a position and NOT a
+  // top-level key. (Legacy top-level "insert" + a "mode":"insert" zone value are auto-promoted to this
+  // shape on read by zoneCfg — no migration needed. Do not author the legacy form for new elements.)
 
   // ── GLB Recompose — customer-recolourable part groups ──
   "_model": {
@@ -150,9 +155,9 @@ section below (§1–§4) is the authoritative detail for its keys.
 ```
 
 > Keys present in the sample but not yet in dedicated tables below (`scatter`, `scatter_count`, `side_proud`,
-> `useSharedFondantTexture`, `perch`, `verge`, `insert`, `_model`) are read by
-> `addSticker` / the GLB material path (`verge` + `insert` are summarised in the §2 modes table) — tabulate them
-> when next touched.
+> `useSharedFondantTexture`, `perch`, `verge`, `_model`) are read by
+> `addSticker` / the GLB material path (`verge` is summarised in the §2 modes table; the per-zone
+> `insert` MODIFIER is documented in §1 `<zone>.insert`) — tabulate them when next touched.
 
 ---
 
@@ -160,8 +165,9 @@ section below (§1–§4) is the authoritative detail for its keys.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `<zone>` | string **or** object | — | One key per surface the element sits on: `top_surface`, `side`, `middle_tier`, `board`, `rim`. The value is either the **mode** string for that surface (see §2) — `{ "side": "hug" }` — **or** an object carrying per-zone config: `{ "side": { "mode": "hug", "seat": "proud" } }`. Both forms are read through `placement.js` `zoneCfg()` (→ `{ mode, seat, … }`); every consumer uses `zoneMode()`/`zoneSeat()`, never the raw value, so the two forms are interchangeable and future per-zone keys ride on the object. Legacy string configs keep working unchanged. |
+| `<zone>` | string **or** object | — | One key per surface the element sits on: `top_surface`, `side`, `middle_tier`, `board`, `rim`. The value is either the **mode** (POSITION) string for that surface (see §2) — `{ "side": "hug" }` — **or** an object carrying per-zone **modifiers**: `{ "side": { "mode": "hug", "seat": "proud" } }`. Both forms are read through `placement.js` `zoneCfg()` (→ `{ mode, seat, insert, … }`); every consumer uses `zoneMode()`/`zoneSeat()`/`zoneInsert()`, never the raw value, so the two forms are interchangeable and per-zone modifiers ride on the object. Legacy string configs keep working unchanged. Modifiers compose — a zone can carry `seat` AND `insert` together. |
 | `<zone>.seat` | `"proud"` \| `"flush"` | `scatter ? "flush" : "proud"` | **Wall-hug seat DEPTH** for that zone (ignored by verge/stand/perch, which seat by their own logic). `proud` = a solid body's back sits ON the wall, whole body outside — a 3D piece (bow, topper, cluster ball) never half-buried. `flush` = centred on the wall (back half tucks in) — right for a thin 2D decal, and for **scatter** decor which nestles better tucked in. Default is config-driven off the `scatter` flag; an explicit value overrides it. The seat magnitude is **measured** (half the model's rendered depth, `geometry/seating.js` `seatHalfDepth` — the SAME rule piping uses to sit its shells on the rim). Read via `zoneSeat()` → the instance's `sideProud`; applied in the side bend path (`StickerModel`). No element-type branch. Supersedes the old top-level `side_proud` (still honored, now redundant under the proud default). |
+| `<zone>.insert` | object | `null` | **Insert MODIFIER** for that zone — the element's base is **sunk into the surface** and it stands at an angle (chocolate bars, sparklers, wafer shards). Insert is a MODIFIER, **not a position**: it composes with the zone's upright **pose** (`stand` on a flat surface, `hug` against a wall — geometry-driven, no zone-name branch), so the pose keeps the element upright and `insert` only buries + leans the base. Present (any object, incl. `{}` = all defaults) → buried; absent → seats flush. Shape `{ depth, lean_deg, jitter_deg }` — **`depth`** = fraction of the element's LENGTH buried (0–1, render scales by the MEASURED length, never a world constant — INVARIANTS #8); **`lean_deg`** = base tilt away from the surface normal (0 = straight in); **`jitter_deg`** = random ± spread added to the lean AND a small fan-yaw PER INSTANCE, so scattered pieces fan out. All optional. Read via `zoneInsert()`; seeded once at add time by the shared `insertSeat()` (baked onto the instance: `tiltAngle` = lean±jitter, `rotation` = fan yaw, `insertDepth` = depth — the instance's "is inserted" signal, non-null iff buried). Render sinks the base by `insertDepth × measured length` (top: below `topY`, occluded by the opaque cake; side: a negative radial seat) inside the upright branch, reusing the base-pivot tilt. Composes with `scatter` (each scattered piece inserted, for the exploded-bar cluster). **Back-compat:** the legacy position form (`"top_surface": "insert"` + a shared top-level `placement_config.insert`) is auto-promoted to this per-zone shape by `zoneCfg` — no data migration; do not author the legacy form for new elements. |
 | `single_per_slot` | bool | `false` | Placement **style**, not mode. `true` = one instance per (tier×surface) slot, chosen via the checkbox chooser (topper, top&side decor). `false` = scatter freely (many independent stickers). Read by `isMultiSlotEl` (returns `false` when `cluster` is set). **Must not be inferred from `allowed_zones.length`.** |
 | `cluster` | object | `null` | Placement **style** (peer of `scatter`/`single_per_slot`, mutually exclusive). Present = a **packed faux-ball clump**: the element drops as ONE single ball (drag-to-place, no chooser); a per-card **Cluster** toggle grows it into a tangent, non-overlapping clump of mixed-size GLB spheres that clings top→rim→side. Multiple clusters per cake, each its own `clusterId`. Shape: `{ min, max, sizes, palette }` — `min`/`max` = ball-count slider bounds (default 3/30); `sizes` = `[largest, 2nd, 3rd, small]` relative scale multipliers (default `[1.6, 1.35, 0.85, 0.5]`); `palette` = default mix colours (the customer can recolour; default `[default_color ?? '#D4AF37']`). Read by `clusterConfigOf`; packed by `geometry/spherePacking.js`. A cluster ball is always seated **proud** on the side wall regardless of `side_proud`. |
 | `r` | number | GLB `2.5` / 2D `1` | Default scale for a freshly placed sticker (`stand`). Never hard-code a scale elsewhere. |
@@ -188,7 +194,7 @@ From `PLACEMENT_MODES` in `constants.js`:
 | `stand` | `top_surface` | Stands upright on the surface; billboarded for 2D, full model for GLB. Size from `r`/scale. |
 | `hug` | `side`, `top_surface` | Lies flat against the surface; size derived from the wall (`hug_fill`), bends around round walls. |
 | `perch` | `rim` | A figure seated on the top edge — its centre straddles the edge (legs over the side, body above). Leans on world-X. Calibrated by `perch` (§ below). Legged 3D toppers. |
-| `insert` | `top_surface`, `side` | The element's base is **sunk into the surface** and it stands at an angle — chocolate bars, sparklers, wafer shards. The **zone drives orientation**: on `top_surface` it stands up out of the top; on `side` it pokes out of the wall (the designer inserts along that surface's normal — no zone-name branch, the mode is the config). Composes with `scatter` (each scattered piece inserted, for the exploded-bar cluster). Calibrated by `insert`: `{ depth, lean_deg, jitter_deg }` — **`depth`** = fraction of the element's length buried (0–1, default designer value); **`lean_deg`** = base tilt away from the surface normal (0 = straight in); **`jitter_deg`** = random ± spread added to the lean AND a small fan-yaw PER INSTANCE, so scattered pieces fan out instead of all leaning the same. All optional. Seeded once at add time via the shared `insertSeat()` (baked onto the instance: `tiltAngle` = lean±jitter, `rotation` = fan yaw, `insertDepth` = depth) so it persists and each scattered piece keeps its own angle; render sinks the base by `insertDepth × measured length` (top: below `topY`, occluded by the opaque cake; side: a negative radial seat) and reuses the base-pivot tilt. |
+| ~~`insert`~~ | — | **No longer a mode.** Insert is a per-zone **MODIFIER** (`<zone>.insert`, see §1) that composes with a `stand`/`hug` pose — it does not select a position. The legacy `mode:"insert"` value is auto-promoted (→ `stand` on a flat surface, `hug` against a wall) by `zoneCfg`; kept here only so old configs keep rendering. |
 | `verge` | `rim` | Reclines radially **OUTWARD** by `verge.angle_deg` so the body cantilevers over the edge into the air. World-oriented (never billboarded); auto-faces outward, re-orienting as it's dragged round the rim. For butterflies, flowers. Conventionally `rim`, but like every mode it's a config value usable on any allowed surface. Calibrated by `verge`: `{ seat, angle_deg, y_offset, edge_inset }` — **`seat`** = `'center'` (default; the MID-SPINE/geometry centre rests on the rim edge and the body drapes over the lip) or `'base'` (the body BASE seats on the top surface and leans from there); **`angle_deg`** default-tilt in degrees (default 35; seeds the per-instance Tilt control); **`edge_inset`** radial pull-in from the rim (− pushes out over the lip); **`y_offset`** height nudge. Dragging an edge-seated element rim-locks it (snaps to the perimeter — never inward, so a centre-seat element can't bury itself); a base-seat verge drags freely on the top like `stand`. _Planned (with the faux-ball work): **`edge_drag`** = `'rim'` (default, locked to the perimeter) \| `'outward'` (may be dragged OUT over the lip for a "spill over the edge" look, while inward is always clamped to the rim — for faux balls)._ |
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).

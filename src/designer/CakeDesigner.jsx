@@ -4,11 +4,11 @@ import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap } from './canvas/CakeCanvas';
-import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants';
+import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneSeatFields } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneInsert, zoneSeatFields } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -4262,10 +4262,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       } else {
         pos = { theta: 0, y: baseY + tierH * 0.45 };
       }
-      // Insert (top or side): re-bake the lean/fan/depth via the SAME helper the add path uses, so a
-      // moved insert doesn't lose its angle (the reset below zeroes tiltAngle/rotation).
-      if (mode === PLACEMENT_MODES.INSERT) {
-        const s = insertSeat(pc.insert);
+      // Insert modifier (top or side): if the target zone carries an `insert` modifier, re-bake the
+      // lean/fan/depth via the SAME helper the add path uses, so a moved insert doesn't lose its angle
+      // (the reset below zeroes tiltAngle/rotation). Composes with the zone's pose (`mode`).
+      const zi = zoneInsert(pc, slot.zone);
+      if (zi) {
+        const s = insertSeat(zi);
         pos = { ...pos, tiltAngle: s.tiltAngle, rotation: s.fanYaw, insertDepth: s.depthFrac };
       }
       return { mode, pos };
@@ -4281,8 +4283,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Per-slot Size/Tilt only in hero mode (scatter keeps its own controls below the chooser).
       const sticker = !instance ? design.stickers.find(s => s.elementId === elId && onSlot(s, slot)) : null;
       // Drives the preview's orientation (stand vs hug), straight from config — matches the renderer.
+      // Resolve via zoneMode (never the raw value) so the { mode, … } object form and the legacy
+      // `insert` position both surface as their upright pose (TopperPreview keys upright off 'stand').
       // scaleRange caps the stand-slot Size dial from config (placement_config.scale); hug uses hugMul.
-      return { ...slot, label, checked, sticker, mode: pc[slot.zone], scaleRange: scaleRangeOf(srcEl, 0.5, 8, 0.1) };
+      return { ...slot, label, checked, sticker, mode: zoneMode(pc, slot.zone), scaleRange: scaleRangeOf(srcEl, 0.5, 8, 0.1) };
     });
     const onToggle = slot => {
       if (instance) {

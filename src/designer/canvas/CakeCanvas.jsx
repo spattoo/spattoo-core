@@ -1430,10 +1430,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // `=== 'rect'`, or an outline decal lands on an imaginary bounding-radius circle off the wall.
   const facetWall = !isRoundWall(shp);
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
-  // Insert on the side: the base is pushed INTO the wall (a negative radial seat) so the piece pokes
-  // out at an angle (the tilt is already applied by the sticker.tiltAngle group below). Best for a GLB
-  // bar oriented to extend along its outward face.
-  const isInsert = sticker.placementMode === 'insert';
+  // Insert on the side is a MODIFIER on the wall pose (not its own mode): the base is pushed INTO the
+  // wall (a negative radial seat) so the piece pokes out at an angle (the tilt is already applied by
+  // the sticker.tiltAngle group below). Signalled by insertDepth != null (0 is valid = flush). Best
+  // for a GLB bar oriented to extend along its outward face.
+  const isInsert = sticker.insertDepth != null;
   const insertDepthFrac = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
   // A hero hug (single_per_slot, hugging a side) sizes to THIS tier's wall height, so it shrinks
   // on smaller tiers automatically — r is the stand size only and is ignored here. Scattered decor
@@ -1644,9 +1645,13 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // the edge into the air (butterflies, flowers). Seats on its base like `stand` (no straddle); the
   // outward lean + edge contact is what makes part of it overhang. World-oriented, never billboarded.
   const isVerge = sticker.placementMode === 'verge';
-  // Insert: base sunk INTO the top surface, standing at an angle (chocolate bars). Upright + world-
-  // oriented like verge, but seated BELOW the surface by its burial depth (see py) rather than on it.
-  const isInsert = sticker.placementMode === 'insert';
+  // Insert is a MODIFIER on an upright pose (usually `stand`), not its own mode: the base is sunk
+  // BELOW the top surface by its burial depth (see py) while the model stays upright + world-oriented
+  // like a stand/verge. Signalled by insertDepth != null (0 is valid = flush). Because the pose is
+  // `stand`, isStand is true and the upright render branch below already fires — insert just adds the
+  // burial/lean inside it (this is what unbroke "chocolate bar sleeps on top": insert was a sibling
+  // mode the upright branch didn't cover, so it fell to Flat mode; now it composes WITH stand).
+  const isInsert = sticker.insertDepth != null;
   const insertDepthFrac = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
   const isGlb2d = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
   // Seat the model's actual BOTTOM on the surface: lift by its measured half-height (reported by
@@ -1839,7 +1844,9 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // (lean). Same orientation pipeline; they differ in py (perch straddles the edge, no seat-lift),
   // clip (perch/verge aren't clipped), facing, and lean direction (see below). Stand/perch 2D images
   // billboard to face the camera; a verge is fixed in world space so it reclines over the actual edge.
-  if (isStand || isPerch || isVerge) {
+  // `isInsert` is a MODIFIER — normally it rides `stand` (so isStand already selects this branch), but
+  // it's OR'd in so any inserted element renders upright (buried base) and never falls to Flat mode.
+  if (isStand || isPerch || isVerge || isInsert) {
     // Billboard must be INSIDE the world-positioned group, not wrapping it.
     // If Billboard wraps the position group, it sits at origin and rotates its
     // local frame — so any x/z offset becomes wrong world-space position.
@@ -2419,9 +2426,11 @@ function CakeThumbnailScene({ config }) {
       {stickers.map(sticker => {
         const tier = tierData[sticker.tierIndex] ?? tierData[0];
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
-        // Insert (base sunk into the surface at an angle) — mirror the interactive render (no measured
-        // seatHalf here, so use STICKER_SIZE/2 as the half-length).
-        const isInsertPv = sticker.placementMode === 'insert';
+        // Insert modifier (base sunk into the surface at an angle) — mirror the interactive render (no
+        // measured seatHalf here, so use STICKER_SIZE/2 as the half-length). Signalled by insertDepth
+        // != null (0 valid); composes with the pose (stand base-seats, so both flags are true — the py
+        // below checks isInsertPv first so burial wins).
+        const isInsertPv = sticker.insertDepth != null;
         const insertDepthPv = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
         if (isSide) {
           const tshp = tierShape(tier);

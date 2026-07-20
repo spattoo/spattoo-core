@@ -3,7 +3,7 @@ import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_M
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
-import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields } from '../placement.js';
+import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields, zoneInsert } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
@@ -702,12 +702,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         const siblings = prev.stickers.filter(s => s.placementMode === placementMode && s.tierIndex === (tierIndex ?? 0));
         ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.RIM, { x: px, z: pz }, siblings));
       }
-      // Insert: base sunk into the surface at an angle. Placed at the drop/scatter position (NOT forced
-      // to the front edge like perch/verge); we only bake the per-instance lean (±jitter), a small fan
-      // spin and the burial depth. Scatter flows through addSticker unchanged, so each scattered piece
-      // gets its own jittered angle. Shared insertSeat helper (both add + chooser-move paths call it).
-      if (!exact && placementMode === PLACEMENT_MODES.INSERT) {
-        const seed = insertSeat(element.placement_config?.insert);
+      // Insert is a per-zone MODIFIER (not a mode) — it composes with whatever upright pose
+      // `placementMode` carries (stand on top, hug on a wall). When the dropped-into zone has an
+      // `insert` modifier, bake the per-instance lean (±jitter), a small fan spin and the burial depth
+      // onto the instance. Placed at the drop/scatter position (NOT forced to the front edge like
+      // perch/verge); scatter flows through addSticker unchanged, so each scattered piece gets its own
+      // jittered angle. Shared insertSeat helper (both add + chooser-move paths call it).
+      const insertCfg = exact ? null : zoneInsert(element.placement_config, zone);
+      if (insertCfg) {
+        const seed = insertSeat(insertCfg);
         seatTilt        = seed.tiltAngle;
         seatFanYaw      = seed.fanYaw;
         seatInsertDepth = seed.depthFrac;
@@ -821,11 +824,13 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
           yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
-          rotation:      seatFanYaw,     // insert: small per-instance fan spin (else 0 — user Y-spin adds on top)
+          rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
-          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert: lean±jitter
-          // Insert: fraction of the element's LENGTH sunk into the surface (render scales by measured
-          // length). null for every other mode. See placement.js insertSeat / PLACEMENT_CONFIG.md.
+          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
+          // Insert modifier: fraction of the element's LENGTH sunk into the surface (render scales by
+          // measured length), and the RENDER'S "is inserted" signal — non-null iff the zone carried an
+          // insert modifier (0 is valid: buried-but-flush). null otherwise. See placement.js zoneInsert
+          // / insertSeat / PLACEMENT_CONFIG.md.
           insertDepth:   seatInsertDepth,
           groupId:       null,
           // Ball-cluster membership: every ball in one packed clump shares a clusterId, so the UI

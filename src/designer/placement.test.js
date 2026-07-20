@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneInsert, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -397,6 +397,38 @@ describe('zoneCfg / zoneMode', () => {
     expect(zoneMode({ side: { mode: 'perch' } }, 'side', 'stand')).toBe('perch');
     expect(zoneMode({}, 'side', 'stand')).toBe('stand');
     expect(zoneMode({ side: 'verge' }, 'side')).toBe('verge');
+  });
+});
+
+// Insert is a MODIFIER, not a position. `zoneInsert` reads the per-zone `insert` object; zoneCfg
+// promotes the legacy `mode:"insert"` + shared `placement_config.insert` form into an upright pose
+// (stand on flat surfaces, hug against a wall) so no data migration is needed. These are the
+// back-compat + composition contracts for the decomposition.
+describe('zoneInsert / insert-as-modifier', () => {
+  it('reads a per-zone insert modifier riding the zone object (new form)', () => {
+    const pc = { top_surface: { mode: 'stand', insert: { depth: 0.4, lean_deg: 10 } } };
+    expect(zoneMode(pc, 'top_surface')).toBe('stand');
+    expect(zoneInsert(pc, 'top_surface')).toEqual({ depth: 0.4, lean_deg: 10 });
+  });
+  it('no insert key → null (element seats flush, not buried)', () => {
+    expect(zoneInsert({ top_surface: 'stand' }, 'top_surface')).toBeNull();
+    expect(zoneInsert({ top_surface: { mode: 'stand' } }, 'top_surface')).toBeNull();
+    expect(zoneInsert({}, 'top_surface')).toBeNull();
+  });
+  it('legacy mode:"insert" on a flat surface promotes to stand + the shared global insert params', () => {
+    const pc = { top_surface: 'insert', insert: { depth: 0.3, lean_deg: 15, jitter_deg: 20 } };
+    expect(zoneMode(pc, 'top_surface')).toBe('stand');           // position, never "insert"
+    expect(zoneInsert(pc, 'top_surface')).toEqual({ depth: 0.3, lean_deg: 15, jitter_deg: 20 });
+  });
+  it('legacy mode:"insert" on a WALL promotes to hug (the wall base pose), same params', () => {
+    const pc = { side: 'insert', insert: { depth: 0.25 } };
+    expect(zoneMode(pc, 'side')).toBe('hug');
+    expect(zoneInsert(pc, 'side')).toEqual({ depth: 0.25 });
+  });
+  it('legacy mode:"insert" with no global params still promotes (empty modifier, defaults apply)', () => {
+    const pc = { top_surface: 'insert' };
+    expect(zoneMode(pc, 'top_surface')).toBe('stand');
+    expect(zoneInsert(pc, 'top_surface')).toEqual({});
   });
 });
 

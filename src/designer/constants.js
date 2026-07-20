@@ -110,8 +110,11 @@ export const PLACEMENT_MODES = Object.freeze({
   PERCH:            'perch',   // figure seated on the rim/top edge — straddles the edge, legs over
   VERGE:            'verge',   // rests its base on the rim lip and reclines radially OUTWARD, the rest
                               //   cantilevered over the edge into the air (butterflies, flowers)
-  INSERT:           'insert',  // base sunk INTO the surface, standing at an angle (chocolate bars,
-                              //   sparklers) — top: stands up out of the top; side: pokes out of the wall
+  INSERT:           'insert',  // LEGACY position string only. Insert is now a MODIFIER (a per-zone
+                              //   `insert:{…}` key riding the zone object like `seat`) that composes
+                              //   with an upright base pose — NOT a position. zoneCfg promotes the old
+                              //   `mode:"insert"` form to `{mode:<stand|hug>, insert:{…}}`; kept here
+                              //   so that back-compat promotion has the string to match on.
 });
 
 // Internal element kinds the designer branches on (NOT the admin element-type slug).

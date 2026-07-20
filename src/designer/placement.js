@@ -355,19 +355,51 @@ export function occludedTopFrac(tiers, i) {
   return (r > 0 && up && up < r) ? up / r : 0;
 }
 
-// ── Per-zone placement config ─────────────────────────────────────────────────────────────────
-// A zone's entry in `placement_config` is EITHER a mode string ("hug") or an object carrying
-// per-zone config ({ mode, seat, ... }). `zoneCfg` normalises both so callers never branch on the
-// shape, and it keeps the door open for future per-zone keys (a per-zone material, orientation, …)
-// which ride on the object and flow through this one seam.
-export function zoneCfg(placementConfig, zone) {
-  const v = placementConfig?.[zone];
-  return (v && typeof v === 'object') ? v : { mode: v };
+// Wall zones (side + middle tier) seat elements AGAINST a vertical face; every other zone
+// (top_surface, rim, board) is a flat-ish surface an element stands ON. The ONE predicate for that
+// split (deOverlapSeat has its own inline copy for its coord-system branch); used here to pick the
+// upright base pose an `insert` modifier composes with when back-compat has to infer it.
+function isWallZone(zone) {
+  return zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
 }
 
-// The placement MODE for a zone ("hug" | "stand" | "perch" | "verge"), from string or object form.
+// ── Per-zone placement config ─────────────────────────────────────────────────────────────────
+// A zone's entry in `placement_config` is EITHER a mode string ("hug") or an object carrying
+// per-zone config ({ mode, seat, insert, ... }). `zoneCfg` normalises both so callers never branch
+// on the shape; per-zone modifiers (`seat`, and now `insert`) ride on the object alongside `mode`
+// and flow through this one seam.
+//
+// Back-compat: `insert` was once a POSITION (`mode:"insert"`) with its params in a SHARED top-level
+// `placement_config.insert`. It is now a MODIFIER on a standing base pose (INSERT is upright, only
+// its base is buried). `zoneCfg` promotes the legacy form so every caller sees the canonical
+// `{ mode:<upright pose>, insert:{…} }` — no data migration. The pose insert composes with is the
+// zone's natural upright base: `stand` on a flat surface, `hug` against a wall (geometry-driven, no
+// element-type branch). New data authors `insert` as a per-zone key directly and never trips this.
+export function zoneCfg(placementConfig, zone) {
+  const v = placementConfig?.[zone];
+  const obj = (v && typeof v === 'object') ? { ...v } : { mode: v };
+  if (obj.mode === PLACEMENT_MODES.INSERT) {
+    obj.mode = isWallZone(zone) ? PLACEMENT_MODES.HUG : PLACEMENT_MODES.STAND;
+    if (obj.insert == null) obj.insert = placementConfig?.insert ?? {};
+  }
+  return obj;
+}
+
+// The placement MODE (the POSITION) for a zone ("hug" | "stand" | "perch" | "verge"), from string or
+// object form. Never returns "insert" — that is a modifier now (see zoneInsert), promoted away by
+// zoneCfg.
 export function zoneMode(placementConfig, zone, fallback) {
   return zoneCfg(placementConfig, zone).mode ?? fallback;
+}
+
+// The per-zone INSERT modifier ({ depth, lean_deg, jitter_deg }) or null. Insert sinks an element's
+// base INTO the zone surface and leans it — a MODIFIER on the zone's upright base pose, NOT a pose
+// itself, so it composes with `stand`/`hug` (whatever `zoneMode` returns). Rides the per-zone object
+// like `seat`; zoneCfg promotes the legacy `mode:"insert"` + shared `placement_config.insert` form
+// into it, so callers read one shape. Null (absent) → the element seats flush, not buried.
+export function zoneInsert(placementConfig, zone) {
+  const ins = zoneCfg(placementConfig, zone).insert;
+  return (ins && typeof ins === 'object') ? ins : null;
 }
 
 // How DEEP an element seats in a zone: 'proud' (a solid body sits ON the surface, back flush against
