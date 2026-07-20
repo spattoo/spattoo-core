@@ -57,3 +57,25 @@ describe('buildSolidWallMaterial — local wall colour (printMap)', () => {
     expect(mat.normalMap).not.toBe(mat.map);
   });
 });
+
+// REGRESSION GUARD — the slab wall's self-illumination must not over-drive and wash pale/saturated
+// walls white. The designer feeds this factory the print exposure model's `selfLit` term (~0.65 at
+// neutral, shared/printExposure.js). emissiveIntensity = selfLit × emissiveFactor, so a matte finish
+// must land near the pre-exposure-refactor level (~0.35), NOT the ~1.04 that clipped a pink bow slab's
+// walls to near-white (the 0.1.67 refactor changed the input 0.22→0.65 without re-tuning emissiveFactor).
+describe('buildSolidWallMaterial — wall emissive intensity is not over-driven', () => {
+  const SELF_LIT = 0.65;   // printExposure(neutral).selfLit — the designer's wall-emissive input
+  it('multiplies the input by the finish emissiveFactor', () => {
+    const mat = buildSolidWallMaterial('fondant', '#73ab0c', SELF_LIT);
+    expect(mat.emissiveIntensity).toBeCloseTo(SELF_LIT * SOLID_FINISHES.fondant.emissiveFactor, 5);
+  });
+  it('a matte fondant wall stays near the tuned ~0.35, well below the ~1.04 that washed walls white', () => {
+    const intensity = buildSolidWallMaterial('fondant', '#73ab0c', SELF_LIT).emissiveIntensity;
+    expect(intensity).toBeGreaterThan(0.25);
+    expect(intensity).toBeLessThan(0.45);   // 1.04 (the washed-out regression) must fail this
+  });
+  it('glossy finishes self-illuminate LESS than matte (reflections already brighten them)', () => {
+    expect(SOLID_FINISHES.ganache.emissiveFactor).toBeLessThan(SOLID_FINISHES.fondant.emissiveFactor);
+    expect(SOLID_FINISHES.chocolate.emissiveFactor).toBeLessThan(SOLID_FINISHES.fondant.emissiveFactor);
+  });
+});

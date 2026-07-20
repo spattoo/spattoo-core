@@ -9,16 +9,25 @@
 import * as THREE from 'three';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 
-// `emissiveFactor` scales the front print's emissive onto the wall so the two read as the SAME colour
-// under the same light (the front self-illuminates; without this the wall sits dimmer). Matte finishes
-// match the front fully (~1); glossy ones use less, since their reflections already brighten them.
+// `emissiveFactor` scales the wall's self-illumination so the side/back walls read as a slightly-shaded
+// version of the front print — present, but never brighter than the cap. It multiplies the `emissive`
+// intensity passed in (the print exposure model's `selfLit` term, ~0.65 at neutral — shared/printExposure.js).
+//
+// CALIBRATION NOTE: these were originally tuned against the OLD wall-emissive input `DECAL_EMISSIVE` (0.22).
+// The 0.1.67 exposure refactor changed the input the designer feeds this factory to `printExposure().selfLit`
+// (~0.65, ~3× larger) WITHOUT re-tuning here, so the wall emissiveIntensity jumped (fondant 0.22×1.60=0.35 →
+// 0.65×1.60=1.04). That over-drive is additive and un-mapped, so it clipped saturated/pale walls toward white
+// (a pink bow slab rendered near-white walls). Re-scaled by ~0.34 to restore the known-good absolute intensity
+// under the new input (fondant → 0.65×0.54≈0.35, matching the pre-refactor look). Glossy finishes keep the
+// same RELATIVE reduction (their reflections already brighten them). Matte finishes now land ≈0.54, not ~1: the
+// wall is meant to read a touch DARKER than the light-facing cap (physically correct for a side wall), not equal.
 export const SOLID_FINISHES = {
-  fondant:     { label: 'Fondant',     roughness: 0.97, envMapIntensity: 0.30, grain: 'fondant', normalScale: 0.60, emissiveFactor: 1.60 },
-  buttercream: { label: 'Buttercream', roughness: 0.88, envMapIntensity: 0.35, grain: 'fondant', normalScale: 0.90, emissiveFactor: 1.60 },
-  chocolate:   { label: 'Chocolate',   roughness: 0.42, envMapIntensity: 0.85, clearcoat: 0.35, clearcoatRoughness: 0.45, grain: 'fondant', normalScale: 0.25, emissiveFactor: 0.80 },
-  ganache:     { label: 'Ganache',     roughness: 0.22, envMapIntensity: 1.00, clearcoat: 0.50, clearcoatRoughness: 0.25, grain: null, emissiveFactor: 0.45 },
-  royal_icing: { label: 'Royal icing', roughness: 0.68, envMapIntensity: 0.40, grain: null, emissiveFactor: 1.40 },
-  hard_sugar:  { label: 'Hard sugar',  roughness: 0.10, envMapIntensity: 1.00, clearcoat: 0.60, clearcoatRoughness: 0.15, grain: null, emissiveFactor: 0.35 },
+  fondant:     { label: 'Fondant',     roughness: 0.97, envMapIntensity: 0.30, grain: 'fondant', normalScale: 0.60, emissiveFactor: 0.54 },
+  buttercream: { label: 'Buttercream', roughness: 0.88, envMapIntensity: 0.35, grain: 'fondant', normalScale: 0.90, emissiveFactor: 0.54 },
+  chocolate:   { label: 'Chocolate',   roughness: 0.42, envMapIntensity: 0.85, clearcoat: 0.35, clearcoatRoughness: 0.45, grain: 'fondant', normalScale: 0.25, emissiveFactor: 0.27 },
+  ganache:     { label: 'Ganache',     roughness: 0.22, envMapIntensity: 1.00, clearcoat: 0.50, clearcoatRoughness: 0.25, grain: null, emissiveFactor: 0.15 },
+  royal_icing: { label: 'Royal icing', roughness: 0.68, envMapIntensity: 0.40, grain: null, emissiveFactor: 0.47 },
+  hard_sugar:  { label: 'Hard sugar',  roughness: 0.10, envMapIntensity: 1.00, clearcoat: 0.60, clearcoatRoughness: 0.15, grain: null, emissiveFactor: 0.12 },
 };
 // Stable display/authoring order (dropdown). Keys are the persisted config values — do not rename.
 export const SOLID_FINISH_ORDER = ['fondant', 'buttercream', 'chocolate', 'ganache', 'royal_icing', 'hard_sugar'];
