@@ -469,6 +469,21 @@ function TiltRow({ tiltAngle, onChange }) {
   );
 }
 
+// Bury stepper (−/%/+) — how far an INSERTED decoration's base sinks INTO the cake. Only meaningful
+// for an inserted instance (insertDepth != null), the same signal the renderer's isInsert uses.
+// Writes the length-FRACTION buried (0 = flush/standing, 0.5 = half-buried) the renderer already reads.
+function BuryRow({ insertDepth, onChange }) {
+  const bd = insertDepth ?? 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Bury</span>
+      <button style={s.tbIconBtn} onClick={() => onChange(Math.max(0, +(bd - 0.05).toFixed(2)))}>−</button>
+      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 28, textAlign: 'center' }}>{Math.round(bd * 100)}%</span>
+      <button style={s.tbIconBtn} onClick={() => onChange(Math.min(0.5, +(bd + 0.05).toFixed(2)))}>+</button>
+    </div>
+  );
+}
+
 // Placement chooser — one PreviewTile per valid (tier × surface) SLOT the element allows, each
 // an INDEPENDENT add/remove checkbox (check = place, uncheck = remove). A placed slot gets its own
 // Size dial + Tilt — the SAME SizeDial the cream-piping popup uses (no clamp; sizes freely).
@@ -500,6 +515,12 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
                   <TiltRow tiltAngle={slot.sticker.tiltAngle} onChange={v => onUpdate(slot.sticker.id, { tiltAngle: v })} />
                 </div>
+                {/* Bury — only for an inserted instance (insertDepth != null), same signal as the renderer. */}
+                {slot.sticker.insertDepth != null && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
+                    <BuryRow insertDepth={slot.sticker.insertDepth} onChange={v => onUpdate(slot.sticker.id, { insertDepth: v })} />
+                  </div>
+                )}
               </div>
             )}
           </div>
