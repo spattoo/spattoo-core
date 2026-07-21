@@ -2086,6 +2086,12 @@ function CakeScene({
 }) {
   const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [] } = config;
   const orbitBlockSet = useRef(new Set());
+  // A decoration selects via native pointerup + pointer capture, which breaks its r3f `stopPropagation`
+  // — so the r3f `click` still leaks to the tier/board underneath and toggles the cake's selection off,
+  // wiping the decoration you just picked (needs a second click). We already know at pointer-down (the
+  // capture raycast below) whether the gesture is on a decoration/grip; record it so the tier and
+  // background click handlers ignore a click that a decoration owns. No per-type logic.
+  const gestureOnStickerRef = useRef(false);
   const { gl, camera, scene } = useThree();
 
   // Capture-phase pointerdown fires before OrbitControls' bubble-phase listener.
@@ -2114,6 +2120,9 @@ function CakeScene({
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
+      // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
+      // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
+      gestureOnStickerRef.current = overSticker || overGrip;
       if (orbitRef.current) {
         orbitRef.current.enabled = !overSticker && !overPen && !overDust && !overGrip;
         orbitRef.current.enableRotate = !overCream;
@@ -2148,19 +2157,19 @@ function CakeScene({
       <SceneEnv />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
-        onClick={e => { e.stopPropagation(); onDeselect(); }}>
+        onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
         <planeGeometry args={[30, 30]} />
         <meshStandardMaterial color="#fce8d5" roughness={0.85} />
       </mesh>
 
       {board.kind === 'rect' ? (
         <RoundedBox position={[0, 0.05, 0]} args={[board.width, 0.1, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
-          onClick={e => { e.stopPropagation(); onDeselect(); }}>
+          onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </RoundedBox>
       ) : (
         <mesh position={[0, 0.05, 0]} castShadow receiveShadow
-          onClick={e => { e.stopPropagation(); onDeselect(); }}>
+          onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
           <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </mesh>
@@ -2197,7 +2206,7 @@ function CakeScene({
             highlightPipingId={highlightPipingId}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
-            onClick={e => { e.stopPropagation(); onTierClick(i); }}
+            onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onTierClick(i); }}
           />
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
