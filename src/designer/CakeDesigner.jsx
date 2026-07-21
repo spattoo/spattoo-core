@@ -2504,31 +2504,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setColorOpen(false);
   }
 
-  // ── Selection handlers ────────────────────────────────────────────────────
-  function clearAllSelections() {
-    setSelectedEl(null);
-    setColorOpen(false);
-    setActiveGroupKey(null);
-    setSelectedStickerIds(new Set());
+  // ── Selection: ONE authority ──────────────────────────────────────────────
+  // `selectedEl` is the single source of truth for WHAT is selected; `selectedStickerIds` only holds
+  // the decoration instances to highlight for that selection. They are ALWAYS written together here so
+  // they can never diverge into "two things selected at once" (the tier lit up while a decoration keeps
+  // its box, or the reverse) — that entire class of bug came from call sites setting one state and
+  // forgetting the other, per type. So NO call site clears the other state by hand: any exclusive
+  // selection routes through this, passing its decoration instance ids (or none → the Set empties). The
+  // additive multi-select path (ctrl / multi-select mode) is the ONE exception and owns the Set itself.
+  function selectExclusive(el, stickerIds = null) {
+    setSelectedEl(el);
+    setSelectedStickerIds(new Set(stickerIds ?? []));
     setMultiSelectMode(false);
+    setActiveGroupKey(null);
+    setColorOpen(false);
   }
+
+  function clearAllSelections() { selectExclusive(null); }
 
   function handleDeselect() { clearAllSelections(); }
 
   function handleTierClick(i) {
     closeAllPopups();
-    // Selecting the cake is a FULL-REPLACE selection: stickers track their own `selectedStickerIds`
-    // (a separate Set from `selectedEl`), so without clearing it a previously-selected decoration keeps
-    // its SelectionBox while the tier also highlights — two things selected at once. The tier owns the
-    // selection now, so drop any sticker selection (and multi-select mode) with it.
-    setSelectedStickerIds(new Set());
-    setMultiSelectMode(false);
-    setSelectedEl(prev => (prev?.type === 'tier' && prev.index === i) ? null : { type: 'tier', index: i });
+    // Clicking the already-selected tier toggles it off; otherwise the tier becomes the sole selection.
+    const isSame = selectedEl?.type === 'tier' && selectedEl.index === i;
+    selectExclusive(isSame ? null : { type: 'tier', index: i });
   }
 
   function handleTextSelect(id) {
     focusEditor('decoration');
-    setSelectedEl({ type: 'text', id });
+    selectExclusive({ type: 'text', id });
   }
 
   // Clicking a ring on the cake opens the card that owns it (matched by cardId). Layers from
@@ -2562,7 +2567,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (element.placement_config?.cluster) {
       setElementsOpen(false);
       focusEditor('decoration');
-      setSelectedEl({ type: 'cluster-place', elementId: element.id });
+      selectExclusive({ type: 'cluster-place', elementId: element.id });
       return;
     }
     // Tier-finish elements (gold leaf / food foil) paint flakes into the tier material rather than
@@ -2572,7 +2577,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setElementsOpen(false);
       focusEditor('decoration');
       setFoilTier(0); setFoilSel(0);
-      setSelectedEl({ type: 'foil', elementId: element.id });
+      selectExclusive({ type: 'foil', elementId: element.id });
       return;
     }
     // Second cream layer (config: placement_config.second_cream) — a raised buttercream band, not a
@@ -2581,7 +2586,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setElementsOpen(false);
       focusEditor('decoration');
       addCreamToTier(0);
-      setSelectedEl({ type: 'cream', elementId: element.id });
+      selectExclusive({ type: 'cream', elementId: element.id });
       return;
     }
     const zones = element.allowed_zones ?? [];
@@ -2599,18 +2604,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // A decor_pattern part belongs to ONE pattern card (the parts are abstracted away). Tapping any
     // part selects that pattern card; parts still drag individually (moveSet excludes patternId).
     if (!ctrlKey && !multiSelectMode && sticker?.patternId) {
-      setColorOpen(false);
-      setSelectedEl({ type: 'pattern', patternId: sticker.patternId, patternElementId: sticker.patternElementId });
-      setSelectedStickerIds(new Set(design.stickers.filter(s => s.patternId === sticker.patternId).map(s => s.id)));
+      selectExclusive(
+        { type: 'pattern', patternId: sticker.patternId, patternElementId: sticker.patternElementId },
+        design.stickers.filter(s => s.patternId === sticker.patternId).map(s => s.id));
       return;
     }
 
     // A cluster ball belongs to ONE cluster card (the packed clump is abstracted away); tapping any
     // ball selects that card (ops run by clusterId). Like scatter, no per-instance highlight.
     if (!ctrlKey && !multiSelectMode && sticker?.clusterId) {
-      setColorOpen(false);
-      setSelectedEl({ type: 'cluster', clusterId: sticker.clusterId });
-      setSelectedStickerIds(new Set());
+      selectExclusive({ type: 'cluster', clusterId: sticker.clusterId });
       return;
     }
 
@@ -2618,18 +2621,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // card. We DON'T mark the instances selected — painting 41 sprinkles purple reads as a recolour
     // and would trip the grouping bar; the open card is the selection feedback. Ops run by elementId.
     if (!ctrlKey && !multiSelectMode && sticker?.scatter) {
-      setColorOpen(false);
-      setSelectedEl({ type: 'scatter', elementId: sticker.elementId });
-      setSelectedStickerIds(new Set());
+      selectExclusive({ type: 'scatter', elementId: sticker.elementId });
       return;
     }
 
     // A multi-slot decor instance opens its element's single card (manages all placements),
     // not a per-instance selection — keeps one uniform card per element.
     if (!ctrlKey && !multiSelectMode && sticker && isMultiSlotEl(sticker.elementId)) {
-      setColorOpen(false);
-      setSelectedEl({ type: 'decorEl', elementId: sticker.elementId });
-      setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === sticker.elementId).map(s => s.id)));
+      selectExclusive(
+        { type: 'decorEl', elementId: sticker.elementId },
+        design.stickers.filter(s => s.elementId === sticker.elementId).map(s => s.id));
       return;
     }
 
@@ -2649,18 +2650,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (sticker?.groupId) {
       // A grouped member belongs to ONE group card (members abstracted away, like a decor_pattern).
       // Tapping any member selects the group as a unit; drill into a single member from the card.
-      const groupIds = new Set(
-        design.stickers.filter(s => s.groupId === sticker.groupId).map(s => s.id)
-      );
-      setSelectedStickerIds(groupIds);
-      setSelectedEl({ type: 'group', groupId: sticker.groupId });
+      selectExclusive(
+        { type: 'group', groupId: sticker.groupId },
+        design.stickers.filter(s => s.groupId === sticker.groupId).map(s => s.id));
     } else {
       // Toggle single selection
       const isOnly = selectedStickerIds.size === 1 && selectedStickerIds.has(id);
-      setSelectedStickerIds(isOnly ? new Set() : new Set([id]));
-      setSelectedEl(isOnly ? null : { type: 'sticker', id });
+      selectExclusive(isOnly ? null : { type: 'sticker', id }, isOnly ? null : [id]);
     }
-    setColorOpen(false);
   }
 
   function handleStickerLongPress(id) {
@@ -3202,7 +3199,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setElementsOpen(false);
       focusEditor('decoration');
       setFoilTier(hit?.tierIndex ?? 0); setFoilSel(0);
-      setSelectedEl({ type: 'foil', elementId: element.id });
+      selectExclusive({ type: 'foil', elementId: element.id });
       return;
     }
     // Second cream layer (config: placement_config.second_cream) — drag path. Seeds a band on the
@@ -3211,7 +3208,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setElementsOpen(false);
       focusEditor('decoration');
       addCreamToTier(hit?.tierIndex ?? 0);
-      setSelectedEl({ type: 'cream', elementId: element.id });
+      selectExclusive({ type: 'cream', elementId: element.id });
       return;
     }
     const parts = element.placement_config?.parts;
@@ -3258,11 +3255,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Multi-slot decor opens its single element card (manages all placements); others select
     // the just-placed instance.
     if (isMultiSlotEl(element.id)) {
-      setSelectedEl({ type: 'decorEl', elementId: element.id });
-      setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === element.id).map(s => s.id).concat(newId)));
+      selectExclusive({ type: 'decorEl', elementId: element.id },
+        design.stickers.filter(s => s.elementId === element.id).map(s => s.id).concat(newId));
     } else {
-      setSelectedEl({ type: 'sticker', id: newId });
-      setSelectedStickerIds(new Set([newId]));
+      selectExclusive({ type: 'sticker', id: newId }, [newId]);
     }
 
     if (isImageTopper && hit.zone === 'top_surface') {
@@ -3746,56 +3742,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'tool' ? selectedEl.tool === card.tool
          : selectedEl?.id === card.id);
   function selectDecorationCard(card) {
-    // Tool finishes (luster dust / freehand cream pen) expand INLINE like every other card — selecting
-    // the tool renders its editor body (renderDustBody / renderPenBody) inside the card. Its placement
-    // mode (dustMode / penDrawMode) is gated on this selection. Collapse = click the header again
-    // (clearAllSelections). No ✕ — consistent with the piping/foil/cream/writing cards.
-    if (card.type === 'tool') {
-      setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false);
-      setSelectedEl({ type: 'tool', tool: card.tool });
-      return;
-    }
-    setColorOpen(false);
+    // Every card is a single exclusive selection routed through selectExclusive (selectedEl + the
+    // highlight Set written together), so clicking any card can never leave a previous card OR a canvas
+    // decoration still selected. Per-instance highlight ids are derived per card type; card-managed
+    // selections (tool / scatter / cluster / cluster-place / foil / cream / text) highlight no instances.
+    // Tool finishes (luster dust / cream pen) expand INLINE like the others; their placement mode is
+    // gated on this selection. Collapse = click the header again (clearAllSelections).
     setExpandedPipingId(null);   // collapse any expanded piping card — single expansion
-    if (card.type === 'decorEl') {
-      setSelectedEl({ type: 'decorEl', elementId: card.elementId });
-      setSelectedStickerIds(new Set(design.stickers.filter(s => s.elementId === card.elementId).map(s => s.id)));
-      setMultiSelectMode(false);
-    } else if (card.type === 'scatter') {
-      setSelectedEl({ type: 'scatter', elementId: card.elementId });
-      setSelectedStickerIds(new Set());   // no per-instance highlight; ops run by elementId
-      setMultiSelectMode(false);
-    } else if (card.type === 'cluster') {
-      setSelectedEl({ type: 'cluster', clusterId: card.clusterId });
-      setSelectedStickerIds(new Set());   // card is the selection; ops run by clusterId
-      setMultiSelectMode(false);
-    } else if (card.type === 'cluster-place') {
-      setSelectedEl({ type: 'cluster-place', elementId: card.elementId });
-      setSelectedStickerIds(new Set());
-      setMultiSelectMode(false);
-    } else if (card.type === 'foil') {
-      setSelectedEl({ type: 'foil', elementId: card.elementId });
-      setSelectedStickerIds(new Set());
-      setMultiSelectMode(false);
-    } else if (card.type === 'cream') {
-      setSelectedEl({ type: 'cream', elementId: card.elementId });
-      setSelectedStickerIds(new Set());
-      setMultiSelectMode(false);
-    } else if (card.type === 'sticker') {
-      setSelectedEl({ type: 'sticker', id: card.id });
-      setSelectedStickerIds(new Set([card.id]));
-      setMultiSelectMode(false);
-    } else if (card.type === 'pattern') {
-      setSelectedEl({ type: 'pattern', patternId: card.patternId, patternElementId: card.patternElementId });
-      setSelectedStickerIds(new Set(design.stickers.filter(s => s.patternId === card.patternId).map(s => s.id)));
-      setMultiSelectMode(false);
-    } else if (card.type === 'group') {
-      setSelectedEl({ type: 'group', groupId: card.groupId });
-      setSelectedStickerIds(new Set(design.stickers.filter(s => s.groupId === card.groupId).map(s => s.id)));
-      setMultiSelectMode(false);
-    } else if (card.type === 'text') {
-      setSelectedEl({ type: 'text', id: card.id });
-    }
+    if (card.type === 'tool') setToolsOpen(false);
+    const stickerIds =
+        card.type === 'decorEl' ? design.stickers.filter(s => s.elementId === card.elementId).map(s => s.id)
+      : card.type === 'pattern' ? design.stickers.filter(s => s.patternId === card.patternId).map(s => s.id)
+      : card.type === 'group'   ? design.stickers.filter(s => s.groupId === card.groupId).map(s => s.id)
+      : card.type === 'sticker' ? [card.id]
+      : null;
+    const el =
+        card.type === 'tool'          ? { type: 'tool', tool: card.tool }
+      : card.type === 'decorEl'       ? { type: 'decorEl', elementId: card.elementId }
+      : card.type === 'scatter'       ? { type: 'scatter', elementId: card.elementId }
+      : card.type === 'cluster'       ? { type: 'cluster', clusterId: card.clusterId }
+      : card.type === 'cluster-place' ? { type: 'cluster-place', elementId: card.elementId }
+      : card.type === 'foil'          ? { type: 'foil', elementId: card.elementId }
+      : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
+      : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
+      : card.type === 'pattern'       ? { type: 'pattern', patternId: card.patternId, patternElementId: card.patternElementId }
+      : card.type === 'group'         ? { type: 'group', groupId: card.groupId }
+      : card.type === 'text'          ? { type: 'text', id: card.id }
+      : null;
+    if (el) selectExclusive(el, stickerIds);
   }
 
   // Move a whole decor_pattern to another surface: drop its current parts, re-place on the new zone
@@ -5364,7 +5338,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!elemSearch.trim() && (
               <>
                 <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'tool', tool: 'pen' }); setElementsOpen(false); }}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'tool', tool: 'pen' }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0 }} />
                   <div style={{ textAlign: 'left' }}>
@@ -5373,7 +5347,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'tool', tool: 'luster-dust' }); setElementsOpen(false); }}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'tool', tool: 'luster-dust' }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: 'radial-gradient(circle at 35% 35%, #f0cf63, #9a7b2e)', flexShrink: 0 }} />
                   <div style={{ textAlign: 'left' }}>
@@ -5382,7 +5356,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
-                  onClick={() => { if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); setElementsOpen(false); }}
+                  onClick={() => { if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing' }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
                     <TextIcon size={22} />
@@ -5395,8 +5369,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button
                   onClick={() => {
                     addAge();
-                    setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false);
-                    setSelectedEl({ type: 'age', pending: true });   // resolved to the new id by the effect below
+                    setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false);
+                    selectExclusive({ type: 'age', pending: true });   // resolved to the new id by the effect below
                   }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FBF1D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b8860b', flexShrink: 0, fontWeight: 800, fontSize: 20 }}>
@@ -5565,9 +5539,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onTextContentChange={(id, content) => updateText(id, { content })}
               textToolbar={null /* text now edits via the right-side popup, not a floating strip */}
               selectedAgeId={selectedAgeId}
-              onAgeSelect={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false); setSelectedEl({ type: 'age', id }); }}
+              onAgeSelect={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false); selectExclusive({ type: 'age', id }); }}
               onAgeMove={(id, pos) => updateAge(id, pos)}
-              onWritingClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); setElementsOpen(false); }}
+              onWritingClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing' }); setElementsOpen(false); }}
               onWritingMove={moves => setWriting(moves)}
               writingSelected={selectedEl?.type === 'writing'}
               penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen'}
@@ -5886,7 +5860,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div role="button"
                       onClick={() => {
                         if (expanded) { clearAllSelections(); }
-                        else { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setSelectedEl({ type: 'writing' }); }
+                        else { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing' }); }
                       }}
                       style={stackCardHeaderStyle(expanded)}>
                       <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
