@@ -2589,6 +2589,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       selectExclusive({ type: 'cream', elementId: element.id });
       return;
     }
+    // Full-ring decoration (config: an 'element' ring finish on an allowed rim/board zone) — an ordinary
+    // decoration set to repeat around the perimeter. It rides the SAME proven ring path as piping
+    // (openPipingPopup → topPipings/bottomPipings); the renderer keeps its REAL materials because the
+    // layer's finish resolves to 'element'. A finish KEY, never the element type (INVARIANTS #1/#6), so
+    // the picker stays one uniform tap-to-open for every element.
+    const rc = element.placement_config, rz = element.allowed_zones ?? [];
+    const ringsRim   = rz.includes(ZONES.RIM)   && (rc?.top_ring_finish    ?? rc?.ring_finish) === 'element';
+    const ringsBoard = rz.includes(ZONES.BOARD) && (rc?.bottom_ring_finish ?? rc?.ring_finish) === 'element';
+    if (ringsRim || ringsBoard) {
+      openPipingPopup(element);
+      return;
+    }
     const zones = element.allowed_zones ?? [];
     // Prefer the top surface; a hero decoration belongs on the cake's actual top (the LAST/
     // topmost tier), not tier 0 (which is hidden under upper tiers on a multi-tier cake).

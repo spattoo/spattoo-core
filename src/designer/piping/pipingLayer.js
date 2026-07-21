@@ -25,6 +25,10 @@ export function pipingDefaultArrangement(pc, isTop) {
 export function pipingPlacementFromConfig(placementConfig, isTop) {
   const pc = placementConfig ?? {};
   const arrangement = pipingDefaultArrangement(pc, isTop);
+  // Ring finish: 'cream' recolours the GLB to a single piped-cream material (default, piping); 'element'
+  // keeps the GLB's REAL materials so any decoration can ring around the rim/board. A KEY, not a type
+  // branch (INVARIANTS #1/#6) — the renderer picks its leaf from this, never from the element's slug.
+  const finish = (isTop ? pc.top_ring_finish : pc.bottom_ring_finish) ?? pc.ring_finish ?? 'cream';
   // Single mode seeds exactly one instance from the configured angle; ring carries
   // no instances array so it stays the cheap, procedural full-circle path.
   const seed = arrangement === 'single'
@@ -78,6 +82,7 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
       swagDepth:         pc.top_swag_depth      ?? null,
       swagTilt:          pc.top_swag_tilt       ?? null,
       arrangement,
+      finish,
       ...alt,
       ...bend,
       ...wrap,

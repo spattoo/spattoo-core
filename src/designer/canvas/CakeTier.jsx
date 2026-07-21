@@ -22,6 +22,7 @@ import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
+import { ringPositions } from './ringPositions.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 function extractGeo(scene) {
@@ -194,122 +195,29 @@ function capShellScale(sc1, sizeFactor, bbDepthZ, radius) {
   return Math.min(sc1 * sizeFactor, maxSc);
 }
 
-// Bend a flat piping ring into `swagCount` scalloped drapes (garland/swag look).
-// Returns one entry per shell { pos, rotY, tq }:
-//   pos  — world position, with the scallop drop baked into y
-//   rotY — yaw so the shell faces outward (same as the flat ring)
-//   tq   — a quaternion [x,y,z,w] that pitches the shell about the WORLD radial
-//          axis to follow the drape's slope. Pitching about the radial axis (not a
-//          shell-local axis) is independent of the GLB's internal orientation, so it
-//          leans the upright shell along the drape instead of rolling it.
-// Shells are spaced by equal arc-length ALONG the draped curve (not the flat circle)
-// so they stay touching through the dips. swagDepth/swagTilt are in cake units / 0–1.
-// The calibrator (PipingCalibrator.jsx) keeps an identical copy for an exact preview.
-function buildSwagRing({ r, baseY, step, swagCount, swagDepth, swagTilt = 0.5 }) {
-  const dipAt = a => -swagDepth * (1 - Math.cos(a * swagCount)) / 2;
-  // Sample the wavy circle and accumulate arc length.
-  const N = 1440;
-  const cum = [0];
-  let px = r, py = baseY + dipAt(0), pz = 0;
-  for (let s = 1; s <= N; s++) {
-    const a = (s / N) * Math.PI * 2;
-    const cx = Math.cos(a) * r, cy = baseY + dipAt(a), cz = Math.sin(a) * r;
-    cum.push(cum[s - 1] + Math.hypot(cx - px, cy - py, cz - pz));
-    px = cx; py = cy; pz = cz;
-  }
-  const total = cum[N];
-  const count = Math.max(6, Math.round(total / step));
-  const out = [];
-  let seg = 0;
-  for (let j = 0; j < count; j++) {
-    const target = (j / count) * total;            // monotonically increasing
-    while (seg < N && cum[seg + 1] < target) seg++;
-    const a0 = (seg / N) * Math.PI * 2, a1 = ((seg + 1) / N) * Math.PI * 2;
-    const f  = (target - cum[seg]) / Math.max(1e-9, cum[seg + 1] - cum[seg]);
-    const a  = a0 + (a1 - a0) * f;
-    const slope = -(swagDepth * swagCount / 2) * Math.sin(a * swagCount); // d(dip)/d(angle)
-    const tilt  = -swagTilt * Math.atan2(slope, r);
-    const sh = Math.sin(tilt / 2), ch = Math.cos(tilt / 2);
-    // Rotation about world radial axis (cos a, 0, sin a).
-    const tq = [Math.cos(a) * sh, 0, Math.sin(a) * sh, ch];
-    out.push({ pos: [Math.cos(a) * r, baseY + dipAt(a), Math.sin(a) * r], rotY: a, tq });
-  }
-  return out;
+// Measure a DECORATION GLB for the "element" ring finish. Unlike buildShellGeo (which extracts a
+// single geometry and recolours it cream), a decoration keeps its FULL scene + real materials, so we
+// only MEASURE it — whole-scene bbox, authored upright (no piping X-rotation). Returns the same shape
+// buildShellGeo does (shellScale / bbWidth / bbDepth + world extents), so ringPositions and the editor
+// clamps treat it identically, plus `scene` / `minY` for the base-seated render. Height-normalised to
+// SHELL_HEIGHT_FRAC of the tier radius (× user size), sharing the same depth cap as cream shells.
+function buildDecorationShell(scene, radius, sizeFactor) {
+  if (!scene) return null;
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const sc1 = (radius * SHELL_HEIGHT_FRAC) / (size.y || 1);
+  const sc  = capShellScale(sc1, sizeFactor, size.z || 1e-3, radius);
+  return {
+    scene, minY: box.min.y, isElement: true,
+    shellScale: sc, bbWidth: size.x, bbDepth: size.z,
+    // Extents relative to the base-seat anchor (base at 0): for the Height/radial clamps + clearance.
+    worldTopY: size.y * sc, worldBotY: 0,
+    worldMaxZ: box.max.z * sc, worldMinZ: box.min.z * sc,
+  };
 }
 
-// Place ONE single-mode shell on a perimeter. The instance `angle` is read as a fraction
-// of the way round (relative to the cake front), so the existing front-relative angle
-// sliders keep working on rectangles.
-function perimeterSinglePos({ perim, off, baseY, angle }) {
-  const f = ((((angle - PIPING_FRONT_ANGLE) / (2 * Math.PI)) % 1) + 1) % 1;
-  const p = perim.at(f * perim.length);
-  return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
-}
-
-// Evenly-spaced shells around ANY perimeter (heart, number, polygon…). Generalises rectEdgeRing's clean
-// garland to a free-form outline by doing what rectEdgeRing does for a rectangle: build a proper ROUND-
-// JOIN offset of the outline (the corners come out ROUNDED, like a rounded-rect), then walk that smooth
-// closed path at even arc length. Round joins are the whole trick — a sharp corner becomes an arc the
-// beads flow around continuously, so there is no gap, no self-intersection spike, and no corner pile, and
-// none of the corner-detection / spike-filter / corner-thin patches those failure modes used to need.
-// Relies on the outline being wound CCW-in-xz so the offset normals point OUTWARD (see numberShape).
-function perimeterRing(perim, off, step, baseY) {
-  const dense = Math.max(160, Math.round((perim.length / step) * 10));
-  const P = [];
-  for (let i = 0; i < dense; i++) { const p = perim.at((i / dense) * perim.length); P.push({ x: p.x, z: p.z }); }
-  // Outward normal of each edge (CCW winding ⇒ the right-hand perpendicular points out).
-  const nrm = [];
-  for (let i = 0; i < dense; i++) { const a = P[i], b = P[(i + 1) % dense], dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1; nrm.push({ x: dz / l, z: -dx / l }); }
-
-  // ROUND-JOIN offset: push each vertex out along its normal by `off`; where the normal swings sharply
-  // (a corner) sweep an ARC of radius |off| from the incoming normal to the outgoing one, rounding the
-  // corner. `nx,nz` is the outward direction at each offset point (the shell's facing).
-  const Q = [];
-  const ARC = 7 * Math.PI / 180, TURN = 8 * Math.PI / 180;
-  const put = (cx, cz, a) => Q.push({ x: cx + off * Math.cos(a), z: cz + off * Math.sin(a), nx: Math.cos(a), nz: Math.sin(a) });
-  for (let i = 0; i < dense; i++) {
-    const np = nrm[(i - 1 + dense) % dense], nc = nrm[i];
-    const a0 = Math.atan2(np.z, np.x), a1 = Math.atan2(nc.z, nc.x);
-    let da = a1 - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
-    if (Math.abs(da) > TURN) { const steps = Math.ceil(Math.abs(da) / ARC); for (let s = 0; s <= steps; s++) put(P[i].x, P[i].z, a0 + da * (s / steps)); }
-    else put(P[i].x, P[i].z, a0 + da * 0.5);
-  }
-
-  // Thin-stroke collapse: where an inset stroke is narrower than 2·|off| its two sides cross to the wrong
-  // side of the outline. Keep only the points on the correct side (inside for an inset, outside for an
-  // outset); the crossed strip vanishes and the walk chords across it, thinning to one clean row.
-  const path = off === 0 ? Q : Q.filter(q => (off < 0) === pointInPolygon(P, q.x, q.z));
-  const use = path.length >= 3 ? path : Q;
-
-  // Even walk of the smooth offset path.
-  const n = use.length, cum = [0];
-  for (let i = 0; i < n; i++) { const a = use[i], b = use[(i + 1) % n]; cum.push(cum[i] + Math.hypot(b.x - a.x, b.z - a.z)); }
-  const len = cum[n], N = Math.max(6, Math.round(len / step)), raw = [];
-  for (let j = 0; j < N; j++) {
-    const t = (j / N) * len;
-    let seg = 0;
-    while (seg < n && cum[seg + 1] < t) seg++;
-    const a = use[seg], b = use[(seg + 1) % n], d = cum[seg + 1] - cum[seg], u = d ? (t - cum[seg]) / d : 0;
-    const nx = a.nx + (b.nx - a.nx) * u, nz = a.nz + (b.nz - a.nz) * u;
-    raw.push({ pos: [a.x + (b.x - a.x) * u, baseY, a.z + (b.z - a.z) * u], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
-  }
-
-  // Collapse dedup, tuned against the REAL ring capture (step≈0.49, off≈−0.26 — a big rosette on a "1"):
-  // drop a shell within 0.5·step of ANY kept shell. This removes genuine overlaps — a thin stroke folded
-  // onto itself, or a concave notch folding the path back on a non-adjacent part — while leaving a narrow
-  // stroke's two parallel rows (~0.6·step apart) intact. NO sequential/walk-adjacent rule: it can't tell a
-  // clean ROUNDED CORNER (where consecutive shells sit a full step apart by arc but a bit less by chord)
-  // from real bunching, so it culled the corner shells and opened GAPS at the top-right (and every rounded
-  // corner). A rounded corner reads best with its shells kept — slightly crowding is how piping turns a
-  // corner; a gap is not.
-  const out = [], glob2 = (0.5 * step) ** 2;
-  for (const sh of raw) {
-    const x = sh.pos[0], z = sh.pos[2];
-    if (out.some(q => (q.pos[0] - x) ** 2 + (q.pos[2] - z) ** 2 < glob2)) continue;
-    out.push(sh);
-  }
-  return out;
-}
+// buildSwagRing / perimeterSinglePos / perimeterRing + the whole ring distribution moved to
+// ./ringPositions.js (shared by the cream rings AND the decoration ring; unit-tested there).
 
 // Local-space bbox of a geometry, in the frame the gradient shader reads (the `position`
 // attribute). Null when there's no gradient so non-gradient piping skips the work.
@@ -375,6 +283,30 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
       <Shell key={u.key ?? i} pos={pos} rotY={u.rotY} tq={u.tq}
         ryGroup={isB ? ryB : ryA} meshRot={isB ? meshB : meshA}
         geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected} />
+    );
+  });
+}
+
+// Render the DECORATION ring ("element" finish): the element's FULL GLB with its REAL materials,
+// cloned at each ring position, base-seated on the surface and yawed to face outward. The
+// material-preserving counterpart to renderShells (which merges the GLB into one cream geometry).
+// Clones are memoised so re-renders are cheap and geometry/materials stay shared across instances.
+// (Swag `tq` tilt and per-instance selection tint are intentionally omitted — decorations don't
+// swag, and INVARIANTS #5a bans material-tint selection; the ring's card carries selection.)
+function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0] }) {
+  const clones = useMemo(() => {
+    if (!scene) return [];
+    return positions.map(() => { const c = scene.clone(true); c.scale.setScalar(shellScale); return c; });
+  }, [positions, scene, shellScale]);
+  const ry = (baseRotation?.[1] ?? 0) * DEG;
+  return clones.map((obj, i) => {
+    const u = positions[i];
+    return (
+      <group key={u.key ?? i}
+        position={[u.pos[0], u.pos[1] - minY * shellScale, u.pos[2]]}
+        rotation={[0, (u.rotY ?? 0) + ry, 0]}>
+        <primitive object={obj} />
+      </group>
     );
   });
 }
@@ -466,6 +398,7 @@ function TopPipingRingImpl({
   extraRadialOffset = 0,
   yOffset           = 0,
   flipTop = false,
+  finish = 'cream',
   spacing = 1,
   swagCount = 0, swagDepth = 0, swagTilt = 0.5,
   arrangement = 'ring', instances = null,
@@ -480,8 +413,10 @@ function TopPipingRingImpl({
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
   const tr0 = topRotation?.[0] ?? 0, tr2 = topRotation?.[2] ?? 0;
-  const A = useMemo(() => buildShellGeo(scene, flipTop, radius, sizeFactor, [tr0, 0, tr2]),
-    [scene, flipTop, radius, sizeFactor, tr0, tr2]);
+  const A = useMemo(() => finish === 'element'
+    ? buildDecorationShell(scene, radius, sizeFactor)
+    : buildShellGeo(scene, flipTop, radius, sizeFactor, [tr0, 0, tr2]),
+    [finish, scene, flipTop, radius, sizeFactor, tr0, tr2]);
   const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
     [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
 
@@ -516,40 +451,9 @@ function TopPipingRingImpl({
     let   off  = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
     // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
     if (shape?.strokeW) off = Math.max(off, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
-    const r    = radius + off;
-    const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
-    // Rectangular (sheet) cakes walk a rounded-rect perimeter; round cakes keep the circle.
-    const perim = (shape?.kind === 'rect' || shape?.outline) ? pipingPerimeter(shape) : null;
-    if (arrangement === 'single') {
-      const list = instances?.length ? instances : [{ angle: 0 }];
-      return list.map(inst => {
-        const angle = inst.angle ?? 0;
-        if (perim) return { ...perimeterSinglePos({ perim, off, baseY: topY + yOffset, angle }), key: inst.id };
-        return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
-      });
-    }
-    if (perim) {
-      if (shape.kind === 'rect') return rectEdgeRing(shape, off, step, topY + yOffset);  // sheet: clean straight runs + corners
-      // heart, number, …: even by arc length, EACH contour its OWN loop so a multi-digit number's
-      // digits are ringed separately and no shell bridges the gap between them. A glyph's COUNTERS
-      // (holes) are ringed too, with the offset flipped (+off) so beads sit on the material side of the
-      // inner edge — a real number cake borders every edge, not just the silhouette.
-      return [
-        ...pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, topY + yOffset)),
-        // Counters: beads on the MATERIAL side of the hole edge — always a POSITIVE offset (into the
-        // material, away from the hole) regardless of the ring's own inset/outset sign.
-        ...pipingHolePerimeters(shape).flatMap(p => perimeterRing(p, Math.abs(off), step, topY + yOffset)),
-      ];
-    }
-    if (swagCount > 0 && swagDepth > 0) {
-      return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
-    }
-    let count = Math.max(6, Math.round((2 * Math.PI * r) / step));
-    // Round up to a whole number of pattern cycles so the alternation closes cleanly.
-    if (altActive) { const L = pattern.length || 1; count = Math.max(L, Math.ceil(count / L) * L); }
-    return Array.from({ length: count }, (_, i) => {
-      const angle = (i / count) * Math.PI * 2;
-      return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
+    return ringPositions({
+      A, radius, off, baseY: topY + yOffset,
+      spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
   }, [A, radius, topY, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
 
@@ -583,7 +487,9 @@ function TopPipingRingImpl({
 
   return (
     <group onClick={onClick}>
-      {wrapGeo
+      {finish === 'element'
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={topRotation} />
+        : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
@@ -611,6 +517,7 @@ function BottomPipingRingImpl({
   extraRadialOffset = 0,
   yOffset           = 0,
   flipBottom = true,
+  finish = 'cream',
   spacing = 1,
   swagCount = 0, swagDepth = 0, swagTilt = 0.5,
   arrangement = 'ring', instances = null,
@@ -625,8 +532,10 @@ function BottomPipingRingImpl({
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
   const br0 = bottomRotation?.[0] ?? 0, br2 = bottomRotation?.[2] ?? 0;
-  const A = useMemo(() => buildShellGeo(scene, flipBottom, radius, sizeFactor, [br0, 0, br2]),
-    [scene, flipBottom, radius, sizeFactor, br0, br2]);
+  const A = useMemo(() => finish === 'element'
+    ? buildDecorationShell(scene, radius, sizeFactor)
+    : buildShellGeo(scene, flipBottom, radius, sizeFactor, [br0, 0, br2]),
+    [finish, scene, flipBottom, radius, sizeFactor, br0, br2]);
   const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
     [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
 
@@ -660,37 +569,9 @@ function BottomPipingRingImpl({
     let   off  = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
     // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
     if (shape?.strokeW) off = Math.min(off, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
-    const r    = radius + off;
-    const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
-    const perim = (shape?.kind === 'rect' || shape?.outline) ? pipingPerimeter(shape) : null;
-    if (arrangement === 'single') {
-      const list = instances?.length ? instances : [{ angle: 0 }];
-      return list.map(inst => {
-        const angle = inst.angle ?? 0;
-        if (perim) return { ...perimeterSinglePos({ perim, off, baseY: yBase + yOffset, angle }), key: inst.id };
-        return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
-      });
-    }
-    if (perim) {
-      if (shape.kind === 'rect') return rectEdgeRing(shape, off, step, yBase + yOffset);  // sheet: clean straight runs + corners
-      // heart, number, …: even by arc length, EACH contour its OWN loop so a multi-digit number's
-      // digits are ringed separately and no shell bridges the gap between them. Counters (holes) are
-      // ringed too, offset flipped (+off) onto the material side — see the top ring for the rationale.
-      return [
-        ...pipingPerimeters(shape).flatMap(p => perimeterRing(p, off, step, yBase + yOffset)),
-        // Counters: beads on the material side of the hole edge — always a positive offset (see top ring).
-        ...pipingHolePerimeters(shape).flatMap(p => perimeterRing(p, Math.abs(off), step, yBase + yOffset)),
-      ];
-    }
-    if (swagCount > 0 && swagDepth > 0) {
-      return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });
-    }
-    let count = Math.max(6, Math.round((2 * Math.PI * r) / step));
-    // Round up to a whole number of pattern cycles so the alternation closes cleanly.
-    if (altActive) { const L = pattern.length || 1; count = Math.max(L, Math.ceil(count / L) * L); }
-    return Array.from({ length: count }, (_, i) => {
-      const angle = (i / count) * Math.PI * 2;
-      return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
+    return ringPositions({
+      A, radius, off, baseY: yBase + yOffset,
+      spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
   }, [A, radius, yBase, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
 
@@ -763,7 +644,9 @@ function BottomPipingRingImpl({
 
   return (
     <group onClick={onClick}>
-      {wrapGeo
+      {finish === 'element'
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} />
+        : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
@@ -1516,7 +1399,7 @@ export default function CakeTier({
       flipTop={p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false)}
       spacing={p.spacing ?? 1}
       swagCount={p.swagCount ?? 0} swagDepth={p.swagDepth ?? 0} swagTilt={p.swagTilt ?? 0.5}
-      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null}
+      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null} finish={p.finish ?? 'cream'}
       altEnabled={p.altEnabled ?? false} altGlbUrl={p.altGlbUrl ?? null}
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
@@ -1546,7 +1429,7 @@ export default function CakeTier({
       flipBottom={p.userFlipBottom !== undefined ? p.userFlipBottom : (p.flipBottom ?? true)}
       spacing={p.spacing ?? 1}
       swagCount={p.swagCount ?? 0} swagDepth={p.swagDepth ?? 0} swagTilt={p.swagTilt ?? 0.5}
-      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null}
+      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null} finish={p.finish ?? 'cream'}
       altEnabled={p.altEnabled ?? false} altGlbUrl={p.altGlbUrl ?? null}
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
