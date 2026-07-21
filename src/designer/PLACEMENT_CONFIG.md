@@ -295,7 +295,12 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
   "allowed_zones":   ["top_surface", "side"],             // subset of ZONES — where it can go
 
   "allowed_actions": {                                    // capabilities — gate the edit-popup controls
-    "resize":    true,
+    "resize":    true,                                    // OPT-IN: absent ⇒ OFF. Gates BOTH the canvas
+                                                          // corner grips AND the SizeDial (one capability,
+                                                          // all inputs — INVARIANTS 5b). Same for 2D & 3D,
+                                                          // no element-type branch. Unresizable elements
+                                                          // still move/edit; resize via the dial only when
+                                                          // this is true. (Other keys default ON when absent.)
     "duplicate": true,
     "color":     true,                                    // shows the ColorWheel (GLB tint OR 2D recolour)
     "gradient":  false,

@@ -45,6 +45,16 @@ const LIFT        = 0.009;   // clear of the border's own line (SelectionBox lif
 // of the viewport got grips 28% as wide as the border). Below this size the grip gives up its constant
 // size and shrinks with the element, so it always reads as a corner mark, never as a lid on top of it.
 const BOX_CAP     = 0.28;
+// BOX_CAP shrinks the DRAWN disc so it never lids a small element — but the invisible TAP TARGET keeps
+// its constant screen size (it must stay thumb-sized). On an element that is itself smaller than that
+// target, the four corner targets blanket the whole body and overlap its centre, so a pointer-down
+// anywhere hits a grip and RESIZES — the body's move hit-plane never gets the event. Past this point a
+// grip stops being a corner mark and becomes the only thing you can grab. So below it we drop the grips
+// entirely: resize stays reachable through the SizeDial (in the chooser card and the edit popup), and
+// the freed body drags to MOVE. The test is on the tap target vs the element's shorter side, both in
+// local units (the ratio is scale-independent and encodes zoom through `constant`): hide once a single
+// corner target's DIAMETER reaches this fraction of the shorter side — four of them then cover the body.
+const TOUCH_DROP  = 0.9;
 
 const CORNERS = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
 
@@ -60,6 +70,10 @@ export default function ResizeHandles({ width, height, centerY = 0, z = 0, value
   // when it is smallest. They scale independently.
   const discRefs  = [useRef(), useRef(), useRef(), useRef()];
   const touchRefs = [useRef(), useRef(), useRef(), useRef()];
+  // Grips are dropped when they'd blanket a small element (see TOUCH_DROP). `visible=false` alone is
+  // not enough — three's raycaster tests layers, not visibility — so `beginResize` reads this flag to
+  // step aside and let the body hit-plane take the pointer-down (→ move) once the grips are hidden.
+  const activeRef = useRef(true);
 
   // Native listeners are attached once per drag and close over their render's props; read the live
   // ones through a ref so a resize started before a prop change still writes the right value.
@@ -84,13 +98,22 @@ export default function ResizeHandles({ width, height, centerY = 0, z = 0, value
     // already in local units, so the cap needs no world scale.
     const capped = (BOX_CAP * Math.min(width, height)) / (2 * RING);
     const drawn = Math.min(constant, capped);
+    // Drop the grips once a corner tap target's diameter reaches TOUCH_DROP of the element's shorter
+    // side — below that four of them cover the body and steal the move. Both terms are local units.
+    const active = (2 * TOUCH * constant) < (TOUCH_DROP * Math.min(width, height));
+    activeRef.current = active;
     for (let i = 0; i < 4; i++) {
       discRefs[i].current?.scale.setScalar(drawn);
       touchRefs[i].current?.scale.setScalar(constant);
+      if (discRefs[i].current)  discRefs[i].current.visible  = active;
+      if (touchRefs[i].current) touchRefs[i].current.visible = active;
     }
   });
 
   function beginResize(e) {
+    // Grips hidden (too small to offer without covering the body): don't stop propagation — let the
+    // pointer-down fall through to the body's move hit-plane instead of starting a resize.
+    if (!activeRef.current) return;
     e.stopPropagation();
     const root = rootRef.current;
     if (!root) return;

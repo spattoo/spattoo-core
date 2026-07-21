@@ -154,7 +154,9 @@ function migrateTopperToSticker(templateDesign) {
     baseRotation: [0, -Math.PI / 2, 0],   // legacy CakeTopper faced toppers with this offset
     yOffset: 0, rotation: 0, radialOffset: 0, tiltAngle: 0, groupId: null,
     color: tp.color ?? null,
-    allowedActions: { resize: true, duplicate: true, color: false, delete: true, move: true, tilt: true },
+    // Resize is opt-in (see the main placement path). A legacy topper carries no allowed_actions, so
+    // it lands non-resizable like any unconfigured element; it can still be MOVED and edited.
+    allowedActions: { resize: false, duplicate: true, color: false, delete: true, move: true, tilt: true },
   }];
 }
 
@@ -886,7 +888,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // recolour still tints the base colour. Config-driven, no element-type branch.
           surface:       extra.surface ?? materialSurface(element.placement_config?.material) ?? element.placement_config?.surface ?? null,
           allowedActions: {
-            resize:    element.allowed_actions?.resize    ?? true,
+            // Resize is OPT-IN: an element is resizable (canvas corner grips AND the popup/toolbar
+            // SizeDial — one capability, all inputs gated together, INVARIANTS 5b) only when its config
+            // explicitly sets allowed_actions.resize. Default OFF, so a placed element without the flag
+            // can be MOVED but not resized, and 3D/2D behave identically — no element-type branch. The
+            // admin turns resize on per element.
+            resize:    element.allowed_actions?.resize    ?? false,
             duplicate: element.allowed_actions?.duplicate ?? true,
             color:     element.allowed_actions?.color     ?? false,
             gradient:  element.allowed_actions?.gradient  ?? false,

@@ -1473,7 +1473,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     ? (selRecolorInst?.groups?.find(g => g.key === activeGroupKey)?.label
        ?? (typeof activeGroupKey === 'string' ? activeGroupKey : null))
     : null;
-  const STICKER_CAPS = { resize: true, delete: true, color: false, duplicate: true };
+  // Resize is opt-in (allowed_actions.resize; default off — see useCakeDesign placement). This defensive
+  // fallback (a sticker with no allowedActions at all) mirrors that default so the edge case is opt-in too.
+  const STICKER_CAPS = { resize: false, delete: true, color: false, duplicate: true };
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
      : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
