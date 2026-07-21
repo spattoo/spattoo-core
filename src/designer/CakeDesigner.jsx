@@ -2517,6 +2517,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function handleTierClick(i) {
     closeAllPopups();
+    // Selecting the cake is a FULL-REPLACE selection: stickers track their own `selectedStickerIds`
+    // (a separate Set from `selectedEl`), so without clearing it a previously-selected decoration keeps
+    // its SelectionBox while the tier also highlights — two things selected at once. The tier owns the
+    // selection now, so drop any sticker selection (and multi-select mode) with it.
+    setSelectedStickerIds(new Set());
+    setMultiSelectMode(false);
     setSelectedEl(prev => (prev?.type === 'tier' && prev.index === i) ? null : { type: 'tier', index: i });
   }
 

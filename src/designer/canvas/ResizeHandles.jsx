@@ -68,8 +68,9 @@ export default function ResizeHandles({ width, height, centerY = 0, z = 0, value
   // The drawn disc may shrink below its constant screen size (BOX_CAP) so it never dominates a small
   // element — but the TAP TARGET must not shrink with it, or the grip becomes hard to hit exactly
   // when it is smallest. They scale independently.
-  const discRefs  = [useRef(), useRef(), useRef(), useRef()];
-  const touchRefs = [useRef(), useRef(), useRef(), useRef()];
+  const discRefs      = [useRef(), useRef(), useRef(), useRef()];
+  const touchRefs     = [useRef(), useRef(), useRef(), useRef()];
+  const touchMeshRefs = [useRef(), useRef(), useRef(), useRef()];
   // Grips are dropped when they'd blanket a small element (see TOUCH_DROP). `visible=false` alone is
   // not enough — three's raycaster tests layers, not visibility — so `beginResize` reads this flag to
   // step aside and let the body hit-plane take the pointer-down (→ move) once the grips are hidden.
@@ -107,6 +108,11 @@ export default function ResizeHandles({ width, height, centerY = 0, z = 0, value
       touchRefs[i].current?.scale.setScalar(constant);
       if (discRefs[i].current)  discRefs[i].current.visible  = active;
       if (touchRefs[i].current) touchRefs[i].current.visible = active;
+      // A HIDDEN grip must also leave every raycast: CakeCanvas's capture-phase orbit gate uses a bare
+      // THREE.Raycaster (tests layers, not visibility), so `visible=false` alone would let a dropped
+      // grip still register as `isResizeGrip` and wrongly suspend orbit / swallow a press. Toggle the
+      // tap mesh's own raycast in step with `active` so it is truly inert when the grip isn't offered.
+      if (touchMeshRefs[i].current) touchMeshRefs[i].current.raycast = active ? THREE.Mesh.prototype.raycast : noRaycast;
     }
   });
 
@@ -159,6 +165,8 @@ export default function ResizeHandles({ width, height, centerY = 0, z = 0, value
               constant screen size even when the disc shrinks to fit a small element. */}
           <group ref={touchRefs[i]}>
             <mesh
+              ref={touchMeshRefs[i]}
+              userData={{ isResizeGrip: true }}
               onPointerDown={beginResize}
               onClick={e => e.stopPropagation()}
               onPointerEnter={e => { e.stopPropagation(); onOrbitEnable?.(false); }}

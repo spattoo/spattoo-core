@@ -2101,6 +2101,11 @@ function CakeScene({
       rc.setFromCamera({ x: ndx, y: ndy }, camera);
       const hits = rc.intersectObjects(scene.children, true);
       const overSticker = hits.some(h => h.object.userData.isStickerHitPlane);
+      // A resize grip sits proud of (and often beyond) the flat hit plane, so pressing one may NOT
+      // hit `isStickerHitPlane`. Without this, orbit stays enabled and OrbitControls' bubble listener
+      // starts a rotate before the grip's `beginResize` (also bubble) can suspend it — capture beats
+      // bubble, so the gate itself must recognise the grip. Dragging a grip resizes, never rotates.
+      const overGrip = hits.some(h => h.object.userData.isResizeGrip);
       // Cream-pen catchers (present only in draw mode): pressing on the cake draws, so
       // suspend rotate; pressing empty space still rotates.
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
@@ -2110,7 +2115,7 @@ function CakeScene({
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
       if (orbitRef.current) {
-        orbitRef.current.enabled = !overSticker && !overPen && !overDust;
+        orbitRef.current.enabled = !overSticker && !overPen && !overDust && !overGrip;
         orbitRef.current.enableRotate = !overCream;
       }
     }
