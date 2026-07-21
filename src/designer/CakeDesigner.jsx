@@ -2,6 +2,8 @@ import { Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCal
 import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
+import PasswordChecklist from '../auth/PasswordChecklist.jsx';
+import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap } from './canvas/CakeCanvas';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
@@ -1059,8 +1061,11 @@ function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
       setMsg({ ok: false, text: 'Passwords do not match.' });
       return;
     }
-    if (form.newPassword.length < 8) {
-      setMsg({ ok: false, text: 'Password must be at least 8 characters.' });
+    // Full policy (length + character classes) is enforced by isPasswordValid, mirroring
+    // the Supabase Auth policy; the live checklist below shows each rule. canSubmit already
+    // gates on it, so this is a defensive backstop for any programmatic call path.
+    if (!isPasswordValid(form.newPassword)) {
+      setMsg({ ok: false, text: 'Password does not meet the requirements below.' });
       return;
     }
     setLoading(true);
@@ -1084,7 +1089,8 @@ function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
     }
   }
 
-  const canSubmit = form.newPassword && form.confirmPassword && !loading;
+  const mismatch = form.confirmPassword.length > 0 && form.newPassword !== form.confirmPassword;
+  const canSubmit = isPasswordValid(form.newPassword) && form.newPassword === form.confirmPassword && !loading;
 
   return (
     <div style={s.modalOverlay} onClick={onClose}>
@@ -1097,12 +1103,18 @@ function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
           <span style={s.fieldLabel}>New password</span>
           <input style={s.modalInput} type="password" value={form.newPassword}
             onChange={e => setField('newPassword', e.target.value)} disabled={loading} autoFocus />
+          <PasswordChecklist password={form.newPassword} />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={s.fieldLabel}>Confirm new password</span>
           <input style={s.modalInput} type="password" value={form.confirmPassword}
             onChange={e => setField('confirmPassword', e.target.value)} disabled={loading}
             onKeyDown={e => e.key === 'Enter' && canSubmit && handleSubmit()} />
+          {mismatch && (
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#e53935', fontFamily: "'Quicksand',sans-serif" }}>
+              Passwords do not match.
+            </span>
+          )}
         </label>
         {msg && (
           <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>
