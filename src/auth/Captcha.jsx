@@ -58,6 +58,9 @@ export const Captcha = forwardRef(function Captcha({ siteKey, onVerify, onExpire
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
           theme,
+          // Invisible for the common silent pass — the widget only renders when Turnstile actually
+          // needs the user to solve a challenge (no confusing "Success!" box before any input).
+          appearance: 'interaction-only',
           callback: (token) => onVerifyRef.current(token),
           'expired-callback': () => onExpireRef.current && onExpireRef.current(),
           'error-callback': () => onExpireRef.current && onExpireRef.current(),
