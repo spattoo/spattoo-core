@@ -3,6 +3,7 @@ import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
+import { Captcha } from '../auth/Captcha.jsx';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -73,6 +74,7 @@ export default function CustomerStorefront({
   gallery: galleryProp = null,
   apiBaseUrl = '',
   supabase = null,
+  captchaSiteKey = null,   // host-injected Turnstile site key (core reads no env); null → no-op
   onAuthenticated,
   onStartDesign,
   onEditPortrait = null,   // customiser only: makes the portrait an upload affordance
@@ -438,6 +440,7 @@ export default function CustomerStorefront({
           inviteId={inviteId}
           apiBaseUrl={apiBaseUrl}
           supabase={supabase}
+          captchaSiteKey={captchaSiteKey}
           primary={primary}
           onClose={() => setShowLogin(false)}
           onAuthenticated={onAuthenticated}
@@ -536,22 +539,31 @@ function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, p
 }
 
 // ── OTP login ──────────────────────────────────────────────────────────────────
-function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, onAuthenticated }) {
+function LoginModal({ invite, inviteId, apiBaseUrl, supabase, captchaSiteKey, primary, onClose, onAuthenticated }) {
   const channels = invite?.customer?.channels?.length ? invite.customer.channels : ['email'];
   const [channel, setChannel] = useState(channels[0]);
   const [step, setStep]   = useState('start');
   const [code, setCode]   = useState('');
   const [busy, setBusy]   = useState(false);
   const [err, setErr]     = useState(null);
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const captchaRef = useRef(null);
+  // OTP send hits the anon-key signInWithOtp, which Supabase captcha gates. The customer solves
+  // Turnstile here and we forward the token to /send-otp. Null key → no-op (send not gated).
+  const captchaConfigured = !!captchaSiteKey;
+  const resetCaptcha = () => { captchaRef.current?.reset(); setCaptchaToken(null); };
 
   const masked = channel === 'email' ? invite?.customer?.masked_email : invite?.customer?.masked_phone;
 
   async function send() {
     setBusy(true); setErr(null);
     try {
-      await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/send-otp`, { channel });
+      await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/send-otp`, { channel, captchaToken: captchaToken ?? undefined });
       setStep('code');
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(e.message); } finally {
+      setBusy(false);
+      resetCaptcha();   // single-use token — a resend needs a fresh one
+    }
   }
 
   async function verify() {
@@ -568,6 +580,13 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, 
   }
 
   const m = modalStyles(primary);
+  // ONE Turnstile widget for the modal (both the initial send and the resend). Rendered outside the
+  // step ternary so it doesn't remount when we move to the code step.
+  const captchaEl = (
+    <Captcha ref={captchaRef} siteKey={captchaSiteKey}
+      onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} style={{ margin: '4px 0' }} />
+  );
+  const sendBlocked = busy || (captchaConfigured && !captchaToken);
   return (
     <div style={m.overlay} onClick={onClose}>
       <div style={m.card} onClick={e => e.stopPropagation()}>
@@ -584,10 +603,12 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, 
           </div>
         )}
 
+        {captchaEl}
+
         {step === 'start' ? (
           <>
             <p style={m.sub}>We'll send a code to <b>{masked}</b></p>
-            <button style={m.primaryBtn} disabled={busy} onClick={send}>{busy ? 'Sending…' : 'Send code'}</button>
+            <button style={m.primaryBtn} disabled={sendBlocked} onClick={send}>{busy ? 'Sending…' : 'Send code'}</button>
           </>
         ) : (
           <>
@@ -595,7 +616,7 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, 
             <input style={m.input} value={code} onChange={e => setCode(e.target.value)}
               inputMode="numeric" placeholder="6-digit code" autoFocus />
             <button style={m.primaryBtn} disabled={busy || !code.trim()} onClick={verify}>{busy ? 'Verifying…' : 'Verify & enter'}</button>
-            <button style={m.linkBtn} disabled={busy} onClick={send}>Resend code</button>
+            <button style={m.linkBtn} disabled={sendBlocked} onClick={send}>Resend code</button>
           </>
         )}
 
