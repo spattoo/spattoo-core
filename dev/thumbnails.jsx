@@ -108,6 +108,6 @@ function Backfill() {
 const container = document.getElementById('root');
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
-    <AuthGate supabase={supabase}><Backfill /></AuthGate>
+    <AuthGate supabase={supabase} captchaSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}><Backfill /></AuthGate>
   </React.StrictMode>
 );

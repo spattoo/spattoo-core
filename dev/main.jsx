@@ -281,7 +281,7 @@ if (!storefrontSlug && !settingsPreview) {
   }
   container._reactRoot.render(
     <React.StrictMode>
-      <AuthGate supabase={supabase}>
+      <AuthGate supabase={supabase} captchaSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}>
         <Root />
       </AuthGate>
     </React.StrictMode>

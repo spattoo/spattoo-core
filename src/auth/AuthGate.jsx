@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { Captcha } from './Captcha.jsx';
 
 const BRAND = '#1a1a1a';
 const BRAND_LIGHT = '#f5e6ec';
@@ -96,30 +97,47 @@ const linkStyle = {
 };
 
 // ── Auth forms (login / forgot) ───────────────────────────────────────────────
-function AuthForms({ supabase, noAccountError }) {
+function AuthForms({ supabase, noAccountError, captchaSiteKey }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const captchaRef = useRef(null);
+  // Host injects the Turnstile site key (core reads no env). Empty → widget is a no-op and the
+  // submit isn't gated, so login behaves exactly as before.
+  const captchaConfigured = !!captchaSiteKey;
 
   const reset = () => { setError(''); setInfo(''); };
+  // Turnstile tokens are single-use — reset the widget so a retry gets a fresh one.
+  const resetCaptcha = () => { captchaRef.current?.reset(); setCaptchaToken(null); };
 
   async function handleLogin() {
     setLoading(true); reset();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError(error.message);
+    const { error } = await supabase.auth.signInWithPassword({
+      email, password,
+      options: { captchaToken: captchaToken ?? undefined },
+    });
+    if (error) { setError(error.message); resetCaptcha(); }
     setLoading(false);
   }
 
   async function handleForgot() {
     setLoading(true); reset();
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
-    if (error) setError(error.message);
-    else setInfo('Password reset email sent — check your inbox.');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      captchaToken: captchaToken ?? undefined,
+    });
+    if (error) { setError(error.message); resetCaptcha(); }
+    else { setInfo('Password reset email sent — check your inbox.'); resetCaptcha(); }
     setLoading(false);
   }
+
+  const captchaEl = (
+    <Captcha ref={captchaRef} siteKey={captchaSiteKey}
+      onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
+  );
 
   const titles    = { login: 'Welcome back',   forgot: 'Reset password' };
   const subtitles = { login: 'Sign in to manage your bakery', forgot: "We'll email you a reset link" };
@@ -139,10 +157,12 @@ function AuthForms({ supabase, noAccountError }) {
         {error && <Alert message={error} type="error" />}
         {info  && <Alert message={info}  type="info"  />}
 
+        {captchaEl}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {mode === 'login' && (
             <>
-              <Btn onClick={handleLogin} disabled={loading || !email || !password}>
+              <Btn onClick={handleLogin} disabled={loading || !email || !password || (captchaConfigured && !captchaToken)}>
                 {loading ? 'Signing in…' : 'Sign in'}
               </Btn>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -152,7 +172,7 @@ function AuthForms({ supabase, noAccountError }) {
           )}
           {mode === 'forgot' && (
             <>
-              <Btn onClick={handleForgot} disabled={loading || !email}>
+              <Btn onClick={handleForgot} disabled={loading || !email || (captchaConfigured && !captchaToken)}>
                 {loading ? 'Sending…' : 'Send reset link'}
               </Btn>
               <button type="button" onClick={() => { setMode('login'); reset(); }} style={{ ...linkStyle, textAlign: 'center' }}>
@@ -168,7 +188,7 @@ function AuthForms({ supabase, noAccountError }) {
 
 
 // ── AuthGate ──────────────────────────────────────────────────────────────────
-export default function AuthGate({ supabase, children }) {
+export default function AuthGate({ supabase, children, captchaSiteKey }) {
   const [session, setSession]     = useState(undefined); // undefined = loading
   const [contact, setContact]     = useState(undefined); // undefined = loading, null = not found
   const [checking, setChecking]   = useState(false);
@@ -216,7 +236,7 @@ export default function AuthGate({ supabase, children }) {
     );
   }
 
-  if (!session) return <AuthForms supabase={supabase} noAccountError={noAccountErr} />;
+  if (!session) return <AuthForms supabase={supabase} noAccountError={noAccountErr} captchaSiteKey={captchaSiteKey} />;
 
   return children;
 }
