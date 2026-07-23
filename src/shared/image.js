@@ -1,3 +1,5 @@
+import { extractRegions } from '../designer/shared/color/imageRecolor.js';
+
 // ── Image ingest — the ONE pipeline every picked image goes through ──────────────────────────────
 // A user hands us a File (phone camera, gallery, a drag-drop). Before it reaches R2 it must be
 // VALIDATED (is this even an image we can decode?) and OPTIMIZED (a 12MB 4032×3024 phone photo is not
@@ -160,5 +162,38 @@ export async function normalizeArtwork(blob, { size = 1024, fill = 0.8, quality 
     return (await toBlob(out, quality)) ?? blob;
   } catch {
     return blob;
+  }
+}
+
+// ── Brand-colour suggestion from a logo ──────────────────────────────────────────────────────────
+// Onboarding pre-fills a baker's primary/accent pickers from their uploaded logo — the two most
+// dominant, perceptually DISTINCT colours. Reuses extractRegions (the SAME dominant-colour clustering
+// the sticker-recolour path runs), which already skips the transparent margin + grey/white/black AND
+// forces its hue peaks ≥16° apart — so primary and accent can never come back as two shades of one
+// colour (the trap a naïve "1st- and 2nd-most-common pixel" count falls into). Samples a small copy:
+// dominant colour is a low-frequency signal, so full resolution buys nothing but time.
+//
+// Returns { primary, accent } as '#rrggbb' (accent null when the logo is effectively one colour), or
+// null when nothing qualifies — a greyscale/transparent logo, or a CORS-tainted/undecodable file — so
+// the caller keeps its existing defaults. These are only a SUGGESTION: the baker can still change them.
+// Shared by the self-signup wizard (spattoo-web) and the admin onboarding helper (spattoo-admin), which
+// both import it through @spattoo/designer, so the two flows can't drift.
+export async function extractLogoPalette(fileOrBlob, { sample = 160 } = {}) {
+  try {
+    const bitmap = await decodeImage(fileOrBlob);
+    const [srcW, srcH] = dims(bitmap);
+    if (!srcW || !srcH) return null;
+    const scale = Math.min(1, sample / Math.max(srcW, srcH));
+    const w = Math.max(1, Math.round(srcW * scale));
+    const h = Math.max(1, Math.round(srcH * scale));
+    const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const regions = extractRegions(ctx.getImageData(0, 0, w, h).data, w, h);   // ranked by share, distinct hues
+    if (!regions.length) return null;
+    return { primary: regions[0].hex, accent: regions[1]?.hex ?? null };
+  } catch {
+    return null;   // undecodable / CORS-tainted → caller keeps its defaults
   }
 }
