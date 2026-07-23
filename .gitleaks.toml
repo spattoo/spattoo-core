@@ -1,0 +1,33 @@
+# gitleaks config — spattoo-core.
+# Extends gitleaks' default ruleset and adds Spattoo-specific allowlisting so the
+# scan runs clean and can gate commits without noise.
+#   Full history:  gitleaks git --no-banner
+#   Staged only:   gitleaks git --staged --no-banner   (used by the pre-commit hook)
+# See spattoo-api/docs/SECURITY_REVIEW.md for the shift-left strategy this feeds.
+title = "spattoo-core gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Spattoo false positives + intentionally-public keys (verified 2026-07-24)"
+
+# ── False positives ──────────────────────────────────────────────────────────
+# gitleaks' generic-api-key rule matches the API PATH string 'orders/thumbnails'
+# (src/designer/CakeDesigner.jsx) — a route, not a secret. Matched against the
+# secret value, so this can't hide a real key that merely sits near that path.
+regexes = [
+  '''orders/thumbnails''',
+]
+
+# ── Intentionally-public keys (NOT secrets) ──────────────────────────────────
+# The local dev harness hardcodes the Supabase *anon* key (role=anon), which is
+# public by design (access is governed by Row-Level Security) and never ships in
+# the library build — package.json `files` = ["dist","src"], so dev/ is excluded.
+# Scoped to the EXACT dev-harness files (not the whole dev/ dir) so a real secret
+# pasted elsewhere still trips. If RLS is ever disabled on the project, this anon
+# key becomes sensitive — see the security ledger's gitleaks section.
+paths = [
+  '''dev/main\.jsx''',
+  '''dev/thumbnails\.jsx''',
+]
