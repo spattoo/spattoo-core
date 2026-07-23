@@ -18,7 +18,6 @@ export { default as PlanCards } from './billing/PlanCards.jsx';
 export { periodPrice, formatPlanPrice, PERIOD_SUFFIX } from './billing/planPricing.js';
 export { default as AuthGate } from './auth/AuthGate.jsx';
 export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
-export { extractFromPhoto } from './designer/hooks/useExtractElements.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';
 // The cake's DEFAULT dimensions — the sizes core actually ships. Exported so a studio can start from
 // the real cake instead of inventing numbers to tune against.
