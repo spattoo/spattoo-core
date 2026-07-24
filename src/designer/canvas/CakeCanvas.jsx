@@ -3,6 +3,14 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
+// SEC-WEB-7 — every drei <Text> MUST pass this as `font`. Without an explicit font,
+// troika-three-text resolves one at runtime and fetches it (plus its index data)
+// from cdn.jsdelivr.net, putting a third-party CDN on the designer's critical path
+// and an extra origin in the CSP. `?inline` makes Vite emit it as a data: URI, so
+// it costs no origin and no request. It is byte-identical to the file troika was
+// already downloading (Noto Sans Regular) — see fonts/README.md — so nothing about
+// the rendered text changes.
+import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
 import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { LoadingPing } from './loadingRegistry.js';
@@ -2008,6 +2016,7 @@ function CameraSnapper({ snapCameraRef, orbitRef }) {
 function FrontMarker({ frontZ }) {
   return (
     <Text
+      font={textFont}          // SEC-WEB-7 — bundled; omitting it re-introduces the jsdelivr fetch
       position={[0, 0.002, frontZ + 0.82]}
       rotation={[-Math.PI / 2, 0, 0]}
       fontSize={0.11}

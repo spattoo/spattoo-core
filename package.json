@@ -1,6 +1,6 @@
 {
   "name": "@spattoo/designer",
-  "version": "0.1.146",
+  "version": "0.1.147",
   "type": "module",
   "main": "./dist/spattoo-designer.umd.cjs",
   "module": "./dist/spattoo-designer.js",
@@ -18,9 +18,10 @@
     "dev": "vite",
     "build": "NODE_ENV=production vite build",
     "check:paths": "node scripts/check-paths.mjs",
+    "check:fonts": "node scripts/check-fonts.mjs",
     "check:dup": "jscpd src/designer",
     "test": "vitest run",
-    "verify": "npm run check:paths && npm run check:dup && npm test"
+    "verify": "npm run check:paths && npm run check:fonts && npm run check:dup && npm test"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",
