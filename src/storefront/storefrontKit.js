@@ -130,8 +130,13 @@ export const STOREFRONT_TEXT = {
 
 // ── Font themes ─────────────────────────────────────────────────────────────────
 // A "font theme" swaps the storefront's typography as a set (baker lever, saved as
-// storefront_customizations.font_key). Reuses fonts already loaded by the app (Montserrat,
-// Pacifico, Quicksand, Cormorant) — ADD a new theme only after loading its fonts in the host apps.
+// storefront_customizations.font_key). Every family named below MUST be loaded by the
+// host app — see spattoo-web apps/app/app/layout.tsx (next/font, all four families) and
+// the same requirement for admin's theme preview. That was NOT true for a long time —
+// only Quicksand was loaded, so the DEFAULT theme (montserrat → Montserrat + Pacifico)
+// and the cormorant theme silently rendered in a system font (SEC-WEB-7 follow-up, fixed
+// 2026-07-25). Before ADDING a theme with a new family, load that family in the host apps
+// first (and the check-fonts gate forbids re-adding a font CDN to do it).
 export const FONT_THEMES = {
   montserrat: { key: 'montserrat', label: 'Modern',       brandFont: "'Pacifico', cursive", serif: "'Montserrat', system-ui, sans-serif",      font: "'Montserrat', system-ui, sans-serif" },
   cormorant:  { key: 'cormorant',  label: 'Classic serif', brandFont: "'Pacifico', cursive", serif: "'Cormorant Garamond', Georgia, serif",     font: "'Montserrat', system-ui, sans-serif" },
