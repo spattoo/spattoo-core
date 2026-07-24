@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Captcha } from './Captcha.jsx';
+import { UI_FONT } from '../shared/fonts.js';
 
 const BRAND = '#1a1a1a';
 const BRAND_LIGHT = '#f5e6ec';
-const FONT = "'Quicksand', sans-serif";
+const FONT = UI_FONT;
 
 function Input({ label, type = 'text', value, onChange, disabled, placeholder }) {
   return (
@@ -62,7 +63,6 @@ function Card({ title, subtitle, children }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       minHeight: '100vh', background: BRAND_LIGHT, fontFamily: FONT,
     }}>
-      <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <div style={{
         background: '#fff', borderRadius: 16, padding: '36px 32px',
         width: '100%', maxWidth: 380,
@@ -230,7 +230,6 @@ export default function AuthGate({ supabase, children, captchaSiteKey }) {
   if (isLoading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: BRAND_LIGHT }}>
-        <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <div style={{ fontFamily: FONT, color: BRAND, fontSize: 15 }}>Loading…</div>
       </div>
     );

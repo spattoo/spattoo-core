@@ -538,7 +538,6 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
         @keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
       `}</style>

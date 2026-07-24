@@ -103,3 +103,15 @@ export { useUploadLimits } from './shared/useUploadLimits.js';
 export { reportError, reportMessage, setContext, configureTelemetry } from './telemetry/index.js';
 export { ErrorBoundary } from './telemetry/ErrorBoundary.jsx';
 export { installGlobalHandlers } from './telemetry/globalHandlers.js';
+
+// ── UI typography ────────────────────────────────────────────────────────────
+// SEC-WEB-7: this library NAMES its font but no longer LOADS it — it used to
+// @import Google Fonts from 17 places, putting a third-party origin in every
+// host app's CSP. Host apps must self-host the families in REQUIRED_FONT_FAMILIES
+// (spattoo-web: next/font/google; spattoo-admin: a self-hosted @font-face).
+// `warnIfFontsMissing()` runs on import and warns exactly once if they didn't —
+// a missing webfont silently falls back to a system font, which is how the
+// storefront FONT_THEMES fonts went unloaded for months without anyone noticing.
+export { UI_FONT, REQUIRED_FONT_FAMILIES, warnIfFontsMissing } from './shared/fonts.js';
+import { warnIfFontsMissing as _warnIfFontsMissing } from './shared/fonts.js';
+_warnIfFontsMissing();

@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { UI_FONT } from '../shared/fonts.js';
 import CustomerStorefront from './CustomerStorefront.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
@@ -718,7 +719,7 @@ function useIsWide(bp = 900) {
   return w;
 }
 
-const FONT = "'Quicksand', sans-serif";
+const FONT = UI_FONT;
 // Desktop preview frame — a fixed 1280-wide browser window (viewport 800 + a 34px chrome bar). The
 // storefront renders at this TRUE width (→ its `desktop` breakpoint) and the whole frame is scaled to
 // fit the stage. Config, not a branch: adding a device preset = one row here + a DEVICE_TABS entry.

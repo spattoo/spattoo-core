@@ -14,15 +14,17 @@
 // broken. A reviewer cannot catch it by reading the console. See the CSP notes in
 // spattoo-docs/deployment/production-rollout.md §5.
 //
-// Not yet enforced: the Google Fonts `@import` used for Quicksand still exists in ~17
-// places across src/ (the other half of SEC-WEB-7). When those move to the host apps'
-// next/font, add 'fonts.googleapis.com' / 'fonts.gstatic.com' to BANNED_HOSTS below.
+// The Google Fonts hosts are banned for the same reason, and for one more: this is a
+// LIBRARY. It has no document head it owns, so "loading" a webfont meant injecting an
+// @import from a component — which is how the same rule ended up pasted in 17 places
+// across 13 files. The library now only NAMES its font (src/shared/fonts.js); host
+// apps load it (next/font in spattoo-web, @fontsource in spattoo-admin).
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const CANVAS = 'src/designer/canvas';
 const SRC = 'src';
-const BANNED_HOSTS = ['cdn.jsdelivr.net'];
+const BANNED_HOSTS = ['cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 const stripComments = src => src
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))

@@ -268,7 +268,6 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
         @keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }

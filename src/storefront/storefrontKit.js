@@ -1,4 +1,5 @@
 // Shared storefront kit — colour utilities, fonts and default copy used by the storefront.
+import { UI_FONT } from '../shared/fonts.js';
 
 // Accept both '#hex' and 'rgb(r, g, b)' so the utilities chain safely
 // (e.g. lighten(darken(primary, .8), .05) — darken returns an rgb() string).
@@ -114,7 +115,7 @@ export function buildPalette(primary, accent, tk = {}, opts = {}) {
   };
 }
 
-export const FONT  = "'Quicksand', sans-serif";              // soft sans for body / UI
+export const FONT  = UI_FONT;                                // soft sans for body / UI — ONE declaration (shared/fonts.js)
 export const SERIF = "'Cormorant Garamond', Georgia, serif"; // elegant serif for headings
 
 // Baker-editable storefront text (bakers.storefront_customizations); empty/missing → these.

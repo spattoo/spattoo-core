@@ -530,7 +530,6 @@ export default function OrderModal({
     return (
       <>
         <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
           .spattoo-modal input::placeholder,
           .spattoo-modal textarea::placeholder {
             font-family: 'Quicksand', sans-serif;
@@ -606,7 +605,6 @@ export default function OrderModal({
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
         @keyframes slideUp { from { transform:translateY(100%) } to { transform:translateY(0) } }
         .spattoo-modal input::placeholder,
         .spattoo-modal textarea::placeholder {

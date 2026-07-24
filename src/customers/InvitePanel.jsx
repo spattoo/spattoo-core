@@ -99,7 +99,6 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
 
   return (
     <>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');`}</style>
       <div style={{
         position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
         zIndex: 300, display: 'flex', flexDirection: 'column',

@@ -4966,7 +4966,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (!bakerReady) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f4f4f5', fontFamily: "'Quicksand', sans-serif" }}>
-        <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         <CakeSpinner label="Loading…" />
       </div>
     );
@@ -4977,7 +4976,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (bakerData && blockedStatuses.includes(bakerData.subscription_status)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F4F8F5', fontFamily: "'Quicksand', sans-serif" }}>
-        <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         <div style={{ textAlign: 'center', maxWidth: 400, padding: '0 24px' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', marginBottom: 8 }}>
@@ -5012,7 +5010,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   return (
     <div style={{ ...s.page, animation: 'spattooFadeIn 0.35s ease' }}>
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
-      <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
       {/* ── Mobile header ── */}
       {isMobile && (
