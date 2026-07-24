@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
-import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref } from './storefrontKit.js';
+import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
 
@@ -146,7 +146,7 @@ export default function CustomerStorefront({
   // single source of the starting palette. The literal is only a last resort if a template omits defaults.
   const primary = baker.primary_color || template.defaults?.primary || '#2C4433';
   const accent  = baker.accent_color  || template.defaults?.accent  || '#6B8C74';
-  const ig      = baker.instagram_handle?.replace(/^@/, '');
+  const ig      = normalizeIgHandle(baker.instagram_handle);   // SEC-CORE-4 — cleans rows stored before the input guard existed
   const phone   = baker.whatsapp || baker.whatsapp_number || baker.phone || null;
   const logo    = logoUrl || baker.logo_transparent_url || baker.logo_url;   // prefer the bg-removed logo (floats cleanly on any surface)
   const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import ThemePreview from '../storefront/ThemePreview.jsx';
+// SEC-CORE-4 — same pure helper the storefront renders through, so the input and
+// the sink can never disagree about what a valid handle is.
+import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
@@ -407,7 +410,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                       style={{ ...inp, borderRadius: '0 10px 10px 0' }}
                       placeholder="yourbakery"
                       value={profile.instagram_handle ?? ''}
-                      onChange={e => setProfileField('instagram_handle', e.target.value.replace(/^@/, ''))}
+                      onChange={e => setProfileField('instagram_handle', normalizeIgHandle(e.target.value) ?? '')}
                     />
                   </div>
                 </Field>

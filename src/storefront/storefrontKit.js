@@ -40,6 +40,30 @@ export function safeHref(url) {
   }
 }
 
+// SEC-CORE-4 — normalize a baker-authored Instagram handle to the charset Instagram
+// itself allows (letters, digits, dot, underscore). The scheme and host at the sink
+// are hardcoded (`https://instagram.com/${ig}`), so an odd handle is NOT a scheme
+// escape or an open redirect — but `/`, `?`, `#` or whitespace in it would silently
+// retarget the path (`.../foo?x=` → a different URL than intended) or produce a
+// broken link. Returns null when nothing usable remains, so the caller omits the
+// link entirely — same contract as safeHref above.
+//
+// Applied at BOTH ends deliberately: at the settings input (so bad input is never
+// stored) and at render (so rows already in the database are cleaned too). One
+// pure function, two call sites — never a second copy of the rule.
+export function normalizeIgHandle(handle) {
+  if (typeof handle !== 'string') return null;
+  // Tolerate what people actually paste: a full profile URL, a leading @, spaces.
+  // Order matters — DISCARD any query/fragment before picking the path segment,
+  // so `sweetbakes?next=evil` yields `sweetbakes`, not `evil`. (Splitting on
+  // `[/?#]` and taking the last piece would promote the query string instead.)
+  const noScheme = handle.trim().replace(/^[a-zA-Z][\w+.-]*:\/\//, '');
+  const path = noScheme.split(/[?#]/)[0];
+  const last = path.split('/').filter(Boolean).pop() || '';
+  const cleaned = last.replace(/^@+/, '').replace(/[^A-Za-z0-9._]/g, '');
+  return cleaned ? cleaned.slice(0, 30) : null;   // Instagram caps handles at 30
+}
+
 // ── Storefront palette ──────────────────────────────────────────────────────────
 // SINGLE SOURCE OF TRUTH for every brand-derived colour on the storefront. Colour work is highly
 // iterative, so ALL the tunable numbers live here — change one and the whole page follows; no
