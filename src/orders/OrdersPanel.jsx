@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { dietTone, hasAllergen } from './dietary.js';
 import XrayReport from './xray/XrayReport.jsx';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
@@ -1037,6 +1038,29 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
   );
 }
 
+// The requirement as a chip. Text-first — the label always reads, colour only speeds
+// up scanning — so this survives a greyscale print and a colour-blind reader. See
+// dietary.js for why there is no veg green dot.
+function DietChip({ req, small = false }) {
+  const t = dietTone(req.kind);
+  return (
+    <span style={{
+      display: 'inline-block', padding: small ? '1px 6px' : '3px 9px',
+      borderRadius: 6, fontSize: small ? 10 : 11, fontWeight: 800, letterSpacing: 0.2,
+      background: t.bg, color: t.fg, border: `1px solid ${t.border}`, whiteSpace: 'nowrap',
+    }}>{req.label}</span>
+  );
+}
+
+function DietChips({ reqs, small = false }) {
+  if (!reqs?.length) return null;
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+      {reqs.map(r => <DietChip key={r.key} req={r} small={small} />)}
+    </span>
+  );
+}
+
 function DetailSections({ order, name, flavours, delivDate }) {
   const customer = order.customers;
   return (
@@ -1050,6 +1074,9 @@ function DetailSections({ order, name, flavours, delivDate }) {
       <Section title="Order">
         {order.weight_kg && <InfoRow label="Weight" value={`${order.weight_kg} kg`} />}
         {flavours.length > 0 && <InfoRow label="Flavours" value={flavours.join(', ')} />}
+        {order.dietary_requirements?.length > 0 && (
+          <InfoRow label="Dietary" value={<DietChips reqs={order.dietary_requirements} />} />
+        )}
         {order.special_instructions && <InfoRow label="Notes" value={order.special_instructions} />}
       </Section>
 
@@ -1156,6 +1183,14 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
                 <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[fmt(order.delivery_date), flavours[0]].filter(Boolean).join(' · ') || fmt(order.created_at)}
                 </div>
+                {/* Its own line rather than appended to the subtitle above: that line
+                    ellipsises, and a long flavour name would push the requirement off
+                    the end of exactly the row where a baker is scanning for it. */}
+                {order.dietary_requirements?.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <DietChips reqs={order.dietary_requirements} small />
+                  </div>
+                )}
               </div>
             </div>
           );

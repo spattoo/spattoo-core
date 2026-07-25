@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { dietTone, hasAllergen, dietaryLine } from '../dietary.js';
 import { buildXrayReport } from './report.js';
 import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
@@ -105,6 +106,30 @@ export default function XrayReport({ order, apiClient, onClose }) {
       {pdfErr && <div style={s.err}>{pdfErr}</div>}
 
       <div style={s.body}>
+        {/* First thing on the sheet, before the cake itself: this is the one item that
+            changes what goes in the bowl rather than how it is decorated, and it is the
+            one that cannot be corrected later. Imperative wording — it is the
+            customer's requirement to meet, not a claim that the cake meets it. */}
+        {order.dietary_requirements?.length > 0 && (() => {
+          const allergen = hasAllergen(order.dietary_requirements);
+          const t = dietTone(allergen ? 'allergen' : 'diet');
+          return (
+            <div style={{
+              border: `2px solid ${t.border}`, background: t.bg, borderRadius: 12,
+              padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: t.fg, letterSpacing: 0.4 }}>
+                {dietaryLine(order.dietary_requirements)}
+              </span>
+              {allergen && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: t.fg, opacity: 0.85 }}>
+                  Allergen — use clean equipment and separate the batch.
+                </span>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Annotated cake */}
         {diagramItems.length > 0 && (
           <XrayCakeDiagram thumbnailUrl={order.design_thumbnail_url} items={diagramItems} snapshotTiers={design.tiers} />

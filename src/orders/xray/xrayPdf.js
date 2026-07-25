@@ -3,6 +3,7 @@ import { layoutDiagram, DIAGRAM } from './xrayProject.js';
 import { strengthColor } from './report.js';
 import { loadImage } from '../framePhoto.js';
 import { corsUrl } from '../../designer/utils/assetUrl.js';
+import { hasAllergen, dietaryLine } from '../dietary.js';
 
 // ── The X-Ray report, as a sheet of paper ────────────────────────────────────────────────────────
 // The screen version of this report is read at a desk. THIS one is carried to a bench, put down next
@@ -170,6 +171,31 @@ function drawHeader(sheet, { order, baker, logo }) {
   sheet.y += sheet.text(bits.join('   ·   '), sheet.margin, sheet.y, { size: mm(3.4), color: MUTED, weight: 700 });
 
   sheet.y += mm(4);
+
+  // The dietary band, above the rule so it is the last thing read before the cake and
+  // impossible to skim past. Deliberately BLACK ON WHITE inside a heavy black frame,
+  // not the screen's tinted chip: this sheet gets printed on whatever mono laser is in
+  // the kitchen, and a requirement encoded as a colour would simply vanish. The screen
+  // may use colour to help scanning; paper cannot rely on it. (See dietary.js — also
+  // for why this is imperative wording and not a veg certification mark.)
+  const reqs = order?.dietary_requirements ?? [];
+  if (reqs.length) {
+    const allergen = hasAllergen(reqs);
+    const padY = mm(3), boxTop = sheet.y;
+    const lineH = sheet.text(dietaryLine(reqs), sheet.margin + mm(3), boxTop + padY, { size: mm(4.6), weight: 800 });
+    let inner = padY + lineH;
+    if (allergen) {
+      inner += sheet.text('Allergen — use clean equipment and keep this batch separate.',
+        sheet.margin + mm(3), boxTop + inner + mm(0.5), { size: mm(3.2), weight: 700, color: MUTED });
+      inner += mm(0.5);
+    }
+    const boxH = inner + padY;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = allergen ? mm(1.0) : mm(0.5);   // an allergen gets the heavier frame
+    ctx.strokeRect(sheet.margin, boxTop, sheet.contentW, boxH);
+    sheet.y = boxTop + boxH + mm(4);
+  }
+
   sheet.rule(sheet.y);
   sheet.y += mm(6);
 }
