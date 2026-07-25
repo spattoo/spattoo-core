@@ -292,6 +292,11 @@ export default function OrderModal({
     Array.from({ length: tierCount }, (_, i) => ({ tier: i, name: '', flavourId: null, source: null }))
   );
   const [specialInstructions, setSpecialInstructions] = useState('');
+  // Dietary requirements the customer states — eggless / vegan / Jain / allergens.
+  // ORDER-LEVEL, not per tier (unlike flavour): an eggless requirement is not
+  // satisfied by an eggless top tier sitting on an egg-based base.
+  const [dietaryOptions, setDietaryOptions] = useState([]);
+  const [dietaryKeys,    setDietaryKeys]    = useState([]);
 
   // Delivery
   const [deliveryDate,    setDeliveryDate]    = useState('');
@@ -337,6 +342,18 @@ export default function OrderModal({
     if (!apiClient?.fetchFlavours || !bakerSlug) return;
     apiClient.fetchFlavours(bakerSlug)
       .then(data => Array.isArray(data) ? setAvailableFlavours(data) : null)
+      .catch(() => {});
+  }, []);
+
+  // Load the dietary vocabulary from the API for the same reason the flavours come
+  // from there: it is managed data (a DB table), so core must not carry its own copy
+  // that drifts the moment someone adds or retires a requirement. If the host's
+  // apiClient doesn't provide it the control simply doesn't render — an older shell
+  // degrades to today's behaviour rather than showing an empty picker.
+  useEffect(() => {
+    if (!apiClient?.fetchDietaryRequirements) return;
+    apiClient.fetchDietaryRequirements()
+      .then(data => Array.isArray(data) ? setDietaryOptions(data) : null)
       .catch(() => {});
   }, []);
 
@@ -446,6 +463,9 @@ export default function OrderModal({
         weightKg:            weightKg ? parseFloat(weightKg) : undefined,
         flavours:            flavours.filter(f => f.name.trim()),
         specialInstructions: specialInstructions.trim() || undefined,
+        // Omitted entirely when nothing is selected: "none stated" is not the same as
+        // the customer confirming the cake may contain anything.
+        dietaryRequirementKeys: dietaryKeys.length ? dietaryKeys : undefined,
         deliveryDate:        deliveryDate  || undefined,
         deliveryTime:        deliveryTime  || undefined,
         deliveryMode,
@@ -785,6 +805,49 @@ export default function OrderModal({
                     placeholder="e.g. 2" value={weightKg} autoFocus
                     onChange={e => setWeightKg(e.target.value)} />
                 </label>
+
+                {/* ABOVE flavour on purpose: the requirement constrains which flavours
+                    can be made, so it is asked before the thing it constrains. And it is
+                    ORDER-level, not per tier like flavour — an eggless requirement is not
+                    satisfied by an eggless top tier on an egg-based base. */}
+                {dietaryOptions.length > 0 && (
+                  <div style={{ ...field, gap: isMobile?10:8 }}>
+                    <span style={lbl}>Dietary requirements</span>
+                    {['diet', 'allergen'].map(kind => {
+                      const group = dietaryOptions.filter(o => o.kind === kind);
+                      if (!group.length) return null;
+                      return (
+                        <div key={kind} style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                          {/* Split by kind rather than run together in one row: eggless is a
+                              product attribute and an allergy is a safety matter, and a picker
+                              that presents them identically invites treating them identically. */}
+                          <span style={{ fontSize: isMobile?12:10, fontWeight:700, color:'#888' }}>
+                            {kind === 'diet' ? 'Diet' : 'Allergies'}
+                          </span>
+                          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                            {group.map(o => {
+                              const active = dietaryKeys.includes(o.key);
+                              return (
+                                <button key={o.key} type="button"
+                                  onClick={() => setDietaryKeys(ks => active ? ks.filter(k => k !== o.key) : [...ks, o.key])}
+                                  style={{
+                                    padding: isMobile?'12px 16px':'8px 14px', borderRadius:12,
+                                    border: `1.5px solid ${active ? primaryColor : '#999999'}`,
+                                    fontSize: isMobile?14:11, fontWeight:700, cursor:'pointer',
+                                    background: active ? hexToRgba(primaryColor, 0.1) : 'transparent',
+                                    color: active ? primaryColor : '#666',
+                                    fontFamily:"'Quicksand',sans-serif", transition:'all 0.15s',
+                                  }}>
+                                  {o.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div style={{ ...field, gap: isMobile?10:8 }}>
                   <span style={lbl}>{tierCount === 1 ? 'Flavour' : 'Flavour per tier'}</span>
