@@ -1240,6 +1240,34 @@ function OrderDesignViewer({ order, onClose }) {
 }
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
+// The Orders rail item's submenu. Both entries open the SAME Orders panel — `view` just
+// says which face of it to land on — so there is one orders destination, not two.
+const ORDERS_MENU = [
+  { id: 'orders-list',     label: 'Orders',   view: 'list' },
+  { id: 'orders-calendar', label: 'Calendar', view: 'calendar' },
+];
+
+// A rail nav item that opens a submenu. The desktop rail and the mobile bottom bar
+// differ ONLY in where the dropdown is anchored (sideways vs upward), so the markup
+// lives here once instead of being pasted into both rails.
+function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onSelect, children }) {
+  return (
+    <div style={{ position: 'relative' }} ref={containerRef}>
+      {children}
+      {open && (
+        <div style={anchorStyle ? { ...s.dropdown, ...anchorStyle } : s.dropdown}>
+          <div style={s.dropdownSection}>{label}</div>
+          {items.map(item => (
+            <button key={item.id} style={s.dropdownItem} onClick={() => onSelect(item)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main designer ─────────────────────────────────────────────────────────────
 function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, legalBase = DEFAULT_LEGAL_BASE }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
@@ -1514,11 +1542,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen,  setProfileOpen]  = useState(false);
   const [chefsDeskOpen, setChefsDeskOpen] = useState(false);   // Chef's Desk menu (Color Guide, …)
+  // Which rail item's submenu is open, by nav id (null = none). Generic rather than a
+  // flag per menu, so a nav item gets a submenu purely by declaring `menu` in the config.
+  const [navMenuId, setNavMenuId] = useState(null);
   const [addUserModal,        setAddUserModal]        = useState(false);
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
   const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
+  const [manualOrderDate,     setManualOrderDate]     = useState(null);    // pre-filled delivery date when started from the Orders calendar
+  const [ordersInitialView,   setOrdersInitialView]   = useState('list');  // which Orders view the rail asked for ('list' | 'calendar')
   // Holds the quote result after a successful customer submit; read when the
   // OrderModal success screen is dismissed so the host can react (redirect to a
   // share screen). A ref so it survives the submit→close render gap.
@@ -1553,6 +1586,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const chefsDeskRef     = useRef(null);
+  const navMenuRef       = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
@@ -1712,6 +1746,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       if (settingsRef.current && !settingsRef.current.contains(e.target)) setSettingsOpen(false);
       if (profileRef.current  && !profileRef.current.contains(e.target))  setProfileOpen(false);
       if (chefsDeskRef.current && !chefsDeskRef.current.contains(e.target)) setChefsDeskOpen(false);
+      if (navMenuRef.current && !navMenuRef.current.contains(e.target)) setNavMenuId(null);
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
@@ -3415,6 +3450,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // "New Order" (manual): a baker creates an order WITHOUT the 3D designer — from a
   // customer reference photo (or nothing). No design snapshot; the reference photo
   // keys ride along and become the order's picture. Never touches the canvas.
+  // ONE way into the Orders panel, from the rail submenu or anywhere else: same panel,
+  // `view` only chooses which face of it opens.
+  function openOrdersPanel(view = 'list') {
+    setOrdersInitialView(view);
+    setOrdersPanelOpen(true);
+  }
+
+  // A day picked in the Orders calendar starts the ordinary manual-order flow with the
+  // delivery date already chosen — same creation path, one field pre-filled.
+  function startOrderForDate(date) {
+    setOrdersPanelOpen(false);
+    setManualOrderDate(date);
+    setManualOrderOpen(true);
+  }
+
   async function handleManualOrderSubmit(formData) {
     if (apiClient?.createManualOrder) return await apiClient.createManualOrder(formData);
     if (onOrder)                      return await onOrder({ ...formData, mode: 'manual_order' });
@@ -5124,24 +5174,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // images — photos, decorations), not a kind of decoration. It is also where uploading now
               // happens, so burying it three taps deep inside another panel made no sense.
               { id: 'uploads',    label: 'Uploads',   icon: <UploadsIcon size={20} />,  requires: 'element:manage' },
-              { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view' },
+              // Orders carries a submenu: the calendar is a VIEW of the same orders, so
+              // it belongs under Orders rather than as its own rail destination. Declared
+              // as `menu` config — any nav item gets a submenu the same way.
+              { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view',
+                menu: ORDERS_MENU },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
               ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
-            ].filter(item => hasCap(item.requires)).map(({ id, label, icon }) => {
-              const active = id === 'elements' ? elementsOpen : id === 'uploads' ? uploadsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+            ].filter(item => hasCap(item.requires)).map(({ id, label, icon, menu }) => {
+              const active = menu ? navMenuId === id
+                : id === 'elements' ? elementsOpen : id === 'uploads' ? uploadsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
               const isNew  = id === 'new';
-              return (
+              const button = (
                 <button key={id} style={s.navItem}
                   onClick={() => {
+                    if (menu) { setNavMenuId(o => (o === id ? null : id)); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); return; }
                     if (id === 'new')       handleNewCake();
                     if (id === 'elements')  openElements();
                     if (id === 'uploads')   setUploadsOpen(true);
                     if (id === 'tools')     openTools();
                     if (id === 'templates') openTemplates();
                     if (id === 'dashboard') setDashboardOpen(true);
-                    if (id === 'orders')    setOrdersPanelOpen(true);
                     if (id === 'customers') setCustomersPanelOpen(true);
                     if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
                     if (id === 'share')     onShareStore?.();
@@ -5156,6 +5211,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </span>
                   <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>{label}</span>
                 </button>
+              );
+              if (!menu) return button;
+              return (
+                <RailSubmenu key={id} label={label} items={menu}
+                  open={navMenuId === id}
+                  containerRef={navMenuId === id ? navMenuRef : null}
+                  onSelect={item => { openOrdersPanel(item.view); setNavMenuId(null); }}>
+                  {button}
+                </RailSubmenu>
               );
             })}
 
@@ -6345,13 +6409,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'dashboard',  icon: <DashboardIcon size={20} />, requires: 'order:view' },
             { id: 'templates',  icon: <TemplatesIcon size={20} />, requires: 'design:create' },
             { id: 'elements',   icon: <ElementsIcon size={20} />,  requires: 'design:create' },
-            { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view' },
+            { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ORDERS_MENU },
             { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
             { id: 'invite',     icon: <InviteIcon size={20} />,    requires: 'customer:manage' },
             { id: 'share',      icon: <ShareIcon size={20} />,     requires: 'design:create' },
             ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
-          ].filter(item => hasCap(item.requires)).map(({ id, icon }) => {
-            const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+          ].filter(item => hasCap(item.requires)).map(({ id, icon, menu }) => {
+            const active = menu ? navMenuId === id
+              : id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+            if (menu) {
+              return (
+                // Same RailSubmenu as the desktop rail, anchored UPWARD — this rail is
+                // pinned to the bottom of the screen (the Settings menu re-anchors the
+                // same way). One submenu component, two anchors.
+                <RailSubmenu key={id} label="Orders" items={menu}
+                  open={navMenuId === id}
+                  containerRef={navMenuId === id ? navMenuRef : null}
+                  anchorStyle={{ top: 'auto', bottom: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)' }}
+                  onSelect={item => { openOrdersPanel(item.view); setNavMenuId(null); }}>
+                  <button
+                    style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
+                    onClick={() => { setNavMenuId(o => (o === id ? null : id)); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}>
+                    {icon}
+                  </button>
+                </RailSubmenu>
+              );
+            }
             return (
               <button key={id}
                 style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
@@ -6360,7 +6443,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   if (id === 'tools')     openTools();
                   if (id === 'templates') openTemplates();
                   if (id === 'dashboard') setDashboardOpen(true);
-                  if (id === 'orders')    setOrdersPanelOpen(true);
                   if (id === 'customers') setCustomersPanelOpen(true);
                   if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
                   if (id === 'share')     onShareStore?.();
@@ -6584,6 +6666,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         onBack={ordersFilter ? () => { setOrdersPanelOpen(false); setOrdersFilter(null); setNewOrderId(null); setDashboardOpen(true); } : null}
         externalFilter={ordersFilter}
         initialOrderId={newOrderId}
+        initialView={ordersInitialView}
+        bakerTimezone={bakerData?.timezone ?? null}
+        onNewOrderForDate={hasCap('order:manage') ? startOrderForDate : null}
         onEditDesign={(order, opts) => {
           // Locked orders (confirmed onward) open READ-ONLY in the 3D viewer — never
           // loaded into the editor, so the design can't be changed or saved.
@@ -6690,7 +6775,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           tierCount={1}
           mode="baker"
           manual
-          onClose={() => setManualOrderOpen(false)}
+          initialDeliveryDate={manualOrderDate}
+          onClose={() => { setManualOrderOpen(false); setManualOrderDate(null); }}
           onSubmit={handleManualOrderSubmit}
           apiClient={apiClient}
           supabase={supabase}
@@ -6704,6 +6790,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           legalBase={legalBase}
           onViewOrder={(id) => {
             setManualOrderOpen(false);
+            setManualOrderDate(null);
             setNewOrderId(id);
             setOrdersPanelOpen(true);
           }}

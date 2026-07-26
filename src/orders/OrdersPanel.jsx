@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { dietTone, hasAllergen } from './dietary.js';
+import {
+  buildStatusIndex, DEFAULT_STATUS_INDEX,
+  statusLabel, isClosed, isTerminal, isDesignLocked, statusTone,
+} from './statuses.js';
+import OrdersCalendar from './OrdersCalendar.jsx';
 import XrayReport from './xray/XrayReport.jsx';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
@@ -125,36 +130,6 @@ function useIsMobile() {
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
 // ── Order status lifecycle ────────────────────────────────────────────────────
-// The lifecycle is owned by the DB (order_statuses table) and served via
-// GET /api/order-statuses. Core keeps ONE fallback copy (used until the host wires
-// apiClient.fetchOrderStatuses) and derives EVERY status-dependent bit — labels,
-// filter chips, the stepper — from it, instead of the four scattered hardcoded maps
-// this file used to carry. Visual tone stays a core concern (a deliberate monochrome
-// design), derived from lifecycle position rather than per-status colours.
-const DEFAULT_STATUSES = [
-  { key: 'initiated',     label: 'Initiated',    phase: 'quote',       sort_order: 10,  is_terminal: false },
-  { key: 'requested',     label: 'Requested',    phase: 'quote',       sort_order: 20,  is_terminal: false },
-  { key: 'quoted',         label: 'Quoted',         phase: 'quote',       sort_order: 30,  is_terminal: false },
-  { key: 'quote_approved', label: 'Quote approved', phase: 'fulfillment', sort_order: 35,  is_terminal: false },
-  { key: 'confirmed',     label: 'Confirmed',    phase: 'fulfillment', sort_order: 40,  is_terminal: false },
-  { key: 'in_production', label: 'In production', phase: 'fulfillment', sort_order: 50,  is_terminal: false },
-  { key: 'ready',         label: 'Ready',        phase: 'fulfillment', sort_order: 60,  is_terminal: false },
-  { key: 'completed',     label: 'Completed',    phase: 'fulfillment', sort_order: 70,  is_terminal: true  },
-  { key: 'declined',      label: 'Declined',     phase: 'closed',      sort_order: 80,  is_terminal: true  },
-  { key: 'cancelled',     label: 'Cancelled',    phase: 'closed',      sort_order: 90,  is_terminal: true  },
-  { key: 'expired',       label: 'Expired',      phase: 'closed',      sort_order: 100, is_terminal: true  },
-];
-
-// Build a lookup index + derived lists from a status list (API or fallback).
-function buildStatusIndex(list) {
-  const ordered   = [...list].sort((a, b) => a.sort_order - b.sort_order);
-  const byKey     = Object.fromEntries(ordered.map(s => [s.key, s]));
-  // The happy-path stepper is everything that isn't a closed off-ramp, in order.
-  const flowSteps = ordered.filter(s => s.phase !== 'closed');
-  return { ordered, byKey, flowSteps };
-}
-const DEFAULT_STATUS_INDEX = buildStatusIndex(DEFAULT_STATUSES);
-
 // Readable labels for audit-log event types (else falls back to 'Order edited').
 const AUDIT_EVENT_LABELS = {
   status_changed:  'Status changed',
@@ -165,27 +140,6 @@ const AUDIT_EVENT_LABELS = {
   customer_message: 'Customer message',
   edited:          'Order edited',
 };
-
-const statusLabel = (idx, key) => idx.byKey[key]?.label ?? key;
-const isClosed    = (idx, key) => idx.byKey[key]?.phase === 'closed';
-const isTerminal  = (idx, key) => !!idx.byKey[key]?.is_terminal;
-// The design is pinned from 'confirmed' onward (the agreed cake) and in any closed
-// state — editable only during the quote phase. Locked orders open VIEW-only in 3D.
-const isDesignLocked = (idx, key) => {
-  const s = idx.byKey[key];
-  if (!s) return false;
-  if (s.phase === 'closed') return true;
-  const confirmedOrder = idx.byKey['confirmed']?.sort_order ?? Infinity;
-  return s.sort_order >= confirmedOrder;
-};
-
-// Monochrome badge tone derived from lifecycle position — no per-status hues.
-// Completed = solid ink; closed off-ramps = muted outline; in-flight = soft grey.
-function statusTone(idx, key) {
-  if (key === 'completed') return { bg: '#1a1a1a', color: '#fff',     border: 'transparent' };
-  if (isClosed(idx, key))  return { bg: '#fff',    color: '#999',     border: '#E0DDD8' };
-  return                          { bg: '#ECEBE6', color: '#5e5e5e',  border: 'transparent' };
-}
 
 function StatusBadge({ status, statusIndex = DEFAULT_STATUS_INDEX }) {
   const t = statusTone(statusIndex, status);
@@ -201,6 +155,16 @@ function StatusBadge({ status, statusIndex = DEFAULT_STATUS_INDEX }) {
 function fmt(iso) {
   if (!iso) return null;
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// Same rendering as fmt() but for a DATE-only string ('2026-07-04'). Built from the
+// parts rather than parsed: `new Date('2026-07-04')` is UTC midnight, which formats as
+// the PREVIOUS day for anyone west of Greenwich — a calendar must never be off by one.
+function fmtDateOnly(date) {
+  if (!date) return null;
+  const [y, m, d] = String(date).split('-').map(Number);
+  if (!y || !m || !d) return date;
+  return new Date(y, m - 1, d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function InfoRow({ label, value }) {
@@ -1202,7 +1166,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
   const isMobile = useIsMobile();
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1210,6 +1174,28 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
   const [filter, setFilter]     = useState('all');
   const [selected, setSelected] = useState(null);
   const [statusIndex, setStatusIndex] = useState(DEFAULT_STATUS_INDEX);
+
+  // The calendar is a VIEW of orders, not a separate destination: same panel, same
+  // data, same filter path. It only exists when the host wired the counts endpoint.
+  const hasCalendar = typeof apiClient?.fetchOrdersCalendar === 'function';
+  const [view, setView] = useState(initialView === 'calendar' && hasCalendar ? 'calendar' : 'list');
+
+  // A day picked in the calendar filters the list exactly the way the Dashboard's
+  // "due today" card does. Held here so `externalFilter` (the host's) stays a pure
+  // prop — `activeFilter` is the ONE filter authority the fetch and banner read.
+  const [dateFilter, setDateFilter] = useState(null);
+  const activeFilter = dateFilter ?? externalFilter;
+
+  // Re-entering the panel from the rail's Calendar item must land on the calendar
+  // even if the panel was last closed on the list (and vice versa).
+  // The panel isn't unmounted when closed, so `selected` survives — clear it here or a
+  // stale order detail would still own the mobile top bar when the calendar opens.
+  useEffect(() => {
+    if (!open) return;
+    setView(initialView === 'calendar' && hasCalendar ? 'calendar' : 'list');
+    setDateFilter(null);
+    setSelected(null);
+  }, [open, initialView]);
 
   // Pull the lifecycle from the DB when the host exposes it; otherwise the built-in
   // fallback (DEFAULT_STATUSES) keeps the panel working. The table is authoritative
@@ -1222,11 +1208,11 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || view !== 'list') return;
     setLoading(true);
     setError(null);
     setSelected(null);
-    const params = externalFilter?.params ?? {};
+    const params = activeFilter?.params ?? {};
     apiClient.fetchOrders(params)
       .then(data => {
         const list = Array.isArray(data) ? data : [];
@@ -1239,7 +1225,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
       })
       .catch(err => setError(err.message ?? 'Failed to load orders'))
       .finally(() => setLoading(false));
-  }, [open, externalFilter]);
+  }, [open, view, activeFilter]);
 
   async function handleStatusChange(orderId, newStatus) {
     await apiClient.updateOrderStatus(orderId, newStatus);
@@ -1280,7 +1266,33 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           <button onClick={isMobile && selected ? () => setSelected(null) : (onBack ?? onClose)} style={closeBtn}>
             <ArrowLeftIcon />
           </button>
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{topBarTitle}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{topBarTitle}</span>
+
+          {/* List | Calendar — the calendar is a view of the same orders, so it lives
+              here rather than being a separate destination. */}
+          {hasCalendar && !selected ? (
+            <div style={{
+              display: 'flex', gap: 2, padding: 2, borderRadius: 10,
+              background: '#F2F0EB', border: '1.5px solid #E8E4DC', flexShrink: 0,
+            }}>
+              {[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }].map(v => (
+                <button key={v.id}
+                  onClick={() => { setView(v.id); if (v.id === 'calendar') { setDateFilter(null); setSelected(null); } }}
+                  style={{
+                    border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                    padding: isMobile ? '5px 10px' : '5px 14px', fontSize: 12, fontWeight: 800,
+                    background: view === v.id ? '#fff' : 'transparent',
+                    color:      view === v.id ? '#1a1a1a' : '#8a8a8a',
+                    boxShadow:  view === v.id ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
+                  }}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <span style={{ flex: 1 }} />
+
           {onNewOrder && (!isMobile || !selected) && (
             <button onClick={onNewOrder} style={{
               display: 'flex', alignItems: 'center', gap: 5,
@@ -1291,7 +1303,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
               <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New Order
             </button>
           )}
-          {(!isMobile || !selected) && (
+          {view === 'list' && (!isMobile || !selected) && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{orders.length} total</span>
           )}
           {onBack && (
@@ -1301,26 +1313,45 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           )}
         </div>
 
-        {/* Filter banner */}
-        {externalFilter && !selected && (
+        {/* Filter banner — one banner for both the host's filter and a day picked in
+            the calendar. Clearing a calendar day returns to the calendar it came from;
+            clearing the host's filter closes the panel, as it always did. */}
+        {activeFilter && view === 'list' && !selected && (
           <div style={{
             padding: '8px 20px', background: '#FEF9C3', borderBottom: '1px solid #FCD34D',
             display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
           }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#92400E', flex: 1 }}>
-              {externalFilter.label}
+              {activeFilter.label}
             </span>
-            <button onClick={onClose} style={{
-              fontSize: 11, fontWeight: 700, color: '#92400E', background: 'none',
-              border: '1px solid #FCD34D', borderRadius: 6, padding: '2px 8px',
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}>✕ Clear</button>
+            <button
+              onClick={dateFilter ? () => { setDateFilter(null); setView('calendar'); } : onClose}
+              style={{
+                fontSize: 11, fontWeight: 700, color: '#92400E', background: 'none',
+                border: '1px solid #FCD34D', borderRadius: 6, padding: '2px 8px',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>{dateFilter ? '← Back to calendar' : '✕ Clear'}</button>
           </div>
         )}
 
         {/* Body */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {showList && (
+          {view === 'calendar' && (
+            <OrdersCalendar
+              apiClient={apiClient}
+              statusIndex={statusIndex}
+              isMobile={isMobile}
+              primaryColor={primaryColor}
+              timezone={bakerTimezone}
+              onPickDate={date => {
+                setDateFilter({ params: { delivery_date: date }, label: `Orders due ${fmtDateOnly(date)}` });
+                setView('list');
+              }}
+              onCreateForDate={onNewOrderForDate ?? null}
+            />
+          )}
+
+          {view === 'list' && showList && (
             <OrderList
               orders={orders}
               loading={loading}
@@ -1336,7 +1367,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           )}
 
           {/* Detail pane */}
-          {showDetail && (
+          {view === 'list' && showDetail && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               {selected
                 ? <OrderDetail

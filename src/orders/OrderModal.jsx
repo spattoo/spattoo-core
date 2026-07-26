@@ -267,6 +267,7 @@ export default function OrderModal({
   onViewOrder = null,
   mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
   manual = false,   // baker's "New Order" — no 3D design; collect reference photo(s) instead
+  initialDeliveryDate = null,   // 'YYYY-MM-DD' when started from a day in the Orders calendar
   legalBase = DEFAULT_LEGAL_BASE,   // host's marketing origin — where /terms + /privacy are served
 }) {
   const isMobile = useIsMobile();
@@ -336,8 +337,9 @@ export default function OrderModal({
     ),
   }), [flavours, dietaryOptions, dietaryKeys, availableFlavours]);
 
-  // Delivery
-  const [deliveryDate,    setDeliveryDate]    = useState('');
+  // Delivery. Pre-filled when the order was started from a day in the Orders calendar —
+  // it is the same order creation either way, the date is simply already chosen.
+  const [deliveryDate,    setDeliveryDate]    = useState(initialDeliveryDate || '');
   const [deliveryTime,    setDeliveryTime]    = useState('');
   const [deliveryMode,    setDeliveryMode]    = useState('pickup');
   const [deliveryAddress, setDeliveryAddress] = useState('');
