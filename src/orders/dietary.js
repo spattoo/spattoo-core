@@ -55,3 +55,145 @@ export function dietaryLine(reqs) {
   if (!labels.length) return '';
   return `${labels.join(' · ').toUpperCase()} — REQUIRED`;
 }
+
+// ── What this bakery deals in at all ──────────────────────────────────────────
+// Not every bakery does vegan. Each requirement arrives with `offered` (see
+// GET /api/dietary-requirements?bakerSlug=), and what that means depends on `kind` —
+// which is what `kind` is FOR, and the one place the difference is decided.
+//
+//   diet     (eggless / vegan / Jain) — a MENU. Not offered → not shown. Offering a
+//            vegan cake nobody makes just collects orders that get refused.
+//
+//   allergen (nut / gluten / dairy)   — NEVER hidden, whatever the baker set. A
+//            customer's nut allergy does not go away because this bakery doesn't cater
+//            to it. Hide the chip and the allergy goes back into the free-text box —
+//            the exact transmission loss this feature exists to fix — or goes unsaid,
+//            because a form that doesn't ask implies it doesn't matter. So it stays,
+//            it is still RECORDED on the order, and it carries a warning instead.
+//
+// The asymmetry is deliberate and must not be "tidied up" into one uniform rule.
+export function visibleRequirements(options) {
+  return (options ?? []).filter(o => o?.kind === 'allergen' || o?.offered !== false);
+}
+
+// The requirements this bakery has said it does not deal in, out of those the customer
+// actually ticked. Only allergens can end up here — a diet option they don't offer was
+// never on screen to tick.
+export function unguaranteedRequirements(options, selectedKeys) {
+  return (options ?? []).filter(o => o?.offered === false && (selectedKeys ?? []).includes(o.key));
+}
+
+// Same register as a flavour conflict, and for the same reason: it says what the BAKERY
+// can't promise, never what the cake contains. "Can't guarantee" is the honest verb —
+// stronger than "doesn't offer" (which sounds like a menu choice when it is a safety
+// matter) and weaker than "contains", which we have no basis to say.
+export function unguaranteedSentence(requirement, { bakerName } = {}) {
+  const label = (requirement?.label || '').toLowerCase();
+  if (!label) return '';
+  return bakerName
+    ? `${bakerName} can't guarantee ${label}.`
+    : `This bakery can't guarantee ${label}.`;
+}
+
+// ── Flavour ↔ requirement conflicts ───────────────────────────────────────────
+// "You asked for nut-free, but Tier 2 is Hazelnut Praline." Same module as the rest of
+// the dietary presentation because it is the same feature on the same four surfaces —
+// a second module would only mean a second import and a second place to drift.
+//
+// ── DERIVED, NEVER STORED ─────────────────────────────────────────────────────
+// A conflict is a function of (the order's requirements × each tier's flavour × the
+// declarations in force right now). Declarations change: a baker adds an eggless
+// tiramisu on Tuesday. A flag written at order time would still be shouting on
+// Saturday's bench sheet, and being wrong there is worse than being silent — a warning
+// that cries wolf gets ignored, including the time it is right. So every surface
+// recomputes from the same function instead.
+//
+// ── IT WARNS, IT NEVER BLOCKS ─────────────────────────────────────────────────
+// Nothing built on this may disable a flavour or refuse an order. A disabled option
+// asserts that the platform knows what is compatible, which is exactly what ToS §3.4
+// says we do not do (B5.9 puts the decision with the baker; C2.3 tells the customer to
+// confirm regardless). And the data is hand-authored, so it will drift — a baker who
+// hasn't updated their declarations, or who would happily make an exception, must not
+// silently lose the order.
+
+// flavours     [{ tier, name, flavourId }]           — as stored on orders.flavours
+// requirements [{ key, label, kind }]                — the order's dietary embed
+// declarations { [flavourId]: [{ key, declared_by }] } — from GET /api/flavours
+//
+// Returns one entry per (tier, requirement) clash. A hand-typed flavour has no
+// flavourId, so it can never match a declaration and never warns — an honest gap: we
+// hold no opinion about a flavour nobody has told us about, and inventing one would be
+// worse than saying nothing.
+export function findFlavourConflicts({ flavours, requirements, declarations }) {
+  const wanted = (requirements ?? []).filter(r => r?.key);
+  if (!wanted.length) return [];
+
+  const out = [];
+  for (const f of flavours ?? []) {
+    const declared = (declarations ?? {})[f?.flavourId];
+    if (!declared?.length) continue;
+    for (const req of wanted) {
+      const hit = declared.find(d => d?.key === req.key);
+      if (!hit) continue;
+      out.push({
+        tier: f.tier, flavourId: f.flavourId, flavourName: f.name,
+        requirement: req,
+        // 'baker' = their own statement, quotable. 'spattoo' = our global default,
+        // which must stay hedged. See conflictSentence.
+        declaredBy: hit.declared_by === 'baker' ? 'baker' : 'spattoo',
+      });
+    }
+  }
+  return out;
+}
+
+// ── the customer's voice ──────────────────────────────────────────────────────
+// Two sources of truth, two registers, and using the wrong one is a real error rather
+// than a style nit:
+//
+//   the baker said it   → quote them. "Sweet Crumb doesn't make Tiramisu eggless."
+//                         Hedging their firm answer sends the customer to ask a
+//                         question that has already been answered.
+//   we said it          → hedge. "Hazelnut Praline usually isn't nut-free."
+//                         Saying "Sweet Crumb doesn't…" would put a claim in a baker's
+//                         mouth that they never made and may well dispute — clearing
+//                         our default is exactly their right of reply.
+//
+// Neither form states what is IN the cake. We do not know that, and §3.4 says so.
+export function conflictSentence(conflict, { bakerName } = {}) {
+  const flavour = conflict?.flavourName || 'This flavour';
+  const need    = (conflict?.requirement?.label || '').toLowerCase();
+  if (!need) return '';
+  if (conflict.declaredBy === 'baker') {
+    return bakerName
+      ? `${bakerName} doesn't make ${flavour} ${need}.`
+      : `${flavour} isn't offered ${need}.`;
+  }
+  return `${flavour} usually isn't ${need}.`;
+}
+
+// The call to action, rendered ONCE under the list rather than repeated per line. It
+// carries the two things that keep this honest: talk to the baker, and you are not
+// being stopped. `audience` is 'customer' on a storefront order and 'baker' when the
+// baker is entering the order themselves — where "check with Sweet Crumb" is nonsense,
+// because they ARE Sweet Crumb.
+export function conflictCallToAction({ audience = 'customer', bakerName } = {}) {
+  if (audience === 'baker') return 'Check this before you confirm the order.';
+  return bakerName
+    ? `Please check with ${bakerName} before ordering — you can still place this order.`
+    : 'Please check with the bakery before ordering — you can still place this order.';
+}
+
+// ── the bench's voice ─────────────────────────────────────────────────────────
+// The reader here is the person about to bake, so it is imperative and leads with the
+// requirement, which is the thing that changes what goes in the bowl. Tier is named
+// only on a multi-tier cake — "Tier 1" on a single-tier cake is noise on a sheet whose
+// whole job is to be skimmed.
+export function conflictBenchLine(conflict, { tierCount = 1 } = {}) {
+  const label   = (conflict?.requirement?.label || '').toUpperCase();
+  const flavour = conflict?.flavourName || 'this flavour';
+  const where   = tierCount > 1 && Number.isInteger(conflict?.tier)
+    ? `Tier ${conflict.tier + 1} is ${flavour}`
+    : `The flavour is ${flavour}`;
+  return `${label} REQUIRED — ${where}. Confirm with the customer before baking.`;
+}

@@ -137,7 +137,7 @@ async function tryLoad(url) {
   try { return await loadImage(corsUrl(url)); } catch { return null; }
 }
 
-function drawHeader(sheet, { order, baker, logo }) {
+function drawHeader(sheet, { order, baker, logo, conflicts }) {
   const { ctx } = sheet;
   const top = sheet.y;
 
@@ -192,6 +192,26 @@ function drawHeader(sheet, { order, baker, logo }) {
     const boxH = inner + padY;
     ctx.strokeStyle = INK;
     ctx.lineWidth = allergen ? mm(1.0) : mm(0.5);   // an allergen gets the heavier frame
+    ctx.strokeRect(sheet.margin, boxTop, sheet.contentW, boxH);
+    sheet.y = boxTop + boxH + mm(4);
+  }
+
+  // The contradiction band, under the requirement band. Two separate boxes on purpose:
+  // the one above says what the customer asked for, this one says the order disagrees
+  // with itself, and a baker who reads only one of them must not be left thinking the
+  // other was covered. It carries the heaviest rule on the sheet — of everything printed
+  // here, this is the line that should stop someone before they start creaming butter.
+  if (conflicts?.length) {
+    const padY = mm(3), boxTop = sheet.y;
+    let inner = padY + sheet.text('CHECK BEFORE BAKING',
+      sheet.margin + mm(3), boxTop + padY, { size: mm(3.0), weight: 900, color: INK });
+    for (const line of conflicts) {
+      inner += mm(1.0);
+      inner += sheet.text(line, sheet.margin + mm(3), boxTop + inner, { size: mm(4.0), weight: 800 });
+    }
+    const boxH = inner + padY;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = mm(1.2);
     ctx.strokeRect(sheet.margin, boxTop, sheet.contentW, boxH);
     sheet.y = boxTop + boxH + mm(4);
   }
@@ -453,14 +473,14 @@ function drawFooters(sheet, { order }) {
 // Render the report → the page canvases. Split from the PDF wrapping below so the sheet can be LOOKED
 // AT — a layout you cannot see is a layout you are guessing at, and every bug so far in this file
 // (a missing cake, an orphaned heading) was one only the eye caught.
-export async function renderXrayPages({ order, report, baker } = {}) {
+export async function renderXrayPages({ order, report, baker, conflicts } = {}) {
   const [thumb, logo] = await Promise.all([
     tryLoad(order?.design_thumbnail_url),
     tryLoad(baker?.logo_url),
   ]);
 
   const sheet = new Sheet();
-  drawHeader(sheet, { order, baker, logo });
+  drawHeader(sheet, { order, baker, logo, conflicts });
   drawDiagram(sheet, { thumb, diagram: report.diagram, tiers: order?.design_snapshot?.tiers });
   drawTins(sheet, report.tins);
   drawColors(sheet, report.colors);
@@ -471,7 +491,9 @@ export async function renderXrayPages({ order, report, baker } = {}) {
 }
 
 // Build the whole report → a PDF Blob. `report` is buildXrayReport()'s output; `baker` is optional
-// (name + logo_url) and only affects the letterhead.
+// (name + logo_url) and only affects the letterhead. `conflicts` is an array of ready-made bench
+// lines — the SCREEN derives them and hands them over, so the sheet a baker carries in cannot say
+// something different from the screen he just read it off.
 export async function buildXrayPdf(opts = {}) {
   return canvasesToPdfBlob(await renderXrayPages(opts));
 }

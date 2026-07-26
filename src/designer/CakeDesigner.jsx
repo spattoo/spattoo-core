@@ -6670,6 +6670,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           supabase={supabase}
           bakerId={bakerData?.id}
           bakerSlug={bakerData?.slug}
+          bakerName={bakerData?.name}
           homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
           storeHours={bakerSettings?.store_hours ?? null}
           brandBtn={brandBtn}
@@ -6695,6 +6696,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           supabase={supabase}
           bakerId={bakerData?.id}
           bakerSlug={bakerData?.slug}
+          bakerName={bakerData?.name}
           homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
           storeHours={bakerSettings?.store_hours ?? null}
           brandBtn={brandBtn}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { dietTone, hasAllergen, dietaryLine } from '../dietary.js';
+import { dietTone, hasAllergen, dietaryLine, findFlavourConflicts, conflictBenchLine } from '../dietary.js';
 import { buildXrayReport } from './report.js';
 import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
@@ -75,13 +75,45 @@ export default function XrayReport({ order, apiClient, onClose }) {
     return () => { alive = false; };
   }, [apiClient]);
 
+  // The baker's flavour declarations, so the sheet can flag "customer wants nut-free, this
+  // is Hazelnut Praline". Fetched rather than read off the order because a conflict is
+  // DERIVED from declarations as they stand today — an order stores what was chosen, not
+  // what is currently declared about it (dietary.js explains why storing it would rot).
+  // A failure means no band, never a wrong one: silence is recoverable, a false all-clear
+  // on a bench sheet is not.
+  const [declarations, setDeclarations] = useState({});
+  useEffect(() => {
+    let alive = true;
+    if (!apiClient?.fetchBakerFlavours) return;
+    apiClient.fetchBakerFlavours()
+      .then(list => {
+        if (!alive) return;
+        setDeclarations(Object.fromEntries(
+          (list ?? []).filter(f => f.conflicts_with?.length).map(f => [f.id, f.conflicts_with]),
+        ));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient]);
+
+  const conflicts = useMemo(() => findFlavourConflicts({
+    flavours:     order?.flavours,
+    requirements: order?.dietary_requirements,
+    declarations,
+  }), [order?.flavours, order?.dietary_requirements, declarations]);
+
   // The sheet the baker takes to the bench. Built from the report ABOVE — the same data the screen is
   // showing right now, so what he reads here and what he carries in cannot disagree.
   async function download() {
     if (pdfBusy) return;
     setPdfBusy(true); setPdfErr(null);
     try {
-      const blob = await buildXrayPdf({ order, report, baker });
+      const blob = await buildXrayPdf({
+        order, report, baker,
+        // Derived here, not again inside the PDF: one derivation, so the sheet cannot
+        // disagree with the screen it was printed from.
+        conflicts: conflicts.map(c => conflictBenchLine(c, { tierCount: order?.flavours?.length ?? 1 })),
+      });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
       setPdfErr(e?.message || 'Could not make the PDF.');
@@ -129,6 +161,28 @@ export default function XrayReport({ order, apiClient, onClose }) {
             </div>
           );
         })()}
+
+        {/* The contradiction band. Separate from the requirement band above and BELOW it,
+            because it is a different statement: that one says what the customer asked for,
+            this one says the order disagrees with itself. Black on white in a heavy frame
+            for the same reason the printed sheet is — this is the one thing here that
+            should stop a baker mid-scan, and it must not depend on a colour surviving. */}
+        {conflicts.length > 0 && (
+          <div style={{
+            border: '2.5px solid #1a1a1a', borderRadius: 12, background: '#fff',
+            padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, color: '#1a1a1a' }}>
+              CHECK BEFORE BAKING
+            </span>
+            {conflicts.map((c, i) => (
+              <span key={`${c.flavourId}-${c.requirement.key}-${i}`}
+                style={{ fontSize: 14, fontWeight: 800, color: '#1a1a1a' }}>
+                {conflictBenchLine(c, { tierCount: order?.flavours?.length ?? 1 })}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Annotated cake */}
         {diagramItems.length > 0 && (

@@ -4,6 +4,11 @@ import { ACCEPT_IMAGE, validateImageFile, compressImage } from '../shared/image.
 import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { isValidEmail } from '../shared/validators.js';
 import { uploadThumbnail } from '../designer/utils/thumbnail.js';
+import {
+  findFlavourConflicts, conflictSentence, conflictCallToAction, dietTone,
+  visibleRequirements, unguaranteedRequirements, unguaranteedSentence,
+} from './dietary.js';
+import Chip from '../shared/Chip.jsx';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
 const MAX_REFERENCE_PHOTOS = 3;
@@ -254,6 +259,7 @@ function getSlotsForDate(dateStr, storeHours) {
 export default function OrderModal({
   tierCount, onClose, onSubmit,
   apiClient, supabase, bakerId, bakerSlug,
+  bakerName = null,   // named in the flavour-conflict warning ("check with Sweet Crumb")
   homeDeliveryEnabled = false,
   storeHours = null,
   brandBtn, primaryColor = '#1a1a1a',
@@ -297,6 +303,38 @@ export default function OrderModal({
   // satisfied by an eggless top tier sitting on an egg-based base.
   const [dietaryOptions, setDietaryOptions] = useState([]);
   const [dietaryKeys,    setDietaryKeys]    = useState([]);
+
+  // What this bakery actually deals in. A diet option they don't offer is dropped; an
+  // allergen NEVER is — see visibleRequirements() for why hiding one would be the worst
+  // outcome available here.
+  const visibleDietaryOptions = useMemo(
+    () => visibleRequirements(dietaryOptions),
+    [dietaryOptions],
+  );
+
+  // Allergens the customer ticked that this bakery has said it can't guarantee. Recorded
+  // on the order regardless — the point is that the baker sees it and can answer, not
+  // that the customer is turned away.
+  const unguaranteed = useMemo(
+    () => unguaranteedRequirements(dietaryOptions, dietaryKeys),
+    [dietaryOptions, dietaryKeys],
+  );
+
+  // ── Flavour ↔ requirement conflicts ─────────────────────────────────────────
+  // Derived, never stored, and it NEVER blocks: the picker keeps every flavour
+  // selectable and submit stays enabled. Disabling an option would assert that we know
+  // what is compatible — the opposite of what the ToS says we do — and the declarations
+  // are hand-authored, so a stale one would silently cost the baker a real order.
+  // The customer is told, named the person who can actually answer, and left in charge.
+  const flavourConflicts = useMemo(() => findFlavourConflicts({
+    flavours,
+    requirements: dietaryOptions.filter(o => dietaryKeys.includes(o.key)),
+    // conflicts_with rides along on the flavour list the picker already loaded — no
+    // second fetch, and no chance of the two disagreeing.
+    declarations: Object.fromEntries(
+      availableFlavours.filter(f => f.conflicts_with?.length).map(f => [f.id, f.conflicts_with]),
+    ),
+  }), [flavours, dietaryOptions, dietaryKeys, availableFlavours]);
 
   // Delivery
   const [deliveryDate,    setDeliveryDate]    = useState('');
@@ -350,9 +388,12 @@ export default function OrderModal({
   // that drifts the moment someone adds or retires a requirement. If the host's
   // apiClient doesn't provide it the control simply doesn't render — an older shell
   // degrades to today's behaviour rather than showing an empty picker.
+  // Passed the slug so each row comes back with `offered` — whether this bakery deals in
+  // it at all. Hosts on an older apiClient signature simply ignore the argument and get
+  // the unscoped vocabulary, which is the pre-existing behaviour.
   useEffect(() => {
     if (!apiClient?.fetchDietaryRequirements) return;
-    apiClient.fetchDietaryRequirements()
+    apiClient.fetchDietaryRequirements(bakerSlug)
       .then(data => Array.isArray(data) ? setDietaryOptions(data) : null)
       .catch(() => {});
   }, []);
@@ -810,11 +851,11 @@ export default function OrderModal({
                     can be made, so it is asked before the thing it constrains. And it is
                     ORDER-level, not per tier like flavour — an eggless requirement is not
                     satisfied by an eggless top tier on an egg-based base. */}
-                {dietaryOptions.length > 0 && (
+                {visibleDietaryOptions.length > 0 && (
                   <div style={{ ...field, gap: isMobile?10:8 }}>
                     <span style={lbl}>Dietary requirements</span>
                     {['diet', 'allergen'].map(kind => {
-                      const group = dietaryOptions.filter(o => o.kind === kind);
+                      const group = visibleDietaryOptions.filter(o => o.kind === kind);
                       if (!group.length) return null;
                       return (
                         <div key={kind} style={{ display:'flex', flexDirection:'column', gap:5 }}>
@@ -828,24 +869,39 @@ export default function OrderModal({
                             {group.map(o => {
                               const active = dietaryKeys.includes(o.key);
                               return (
-                                <button key={o.key} type="button"
-                                  onClick={() => setDietaryKeys(ks => active ? ks.filter(k => k !== o.key) : [...ks, o.key])}
-                                  style={{
-                                    padding: isMobile?'12px 16px':'8px 14px', borderRadius:12,
-                                    border: `1.5px solid ${active ? primaryColor : '#999999'}`,
-                                    fontSize: isMobile?14:11, fontWeight:700, cursor:'pointer',
-                                    background: active ? hexToRgba(primaryColor, 0.1) : 'transparent',
-                                    color: active ? primaryColor : '#666',
-                                    fontFamily:"'Quicksand',sans-serif", transition:'all 0.15s',
-                                  }}>
-                                  {o.label}
-                                </button>
+                                <Chip key={o.key} label={o.label} active={active} isMobile={isMobile}
+                                  tone={{ fg: primaryColor, bg: hexToRgba(primaryColor, 0.1), border: primaryColor }}
+                                  onClick={() => setDietaryKeys(ks => active ? ks.filter(k => k !== o.key) : [...ks, o.key])} />
                               );
                             })}
                           </div>
                         </div>
                       );
                     })}
+
+                    {/* An allergen this bakery has said it can't guarantee. It stays
+                        tickable and IS recorded on the order — the point is that the
+                        baker sees it and can answer, not that the customer is turned
+                        away with nowhere to put an allergy. */}
+                    {unguaranteed.length > 0 && (() => {
+                      const t = dietTone('allergen');
+                      return (
+                        <div style={{
+                          border: `1.5px solid ${t.border}`, background: t.bg, borderRadius: 12,
+                          padding: isMobile ? '12px 14px' : '10px 12px',
+                          display: 'flex', flexDirection: 'column', gap: 6,
+                        }}>
+                          {unguaranteed.map(o => (
+                            <span key={o.key} style={{ fontSize: isMobile ? 13 : 12, fontWeight: 700, color: t.fg }}>
+                              {unguaranteedSentence(o, { bakerName })}
+                            </span>
+                          ))}
+                          <span style={{ fontSize: isMobile ? 12 : 11, fontWeight: 600, color: t.fg, opacity: 0.85 }}>
+                            {conflictCallToAction({ audience: mode === 'customer' ? 'customer' : 'baker', bakerName })}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -873,6 +929,37 @@ export default function OrderModal({
                       )}
                     </div>
                   ))}
+
+                  {/* Directly under the picker, because it is about the choice just
+                      made — not floated to the top of the form where it would read as a
+                      general disclaimer and be scrolled past. Nothing above is disabled
+                      and the submit button is untouched: this informs, it does not gate. */}
+                  {flavourConflicts.length > 0 && (() => {
+                    const t = dietTone(
+                      flavourConflicts.some(c => c.requirement?.kind === 'allergen') ? 'allergen' : 'diet',
+                    );
+                    return (
+                      <div style={{
+                        border: `1.5px solid ${t.border}`, background: t.bg, borderRadius: 12,
+                        padding: isMobile ? '12px 14px' : '10px 12px',
+                        display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4,
+                      }}>
+                        {flavourConflicts.map((c, i) => (
+                          <span key={`${c.flavourId}-${c.requirement.key}-${i}`}
+                            style={{ fontSize: isMobile ? 13 : 12, fontWeight: 700, color: t.fg }}>
+                            {tierCount > 1 && Number.isInteger(c.tier)
+                              ? `${TIER_LABELS[c.tier] ?? `Tier ${c.tier + 1}`}: ` : ''}
+                            {conflictSentence(c, { bakerName })}
+                          </span>
+                        ))}
+                        {/* Once, under the list — the reassurance that they are not
+                            being stopped matters more than repeating it per line. */}
+                        <span style={{ fontSize: isMobile ? 12 : 11, fontWeight: 600, color: t.fg, opacity: 0.85 }}>
+                          {conflictCallToAction({ audience: mode === 'customer' ? 'customer' : 'baker', bakerName })}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <label style={field}>
