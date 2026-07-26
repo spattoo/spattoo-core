@@ -355,10 +355,135 @@ function drawTins(sheet, tins) {
     sheet.font(mm(3.2), 400);
     sheet.ctx.fillStyle = MUTED;
     sheet.ctx.fillText(`${t.weightKg} kg`, sheet.margin + mm(80), y + mm(1.5));
+    // What goes IN the tin. The sheet has never said, and a baker reading "7in round,
+    // 1.54 kg" wants it at exactly this moment. Baking a tier in the wrong flavour is not
+    // a blemish to patch — it is a remake.
+    if (t.flavour) {
+      sheet.font(mm(3.4), 700);
+      sheet.ctx.fillStyle = INK;
+      sheet.ctx.fillText(t.flavour, sheet.margin + mm(105), y + mm(1.5));
+    }
     sheet.rule(y + rowH - mm(1));
     sheet.y = y + rowH;
   }
   sheet.y += mm(5);
+}
+
+// ── The checklist ─────────────────────────────────────────────────────────────
+// Everything that has to go ON the cake, in the order it gets assembled. Numbered 1..N
+// unbroken across groups, matching the screen exactly — the number is assigned in
+// report.js precisely so a baker and whoever is on the phone are looking at the same
+// "number 7".
+//
+// The boxes are HERE and nowhere else. Ticking is a claim about the physical cake, made
+// at the bench with icing on your hands; the screen shows the same numbered list to read
+// from, and the paper carries the marks. (An on-screen box would have to persist to mean
+// anything, and one that silently forgets gets trusted.)
+//
+// The box sits hard RIGHT, in one column: the eye runs straight down a column of empty
+// squares and stops at the first one still empty, which is the entire job of this
+// section. Boxes tucked beside variable-length text would zig-zag down the page and
+// defeat it.
+//
+// Drawn in plain black outline, like the dietary band, because this sheet gets printed
+// on whatever mono laser is in the kitchen.
+// How tall `text` will be once wrapped to `maxW` — measured with the SAME rule Sheet.text
+// wraps by, so the row height reserved and the text drawn cannot disagree.
+function wrappedHeight(sheet, text, maxW, size) {
+  sheet.font(size, 700);
+  let lines = 1, line = '';
+  for (const w of String(text).split(/\s+/)) {
+    const next = line ? `${line} ${w}` : w;
+    if (sheet.ctx.measureText(next).width > maxW && line) { lines++; line = w; }
+    else line = next;
+  }
+  return lines * size * 1.35;
+}
+
+function drawChecklist(sheet, checklist, total) {
+  if (!checklist?.length) return;
+  sheet.heading(`Checklist — ${total} item${total === 1 ? '' : 's'}`, INK);
+
+  const boxSize = mm(4.5);
+  const boxX    = sheet.margin + sheet.contentW - boxSize;
+
+  for (const group of checklist) {
+    const gy = sheet.space(mm(6));
+    sheet.text(group.title.toUpperCase(), sheet.margin, gy + mm(1),
+      { size: mm(2.8), weight: 800, color: group.kind === 'instruction' ? INK : MUTED });
+    sheet.y = gy + mm(6);
+
+    // Remember where the instruction block starts, and which page it started on, so it
+    // can be framed once its height is known. A darker heading alone is not enough
+    // separation for the one group on this sheet that is the customer's own words.
+    const frameTop  = sheet.y - mm(6);
+    const framePage = sheet.pages.length;
+
+    for (const item of group.items) {
+      // An instruction is the CUSTOMER'S OWN WORDS and must never be clipped — truncating
+      // "no nuts in the buttercream but nuts on top are fine" at the column edge inverts
+      // its meaning. So it wraps to the full width left of the box and the row grows to
+      // fit, rather than being forced into the fixed row height a derived item uses.
+      const isInstr = group.kind === 'instruction';
+      const textX   = sheet.margin + mm(8);
+      const textW   = boxX - textX - mm(4);
+      const label   = item.count > 1 ? `${item.what}  × ${item.count}` : item.what;
+
+      if (isInstr) {
+        sheet.font(mm(3.6), 700);
+        const h = wrappedHeight(sheet, label, textW, mm(3.6));
+        const rowH = Math.max(mm(8), h + mm(3));
+        const y = sheet.space(rowH);
+        sheet.text(`${item.seq}.`, sheet.margin, y + mm(1.2), { size: mm(3.2), weight: 800, color: INK });
+        sheet.text(label, textX, y + mm(1.2), { size: mm(3.6), weight: 700, maxW: textW });
+        sheet.ctx.strokeStyle = INK;
+        sheet.ctx.lineWidth = mm(0.4);
+        sheet.ctx.strokeRect(boxX, y + mm(0.4), boxSize, boxSize);
+        sheet.rule(y + rowH - mm(1));
+        sheet.y = y + rowH;
+        continue;
+      }
+
+      const rowH = mm(8);
+      const y = sheet.space(rowH);
+
+      sheet.text(`${item.seq}.`, sheet.margin, y + mm(1.2), { size: mm(3.2), weight: 800, color: MUTED });
+      sheet.text(label, textX, y + mm(1.2), { size: mm(3.6), weight: 700 });
+      if (item.where) {
+        // FIXED column, not offset from the label's measured width. Keying it to the text
+        // length makes the "where" zig-zag down the page, which defeats the one thing this
+        // layout is for — running the eye down a straight column. Same reason drawTins
+        // pins its size and weight columns to fixed offsets.
+        sheet.font(mm(3.0), 400);
+        sheet.ctx.fillStyle = MUTED;
+        sheet.ctx.fillText(item.where, sheet.margin + mm(95), y + mm(1.2));
+      }
+
+      // The box itself — empty, to be penned.
+      sheet.ctx.strokeStyle = INK;
+      sheet.ctx.lineWidth = mm(0.4);
+      sheet.ctx.strokeRect(boxX, y + mm(0.4), boxSize, boxSize);
+
+      sheet.rule(y + rowH - mm(1));
+      sheet.y = y + rowH;
+    }
+
+    // Frame the instruction block. Skipped if it spilled onto a new page mid-group — a
+    // rectangle drawn from a start point on the previous page would streak down the sheet,
+    // and no frame reads better than a broken one.
+    if (group.kind === 'instruction' && sheet.pages.length === framePage) {
+      sheet.ctx.strokeStyle = INK;
+      sheet.ctx.lineWidth = mm(0.5);
+      sheet.ctx.strokeRect(
+        sheet.margin - mm(2), frameTop - mm(1),
+        sheet.contentW + mm(4), sheet.y - frameTop + mm(1),
+      );
+      sheet.y += mm(2);
+    }
+
+    sheet.y += mm(2);
+  }
+  sheet.y += mm(4);
 }
 
 function drawColors(sheet, colors) {
@@ -483,6 +608,9 @@ export async function renderXrayPages({ order, report, baker, conflicts } = {}) 
   drawHeader(sheet, { order, baker, logo, conflicts });
   drawDiagram(sheet, { thumb, diagram: report.diagram, tiers: order?.design_snapshot?.tiers });
   drawTins(sheet, report.tins);
+  // Before the colour/nozzle detail: the checklist is what a baker returns to repeatedly
+  // during assembly, and the mixing tables are read once at the start.
+  drawChecklist(sheet, report.checklist, report.checklistTotal);
   drawColors(sheet, report.colors);
   drawPiping(sheet, { elements: report.elements, freehand: report.freehand });
   drawFooters(sheet, { order });

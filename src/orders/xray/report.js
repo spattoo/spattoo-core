@@ -1,5 +1,5 @@
 import { computeTinPlan } from './tinHelper.js';
-import { harvestColors, harvestPiping } from './harvest.js';
+import { harvestColors, harvestPiping, harvestPlaceables } from './harvest.js';
 import { gelRecipeFor } from './gelLibrary.js';
 
 // ── The X-Ray report, as DATA ────────────────────────────────────────────────────────────────────
@@ -42,9 +42,39 @@ export function strengthColor(strength) {
   return '#8A7CB0';
 }
 
-export function buildXrayReport({ design, weightKg, guides } = {}) {
-  const tins   = computeTinPlan(design?.tiers, weightKg);
+// ── The customer's own words, split into tickable lines ──────────────────────
+// `special_instructions` is one free-text blob. Split on NEWLINES only, because that is
+// the separator the customer actually chose. Splitting on sentences is over-clever and
+// actively dangerous: "no nuts in the buttercream. nuts on top are fine." becomes two
+// items that read as contradicting each other.
+//
+// No parsing beyond that, ever. This is the one place on the sheet where the text is the
+// customer's rather than something we derived, and any attempt to infer structure from
+// it is us guessing at intent. Ambiguity belongs to the customer; the baker resolves it
+// by asking them.
+export function splitInstructions(text) {
+  return String(text ?? '')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
+}
+
+export function buildXrayReport({ design, weightKg, guides, flavours, specialInstructions } = {}) {
+  const plan   = computeTinPlan(design?.tiers, weightKg);
   const piping = harvestPiping(design);
+
+  // Flavour joined onto the tin row by tier INDEX, not by label — labels are display
+  // strings ("Base tier") and orders.flavours keys on the index. One per-tier table
+  // rather than a second one below it: a baker reading "7in round, 1.54 kg" wants to know
+  // what goes IN it at that moment, and the sheet has never said. Getting this wrong is
+  // not a blemish, it is a remake.
+  const tins = {
+    ...plan,
+    tiers: plan.tiers.map(t => ({
+      ...t,
+      flavour: (flavours ?? []).find(f => f?.tier === t.index)?.name || null,
+    })),
+  };
 
   // Each colour with its mixing recipe already resolved — the screen used to call gelRecipeFor inline
   // in its JSX, which meant the PDF would have had to know to call it too (and could have called it
@@ -89,12 +119,49 @@ export function buildXrayReport({ design, weightKg, guides } = {}) {
       strength: e.strength,
     }));
 
+  // ── The checklist ───────────────────────────────────────────────────────────
+  // Numbered ONCE, here, running unbroken across groups — 1..N over the whole cake, not
+  // restarting per tier. Two reasons, and both are about the sheet being read aloud in a
+  // kitchen: "number 7 is missing" has to identify exactly one thing, and a final number
+  // that equals the total tells a baker at a glance how much is left. Restarting per
+  // tier gives you three number 1s and no count.
+  //
+  // The sequence is assigned in the data layer for the same reason everything else here
+  // is: both renderers must show the SAME number against the same item, or the screen
+  // and the sheet cannot be talked about together.
+  // Instructions lead the checklist. They are CONSTRAINTS on everything below — "make the
+  // lion face left", "gold candles not silver", "keep it under 6in for the box" — so a
+  // baker has to meet them before the hands start, not tick them afterwards. A
+  // don't-forget list at the bottom of the page is read after the mistake.
+  //
+  // `kind` marks them so both renderers can treat them differently WITHOUT either one
+  // deciding what an instruction is. They are a different sort of claim: "Lion topper ✓"
+  // means I placed it — derived, objective, checkable. "Read the instruction ✓" means I
+  // read this and complied, which nothing here can verify.
+  const instructions = splitInstructions(specialInstructions);
+  const groups = [
+    ...(instructions.length ? [{
+      title: 'Special instructions',
+      kind: 'instruction',
+      items: instructions.map((what, i) => ({ key: `instr-${i}`, what, where: null, count: 1 })),
+    }] : []),
+    ...harvestPlaceables(design),
+  ];
+
+  let seq = 0;
+  const checklist = groups.map(g => ({
+    ...g,
+    items: g.items.map(i => ({ ...i, seq: ++seq })),
+  }));
+
   return {
     tins,
     colors,
     elements,
     freehand: piping.freehand,
     diagram,
+    checklist,
+    checklistTotal: seq,
     elementIds: piping.elementIds,
     // True when there is nothing to say — the caller shows an empty state rather than a blank sheet.
     isEmpty: !tins.tiers.length && !colors.length && !elements.length && !piping.freehand.length,

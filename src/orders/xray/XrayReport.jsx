@@ -49,8 +49,14 @@ export default function XrayReport({ order, apiClient, onClose }) {
   // Everything the report SAYS — one pure call, shared with the PDF (report.js). The screen decides
   // only how it looks.
   const report = useMemo(
-    () => buildXrayReport({ design, weightKg: order?.weight_kg, guides }),
-    [design, order?.weight_kg, guides],
+    () => buildXrayReport({
+      design, weightKg: order?.weight_kg, guides,
+      // Both come off the ORDER, not the design — the flavour a tier is baked in and the
+      // words the customer typed are neither of them properties of the 3D model.
+      flavours: order?.flavours,
+      specialInstructions: order?.special_instructions,
+    }),
+    [design, order?.weight_kg, guides, order?.flavours, order?.special_instructions],
   );
   const { tins: tinPlan, colors, elements: withNozzle, freehand, diagram: diagramItems } = report;
 
@@ -184,6 +190,66 @@ export default function XrayReport({ order, apiClient, onClose }) {
           </div>
         )}
 
+        {/* ── Checklist ──────────────────────────────────────────────────────
+            Everything that has to go ON the cake, in assembly order (tiers bottom
+            up, whole-cake finishing last). Until this existed the sheet was
+            piping-centric: a lion topper — the most visible thing on a cake and the
+            easiest to forget — appeared nowhere on it.
+
+            Numbers run 1..N unbroken across groups so "number 7 is missing" names
+            exactly one thing, and the last number is the total.
+
+            READ-ONLY HERE; the BOXES ARE ON THE PRINTED SHEET. Ticking is a claim
+            about the physical cake, made at the bench with icing on your hands —
+            not something anyone does at a screen. An on-screen box would have to
+            persist to mean anything, and a box that silently forgets is worse than
+            none because it gets trusted. So the screen reads the list out and the
+            paper carries the ticks. */}
+        {report.checklist?.length > 0 && (
+          <div>
+            <div style={s.sub}>
+              <span style={s.dot('#2C2A26')} />
+              CHECKLIST — {report.checklistTotal} item{report.checklistTotal === 1 ? '' : 's'}
+              <span style={{ ...s.muted, fontWeight: 600, marginLeft: 6 }}>
+                (tick them off on the printed sheet)
+              </span>
+            </div>
+            <div style={s.card}>
+              {report.checklist.map(group => (
+                <div key={group.title} style={group.kind === 'instruction' ? {
+                  // Framed, because it is a different kind of claim from the rest of the
+                  // list. "Lion topper" is something we derived from the design and can
+                  // check off objectively; an instruction is the customer's own words,
+                  // which only they can say have been honoured. It also leads the list:
+                  // these are constraints on everything below, and a don't-forget note
+                  // read at the end is read after the mistake.
+                  border: '2px solid #2C2A26', borderRadius: 10,
+                  padding: '4px 12px 8px', margin: '4px 0 14px',
+                } : undefined}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 800, letterSpacing: 0.4, padding: '10px 0 4px',
+                    color: group.kind === 'instruction' ? '#2C2A26' : '#9a958d',
+                  }}>
+                    {group.title.toUpperCase()}
+                  </div>
+                  {group.items.map(item => (
+                    <div key={item.key} style={{ ...s.row, alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#9a958d', minWidth: 22, flexShrink: 0 }}>
+                        {item.seq}.
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: '#2C2A26' }}>
+                        {item.what}
+                        {item.count > 1 && <span style={{ color: '#8A7CB0' }}> × {item.count}</span>}
+                        {item.where && <span style={s.muted}>  ·  {item.where}</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Annotated cake */}
         {diagramItems.length > 0 && (
           <XrayCakeDiagram thumbnailUrl={order.design_thumbnail_url} items={diagramItems} snapshotTiers={design.tiers} />
@@ -197,6 +263,22 @@ export default function XrayReport({ order, apiClient, onClose }) {
               {tinPlan.totalKg
                 ? <XrayTinDiagram tiers={tinPlan.tiers} />
                 : <div style={s.muted}>Add a weight to the order to size the tins.</div>}
+
+              {/* What goes IN each tin — the sheet never said, and it is the one mistake
+                  here that cannot be patched afterwards. Under the diagram rather than
+                  inside it: the diagram is about SIZE, and a flavour name is not a
+                  dimension. Only rendered for tiers that actually carry one, so a design
+                  with no flavours chosen looks the same as it always did. */}
+              {tinPlan.tiers.some(t => t.flavour) && (
+                <div style={{ marginTop: 12, borderTop: '1px solid #F4F1EC', paddingTop: 10 }}>
+                  {tinPlan.tiers.filter(t => t.flavour).map(t => (
+                    <div key={t.index} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '3px 0' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#9a958d', minWidth: 78 }}>{t.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: '#2C2A26' }}>{t.flavour}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
