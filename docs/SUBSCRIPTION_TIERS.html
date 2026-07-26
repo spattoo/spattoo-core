@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spattoo — Subscription Tiers → Feature Mapping</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --line:#262b36; --txt:#e7eaf0; --muted:#9aa3b2;
+    --green:#1f9d57; --greenbg:#13351f; --grey:#3a4150;
+    --amber:#b8860b; --amberbg:#3a2f10; --blaze:#ffb020; --blazebg:#231a06;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0f1115;color:#e7eaf0;font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:32px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:#9aa3b2;margin:0 0 22px;font-size:13px}
+  table{border-collapse:collapse;width:100%;background:#171a21;border:1px solid #262b36;border-radius:10px;overflow:hidden}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid #262b36;white-space:nowrap}
+  th{background:#1d212a;color:#cfd6e2;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0}
+  td.feat{white-space:normal;min-width:280px}
+  td.num{color:#6b7280;width:34px;text-align:right;font-variant-numeric:tabular-nums}
+  tr.group td{background:#12151c;color:#8b93a3;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .col-blaze{background:rgba(255,176,32,.06)}
+  th.col-blaze{background:#2a2410;color:#ffb020}
+  .col-trial{background:rgba(255,255,255,.02);color:#7d8595}
+  th.col-trial{background:#171a21;color:#7d8595;font-weight:500}
+  .cell{display:inline-block;min-width:22px;text-align:center}
+  .yes{color:#3ddc84;font-weight:700}
+  .no{color:#5a6273}
+  .lvl{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:#222734;color:#cdd4e0;border:1px solid #313847}
+  .lvl.s{background:#13351f;color:#6ee7a0;border-color:#1f5135}
+  .lvl.m{background:#2a2410;color:#ffcf6b;border-color:#574412}
+  .mvp{font-size:12px;text-align:center}
+  .mvp.now{color:#3ddc84}
+  .mvp.next{color:#ffcf6b}
+  .mvp.future{color:#7d8595}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;margin:16px 0 26px;color:#9aa3b2;font-size:12px}
+  .legend b{color:#cdd4e0;font-weight:600}
+  .levers{margin-top:28px;background:#171a21;border:1px solid #262b36;border-radius:10px;padding:18px 20px}
+  .levers h2{font-size:14px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.05em;color:#cdd4e0}
+  .lever{margin:0 0 9px;padding-left:14px;border-left:3px solid #2f3645}
+  .lever .h{color:#ffb020;font-weight:600}
+  .star{color:#ffb020}
+  .note{color:#7d8595;font-size:12px;margin-top:20px}
+  .trialbar{background:#13351f;border:1px solid #1f5135;border-radius:10px;padding:14px 18px;margin:0 0 18px}
+  .trialbar b{color:#6ee7a0}
+  .trialbar p{margin:6px 0 0;color:#9aa3b2;font-size:12.5px}
+  .includes{background:#171a21;border:1px solid #262b36;border-radius:10px;padding:16px 20px;margin:0 0 22px}
+  .includes h2{font-size:13px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:#cdd4e0}
+  .includes ul{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:8px 22px}
+  .includes li{color:#cdd4e0;font-size:13px}
+  .includes li::before{content:"✓";color:#3ddc84;font-weight:700;margin-right:7px}
+  .includes .why{margin:12px 0 0;color:#7d8595;font-size:12px}
+  tr.price td,tr.price th{background:#12151c;font-size:13px}
+  .price .amt{color:#e7eaf0;font-weight:700}
+  .price .gst{color:#7d8595;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Spattoo — Subscription Tiers <span style="color:#6b7280">→</span> Feature Mapping</h1>
+  <p class="sub">Working draft · updated 2026-07-26 · authoritative values live in <code>subscription_plans.features</code> (jsonb). Full rationale + pricing justification in <code>SUBSCRIPTION_TIERS.md</code>.</p>
+
+  <div class="trialbar">
+    <b>Spark is a 30-day free TRIAL — a CARD on the pricing page, never a COLUMN.</b>
+    <p>Spark <b>does</b> appear on the pricing page, as one of three cards (Spark · Flame · Blaze). What it must never be is a column in the comparison matrix. The original failure was not the label — it was the tick-by-tick comparison: readers ran their eye across the rows, saw ✓/✓/✓/✓ on designer, storefront, branding and order management, and concluded Flame added nothing. Calling the column “Trial” does not fix that; the ticks still line up. So Spark’s card body is <b>messaging, not a feature list</b> — “Everything unlocked. Free for 30 days. No card needed. After 30 days, pick a plan.” Any detailed comparison table below has columns <b>Flame | Blaze only</b>. <i>(In THIS engineering doc Spark stays a greyed column — here we need to see what it grants. The rule is about the customer-facing page.)</i> Three cards also means the Forge decision can wait: the page does not look thin without it.</p>
+    <p style="color:#ffcf6b"><b>⚠️ Pending sign-off — what does the trial grant?</b> The card copy only works if the trial equals ONE tier. Today Spark is a hybrid (same as Flame on most rows, but craft guides preview vs full, templates 3 vs 30, smart tools trial vs small) — unwritable as a one-liner. <b>Recommended: trial = BLAZE for 30 days</b> (“Start with everything”) — the textbook reverse trial, 24% median conversion vs 14% for a plain opt-in trial, and it aims people at THE TARGET tier. Alternative: trial = Flame (safer, weaker). Accept the tradeoff: trialling Blaze then buying Flame feels like a downgrade — that is loss aversion working as designed, but pre-empt it in the trial-ending email. Changes <code>seed_plan_entitlements.sql</code>, so decide before shipping.</p>
+  </div>
+
+  <div class="includes">
+    <h2>Every plan includes — the category features</h2>
+    <ul>
+      <li>Full 3D cake designer</li>
+      <li>Every decoration, finish, piping &amp; topper</li>
+      <li>A4 edible-print simulator</li>
+      <li>Order &amp; quote management</li>
+      <li>Public storefront + your branding</li>
+      <li>Colour guide</li>
+      <li>Cake flavours catalog</li>
+      <li>Email notifications</li>
+    </ul>
+    <p class="why">These are <b>never gated</b>. Their job is to justify the price LEVEL — why the floor is ₹999 and not ₹299, and why a generic store builder (Shopify, Instamojo, Dukaan) is not a comparable product. Gating a category feature destroys that argument, which is why element-tier-gating was killed. But they must be <b>visible</b>: the A4 simulator defended nothing while it was buried inside “photos, PDF”.</p>
+  </div>
+
+  <div class="legend">
+    <span><b class="yes">✓</b> included</span>
+    <span><b class="no">—</b> not included</span>
+    <span><span class="lvl s">level</span> graduated allowance</span>
+    <span><b style="color:#3ddc84">MVP</b> in go-live</span>
+    <span><b style="color:#ffcf6b">v1.1</b> post-MVP</span>
+    <span><b style="color:#7d8595">future</b> deferred/unmarketed</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="num">#</th><th>Feature</th>
+        <th>Flame</th><th class="col-blaze">Blaze ★</th><th>Forge</th>
+        <th class="col-trial">Spark <span style="font-weight:400">(trial)</span></th>
+        <th style="text-align:center">MVP</th>
+      </tr>
+      <tr class="price">
+        <td></td><td style="color:#9aa3b2">Price / month</td>
+        <td><span class="amt">₹999</span><br><span class="gst">₹1,179 incl. GST</span></td>
+        <td class="col-blaze"><span class="amt">₹2,499</span><br><span class="gst">₹2,949 incl. GST</span></td>
+        <td><span class="amt">from ₹4,999</span><br><span class="gst">₹5,899 incl. GST · talk to us</span></td>
+        <td class="col-trial">free · 30 days</td>
+        <td></td>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="group"><td></td><td colspan="6">Creative — category features, same for all</td></tr>
+      <tr><td class="num">1</td><td class="feat">Full 3D cake designer</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">2</td><td class="feat">All decorations / finishes / piping / toppers <span style="color:#7d8595">(all elements, all tiers)</span></td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">3</td><td class="feat">Cream pen, drip, scatter, foil, luster, etc.</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+
+      <tr class="group"><td></td><td colspan="6">Storefront</td></tr>
+      <tr><td class="num">4</td><td class="feat">Public storefront (<code>{slug}.spattoo.com</code>)</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">5</td><td class="feat">Custom branding (logo, colors, story)</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">6</td><td class="feat">Storefront template / layout choice <span style="color:#ffb020">★ strongest Flame→Blaze hook (customer-facing)</span></td><td><span class="lvl">preview only</span></td><td class="col-blaze"><span class="lvl s">choose &amp; apply</span></td><td><span class="lvl s">choose &amp; apply</span></td><td class="col-trial"><span class="lvl">preview only</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">7</td><td class="feat">Storefront analytics (views / conversion)</td><td><span class="no">—</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="no">—</span></td><td class="mvp next">v1.1</td></tr>
+      <tr><td class="num">8</td><td class="feat">White-label (remove Spattoo branding)</td><td><span class="no">—</span></td><td class="col-blaze"><span class="no">—</span></td><td><span class="no">—</span></td><td class="col-trial"><span class="no">—</span></td><td class="mvp future">future</td></tr>
+      <tr><td class="num">9</td><td class="feat">Custom domain</td><td><span class="no">—</span></td><td class="col-blaze"><span class="no">—</span></td><td><span class="no">—</span></td><td class="col-trial"><span class="no">—</span></td><td class="mvp future">future</td></tr>
+
+      <tr class="group"><td></td><td colspan="6">Orders</td></tr>
+      <tr><td class="num">10</td><td class="feat">Order / quote mgmt, statuses, photos, PDF</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">10a</td><td class="feat"><b>A4 edible-print simulator</b> <span style="color:#7d8595">(category feature — ungated on purpose; no generic store builder can do this)</span></td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">11</td><td class="feat">Order volume <span style="color:#7d8595">(no order-count cap anywhere — Spark is gated by TIME)</span></td><td><span class="lvl s">Unlimited</span></td><td class="col-blaze"><span class="lvl s">Unlimited</span></td><td><span class="lvl s">Unlimited</span></td><td class="col-trial"><span class="lvl m">30-day trial</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">12</td><td class="feat">Cake flavours catalog</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+
+      <tr class="group"><td></td><td colspan="6">Smart tools — BETA (name the job, never "AI")</td></tr>
+      <tr><td class="num">13</td><td class="feat">Photo → cake design <span style="color:#7d8595">(BETA · the SOLE metered cost-bearing lever)</span></td><td><span class="lvl">small</span></td><td class="col-blaze"><span class="lvl s">larger</span></td><td><span class="lvl s">larger</span></td><td class="col-trial"><span class="lvl">trial</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">14</td><td class="feat" style="color:#5a6273"><em>merged into #13</em></td><td colspan="4" style="text-align:center;color:#5a6273">—</td><td class="mvp" style="color:#5a6273">—</td></tr>
+      <tr><td class="num">15</td><td class="feat">Background removal <span style="color:#7d8595">(utility inside upload — not a headline)</span></td><td colspan="4" style="text-align:center;color:#9aa3b2">plumbing — all tiers, not metered separately</td><td class="mvp now">MVP</td></tr>
+
+      <tr class="group"><td></td><td colspan="6">Production help</td></tr>
+      <tr><td class="num">16</td><td class="feat">X-Ray order reports <span style="color:#ffb020">★ Flame→Blaze hook</span> <span style="color:#7d8595">· METERED TEASE, not a preview — let them use it, then run out. Nudge at 70/90/100%. Meter counts CONFIRMED ORDERS, not report views: once an order is inside the allowance it keeps X-Ray forever, so re-opening the guide mid-bake never costs anything. Fixed 2026-07-26: Flame was “—” while the free trial got a preview, so upgrading TOOK IT AWAY.</span></td><td><span class="lvl m">first 5 confirmed orders / mo</span></td><td class="col-blaze"><span class="yes">✓ unlimited</span></td><td><span class="yes">✓ unlimited</span></td><td class="col-trial"><span class="lvl">first 5 / mo</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">17</td><td class="feat">Craft guides</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="lvl">preview</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">18</td><td class="feat">Color guide (Chef's Desk)</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+
+      <tr class="group"><td></td><td colspan="6">Notifications</td></tr>
+      <tr><td class="num">19</td><td class="feat">Email notifications</td><td><span class="yes">✓</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="yes">✓</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">20</td><td class="feat">WhatsApp notifications <span style="color:#7d8595">(deferred — big India channel, later)</span></td><td><span class="no">—</span></td><td class="col-blaze"><span class="no">—</span></td><td><span class="no">—</span></td><td class="col-trial"><span class="no">—</span></td><td class="mvp future">future</td></tr>
+
+      <tr class="group"><td></td><td colspan="6">Account / team</td></tr>
+      <tr><td class="num">21</td><td class="feat">Custom saved templates <span style="color:#7d8595">(global library unlimited for all)</span></td><td><span class="lvl s">30</span></td><td class="col-blaze"><span class="lvl s">∞</span></td><td><span class="lvl s">∞</span></td><td class="col-trial"><span class="lvl">3</span></td><td class="mvp now">MVP</td></tr>
+      <tr><td class="num">22</td><td class="feat">Team members <span style="color:#ff8a6b"><b>— DEFERRED FROM MVP, DO NOT MARKET</b></span> <span style="color:#7d8595">· staff logins are not being introduced at launch, so every tier is single-seat (owner). The 1/2/4/10 values STAY in the seed (anti-resale ceiling, ready for the day seats ship) but the row must not appear on the pricing page, in <code>feature_bullets</code>, or in the in-app picker.</span></td><td><span class="lvl">1</span></td><td class="col-blaze"><span class="lvl">1</span></td><td><span class="lvl">1</span></td><td class="col-trial"><span class="lvl">1</span></td><td class="mvp future">future</td></tr>
+      <tr><td class="num">23</td><td class="feat">Staff access control <span style="color:#7d8595">(plumbing under #22) — deferred with it. Capability model stays as built (RBAC is orthogonal to plans; re-modelling later costs far more than leaving it dormant), it just has no second user to apply to.</span></td><td><span class="no">n/a</span></td><td class="col-blaze"><span class="no">n/a</span></td><td><span class="no">n/a</span></td><td class="col-trial"><span class="no">n/a</span></td><td class="mvp future">future</td></tr>
+      <tr><td class="num">24</td><td class="feat">Priority support</td><td><span class="no">—</span></td><td class="col-blaze"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td class="col-trial"><span class="no">—</span></td><td class="mvp now">MVP</td></tr>
+    </tbody>
+  </table>
+
+  <div class="levers">
+    <h2>Upgrade levers</h2>
+    <p class="lever"><span class="h">Trial → Flame:</span> Flame is NOT sold against Spark — it is sold against a notebook, a phone gallery and Instagram DMs. The story: <em>“I pay ₹999 so my customers can see my cakes and order properly, instead of me chasing quotes on WhatsApp.”</em> Storefront + branding + order/quote management + the A4 simulator. Saved templates 3 → 30 is a secondary nudge, not the headline.</p>
+    <p class="lever"><span class="h">Flame → Blaze <span class="star">★</span>:</span> premium storefront template (#6, customer-facing — strongest) · full X-Ray reports (#16) · bigger smart-tools allowance (#13) · storefront analytics (#7, v1.1). This is where the domain-specific production tools live, and it is the step with the most headroom to price into.</p>
+    <p class="lever"><span class="h">Blaze → Forge:</span> <b style="color:#ff8a6b">⚠️ EMPTY AT MVP.</b> Was seats + priority support + (later) granular staff control; with staff logins deferred (2026-07-27) only priority support remains, and a support policy is not a tier. <b>Open question — decide before correcting the marketing page:</b> (1) ship two paid tiers and bring Forge back with seats, (2) keep Forge as a SERVICE tier — “Studio · from ₹4,999 · talk to us”, sold on support/onboarding rather than features (<i>current lean</i>: honest, and preserves the anchor), or (3) build something specifically to justify it — wrong order to do things in. Whichever wins, its price stays <b>visible</b>: “call our sales team” was considered and rejected — hiding price loses 70–80% of buyers, the contact-sales pattern only pays above ~$25k ACV (Forge is ~$600), and a decoy with no number anchors nothing.</p>
+  </div>
+
+  <div class="levers">
+    <h2>Hiding a plan — use the flag that already exists</h2>
+    <p class="lever"><span class="h">Forge is already in the system</span>, so “don’t launch Forge yet” is a DATA change, not a code change: <code>update subscription_plans set is_active = false where name = 'forge';</code></p>
+    <p class="lever"><span class="h">What it hides:</span> <code>GET /api/plans</code> filters <code>is_active</code>, and that ONE endpoint feeds the marketing catalog, the billing plan picker and the signup wizard. Flip the flag, Forge vanishes from all three, no deploy.</p>
+    <p class="lever"><span class="h">What it does NOT touch</span> (verified by tracing every reader of the table): existing Forge subscribers keep working — entitlements resolve by <code>plan_id</code> with no <code>is_active</code> filter, so hiding a plan ≠ deactivating a customer. Admin still sees and can edit it (<code>/admin/subscription-plans</code> selects <code>*</code>). Nothing else reads the flag.</p>
+    <p class="lever"><span class="h">⚠️ Known gap:</span> <code>POST /billing/subscribe</code> resolves the tier through the <code>PLAN.ID_BY_NAME</code> code constant, not the table, so it does not check <code>is_active</code>. A direct API call with <code>tier:'forge'</code> would still be accepted. Fine for MVP (unreachable through the product), but the route must validate the plan is active before this is treated as a real gate rather than a display toggle.</p>
+    <p class="lever"><span class="h">Do not add a new column.</span> <code>is_active</code> already means “publicly listed and subscribable”, and for Forge at MVP those are the same thing. A separate <code>is_listed</code> only earns its keep if we ever need listed-but-not-subscribable, which we do not.</p>
+  </div>
+
+  <div class="levers">
+    <h2>Market — who we are selling to</h2>
+    <p class="lever"><span class="h">~5 lakh active home bakers</span> in India, plus ~10 lakh unorganised bakeries (only ~2,000 organised). Bakery market USD 15.05B → 32.05B by 2034.</p>
+    <p class="lever"><span class="h">40–60% of custom cake orders already come via Instagram / WhatsApp</span> — Flame’s pitch is not a hypothesis, it describes what half the market does today.</p>
+    <p class="lever"><span class="h">Segment split below is an ESTIMATE, not data</span> — no source segments the 5 lakh by revenue. Hypothesis to validate against our own signups: hobby &lt;10 orders/mo ~325k (trial only) · part-time 10–30 ~110k (<b>Flame</b>) · full-time 30–60 ~50k (<b>Blaze</b>) · studio 60+ ~15k (<b>Forge</b>). At 2% penetration ≈ ₹62L/month, ~₹7.4Cr ARR.</p>
+  </div>
+
+  <div class="levers">
+    <h2>Pricing model — decided, do not reopen</h2>
+    <p class="lever"><span class="h">Feature tiers + metered smart tools. No order cap, ever.</span> “Features vs order caps” is a false binary: usage-based SaaS runs 115–130% NRR vs 95–105% flat-rate, but the usage lever does not have to be ORDERS. Ours is smart tools (#13). Order volume is customer-driven — the wrong actor to cap.</p>
+    <p class="lever"><span class="h">Metered tease, not preview.</span> A capped allowance of a premium feature beats hiding it AND beats a preview: a preview shows what you’re missing, five real build guides make you feel what you’d lose. X-Ray meters <b>confirmed orders</b> (first 5 per calendar month), never report views — punishing a baker for re-opening the guide mid-bake would break the one moment it matters. Applies to #13, #16, #21 — never to category features.</p>
+    <p class="lever"><span class="h">PQL beats the calendar.</span> Product-qualified prompting converts at 25–30% vs 5–10% for time-triggered. Our PQL = <b>storefront published AND ≥1 quote request received</b>. Highest-leverage change available, and it needs no pricing change at all.</p>
+  </div>
+
+  <p class="note">Tiers: <b>Flame</b> (entry) · <b>Blaze ★</b> (the target — serious home baker) · <b>Forge</b> (studio / multi-staff). <b>Spark</b> = 30-day trial, not a tier. Deferred &amp; unmarketed: #8 white-label, #9 custom domain, #20 WhatsApp. Killed: element-tier-gating, order caps on paid tiers.</p>
+  <p class="note">Prices held at ₹999 / ₹2,499 / ₹4,999 (2026-07-26). Benchmark against vertical SaaS sold to Indian SMBs (Petpooja ₹3,000–12,000/mo), <b>not</b> horizontal store builders — those set what a baker thinks software costs, not what this is worth. A full-time home baker makes 30–60 cakes/mo at ₹1,400–2,400 and 60–70% margin, so one extra order a month covers Flame or Blaze. Full derivation, rejected options and sources in <code>SUBSCRIPTION_TIERS.md</code>.</p>
+</div>
+</body>
+</html>
