@@ -49,7 +49,13 @@ const EVENT_LABELS = {
 // Plan catalog (display names, taglines, feature bullets, prices, popular flag) now comes from
 // the DB via GET /api/plans — see PlanCards + the billing fetch. Nothing hardcoded here.
 
-const PERIOD_KEYS  = ['monthly', 'quarterly', 'yearly'];
+// Labels for naming a period in prose ("you keep Monthly billing until…"). Covers every period that
+// ever shipped, INCLUDING retired ones (quarterly, withdrawn 2026-07-27) — a subscription created
+// before a period was retired still has to render its own name. Which periods are SELLABLE is a
+// different question with a different answer: it comes from the server, since GET /billing/periods
+// filters on is_active. So the picker below is driven by the fetched `periods`, never by a hardcoded
+// list — otherwise retiring a period leaves a button on screen that silently bills at another
+// interval, and un-retiring one needs a deploy instead of a flag flip.
 const PERIOD_SHORT = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
 
 function inferPeriodType(displayName) {
@@ -510,10 +516,6 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
     return `You’ll keep ${cur} until ${dateStr}, then move to ${next}.${dgReauth}`;   // downgrade / reactivate-lower
   }
 
-  function getDiscount(pk) {
-    return periods.find(p => inferPeriodType(p.display_name) === pk)?.discount_pct ?? 0;
-  }
-
   // History row label with the tier woven in (events carry previous_tier/new_tier). Falls back to the
   // plain EVENT_LABELS map when a tier isn't present.
   function historyLabel(ev) {
@@ -689,13 +691,13 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   display: 'flex', background: '#fff', borderRadius: 12, padding: 4,
                   boxShadow: '0 2px 8px rgba(0,0,0,0.06)', alignSelf: 'flex-start', gap: 2,
                 }}>
-                  {PERIOD_KEYS.map(pk => {
-                    const active = selectedPeriod === pk;
-                    const disc   = getDiscount(pk);
+                  {periods.map(p => {
+                    const active = selectedPeriod === p.name;
+                    const disc   = p.discount_pct ?? 0;
                     return (
                       <button
-                        key={pk}
-                        onClick={() => setSelectedPeriod(pk)}
+                        key={p.name}
+                        onClick={() => setSelectedPeriod(p.name)}
                         style={{
                           padding: '7px 16px', borderRadius: 9, border: 'none', cursor: 'pointer',
                           fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
@@ -704,7 +706,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                           transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 5,
                         }}
                       >
-                        {PERIOD_SHORT[pk]}
+                        {p.display_name}
                         {disc > 0 && (
                           <span style={{
                             fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 20,
