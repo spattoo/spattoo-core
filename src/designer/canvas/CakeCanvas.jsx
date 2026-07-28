@@ -112,7 +112,8 @@ function SceneLights({ shadows = false }) {
 // wall is a `meshPhysicalMaterial` and is image-based-lighting dependent — with NO env map it loses
 // all IBL fill and reads its raw warm base under directional-only light (a taupe/brown wall). So when
 // no HDRI URL is configured (local dev, no `cfAssetsBase`), fall back to the neutral `apartment`
-// preset. IBL only — no `background` prop — so the snapshot capture stays transparent. Shared so the
+// preset. IBL only — no `background` prop — so the rendered frame carries no sky behind the cake and
+// the capture is free to choose its own (utils/thumbnail.js flattens onto white). Shared so the
 // live scene and CakeThumbnailScene can never drift (they browned differently on dev before this).
 function SceneEnv() {
   return envMapUrl()
