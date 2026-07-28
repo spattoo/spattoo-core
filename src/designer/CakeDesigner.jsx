@@ -1780,7 +1780,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setSaving(true);
     setSaveMsg(null);
 
-    // Capture from the off-screen thumbnail canvas (no floor, transparent bg) as a compact WebP.
+    // Capture from the off-screen thumbnail canvas (no floor, flattened onto white) as a compact WebP.
     // Keep the blob here — the onSaveTemplate callback path hands the raw blob to the host.
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
