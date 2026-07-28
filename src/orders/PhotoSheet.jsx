@@ -72,6 +72,8 @@ export default function PhotoSheet({ order, onClose }) {
   }
 
   // Load every frame's photo + mask, render the shaped preview once (read-only transform).
+  // Raw R2 urls are fine here: loadImage qualifies them itself (framePhoto.js → corsUrl), so this
+  // CORS-clean load can never be blocked by a cache entry a plain <img> elsewhere poisoned.
   useEffect(() => {
     let alive = true;
     (async () => {
