@@ -1,0 +1,32 @@
+#!/bin/sh
+# Tracked hook - pre-push security gate. See spattoo-api/docs/SECURITY_REVIEW.md.
+# Scans ONLY the commits being pushed (not full history) for secrets, and surfaces
+# vulnerable deps. gitleaks findings BLOCK; npm audit is advisory (warn only) so a
+# known dev-dependency advisory doesn't wall off every push. Bypass: git push --no-verify
+. "$(git rev-parse --show-toplevel)/.githooks/_lib.sh"
+
+FAIL=0
+
+gitleaks_available
+case $? in
+  0)
+    while read -r local_ref local_sha remote_ref remote_sha; do
+      case "$local_sha"  in *0000000000000000*) continue ;; esac
+      case "$remote_sha" in
+        *0000000000000000*) RANGE="$local_sha" ;;      # new branch - scan all its commits
+        *)                  RANGE="$remote_sha..$local_sha" ;;
+      esac
+      secret_scan_range "$RANGE" || FAIL=1
+    done
+    ;;
+  2) exit 1 ;;                                          # missing scanner - already explained
+esac
+
+# Advisory only (does not set FAIL) - surfaces vulnerable deps without blocking.
+npm audit --audit-level=high >/dev/null 2>&1 || \
+  printf 'i npm audit: high-severity advisories present - run `npm audit` (non-blocking).\n'
+
+[ "$FAIL" -eq 0 ] || {
+  printf '\nx Push blocked: possible secret in pushed commits (see above). Bypass: git push --no-verify\n'
+  exit 1
+}

@@ -15,9 +15,11 @@
     "src"
   ],
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "dev": "vite",
     "build": "NODE_ENV=production vite build",
     "check:paths": "node scripts/check-paths.mjs",
+    "check:feature-docs": "node ../spattoo-docs/bin/check-feature-docs.mjs --repo spattoo-core",
     "check:fonts": "node scripts/check-fonts.mjs",
     "check:dup": "jscpd src/designer",
     "test": "vitest run",
