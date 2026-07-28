@@ -11,6 +11,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneInsert, zoneSeatFields } from './placement.js';
+import { corsUrl } from './utils/assetUrl.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -568,7 +569,9 @@ function ElementTypeCard({
   // empty-state text, and image fit differ — passed in as options.
   // crossOrigin defaults ON so a tile <img> caches the asset CORS-clean — the same URL is later
   // loaded as a WebGL texture (placement preview / on-cake), and a non-CORS cache entry would
-  // poison that load. R2 serves the CORS header, so this is safe for every tile.
+  // poison that load. R2 serves the CORS header, so this is safe for every tile. The src must go
+  // through corsUrl for that warming to land: the texture path asks for the QUALIFIED url
+  // (useTexture(corsUrl(...))), so a tile fetching the raw one warms an entry nobody reads.
   const renderDraggableGrid = (elements, { hint, emptyText, objectFit = 'cover', crossOrigin = true }) => (
     <div style={{ ...s.elementCard, cursor: 'default' }}>
       <div style={s.elementCardLabel}>{name}</div>
@@ -580,7 +583,7 @@ function ElementTypeCard({
               <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}>
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
-                  {thumbSrc(el) && <img src={thumbSrc(el)} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
+                  {thumbSrc(el) && <img src={crossOrigin ? corsUrl(thumbSrc(el)) : thumbSrc(el)} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
                 </div>
                 <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
               </div>
@@ -3954,7 +3957,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div role="button" title="Drag onto the cake"
           onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startStickerDrag(element, e.clientX, e.clientY); }}
           style={{ width: 78, height: 78, borderRadius: 16, border: '2px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', flexShrink: 0, touchAction: 'none' }}>
-          {thumb ? <img src={thumb} alt="" width={58} height={58} draggable={false} crossOrigin="anonymous" style={{ objectFit: 'contain', pointerEvents: 'none' }} />
+          {thumb ? <img src={corsUrl(thumb)} alt="" width={58} height={58} draggable={false} crossOrigin="anonymous" style={{ objectFit: 'contain', pointerEvents: 'none' }} />
                  : <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
         </div>
         <span style={{ fontSize: 10.5, color: '#5a5a5a', lineHeight: 1.4, fontFamily: "'Quicksand',sans-serif" }}>Drag this ball onto the cake to add another — anywhere on the top or down the side. Switch on <b>Cluster</b> to grow it.</span>
@@ -3974,7 +3977,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startStickerDrag(el, e.clientX, e.clientY); }}
           style={{ width: 70, height: 70, borderRadius: 14, border: '1.5px dashed #c9a227', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', background: '#fffdf5', touchAction: 'none' }}>
           {card.thumb
-            ? <img src={card.thumb} alt={card.name} width={52} height={52} draggable={false} crossOrigin="anonymous" style={{ objectFit: 'contain', pointerEvents: 'none' }} />
+            ? <img src={corsUrl(card.thumb)} alt={card.name} width={52} height={52} draggable={false} crossOrigin="anonymous" style={{ objectFit: 'contain', pointerEvents: 'none' }} />
             : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #f4e3a1, #c9a227 70%)' }} />}
         </div>
         <div style={{ fontSize: 9, fontWeight: 700, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif", letterSpacing: 0.3 }}>DRAG ONTO THE CAKE</div>
