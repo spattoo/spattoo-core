@@ -137,7 +137,7 @@ async function tryLoad(url) {
   try { return await loadImage(corsUrl(url)); } catch { return null; }
 }
 
-function drawHeader(sheet, { order, baker, logo, conflicts }) {
+function drawHeader(sheet, { order, baker, logo, conflicts, estimate }) {
   const { ctx } = sheet;
   const top = sheet.y;
 
@@ -212,6 +212,47 @@ function drawHeader(sheet, { order, baker, logo, conflicts }) {
     const boxH = inner + padY;
     ctx.strokeStyle = INK;
     ctx.lineWidth = mm(1.2);
+    ctx.strokeRect(sheet.margin, boxTop, sheet.contentW, boxH);
+    sheet.y = boxTop + boxH + mm(4);
+  }
+
+  // ── Read off a photo, not measured ─────────────────────────────────────────
+  // Below the two customer-requirement bands (an allergen is always read first) but still above
+  // the rule, so it is read before any number on the sheet.
+  //
+  // This band matters MORE on paper than on screen. The screen version is seen once, by whoever
+  // pressed the button and therefore already knows the order had no design; the sheet is what
+  // reaches the bench, possibly in someone else's hands, hours later. A tin size printed in the
+  // same typeface as a measured one is indistinguishable from it — so the page has to say where
+  // the numbers came from, and name what could not be read.
+  if (estimate?.estimated) {
+    const padY = mm(3), boxTop = sheet.y;
+    let inner = padY + sheet.text('READ FROM THE REFERENCE PHOTO — CHECK BEFORE BAKING',
+      sheet.margin + mm(3), boxTop + padY, { size: mm(3.0), weight: 900, color: INK });
+    inner += mm(1.0);
+    inner += sheet.text(
+      'This order had no 3D design. Tiers, colours and tin sizes below were worked out from the '
+      + `customer's photo${estimate.edited ? ' and corrected by the baker' : ''}.`,
+      sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 700 });
+
+    const missed = estimate.coverage?.unidentified ?? [];
+    if (missed.length) {
+      inner += mm(1.2);
+      inner += sheet.text(
+        `NOT in the list below (${missed.length} could not be identified): `
+        + missed.map(u => u.what).join(', '),
+        sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 800 });
+    }
+    if (estimate.coverage?.shapeRecognised === false) {
+      inner += mm(1.0);
+      inner += sheet.text(
+        `Cake shape read as "${estimate.coverage.reportedShape}" — tin sizes assume a round tin.`,
+        sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 700 });
+    }
+
+    const boxH = inner + padY;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = mm(0.8);
     ctx.strokeRect(sheet.margin, boxTop, sheet.contentW, boxH);
     sheet.y = boxTop + boxH + mm(4);
   }
@@ -598,14 +639,14 @@ function drawFooters(sheet, { order }) {
 // Render the report → the page canvases. Split from the PDF wrapping below so the sheet can be LOOKED
 // AT — a layout you cannot see is a layout you are guessing at, and every bug so far in this file
 // (a missing cake, an orphaned heading) was one only the eye caught.
-export async function renderXrayPages({ order, report, baker, conflicts } = {}) {
+export async function renderXrayPages({ order, report, baker, conflicts, estimate } = {}) {
   const [thumb, logo] = await Promise.all([
     tryLoad(order?.design_thumbnail_url),
     tryLoad(baker?.logo_url),
   ]);
 
   const sheet = new Sheet();
-  drawHeader(sheet, { order, baker, logo, conflicts });
+  drawHeader(sheet, { order, baker, logo, conflicts, estimate });
   drawDiagram(sheet, { thumb, diagram: report.diagram, tiers: order?.design_snapshot?.tiers });
   drawTins(sheet, report.tins);
   // Before the colour/nozzle detail: the checklist is what a baker returns to repeatedly

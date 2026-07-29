@@ -5,12 +5,19 @@ import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
+import { resolveXrayDesign } from './resolveDesign.js';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
 // cream-colour mixing table, and the full piping/nozzle list. Opened from the
-// order detail; computed client-side from design_snapshot + weight, with nozzle
+// order detail; computed client-side from the order's design + weight, with nozzle
 // data via apiClient.fetchCraftGuides.
+//
+// The design comes from resolveXrayDesign (design_snapshot, or an AI reading of the order's
+// reference photo for a manual order that never touched the designer). Everything below this line
+// is identical either way — the tin plan, the gel recipes and the nozzle guides are the same
+// deterministic computation over the same shape. The ONE difference is honesty: an estimated
+// report says, on screen and on paper, that it was read off a photo rather than measured.
 
 const s = {
   overlay: { position: 'fixed', inset: 0, zIndex: 4000, background: '#FAFAF8', overflowY: 'auto', fontFamily: 'inherit' },
@@ -38,7 +45,9 @@ const s = {
 };
 
 export default function XrayReport({ order, apiClient, onClose }) {
-  const design = order?.design_snapshot;
+  // One resolution, shared with the launcher and the PDF (resolveDesign.js) — the sheet in the
+  // kitchen and the screen in the office must be built from the same design.
+  const { design, estimated, edited, coverage } = resolveXrayDesign(order);
 
   const [guides, setGuides] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -119,6 +128,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
         // Derived here, not again inside the PDF: one derivation, so the sheet cannot
         // disagree with the screen it was printed from.
         conflicts: conflicts.map(c => conflictBenchLine(c, { tierCount: order?.flavours?.length ?? 1 })),
+        // Same rule for provenance: resolveXrayDesign was called ONCE, at the top of this
+        // component, and the sheet is told what it decided rather than deciding again. A PDF that
+        // re-resolved could print a measured-looking sheet from an estimate the screen had
+        // labelled — and paper is the copy that reaches the bench.
+        estimate: { estimated, edited, coverage },
       });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
@@ -190,6 +204,56 @@ export default function XrayReport({ order, apiClient, onClose }) {
           </div>
         )}
 
+        {/* ── Read off a photo, not measured ─────────────────────────────────
+            Third, not first: the two bands above are about the CUSTOMER's requirements, and an
+            allergen has to be the first thing read on any sheet. This one is about the sheet
+            itself — that everything below it was inferred from a reference photo rather than
+            built in the designer.
+
+            It is not decoration. A baker who takes an estimated tin plan for a measured one bakes
+            the wrong size, and the difference is invisible once the numbers are on the page. So
+            the provenance is stated plainly, above everything it qualifies, and the same
+            statement goes on the printed sheet — a report that only admits it on screen is worse
+            than one that never admits it, because paper is what goes to the bench. */}
+        {estimated && (
+          <div style={{
+            border: '2px solid #6A5A8C', background: '#F4F1FA', borderRadius: 12,
+            padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, color: '#4A3D66' }}>
+              READ FROM THE REFERENCE PHOTO
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#4A3D66' }}>
+              This order has no 3D design, so the cake below was worked out from the customer's
+              photo{edited ? ', and corrected by you' : ''}. Check the tiers and colours before you bake.
+            </span>
+
+            {/* What could NOT be identified. harvest.js is blunt about why a checklist that
+                silently omits is worse than no checklist: it gets believed. An estimate that
+                quietly dropped what it could not read would be that same trap one step earlier,
+                so the gaps are named here rather than left out. */}
+            {coverage?.unidentified?.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#4A3D66' }}>
+                  {coverage.unidentified.length} thing{coverage.unidentified.length > 1 ? 's' : ''} on the
+                  photo could not be identified — they are NOT in the list below:
+                </span>
+                {coverage.unidentified.map((u, i) => (
+                  <span key={i} style={{ fontSize: 12, color: '#4A3D66' }}>
+                    · {u.what}{u.placement ? ` (${String(u.placement).replace(/_/g, ' ')})` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {coverage?.shapeRecognised === false && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#4A3D66' }}>
+                The cake shape read as “{coverage.reportedShape}” — the tin sizes below assume a round tin.
+              </span>
+            )}
+          </div>
+        )}
+
         {/* ── Checklist ──────────────────────────────────────────────────────
             Everything that has to go ON the cake, in assembly order (tiers bottom
             up, whole-cake finishing last). Until this existed the sheet was
@@ -250,8 +314,21 @@ export default function XrayReport({ order, apiClient, onClose }) {
           </div>
         )}
 
-        {/* Annotated cake */}
-        {diagramItems.length > 0 && (
+        {/* Annotated cake — DESIGNED ORDERS ONLY.
+            xrayProject.js lands the leader lines by rebuilding the thumbnail's camera exactly
+            (CAMERA_POSITION / CAMERA_FOV / lookAt) and projecting each piping's 3D anchor through
+            it. That works because the thumbnail is OUR render, taken with that camera.
+
+            On an estimated order the picture is the customer's phone photo — arbitrary angle,
+            arbitrary lens, arbitrary distance — mirrored into design_thumbnail_url by the manual
+            order flow. Projecting through the designer's camera would draw confident leader lines
+            pointing at the wrong parts of a real cake, which is worse than drawing none: the rest
+            of the sheet is honest about being an estimate, and this would quietly contradict it.
+
+            Omitted rather than approximated. Getting it back means the model returning 2D anchors
+            on the photo itself; layoutDiagram already separates where a line POINTS (ax/ay) from
+            where its label SITS, so it would take pre-projected anchors with little change. */}
+        {!estimated && diagramItems.length > 0 && (
           <XrayCakeDiagram thumbnailUrl={order.design_thumbnail_url} items={diagramItems} snapshotTiers={design.tiers} />
         )}
 

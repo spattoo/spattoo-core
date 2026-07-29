@@ -6,6 +6,7 @@ import {
 } from './statuses.js';
 import OrdersCalendar from './OrdersCalendar.jsx';
 import XrayReport from './xray/XrayReport.jsx';
+import { hasXrayDesign } from './xray/resolveDesign.js';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
@@ -105,14 +106,83 @@ function IconAction({ glyph, label, short, onClick, disabled, variant = 'row' })
 }
 
 // X-Ray launcher — an icon+label action that opens the report.
+//
+// "Is there a design to report on" is resolveDesign.js's question, not this component's: a manual
+// order can have no design_snapshot and still have a reading of its reference photo. Asking it
+// here in a second way is how the launcher and the report end up disagreeing about whether the
+// button should exist.
 function XrayLauncher({ order, apiClient, variant, enabled }) {
   const [open, setOpen] = useState(false);
   if (!enabled) return null;                 // X-Ray report is a Blaze+ entitlement (xray_reports)
-  if (!order?.design_snapshot) return null;
+  if (!hasXrayDesign(order)) return null;
   return (
     <>
       <IconAction glyph={<XrayGlyph />} label="X-Ray report" short="X-Ray" onClick={() => setOpen(true)} variant={variant} />
       {open && <XrayReport order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+// Build-guide-from-a-photo launcher — the entry point for orders that never touched the designer.
+//
+// Only ever appears where X-Ray CANNOT: a manual order with reference photos, no design_snapshot,
+// and no estimate yet. Once an estimate exists the order has a design as far as resolveDesign.js
+// is concerned, XrayLauncher takes over, and this disappears — so the two are never both offered
+// and the baker is never asked to choose between them.
+//
+// The result is opened directly rather than refetching the order. The route returns the estimate
+// it just wrote, so a round trip would re-read what we are already holding, and the panel picks it
+// up from the server on its next load anyway.
+function EstimateLauncher({ order, apiClient, variant, enabled }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+  const [estimate, setEstimate] = useState(null);
+
+  if (!enabled) return null;
+  if (!apiClient?.createDesignEstimate) return null;    // host hasn't wired it → no dead button
+  if (order?.design_snapshot) return null;              // designed: X-Ray reads it directly
+  if (hasXrayDesign(order)) return null;                // already estimated: XrayLauncher has it
+
+  async function generate() {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await apiClient.createDesignEstimate(order.id);
+      if (!res?.estimate) throw new Error('No build guide came back.');
+      setEstimate({ estimate: res.estimate, meta: res.meta ?? null });
+    } catch (e) {
+      // Out of credits is an ordinary outcome with its own message, not a failure to apologise
+      // for — the baker needs to know the difference between "we could not read your photo" and
+      // "you have used this month's allowance".
+      setErr(e?.code === 'INSUFFICIENT_CREDITS' || /credit/i.test(e?.message ?? '')
+        ? "You've used this month's build guides. They reset next month, or you can top up."
+        : (e?.message || 'Could not read that photo.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <IconAction
+        glyph={<XrayGlyph />}
+        label={busy ? 'Reading photo…' : 'Build guide from photo'}
+        short={busy ? 'Reading…' : 'Build guide'}
+        onClick={generate}
+        disabled={busy}
+        variant={variant}
+      />
+      {err && <span style={{ fontSize: 12, fontWeight: 700, color: '#B00020', maxWidth: 220 }}>{err}</span>}
+      {estimate && (
+        <XrayReport
+          // The order as it now is on the server. Merged rather than refetched — same data, one
+          // fewer round trip — and resolveXrayDesign picks the estimate up from exactly these two
+          // fields, so the report cannot tell the difference.
+          order={{ ...order, design_estimate: estimate.estimate, design_estimate_meta: estimate.meta }}
+          apiClient={apiClient}
+          onClose={() => setEstimate(null)}
+        />
+      )}
     </>
   );
 }
@@ -888,6 +958,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         flexWrap: stack ? 'nowrap' : 'wrap',
       }}>
         <XrayLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
+        <EstimateLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
         <IconAction
           glyph={<Cube3D />}
           label={designLocked ? 'View in 3D' : 'Edit in 3D'}
