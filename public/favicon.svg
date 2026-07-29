@@ -1,8 +1,8 @@
 <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Spattoo">
   <title>Spattoo</title>
-  <!-- three cake tiers on a gold board -->
-  <rect x="25" y="7"  width="14" height="13" rx="3.5" fill="#1a1a1a"/>
-  <rect x="19" y="22" width="26" height="13" rx="3.5" fill="#1a1a1a"/>
-  <rect x="12" y="37" width="40" height="13" rx="3.5" fill="#1a1a1a"/>
+  <!-- three cake tiers on a gold board; green sampled from the Spattoo wordmark -->
+  <rect x="25" y="7"  width="14" height="13" rx="3.5" fill="#3a4f46"/>
+  <rect x="19" y="22" width="26" height="13" rx="3.5" fill="#3a4f46"/>
+  <rect x="12" y="37" width="40" height="13" rx="3.5" fill="#3a4f46"/>
   <rect x="6"  y="52" width="52" height="6"  rx="3"   fill="#C9A227"/>
 </svg>
