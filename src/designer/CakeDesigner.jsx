@@ -5125,6 +5125,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
       )}
 
+      {/* ── Desktop header ── */}
+      {/* The logo used to sit inside the 64px rail, above the spatula cap, capped at
+          56px wide. That crushes the horizontal wordmarks most bakeries actually use:
+          a 1536x320 logo rendered ~9px tall. A header gives it the full width it needs,
+          and matches what mobile already does. */}
+      {!isMobile && (
+        <div style={s.desktopHeader}>
+          <div style={s.topLogo}>
+            {bakerData?.logo_url
+              ? <img src={bakerData.logo_url} alt="" style={s.topLogoImg} />
+              : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
+            }
+          </div>
+        </div>
+      )}
+
       {/* ── Main ── */}
       <div style={{ ...s.main, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
         {codesign.live && codesign.sessionId && !codesignPanelOpen && (
@@ -5153,15 +5169,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           }}
         />
 
-        {/* ── Left column: logo + sidebar ── */}
+        {/* ── Left column: sidebar (the logo moved to the desktop header) ── */}
         {!isMobile && <div style={s.leftCol}>
-          {/* Logo sits above the dark pill */}
-          <div style={s.topLogo}>
-            {bakerData?.logo_url
-              ? <img src={bakerData.logo_url} alt="" style={s.topLogoImg} />
-              : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
-            }
-          </div>
 
         {/* ── Sidebar ── */}
         <div style={s.sidebar}>
@@ -6839,22 +6848,37 @@ const s = {
     background:'#f4f4f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
   },
 
-  // Left column (logo above + sidebar below). Extra left padding + raised stacking
-  // give the spatula blade room to bulge left on-screen and overlap the canvas.
+  // Left column (sidebar only — the logo lives in desktopHeader). Extra left padding +
+  // raised stacking give the spatula blade room to bulge left and overlap the canvas.
   leftCol: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '12px 0 12px 40px', gap: 10, flexShrink: 0,
+    padding: '12px 0 12px 40px', flexShrink: 0,
     position: 'relative', zIndex: 5,
   },
-  topLogo: {
-    width: 64, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
+
+  // Desktop header — the counterpart to mobileHeader, so the baker's logo has one
+  // definition and one behaviour on both breakpoints.
+  desktopHeader: {
+    display: 'flex', alignItems: 'center',
+    padding: '0 20px', height: 52, flexShrink: 0,
+    background: '#fff', borderBottom: '1px solid #f0e8ea',
+    position: 'relative', zIndex: 10,
   },
-  topLogoImg: { maxHeight: 36, maxWidth: 56, objectFit: 'contain' },
+  // Header logo slot — used by both mobileHeader and desktopHeader. It is deliberately
+  // width-auto: baker logos range from square marks to ~6:1 wordmarks, so the height is
+  // the only cap that should bind. A fixed width here is what previously reduced wide
+  // logos to a hairline.
+  topLogo: {
+    display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+    flexShrink: 0, minWidth: 0, maxWidth: '100%',
+  },
+  topLogoImg: { maxHeight: 34, maxWidth: 220, objectFit: 'contain', display: 'block' },
+  // Fallback when a baker has not uploaded a logo. Sized for a header line, not the
+  // old 64px rail box — hence one line with an ellipsis rather than centred wrapping.
   topLogoText: {
-    fontSize: 11, fontWeight: 700, color: '#444',
-    textAlign: 'center', lineHeight: 1.3, wordBreak: 'break-word',
-    fontFamily: "'Quicksand',sans-serif",
+    fontSize: 15, fontWeight: 700, color: '#333',
+    lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    maxWidth: 260, fontFamily: "'Quicksand',sans-serif",
   },
 
   // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
