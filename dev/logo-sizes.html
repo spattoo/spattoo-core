@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Baker logo sizing — every surface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Compares the logo caps in force on every surface that renders a baker logo against a
+     single derived policy. Caps are copied from the components; see SURFACES below. */
+  * { box-sizing: border-box; }
+  body { margin:0; background:#ececed; font-family:'Quicksand',system-ui,sans-serif; color:#1a1a1a; }
+  header { background:#fff; padding:14px 22px 16px; border-bottom:1px solid #e2dfe4; }
+  h1 { font-size:16px; margin:0 0 2px; }
+  .sub { font-size:11.5px; color:#8a7a80; margin:0 0 13px; max-width:900px; line-height:1.5; }
+  .controls { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; }
+  .group { display:flex; flex-direction:column; gap:5px; }
+  .glabel { font-size:9.5px; text-transform:uppercase; letter-spacing:.09em; color:#8a7a80; font-weight:700; }
+  .segs { display:flex; border:1px solid #ddd8dd; border-radius:8px; overflow:hidden; }
+  .segs button { border:none; background:#fff; padding:7px 12px; font:inherit; font-size:11.5px;
+                 font-weight:600; color:#555; cursor:pointer; border-right:1px solid #eee; white-space:nowrap; }
+  .segs button:last-child { border-right:none; }
+  .segs button[aria-pressed="true"] { background:#1a1a1a; color:#fff; }
+  .policy { display:flex; align-items:center; gap:8px; font-size:11.5px; color:#5a5a60; }
+  .policy input { width:56px; padding:5px 7px; border:1px solid #ddd8dd; border-radius:6px; font:inherit; font-size:12px; }
+
+  main { padding:16px 22px 30px; }
+  table { border-collapse:collapse; width:100%; background:#fff; border-radius:12px; overflow:hidden;
+          box-shadow:0 2px 14px rgba(0,0,0,.07); }
+  th { font-size:9.5px; text-transform:uppercase; letter-spacing:.08em; color:#8a7a80; font-weight:700;
+       text-align:left; padding:11px 14px; border-bottom:1px solid #efeaef; background:#fbfafb; }
+  td { padding:14px; border-bottom:1px solid #f3eff3; vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  .surface { font-weight:700; font-size:12.5px; }
+  .surface small { display:block; font-weight:500; font-size:10.5px; color:#8a7a80; margin-top:3px; }
+  .stage { background:#f6f4f6; border-radius:8px; padding:8px; display:inline-flex;
+           align-items:center; justify-content:flex-start; }
+  .stage img { object-fit:contain; display:block; }
+  .num { font-size:11px; color:#6b6b70; white-space:nowrap; }
+  .num b { display:block; font-size:12.5px; color:#1a1a1a; }
+  .num.warn b { color:#b4453f; } .num.good b { color:#2e7d52; }
+  .delta { font-size:11px; font-weight:700; }
+  .up { color:#2e7d52; } .down { color:#b4453f; } .same { color:#8a7a80; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Baker logo sizing — every surface</h1>
+  <p class="sub">
+    Left column is what each component ships today; right is a single policy —
+    <b>pick a height, derive the width cap as height × ratio</b>. Ink height is what a viewer
+    actually perceives, and it is the drawn box minus whatever transparent padding the uploaded
+    file carries. Sizes are computed, not hand-drawn.
+  </p>
+  <div class="controls">
+    <div class="group"><span class="glabel">Baker logo</span>
+      <div class="segs" id="logo">
+        <button data-k="word" aria-pressed="true">Spattoo (sample)</button>
+        <button data-k="baker">Real baker logo</button>
+        <button data-k="square">Square mark</button>
+      </div>
+    </div>
+    <div class="group"><span class="glabel">Transparent padding</span>
+      <div class="segs" id="trim">
+        <button data-k="raw" aria-pressed="true">As uploaded</button>
+        <button data-k="trim">Auto-trimmed</button>
+      </div>
+    </div>
+    <div class="group"><span class="glabel">Policy</span>
+      <div class="policy">max width = height ×
+        <input id="ratio" type="number" min="1" max="12" step="0.5" value="6" />
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <table>
+    <thead><tr>
+      <th style="width:190px">Surface</th>
+      <th style="width:120px">Today's caps</th>
+      <th>Today</th>
+      <th style="width:120px">Proposed</th>
+      <th>Proposed</th>
+      <th style="width:96px">Ink height</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+
+<script type="module">
+const SOURCES = {
+  word:   './sample-logo-wordmark.png',
+  baker:  './feelings-flavours-logo.png',
+  square: '/icon-512.png',
+};
+
+// Every surface that renders a baker logo, with the caps it ships today.
+// `h` is the proposed height for that surface; the width cap is derived from the ratio.
+const PX_PER_MM = 96 / 25.4;
+const SURFACES = [
+  { name: 'Designer header',        where: 'CakeDesigner.jsx topLogoImg',        now: { h: 34, w: 220 }, h: 34 },
+  { name: 'Storefront header wide', where: 'CustomerStorefront.jsx:802',         now: { h: 52, w: 300 }, h: 52 },
+  { name: 'Storefront header narrow', where: 'CustomerStorefront.jsx:802',       now: { h: 44, w: 240 }, h: 44 },
+  { name: 'Quote modal',            where: 'CustomerStorefront.jsx:970',         now: { h: 38, w: 210 }, h: 38 },
+  { name: 'Settings preview',       where: 'SettingsPanel.jsx:340 — 80×80 box',  now: { h: 80, w: 80 },  h: 52,
+    note: 'square today, so it previews nothing the baker will actually see' },
+  { name: 'X-ray PDF letterhead',   where: 'xrayPdf.js:145 — 12mm × 34mm',
+    now: { h: 12 * PX_PER_MM, w: 34 * PX_PER_MM }, h: 12 * PX_PER_MM,
+    note: 'clamped at 2.8:1 today, tighter than every web surface' },
+];
+
+async function analyse(src) {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let mnX = Infinity, mnY = Infinity, mxX = -1, mxY = -1;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      if (d[(y * c.width + x) * 4 + 3] < 16) continue;
+      if (x < mnX) mnX = x; if (x > mxX) mxX = x;
+      if (y < mnY) mnY = y; if (y > mxY) mxY = y;
+    }
+  }
+  const iw = mxX - mnX + 1, ih = mxY - mnY + 1;
+  const t = document.createElement('canvas');
+  t.width = iw; t.height = ih;
+  t.getContext('2d').drawImage(c, mnX, mnY, iw, ih, 0, 0, iw, ih);
+  return { raw: src, trimmed: t.toDataURL('image/png'), bw: c.width, bh: c.height, iw, ih };
+}
+
+// object-fit: contain — the drawn box for a source of the given aspect inside maxH × maxW
+function fit(aspect, maxH, maxW) {
+  let h = maxH, w = h * aspect;
+  if (w > maxW) { w = maxW; h = w / aspect; }
+  return { w, h };
+}
+
+const state = { logo: 'word', trim: 'raw', ratio: 6 };
+let LOGOS = {};
+
+function render() {
+  const L = LOGOS[state.logo];
+  const src = state.trim === 'trim' ? L.trimmed : L.raw;
+  // aspect of the drawn box, and what fraction of its height is actually ink
+  const aspect = state.trim === 'trim' ? L.iw / L.ih : L.bw / L.bh;
+  const inkFrac = state.trim === 'trim' ? 1 : L.ih / L.bh;
+
+  document.getElementById('rows').innerHTML = SURFACES.map((s) => {
+    const now = fit(aspect, s.now.h, s.now.w);
+    const proposedW = s.h * state.ratio;
+    const next = fit(aspect, s.h, proposedW);
+    const inkNow = now.h * inkFrac, inkNext = next.h * inkFrac;
+    const pct = inkNow > 0 ? Math.round(((inkNext - inkNow) / inkNow) * 100) : 0;
+    const cls = pct > 4 ? 'up' : pct < -4 ? 'down' : 'same';
+    const inkCls = inkNext < 18 ? 'warn' : inkNext >= 30 ? 'good' : '';
+    return `
+      <tr>
+        <td class="surface">${s.name}<small>${s.where}${s.note ? ` — ${s.note}` : ''}</small></td>
+        <td class="num">${Math.round(s.now.h)} × ${Math.round(s.now.w)}<b>${(s.now.w / s.now.h).toFixed(1)}:1</b></td>
+        <td><span class="stage" style="height:${s.now.h + 16}px;width:${s.now.w + 16}px">
+              <img src="${src}" style="width:${now.w}px;height:${now.h}px"></span></td>
+        <td class="num">${Math.round(s.h)} × ${Math.round(proposedW)}<b>${state.ratio}:1</b></td>
+        <td><span class="stage" style="height:${s.h + 16}px;width:${proposedW + 16}px">
+              <img src="${src}" style="width:${next.w}px;height:${next.h}px"></span></td>
+        <td class="num ${inkCls}">${Math.round(inkNow)} → <b>${Math.round(inkNext)} px</b>
+            <span class="delta ${cls}">${pct >= 0 ? '+' : ''}${pct}%</span></td>
+      </tr>`;
+  }).join('');
+}
+
+function wire(id, key, cast = (v) => v) {
+  document.querySelectorAll(`#${id} button`).forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+      state[key] = cast(b.dataset.k);
+      render();
+    });
+  });
+}
+
+const entries = await Promise.all(
+  Object.entries(SOURCES).map(async ([k, src]) => [k, await analyse(src)]));
+LOGOS = Object.fromEntries(entries);
+
+wire('logo', 'logo');
+wire('trim', 'trim');
+document.getElementById('ratio').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  if (v > 0) { state.ratio = v; render(); }
+});
+render();
+</script>
+</body>
+</html>
