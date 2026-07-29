@@ -27,3 +27,15 @@ export function corsUrl(url) {
   if (/[?&]cors=/.test(url)) return url;                 // already qualified — never double-append
   return url + (url.includes('?') ? '&' : '?') + 'cors=1';
 }
+
+// ── R2 key → absolute URL ─────────────────────────────────────────────────────────────────────
+// Some `bakers` columns hold an absolute URL (logo_url, portrait_url) and others hold a bare R2
+// key (logo_transparent_key). Components that read the table directly — rather than going through
+// the backend, which resolves keys before it returns a profile — have to resolve them here.
+// Already-absolute values are returned untouched, so this is safe to apply to either shape.
+export function assetUrl(keyOrUrl, base) {
+  if (!keyOrUrl || typeof keyOrUrl !== 'string') return null;
+  try { new URL(keyOrUrl); return keyOrUrl; } catch { /* a bare key — needs the base */ }
+  if (!base) return null;                                // no base configured: unresolvable, not a guess
+  return `${String(base).replace(/\/$/, '')}/${keyOrUrl.replace(/^\//, '')}`;
+}

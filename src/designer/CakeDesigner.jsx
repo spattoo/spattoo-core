@@ -11,7 +11,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneInsert, zoneSeatFields } from './placement.js';
-import { corsUrl } from './utils/assetUrl.js';
+import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -1729,13 +1729,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       setUserData({ firstName: contact.first_name, lastName: contact.last_name, email: session.user.email });
       const { data: baker } = await supabase
         .from('bakers')
-        .select('id, name, logo_url')
+        .select('id, name, logo_url, logo_transparent_key')
         .eq('id', contact.baker_id)
         .single();
-      if (baker) setBakerData(baker);
+      // Prefer the background-removed logo, the same precedence CustomerStorefront uses — it
+      // floats cleanly on any surface, where the raw upload can carry a white or coloured box.
+      // Note the column shapes differ: logo_url is already absolute, logo_transparent_key is a
+      // bare R2 key, because the backend resolves keys only for the profile it serves and this
+      // reads the table directly. assetUrl() returns null when the key is absent or no assets
+      // base is configured, so the fallback to logo_url is what runs in local dev.
+      if (baker) setBakerData({
+        ...baker,
+        logo_url: assetUrl(baker.logo_transparent_key, cfAssetsBase) ?? baker.logo_url,
+      });
       setBakerReady(true);
     });
-  }, [supabase, apiClient]);
+  }, [supabase, apiClient, cfAssetsBase]);
 
   // Tag telemetry with baker context so every error report (boundary, texture,
   // global handler) carries baker_id. The host app sets `surface`; the customer
