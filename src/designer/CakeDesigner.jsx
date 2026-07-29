@@ -12,6 +12,7 @@ import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneInsert, zoneSeatFields } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
+import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -1578,6 +1579,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [ordersFilter,        setOrdersFilter]        = useState(null);
   const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
+  // Uploaded logos carry a transparent margin (29–38% on the ones we have), and every surface caps
+  // by height — so that margin is spent out of the height budget and the mark reads small. Trimmed
+  // once per URL at render, which fixes existing logos without a re-upload or a backfill.
+  const logoSrc = useTrimmedLogo(bakerData?.logo_url);
   const [userData,     setUserData]     = useState(null);
   const [bakerSettings, setBakerSettings] = useState({});
   // Server-resolved capabilities (from /api/me). null = not loaded / host app
@@ -1710,7 +1715,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (apiClient?.fetchBakerProfile) {
       apiClient.fetchBakerProfile()
         .then(({ baker, user }) => {
-          if (baker) setBakerData(baker);
+          // Same precedence as CustomerStorefront — prefer the background-removed logo. On THIS
+          // path the backend has already resolved the key, so it arrives as logo_transparent_url;
+          // the supabase fallback below gets the raw logo_transparent_key and resolves it itself.
+          if (baker) setBakerData({
+            ...baker,
+            logo_url: baker.logo_transparent_url || baker.logo_url,
+          });
           if (user)  setUserData(user);
         })
         .catch(() => {})
@@ -5077,8 +5088,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {isMobile && (
         <div style={s.mobileHeader}>
           <div style={s.topLogo}>
-            {bakerData?.logo_url
-              ? <img src={bakerData.logo_url} alt="" style={s.topLogoImg} />
+            {logoSrc
+              ? <img src={logoSrc} alt="" style={s.topLogoImg} />
               : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
             }
           </div>
@@ -5134,19 +5145,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
       )}
 
-      {/* ── Desktop header ── */}
-      {/* The logo used to sit inside the 64px rail, above the spatula cap, capped at
-          56px wide. That crushes the horizontal wordmarks most bakeries actually use:
-          a 1536x320 logo rendered ~9px tall. A header gives it the full width it needs,
-          and matches what mobile already does. */}
+      {/* ── Desktop logo ── */}
+      {/* Sits OUT OF FLOW, over the empty top-left of the canvas, deliberately.
+          It cannot live in the 64px rail: that caps it at 56px wide and crushes the
+          horizontal wordmarks most bakeries use. But it cannot be a header band either
+          — the rail is already height-starved (12 items, all flexShrink:0), so spending
+          52px of column height on chrome pushes the spatula down and clips its blade.
+          Absolute positioning buys the width without spending any height.
+          Left offset clears the rail: 40px leftCol padding + 64px rail. */}
       {!isMobile && (
-        <div style={s.desktopHeader}>
-          <div style={s.topLogo}>
-            {bakerData?.logo_url
-              ? <img src={bakerData.logo_url} alt="" style={s.topLogoImg} />
-              : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
-            }
-          </div>
+        <div style={s.desktopLogo}>
+          {logoSrc
+            ? <img src={logoSrc} alt="" style={s.topLogoImg} />
+            : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
+          }
         </div>
       )}
 
@@ -6855,6 +6867,7 @@ const s = {
   page: {
     display:'flex', flexDirection:'column', height:'100vh',
     background:'#f4f4f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
+    position:'relative',   // anchors desktopLogo, which is out of flow
   },
 
   // Left column (sidebar only — the logo lives in desktopHeader). Extra left padding +
@@ -6865,13 +6878,11 @@ const s = {
     position: 'relative', zIndex: 5,
   },
 
-  // Desktop header — the counterpart to mobileHeader, so the baker's logo has one
-  // definition and one behaviour on both breakpoints.
-  desktopHeader: {
-    display: 'flex', alignItems: 'center',
-    padding: '0 20px', height: 52, flexShrink: 0,
-    background: '#fff', borderBottom: '1px solid #f0e8ea',
-    position: 'relative', zIndex: 10,
+  // Desktop logo — absolutely positioned so it costs the column no height. See the
+  // comment at the render site for why a header band is not an option here.
+  desktopLogo: {
+    position: 'absolute', top: 14, left: 120, zIndex: 6,
+    display: 'flex', alignItems: 'center', pointerEvents: 'none',
   },
   // Header logo slot — used by both mobileHeader and desktopHeader. It is deliberately
   // width-auto: baker logos range from square marks to ~6:1 wordmarks, so the height is
@@ -6881,7 +6892,10 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
     flexShrink: 0, minWidth: 0, maxWidth: '100%',
   },
-  topLogoImg: { maxHeight: 34, maxWidth: 220, objectFit: 'contain', display: 'block' },
+  // 40 not 34: off-flow the desktop logo no longer competes with the rail for height, and
+  // most uploads carry transparent padding, so a chunk of this box is margin, not mark.
+  // Capped at 40 rather than higher because mobileHeader shares this and is only 52 tall.
+  topLogoImg: { maxHeight: 40, maxWidth: 240, objectFit: 'contain', display: 'block' },
   // Fallback when a baker has not uploaded a logo. Sized for a header line, not the
   // old 64px rail box — hence one line with an ellipsis rather than centred wrapping.
   topLogoText: {

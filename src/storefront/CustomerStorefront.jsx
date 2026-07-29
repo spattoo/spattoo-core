@@ -4,6 +4,7 @@ import HeroCake3D from './HeroCake3D.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
+import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -122,6 +123,12 @@ export default function CustomerStorefront({
   // (design → confirm identity → bake). Only for a valid invite; browse visits skip it.
   useEffect(() => { if (inviteId && invite?.valid) setWelcomeOpen(true); }, [inviteId, invite]);
 
+  // Prefer the bg-removed logo (floats cleanly on any surface), then trim its transparent margin —
+  // the header caps by height, so padding inside the file is spent out of the mark's height budget.
+  // MUST sit above the early returns below: a hook skipped on the loading render and called on the
+  // next one changes the hook order, which React treats as a fatal error.
+  const logo = useTrimmedLogo(logoUrl || baker?.logo_transparent_url || baker?.logo_url);
+
   // Loader stays until the baker is fetched AND the container breakpoint is measured — so the FIRST
   // storefront paint is already at the correct layout (no mobile→desktop / default→config flash).
   // rootRef is attached to the loader too, so the breakpoint can measure before content renders.
@@ -148,7 +155,7 @@ export default function CustomerStorefront({
   const accent  = baker.accent_color  || template.defaults?.accent  || '#6B8C74';
   const ig      = normalizeIgHandle(baker.instagram_handle);   // SEC-CORE-4 — cleans rows stored before the input guard existed
   const phone   = baker.whatsapp || baker.whatsapp_number || baker.phone || null;
-  const logo    = logoUrl || baker.logo_transparent_url || baker.logo_url;   // prefer the bg-removed logo (floats cleanly on any surface)
+  // `logo` is resolved above the early returns — see the note there on hook ordering.
   const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback
 
   // Hero/button text: the baker's cta_color, else the TEMPLATE's default (e.g. Spotlight ships light

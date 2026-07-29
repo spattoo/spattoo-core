@@ -4,6 +4,7 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 // SEC-CORE-4 — same pure helper the storefront renders through, so the input and
 // the sink can never disagree about what a valid handle is.
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
+import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
@@ -128,6 +129,9 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   const [profile,  setProfile]      = useState(null);
   const [logoFile,    setLogoFile]   = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  // Preview the logo the way every surface actually renders it — trimmed of its transparent
+  // margin. Must stay above the `if (!open) return null` below, or the hook order changes.
+  const logoSrc = useTrimmedLogo(logoPreview ?? profile?.logo_url);
   const [loading,  setLoading]  = useState(false);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState(null);
@@ -325,10 +329,14 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
               {/* ── Branding ── */}
               <Section title="Branding">
                 {/* Logo — clicking the image opens the file picker */}
-                <Field label="Logo" hint="Square or circular image works best. Click to change.">
-                  <label style={{ display: 'inline-block', marginTop: 4, cursor: 'pointer' }}>
+                <Field label="Logo" hint="Wide or square both work — this is the size and shape it appears at in your storefront. Click to change.">
+                  <label style={{ display: 'block', marginTop: 4, cursor: 'pointer' }}>
+                    {/* Was an 80×80 square, which previewed a shape no surface actually uses: a
+                        wide wordmark showed at ~12px tall here and told bakers to re-crop a logo
+                        that was fine. Sized to the storefront header instead — height 52, width
+                        capped at 6× that, the widest real logos run. */}
                     <div style={{
-                      width: 80, height: 80, borderRadius: 16, overflow: 'hidden',
+                      width: '100%', maxWidth: 312, height: 52, borderRadius: 12, overflow: 'hidden',
                       border: '2px dashed #C5D4C8', background: '#F4F8F5',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       position: 'relative', transition: 'border-color 0.15s',
@@ -336,10 +344,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                       onMouseEnter={e => e.currentTarget.style.borderColor = '#2C4433'}
                       onMouseLeave={e => e.currentTarget.style.borderColor = '#C5D4C8'}
                     >
-                      {(logoPreview || profile.logo_url)
-                        ? <img src={logoPreview ?? profile.logo_url} alt="Logo"
-                            style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                        : <span style={{ fontSize: 32 }}>🏪</span>
+                      {logoSrc
+                        ? <img src={logoSrc} alt="Logo"
+                            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        : <span style={{ fontSize: 26 }}>🏪</span>
                       }
                       {/* Hover overlay */}
                       <div style={{

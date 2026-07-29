@@ -122,7 +122,27 @@ export async function compressImage(file, { maxEdge = 1600, quality = 0.82 } = {
 // DECORATION. Crop to the non-transparent bounding box, then scale to fill `fill` of a square `size`
 // frame, centred. Alpha > ALPHA_FLOOR counts as content — anti-aliased edges and remove.bg's soft
 // fringe are near-zero alpha and would otherwise inflate the bounds back to the full image.
-const ALPHA_FLOOR = 10;
+export const ALPHA_FLOOR = 10;
+
+// The opaque bounding box of RGBA `data`, or null when nothing clears the floor (a fully
+// transparent image). Extracted so the upload-time crop (normalizeArtwork) and the render-time
+// logo trim (useTrimmedLogo) cannot disagree about what "the edge of the artwork" means — and so
+// the pixel logic is unit-testable, since the tests run in node with no canvas.
+export function alphaBounds(data, w, h, floor = ALPHA_FLOOR) {
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > floor) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
 
 export async function normalizeArtwork(blob, { size = 1024, fill = 0.8, quality = 0.9 } = {}) {
   try {
@@ -136,23 +156,12 @@ export async function normalizeArtwork(blob, { size = 1024, fill = 0.8, quality 
     bitmap.close?.();
 
     const { data } = sCtx.getImageData(0, 0, srcW, srcH);
-    let minX = srcW, minY = srcH, maxX = -1, maxY = -1;
-    for (let y = 0; y < srcH; y++) {
-      for (let x = 0; x < srcW; x++) {
-        if (data[(y * srcW + x) * 4 + 3] > ALPHA_FLOOR) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
     // Fully transparent (or fully opaque, where the bbox IS the image) — either way, fit the source.
-    const hasContent = maxX >= minX && maxY >= minY;
-    const cx = hasContent ? minX : 0;
-    const cy = hasContent ? minY : 0;
-    const cw = hasContent ? maxX - minX + 1 : srcW;
-    const ch = hasContent ? maxY - minY + 1 : srcH;
+    const box = alphaBounds(data, srcW, srcH);
+    const cx = box ? box.x : 0;
+    const cy = box ? box.y : 0;
+    const cw = box ? box.w : srcW;
+    const ch = box ? box.h : srcH;
 
     const out = Object.assign(document.createElement('canvas'), { width: size, height: size });
     const scale = (size * fill) / Math.max(cw, ch);
