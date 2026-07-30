@@ -17,30 +17,94 @@
 // on a solid black slab. Baking the background in costs nothing — every consumer (order cards, invite
 // panel, X-ray PDF, email) composites onto white or near-white anyway — and it cannot be undone by a
 // renderer we don't control. Pass `background: null` for a genuinely transparent capture.
-import { imageExt } from '../../shared/image.js';
+//
+// The capture is also CROPPED to the cake before it is flattened. The camera frames a scene, not a
+// picture: the same ~72% of empty pixels noted above is dead space in every consumer, and the
+// template picker is where it shows — a 120px card rendering `objectFit: contain` gives the cake
+// barely a third of its height, so the grid reads as mostly blank boxes. Cropping must happen HERE,
+// while the alpha still marks what is cake and what is nothing; once flattened onto white the two
+// are indistinguishable, and a white cake on a white field cannot be recovered by any later pass.
+import { imageExt, alphaBounds } from '../../shared/image.js';
 
 const THUMB_QUALITY = 0.85;
 const THUMB_BACKGROUND = '#FFFFFF';
+// 3:2 matches the template card's 180x120 box, so every thumbnail letterboxes identically and the
+// grid stays even however tall or wide a given cake happens to be.
+const THUMB_ASPECT = 3 / 2;
+// Breathing room around the cake, as a fraction of its longest side. Without it the crop is flush
+// to the icing and the card looks cropped rather than composed.
+const THUMB_MARGIN = 0.06;
 
-// Composite a (possibly transparent) source canvas onto an opaque one. The source is a WebGL canvas
-// created with preserveDrawingBuffer, so drawImage sees the rendered frame rather than a cleared one.
-function flattenOnto(source, background) {
-  const flat = document.createElement('canvas');
-  flat.width = source.width;
-  flat.height = source.height;
-  const ctx = flat.getContext('2d');
-  ctx.fillStyle = background;
-  ctx.fillRect(0, 0, flat.width, flat.height);
+// The crop rectangle for `bounds` inside a canvasW x canvasH frame: padded, grown to `aspect`, and
+// clamped to the canvas. Pure, so the geometry is testable — the suite runs in node with no canvas.
+// It never returns a rect smaller than `bounds`: a cake that will not fit the target aspect widens
+// the rect instead, because letterboxing a thumbnail is a cosmetic loss and clipping the cake is not.
+export function contentCrop(bounds, canvasW, canvasH, { aspect = THUMB_ASPECT, margin = THUMB_MARGIN } = {}) {
+  if (!bounds || !canvasW || !canvasH) return null;
+
+  const pad = Math.max(bounds.w, bounds.h) * margin;
+  let w = Math.min(canvasW, bounds.w + pad * 2);
+  let h = Math.min(canvasH, bounds.h + pad * 2);
+
+  // Grow the short side toward the target aspect, never past the canvas.
+  if (w / h < aspect) w = Math.min(canvasW, h * aspect);
+  else                h = Math.min(canvasH, w / aspect);
+
+  w = Math.round(w);
+  h = Math.round(h);
+
+  // Centre on the cake, then slide back inside the frame if that pushed an edge out.
+  const cx = bounds.x + bounds.w / 2;
+  const cy = bounds.y + bounds.h / 2;
+  const x = Math.max(0, Math.min(Math.round(cx - w / 2), canvasW - w));
+  const y = Math.max(0, Math.min(Math.round(cy - h / 2), canvasH - h));
+
+  return { x, y, w, h };
+}
+
+// The opaque bounds of a (possibly WebGL) source canvas. Needs a 2D copy because getImageData is a
+// 2D-context call and the source is a WebGL canvas.
+function contentBounds(source) {
+  const probe = document.createElement('canvas');
+  probe.width = source.width;
+  probe.height = source.height;
+  const ctx = probe.getContext('2d', { willReadFrequently: true });
+  // Bail before drawing anything if pixels can't be read back — no point paying for a composite
+  // whose result we cannot inspect.
+  if (typeof ctx?.getImageData !== 'function') return null;
   ctx.drawImage(source, 0, 0);
+  return alphaBounds(ctx.getImageData(0, 0, probe.width, probe.height).data, probe.width, probe.height);
+}
+
+// Composite a (possibly transparent) source canvas onto an opaque one, optionally taking only
+// `crop` of it. The source is a WebGL canvas created with preserveDrawingBuffer, so drawImage sees
+// the rendered frame rather than a cleared one.
+function flattenOnto(source, background, crop) {
+  const rect = crop ?? { x: 0, y: 0, w: source.width, h: source.height };
+  const flat = document.createElement('canvas');
+  flat.width = rect.w;
+  flat.height = rect.h;
+  const ctx = flat.getContext('2d');
+  if (background) {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, flat.width, flat.height);
+  }
+  ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
   return flat;
 }
 
-export function captureThumbnailBlob(canvas, { quality = THUMB_QUALITY, timeoutMs = 4000, background = THUMB_BACKGROUND } = {}) {
+export function captureThumbnailBlob(canvas, { quality = THUMB_QUALITY, timeoutMs = 4000, background = THUMB_BACKGROUND, crop = true } = {}) {
   return new Promise(resolve => {
     if (!canvas) return resolve(null);
     try {
       const timeout = setTimeout(() => resolve(null), timeoutMs);
-      const source = background ? flattenOnto(canvas, background) : canvas;
+      // A crop of null (nothing drawn, or the probe failed) falls through to the whole frame, which
+      // is exactly the old behaviour — a thumbnail is never worth failing a save over.
+      let rect = null;
+      if (crop) {
+        try { rect = contentCrop(contentBounds(canvas), canvas.width, canvas.height); } catch { rect = null; }
+      }
+      const source = (background || rect) ? flattenOnto(canvas, background, rect) : canvas;
       source.toBlob(blob => { clearTimeout(timeout); resolve(blob ?? null); }, 'image/webp', quality);
     } catch {
       resolve(null);
