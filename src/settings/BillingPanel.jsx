@@ -648,8 +648,15 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const labelOf      = name => planByName[name]?.display_name ?? (name ? name[0].toUpperCase() + name.slice(1) : '—');
   const currentRank  = rankOf(billing?.tier);
   const selectedRank = rankOf(selectedTier);
-  // Same tier is only "current" when NOT winding down — while cancelled, picking the same tier = reactivate.
-  const isSameTier = billing && selectedTier === billing.tier && !windingDown;
+  // LAPSED = the subscription is no longer live (past the paid-through boundary, or halted after dunning)
+  // on a PAID tier. The tier still sits on the row, so without this the panel reads "you're already on
+  // Blaze" and disables the CTA — leaving a baker who WANTS to pay us with no way to do it. Spark is
+  // excluded: it is the trial, not a paid plan, and has its own free-plan handling below.
+  const lapsed = !!billing && !isActive && !isOnSpark;
+  // Same tier is only "current" when the subscription is actually LIVE. Two escapes: winding down
+  // (cancelled but still in grace) → reactivate, and lapsed (already dead) → resume. In both cases
+  // re-picking the same tier is a real action, not a no-op.
+  const isSameTier = billing && selectedTier === billing.tier && !windingDown && !lapsed;
   // The TRUE no-op = same tier AND same period (disables the CTA). Same tier + a DIFFERENT period is an
   // interval switch (monthly↔yearly) — a real, deferred change, not a no-op.
   const isSameTierSamePeriod = isSameTier && selectedPeriod === currentPeriodType;
@@ -658,6 +665,10 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   function ctaLabel() {
     if (subscribing) return 'Processing…';
     if (windingDown) return selectedTier === billing.tier ? `Reactivate ${labelOf(selectedTier)}` : `Switch to ${labelOf(selectedTier)}`;
+    // Lapsed baker re-picking the plan they lost: this is a RESUME, not an upgrade. Without this branch
+    // it falls through to "Upgrade to Blaze" (via !isActive), which misdescribes the action and does not
+    // match the "Resume {plan}" button on the access gate that sent them here.
+    if (lapsed && selectedTier === billing.tier) return `Resume ${labelOf(selectedTier)}`;
     if (isSameTierSamePeriod) return `${labelOf(selectedTier)} — Current Plan`;
     if (isIntervalSwitch) return `Switch to ${PERIOD_SHORT[selectedPeriod]} billing`;
     if (selectedTier === 'spark') return 'Switch to Spark — Free';
