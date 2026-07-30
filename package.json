@@ -24,7 +24,8 @@
     "check:cors": "node scripts/check-cors.mjs",
     "check:dup": "jscpd src/designer",
     "test": "vitest run",
-    "verify": "npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:dup && npm test"
+    "verify": "npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:dup && npm test",
+    "pack:vendor": "npm run build && node scripts/pack-vendor.mjs"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",

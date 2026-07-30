@@ -3,7 +3,13 @@
 # Blocks a commit that changes code an owning feature doc covers without also
 # updating that doc. Honors [skip-feature-doc] in the commit message.
 # Tracked hook: activated via `git config core.hooksPath .githooks` (npm run prepare).
-DOCS_DIR="${SPATTOO_DOCS_DIR:-$(git rev-parse --show-toplevel)/../spattoo-docs}"
+# Resolve the docs repo from the MAIN checkout, not from `git rev-parse --show-toplevel`. In a
+# worktree that returns the worktree itself (…/.claude/worktrees/<name>), so `../spattoo-docs`
+# pointed at a directory that cannot exist and the gate silently skipped itself — the failure mode
+# a gate must never have, because it looks exactly like passing. --git-common-dir is the shared
+# .git of the repo whichever worktree you are standing in; its parent is the main checkout.
+MAIN_ROOT="$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)"
+DOCS_DIR="${SPATTOO_DOCS_DIR:-$MAIN_ROOT/../spattoo-docs}"
 BIN="$DOCS_DIR/bin/check-feature-docs.mjs"
 [ -f "$BIN" ] || { echo "i spattoo-docs not found next to repo - skipping feature-doc gate"; exit 0; }
 COMMIT_MSG_FILE="$1" node "$BIN" --repo spattoo-core
