@@ -695,6 +695,50 @@ function ToolsIcon({ size = 20 }) {
   );
 }
 
+function LockIcon({ size = 44 }) {
+  // Padlock, shackle closed — the access-gate mark. Replaces a pictographic emoji
+  // (INVARIANTS #7: zero emoji in UI, empty states included).
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2.2" strokeWidth="1.6" />
+      <path strokeWidth="1.6" d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9" />
+      <circle cx="12" cy="15.5" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// ── Lapsed-access gate copy ───────────────────────────────────────────────────
+// THREE distinct situations reach the gate, and showing the wrong one tells the baker a
+// false story about their own account. Keyed by a resolved state (see lapsedGateState)
+// rather than a chain of literal status comparisons, so adding a state is a map entry.
+//   trial  — never paid; the 30-day Spark trial ran out (docs/SUBSCRIPTION_TIERS.md)
+//   ended  — paid, then cancelled ON PURPOSE (a cancellation reason is recorded)
+//   failed — paid, then Razorpay could no longer charge (halted / dunning exhausted)
+// Deliberately no amounts in any copy — Checkout is the only place a figure is shown.
+const LAPSED_GATE_COPY = {
+  trial: {
+    title: 'Your trial has ended',
+    body:  () => 'Choose a plan to keep using Spattoo.',
+  },
+  ended: {
+    title: 'Your subscription has ended',
+    body:  plan => `Your ${plan} plan is no longer active. Pick up where you left off, or choose a different plan.`,
+  },
+  failed: {
+    title: "We couldn't renew your subscription",
+    body:  plan => `Your last payment didn't go through, so your ${plan} plan is inactive. Resume it to get back in.`,
+  },
+};
+
+// Which of the three the baker is in. `has_paid_before` is the one-way "has ever paid" flag
+// (bakers.first_paid_at); a cancellation reason distinguishes a deliberate cancel from a
+// renewal that simply stopped working.
+function lapsedGateState(baker) {
+  if (!baker?.has_paid_before) return 'trial';
+  return baker.subscription_cancellation_reason ? 'ended' : 'failed';
+}
+
 function NewCakeIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -5044,19 +5088,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
-  // Block access if subscription is expired or cancelled
+  // Block access if subscription is expired or cancelled. past_due / pending are deliberately
+  // ABSENT — they are the dunning grace window (Razorpay is still retrying), and the api gate
+  // agrees: entitlements.js BLOCKED_STATUSES excludes them too.
   const blockedStatuses = ['expired', 'cancelled', 'paused'];
+  // Plan naming for the gate copy + button. Prefer the display name ("Blaze") — the raw name is
+  // lowercase. A baker who has paid always had a plan, so 'previous' is defensive only (a plan we
+  // have since retired); in that case we also drop the Resume label and just show the plan list.
+  const lapsedPlanName  = bakerData?.subscription_plan_display || bakerData?.subscription_plan || null;
+  const lapsedPlanLabel = lapsedPlanName ?? 'previous';
+  const canResumeLapsedPlan = !!lapsedPlanName && lapsedGateState(bakerData) !== 'trial';
   if (bakerData && blockedStatuses.includes(bakerData.subscription_status)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F4F8F5', fontFamily: "'Quicksand', sans-serif" }}>
         <div style={{ textAlign: 'center', maxWidth: 400, padding: '0 24px' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <div style={{ color: '#9BB5A2', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+            <LockIcon />
+          </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', marginBottom: 8 }}>
-            {bakerData.subscription_status === 'expired' ? 'Your trial has ended' : 'Subscription inactive'}
+            {LAPSED_GATE_COPY[lapsedGateState(bakerData)].title}
           </div>
           <div style={{ fontSize: 14, color: '#6B7280', lineHeight: 1.6, marginBottom: 28 }}>
-            Choose a plan to continue using Spattoo. Start free with Spark or unlock more with a paid plan.
+            {LAPSED_GATE_COPY[lapsedGateState(bakerData)].body(lapsedPlanLabel)}
           </div>
+          {/* One action, one surface. BillingPanel already pre-selects the baker's own tier and
+              period from its own load (BillingPanel.jsx:324-325), so opening it IS "resume this
+              plan" — with the plan list and the GST checkout review right there. Nothing about
+              the panel changes; only this label does. Falls back to "View plans" when there is
+              no plan name to resume (e.g. a retired plan we no longer sell). */}
           <button
             onClick={() => setBillingPanelOpen(true)}
             style={{
@@ -5066,7 +5125,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               boxShadow: '0 6px 20px rgba(0,0,0,0.15)',
             }}
           >
-            View Plans
+            {canResumeLapsedPlan ? `Resume ${lapsedPlanLabel}` : 'View plans'}
           </button>
           <BillingPanel
             open={billingPanelOpen}
