@@ -7,6 +7,7 @@ import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap } from './canvas/CakeCanvas';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
+import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
@@ -706,37 +707,6 @@ function LockIcon({ size = 44 }) {
       <circle cx="12" cy="15.5" r="1.25" fill="currentColor" stroke="none" />
     </svg>
   );
-}
-
-// ── Lapsed-access gate copy ───────────────────────────────────────────────────
-// THREE distinct situations reach the gate, and showing the wrong one tells the baker a
-// false story about their own account. Keyed by a resolved state (see lapsedGateState)
-// rather than a chain of literal status comparisons, so adding a state is a map entry.
-//   trial  — never paid; the 30-day Spark trial ran out (docs/SUBSCRIPTION_TIERS.md)
-//   ended  — paid, then cancelled ON PURPOSE (a cancellation reason is recorded)
-//   failed — paid, then Razorpay could no longer charge (halted / dunning exhausted)
-// Deliberately no amounts in any copy — Checkout is the only place a figure is shown.
-const LAPSED_GATE_COPY = {
-  trial: {
-    title: 'Your trial has ended',
-    body:  () => 'Choose a plan to keep using Spattoo.',
-  },
-  ended: {
-    title: 'Your subscription has ended',
-    body:  plan => `Your ${plan} plan is no longer active. Pick up where you left off, or choose a different plan.`,
-  },
-  failed: {
-    title: "We couldn't renew your subscription",
-    body:  plan => `Your last payment didn't go through, so your ${plan} plan is inactive. Resume it to get back in.`,
-  },
-};
-
-// Which of the three the baker is in. `has_paid_before` is the one-way "has ever paid" flag
-// (bakers.first_paid_at); a cancellation reason distinguishes a deliberate cancel from a
-// renewal that simply stopped working.
-function lapsedGateState(baker) {
-  if (!baker?.has_paid_before) return 'trial';
-  return baker.subscription_cancellation_reason ? 'ended' : 'failed';
 }
 
 function NewCakeIcon({ size = 20 }) {
