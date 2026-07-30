@@ -285,6 +285,181 @@ function PaymentsCard({ info, apiClient, primaryColor, bare = false }) {
   );
 }
 
+// ── Smart tools — the metered allowance ──────────────────────────────────────────────────────────
+// Named for the JOB, never "AI". Bakers buy outcomes ("build guides"), not tokens, and
+// SUBSCRIPTION_TIERS.md is explicit that the limit is expressed as a concrete count everywhere the
+// baker can see it.
+//
+// This card is the ONE exception where a raw credit number is also shown, because it is where
+// top-ups are bought and a pack has to state what it contains. Everywhere else in the product —
+// the launcher, the nudges — shows counts only.
+//
+// The COUNTS COME FROM THE SERVER (`actions[].remaining`), never from dividing a balance by a price
+// held here. Prices live in `credit_costs` precisely so they can be retuned without a deploy; a
+// client carrying its own copy starts lying the moment they move.
+function SmartToolsCard({ apiClient, primaryColor }) {
+  const [data, setData]       = useState(null);
+  const [packs, setPacks]     = useState([]);
+  const [busyPack, setBusy]   = useState(null);
+  const [err, setErr]         = useState(null);
+  const [tick, setTick]       = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    if (!apiClient?.fetchAiCredits) return;
+    Promise.all([
+      apiClient.fetchAiCredits().catch(() => null),
+      apiClient.fetchAiCreditPacks ? apiClient.fetchAiCreditPacks().catch(() => null) : Promise.resolve(null),
+    ]).then(([bal, pk]) => {
+      if (!alive) return;
+      setData(bal);
+      setPacks(pk?.packs ?? []);
+    });
+    return () => { alive = false; };
+  }, [apiClient, tick]);
+
+  // A failure here must never take the billing screen down with it — the plan, the payment method
+  // and the cancel button all matter more than a usage meter.
+  if (!data) return null;
+
+  const card = { background: '#fff', borderRadius: 16, padding: '18px 22px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 };
+  const label = { fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#9BB5A2' };
+
+  const header = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={label}>Smart tools</span>
+      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6, padding: '2px 6px', borderRadius: 20, background: '#F0F4F1', color: '#6B8F7A' }}>BETA</span>
+    </div>
+  );
+
+  // Unlimited plans get a statement, not a countdown. Inventing a number here would mean keeping it
+  // accurate forever for no benefit — "included" is both simpler and true.
+  if (data.unlimited) {
+    return (
+      <div style={card}>
+        {header}
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#2C4433' }}>Included on your plan</div>
+        <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600 }}>
+          Build guides from a photo, with no monthly cap.
+        </div>
+      </div>
+    );
+  }
+
+  // Graduated nudges at 70 / 90 / 100 — the pattern SUBSCRIPTION_TIERS.md calls for. Silently
+  // failing at the wall wastes the whole mechanism, so the tone escalates before the baker hits it.
+  const pct  = Math.min(100, data.usedPct ?? 0);
+  const tone = pct >= 100 ? { bar: '#DC2626', bg: '#FEF2F2', fg: '#991B1B' }
+             : pct >= 90  ? { bar: '#B26B00', bg: '#FFF6E5', fg: '#8A5200' }
+             : pct >= 70  ? { bar: '#B26B00', bg: '#FFFBF2', fg: '#8A5200' }
+             :              { bar: primaryColor, bg: 'transparent', fg: '#7C8B82' };
+
+  const note = pct >= 100 ? 'You’ve used this month’s allowance. Top up, or it resets next month.'
+             : pct >= 90  ? 'Almost out for this month.'
+             : pct >= 70  ? 'You’re past three quarters of this month’s allowance.'
+             :              null;
+
+  async function buy(packKey) {
+    setBusy(packKey); setErr(null);
+    try {
+      const d = await apiClient.purchaseAiCredits(packKey);
+      if (!window.Razorpay) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+      await new Promise(resolve => {
+        // A one-time ORDER, not a subscription — so `order_id` + `amount`, where the plan checkout
+        // passes `subscription_id`. That is why this does not reuse runCheckout.
+        const rzp = new window.Razorpay({
+          key: d.key_id, order_id: d.order_id, amount: d.amount, currency: d.currency ?? 'INR',
+          name: 'Spattoo', description: packs.find(p => p.packKey === packKey)?.label ?? 'Top-up',
+          theme: { color: primaryColor },
+          handler: () => { resolve(); settle(); },
+          modal: { ondismiss: resolve },
+        });
+        rzp.open();
+      });
+    } catch (e) { setErr(e.message || 'Could not start the payment.'); }
+    finally { setBusy(null); }
+  }
+
+  // Credits are minted by the payment WEBHOOK, which lands asynchronously — so the balance is not
+  // updated the moment Checkout closes. Re-read a few times and then stop; the next open reconciles.
+  async function settle() {
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      setTick(t => t + 1);
+    }
+  }
+
+  return (
+    <div style={card}>
+      {header}
+
+      {/* The headline is the JOB COUNT, straight from the server. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {(data.actions ?? []).map(a => (
+          <div key={a.actionKey} style={{ fontSize: 15, fontWeight: 800, color: a.remaining > 0 ? '#2C4433' : '#991B1B' }}>
+            {a.remaining} {a.label.toLowerCase()}{a.remaining === 1 ? '' : 's'} left this month
+          </div>
+        ))}
+      </div>
+
+      {/* The meter. Credits are legible here because top-ups are sold in them. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ height: 7, borderRadius: 20, background: '#F0F4F1', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: tone.bar, borderRadius: 20, transition: 'width .3s' }} />
+        </div>
+        <div style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+          {data.allowanceUsed} of {data.allowance} used
+          {data.walletBalance > 0 && ` · ${data.walletBalance} top-up credits (these don’t expire)`}
+        </div>
+      </div>
+
+      {note && (
+        <div style={{ background: tone.bg, borderRadius: 10, padding: '8px 11px', fontSize: 12, fontWeight: 700, color: tone.fg }}>
+          {note}
+        </div>
+      )}
+
+      {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626' }}>{err}</div>}
+
+      {packs.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
+          <span style={{ ...label, color: '#B7C4BB' }}>Need more this month</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {packs.map(p => {
+              const buys = p.buys?.[0];
+              return (
+                <button
+                  key={p.packKey} type="button" onClick={() => buy(p.packKey)} disabled={!!busyPack}
+                  style={{
+                    flex: '1 1 150px', textAlign: 'left', cursor: busyPack ? 'default' : 'pointer',
+                    background: '#fff', border: '1.5px solid #E8EFE9', borderRadius: 12,
+                    padding: '10px 13px', fontFamily: 'inherit', opacity: busyPack && busyPack !== p.packKey ? 0.5 : 1,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>
+                    {busyPack === p.packKey ? 'Opening…' : formatMoney(p.pricePaise / 100)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#7C8B82', fontWeight: 600, marginTop: 2 }}>
+                    {buys ? `+${buys.count} ${buys.label.toLowerCase()}s` : `+${p.credits} credits`}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <span style={{ fontSize: 10.5, color: '#B7C4BB', fontWeight: 600 }}>Prices exclude GST.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BillingPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [billing,        setBilling]        = useState(null);
@@ -677,6 +852,12 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   )}
                 </div>
               </div>
+
+              {/* ── Smart tools allowance ─────────────────────────
+                  Between "what you have" and "change what you have": a baker checking billing
+                  wants their plan, then what it includes and how much is left, and only then the
+                  option to switch. Renders nothing if the host hasn't wired fetchAiCredits. */}
+              <SmartToolsCard apiClient={apiClient} primaryColor={primaryColor} />
 
               {/* ── Plan picker ──────────────────────────────────── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
