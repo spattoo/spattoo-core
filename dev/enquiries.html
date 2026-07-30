@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enquiries — UI mock</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      /* ── Enquiry list — STATIC UI MOCK ────────────────────────────────────
+         No React, no data, no build step: open the file. It exists to judge the
+         INFORMATION DESIGN of plans/storefront-configurator.md's enquiry list
+         before any of it is built.
+
+         The one idea being tested: rows are grouped by WHOSE MOVE IT IS, not by
+         date. A chronological list of enquiries is a log — it tells a baker what
+         happened. Grouping by turn tells her what to do, and puts the enquiries
+         that went quiet (the whole reason this view exists) on the screen instead
+         of buried at the bottom of a feed.
+
+         Palette and type are spattoo-core's own, not invented here: ink #2C2A26,
+         paper #EDEAE3, rules #EFEAE3, muted #8A857D, and the semantic set the
+         X-Ray report already uses (#B26B00 / #1B5FA8 / #6A5A8C / #1E7A35). Brand
+         green #3A4F46 is the manifest theme colour and is reserved for the one
+         primary action per row. */
+
+      :root {
+        --ink:        #2C2A26;
+        --ink-soft:   #6b6459;
+        --muted:      #8A857D;
+        --paper:      #EDEAE3;
+        --card:       #FDFCFA;
+        --rule:       #E3DED5;
+        --rule-soft:  #EFEAE3;
+        --brand:      #3A4F46;
+        --brand-ink:  #FFFFFF;
+
+        /* State. Semantic, deliberately not the brand accent. */
+        --turn:       #B26B00;  --turn-bg:  #FFF6E5;
+        --waiting:    #1B5FA8;  --waiting-bg: #EEF6FF;
+        --quiet:      #6A5A8C;  --quiet-bg: #F0EEF6;
+        --done:       #1E7A35;  --done-bg:  #E6F4EA;
+
+        --shadow: 0 1px 2px rgba(44,42,38,.05), 0 1px 8px rgba(44,42,38,.04);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #EDE9E2; --ink-soft: #BDB6AA; --muted: #948D82;
+          --paper: #1B1A18; --card: #232220; --rule: #35322D; --rule-soft: #2C2A27;
+          --brand: #8FBFA6; --brand-ink: #14201A;
+          --turn: #E0A250; --turn-bg: #3A2E1B;
+          --waiting: #7FB2E8; --waiting-bg: #1B2A3A;
+          --quiet: #B0A0CE; --quiet-bg: #2A2437;
+          --done: #74C88C; --done-bg: #1A2E20;
+          --shadow: 0 1px 2px rgba(0,0,0,.3), 0 1px 8px rgba(0,0,0,.2);
+        }
+      }
+      /* The viewer's own toggle must win over the OS preference, both ways. */
+      :root[data-theme="dark"] {
+        --ink: #EDE9E2; --ink-soft: #BDB6AA; --muted: #948D82;
+        --paper: #1B1A18; --card: #232220; --rule: #35322D; --rule-soft: #2C2A27;
+        --brand: #8FBFA6; --brand-ink: #14201A;
+        --turn: #E0A250; --turn-bg: #3A2E1B;
+        --waiting: #7FB2E8; --waiting-bg: #1B2A3A;
+        --quiet: #B0A0CE; --quiet-bg: #2A2437;
+        --done: #74C88C; --done-bg: #1A2E20;
+        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 1px 8px rgba(0,0,0,.2);
+      }
+      :root[data-theme="light"] {
+        --ink: #2C2A26; --ink-soft: #6b6459; --muted: #8A857D;
+        --paper: #EDEAE3; --card: #FDFCFA; --rule: #E3DED5; --rule-soft: #EFEAE3;
+        --brand: #3A4F46; --brand-ink: #FFFFFF;
+        --turn: #B26B00; --turn-bg: #FFF6E5;
+        --waiting: #1B5FA8; --waiting-bg: #EEF6FF;
+        --quiet: #6A5A8C; --quiet-bg: #F0EEF6;
+        --done: #1E7A35; --done-bg: #E6F4EA;
+        --shadow: 0 1px 2px rgba(44,42,38,.05), 0 1px 8px rgba(44,42,38,.04);
+      }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      body {
+        font-family: 'Quicksand', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.45;
+      }
+
+      .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+
+      /* ── Header ─────────────────────────────────────────────────────────── */
+      .head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+      h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.2px; }
+      .sub { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+      .invite-btn {
+        font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+        background: var(--brand); color: var(--brand-ink);
+        border: none; border-radius: 10px; padding: 9px 16px;
+        display: inline-flex; align-items: center; gap: 7px;
+      }
+      .invite-btn:hover { filter: brightness(1.08); }
+      .invite-btn:focus-visible { outline: 2.5px solid var(--turn); outline-offset: 2px; }
+
+      /* ── Funnel: the summary, before any detail ─────────────────────────── */
+      .funnel {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+        background: var(--rule); border: 1px solid var(--rule);
+        border-radius: 14px; overflow: hidden; margin: 18px 0 30px;
+      }
+      .step { background: var(--card); padding: 13px 14px; }
+      .step-n {
+        font-size: 25px; font-weight: 700; line-height: 1.1;
+        font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
+      }
+      .step-l {
+        font-size: 10px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.9px; color: var(--muted); margin-top: 3px;
+      }
+      .step-drop { font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 5px; }
+
+      /* ── Section headings — core's dot idiom ────────────────────────────── */
+      .sec { margin-bottom: 28px; }
+      .sec-h { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; padding-left: 2px; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+      .sec-t { font-size: 13px; font-weight: 700; }
+      .sec-c {
+        font-size: 11px; font-weight: 700; color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .sec-note { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: auto; }
+
+      /* ── Rows ───────────────────────────────────────────────────────────── */
+      .rows { display: flex; flex-direction: column; gap: 8px; }
+      .row {
+        background: var(--card); border: 1px solid var(--rule-soft);
+        border-radius: 13px; padding: 13px 15px; box-shadow: var(--shadow);
+        display: flex; align-items: flex-start; gap: 14px;
+      }
+      .row:hover { border-color: var(--rule); }
+
+      .row-main { flex: 1; min-width: 0; }
+      .row-top { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+      .name { font-size: 15px; font-weight: 700; }
+      .when { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+      .want {
+        font-size: 13px; color: var(--ink-soft); margin-top: 4px; font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+      .chip {
+        font-size: 10.5px; font-weight: 700; padding: 2.5px 8px; border-radius: 20px;
+        letter-spacing: 0.2px; white-space: nowrap;
+      }
+      .chip-door { background: var(--rule-soft); color: var(--ink-soft); }
+      .chip-turn { background: var(--turn-bg); color: var(--turn); }
+      .chip-wait { background: var(--waiting-bg); color: var(--waiting); }
+      .chip-quiet { background: var(--quiet-bg); color: var(--quiet); }
+      .chip-done { background: var(--done-bg); color: var(--done); }
+
+      .act { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+      .btn {
+        font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+        border-radius: 9px; padding: 7px 13px; white-space: nowrap; border: 1.5px solid transparent;
+      }
+      .btn:focus-visible { outline: 2.5px solid var(--turn); outline-offset: 2px; }
+      .btn-primary { background: var(--brand); color: var(--brand-ink); }
+      .btn-primary:hover { filter: brightness(1.08); }
+      .btn-ghost { background: transparent; color: var(--ink-soft); border-color: var(--rule); }
+      .btn-ghost:hover { background: var(--rule-soft); }
+      .price { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+      /* Quiet section reads calmer — present, not shouting. */
+      .sec-quiet .row { background: transparent; box-shadow: none; border-style: dashed; }
+
+      /* Ordered is done: collapsed by default, out of the way. */
+      details.sec-done summary {
+        cursor: pointer; list-style: none; display: flex; align-items: center; gap: 9px;
+        padding-left: 2px;
+      }
+      details.sec-done summary::-webkit-details-marker { display: none; }
+      details.sec-done summary:focus-visible { outline: 2.5px solid var(--turn); outline-offset: 3px; border-radius: 4px; }
+      details.sec-done[open] summary { margin-bottom: 11px; }
+      .caret { font-size: 10px; color: var(--muted); margin-left: auto; }
+
+      .foot {
+        margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--rule);
+        font-size: 12px; color: var(--muted); font-weight: 500;
+      }
+      .foot strong { color: var(--ink-soft); font-weight: 700; }
+
+      @media (max-width: 560px) {
+        .funnel { grid-template-columns: repeat(2, 1fr); }
+        .row { flex-direction: column; gap: 11px; }
+        .act { flex-direction: row-reverse; align-items: center; width: 100%; justify-content: flex-start; gap: 10px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { transition: none !important; animation: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <div class="head">
+        <div>
+          <h1>Enquiries</h1>
+          <p class="sub">Feelings &amp; Flavours &middot; last 30 days</p>
+        </div>
+        <button class="invite-btn" type="button">
+          <span aria-hidden="true">+</span> Invite a customer
+        </button>
+      </div>
+
+      <!-- Summary before detail. The drop between steps is the point: it is the
+           number a baker can never see on WhatsApp. -->
+      <section class="funnel" aria-label="Enquiry funnel">
+        <div class="step">
+          <div class="step-n">9</div>
+          <div class="step-l">Invited</div>
+        </div>
+        <div class="step">
+          <div class="step-n">7</div>
+          <div class="step-l">Configured</div>
+          <div class="step-drop">2 never opened</div>
+        </div>
+        <div class="step">
+          <div class="step-n">4</div>
+          <div class="step-l">Quoted</div>
+          <div class="step-drop">3 awaiting you</div>
+        </div>
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-l">Ordered</div>
+          <div class="step-drop">&#8377;2,800</div>
+        </div>
+      </section>
+
+      <!-- ── Your turn ────────────────────────────────────────────────────── -->
+      <section class="sec">
+        <div class="sec-h">
+          <span class="dot" style="background: var(--turn)"></span>
+          <span class="sec-t">Your turn</span>
+          <span class="sec-c">3</span>
+          <span class="sec-note">They&rsquo;ve told you what they want</span>
+        </div>
+        <div class="rows">
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Priya Menon</span>
+                <span class="when">2 hours ago</span>
+              </div>
+              <p class="want">1.5&nbsp;kg chocolate truffle &middot; Sat 8 Aug &middot; deliver to Kondapur</p>
+              <div class="chips">
+                <span class="chip chip-door">Sent a photo</span>
+                <span class="chip chip-turn">Needs a quote</span>
+              </div>
+            </div>
+            <div class="act"><button class="btn btn-primary" type="button">Send quote</button></div>
+          </article>
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Rahul Iyer</span>
+                <span class="when">5 hours ago</span>
+              </div>
+              <p class="want">2&nbsp;kg red velvet, 2 tiers &middot; Sun 9 Aug &middot; pickup</p>
+              <div class="chips">
+                <span class="chip chip-door">Designed it in 3D</span>
+                <span class="chip chip-turn">Needs a quote</span>
+              </div>
+            </div>
+            <div class="act"><button class="btn btn-primary" type="button">Send quote</button></div>
+          </article>
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Sneha Reddy</span>
+                <span class="when">Wed 29 Jul</span>
+              </div>
+              <p class="want">1&nbsp;kg, eggless &middot; Fri 7 Aug &middot; pickup &middot; &ldquo;5th birthday, she loves unicorns&rdquo;</p>
+              <div class="chips">
+                <span class="chip chip-door">Left it to you</span>
+                <span class="chip chip-turn">Needs a quote</span>
+              </div>
+            </div>
+            <div class="act"><button class="btn btn-primary" type="button">Send quote</button></div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- ── Waiting on them ──────────────────────────────────────────────── -->
+      <section class="sec">
+        <div class="sec-h">
+          <span class="dot" style="background: var(--waiting)"></span>
+          <span class="sec-t">Waiting on them</span>
+          <span class="sec-c">2</span>
+          <span class="sec-note">Quote sent, no answer yet</span>
+        </div>
+        <div class="rows">
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Arjun Nair</span>
+                <span class="when">Quoted Tue 28 Jul</span>
+              </div>
+              <p class="want">3&nbsp;kg fondant, 2 tiers &middot; Sun 9 Aug &middot; deliver to Gachibowli</p>
+              <div class="chips">
+                <span class="chip chip-door">Sent a photo</span>
+                <span class="chip chip-wait">Quote valid 5 more days</span>
+              </div>
+            </div>
+            <div class="act">
+              <span class="price">&#8377;3,200</span>
+              <button class="btn btn-ghost" type="button">Nudge</button>
+            </div>
+          </article>
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Divya Krishnan</span>
+                <span class="when">Quoted Sun 26 Jul</span>
+              </div>
+              <p class="want">1&nbsp;kg pineapple &middot; Fri 31 Jul &middot; pickup</p>
+              <div class="chips">
+                <span class="chip chip-door">Designed it in 3D</span>
+                <span class="chip chip-wait">Delivery in 1 day</span>
+              </div>
+            </div>
+            <div class="act">
+              <span class="price">&#8377;1,450</span>
+              <button class="btn btn-ghost" type="button">Nudge</button>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- ── Gone quiet — the reason this whole view exists ────────────────── -->
+      <section class="sec sec-quiet">
+        <div class="sec-h">
+          <span class="dot" style="background: var(--quiet)"></span>
+          <span class="sec-t">Gone quiet</span>
+          <span class="sec-c">3</span>
+          <span class="sec-note">You&rsquo;d never see these on WhatsApp</span>
+        </div>
+        <div class="rows">
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Meera Shetty</span>
+                <span class="when">Invited Fri 24 Jul</span>
+              </div>
+              <p class="want">Never opened the link</p>
+              <div class="chips"><span class="chip chip-quiet">6 days</span></div>
+            </div>
+            <div class="act"><button class="btn btn-ghost" type="button">Send again</button></div>
+          </article>
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Kiran Rao</span>
+                <span class="when">Sun 26 Jul</span>
+              </div>
+              <p class="want">Picked a photo, didn&rsquo;t finish &middot; no date chosen</p>
+              <div class="chips">
+                <span class="chip chip-door">Sent a photo</span>
+                <span class="chip chip-quiet">4 days</span>
+              </div>
+            </div>
+            <div class="act"><button class="btn btn-ghost" type="button">Nudge</button></div>
+          </article>
+
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Anjali Desai</span>
+                <span class="when">Quoted Tue 21 Jul</span>
+              </div>
+              <p class="want">2&nbsp;kg butterscotch &middot; Sat 8 Aug &middot; quote expired</p>
+              <div class="chips">
+                <span class="chip chip-quiet">No reply in 9 days</span>
+              </div>
+            </div>
+            <div class="act">
+              <span class="price">&#8377;2,100</span>
+              <button class="btn btn-ghost" type="button">Re-quote</button>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- ── Ordered — done, folded away ──────────────────────────────────── -->
+      <details class="sec sec-done">
+        <summary>
+          <span class="dot" style="background: var(--done)"></span>
+          <span class="sec-t">Ordered</span>
+          <span class="sec-c">1</span>
+          <span class="caret">show</span>
+        </summary>
+        <div class="rows">
+          <article class="row">
+            <div class="row-main">
+              <div class="row-top">
+                <span class="name">Vikram Pillai</span>
+                <span class="when">Confirmed Tue 28 Jul</span>
+              </div>
+              <p class="want">2&nbsp;kg chocolate &middot; Fri 31 Jul &middot; deliver to Madhapur</p>
+              <div class="chips"><span class="chip chip-done">Advance paid</span></div>
+            </div>
+            <div class="act">
+              <span class="price">&#8377;2,800</span>
+              <button class="btn btn-ghost" type="button">Open order</button>
+            </div>
+          </article>
+        </div>
+      </details>
+
+      <p class="foot">
+        <strong>Static mock.</strong> Nothing here is wired up. It exists to judge one decision from
+        <code>plans/storefront-configurator.md</code>: that enquiries are grouped by <strong>whose move it
+        is</strong> rather than by date &mdash; so &ldquo;gone quiet&rdquo; is on the screen instead of
+        buried in a feed.
+      </p>
+    </main>
+  </body>
+</html>
