@@ -7,6 +7,7 @@ import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap } from './canvas/CakeCanvas';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
+import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
@@ -691,6 +692,19 @@ function ToolsIcon({ size = 20 }) {
       <path strokeWidth="3.2" d="M3.2 3.2l2.4 2.4" />
       <path strokeWidth="1.7" d="M5.6 5.6l9.6 9.6" />
       <path strokeWidth="2.4" d="M16 16l3.5 3.5" />
+    </svg>
+  );
+}
+
+function LockIcon({ size = 44 }) {
+  // Padlock, shackle closed — the access-gate mark. Replaces a pictographic emoji
+  // (INVARIANTS #7: zero emoji in UI, empty states included).
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2.2" strokeWidth="1.6" />
+      <path strokeWidth="1.6" d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9" />
+      <circle cx="12" cy="15.5" r="1.25" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -5044,19 +5058,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
-  // Block access if subscription is expired or cancelled
+  // Block access if subscription is expired or cancelled. past_due / pending are deliberately
+  // ABSENT — they are the dunning grace window (Razorpay is still retrying), and the api gate
+  // agrees: entitlements.js BLOCKED_STATUSES excludes them too.
   const blockedStatuses = ['expired', 'cancelled', 'paused'];
+  // Plan naming for the gate copy + button. Prefer the display name ("Blaze") — the raw name is
+  // lowercase. A baker who has paid always had a plan, so 'previous' is defensive only (a plan we
+  // have since retired); in that case we also drop the Resume label and just show the plan list.
+  const lapsedPlanName  = bakerData?.subscription_plan_display || bakerData?.subscription_plan || null;
+  const lapsedPlanLabel = lapsedPlanName ?? 'previous';
+  const canResumeLapsedPlan = !!lapsedPlanName && lapsedGateState(bakerData) !== 'trial';
   if (bakerData && blockedStatuses.includes(bakerData.subscription_status)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F4F8F5', fontFamily: "'Quicksand', sans-serif" }}>
         <div style={{ textAlign: 'center', maxWidth: 400, padding: '0 24px' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <div style={{ color: '#9BB5A2', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+            <LockIcon />
+          </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', marginBottom: 8 }}>
-            {bakerData.subscription_status === 'expired' ? 'Your trial has ended' : 'Subscription inactive'}
+            {LAPSED_GATE_COPY[lapsedGateState(bakerData)].title}
           </div>
           <div style={{ fontSize: 14, color: '#6B7280', lineHeight: 1.6, marginBottom: 28 }}>
-            Choose a plan to continue using Spattoo. Start free with Spark or unlock more with a paid plan.
+            {LAPSED_GATE_COPY[lapsedGateState(bakerData)].body(lapsedPlanLabel)}
           </div>
+          {/* One action, one surface. BillingPanel already pre-selects the baker's own tier and
+              period from its own load (BillingPanel.jsx:324-325), so opening it IS "resume this
+              plan" — with the plan list and the GST checkout review right there. Nothing about
+              the panel changes; only this label does. Falls back to "View plans" when there is
+              no plan name to resume (e.g. a retired plan we no longer sell). */}
           <button
             onClick={() => setBillingPanelOpen(true)}
             style={{
@@ -5066,7 +5095,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               boxShadow: '0 6px 20px rgba(0,0,0,0.15)',
             }}
           >
-            View Plans
+            {canResumeLapsedPlan ? `Resume ${lapsedPlanLabel}` : 'View plans'}
           </button>
           <BillingPanel
             open={billingPanelOpen}
