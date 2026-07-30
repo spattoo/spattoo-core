@@ -46,23 +46,38 @@ if (sh('git', ['status', '--porcelain'])) {
 ok('working tree is clean');
 
 // ── 2. not behind the branch this will ship from ──
-const branch = sh('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
-const upstream = `origin/${branch === 'HEAD' ? 'dev' : branch}`;
-try {
-  sh('git', ['fetch', 'origin', '--quiet']);
-  const behind = sh('git', ['rev-list', '--count', `HEAD..${upstream}`]);
-  if (behind !== '0') {
-    const missing = sh('git', ['log', '--oneline', `HEAD..${upstream}`]).split('\n').slice(0, 8);
-    const msg = `HEAD is ${behind} commit(s) behind ${upstream}. Packing now would ship a tarball\n` +
-      `  missing work that is already on the branch — this is how 0.1.161 lost the thumbnail crop.\n\n` +
-      missing.map((l) => `      ${l}`).join('\n') +
-      `\n\n  Rebase onto ${upstream} first, or pass --allow-behind if this is deliberate.`;
-    if (allowBehind) console.warn(`\n  ! ${msg}\n`); else die(msg);
-  } else {
-    ok(`up to date with ${upstream}`);
-  }
-} catch {
-  console.warn(`  ! could not compare against ${upstream} (offline?) — skipping that check`);
+// Compare against the RELEASE branch, never against origin/<current branch>. The question is
+// "does this tree contain everything that will be on dev when it ships", and it does not stop
+// mattering because you are on a feature branch — that is when you are most likely to be behind.
+// An earlier cut of this script derived the ref from the branch name, so on any feature branch it
+// looked up a remote ref that does not exist, fell into the catch, and downgraded the check that
+// matters most to a warning about being offline. Same silent-skip bug as the hook above.
+const RELEASE_REF = process.env.SPATTOO_RELEASE_REF || 'origin/dev';
+
+let fetched = true;
+try { sh('git', ['fetch', 'origin', '--quiet']); }
+catch { fetched = false; console.warn(`  ! could not reach origin — comparing against the last fetched ${RELEASE_REF}`); }
+
+const haveRef = (() => {
+  try { sh('git', ['rev-parse', '--verify', '--quiet', RELEASE_REF]); return true; } catch { return false; }
+})();
+
+if (!haveRef) {
+  die(`${RELEASE_REF} does not exist locally${fetched ? '' : ' and origin is unreachable'}.\n` +
+      '  Without it there is no way to tell whether this tree is missing shipped work — which is\n' +
+      `  the check that matters. Fetch first, or set SPATTOO_RELEASE_REF to the right branch.`);
+}
+
+const behind = sh('git', ['rev-list', '--count', `HEAD..${RELEASE_REF}`]);
+if (behind !== '0') {
+  const missing = sh('git', ['log', '--oneline', `HEAD..${RELEASE_REF}`]).split('\n').slice(0, 8);
+  const msg = `HEAD is ${behind} commit(s) behind ${RELEASE_REF}. Packing now would ship a tarball\n` +
+    `  missing work already on the release branch — this is how 0.1.161 lost the thumbnail crop.\n\n` +
+    missing.map((l) => `      ${l}`).join('\n') +
+    `\n\n  Rebase onto ${RELEASE_REF} first, or pass --allow-behind if this is deliberate.`;
+  if (allowBehind) console.warn(`\n  ! ${msg}\n`); else die(msg);
+} else {
+  ok(`contains everything on ${RELEASE_REF}`);
 }
 
 // ── 3. version not already vendored ──
