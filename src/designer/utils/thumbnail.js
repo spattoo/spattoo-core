@@ -62,6 +62,22 @@ export function contentCrop(bounds, canvasW, canvasH, { aspect = THUMB_ASPECT, m
   return { x, y, w, h };
 }
 
+// Where to put the enlarged preview for a card at `rect`, inside a viewport of `vw` x `vh`.
+// Beside the card by preference, flipped to its other side when that would overflow, and always
+// clamped fully on-screen — a preview half off the edge is worse than no preview. Pure, so the
+// flip-and-clamp is testable without a DOM.
+export function previewPosition(rect, size, vw, vh, gap = 12, edge = 8) {
+  let left = rect.right + gap;
+  if (left + size.w > vw - edge) left = rect.left - size.w - gap;     // flip to the other side
+  left = Math.max(edge, Math.min(left, vw - size.w - edge));          // and clamp regardless
+
+  const top = Math.max(edge, Math.min(
+    rect.top + rect.height / 2 - size.h / 2,                          // centred on the card
+    vh - size.h - edge,
+  ));
+  return { left: Math.round(left), top: Math.round(top) };
+}
+
 // The opaque bounds of a (possibly WebGL) source canvas. Needs a 2D copy because getImageData is a
 // 2D-context call and the source is a WebGL canvas.
 function contentBounds(source) {

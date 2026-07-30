@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { captureThumbnailBlob, contentCrop } from './thumbnail.js';
+import { captureThumbnailBlob, contentCrop, previewPosition } from './thumbnail.js';
 
 // The cake scene renders on a transparent canvas, so a raw capture is ~72% RGBA(0,0,0,0) — black held
 // invisible by the alpha channel. The order snapshot is embedded in the quote-request email, and a
@@ -173,5 +173,46 @@ describe('captureThumbnailBlob — crops to the cake when pixels are readable', 
     const { source, flatCanvas } = readableCanvas();
     await captureThumbnailBlob(source, { crop: false });
     expect([flatCanvas.width, flatCanvas.height]).toEqual([400, 400]);
+  });
+});
+
+// The panel hugs the left edge, so the preview normally opens to its right — but the same panel
+// can be docked near a narrow viewport's right edge, and a preview hanging off-screen is worse
+// than none. These pin the flip and the clamp.
+describe('previewPosition — beside the card, always fully on-screen', () => {
+  const SIZE = { w: 320, h: 250 };
+  const card = (over = {}) => ({ left: 160, right: 340, top: 400, height: 120, ...over });
+
+  it('opens to the right of the card when there is room', () => {
+    const p = previewPosition(card(), SIZE, 1440, 900);
+    expect(p.left).toBe(340 + 12);
+  });
+
+  it('flips to the left when the right would overflow', () => {
+    const p = previewPosition(card({ left: 900, right: 1080 }), SIZE, 1200, 900);
+    expect(p.left).toBe(900 - 320 - 12);
+  });
+
+  it('centres vertically on the card', () => {
+    const p = previewPosition(card(), SIZE, 1440, 900);
+    expect(p.top).toBe(Math.round(400 + 60 - 125));
+  });
+
+  it('clamps to the top edge for a card near the top', () => {
+    const p = previewPosition(card({ top: 0 }), SIZE, 1440, 900);
+    expect(p.top).toBe(8);
+  });
+
+  it('clamps to the bottom edge for a card near the bottom', () => {
+    const p = previewPosition(card({ top: 860 }), SIZE, 1440, 900);
+    expect(p.top).toBe(900 - 250 - 8);
+  });
+
+  it('stays on-screen even when neither side fits — clamped, never hanging off', () => {
+    const p = previewPosition(card({ left: 20, right: 300 }), SIZE, 360, 640);
+    expect(p.left).toBeGreaterThanOrEqual(8);
+    expect(p.left + SIZE.w).toBeLessThanOrEqual(360 - 8 + 1);
+    expect(p.top).toBeGreaterThanOrEqual(8);
+    expect(p.top + SIZE.h).toBeLessThanOrEqual(640 - 8 + 1);
   });
 });

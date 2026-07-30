@@ -22,7 +22,7 @@ import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFro
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
-import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail } from './utils/thumbnail.js';
+import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
@@ -1597,6 +1597,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // by height — so that margin is spent out of the height budget and the mark reads small. Trimmed
   // once per URL at render, which fixes existing logos without a re-upload or a backfill.
   const logoSrc = useTrimmedLogo(bakerData?.logo_url);
+
+  // Enlarged template thumbnail. The card is 180x120 and the stored capture is the camera's whole
+  // 800x800 frame, so even a badly-framed thumbnail has real pixels behind it — showing it bigger
+  // is what rescues the templates saved before the capture was cropped, which is most of them.
+  // { src, name, tiers, rect } — rect is the card, so the panel can be anchored beside it.
+  const [tplPreview, setTplPreview] = useState(null);
+  const tplPreviewTimer = useRef(null);
+  useEffect(() => () => clearTimeout(tplPreviewTimer.current), []);
   const [userData,     setUserData]     = useState(null);
   const [bakerSettings, setBakerSettings] = useState({});
   // Server-resolved capabilities (from /api/me). null = not loaded / host app
@@ -5608,7 +5616,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 return true;
               })
               .map(t => (
-              <div key={t.id} style={{ ...s.templateCard, ...(isMobile ? { flex: '0 0 calc(50% - 5px)' } : {}) }}
+              <div key={t.id} style={{ ...s.templateCard, ...(isMobile ? { flex: '0 0 calc(50% - 5px)', position: 'relative' } : {}) }}
+                // Desktop only: touch has no hover, and the two substitutes both break here —
+                // long-press fights the panel's own scrolling, and tap already loads the template.
+                // Mobile gets the explicit ⤢ button below instead.
+                onMouseEnter={isMobile ? undefined : (e) => {
+                  const src = thumbSrc(t);
+                  if (!src) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  clearTimeout(tplPreviewTimer.current);
+                  // A short delay so running the cursor down the list doesn't strobe previews.
+                  tplPreviewTimer.current = setTimeout(
+                    () => setTplPreview({ src, name: t.name, tiers: t.tier_count, rect }), 180);
+                }}
+                onMouseLeave={isMobile ? undefined : () => {
+                  clearTimeout(tplPreviewTimer.current);
+                  setTplPreview(null);
+                }}
                 onClick={async () => {
                   let templateDesign = t.design ?? null;
                   if (!templateDesign) {
@@ -5636,6 +5660,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   ? <img src={thumbSrc(t)} alt={t.name} width={180} height={120} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#FAFAF8' }} />
                   : <div style={s.templateThumbPlaceholder} />
                 }
+                {/* Mobile's stand-in for hover. An explicit control, not a gesture: tapping the card
+                    loads the template, so the preview needs a target of its own. */}
+                {isMobile && thumbSrc(t) && (
+                  <button
+                    type="button"
+                    aria-label={`Preview ${t.name}`}
+                    style={s.templatePreviewBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();      // never load the template from this button
+                      setTplPreview({ src: thumbSrc(t), name: t.name, tiers: t.tier_count, rect: null });
+                    }}
+                  >⤢</button>
+                )}
                 <div style={s.templateCardFooter}>
                   <span style={s.templateCardName}>{t.name}</span>
                   {t.offering === 'premium' && (
@@ -5649,6 +5686,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ))
             }
             </div>{/* end templateGrid */}
+
+            {/* Enlarged preview. Portalled to the body because the panel clips its own overflow,
+                and anchored beside the card on desktop / centred as a sheet on mobile (rect null). */}
+            {tplPreview && createPortal(
+              tplPreview.rect
+                ? (() => {
+                    const size = { w: 320, h: 250 };
+                    const { left, top } = previewPosition(
+                      tplPreview.rect, size, window.innerWidth, window.innerHeight);
+                    return (
+                      <div style={{ ...s.templatePreview, left, top, width: size.w }}>
+                        <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
+                        <div style={s.templatePreviewCaption}>
+                          {tplPreview.name} · {tplPreview.tiers}-tier
+                        </div>
+                      </div>
+                    );
+                  })()
+                : (
+                  <div style={s.templatePreviewBackdrop} onClick={() => setTplPreview(null)}>
+                    <div style={{ ...s.templatePreview, position: 'relative', width: 'min(92vw, 420px)' }}
+                      onClick={(e) => e.stopPropagation()}>
+                      <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
+                      <div style={s.templatePreviewCaption}>
+                        {tplPreview.name} · {tplPreview.tiers}-tier
+                      </div>
+                    </div>
+                  </div>
+                ),
+              document.body,
+            )}
             </div>{/* end flyoutScroll */}
           </div>
         )}
@@ -7115,6 +7183,35 @@ const s = {
   },
   templateGrid: {
     display: 'flex', flexWrap: 'wrap', gap: 10,
+  },
+  // Enlarged thumbnail. pointerEvents none on desktop so it can never sit between the cursor and
+  // the card it belongs to — that would fire mouseleave and make the preview flicker itself away.
+  templatePreview: {
+    position: 'fixed', zIndex: 320, pointerEvents: 'none',
+    background: '#fff', borderRadius: 14, padding: 10,
+    boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
+  },
+  templatePreviewImg: {
+    width: '100%', height: 200, objectFit: 'contain',
+    borderRadius: 10, background: '#FAFAF8', display: 'block',
+  },
+  templatePreviewCaption: {
+    fontSize: 12, fontWeight: 700, color: '#1a1a1a',
+    textAlign: 'center', padding: '8px 4px 2px',
+  },
+  templatePreviewBackdrop: {
+    position: 'fixed', inset: 0, zIndex: 320,
+    background: 'rgba(20,16,18,0.45)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+  },
+  templatePreviewBtn: {
+    position: 'absolute', top: 6, right: 6,
+    width: 26, height: 26, borderRadius: 8,
+    border: 'none', background: 'rgba(255,255,255,0.92)',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+    fontSize: 13, lineHeight: 1, color: '#333', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    WebkitTapHighlightColor: 'transparent',
   },
   templateCard: {
     border: '1.5px solid #999999', borderRadius: 12,
