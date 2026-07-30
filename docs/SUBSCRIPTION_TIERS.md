@@ -1,6 +1,6 @@
 # Subscription Tiers → Feature Mapping
 
-**Status:** WORKING DRAFT (shaping for go-live). Last updated 2026-07-26.
+**Status:** WORKING DRAFT (shaping for go-live). Last updated 2026-07-28.
 
 This is the human-readable spec for what each subscription tier includes. The
 **authoritative values** live as data in `subscription_plans.features` (jsonb) in
@@ -235,6 +235,117 @@ India](https://avada.io/blog/shopify-price-in-india/) ·
 [Instamojo](https://www.instamojo.com/pricing/) · [bakery margins,
 India](https://trufflenationonline.com/blog/bakery-profit-margin/) · [vertical SaaS
 premium](https://www.getmonetizely.com/articles/vertical-specific-saas-pricing-why-industry-context-matters-for-revenue-growth)
+
+## Billing intervals — monthly + yearly only (decided 2026-07-28)
+
+**Quarterly is retired. We sell two intervals: monthly and yearly.** Previously this doc specified
+prices per plan but never examined the *intervals* those prices are charged over — which is how a
+third interval survived unexamined from the original `billing_periods` seed all the way to now.
+
+**Why quarterly goes:**
+- **It cannibalises yearly, not monthly.** The baker who takes 10% off for a three-month commitment
+  is the one who was closest to taking 17% off for twelve. You pay a discount to the segment most
+  likely to have committed anyway, and collect three months of cash and lock-in instead of twelve.
+- **0% / 10% / 17% is a weak ladder.** The middle rung is too small to change behaviour but big
+  enough to leak margin, and it blurs the one line that works: *"pay yearly, get two months free."*
+- **It quadruples renewal events.** Every renewal is an opportunity for an involuntary failure on
+  Indian card/UPI mandates. Four failure points a year instead of one, for no gain.
+- **It was never marketed.** The marketing pricing page only ever had a Monthly/Annual toggle;
+  quarterly existed solely in the in-app billing panel. Retiring it makes the two agree.
+
+### Monthly-only was considered and REJECTED (2026-07-28)
+
+The prompt was real — ₹24,999 upfront for Blaze annual is a genuine ask in this market — but
+dropping yearly costs the two things we can least afford, and doesn't fix the thing it's aimed at.
+
+- **Cake demand is seasonal, and monthly-only converts that into churn.** Weddings, festivals and
+  December are peaks; Jan–Feb is genuinely slow. On monthly-only a baker in a quiet month weighs
+  ₹2,499 against three orders and cancels — then returns in October. That is a seasonal rental
+  business with sawtooth revenue and a re-acquisition cost every cycle, and it is structural to the
+  interval, not fixable in product. An annual subscriber rides the slow months without a decision
+  point.
+- **Monthly-only puts the first renewal decision ~30 days in.** This doc's own argument for a
+  30-day trial over 14 is that the aha — landing a real order through a brand-new storefront —
+  takes weeks. Monthly-only recreates that trap on the paid side.
+- **Annual prepay is the growth capital.** Bootstrapped, ₹9,999 or ₹24,999 landing on day one is
+  what funds acquiring the next baker. Monthly-only stretches CAC payback over months we float.
+
+Also worth keeping in proportion: at 30–60 cakes/month and ₹900–1,560 profit each, Blaze annual is
+roughly **half a month's profit**, and Flame annual (₹9,999) is about **seven cakes**. The upfront
+problem is narrow — it's Blaze annual sold to a stranger on day one — and the people for whom it is
+truly impossible are largely not Blaze-segment bakers.
+
+**So fix the timing and the rails, not the structure:** monthly stays the default everywhere (it
+already is — the marketing toggle and `BillingPanel`'s `selectedPeriod` both default to monthly), the
+annual offer is made at the **PQL moment** (storefront published + ≥1 quote received — the same
+trigger this doc already identifies as the highest-leverage change) rather than at signup, and
+affordability is answered with UPI Autopay / EMI. **A pricing interval is a permanent structural
+decision; affordability is a checkout feature.** Do not reach for semi-annual as a compromise — it
+is the quarterly problem again at six months.
+
+### The yearly discount stays at ~17% — two months free
+
+Current prices already are exactly that (₹999 × 12 = ₹11,988 → ₹9,999 = 16.6% off; same ratio on
+Blaze and Forge). Keep the number; the reasoning for the next person to argue against:
+
+- **The churn math says it's fairly priced.** Value the discount against what you'd actually collect
+  on monthly: at 5% monthly churn you collect ~9.2 months over a year, at 3% churn ~10.2. Yearly at
+  17% off = 10 months paid upfront. Across the plausible SMB churn range that is within a few
+  percent of break-even on nominal revenue — and then strictly ahead on cash timing, one renewal
+  event instead of twelve, and no dunning exposure.
+- **Deeper doesn't buy adoption, because the barrier is liquidity, not price.** A baker who can't
+  front ₹24,999 can't front ₹22,500 either. Going to 25% would mostly refund the people who'd have
+  taken 17% — paying ~8% of the annual base to change almost nobody's mind.
+- **Shallower stops reading as a deal.** "Two months free" is roughly the threshold at which
+  committing twelve months feels rewarded. The retired 10% quarterly rung is the proof that a
+  smaller number moves no one.
+- **Don't chase a rounder percentage at the cost of the prices.** ₹9,999 keeps Flame under the ₹10k
+  anchor and ₹24,999 keeps Blaze under ₹25k; those matter more than reaching a clean 20%.
+
+**Frame it as "2 months free", not "‑17%"** — same money, concrete and self-evidently good, where a
+percentage invites arithmetic. The marketing toggle already says *"save 2 months"*; the in-app
+`BillingPanel` badge still renders `-{discount_pct}%`. Copy change pending sign-off, not done here.
+
+### How it's switched off (and back on)
+
+Retiring an interval is a **data** change, not a code change — the same shape as hiding a plan via
+`subscription_plans.is_active`:
+
+```sql
+update billing_periods set is_active = false where name = 'quarterly';   -- and true to bring it back
+```
+
+`supabase/billing_periods_retire_quarterly.sql` carries this. **The row and its id (2) stay
+forever** — `baker_subscriptions.billing_period_id` references it and `billingEvents` labels
+historical rows through `PERIOD.NAME_BY_ID`, so deleting or renumbering would orphan history and
+shift yearly's id. `PERIOD_SHORT` in `BillingPanel` likewise keeps `quarterly` on purpose, so a
+subscription created before the retirement can still render its own name.
+
+Two code changes were needed to make that flag *real*, because it previously controlled nothing a
+customer could see:
+- **`BillingPanel` rendered the interval toggle from a hardcoded `['monthly','quarterly','yearly']`.**
+  Flipping the flag would have left a Quarterly button on screen that fell through to `periods[0]`
+  and silently billed monthly. The picker is now driven by the fetched `periods`, which
+  `GET /billing/periods` already filters on `is_active`.
+- **`POST /billing/subscribe` resolved the interval through the `PERIOD.NAME_BY_ID` code constant**,
+  so a direct API call could still subscribe to a retired period. It now re-reads the row and
+  rejects an inactive one with `billing_period_inactive`.
+
+*(The same class of gap still exists for PLANS — `POST /billing/subscribe` resolves the tier through
+`PLAN.ID_BY_NAME`, not the table, so `subscription_plans.is_active` remains a display toggle rather
+than a real gate. Left open deliberately: it's entangled with the unresolved Forge question. See
+"Hiding a plan".)*
+
+**Verified safe against the in-flight weekly renewal test** (baker `super-bake`, `sub_TGVFzGSSOmXa1A`,
+renewal due 29 Jul): that row carries `billing_period_id: null` (hand-linked weekly, not a real
+period), renewal runs off the `subscription.charged` webhook which advances `current_period_end` from
+Razorpay's own `current_end` and never reads `billing_periods`, and **zero** subscriptions in the DB
+reference period 2.
+
+**Known follow-up:** `billing_periods.discount_pct` is only a *fallback* — `periodPrice()` uses it
+when a plan has no explicit `price_yearly`, and all four plans have one. So the badge and the actual
+charge are computed from different sources. They agree today; they would silently diverge if anyone
+edited a yearly price without updating `discount_pct`.
 
 ## Legend
 - **MVP:** ✅ in go-live · 🔜 post-MVP (v1.1) · 🔮 future
