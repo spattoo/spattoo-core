@@ -466,7 +466,13 @@ function SmartToolsCard({ apiClient, primaryColor }) {
   );
 }
 
-export default function BillingPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
+// onSubscriptionChange — optional. Fired once the subscription state has actually MOVED (a
+// completed Checkout, or a cancel), so the host can re-read whatever it derives from the
+// subscription. The designer uses it to refresh bakerData, which drives the blocked-access gate:
+// without it a baker who paid from that gate was dropped straight back onto the expired screen,
+// because bakerData is fetched once at mount and this panel only ever reloaded its OWN state.
+// NOT fired on open/refresh — only on a real change, so the host isn't refetched for nothing.
+export default function BillingPanel({ open, onClose, onSubscriptionChange, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [billing,        setBilling]        = useState(null);
   const [history,        setHistory]        = useState([]);
@@ -513,9 +519,12 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   async function reloadUntilSettled(tries = 5, delayMs = 1500) {
     for (let i = 0; i < tries; i++) {
       const b = await reload().catch(() => null);
-      if (b && b.status !== 'pending') return;
+      if (b && b.status !== 'pending') { onSubscriptionChange?.(b); return; }
       await new Promise(r => setTimeout(r, delayMs));
     }
+    // Gave up waiting for the webhook. Tell the host anyway: the payment DID go through, so the
+    // host's stale copy is more wrong than a late one, and refetching can only improve it.
+    onSubscriptionChange?.(null);
   }
 
   useEffect(() => {
@@ -619,7 +628,8 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       await apiClient.cancelSubscription();
       // Re-fetch authoritative state so the WHOLE panel reconciles (top card + history), not just a
       // local flag flip. cancelSubscription already set cancel_at_period_end server-side.
-      await reload();
+      const b = await reload();
+      onSubscriptionChange?.(b);   // host derives access from this too
     } catch (e) { setError(e.message); }
     finally { setCancelling(false); }
   }

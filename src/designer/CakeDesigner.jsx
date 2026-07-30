@@ -1725,21 +1725,31 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     }
   }, [apiClient]);
 
+  // Re-read the baker profile from the API. Extracted (rather than living only inside the mount
+  // effect) because bakerData drives the blocked-access gate below, and it was otherwise fetched
+  // ONCE at mount: a baker who lapsed, opened Billing from the gate and PAID still had
+  // subscription_status='expired' in state, so closing the panel dropped them back on the expired
+  // screen despite a successful payment. BillingPanel calls this via onSubscriptionChange.
+  // Failure keeps the last good profile — a transient network error must not blank the app or
+  // (worse) gate a baker who is actually paid up.
+  const refreshBakerProfile = useCallback(async () => {
+    if (!apiClient?.fetchBakerProfile) return;
+    try {
+      const { baker, user } = await apiClient.fetchBakerProfile();
+      // Same precedence as CustomerStorefront — prefer the background-removed logo. On THIS
+      // path the backend has already resolved the key, so it arrives as logo_transparent_url;
+      // the supabase fallback below gets the raw logo_transparent_key and resolves it itself.
+      if (baker) setBakerData({
+        ...baker,
+        logo_url: baker.logo_transparent_url || baker.logo_url,
+      });
+      if (user) setUserData(user);
+    } catch { /* keep the last good profile */ }
+  }, [apiClient]);
+
   useEffect(() => {
     if (apiClient?.fetchBakerProfile) {
-      apiClient.fetchBakerProfile()
-        .then(({ baker, user }) => {
-          // Same precedence as CustomerStorefront — prefer the background-removed logo. On THIS
-          // path the backend has already resolved the key, so it arrives as logo_transparent_url;
-          // the supabase fallback below gets the raw logo_transparent_key and resolves it itself.
-          if (baker) setBakerData({
-            ...baker,
-            logo_url: baker.logo_transparent_url || baker.logo_url,
-          });
-          if (user)  setUserData(user);
-        })
-        .catch(() => {})
-        .finally(() => setBakerReady(true));
+      refreshBakerProfile().finally(() => setBakerReady(true));
       return;
     }
     if (!supabase) { setBakerReady(true); return; }
@@ -1769,7 +1779,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       });
       setBakerReady(true);
     });
-  }, [supabase, apiClient, cfAssetsBase]);
+  }, [supabase, apiClient, cfAssetsBase, refreshBakerProfile]);
 
   // Tag telemetry with baker context so every error report (boundary, texture,
   // global handler) carries baker_id. The host app sets `surface`; the customer
@@ -5100,6 +5110,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <BillingPanel
             open={billingPanelOpen}
             onClose={() => setBillingPanelOpen(false)}
+            onSubscriptionChange={refreshBakerProfile}
             apiClient={apiClient}
             primaryColor={primaryColor}
             accentColor={accentColor}
@@ -6699,6 +6710,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       <BillingPanel
         open={billingPanelOpen}
         onClose={() => setBillingPanelOpen(false)}
+        onSubscriptionChange={refreshBakerProfile}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}
