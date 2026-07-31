@@ -657,8 +657,10 @@ function drawFooters(sheet, { order }) {
 //
 // Role tokens ({body}) print as the role word. The colours live in the colour table above; naming
 // them twice would be a second place for them to disagree.
-function drawBuildGuides(sheet, buildGuides) {
-  const rows = Object.values(buildGuides ?? {}).filter(r => r?.guide?.steps?.length);
+function drawDecorationSteps(sheet, decorationSteps) {
+  // Same shape from both sources: { <key>: { guide, … } }. An element-backed guide is keyed by
+  // element id, a photo one by the decoration's id within the spec — the sheet does not care which.
+  const rows = Object.values(decorationSteps ?? {}).filter(r => r?.guide?.steps?.length);
   if (!rows.length) return;
 
   const readable = (s) => String(s ?? '').replace(/\{(\w+)\}/g, (_, r) => r.replace(/_/g, ' '));
@@ -711,7 +713,7 @@ function drawBuildGuides(sheet, buildGuides) {
   }
 }
 
-export async function renderXrayPages({ order, report, baker, conflicts, spec, buildGuides } = {}) {
+export async function renderXrayPages({ order, report, baker, conflicts, spec, decorationSteps } = {}) {
   const [thumb, logo] = await Promise.all([
     tryLoad(order?.design_thumbnail_url),
     tryLoad(baker?.logo_url),
@@ -726,7 +728,7 @@ export async function renderXrayPages({ order, report, baker, conflicts, spec, b
   drawChecklist(sheet, report.checklist, report.checklistTotal);
   drawColors(sheet, report.colors);
   drawPiping(sheet, { elements: report.elements, freehand: report.freehand });
-  drawBuildGuides(sheet, buildGuides);
+  drawDecorationSteps(sheet, decorationSteps);
   drawFooters(sheet, { order });
 
   return sheet.pages;

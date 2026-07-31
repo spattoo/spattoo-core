@@ -24,22 +24,46 @@
 // READING OF A PHOTO, not a measurement, and both the screen and the printed sheet have to keep
 // saying so. A baker must never mistake an inferred tin plan for one derived from a real design.
 
+// xray_spec holds TWO things for a photo order, in one column: the design the model read, and the
+// decoration steps generated on demand afterwards. Both are inputs to the same buildXrayReport()
+// call, which is why they travel together rather than in a second column.
+//
+//   { design: {…design_snapshot-shaped…}, decorations: { "<key>": {…steps…} } }
+//
+// Rows written before decoration steps existed are a BARE design_snapshot with no wrapper, so
+// unwrap defensively: a spec with `tiers` at the top level is the old shape and is its own design.
+function unwrapSpec(spec) {
+  if (!spec) return { design: null, decorations: null };
+  if (spec.design) return { design: spec.design, decorations: spec.decorations ?? null };
+  return { design: spec, decorations: null };
+}
+
 export function resolveXraySpec(order) {
   const snapshot = order?.design_snapshot;
   if (snapshot) {
-    return { design: snapshot, fromPhoto: false, edited: false, stale: false, meta: null, coverage: null };
+    return {
+      design: snapshot, fromPhoto: false, edited: false, stale: false,
+      meta: null, coverage: null, decorations: null,
+    };
   }
 
-  const edited   = order?.xray_spec_edited;
-  const spec     = order?.xray_spec;
-  const design   = edited ?? spec ?? null;
+  const editedRaw = unwrapSpec(order?.xray_spec_edited);
+  const specRaw   = unwrapSpec(order?.xray_spec);
+  const design    = editedRaw.design ?? specRaw.design ?? null;
+  // Steps are generated against the ORDER, not against a particular revision of the reading, so a
+  // baker correcting the tier count must not silently discard the steps they already paid for.
+  const decorations = editedRaw.decorations ?? specRaw.decorations ?? null;
   if (!design) {
-    return { design: null, fromPhoto: false, edited: false, stale: false, meta: null, coverage: null };
+    return {
+      design: null, fromPhoto: false, edited: false, stale: false,
+      meta: null, coverage: null, decorations: null,
+    };
   }
 
   const meta = order?.xray_spec_meta ?? null;
   return {
     design,
+    decorations,
     fromPhoto: true,
     // The reference photo has been replaced since this was read (server-computed — see
     // routes/orders.js xraySpecStale). The guide is not wrong so much as ABOUT A DIFFERENT
@@ -47,7 +71,7 @@ export function resolveXraySpec(order) {
     // Surfaced, never auto-fixed — re-reading spends credits, and nothing should be charged as a
     // side effect of uploading a photo.
     stale: order?.xray_spec_stale === true,
-    edited: !!edited,
+    edited: !!editedRaw.design,
     meta,
     // What the model could NOT identify. Surfaced deliberately: harvest.js warns that a checklist
     // which silently omits is worse than no checklist, because it is believed. An estimate that

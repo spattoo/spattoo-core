@@ -141,7 +141,7 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
 // The result is opened directly rather than refetching the order. The route returns the estimate
 // it just wrote, so a round trip would re-read what we are already holding, and the panel picks it
 // up from the server on its next load anyway.
-function BuildGuideLauncher({ order, apiClient, variant }) {
+function PhotoXrayLauncher({ order, apiClient, variant }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState(null);
   const [spec, setSpec] = useState(null);
@@ -153,7 +153,7 @@ function BuildGuideLauncher({ order, apiClient, variant }) {
   if (!apiClient?.createXraySpec) return null;    // host hasn't wired it → no dead button
   if (order?.design_snapshot) return null;        // designed: X-Ray reads it directly
   // Normally this disappears once a guide exists and XrayLauncher takes over. The exception is a
-  // STALE one: the baker has replaced the reference photo, so the cached guide describes a picture
+  // STALE one: the baker has replaced the reference photo, so the cached X-Ray describes a picture
   // that is no longer on the order. It comes back as a re-read, priced and worded as one.
   if (hasXraySpec(order) && !stale) return null;
 
@@ -162,9 +162,9 @@ function BuildGuideLauncher({ order, apiClient, variant }) {
     setBusy(true); setErr(null);
     try {
       // A stale re-read must REGENERATE — without this the route would hand back the very
-      // cached guide we are trying to replace, free and unchanged.
+      // cached X-Ray we are trying to replace, free and unchanged.
       const res = await apiClient.createXraySpec(order.id, { regenerate: stale });
-      if (!res?.estimate) throw new Error('No build guide came back.');
+      if (!res?.estimate) throw new Error('No X-Ray came back.');
       setSpec({ spec: res.estimate, meta: res.meta ?? null });
       // Tell the header pill the balance moved. Fired on `reused` too: that call spends nothing,
       // but re-reading is cheap and a pill that is occasionally over-eager is far better than one
@@ -985,7 +985,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         flexWrap: stack ? 'nowrap' : 'wrap',
       }}>
         <XrayLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
-        <BuildGuideLauncher order={order} apiClient={apiClient} variant={v} />
+        <PhotoXrayLauncher order={order} apiClient={apiClient} variant={v} />
         <IconAction
           glyph={<Cube3D />}
           label={designLocked ? 'View in 3D' : 'Edit in 3D'}

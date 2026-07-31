@@ -6,7 +6,7 @@ import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
 import { resolveXraySpec } from './resolveXraySpec.js';
-import BuildGuideSection from './BuildGuideSection.jsx';
+import DecorationStepsSection from './DecorationStepsSection.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -48,7 +48,7 @@ const s = {
 export default function XrayReport({ order, apiClient, onClose }) {
   // One resolution, shared with the launcher and the PDF (resolveXraySpec.js) — the sheet in the
   // kitchen and the screen in the office must be built from the same design.
-  const { design, fromPhoto, edited, stale, coverage } = resolveXraySpec(order);
+  const { design, fromPhoto, edited, stale, coverage, decorations: storedSteps } = resolveXraySpec(order);
 
   const [guides, setGuides] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -150,9 +150,10 @@ export default function XrayReport({ order, apiClient, onClose }) {
         // re-resolved could print a measured-looking sheet from an estimate the screen had
         // labelled — and paper is the copy that reaches the bench.
         spec: { fromPhoto, edited, stale, coverage },
-        // A modelled topper is made days ahead, at a bench, from paper — so the guide has to be
-        // ON the sheet, not only on the screen it was generated from.
-        buildGuides,
+        // A modelled topper is made days ahead, at a bench, from paper — so the steps have to be
+        // ON the sheet, not only on the screen they were generated from. Element-backed on a
+        // designed order, read from the photo on a photo one; identical shape either way.
+        decorationSteps: fromPhoto ? storedSteps : buildGuides,
       });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
@@ -350,8 +351,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
 
         {/* How to make the baker's own decorations. After the nozzle sections, because piping is
             what happens ON the cake and a modelled topper is made separately, usually ahead. */}
-        <BuildGuideSection
-          report={report} design={design} guides={buildGuides} apiClient={apiClient}
+        <DecorationStepsSection
+          design={design} fromPhoto={fromPhoto} storedSteps={storedSteps}
+          guides={buildGuides} orderId={order?.id} apiClient={apiClient}
           onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
         />
 
