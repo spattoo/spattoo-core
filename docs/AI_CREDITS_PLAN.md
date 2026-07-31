@@ -328,6 +328,58 @@ Consequences to design for now, because retrofitting them is painful:
 
 ---
 
+### 2.5 Why would a baker pay us, when ChatGPT is free?
+
+The question that decides whether any of §2 matters. `FONDANT_BUILD_GUIDE_PLAN.md` concedes the
+premise: this is *"exactly like the kind of how-to sheet you can ask ChatGPT to produce from a
+photo."*
+
+**Be honest about where the answer is "they shouldn't."** A baker who wants a rough method should
+use ChatGPT — it is cheaper, already on their phone, and conversational. We lose that argument if
+we contest it.
+
+We are not selling a better model; it is the same class of model. **We are selling what the answer
+is checked against:**
+
+| | ChatGPT | Us |
+|---|---|---|
+| Tin sizes | guesses, or asks | derived from **the weight on this order**, split by real tier volumes |
+| Gel recipe | *"add purple until it looks right"* | *"¼ tsp Sugarflair Grape Violet per 500g"* — ~32 real gels |
+| Nozzles | invents tip numbers | curated `nozzles` catalogue + human-reviewed craft guides |
+| Allergen conflict | **cannot** — has no idea what is in your Hazelnut Praline | *"Customer asked nut-free; top tier is Hazelnut Praline"* |
+| Completeness | confidently omits the topper | enumerates every placeable, with a test asserting none is missed |
+| Honesty | never says "I could not identify this" | names what it could not read |
+
+The last two carry the most weight. **ChatGPT's failure mode is confident omission** — a beautiful
+sheet that quietly leaves out the lion topper. And the allergen band is not a *better* answer, it
+is one ChatGPT cannot produce at all, because it has no access to the baker's own flavour
+declarations.
+
+**The frame that actually decides it** is not AI-vs-AI: ~₹17.60 per build guide against ₹900–1,560
+profit per cake, where a remake costs the whole cake. Roughly 1–2% of one cake's profit to not
+guess the tin. Nobody optimises that by switching to a chat window and re-typing the order.
+
+Three things follow, and they are constraints rather than preferences:
+
+- **Never market it as AI.** The moment we say "AI-powered build guides" we are comparable, and we
+  lose. Name the grounding: *your tins, your gels, your nozzles.* (This is the existing "name the
+  JOB, never AI" rule earning its keep a second time.)
+- **Show the working on the sheet.** If it reads like generic model output it will be judged as
+  generic model output. The tin line should say it is for the weight on this order; the nozzle line
+  should read as coming from the craft guides.
+- **One tap, no prompt box, ever** — the binding constraint, with its full reasoning in spattoo-docs
+  `features/ai-credits.md`. If we ask a baker to type anything, we have handed the advantage back.
+
+**A gap worth closing:** we do not know which nozzles a baker actually owns (`nozzles.is_common` is
+a global heuristic, not an inventory). *"Wilton 1M — you have this"* versus *"Ateco 863"*, which
+they cannot buy before Saturday, is the difference between a useful sheet and an annoying one. A
+per-baker tip inventory would make this argument close to unanswerable, and it is small.
+
+**And the bottom line to hold ourselves to:** we are selling the only build guide that knows what
+the customer ordered, what is in your flavours, and what is in your gel box — and that admits what
+it could not see. If we ever ship one that does not do those things, the objection becomes correct
+and we should stop charging for it.
+
 ## 3. Where else AI earns its keep
 
 Ranked by (value to baker × strategic fit) ÷ (cost + risk). Anchored to things this codebase and
