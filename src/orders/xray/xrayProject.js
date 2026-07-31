@@ -84,12 +84,26 @@ function placeColumn(items) {
 //   ly    where the label sits (ay, pushed to avoid its neighbours)
 export function layoutDiagram(items = [], snapshotTiers = []) {
   const tiers = normalizeTiers(snapshotTiers);
-  if (!items.length || !tiers.length) return [];
+  if (!items.length) return [];
 
-  const enriched = items.map((it, i) => {
+  // Two kinds of item can arrive together on a mixed order: ones carrying a photo box (anchored
+  // directly) and ones needing 3D projection. Projection requires tier geometry, which a photo
+  // order does not have — so drop those rather than let them reach anchorWorld with no tier.
+  //
+  // DROPPING IS THE POINT. The alternative is a leader line drawn from a guessed anchor onto a
+  // real photograph, pointing confidently at the wrong part of someone's cake. The whole reason
+  // this diagram was designed-orders-only is that such a line is worse than no line at all.
+  const drawable = tiers.length ? items : items.filter(it => it.bbox);
+  if (!drawable.length) return [];
+
+  const enriched = drawable.map((it, i) => {
     const side = i % 2 === 0 ? 'L' : 'R';
-    const tier = tiers[it.tierIndex] ?? tiers[tiers.length - 1];
-    const p = projectToScreen(anchorWorld(tier, it.zone, side));
+    // A PHOTO order anchors on the box the model reported, because there is no camera to project
+    // through — the projection below only works against our own render at a known camera. Same
+    // output either way, so nothing downstream has to know which kind of order it is drawing.
+    const p = it.bbox
+      ? { x: it.bbox[0] + it.bbox[2] / 2, y: it.bbox[1] + it.bbox[3] / 2 }
+      : projectToScreen(anchorWorld(tiers[it.tierIndex] ?? tiers[tiers.length - 1], it.zone, side));
     return { ...it, side, ax: DIAGRAM.cakeX + p.x * DIAGRAM.cakeW, ay: p.y, by: p.y };
   });
 

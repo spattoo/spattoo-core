@@ -74,6 +74,10 @@ export function harvestPiping(design) {
           tierIndex: i,
           tierCount: n,
           zone: zone === 'top' ? 'Rim' : 'Base',
+          // Photo orders only: where the model saw this border on the reference image. Carried
+          // rather than derived, because the leader-line anchor for a photo cannot be computed —
+          // there is no camera to project through, only the box the model reported.
+          bbox: p.bbox ?? null,
         });
       });
     });

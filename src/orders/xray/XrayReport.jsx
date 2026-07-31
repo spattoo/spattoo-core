@@ -74,6 +74,12 @@ export default function XrayReport({ order, apiClient, onClose }) {
 
   // Per-decoration bbox + real width, keyed the way the stored steps are. Shared by the screen
   // card and the PDF so a decoration cannot be 5cm in one and 7cm in the other.
+  // On a photo order a leader line is only drawable where the model actually reported a box.
+  const anchoredDiagram = useMemo(
+    () => (fromPhoto ? diagramItems.filter(d => d.bbox) : diagramItems),
+    [fromPhoto, diagramItems],
+  );
+
   const decorationMeta = useMemo(() => {
     const out = {};
     for (const d of [...(design?.stickers ?? []), ...(design?.decorations ?? [])]) {
@@ -383,22 +389,22 @@ export default function XrayReport({ order, apiClient, onClose }) {
           onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
         />
 
-        {/* Annotated cake — DESIGNED ORDERS ONLY.
-            xrayProject.js lands the leader lines by rebuilding the thumbnail's camera exactly
-            (CAMERA_POSITION / CAMERA_FOV / lookAt) and projecting each piping's 3D anchor through
-            it. That works because the thumbnail is OUR render, taken with that camera.
+        {/* Annotated cake — now BOTH kinds of order, by two different routes to the same anchor.
 
-            On an fromPhoto order the picture is the customer's phone photo — arbitrary angle,
-            arbitrary lens, arbitrary distance — mirrored into design_thumbnail_url by the manual
-            order flow. Projecting through the designer's camera would draw confident leader lines
-            pointing at the wrong parts of a real cake, which is worse than drawing none: the rest
-            of the sheet is honest about being an estimate, and this would quietly contradict it.
+            A designed order projects each piping's 3D anchor through the designer's exact camera
+            (xrayProject.js), which works because the thumbnail is OUR render at that camera.
 
-            Omitted rather than approximated. Getting it back means the model returning 2D anchors
-            on the photo itself; layoutDiagram already separates where a line POINTS (ax/ay) from
-            where its label SITS, so it would take pre-projected anchors with little change. */}
-        {!fromPhoto && diagramItems.length > 0 && (
-          <XrayCakeDiagram thumbnailUrl={order.design_thumbnail_url} items={diagramItems} snapshotTiers={design.tiers} />
+            A photo order has no camera to rebuild, and projecting through the designer's one would
+            draw confident leader lines at the wrong parts of a real cake — worse than drawing none,
+            because the rest of the sheet is honest about being an estimate and this would quietly
+            contradict it. So it anchors on the box analyzeCake reported for that piping instead.
+            layoutDiagram already separated where a line POINTS from where its label SITS, so it
+            took the pre-projected anchor with almost no change.
+
+            A photo piping with NO box is dropped rather than projected: falling back would produce
+            exactly the confidently-wrong line this used to avoid by omitting the whole diagram. */}
+        {anchoredDiagram.length > 0 && (
+          <XrayCakeDiagram thumbnailUrl={order.design_thumbnail_url} items={anchoredDiagram} snapshotTiers={design.tiers} />
         )}
 
         {/* Tins */}

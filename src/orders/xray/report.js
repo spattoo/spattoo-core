@@ -117,6 +117,9 @@ export function buildXrayReport({ design, weightKg, guides, flavours, specialIns
       zone: e.zone,
       primaryLabel: e.primaryLabel,
       strength: e.strength,
+      // The anchor for a PHOTO order, as a fraction of the image. Present here means the diagram
+      // can skip the 3D projection entirely — see layoutDiagram.
+      bbox: e.bbox ?? null,
     }));
 
   // ── The checklist ───────────────────────────────────────────────────────────
