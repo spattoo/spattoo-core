@@ -25,7 +25,7 @@ import { creditsChanged } from '../../billing/creditsBus.js';
 // could be an edible-print decal or a reference for a fondant figure, and the baker decides that
 // WITH THE CUSTOMER — often after the order is placed. So the A4 print path is always available
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
-export default function DecorationStepsSection({
+export default function XrayDecorationSteps({
   design, fromPhoto, storedSteps, guides, orderId, apiClient, onGenerated, s,
 }) {
   const rows = fromPhoto ? photoRows(design, storedSteps) : elementRows(design, guides);
@@ -109,7 +109,7 @@ function DecorationRow({ row, orderId, apiClient, onGenerated, s }) {
   // An element guide is shared and amortises across every cake using it; photo steps belong to this
   // order alone. Saying which is which is the difference between "worth it" and "why again?".
   const canGenerate = row.elementId
-    ? !!apiClient?.createElementBuildGuide
+    ? !!apiClient?.createElementDecorationSteps
     : !!(apiClient?.createXrayDecorationSteps && orderId);
 
   async function generate() {
@@ -117,7 +117,7 @@ function DecorationRow({ row, orderId, apiClient, onGenerated, s }) {
     setBusy(true); setErr(null); setNote(null);
     try {
       const res = row.elementId
-        ? await apiClient.createElementBuildGuide(row.elementId)
+        ? await apiClient.createElementDecorationSteps(row.elementId)
         : await apiClient.createXrayDecorationSteps(orderId, { key: row.key, label: row.label });
       // A decoration nobody models — a printed decal, an acrylic topper, or piping, whose real
       // instruction is the nozzle section above. A real answer, and the server released the hold

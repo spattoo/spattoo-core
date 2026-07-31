@@ -6,7 +6,7 @@ import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
 import { resolveXraySpec } from './resolveXraySpec.js';
-import DecorationStepsSection from './DecorationStepsSection.jsx';
+import XrayDecorationSteps from './XrayDecorationSteps.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -351,7 +351,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
 
         {/* How to make the baker's own decorations. After the nozzle sections, because piping is
             what happens ON the cake and a modelled topper is made separately, usually ahead. */}
-        <DecorationStepsSection
+        <XrayDecorationSteps
           design={design} fromPhoto={fromPhoto} storedSteps={storedSteps}
           guides={buildGuides} orderId={order?.id} apiClient={apiClient}
           onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
