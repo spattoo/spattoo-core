@@ -309,6 +309,7 @@ function SmartToolsCard({ apiClient, primaryColor }) {
   const [busyPack, setBusy]   = useState(null);
   const [err, setErr]         = useState(null);
   const [tick, setTick]       = useState(0);
+  const [help, setHelp]       = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -335,6 +336,44 @@ function SmartToolsCard({ apiClient, primaryColor }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={label}>Smart tools</span>
       <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6, padding: '2px 6px', borderRadius: 20, background: '#F0F4F1', color: '#6B8F7A' }}>BETA</span>
+      <button
+        type="button" onClick={() => setHelp(h => !h)} aria-expanded={help}
+        aria-label="What are credits used for?"
+        style={{
+          marginLeft: 'auto', width: 20, height: 20, borderRadius: '50%', cursor: 'pointer',
+          border: '1.5px solid #D8E4DB', background: help ? '#EEF3EF' : '#fff', color: '#7C8B82',
+          fontFamily: 'inherit', fontSize: 11, fontWeight: 800, lineHeight: 1, padding: 0,
+        }}
+      >i</button>
+    </div>
+  );
+
+  // ── What the credits are FOR ─────────────────────────────────────────────────────────────────
+  // A price list, deliberately — not "how many of each you have left". They all draw on ONE pool,
+  // so per-tool counts would read as separate budgets: spend on a build guide and the "cake
+  // designs" number silently drops too. Showing what each costs is the same information without
+  // the false implication. (SUBSCRIPTION_TIERS.md's "concrete count, never abstract credits" rule
+  // predates there being more than one metered tool — it stays true at the point of use, where a
+  // single job is in front of the baker; see the launcher.)
+  const helpText = help && (
+    <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div style={{ fontSize: 12, color: '#4A5D51', fontWeight: 600, lineHeight: 1.5 }}>
+        One pool, shared by every smart tool — use it wherever you like.
+      </div>
+      {(data.actions ?? []).length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {data.actions.map(a => (
+            <div key={a.actionKey} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
+              <span style={{ color: '#4A5D51', fontWeight: 600 }}>{a.label}</span>
+              <span style={{ color: '#7C8B82', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{a.credits} credits</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 11.5, color: '#8A9A90', fontWeight: 600, lineHeight: 1.5 }}>
+        Your monthly allowance resets at the start of each month. Credits you buy never expire, and
+        are only used once the monthly ones are gone. Nothing is charged for a result you discard.
+      </div>
     </div>
   );
 
@@ -346,7 +385,7 @@ function SmartToolsCard({ apiClient, primaryColor }) {
         {header}
         <div style={{ fontSize: 15, fontWeight: 800, color: '#2C4433' }}>Included on your plan</div>
         <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600 }}>
-          Build guides from a photo, with no monthly cap.
+          Every smart tool, with no monthly cap.
         </div>
       </div>
     );
@@ -406,23 +445,22 @@ function SmartToolsCard({ apiClient, primaryColor }) {
     <div style={card}>
       {header}
 
-      {/* The headline is the JOB COUNT, straight from the server. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {(data.actions ?? []).map(a => (
-          <div key={a.actionKey} style={{ fontSize: 15, fontWeight: 800, color: a.remaining > 0 ? '#2C4433' : '#991B1B' }}>
-            {a.remaining} {a.label.toLowerCase()}{a.remaining === 1 ? '' : 's'} left this month
-          </div>
-        ))}
+      {/* ONE number: what is actually spendable, across every tool. */}
+      <div style={{ fontSize: 22, fontWeight: 800, color: (data.spendable ?? 0) > 0 ? '#2C4433' : '#991B1B', fontVariantNumeric: 'tabular-nums', letterSpacing: -0.3 }}>
+        {data.spendable ?? 0} <span style={{ fontSize: 14, fontWeight: 700, color: '#7C8B82' }}>credits left</span>
       </div>
 
-      {/* The meter. Credits are legible here because top-ups are sold in them. */}
+      {helpText}
+
+      {/* The meter tracks the MONTHLY ALLOWANCE only — that is the part that resets, and the only
+          part a progress bar can honestly represent. Purchased credits have no denominator. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <div style={{ height: 7, borderRadius: 20, background: '#F0F4F1', overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${pct}%`, background: tone.bar, borderRadius: 20, transition: 'width .3s' }} />
         </div>
         <div style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-          {data.allowanceUsed} of {data.allowance} used
-          {data.walletBalance > 0 && ` · ${data.walletBalance} top-up credits (these don’t expire)`}
+          {data.allowanceUsed} of {data.allowance} monthly allowance used
+          {data.walletBalance > 0 && ` · ${data.walletBalance} bought (never expire)`}
         </div>
       </div>
 
@@ -438,26 +476,28 @@ function SmartToolsCard({ apiClient, primaryColor }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
           <span style={{ ...label, color: '#B7C4BB' }}>Need more this month</span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {packs.map(p => {
-              const buys = p.buys?.[0];
-              return (
-                <button
-                  key={p.packKey} type="button" onClick={() => buy(p.packKey)} disabled={!!busyPack}
-                  style={{
-                    flex: '1 1 150px', textAlign: 'left', cursor: busyPack ? 'default' : 'pointer',
-                    background: '#fff', border: '1.5px solid #E8EFE9', borderRadius: 12,
-                    padding: '10px 13px', fontFamily: 'inherit', opacity: busyPack && busyPack !== p.packKey ? 0.5 : 1,
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>
-                    {busyPack === p.packKey ? 'Opening…' : formatMoney(p.pricePaise / 100)}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#7C8B82', fontWeight: 600, marginTop: 2 }}>
-                    {buys ? `+${buys.count} ${buys.label.toLowerCase()}s` : `+${p.credits} credits`}
-                  </div>
-                </button>
-              );
-            })}
+            {/* Packs are priced in CREDITS, not in jobs. The endpoint also returns `buys` (what a
+                pack is worth in each tool) and it is deliberately unused here: "+20 build guides"
+                would say the pack is FOR build guides, when it spends anywhere. The help bubble
+                above carries what each tool costs, which is the same information without the
+                false earmarking. */}
+            {packs.map(p => (
+              <button
+                key={p.packKey} type="button" onClick={() => buy(p.packKey)} disabled={!!busyPack}
+                style={{
+                  flex: '1 1 130px', textAlign: 'left', cursor: busyPack ? 'default' : 'pointer',
+                  background: '#fff', border: '1.5px solid #E8EFE9', borderRadius: 12,
+                  padding: '10px 13px', fontFamily: 'inherit', opacity: busyPack && busyPack !== p.packKey ? 0.5 : 1,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>
+                  {busyPack === p.packKey ? 'Opening…' : formatMoney(p.pricePaise / 100)}
+                </div>
+                <div style={{ fontSize: 11, color: '#7C8B82', fontWeight: 600, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                  +{p.credits} credits
+                </div>
+              </button>
+            ))}
           </div>
           <span style={{ fontSize: 10.5, color: '#B7C4BB', fontWeight: 600 }}>Prices exclude GST.</span>
         </div>

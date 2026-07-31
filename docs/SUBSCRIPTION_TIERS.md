@@ -462,6 +462,16 @@ Source: [trial-to-paid benchmarks by trial type, ACV, length and card requiremen
 - **Build real metering** (confirmed). Express the limit as a CONCRETE count in the UI
   ("5 photo→cake designs / month"), NOT abstract "credits". Internally meter a real cost
   ledger (compute/₹) for the margin guardrail; show readable counts outside.
+
+  > **Refined 2026-07-31 — the rule holds at the point of USE, not over the pool.** This was
+  > written while #13 was ONE merged tool on one pool, where a job count is both concrete AND
+  > accurate. Once several tools share that pool it stops being accurate: *"53 build guides · 40
+  > cake designs"* reads as two budgets when spending from either drains both. So: a **launcher or
+  > button shows the job count** for the action in hand ("this uses 15" is true there), while the
+  > **billing card shows ONE number** — credits left — with a help bubble listing what each tool
+  > costs. Top-up packs are priced in credits for the same reason: a pack spends anywhere. The
+  > intent is untouched — bakers are never asked to think in tokens. See spattoo-docs
+  > `features/ai-credits.md`.
 - **Name the JOB, never "AI"** — "Photo → cake design". Bakers don't buy "AI"; they buy the
   outcome. (Background removal = plumbing, not a named feature.)
 - **BETA / experimental for several months.** Quality varies (Meshy/GPT) → label it,
