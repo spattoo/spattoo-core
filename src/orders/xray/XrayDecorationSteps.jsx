@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
+import { gelRecipeFor } from './gelLibrary.js';
 
 // ── How to make the decorations ──────────────────────────────────────────────────────────────────
 // The nozzle sections answer "which tip pipes this border". This answers the other half: how a
@@ -26,7 +27,7 @@ import { creditsChanged } from '../../billing/creditsBus.js';
 // WITH THE CUSTOMER — often after the order is placed. So the A4 print path is always available
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
 export default function XrayDecorationSteps({
-  design, fromPhoto, storedSteps, guides, orderId, apiClient, onGenerated, s,
+  design, fromPhoto, storedSteps, guides, orderId, photoUrl, apiClient, onGenerated, s,
 }) {
   const rows = fromPhoto ? photoRows(design, storedSteps) : elementRows(design, guides);
   if (!rows.length) return null;
@@ -37,7 +38,7 @@ export default function XrayDecorationSteps({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {rows.map(row => (
           <DecorationRow
-            key={row.key} row={row} orderId={orderId}
+            key={row.key} row={row} orderId={orderId} photoUrl={photoUrl}
             apiClient={apiClient} onGenerated={onGenerated} s={s}
           />
         ))}
@@ -70,6 +71,9 @@ function photoRows(design, storedSteps) {
       key:     d.id,
       title:   label,
       label,
+      // Where this decoration sits in the reference photo, so the card can show the real thing
+      // rather than only describing it. Null whenever the model would not commit.
+      bbox:    d?.seen?.bbox ?? null,
       // Photo steps are stored as { guide, label, … } per decoration inside xray_spec.
       guide:   storedSteps?.[d.id]?.guide ?? null,
       status:  'draft',                         // read off a photo, never reviewed by us
@@ -89,6 +93,8 @@ function elementRows(design, guides) {
       key:       d.elementId,
       title:     d.name || 'Decoration',
       elementId: d.elementId,
+      // A library element already has a picture of itself; no crop needed.
+      imageUrl:  d.imageUrl ?? null,
       guide:     row?.guide ?? null,
       status:    row?.status ?? 'draft',
     });
@@ -98,7 +104,7 @@ function elementRows(design, guides) {
 
 // ── One decoration ──────────────────────────────────────────────────────────────────────────────
 
-function DecorationRow({ row, orderId, apiClient, onGenerated, s }) {
+function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState(null);
   const [note, setNote] = useState(null);
@@ -184,7 +190,7 @@ function DecorationRow({ row, orderId, apiClient, onGenerated, s }) {
       {note && <div style={{ ...s.muted, marginTop: 6 }}>{note}</div>}
       {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#C0392B', marginTop: 6 }}>{err}</div>}
 
-      {guide && open && <GuideBody guide={guide} s={s} />}
+      {guide && open && <GuideBody guide={guide} row={row} photoUrl={photoUrl} s={s} />}
     </div>
   );
 }
@@ -194,9 +200,10 @@ function DecorationRow({ row, orderId, apiClient, onGenerated, s }) {
 // the cream-colour table above, and repeating them here would be a second place to get them wrong.
 const readable = (text) => String(text ?? '').replace(/\{(\w+)\}/g, (_, role) => role.replace(/_/g, ' '));
 
-function GuideBody({ guide, s }) {
+function GuideBody({ guide, row, photoUrl, s }) {
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <ReferenceAndColours guide={guide} row={row} photoUrl={photoUrl} s={s} />
       {guide.materials?.length > 0 && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: '#8A857D', marginBottom: 5 }}>YOU WILL NEED</div>
@@ -230,6 +237,108 @@ function GuideBody({ guide, s }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Reference and colours ───────────────────────────────────────────────────────────────────────
+// The two panels that make prose into a guide. Both are DETERMINISTIC — no model call, no cost, no
+// storage — which is why they render for every decoration that has the inputs, not only ones a
+// baker paid extra for.
+//
+// The reference answers "is mine supposed to look like that yet?", which no amount of text can.
+// The colours answer "what do I mix?", which the steps deliberately cannot: they carry role tokens
+// ({body}, {mane}) rather than colour names so one guide serves every colour the decoration is
+// made in. That trade only works if the colours appear SOMEWHERE, and this is that somewhere.
+function ReferenceAndColours({ guide, row, photoUrl, s }) {
+  const colours = (guide?.colours ?? []).filter(c => /^#[0-9a-f]{6}$/i.test(String(c?.hex ?? '')));
+  const hasRef  = !!(row?.imageUrl || (photoUrl && row?.bbox));
+  if (!hasRef && !colours.length) return null;
+
+  return (
+    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      {hasRef && (
+        <div>
+          <div style={PANEL_LABEL}>REFERENCE</div>
+          <DecorationCrop imageUrl={row.imageUrl} photoUrl={photoUrl} bbox={row.bbox} />
+        </div>
+      )}
+      {colours.length > 0 && (
+        <div style={{ flex: 1, minWidth: 190 }}>
+          <div style={PANEL_LABEL}>COLOUR GUIDE</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {colours.map((c, i) => <ColourRow key={i} colour={c} s={s} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PANEL_LABEL = {
+  fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: '#8A857D', marginBottom: 5,
+};
+
+// A close-up WITHOUT cutting the image: the bbox drives background-size/position, so the crop is
+// pure CSS. No canvas, no upload, no second asset to store, keep in sync, or erase when the
+// account is deleted — and it stays correct if the model's box is ever re-read.
+//
+// Padded outward by a quarter of the box. Vision models are imprecise at boundaries, and a crop
+// that clips the decoration is unrecoverable, while a little surrounding cake is harmless context.
+function DecorationCrop({ imageUrl, photoUrl, bbox }) {
+  const box = { width: 132, height: 132, borderRadius: 10, border: '1.5px solid #E8E4DE', background: '#FAF8F5' };
+  if (imageUrl) {
+    return <div style={{ ...box, backgroundImage: `url(${imageUrl})`, backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />;
+  }
+
+  return <div style={{ ...box, ...cropStyle(photoUrl, bbox) }} />;
+}
+
+// Pure, and exported, because this is arithmetic that is easy to get subtly wrong and impossible
+// to eyeball: an off-by-one in the position term shows a plausible-looking crop of the WRONG part
+// of the cake, which reads as a bad model rather than a bad stylesheet.
+//
+// Padded outward by a quarter of the box. Vision models are imprecise at boundaries, and a crop
+// that clips the decoration is unrecoverable, while a little surrounding cake is harmless context.
+export function cropStyle(photoUrl, bbox) {
+  const [x, y, w, h] = bbox;
+  const padX = w * 0.25, padY = h * 0.25;
+  const cx = Math.max(0, x - padX), cy = Math.max(0, y - padY);
+  const cw = Math.min(1 - cx, w + padX * 2), ch = Math.min(1 - cy, h + padY * 2);
+
+  // Scale the photo so the crop fills the frame, then offset so the crop's top-left lands at the
+  // frame's. The percentage form of background-position is relative to (image − frame), which is
+  // exactly the ratio below — and it degrades to centring when the crop spans the whole axis,
+  // where that ratio would divide by zero.
+  const posX = cw >= 1 ? 50 : (cx / (1 - cw)) * 100;
+  const posY = ch >= 1 ? 50 : (cy / (1 - ch)) * 100;
+
+  return {
+    backgroundImage:    `url(${photoUrl})`,
+    backgroundSize:     `${(1 / cw) * 100}% ${(1 / ch) * 100}%`,
+    backgroundPosition: `${posX}% ${posY}%`,
+    backgroundRepeat:   'no-repeat',
+  };
+}
+
+// The hex is what the model saw; the recipe is ours. gelRecipeFor turns a target colour into the
+// gel paste and drop count a baker actually works with — the same table the cream-colour section
+// uses, so the two can never disagree about how a colour is mixed.
+function ColourRow({ colour, s }) {
+  const recipe = gelRecipeFor(colour.hex);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{
+        width: 20, height: 20, borderRadius: 5, background: colour.hex,
+        border: '1.5px solid rgba(0,0,0,0.12)', flexShrink: 0,
+      }} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#2C2A26' }}>
+          {readable(colour.role)}
+          <span style={{ fontWeight: 600, color: '#8A857D', fontVariantNumeric: 'tabular-nums' }}> · {colour.hex}</span>
+        </div>
+        {recipe?.recipe && <div style={{ ...s.muted, marginTop: 1 }}>{recipe.recipe}</div>}
+      </div>
     </div>
   );
 }

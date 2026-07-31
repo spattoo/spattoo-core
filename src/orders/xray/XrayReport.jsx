@@ -354,6 +354,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
         <XrayDecorationSteps
           design={design} fromPhoto={fromPhoto} storedSteps={storedSteps}
           guides={buildGuides} orderId={order?.id} apiClient={apiClient}
+          // The reference photo the spec was read from — the close-up on each decoration is a CSS
+          // crop of it, so no second asset is generated, stored or erased.
+          photoUrl={order?.design_thumbnail_url}
           onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
         />
 
