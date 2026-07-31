@@ -79,6 +79,9 @@ function photoRows(design, storedSteps, meta) {
       // about how big a decoration is — and the baker cuts fondant to the printed one.
       bbox:    meta?.[d.id]?.bbox ?? null,
       widthMm: meta?.[d.id]?.widthMm ?? null,
+      // The generated build sequence, if one was made. Stored as an R2 key and expanded to a URL
+      // by the API (routes/orders.js withStageUrls) — core never learns the bucket.
+      stagesUrl: storedSteps?.[d.id]?.stages_url ?? null,
       // Photo steps are stored as { guide, label, … } per decoration inside xray_spec.
       guide:   storedSteps?.[d.id]?.guide ?? null,
       status:  'draft',                         // read off a photo, never reviewed by us
@@ -210,6 +213,7 @@ function GuideBody({ guide, row, photoUrl, s }) {
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <ReferenceAndColours guide={guide} row={row} photoUrl={photoUrl} s={s} />
+      <StageGrid stagesUrl={row.stagesUrl} s={s} />
       {guide.materials?.length > 0 && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: '#8A857D', marginBottom: 5 }}>YOU WILL NEED</div>
@@ -381,6 +385,32 @@ function TemplateButton({ row, photoUrl, s }) {
       }}>{busy ? 'Preparing…' : 'Print template — actual size'}</button>
       <span style={s.muted}>{(row.widthMm / 10).toFixed(1)} cm wide on this cake</span>
       {err && <span style={{ fontSize: 12, fontWeight: 700, color: '#C0392B' }}>{err}</span>}
+    </div>
+  );
+}
+
+// ── The build sequence ──────────────────────────────────────────────────────────────────────────
+// ONE generated image showing the decoration at each stage, drawn in a single pass so the object is
+// the same object in every panel — separate generations drift, and a sequence whose subject changes
+// shape is worse than no pictures.
+//
+// It carries NO TEXT by design: the model draws, we write. So it sits ABOVE the written steps
+// rather than trying to replace them, and a guide without one is still a complete guide — the
+// picture is best-effort at generation time and its absence is never an error to report.
+function StageGrid({ stagesUrl, s }) {
+  if (!stagesUrl) return null;
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: '#8A857D', marginBottom: 5 }}>
+        STEP BY STEP
+      </div>
+      <img
+        src={stagesUrl} alt=""
+        style={{ width: '100%', maxWidth: 560, borderRadius: 10, border: '1.5px solid #E8E4DE', display: 'block' }}
+      />
+      <div style={{ ...s.muted, marginTop: 4 }}>
+        Drawn by AI from your photo — a guide to the shape, not a photograph of your cake.
+      </div>
     </div>
   );
 }

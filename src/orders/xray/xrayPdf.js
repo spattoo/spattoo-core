@@ -727,7 +727,31 @@ function drawDecorationReference(sheet, photo, meta, guide) {
   return Math.max(canCrop ? size + mm(3) : 0, ty - top + mm(2));
 }
 
-function drawDecorationSteps(sheet, decorationSteps, photo, meta) {
+// The generated build sequence, printed above the written steps.
+//
+// It carries NO TEXT by design — the model draws, we write — so it never replaces the steps below
+// it, and its absence is not an error: the picture is best-effort at generation time and a guide
+// without one is still a complete guide.
+//
+// Reserved whole. Half a build sequence at the foot of a page, with the rest overleaf, is worse
+// than starting it on the next page: a baker reads the panels as a sequence and a broken one reads
+// as a shorter sequence.
+function drawStageGrid(sheet, img) {
+  if (!img) return;
+  const w = sheet.contentW;
+  const h = w * (img.naturalHeight / img.naturalWidth);
+  sheet.space(h + mm(10));
+  sheet.y += sheet.text('STEP BY STEP', sheet.margin, sheet.y, { size: mm(2.8), weight: 900, color: MUTED }) + mm(1);
+  sheet.ctx.drawImage(img, sheet.margin, sheet.y, w, h);
+  sheet.ctx.strokeStyle = RULE;
+  sheet.ctx.lineWidth = Math.max(1, mm(0.2));
+  sheet.ctx.strokeRect(sheet.margin, sheet.y, w, h);
+  sheet.y += h + mm(1.5);
+  sheet.y += sheet.text('Drawn by AI from the reference photo — a guide to the shape, not a photograph of this cake.',
+    sheet.margin, sheet.y, { size: mm(3.0), weight: 600, color: MUTED }) + mm(2);
+}
+
+function drawDecorationSteps(sheet, decorationSteps, photo, meta, stageImages) {
   // Same shape from both sources: { <key>: { guide, … } }. An element-backed guide is keyed by
   // element id, a photo one by the decoration's id within the spec — the sheet does not care which.
   const entries = Object.entries(decorationSteps ?? {}).filter(([, r]) => r?.guide?.steps?.length);
@@ -746,6 +770,7 @@ function drawDecorationSteps(sheet, decorationSteps, photo, meta) {
     sheet.space(mm(20));
     sheet.y += sheet.text(readable(g.title || 'Decoration'), sheet.margin, sheet.y, { size: mm(4.4), weight: 800 });
     sheet.y += drawDecorationReference(sheet, photo, meta?.[key], g);
+    drawStageGrid(sheet, stageImages?.[key]);
 
     // An unreviewed model guess must not read like a curated craft guide — and on paper there is
     // no tooltip to explain it later.
@@ -798,6 +823,14 @@ export async function renderXrayPages({ order, report, baker, conflicts, spec, d
   // and the two must not be conflated — a designed order's decorations are library elements.
   const photo = photoUrl ? await tryLoad(photoUrl) : null;
 
+  // The build-sequence images, one per decoration that has one. Loaded here rather than inside the
+  // draw pass because Sheet drawing is synchronous — and loaded in PARALLEL, since a sheet with six
+  // decorations would otherwise wait on six sequential fetches before a single page appears.
+  const stageEntries = Object.entries(decorationMeta ?? {}).filter(([, m]) => m?.stagesUrl);
+  const stageImages = Object.fromEntries(
+    await Promise.all(stageEntries.map(async ([k, m]) => [k, await tryLoad(m.stagesUrl)])),
+  );
+
   const sheet = new Sheet();
   drawHeader(sheet, { order, baker, logo, conflicts, spec });
   drawDiagram(sheet, { thumb, diagram: report.diagram, tiers: order?.design_snapshot?.tiers });
@@ -807,7 +840,7 @@ export async function renderXrayPages({ order, report, baker, conflicts, spec, d
   drawChecklist(sheet, report.checklist, report.checklistTotal);
   drawColors(sheet, report.colors);
   drawPiping(sheet, { elements: report.elements, freehand: report.freehand });
-  drawDecorationSteps(sheet, decorationSteps, photo, decorationMeta);
+  drawDecorationSteps(sheet, decorationSteps, photo, decorationMeta, stageImages);
   drawFooters(sheet, { order });
 
   return sheet.pages;

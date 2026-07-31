@@ -81,6 +81,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
       out[d.id] = {
         bbox:    d?.seen?.bbox ?? null,
         widthMm: decorationWidthMm(d?.seen?.tierWidthRatio, tierInchFor(tinPlan, d?.tierIndex ?? 0)),
+        stagesUrl: storedSteps?.[d.id]?.stages_url ?? null,
       };
     }
     return out;
