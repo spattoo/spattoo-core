@@ -158,9 +158,16 @@ function EstimateLauncher({ order, apiClient, variant, enabled }) {
       // Out of credits is an ordinary outcome with its own message, not a failure to apologise
       // for — the baker needs to know the difference between "we could not read your photo" and
       // "you have used this month's allowance".
-      setErr(e?.code === 'INSUFFICIENT_CREDITS' || /credit/i.test(e?.message ?? '')
-        ? "You've used this month's build guides. They reset next month, or you can top up."
-        : (e?.message || 'Could not read that photo.'));
+      // The 402 body carries canTopUp and resetsOn, so the server decides which sentence a baker
+      // gets rather than the client guessing from a plan name it does not have. A Flame baker is
+      // told when the credits come back and what Blaze changes; a Blaze baker is pointed at a
+      // top-up. Saying "or you can top up" to someone who cannot is the worse of the two errors.
+      const out = e?.code === 'INSUFFICIENT_CREDITS' || /credit/i.test(e?.message ?? '');
+      const on  = e?.resetsOn ? new Date(e.resetsOn).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }) : null;
+      setErr(!out ? (e?.message || 'Could not read that photo.')
+        : e?.canTopUp === false
+          ? `You've used this month's credits. They refresh${on ? ` on ${on}` : ' next month'}. Blaze adds top-ups, so you never have to wait.`
+          : `You've used this month's credits. They refresh${on ? ` on ${on}` : ' next month'} — or top up in Billing.`);
     } finally {
       setBusy(false);
       creditsChanged();   // success, discard or refusal — the header should reflect reality either way

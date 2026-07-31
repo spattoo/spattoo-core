@@ -197,6 +197,13 @@ const PAYMENT_STATUS_META = {
 };
 
 // `amount` is stored in minor units (paise) — render in major units.
+// "1 September" — a date a baker can act on, where "next cycle" makes them go and count days.
+function formatResetDate(iso) {
+  if (!iso) return 'the 1st';
+  try { return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }); }
+  catch { return 'the 1st'; }
+}
+
 function formatMoney(amount, currency = 'INR') {
   const major = (amount ?? 0) / 100;
   try {
@@ -307,6 +314,7 @@ function PaymentsCard({ info, apiClient, primaryColor, bare = false }) {
 function SmartToolsCard({ apiClient, primaryColor }) {
   const [data, setData]       = useState(null);
   const [packs, setPacks]     = useState([]);
+  const [shelf, setShelf]     = useState(null);   // { canBuy, reason, ceiling, resetsOn }
   const [busyPack, setBusy]   = useState(null);
   const [err, setErr]         = useState(null);
   const [tick, setTick]       = useState(0);
@@ -322,6 +330,7 @@ function SmartToolsCard({ apiClient, primaryColor }) {
       if (!alive) return;
       setData(bal);
       setPacks(pk?.packs ?? []);
+      setShelf(pk ?? null);
     });
     return () => { alive = false; };
   }, [apiClient, tick]);
@@ -474,7 +483,32 @@ function SmartToolsCard({ apiClient, primaryColor }) {
 
       {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626' }}>{err}</div>}
 
-      {packs.length > 0 && (
+      {/* ── Top-ups ────────────────────────────────────────────────────────────────────────────
+          Two gates, two different sentences. "Your plan doesn't include this" points at an
+          upgrade; "you're already well stocked" points at nothing and should not feel like a
+          refusal. Both are stated plainly, with the date the allowance refreshes — "1 September"
+          rather than "next cycle", which makes someone go and check a calendar. */}
+      {shelf && !shelf.canBuy && (
+        <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#2C4433' }}>
+            Credits refresh on {formatResetDate(shelf.resetsOn)}
+          </div>
+          <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5 }}>
+            Blaze includes top-ups — add credits whenever you need them, and they never expire.
+          </div>
+        </div>
+      )}
+
+      {shelf?.canBuy && shelf.reason === 'stocked' && (
+        <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px' }}>
+          <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5 }}>
+            <strong style={{ color: '#2C4433' }}>You’re well stocked.</strong> You can add more once
+            your top-up balance drops below {shelf.ceiling}.
+          </div>
+        </div>
+      )}
+
+      {shelf?.canBuy && packs.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
           <span style={{ ...label, color: '#B7C4BB' }}>Need more this month</span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -485,11 +519,15 @@ function SmartToolsCard({ apiClient, primaryColor }) {
                 false earmarking. */}
             {packs.map(p => (
               <button
-                key={p.packKey} type="button" onClick={() => buy(p.packKey)} disabled={!!busyPack}
+                key={p.packKey} type="button" onClick={() => buy(p.packKey)}
+                disabled={!!busyPack || p.blocked}
+                title={p.blocked ? `Would take you over ${shelf?.ceiling} top-up credits. Add this once your balance drops.` : undefined}
                 style={{
-                  flex: '1 1 130px', textAlign: 'left', cursor: busyPack ? 'default' : 'pointer',
+                  flex: '1 1 130px', textAlign: 'left',
+                  cursor: (busyPack || p.blocked) ? 'default' : 'pointer',
                   background: '#fff', border: '1.5px solid #E8EFE9', borderRadius: 12,
-                  padding: '10px 13px', fontFamily: 'inherit', opacity: busyPack && busyPack !== p.packKey ? 0.5 : 1,
+                  padding: '10px 13px', fontFamily: 'inherit',
+                  opacity: p.blocked ? 0.45 : (busyPack && busyPack !== p.packKey ? 0.5 : 1),
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>
