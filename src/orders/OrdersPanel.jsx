@@ -149,15 +149,21 @@ function BuildGuideLauncher({ order, apiClient, variant }) {
   // NOT gated on xray_reports. Reading a photo costs real money and is metered by CREDITS, which
   // every plan has — so every plan can buy one. Gating it on the Blaze entitlement as well was
   // what left a Flame baker holding an allowance they could not spend on anything.
+  const { stale } = resolveXraySpec(order);
   if (!apiClient?.createXraySpec) return null;    // host hasn't wired it → no dead button
   if (order?.design_snapshot) return null;        // designed: X-Ray reads it directly
-  if (hasXraySpec(order)) return null;            // already read: XrayLauncher has it
+  // Normally this disappears once a guide exists and XrayLauncher takes over. The exception is a
+  // STALE one: the baker has replaced the reference photo, so the cached guide describes a picture
+  // that is no longer on the order. It comes back as a re-read, priced and worded as one.
+  if (hasXraySpec(order) && !stale) return null;
 
   async function generate() {
     if (busy) return;
     setBusy(true); setErr(null);
     try {
-      const res = await apiClient.createXraySpec(order.id);
+      // A stale re-read must REGENERATE — without this the route would hand back the very
+      // cached guide we are trying to replace, free and unchanged.
+      const res = await apiClient.createXraySpec(order.id, { regenerate: stale });
       if (!res?.estimate) throw new Error('No build guide came back.');
       setSpec({ spec: res.estimate, meta: res.meta ?? null });
       // Tell the header pill the balance moved. Fired on `reused` too: that call spends nothing,
@@ -187,8 +193,8 @@ function BuildGuideLauncher({ order, apiClient, variant }) {
     <>
       <IconAction
         glyph={<XrayGlyph />}
-        label={busy ? 'Reading photo…' : 'Build guide from photo'}
-        short={busy ? 'Reading…' : 'Build guide'}
+        label={busy ? 'Reading photo…' : stale ? 'Photo changed — read again' : 'Build guide from photo'}
+        short={busy ? 'Reading…' : stale ? 'Re-read' : 'Build guide'}
         onClick={generate}
         disabled={busy}
         variant={variant}

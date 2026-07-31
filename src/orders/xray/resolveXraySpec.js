@@ -27,20 +27,26 @@
 export function resolveXraySpec(order) {
   const snapshot = order?.design_snapshot;
   if (snapshot) {
-    return { design: snapshot, fromPhoto: false, edited: false, meta: null, coverage: null };
+    return { design: snapshot, fromPhoto: false, edited: false, stale: false, meta: null, coverage: null };
   }
 
   const edited   = order?.xray_spec_edited;
   const spec     = order?.xray_spec;
   const design   = edited ?? spec ?? null;
   if (!design) {
-    return { design: null, fromPhoto: false, edited: false, meta: null, coverage: null };
+    return { design: null, fromPhoto: false, edited: false, stale: false, meta: null, coverage: null };
   }
 
   const meta = order?.xray_spec_meta ?? null;
   return {
     design,
     fromPhoto: true,
+    // The reference photo has been replaced since this was read (server-computed — see
+    // routes/orders.js xraySpecStale). The guide is not wrong so much as ABOUT A DIFFERENT
+    // PICTURE, which is worse: nothing on the sheet looks off, it just describes another cake.
+    // Surfaced, never auto-fixed — re-reading spends credits, and nothing should be charged as a
+    // side effect of uploading a photo.
+    stale: order?.xray_spec_stale === true,
     edited: !!edited,
     meta,
     // What the model could NOT identify. Surfaced deliberately: harvest.js warns that a checklist

@@ -47,7 +47,7 @@ const s = {
 export default function XrayReport({ order, apiClient, onClose }) {
   // One resolution, shared with the launcher and the PDF (resolveXraySpec.js) — the sheet in the
   // kitchen and the screen in the office must be built from the same design.
-  const { design, fromPhoto, edited, coverage } = resolveXraySpec(order);
+  const { design, fromPhoto, edited, stale, coverage } = resolveXraySpec(order);
 
   const [guides, setGuides] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -132,7 +132,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
         // component, and the sheet is told what it decided rather than deciding again. A PDF that
         // re-resolved could print a measured-looking sheet from an estimate the screen had
         // labelled — and paper is the copy that reaches the bench.
-        spec: { fromPhoto, edited, coverage },
+        spec: { fromPhoto, edited, stale, coverage },
       });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
@@ -227,6 +227,20 @@ export default function XrayReport({ order, apiClient, onClose }) {
               This order has no 3D design, so the cake below was worked out from the customer's
               photo{edited ? ', and corrected by you' : ''}. Check the tiers and colours before you bake.
             </span>
+
+            {/* The reference photo has been replaced since this was read. Stated HERE, in the
+                provenance band, because this is the one section whose job is to say what the sheet
+                is — and a guide about a photo that is no longer on the order is the strongest
+                possible version of that claim being wrong. */}
+            {stale && (
+              <span style={{
+                fontSize: 12.5, fontWeight: 800, color: '#8A2E2E',
+                background: '#FBEAEA', borderRadius: 8, padding: '7px 10px',
+              }}>
+                The reference photo has changed since this was made — read it again from the order
+                to bring this up to date.
+              </span>
+            )}
 
             {/* What could NOT be identified. harvest.js is blunt about why a checklist that
                 silently omits is worse than no checklist: it gets believed. An estimate that

@@ -137,7 +137,7 @@ async function tryLoad(url) {
   try { return await loadImage(corsUrl(url)); } catch { return null; }
 }
 
-function drawHeader(sheet, { order, baker, logo, conflicts, estimate }) {
+function drawHeader(sheet, { order, baker, logo, conflicts, spec }) {
   const { ctx } = sheet;
   const top = sheet.y;
 
@@ -225,17 +225,27 @@ function drawHeader(sheet, { order, baker, logo, conflicts, estimate }) {
   // reaches the bench, possibly in someone else's hands, hours later. A tin size printed in the
   // same typeface as a measured one is indistinguishable from it — so the page has to say where
   // the numbers came from, and name what could not be read.
-  if (estimate?.fromPhoto) {
+  if (spec?.fromPhoto) {
     const padY = mm(3), boxTop = sheet.y;
     let inner = padY + sheet.text('READ FROM THE REFERENCE PHOTO — CHECK BEFORE BAKING',
       sheet.margin + mm(3), boxTop + padY, { size: mm(3.0), weight: 900, color: INK });
     inner += mm(1.0);
     inner += sheet.text(
       'This order had no 3D design. Tiers, colours and tin sizes below were worked out from the '
-      + `customer's photo${estimate.edited ? ' and corrected by the baker' : ''}.`,
+      + `customer's photo${spec.edited ? ' and corrected by the baker' : ''}.`,
       sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 700 });
 
-    const missed = estimate.coverage?.unidentified ?? [];
+    // A guide about a photo that is no longer on the order. On PAPER this matters more than on
+    // screen: the sheet outlives the moment, and whoever picks it up at 6am has no way to know the
+    // picture changed. Printed inside the provenance band, in the same heavy frame.
+    if (spec.stale) {
+      inner += mm(1.2);
+      inner += sheet.text(
+        'THE REFERENCE PHOTO HAS CHANGED SINCE THIS SHEET WAS MADE — check the order before baking.',
+        sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 900 });
+    }
+
+    const missed = spec.coverage?.unidentified ?? [];
     if (missed.length) {
       inner += mm(1.2);
       inner += sheet.text(
@@ -243,10 +253,10 @@ function drawHeader(sheet, { order, baker, logo, conflicts, estimate }) {
         + missed.map(u => u.what).join(', '),
         sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 800 });
     }
-    if (estimate.coverage?.shapeRecognised === false) {
+    if (spec.coverage?.shapeRecognised === false) {
       inner += mm(1.0);
       inner += sheet.text(
-        `Cake shape read as "${estimate.coverage.reportedShape}" — tin sizes assume a round tin.`,
+        `Cake shape read as "${spec.coverage.reportedShape}" — tin sizes assume a round tin.`,
         sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 700 });
     }
 
@@ -639,14 +649,14 @@ function drawFooters(sheet, { order }) {
 // Render the report → the page canvases. Split from the PDF wrapping below so the sheet can be LOOKED
 // AT — a layout you cannot see is a layout you are guessing at, and every bug so far in this file
 // (a missing cake, an orphaned heading) was one only the eye caught.
-export async function renderXrayPages({ order, report, baker, conflicts, estimate } = {}) {
+export async function renderXrayPages({ order, report, baker, conflicts, spec } = {}) {
   const [thumb, logo] = await Promise.all([
     tryLoad(order?.design_thumbnail_url),
     tryLoad(baker?.logo_url),
   ]);
 
   const sheet = new Sheet();
-  drawHeader(sheet, { order, baker, logo, conflicts, estimate });
+  drawHeader(sheet, { order, baker, logo, conflicts, spec });
   drawDiagram(sheet, { thumb, diagram: report.diagram, tiers: order?.design_snapshot?.tiers });
   drawTins(sheet, report.tins);
   // Before the colour/nozzle detail: the checklist is what a baker returns to repeatedly
