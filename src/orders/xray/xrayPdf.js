@@ -225,7 +225,7 @@ function drawHeader(sheet, { order, baker, logo, conflicts, estimate }) {
   // reaches the bench, possibly in someone else's hands, hours later. A tin size printed in the
   // same typeface as a measured one is indistinguishable from it — so the page has to say where
   // the numbers came from, and name what could not be read.
-  if (estimate?.estimated) {
+  if (estimate?.fromPhoto) {
     const padY = mm(3), boxTop = sheet.y;
     let inner = padY + sheet.text('READ FROM THE REFERENCE PHOTO — CHECK BEFORE BAKING',
       sheet.margin + mm(3), boxTop + padY, { size: mm(3.0), weight: 900, color: INK });

@@ -105,7 +105,7 @@ on Blaze has unlimited X-Ray on designed orders and always will.
 **The model's job is to fill in the missing `design_snapshot`, not to write the build guide.**
 
 ```
-reference photo ──▶ vision model ──▶ design_estimate (design_snapshot-shaped jsonb)
+reference photo ──▶ vision model ──▶ xray_spec (design_snapshot-shaped jsonb)
                                             │
                        baker reviews / corrects (weight, tiers, colours)
                                             │
@@ -172,7 +172,7 @@ Two implementation notes that will otherwise bite:
 
 #### Metering rules for it
 
-- **Meter the estimate, never the view.** Store the result as `orders.design_estimate` jsonb.
+- **Meter the estimate, never the view.** Store the result as `orders.xray_spec` jsonb.
   Re-opening, re-printing, re-PDFing is free forever — the same principle already settled for
   X-Ray in "Metered tease" ("metering views would punish the baker for re-opening the same build
   guide while they are actually baking").
@@ -492,7 +492,7 @@ lever for craft-guide generation, which is bulk and latency-insensitive.
 
 One smaller engineering difference: OpenAI's strict JSON-Schema structured outputs guarantee
 schema conformance, where Anthropic achieves it via forced tool-use. Both work; OpenAI's is
-marginally less code for the `design_estimate` contract. Not a deciding factor.
+marginally less code for the `xray_spec` contract. Not a deciding factor.
 
 ### 4.3 DECIDED 2026-07-29 — do not run a formal eval before launch
 
@@ -532,7 +532,7 @@ Distinguish two questions that look alike:
   answer being yes. If it is no, you have built a credit ledger for a single action.
 
 Method: open the playground, paste **5 thumbnails** from orders you already know, ask for the
-`design_estimate` JSON, eyeball tier count / shape / colours against the real snapshot. No
+`xray_spec` JSON, eyeball tier count / shape / colours against the real snapshot. No
 harness, no scoring, no code. 5/5 roughly right → proceed on the hypothesis. 2/5 → the sprint you
 just saved paid for the half hour, and the ledger gets built around enquiry-parsing instead.
 
@@ -541,8 +541,8 @@ just saved paid for the half hour, and the ledger gets built around enquiry-pars
 **Store the model's raw output immutably, and the baker's corrections separately.**
 
 ```
-orders.design_estimate       jsonb  -- what the model said. NEVER overwritten.
-orders.design_estimate_meta  jsonb  -- { provider, model, prompt_version, created_at }
+orders.xray_spec       jsonb  -- what the model said. NEVER overwritten.
+orders.xray_spec_meta  jsonb  -- { provider, model, prompt_version, created_at }
 orders.design_snapshot       jsonb  -- what the baker accepted / corrected (existing column)
 ```
 
@@ -727,7 +727,7 @@ clause.
 4. **One action end-to-end: enquiry → draft order (item B).** Cheapest, lowest-risk, highest
    ratio — and it proves reserve/commit/refund on something that cannot embarrass you.
 5. **Photo → X-Ray estimate** on the §4.3 hypothesis (OpenAI / Terra / cached catalogue prefix),
-   diagram omitted (option (a)). **Ships with `design_estimate` + `design_estimate_meta` immutable
+   diagram omitted (option (a)). **Ships with `xray_spec` + `xray_spec_meta` immutable
    from the first commit** (§4.3.2) — this is the step where that becomes irreversible.
 6. Balance UI + 70/90/100% nudges + top-up packs.
 7. Margin dashboard — realized GM per action per week, **plus** estimate-vs-corrected field
@@ -751,7 +751,7 @@ clause.
    out; it decides whether option (b) gets built.
 5. ~~**One provider or two?**~~ **DECIDED 2026-07-29 — OpenAI alone, on the hypothesis, no
    pre-launch eval** (§4.3). Reversible by config; revisit only when §4.3.2's production data
-   names a specific weakness. The corollary that is *not* optional: `design_estimate` must be
+   names a specific weakness. The corollary that is *not* optional: `xray_spec` must be
    immutable and separate from `design_snapshot` from the first commit, or the data this decision
    defers to never exists.
 

@@ -5,7 +5,7 @@ import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
-import { resolveXrayDesign } from './resolveDesign.js';
+import { resolveXraySpec } from './resolveXraySpec.js';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -13,10 +13,10 @@ import { resolveXrayDesign } from './resolveDesign.js';
 // order detail; computed client-side from the order's design + weight, with nozzle
 // data via apiClient.fetchCraftGuides.
 //
-// The design comes from resolveXrayDesign (design_snapshot, or an AI reading of the order's
+// The design comes from resolveXraySpec (design_snapshot, or an AI reading of the order's
 // reference photo for a manual order that never touched the designer). Everything below this line
 // is identical either way — the tin plan, the gel recipes and the nozzle guides are the same
-// deterministic computation over the same shape. The ONE difference is honesty: an estimated
+// deterministic computation over the same shape. The ONE difference is honesty: an fromPhoto
 // report says, on screen and on paper, that it was read off a photo rather than measured.
 
 const s = {
@@ -45,9 +45,9 @@ const s = {
 };
 
 export default function XrayReport({ order, apiClient, onClose }) {
-  // One resolution, shared with the launcher and the PDF (resolveDesign.js) — the sheet in the
+  // One resolution, shared with the launcher and the PDF (resolveXraySpec.js) — the sheet in the
   // kitchen and the screen in the office must be built from the same design.
-  const { design, estimated, edited, coverage } = resolveXrayDesign(order);
+  const { design, fromPhoto, edited, coverage } = resolveXraySpec(order);
 
   const [guides, setGuides] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -128,11 +128,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
         // Derived here, not again inside the PDF: one derivation, so the sheet cannot
         // disagree with the screen it was printed from.
         conflicts: conflicts.map(c => conflictBenchLine(c, { tierCount: order?.flavours?.length ?? 1 })),
-        // Same rule for provenance: resolveXrayDesign was called ONCE, at the top of this
+        // Same rule for provenance: resolveXraySpec was called ONCE, at the top of this
         // component, and the sheet is told what it decided rather than deciding again. A PDF that
         // re-resolved could print a measured-looking sheet from an estimate the screen had
         // labelled — and paper is the copy that reaches the bench.
-        estimate: { estimated, edited, coverage },
+        spec: { fromPhoto, edited, coverage },
       });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
@@ -210,12 +210,12 @@ export default function XrayReport({ order, apiClient, onClose }) {
             itself — that everything below it was inferred from a reference photo rather than
             built in the designer.
 
-            It is not decoration. A baker who takes an estimated tin plan for a measured one bakes
+            It is not decoration. A baker who takes an fromPhoto tin plan for a measured one bakes
             the wrong size, and the difference is invisible once the numbers are on the page. So
             the provenance is stated plainly, above everything it qualifies, and the same
             statement goes on the printed sheet — a report that only admits it on screen is worse
             than one that never admits it, because paper is what goes to the bench. */}
-        {estimated && (
+        {fromPhoto && (
           <div style={{
             border: '2px solid #6A5A8C', background: '#F4F1FA', borderRadius: 12,
             padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6,
@@ -319,7 +319,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
             (CAMERA_POSITION / CAMERA_FOV / lookAt) and projecting each piping's 3D anchor through
             it. That works because the thumbnail is OUR render, taken with that camera.
 
-            On an estimated order the picture is the customer's phone photo — arbitrary angle,
+            On an fromPhoto order the picture is the customer's phone photo — arbitrary angle,
             arbitrary lens, arbitrary distance — mirrored into design_thumbnail_url by the manual
             order flow. Projecting through the designer's camera would draw confident leader lines
             pointing at the wrong parts of a real cake, which is worse than drawing none: the rest
@@ -328,7 +328,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
             Omitted rather than approximated. Getting it back means the model returning 2D anchors
             on the photo itself; layoutDiagram already separates where a line POINTS (ax/ay) from
             where its label SITS, so it would take pre-projected anchors with little change. */}
-        {!estimated && diagramItems.length > 0 && (
+        {!fromPhoto && diagramItems.length > 0 && (
           <XrayCakeDiagram thumbnailUrl={order.design_thumbnail_url} items={diagramItems} snapshotTiers={design.tiers} />
         )}
 

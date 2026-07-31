@@ -6,41 +6,41 @@
 // the kitchen would be built from a different design than the screen in the office.
 //
 //   design_snapshot          the baker built it in the 3D designer. Authoritative, measured.
-//   design_estimate_edited   the baker corrected what the model read off a reference photo.
-//   design_estimate          what the model read off a reference photo, untouched.
+//   xray_spec_edited   the baker corrected what the model read off a reference photo.
+//   xray_spec          what the model read off a reference photo, untouched.
 //
 // PRECEDENCE, and why it is that way round:
 //
-// A real snapshot always wins. A designed order needs nothing inferred, and letting an estimate
-// shadow an authored design would replace measured data with a guess.
+// A real snapshot always wins. A designed order needs nothing inferred, and letting a photo
+// reading shadow an authored design would replace measured data with a guess.
 //
-// Corrections beat the raw estimate, because a baker who fixed the tier count knows the cake and
-// the model did not. But the raw estimate is NEVER overwritten by those corrections — it is kept
+// Corrections beat the raw spec, because a baker who fixed the tier count knows the cake and
+// the model did not. But the raw spec is NEVER overwritten by those corrections — it is kept
 // immutably alongside them (spattoo-backend migration 022), because the difference between what
 // the model said and what the baker changed is the only honest measure of how good the reading
 // was. That is the whole reason there are two columns rather than one.
 //
-// `estimated` is the flag every consumer must respect: a report built from an estimate is a
+// `fromPhoto` is the flag every consumer must respect: a report built from a spec is a
 // READING OF A PHOTO, not a measurement, and both the screen and the printed sheet have to keep
 // saying so. A baker must never mistake an inferred tin plan for one derived from a real design.
 
-export function resolveXrayDesign(order) {
+export function resolveXraySpec(order) {
   const snapshot = order?.design_snapshot;
   if (snapshot) {
-    return { design: snapshot, estimated: false, edited: false, meta: null, coverage: null };
+    return { design: snapshot, fromPhoto: false, edited: false, meta: null, coverage: null };
   }
 
-  const edited   = order?.design_estimate_edited;
-  const estimate = order?.design_estimate;
-  const design   = edited ?? estimate ?? null;
+  const edited   = order?.xray_spec_edited;
+  const spec     = order?.xray_spec;
+  const design   = edited ?? spec ?? null;
   if (!design) {
-    return { design: null, estimated: false, edited: false, meta: null, coverage: null };
+    return { design: null, fromPhoto: false, edited: false, meta: null, coverage: null };
   }
 
-  const meta = order?.design_estimate_meta ?? null;
+  const meta = order?.xray_spec_meta ?? null;
   return {
     design,
-    estimated: true,
+    fromPhoto: true,
     edited: !!edited,
     meta,
     // What the model could NOT identify. Surfaced deliberately: harvest.js warns that a checklist
@@ -53,6 +53,6 @@ export function resolveXrayDesign(order) {
 
 // Is there anything for X-Ray to render? The launcher's question, kept here so it cannot answer it
 // differently from the way the report resolves it.
-export function hasXrayDesign(order) {
-  return !!resolveXrayDesign(order).design;
+export function hasXraySpec(order) {
+  return !!resolveXraySpec(order).design;
 }
