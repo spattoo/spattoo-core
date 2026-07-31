@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
+import { decorationWidthMm, tierInchFor, downloadDecorationTemplate } from './decorationTemplate.js';
 
 // ── How to make the decorations ──────────────────────────────────────────────────────────────────
 // The nozzle sections answer "which tip pipes this border". This answers the other half: how a
@@ -27,9 +28,9 @@ import { gelRecipeFor } from './gelLibrary.js';
 // WITH THE CUSTOMER — often after the order is placed. So the A4 print path is always available
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
 export default function XrayDecorationSteps({
-  design, fromPhoto, storedSteps, guides, orderId, photoUrl, apiClient, onGenerated, s,
+  design, fromPhoto, storedSteps, guides, orderId, photoUrl, tinPlan, apiClient, onGenerated, s,
 }) {
-  const rows = fromPhoto ? photoRows(design, storedSteps) : elementRows(design, guides);
+  const rows = fromPhoto ? photoRows(design, storedSteps, tinPlan) : elementRows(design, guides);
   if (!rows.length) return null;
 
   return (
@@ -62,7 +63,7 @@ function describe(sticker) {
   return where ? `${what} on the ${where}` : what;
 }
 
-function photoRows(design, storedSteps) {
+function photoRows(design, storedSteps, tinPlan) {
   const out = [];
   for (const d of [...(design?.stickers ?? []), ...(design?.decorations ?? [])]) {
     if (!d?.id) continue;                       // no stable key → nothing to store steps under
@@ -74,6 +75,10 @@ function photoRows(design, storedSteps) {
       // Where this decoration sits in the reference photo, so the card can show the real thing
       // rather than only describing it. Null whenever the model would not commit.
       bbox:    d?.seen?.bbox ?? null,
+      // Real width, in mm — the model's size-against-its-tier judgement multiplied by the tin
+      // plan's actual diameter for that tier. Null whenever either is missing, which is common and
+      // correct: a piped border has no single width, and the baker CUTS to this number.
+      widthMm: decorationWidthMm(d?.seen?.tierWidthRatio, tierInchFor(tinPlan, d?.tierIndex ?? 0)),
       // Photo steps are stored as { guide, label, … } per decoration inside xray_spec.
       guide:   storedSteps?.[d.id]?.guide ?? null,
       status:  'draft',                         // read off a photo, never reviewed by us
@@ -191,6 +196,7 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
       {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#C0392B', marginTop: 6 }}>{err}</div>}
 
       {guide && open && <GuideBody guide={guide} row={row} photoUrl={photoUrl} s={s} />}
+      {open && <TemplateButton row={row} photoUrl={photoUrl} s={s} />}
     </div>
   );
 }
@@ -339,6 +345,42 @@ function ColourRow({ colour, s }) {
         </div>
         {recipe?.recipe && <div style={{ ...s.muted, marginTop: 1 }}>{recipe.recipe}</div>}
       </div>
+    </div>
+  );
+}
+
+// ── Print at actual size ────────────────────────────────────────────────────────────────────────
+// Offered only when the size is genuinely known. A greyed button with a tooltip would invite the
+// baker to wonder what they did wrong; absent, it simply is not part of this decoration's sheet.
+//
+// The common reason it is absent is correct behaviour, not a gap: a piped border has no single
+// width, and analyzeCake is told to return null rather than invent one.
+function TemplateButton({ row, photoUrl, s }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+  if (!row.widthMm || !row.bbox || !photoUrl) return null;
+
+  async function print() {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      await downloadDecorationTemplate({
+        photoUrl, bbox: row.bbox, widthMm: row.widthMm, title: row.title,
+      });
+    } catch (e) {
+      setErr(e?.message || 'Could not make the template.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <button type="button" onClick={print} disabled={busy} style={{
+        border: '1.5px solid #E0DDD8', background: busy ? '#F4F1EC' : '#fff', borderRadius: 9,
+        cursor: busy ? 'default' : 'pointer', padding: '6px 12px', fontFamily: 'inherit',
+        fontSize: 12, fontWeight: 700, color: '#555',
+      }}>{busy ? 'Preparing…' : 'Print template — actual size'}</button>
+      <span style={s.muted}>{(row.widthMm / 10).toFixed(1)} cm wide on this cake</span>
+      {err && <span style={{ fontSize: 12, fontWeight: 700, color: '#C0392B' }}>{err}</span>}
     </div>
   );
 }

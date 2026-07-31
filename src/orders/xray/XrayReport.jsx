@@ -357,6 +357,10 @@ export default function XrayReport({ order, apiClient, onClose }) {
           // The reference photo the spec was read from — the close-up on each decoration is a CSS
           // crop of it, so no second asset is generated, stored or erased.
           photoUrl={order?.design_thumbnail_url}
+          // The only real-world measurement on the sheet: the tin plan knows each tier's actual
+          // diameter, which is what turns the model's "about a third as wide as the tier" into
+          // centimetres a baker can cut to.
+          tinPlan={tinPlan}
           onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
         />
 
