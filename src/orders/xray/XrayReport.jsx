@@ -481,7 +481,20 @@ export default function XrayReport({ order, apiClient, onClose }) {
                         {el.strength && <span style={s.strength(el.strength.label)}>{el.strength.pct}% match</span>}
                       </div>
                     ) : (
-                      <div style={{ ...s.muted, marginTop: 4 }}>{apiClient?.fetchCraftGuides ? 'No nozzle tagged yet' : 'Nozzle data not connected'}</div>
+                      // No curated nozzle. On a photo order the model usually still read the
+                      // technique, and saying "the AI thinks this is a star tip, check it" is a
+                      // far better answer than "no nozzle tagged yet" — one the baker can act on.
+                      // Styled as a plain note, never as the green curated tip beside it: the
+                      // difference between a human's catalogue match and a model's guess has to
+                      // stay visible at 6am.
+                      el.seenTechnique ? (
+                        <div style={{ ...s.muted, marginTop: 4 }}>
+                          <b style={{ color: '#6A5A8C' }}>Read from the photo:</b> {el.seenTechnique}
+                          <span style={{ color: '#A39C93' }}> — not a matched nozzle, check it.</span>
+                        </div>
+                      ) : (
+                        <div style={{ ...s.muted, marginTop: 4 }}>{apiClient?.fetchCraftGuides ? 'No nozzle tagged yet' : 'Nozzle data not connected'}</div>
+                      )
                     )}
                     {el.others.length > 0 && <div style={{ ...s.muted, marginTop: 4 }}>Also: {el.othersLabel}</div>}
                     {(el.guide?.consistency || el.guide?.technique) && (

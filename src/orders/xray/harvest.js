@@ -78,6 +78,10 @@ export function harvestPiping(design) {
           // rather than derived, because the leader-line anchor for a photo cannot be computed —
           // there is no camera to project through, only the box the model reported.
           bbox: p.bbox ?? null,
+          // Photo orders only: the model's own read of the technique. A FALLBACK for when no
+          // curated nozzle exists — never a substitute for one, and rendered so the difference is
+          // visible.
+          seenTechnique: p.technique ?? null,
         });
       });
     });

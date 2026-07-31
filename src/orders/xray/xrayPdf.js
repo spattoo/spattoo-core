@@ -597,6 +597,15 @@ function drawPiping(sheet, { elements, freehand }) {
         sheet.ctx.fillText(`${el.strength.pct}% match`, x + w + mm(3), dy + mm(1.8));
       }
       dy += mm(6);
+    } else if (el.seenTechnique) {
+      // No curated nozzle, but the model read the technique off the photo. Worth printing — the
+      // baker can act on "star tip (1M), check it" and can do nothing at all with silence.
+      //
+      // Deliberately NOT drawn in the green tip pill the curated recommendations use. On paper
+      // there is no hover, no colour legend and no way back to ask, so the only thing separating a
+      // human's catalogue match from a model's guess is that they must not look alike.
+      dy += sheet.text(`Read from the photo: ${el.seenTechnique} — not a matched nozzle, check it.`,
+        x, dy + mm(0.8), { size: mm(3.2), color: MUTED, maxW }) + mm(1);
     } else {
       dy += sheet.text('No nozzle tagged yet', x, dy + mm(0.8), { size: mm(3.2), color: MUTED, maxW }) + mm(1);
     }
