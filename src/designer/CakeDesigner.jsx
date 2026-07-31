@@ -53,6 +53,7 @@ import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
 import TemplatesPanel from '../settings/TemplatesPanel';
 import BillingPanel from '../settings/BillingPanel';
+import CreditsPill from '../billing/CreditsPill.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -5142,6 +5143,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             }
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Credits first in the cluster: it is a READOUT, not an action, and it belongs where
+                the eye lands before the controls rather than buried past them. */}
+            {hasCap('billing:manage') && (
+              <CreditsPill apiClient={apiClient} onOpen={() => { setBillingPanelOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+            )}
             {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
               <button
                 style={{ ...s.sidebarBtn, color: chefsDeskOpen ? '#1a1a1a' : '#555', background: chefsDeskOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
@@ -5331,6 +5337,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={s.sidebarDivider} />
 
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            {hasCap('billing:manage') && (
+              <CreditsPill variant="stack" apiClient={apiClient}
+                onOpen={() => { setBillingPanelOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+            )}
             {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
               <SidebarTooltip label="Settings">
                 <button

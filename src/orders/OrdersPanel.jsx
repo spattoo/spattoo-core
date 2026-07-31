@@ -7,6 +7,7 @@ import {
 import OrdersCalendar from './OrdersCalendar.jsx';
 import XrayReport from './xray/XrayReport.jsx';
 import { hasXrayDesign } from './xray/resolveDesign.js';
+import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
@@ -150,6 +151,9 @@ function EstimateLauncher({ order, apiClient, variant, enabled }) {
       const res = await apiClient.createDesignEstimate(order.id);
       if (!res?.estimate) throw new Error('No build guide came back.');
       setEstimate({ estimate: res.estimate, meta: res.meta ?? null });
+      // Tell the header pill the balance moved. Fired on `reused` too: that call spends nothing,
+      // but re-reading is cheap and a pill that is occasionally over-eager is far better than one
+      // that is occasionally wrong.
     } catch (e) {
       // Out of credits is an ordinary outcome with its own message, not a failure to apologise
       // for — the baker needs to know the difference between "we could not read your photo" and
@@ -159,6 +163,7 @@ function EstimateLauncher({ order, apiClient, variant, enabled }) {
         : (e?.message || 'Could not read that photo.'));
     } finally {
       setBusy(false);
+      creditsChanged();   // success, discard or refusal — the header should reflect reality either way
     }
   }
 

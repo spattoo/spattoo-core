@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import PlanCards from '../billing/PlanCards.jsx';
 import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
+import { creditsChanged } from '../billing/creditsBus.js';
 
 // GSTIN format (client-side, immediate feedback). The server does the authoritative checksum validation;
 // here we only gate the obviously-malformed so the button can enable/disable as the baker types.
@@ -437,7 +438,8 @@ function SmartToolsCard({ apiClient, primaryColor }) {
   async function settle() {
     for (let i = 0; i < 5; i++) {
       await new Promise(r => setTimeout(r, 1500));
-      setTick(t => t + 1);
+      setTick(t => t + 1);       // this card
+      creditsChanged();          // and the header pill, which is on screen behind this panel
     }
   }
 
