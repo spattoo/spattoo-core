@@ -649,7 +649,69 @@ function drawFooters(sheet, { order }) {
 // Render the report → the page canvases. Split from the PDF wrapping below so the sheet can be LOOKED
 // AT — a layout you cannot see is a layout you are guessing at, and every bug so far in this file
 // (a missing cake, an orphaned heading) was one only the eye caught.
-export async function renderXrayPages({ order, report, baker, conflicts, spec } = {}) {
+
+// ── How to make the decorations ─────────────────────────────────────────────
+// A modelled topper is usually made DAYS before the cake, at a bench, from paper — which is why
+// this belongs on the sheet at all and not only on a screen. Drawn last: everything above is about
+// the cake itself, this is a separate making session.
+//
+// Role tokens ({body}) print as the role word. The colours live in the colour table above; naming
+// them twice would be a second place for them to disagree.
+function drawBuildGuides(sheet, buildGuides) {
+  const rows = Object.values(buildGuides ?? {}).filter(r => r?.guide?.steps?.length);
+  if (!rows.length) return;
+
+  const readable = (s) => String(s ?? '').replace(/\{(\w+)\}/g, (_, r) => r.replace(/_/g, ' '));
+
+  sheet.heading('Decorations — how to make them', ACCENT.colours);
+
+  for (const row of rows) {
+    const g = row.guide;
+    sheet.space(mm(20));
+    sheet.y += sheet.text(readable(g.title || 'Decoration'), sheet.margin, sheet.y, { size: mm(4.4), weight: 800 });
+
+    // An unreviewed model guess must not read like a curated craft guide — and on paper there is
+    // no tooltip to explain it later.
+    if (row.status !== 'approved') {
+      sheet.y += sheet.text('AI draft — not reviewed. Check before you build.',
+        sheet.margin, sheet.y, { size: mm(3.2), weight: 700, color: MUTED });
+    }
+    if (g.set_time) {
+      sheet.y += sheet.text(`Allow ${g.set_time} to firm up.`, sheet.margin, sheet.y, { size: mm(3.4), weight: 700, color: MUTED });
+    }
+    if (g.materials?.length) {
+      sheet.y += mm(1);
+      sheet.y += sheet.text(`You will need: ${g.materials.map(m => readable(m.label)).join(', ')}`,
+        sheet.margin, sheet.y, { size: mm(3.4), weight: 600 });
+    }
+    sheet.y += mm(2);
+
+    for (const step of g.steps) {
+      // Reserve the whole step: a title stranded at the foot of a page with its instructions
+      // overleaf reads as an empty step, and a baker turns the page only if he doubts it.
+      sheet.space(mm(14));
+      const n = `${step.n}.`;
+      sheet.text(n, sheet.margin, sheet.y, { size: mm(3.6), weight: 800 });
+      const x = sheet.margin + mm(7);
+      let h = sheet.text(readable(step.title), x, sheet.y, { size: mm(3.6), weight: 800, maxW: sheet.contentW - mm(7) });
+      for (const line of step.instructions ?? []) {
+        h += sheet.text(readable(line), x, sheet.y + h, { size: mm(3.4), weight: 500, maxW: sheet.contentW - mm(7) });
+      }
+      if (step.tools?.length) {
+        h += sheet.text(step.tools.join(' · '), x, sheet.y + h, { size: mm(3.2), weight: 600, color: MUTED, maxW: sheet.contentW - mm(7) });
+      }
+      sheet.y += h + mm(2.5);
+    }
+
+    for (const tip of g.tips ?? []) {
+      sheet.space(mm(8));
+      sheet.y += sheet.text(`· ${readable(tip)}`, sheet.margin, sheet.y, { size: mm(3.3), weight: 600, color: MUTED }) + mm(1);
+    }
+    sheet.y += mm(4);
+  }
+}
+
+export async function renderXrayPages({ order, report, baker, conflicts, spec, buildGuides } = {}) {
   const [thumb, logo] = await Promise.all([
     tryLoad(order?.design_thumbnail_url),
     tryLoad(baker?.logo_url),
@@ -664,6 +726,7 @@ export async function renderXrayPages({ order, report, baker, conflicts, spec } 
   drawChecklist(sheet, report.checklist, report.checklistTotal);
   drawColors(sheet, report.colors);
   drawPiping(sheet, { elements: report.elements, freehand: report.freehand });
+  drawBuildGuides(sheet, buildGuides);
   drawFooters(sheet, { order });
 
   return sheet.pages;

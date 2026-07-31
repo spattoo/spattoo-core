@@ -6,6 +6,7 @@ import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
 import { resolveXraySpec } from './resolveXraySpec.js';
+import BuildGuideSection from './BuildGuideSection.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -54,6 +55,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
   const [baker, setBaker] = useState(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfErr, setPdfErr] = useState(null);
+  const [guideRefresh, setGuideRefresh] = useState(0);
 
   // Everything the report SAYS — one pure call, shared with the PDF (report.js). The screen decides
   // only how it looks.
@@ -69,16 +71,31 @@ export default function XrayReport({ order, apiClient, onClose }) {
   );
   const { tins: tinPlan, colors, elements: withNozzle, freehand, diagram: diagramItems } = report;
 
+  // Build guides for the baker's own decorations — same rail, same fetch, different guide_type.
+  const [buildGuides, setBuildGuides] = useState({});
+
   useEffect(() => {
     let alive = true;
-    if (!report.elementIds.length || !apiClient?.fetchCraftGuides) { setGuides({}); return; }
+    const ids = [...report.elementIds, ...report.placeableElementIds];
+    if (!ids.length || !apiClient?.fetchCraftGuides) { setGuides({}); return; }
     setLoading(true);
-    Promise.resolve(apiClient.fetchCraftGuides(report.elementIds))
-      .then(rows => { if (!alive) return; const m = {}; (rows || []).forEach(r => { m[r.element_id] = r; }); setGuides(m); })
+    Promise.resolve(apiClient.fetchCraftGuides(ids))
+      .then(rows => {
+        if (!alive) return;
+        // One rail, two kinds of row. Split by guide_type so `guides` keeps exactly the shape
+        // report.js has always consumed — a nozzle lookup — and build guides travel separately
+        // instead of being merged into a structure that was never meant to hold them.
+        const nozzle = {}, build = {};
+        (rows || []).forEach(r => {
+          if (r.guide_type === 'fondant_figure') build[r.element_id] = r;
+          else nozzle[r.element_id] = r;          // undefined guide_type = a pre-025 row: piping
+        });
+        setGuides(nozzle); setBuildGuides(build);
+      })
       .catch(() => { if (alive) setGuides({}); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [order?.id]); // eslint-disable-line
+  }, [order?.id, guideRefresh]); // eslint-disable-line
 
   // The bakery's letterhead for the printed sheet. Only the PDF uses it, and a failure is not worth a
   // word on screen — the sheet simply prints without the logo.
@@ -133,6 +150,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
         // re-resolved could print a measured-looking sheet from an estimate the screen had
         // labelled — and paper is the copy that reaches the bench.
         spec: { fromPhoto, edited, stale, coverage },
+        // A modelled topper is made days ahead, at a bench, from paper — so the guide has to be
+        // ON the sheet, not only on the screen it was generated from.
+        buildGuides,
       });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
@@ -327,6 +347,13 @@ export default function XrayReport({ order, apiClient, onClose }) {
             </div>
           </div>
         )}
+
+        {/* How to make the baker's own decorations. After the nozzle sections, because piping is
+            what happens ON the cake and a modelled topper is made separately, usually ahead. */}
+        <BuildGuideSection
+          report={report} design={design} guides={buildGuides} apiClient={apiClient}
+          onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
+        />
 
         {/* Annotated cake — DESIGNED ORDERS ONLY.
             xrayProject.js lands the leader lines by rebuilding the thumbnail's camera exactly

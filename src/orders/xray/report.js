@@ -163,6 +163,15 @@ export function buildXrayReport({ design, weightKg, guides, flavours, specialIns
     checklist,
     checklistTotal: seq,
     elementIds: piping.elementIds,
+    // Placeable decorations that reference a library element — stickers and legacy decorations,
+    // deduped, first-seen order. Distinct from `elementIds`, which is piping only: a piped border
+    // gets a NOZZLE guide, a topper gets a BUILD guide, and they are looked up on the same rail by
+    // element id. Kept here rather than derived in the view, so both renderings ask for the same
+    // set (the sheet in the kitchen and the screen in the office, again).
+    placeableElementIds: [...new Set(
+      [...(design?.stickers ?? []), ...(design?.decorations ?? [])]
+        .map(s => s?.elementId).filter(Boolean),
+    )],
     // True when there is nothing to say — the caller shows an empty state rather than a blank sheet.
     isEmpty: !tins.tiers.length && !colors.length && !elements.length && !piping.freehand.length,
   };
