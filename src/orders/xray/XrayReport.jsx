@@ -6,6 +6,7 @@ import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
 import XrayTinDiagram from './XrayTinDiagram.jsx';
 import { resolveXraySpec } from './resolveXraySpec.js';
+import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps from './XrayDecorationSteps.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
@@ -70,6 +71,20 @@ export default function XrayReport({ order, apiClient, onClose }) {
     [design, order?.weight_kg, guides, order?.flavours, order?.special_instructions],
   );
   const { tins: tinPlan, colors, elements: withNozzle, freehand, diagram: diagramItems } = report;
+
+  // Per-decoration bbox + real width, keyed the way the stored steps are. Shared by the screen
+  // card and the PDF so a decoration cannot be 5cm in one and 7cm in the other.
+  const decorationMeta = useMemo(() => {
+    const out = {};
+    for (const d of [...(design?.stickers ?? []), ...(design?.decorations ?? [])]) {
+      if (!d?.id) continue;
+      out[d.id] = {
+        bbox:    d?.seen?.bbox ?? null,
+        widthMm: decorationWidthMm(d?.seen?.tierWidthRatio, tierInchFor(tinPlan, d?.tierIndex ?? 0)),
+      };
+    }
+    return out;
+  }, [design, tinPlan]);
 
   // Build guides for the baker's own decorations — same rail, same fetch, different guide_type.
   const [buildGuides, setBuildGuides] = useState({});
@@ -154,6 +169,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
         // ON the sheet, not only on the screen they were generated from. Element-backed on a
         // designed order, read from the photo on a photo one; identical shape either way.
         decorationSteps: fromPhoto ? storedSteps : buildGuides,
+        // The close-up on the printed sheet is a crop of the same photo the screen crops, and the
+        // size is the same arithmetic — computed ONCE here and handed to the PDF, so paper and
+        // screen cannot disagree about how big a decoration is.
+        photoUrl: fromPhoto ? order?.design_thumbnail_url : null,
+        decorationMeta: fromPhoto ? decorationMeta : null,
       });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {
@@ -357,10 +377,8 @@ export default function XrayReport({ order, apiClient, onClose }) {
           // The reference photo the spec was read from — the close-up on each decoration is a CSS
           // crop of it, so no second asset is generated, stored or erased.
           photoUrl={order?.design_thumbnail_url}
-          // The only real-world measurement on the sheet: the tin plan knows each tier's actual
-          // diameter, which is what turns the model's "about a third as wide as the tier" into
-          // centimetres a baker can cut to.
-          tinPlan={tinPlan}
+          // Shared with the PDF, so the close-up and the printed size are the same on both.
+          decorationMeta={decorationMeta}
           onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
         />
 

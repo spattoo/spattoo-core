@@ -227,12 +227,15 @@ function drawHeader(sheet, { order, baker, logo, conflicts, spec }) {
   // the numbers came from, and name what could not be read.
   if (spec?.fromPhoto) {
     const padY = mm(3), boxTop = sheet.y;
-    let inner = padY + sheet.text('READ FROM THE REFERENCE PHOTO — CHECK BEFORE BAKING',
+    let inner = padY + sheet.text('READ BY AI FROM THE REFERENCE PHOTO — CHECK BEFORE YOU BAKE',
       sheet.margin + mm(3), boxTop + padY, { size: mm(3.0), weight: 900, color: INK });
     inner += mm(1.0);
+    // Says AI outright, which the screen band did not. Paper is the copy that reaches the bench,
+    // is read at 6am, and carries no context around it — and a sheet that looks measured is
+    // indistinguishable from one that was. Naming the source is what lets a baker weigh it.
     inner += sheet.text(
-      'This order had no 3D design. Tiers, colours and tin sizes below were worked out from the '
-      + `customer's photo${spec.edited ? ' and corrected by the baker' : ''}.`,
+      'This order had no 3D design. Tiers, colours and tin sizes below were worked out by AI from the '
+      + `customer's photo${spec.edited ? ' and corrected by the baker' : ''}, and may be wrong.`,
       sheet.margin + mm(3), boxTop + inner, { size: mm(3.6), weight: 700 });
 
     // A guide about a photo that is no longer on the order. On PAPER this matters more than on
@@ -657,20 +660,92 @@ function drawFooters(sheet, { order }) {
 //
 // Role tokens ({body}) print as the role word. The colours live in the colour table above; naming
 // them twice would be a second place for them to disagree.
-function drawDecorationSteps(sheet, decorationSteps) {
+// ── The reference block, printed above each decoration's steps ──────────────────────────────────
+// The three deterministic panels from spattoo-docs plans/visual-decoration-guide.md, on paper. On
+// screen they are optional detail a baker can scroll past; on paper they are the difference
+// between a recipe and a set of instructions for a shape nobody has seen.
+//
+// Returns the height consumed so the caller can advance. Draws nothing, and consumes nothing, when
+// a decoration has none of the three — which is the normal case for an element-backed guide with
+// no colours read.
+function drawDecorationReference(sheet, photo, meta, guide) {
+  const colours = (guide?.colours ?? []).filter(c => /^#[0-9a-f]{6}$/i.test(String(c?.hex ?? '')));
+  const bbox    = meta?.bbox;
+  const canCrop = !!(photo && bbox);
+  if (!canCrop && !colours.length && !meta?.widthMm) return 0;
+
+  const readable = (t) => String(t ?? '').replace(/\{(\w+)\}/g, (_, r) => r.replace(/_/g, ' '));
+  const size = mm(26);
+  const top  = sheet.y + mm(1.5);
+  let textX  = sheet.margin;
+
+  if (canCrop) {
+    // Same quarter-box pad as the screen crop (cropStyle) and the printable template, so all three
+    // agree about where the decoration ends. drawImage clips to the source rect, which is what
+    // background-size/position does on screen.
+    const [x, y, w, h] = bbox;
+    const padX = w * 0.25, padY = h * 0.25;
+    const cx = Math.max(0, x - padX), cy = Math.max(0, y - padY);
+    const cw = Math.min(1 - cx, w + padX * 2), ch = Math.min(1 - cy, h + padY * 2);
+
+    // Cover the square frame without distorting: take the largest centred source square.
+    const sW = cw * photo.naturalWidth, sH = ch * photo.naturalHeight;
+    const side = Math.min(sW, sH);
+    const sx = cx * photo.naturalWidth + (sW - side) / 2;
+    const sy = cy * photo.naturalHeight + (sH - side) / 2;
+
+    sheet.ctx.drawImage(photo, sx, sy, side, side, sheet.margin, top, size, size);
+    sheet.ctx.strokeStyle = RULE;
+    sheet.ctx.lineWidth = Math.max(1, mm(0.2));
+    sheet.ctx.strokeRect(sheet.margin, top, size, size);
+    textX = sheet.margin + size + mm(4);
+  }
+
+  let ty = top;
+  if (meta?.widthMm) {
+    // The one real measurement on the sheet. Printed beside the picture because that is where the
+    // question "how big is it" is actually asked.
+    ty += sheet.text(`Actual size: ${(meta.widthMm / 10).toFixed(1)} cm wide`,
+      textX, ty, { size: mm(3.6), weight: 800 });
+    ty += sheet.text('Print the template from the app to cut to size.',
+      textX, ty, { size: mm(3.0), weight: 600, color: MUTED }) + mm(1);
+  }
+
+  if (colours.length) {
+    ty += sheet.text('COLOURS', textX, ty, { size: mm(2.8), weight: 900, color: MUTED }) + mm(0.8);
+    for (const c of colours) {
+      const sw = mm(3.4);
+      sheet.swatch(c.hex, textX, ty + mm(0.4), sw);
+      // Hex printed alongside the role: the steps carry role tokens rather than colour names so one
+      // guide serves every colour variant, and this is the only place that trade is paid back.
+      sheet.text(`${readable(c.role)} · ${c.hex}`, textX + sw + mm(2), ty,
+        { size: mm(3.2), weight: 700 });
+      ty += Math.max(sw, mm(3.2)) + mm(1.2);
+    }
+  }
+
+  return Math.max(canCrop ? size + mm(3) : 0, ty - top + mm(2));
+}
+
+function drawDecorationSteps(sheet, decorationSteps, photo, meta) {
   // Same shape from both sources: { <key>: { guide, … } }. An element-backed guide is keyed by
   // element id, a photo one by the decoration's id within the spec — the sheet does not care which.
-  const rows = Object.values(decorationSteps ?? {}).filter(r => r?.guide?.steps?.length);
-  if (!rows.length) return;
+  const entries = Object.entries(decorationSteps ?? {}).filter(([, r]) => r?.guide?.steps?.length);
+  if (!entries.length) return;
 
   const readable = (s) => String(s ?? '').replace(/\{(\w+)\}/g, (_, r) => r.replace(/_/g, ' '));
 
   sheet.heading('Decorations — how to make them', ACCENT.colours);
+  // A DESIGNED order gets no provenance band above, but these steps are still model-written. The
+  // warning belongs wherever the steps are, not only where the tin plan is.
+  sheet.y += sheet.text('Written by AI. Check before you build.',
+    sheet.margin, sheet.y, { size: mm(3.2), weight: 700, color: MUTED }) + mm(1.5);
 
-  for (const row of rows) {
+  for (const [key, row] of entries) {
     const g = row.guide;
     sheet.space(mm(20));
     sheet.y += sheet.text(readable(g.title || 'Decoration'), sheet.margin, sheet.y, { size: mm(4.4), weight: 800 });
+    sheet.y += drawDecorationReference(sheet, photo, meta?.[key], g);
 
     // An unreviewed model guess must not read like a curated craft guide — and on paper there is
     // no tooltip to explain it later.
@@ -713,11 +788,15 @@ function drawDecorationSteps(sheet, decorationSteps) {
   }
 }
 
-export async function renderXrayPages({ order, report, baker, conflicts, spec, decorationSteps } = {}) {
+export async function renderXrayPages({ order, report, baker, conflicts, spec, decorationSteps, photoUrl, decorationMeta } = {}) {
   const [thumb, logo] = await Promise.all([
     tryLoad(order?.design_thumbnail_url),
     tryLoad(baker?.logo_url),
   ]);
+  // The decoration close-ups are crops of this same photo, so it is loaded once here rather than
+  // per decoration. `thumb` above IS that photo for a manual order, but not for a designed one,
+  // and the two must not be conflated — a designed order's decorations are library elements.
+  const photo = photoUrl ? await tryLoad(photoUrl) : null;
 
   const sheet = new Sheet();
   drawHeader(sheet, { order, baker, logo, conflicts, spec });
@@ -728,7 +807,7 @@ export async function renderXrayPages({ order, report, baker, conflicts, spec, d
   drawChecklist(sheet, report.checklist, report.checklistTotal);
   drawColors(sheet, report.colors);
   drawPiping(sheet, { elements: report.elements, freehand: report.freehand });
-  drawDecorationSteps(sheet, decorationSteps);
+  drawDecorationSteps(sheet, decorationSteps, photo, decorationMeta);
   drawFooters(sheet, { order });
 
   return sheet.pages;

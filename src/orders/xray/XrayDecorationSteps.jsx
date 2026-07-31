@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
-import { decorationWidthMm, tierInchFor, downloadDecorationTemplate } from './decorationTemplate.js';
+import { downloadDecorationTemplate } from './decorationTemplate.js';
 
 // ── How to make the decorations ──────────────────────────────────────────────────────────────────
 // The nozzle sections answer "which tip pipes this border". This answers the other half: how a
@@ -28,9 +28,9 @@ import { decorationWidthMm, tierInchFor, downloadDecorationTemplate } from './de
 // WITH THE CUSTOMER — often after the order is placed. So the A4 print path is always available
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
 export default function XrayDecorationSteps({
-  design, fromPhoto, storedSteps, guides, orderId, photoUrl, tinPlan, apiClient, onGenerated, s,
+  design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated, s,
 }) {
-  const rows = fromPhoto ? photoRows(design, storedSteps, tinPlan) : elementRows(design, guides);
+  const rows = fromPhoto ? photoRows(design, storedSteps, decorationMeta) : elementRows(design, guides);
   if (!rows.length) return null;
 
   return (
@@ -63,7 +63,7 @@ function describe(sticker) {
   return where ? `${what} on the ${where}` : what;
 }
 
-function photoRows(design, storedSteps, tinPlan) {
+function photoRows(design, storedSteps, meta) {
   const out = [];
   for (const d of [...(design?.stickers ?? []), ...(design?.decorations ?? [])]) {
     if (!d?.id) continue;                       // no stable key → nothing to store steps under
@@ -74,11 +74,11 @@ function photoRows(design, storedSteps, tinPlan) {
       label,
       // Where this decoration sits in the reference photo, so the card can show the real thing
       // rather than only describing it. Null whenever the model would not commit.
-      bbox:    d?.seen?.bbox ?? null,
-      // Real width, in mm — the model's size-against-its-tier judgement multiplied by the tin
-      // plan's actual diameter for that tier. Null whenever either is missing, which is common and
-      // correct: a piped border has no single width, and the baker CUTS to this number.
-      widthMm: decorationWidthMm(d?.seen?.tierWidthRatio, tierInchFor(tinPlan, d?.tierIndex ?? 0)),
+      // bbox + real width come from decorationMeta, computed ONCE in XrayReport and shared with
+      // the PDF. Deriving them here as well would let the screen and the printed sheet disagree
+      // about how big a decoration is — and the baker cuts fondant to the printed one.
+      bbox:    meta?.[d.id]?.bbox ?? null,
+      widthMm: meta?.[d.id]?.widthMm ?? null,
       // Photo steps are stored as { guide, label, … } per decoration inside xray_spec.
       guide:   storedSteps?.[d.id]?.guide ?? null,
       status:  'draft',                         // read off a photo, never reviewed by us
