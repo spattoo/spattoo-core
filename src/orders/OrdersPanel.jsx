@@ -6,7 +6,7 @@ import {
 } from './statuses.js';
 import OrdersCalendar from './OrdersCalendar.jsx';
 import XrayReport from './xray/XrayReport.jsx';
-import { hasXraySpec } from './xray/resolveXraySpec.js';
+import { hasXraySpec, resolveXraySpec } from './xray/resolveXraySpec.js';
 import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
@@ -114,8 +114,15 @@ function IconAction({ glyph, label, short, onClick, disabled, variant = 'row' })
 // button should exist.
 function XrayLauncher({ order, apiClient, variant, enabled }) {
   const [open, setOpen] = useState(false);
-  if (!enabled) return null;                 // X-Ray report is a Blaze+ entitlement (xray_reports)
-  if (!hasXraySpec(order)) return null;
+  const { design, fromPhoto } = resolveXraySpec(order);
+  if (!design) return null;
+  // Two different things are being gated, and only one is a plan feature.
+  //
+  // A DESIGNED order's X-Ray costs us nothing to produce, so it stays what it has always been:
+  // a Blaze+ hook (xray_reports). A PHOTO order's was PAID FOR with credits, on any plan — gating
+  // it again would take a baker's credits and then withhold what they bought, which is the worst
+  // thing this feature could do.
+  if (!fromPhoto && !enabled) return null;
   return (
     <>
       <IconAction glyph={<XrayGlyph />} label="X-Ray report" short="X-Ray" onClick={() => setOpen(true)} variant={variant} />
@@ -134,15 +141,17 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
 // The result is opened directly rather than refetching the order. The route returns the estimate
 // it just wrote, so a round trip would re-read what we are already holding, and the panel picks it
 // up from the server on its next load anyway.
-function BuildGuideLauncher({ order, apiClient, variant, enabled }) {
+function BuildGuideLauncher({ order, apiClient, variant }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState(null);
-  const [estimate, setEstimate] = useState(null);
+  const [spec, setSpec] = useState(null);
 
-  if (!enabled) return null;
+  // NOT gated on xray_reports. Reading a photo costs real money and is metered by CREDITS, which
+  // every plan has — so every plan can buy one. Gating it on the Blaze entitlement as well was
+  // what left a Flame baker holding an allowance they could not spend on anything.
   if (!apiClient?.createXraySpec) return null;    // host hasn't wired it → no dead button
-  if (order?.design_snapshot) return null;              // designed: X-Ray reads it directly
-  if (hasXraySpec(order)) return null;                // already fromPhoto: XrayLauncher has it
+  if (order?.design_snapshot) return null;        // designed: X-Ray reads it directly
+  if (hasXraySpec(order)) return null;            // already read: XrayLauncher has it
 
   async function generate() {
     if (busy) return;
@@ -150,7 +159,7 @@ function BuildGuideLauncher({ order, apiClient, variant, enabled }) {
     try {
       const res = await apiClient.createXraySpec(order.id);
       if (!res?.estimate) throw new Error('No build guide came back.');
-      setEstimate({ estimate: res.estimate, meta: res.meta ?? null });
+      setSpec({ spec: res.estimate, meta: res.meta ?? null });
       // Tell the header pill the balance moved. Fired on `reused` too: that call spends nothing,
       // but re-reading is cheap and a pill that is occasionally over-eager is far better than one
       // that is occasionally wrong.
@@ -185,14 +194,14 @@ function BuildGuideLauncher({ order, apiClient, variant, enabled }) {
         variant={variant}
       />
       {err && <span style={{ fontSize: 12, fontWeight: 700, color: '#B00020', maxWidth: 220 }}>{err}</span>}
-      {estimate && (
+      {spec && (
         <XrayReport
           // The order as it now is on the server. Merged rather than refetched — same data, one
           // fewer round trip — and resolveXraySpec picks the estimate up from exactly these two
           // fields, so the report cannot tell the difference.
-          order={{ ...order, xray_spec: estimate.estimate, xray_spec_meta: estimate.meta }}
+          order={{ ...order, xray_spec: spec.spec, xray_spec_meta: spec.meta }}
           apiClient={apiClient}
-          onClose={() => setEstimate(null)}
+          onClose={() => setSpec(null)}
         />
       )}
     </>
@@ -970,7 +979,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         flexWrap: stack ? 'nowrap' : 'wrap',
       }}>
         <XrayLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
-        <BuildGuideLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
+        <BuildGuideLauncher order={order} apiClient={apiClient} variant={v} />
         <IconAction
           glyph={<Cube3D />}
           label={designLocked ? 'View in 3D' : 'Edit in 3D'}
