@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Storefront configurator — UI mock</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Pacifico&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      /* ── Storefront configurator — STATIC UI MOCK ──────────────────────────
+         No React, no data, no build step: open the file, or /configurator.html
+         via `npm run dev`. It judges the LOOK and FLOW of
+         plans/storefront-configurator.md's three doors before any of it is
+         built — the customer-facing sibling of dev/enquiries.html.
+
+         ── This is the SHIPPED storefront's language, not a new one ────────
+         An earlier pass invented a cream-and-gold editorial look with a serif
+         display face. It was wrong, and wrong in an instructive way: the
+         storefront this lives on has a settled visual identity and none of
+         those were part of it. What is actually shipped (render
+         dev/storefront.html to see it):
+
+           · a tinted band with a WAVY edge — the recurring motif down the
+             whole page, WAVES + WavyBand in CustomerStorefront.jsx
+           · headings in the template's own face at weight 700/800. spotlight
+             sets serif === sans, so the storefront has NO serif display type
+           · eyebrows: 11.5px / 700 / letter-spacing 2.5 / uppercase, in the
+             baker's PRIMARY colour (CustomerStorefront.jsx:900, :976)
+           · white rounded cards with soft shadows on the tinted band
+           · pill CTAs in the baker's cta colour
+
+         Every value below is copied from src/storefront/templates.js and
+         CustomerStorefront.jsx, and the derived colours use the same
+         mix/lighten/darken as storefrontKit.js — so the template switcher
+         shows what a baker on it would really see.
+
+         ── What is being judged ───────────────────────────────────────────
+         1. Entry: does one CTA beat three doors on the page? The shipped hero
+            ALREADY has a single "Start designing" button, so the one-CTA
+            option is the smaller change — but it hides the 3D designer, the
+            one thing that says this baker is not like the others.
+         2. Door labels: the plan argues first-person naming in one section
+            and "Design it in 3D" in another.
+         3. Is "Show me ideas" a container rather than a bounce button? */
+
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; background: #E4E1DA; font-family: 'Quicksand', system-ui, sans-serif; color: #2C2A26; }
+
+      /* ── mock chrome (not the storefront) ── */
+      .bar { background: #fff; border-bottom: 1px solid #E3DED5; padding: 12px 20px 14px; position: sticky; top: 0; z-index: 100; }
+      .bar h1 { font-size: 15px; margin: 0 0 2px; font-weight: 700; }
+      .bar p  { font-size: 11.5px; color: #8A857D; margin: 0 0 12px; max-width: 960px; line-height: 1.5; }
+      .ctrls { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+      .grp { display: flex; flex-direction: column; gap: 5px; }
+      .grp > span { font-size: 9px; text-transform: uppercase; letter-spacing: .09em; color: #8A857D; font-weight: 700; }
+      .segs { display: flex; border: 1px solid #DED8CF; border-radius: 8px; overflow: hidden; }
+      .segs button { border: none; background: #fff; padding: 7px 12px; font: inherit; font-size: 11.5px; font-weight: 600;
+                     color: #5b554c; cursor: pointer; border-right: 1px solid #EFEAE3; white-space: nowrap; }
+      .segs button:last-child { border-right: none; }
+      .segs button[aria-pressed="true"] { background: #2C2A26; color: #fff; }
+      .note { margin: 14px 20px 0; font-size: 11.5px; color: #5b554c; line-height: 1.55; max-width: 960px; }
+      .note b { color: #2C2A26; }
+
+      .stage { padding: 18px 20px 44px; display: flex; justify-content: center; }
+      .device { background: var(--pageBg); border-radius: 16px; overflow: hidden; box-shadow: 0 18px 60px rgba(40,30,25,.18);
+                width: 100%; max-width: 1120px; font-family: var(--font); }
+      .device.mobile { max-width: 390px; }
+
+      /* ── storefront chrome ── */
+      .utilbar { background: var(--utilBg); color: var(--utilInk); font-size: 13px; font-weight: 700; text-align: center; padding: 9px 16px; }
+      /* On the curve hero the brand tint flows up THROUGH the header (CustomerStorefront.jsx:242). */
+      .header { background: var(--headerBg); border-bottom: 1px solid var(--cardBorder); display: flex; align-items: center; justify-content: space-between; padding: 12px 22px; }
+      .brand img { height: 42px; width: auto; max-width: 230px; object-fit: contain; display: block; }
+      .nav { display: flex; align-items: center; gap: 26px; }
+      .nav a { font-size: 14px; font-weight: 600; color: var(--heading); text-decoration: none; }
+      .device.mobile .nav { display: none; }
+      .burger { width: 40px; height: 40px; border: none; background: none; display: none; flex-direction: column; gap: 4px;
+                align-items: center; justify-content: center; }
+      .burger i { width: 18px; height: 2px; border-radius: 2px; background: var(--heading); display: block; }
+      .device.mobile .burger { display: flex; }
+
+      /* ── the wavy band — the storefront's signature motif ── */
+      .band { position: relative; background: var(--tintBand); padding: 30px 0 60px; }
+      .band > svg { position: absolute; left: 0; width: 100%; height: 64px; display: block; }
+      .band > svg.top { top: -1px; transform: scaleY(-1); }
+      .band > svg.bot { bottom: -1px; }
+      .device.mobile .band > svg { height: 44px; }
+      .inner { max-width: 1040px; margin: 0 auto; padding: 0 26px; position: relative; z-index: 1; }
+      .device.mobile .inner { padding: 0 18px; }
+
+      /* ── hero ── */
+      .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: center; padding: 18px 0 10px; }
+      .device.mobile .hero { grid-template-columns: 1fr; text-align: center; gap: 14px; }
+      .hero h1 { font-size: 40px; line-height: 1.1; font-weight: 800; color: var(--onTint); margin: 0 0 14px; letter-spacing: -.02em; }
+      .device.mobile .hero h1 { font-size: 29px; }
+      .hero p { font-size: 15px; line-height: 1.6; color: var(--onTintSoft); margin: 0 0 22px; max-width: 400px; }
+      .device.mobile .hero p { margin-left: auto; margin-right: auto; font-size: 14px; }
+      .heroShot { position: relative; height: 300px; }
+      .device.mobile .heroShot { height: 210px; order: -1; }
+      .heroShot img { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(1.35); max-height: 100%;
+                      filter: drop-shadow(0 24px 40px rgba(0,0,0,.28)); }
+
+      .cta { border: none; cursor: pointer; font: inherit; font-weight: 700; font-size: 15px; background: var(--cta);
+             color: var(--onCta); border-radius: 999px; padding: 14px 30px; display: inline-flex; align-items: center; gap: 9px;
+             box-shadow: 0 10px 26px rgba(30,26,22,.16); transition: transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s; }
+      .cta:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(30,26,22,.22); }
+      .cta:hover .arrow { transform: translateX(4px); }
+      .arrow { transition: transform .25s cubic-bezier(.2,.7,.3,1); display: inline-block; }
+      .ctaHint { margin-top: 12px; font-size: 11px; color: var(--onTintSoft); font-style: italic; }
+
+      /* ── section furniture, per CustomerStorefront ── */
+      .eyebrow { font-size: 11.5px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+                 color: var(--primary); margin-bottom: 12px; text-align: center; }
+      .band .eyebrow { color: var(--onTintSoft); }
+      .secTitle { font-size: 26px; font-weight: 800; color: var(--heading); margin: 0 0 8px; text-align: center; letter-spacing: -.015em; }
+      .band .secTitle { color: var(--onTint); }
+      .secSub { font-size: 14px; color: var(--muted); text-align: center; margin: 0 auto 26px; max-width: 460px; line-height: 1.6; }
+      .band .secSub { color: var(--onTintSoft); }
+      .device.mobile .secTitle { font-size: 21px; }
+
+      /* ── the three doors ── */
+      .doors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .device.mobile .doors { grid-template-columns: 1fr; gap: 12px; }
+      .door { background: #fff; border-radius: 18px; overflow: hidden; cursor: pointer; border: none; padding: 0;
+              font: inherit; text-align: left; color: inherit; display: flex; flex-direction: column;
+              box-shadow: 0 10px 28px rgba(45,40,30,.10);
+              transition: transform .26s cubic-bezier(.2,.7,.3,1), box-shadow .26s; }
+      .door:hover { transform: translateY(-4px); box-shadow: 0 20px 44px rgba(45,40,30,.16); }
+      .door .shot { position: relative; height: 172px; background: var(--tint); overflow: hidden;
+                    display: flex; align-items: center; justify-content: center; }
+      .device.mobile .door .shot { height: 148px; }
+      .door .shot > img { position: absolute; left: 50%; top: 52%; transform: translate(-50%,-50%) scale(1.4); max-height: 100%;
+                          transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+      .door:hover .shot > img { transform: translate(-50%,-50%) scale(1.5); }
+      .door .body { padding: 18px 20px 20px; display: flex; flex-direction: column; flex: 1; }
+      .door h3 { font-size: 18px; font-weight: 800; color: var(--heading); margin: 0 0 6px; letter-spacing: -.01em; }
+      .door p { font-size: 13px; line-height: 1.55; color: var(--muted); margin: 0 0 14px; }
+      .door .go { margin-top: auto; font-size: 13px; font-weight: 700; color: var(--primaryInk); display: inline-flex; gap: 7px; align-items: center; }
+      .cost { font-size: 11.5px; color: var(--muted); margin: -6px 0 12px; }
+
+      /* the designer keeps a badge instead of a bigger box — one grid, no odd spans */
+      .flag { position: absolute; top: 12px; left: 12px; z-index: 2; background: var(--cta); color: var(--onCta);
+              font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+              padding: 6px 11px; border-radius: 999px; box-shadow: 0 4px 12px rgba(30,26,22,.18); }
+
+      /* 02 — snapshots handed over; 03 — a mosaic. The art shows the ACTION, not the product again. */
+      .snaps { position: relative; width: 132px; height: 128px; }
+      .snap { position: absolute; background: #fff; padding: 6px 6px 18px; border-radius: 3px;
+              box-shadow: 0 6px 16px rgba(50,40,28,.2); transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+      .snap i { display: block; width: 84px; height: 78px; overflow: hidden; position: relative; background: var(--tint); }
+      .snap i img { position: absolute; left: 50%; top: 54%; transform: translate(-50%,-50%) scale(1.75); max-height: 100%; }
+      .snap.a { transform: rotate(-8deg) translate(-8px, 2px); }
+      .snap.b { transform: rotate(6deg) translate(14px, -4px); }
+      .door:hover .snap.a { transform: rotate(-11deg) translate(-12px, 0); }
+      .door:hover .snap.b { transform: rotate(9deg) translate(18px, -7px); }
+      .mosaic { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 148px; }
+      .mosaic span { display: block; height: 66px; border-radius: 8px; overflow: hidden; position: relative; background: #fff;
+                     box-shadow: 0 3px 9px rgba(50,40,28,.14); }
+      .mosaic span img { position: absolute; left: 50%; top: 54%; max-height: 100%; transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+
+      /* ── gallery ── */
+      .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .device.mobile .gallery { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .item { background: #fff; border-radius: 16px; overflow: hidden; cursor: pointer; box-shadow: 0 8px 22px rgba(45,40,30,.09);
+              transition: transform .26s cubic-bezier(.2,.7,.3,1), box-shadow .26s; }
+      .item:hover { transform: translateY(-4px); box-shadow: 0 18px 38px rgba(45,40,30,.15); }
+      .item .ph { position: relative; height: 158px; overflow: hidden; background: var(--tint); }
+      .device.mobile .item .ph { height: 118px; }
+      .item .ph img { position: absolute; left: 50%; top: 53%; max-height: 100%; transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+      .item:hover .ph img { transform: translate(-50%,-50%) scale(1.62) !important; }
+      .item .cap { padding: 13px 15px 15px; }
+      .item .nm { font-size: 14px; font-weight: 700; color: var(--heading); }
+      .item .kind { font-size: 11px; color: var(--muted); margin-top: 2px; }
+      .item .mk { margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--primaryInk); }
+      .escape { margin-top: 18px; background: #fff; border-radius: 18px; padding: 22px 26px; display: flex; gap: 18px;
+                align-items: center; justify-content: space-between; flex-wrap: wrap; cursor: pointer;
+                box-shadow: 0 8px 22px rgba(45,40,30,.09); }
+      .escape h4 { font-size: 17px; font-weight: 800; color: var(--heading); margin: 0 0 4px; }
+      .escape p { font-size: 13px; color: var(--muted); margin: 0; max-width: 470px; line-height: 1.55; }
+
+      /* ── after submit ── */
+      .done { text-align: center; padding: 14px 0 20px; }
+      .done .seal { width: 66px; height: 66px; border-radius: 50%; background: var(--cta); color: var(--onCta);
+                    display: flex; align-items: center; justify-content: center; font-size: 27px; margin: 0 auto 20px;
+                    box-shadow: 0 10px 26px rgba(30,26,22,.16); }
+      .sum { margin: 28px auto 0; max-width: 430px; background: #fff; border-radius: 18px; padding: 6px 22px; text-align: left;
+             box-shadow: 0 10px 26px rgba(45,40,30,.10); }
+      .sum .row { display: flex; justify-content: space-between; gap: 16px; font-size: 13.5px; padding: 13px 0;
+                  border-bottom: 1px solid var(--cardBorder); }
+      .sum .row:last-child { border-bottom: none; }
+      .sum .row span:first-child { color: var(--muted); }
+      .sum .row span:last-child { color: var(--heading); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+
+    <div class="bar">
+      <h1>Storefront configurator — three doors to a quote</h1>
+      <p>Static mock of <code>plans/storefront-configurator.md</code>, drawn in the shipped storefront's own language —
+         wavy tinted bands, bold sans headings, letterspaced eyebrows, white rounded cards. Values copied from
+         <code>templates.js</code> + <code>CustomerStorefront.jsx</code>.</p>
+      <div class="ctrls">
+        <div class="grp"><span>Screen</span>
+          <div class="segs" id="screen">
+            <button data-k="entry" aria-pressed="true">Entry (one CTA)</button>
+            <button data-k="doors">The three doors</button>
+            <button data-k="ideas">Show me ideas</button>
+            <button data-k="done">After submit</button>
+          </div></div>
+        <div class="grp"><span>Entry CTA wording</span>
+          <div class="segs" id="cta">
+            <button data-k="start" aria-pressed="true">Start your cake</button>
+            <button data-k="plan">Let’s plan your cake</button>
+            <button data-k="design">Start designing</button>
+            <button data-k="generic">Get started</button>
+          </div></div>
+        <div class="grp"><span>Template</span>
+          <div class="segs" id="tpl">
+            <button data-k="spotlight" aria-pressed="true">Standard</button>
+            <button data-k="aurora">Aurora</button>
+          </div></div>
+        <div class="grp"><span>Door labels</span>
+          <div class="segs" id="labels">
+            <button data-k="honest" aria-pressed="true">Design it in 3D</button>
+            <button data-k="first">I’ll design it myself</button>
+          </div></div>
+        <div class="grp"><span>Viewport</span>
+          <div class="segs" id="view">
+            <button data-k="desktop" aria-pressed="true">Desktop</button>
+            <button data-k="mobile">Mobile</button>
+          </div></div>
+      </div>
+    </div>
+
+    <p class="note" id="note"></p>
+    <div class="stage"><div class="device" id="device"></div></div>
+
+    <script type="module">
+      // ── colour maths, mirroring src/storefront/storefrontKit.js ──
+      const parse = (h) => { const c = (h || '#000').replace('#', '');
+        const n = c.length === 3 ? c.split('').map((x) => x + x).join('') : c;
+        return [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16)); };
+      const hex = (rgb) => '#' + rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+      const mix = (a, b, t) => hex(parse(a).map((v, i) => v + (parse(b)[i] - v) * t));
+      const lighten = (h, t) => mix(h, '#ffffff', t);
+      const darken  = (h, t) => mix(h, '#000000', t);
+      const lum = (h) => { const [r, g, b] = parse(h); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
+      const onColor = (h) => (lum(h) > 0.6 ? '#241a1d' : '#ffffff');
+
+      const SANS = "'Montserrat', system-ui, sans-serif";
+      // The real wave paths from CustomerStorefront.jsx — asymmetric on purpose.
+      const WAVES = [
+        'M0,40 C300,90 720,4 1140,52 C1320,72 1400,40 1440,50 L1440,70 L0,70 Z',
+        'M0,55 C360,2 800,84 1200,30 C1350,10 1410,52 1440,40 L1440,70 L0,70 Z',
+        'M0,30 C260,78 640,8 1040,46 C1280,68 1380,28 1440,44 L1440,70 L0,70 Z',
+      ];
+
+      const TEMPLATES = {
+        spotlight: { defaults: { primary: '#9FA28B', ctaColor: '#EAEBE5' },
+          tokens: { pageBg: '#FFFFFF', heading: '#241A1E', muted: '#8B7B80', cardBorder: '#ECE5DE' } },
+        aurora: { defaults: { primary: '#5B3A29', ctaColor: '#3A281C' },
+          tokens: { pageBg: '#FFFFFF', heading: '#3A281C', muted: '#9C8A79', cardBorder: '#EFE4D6' } },
+      };
+
+      const LABELS = {
+        honest: { design: 'Design it in 3D', photo: 'I have a photo', ideas: 'Show me ideas' },
+        first:  { design: 'I’ll design it myself', photo: 'I have a photo', ideas: 'Show me ideas' },
+      };
+      const COPY = {
+        design: 'Build it yourself — tiers, colours, decorations, a message on top. Turn it as you go.',
+        photo:  'Seen a cake you love? Send the picture. Pinterest, Instagram, a friend’s party.',
+        ideas:  'Look through what this kitchen has already made, and start from one of them.',
+      };
+      const CTA = {
+        start:   { label: 'Start your cake',      hint: 'Names the cake. Short, promises nothing about what comes next.' },
+        plan:    { label: 'Let’s plan your cake', hint: '“Plan” quietly signals a conversation rather than a checkout.' },
+        design:  { label: 'Start designing',      hint: 'What the hero says today — but it names only one of the three doors.' },
+        generic: { label: 'Get started',          hint: 'Describes our funnel, not their cake — the class of word the plan rejects.' },
+      };
+
+      const NOTES = {
+        entry: `<b>One door before the three.</b> The shipped hero already carries a single
+          <i>“Start designing”</i> button, so this is the smaller change — but that label names only ONE
+          of the three doors, and behind any single button the 3D designer is invisible until the
+          customer taps. On a warm visitor who already means to order, the tap is pure cost.
+          <b>Press it</b> to feel the step. Note the plan's naming rule — <i>name the customer's starting
+          state, never our process</i> — which is what rules out “Get started”.`,
+        doors: `<b>Three doors, one grid.</b> Prominence comes from a badge and reading order rather than
+          a bigger box, so the photo door stays visibly one tap. Each card's art shows the ACTION — the
+          cake for building, snapshots for sending, a mosaic for browsing — so the three choices read
+          before a word does. <b>Try both label sets:</b> the plan argues first-person naming in one
+          section and “Design it in 3D” in another, the latter because someone holding a reference photo
+          reads “design my own cake” as “specify my cake”.`,
+        ideas: `<b>A container, not a destination.</b> Every item carries a way onward — “Make one like
+          this” <b>attaches it as a reference photo</b>, which works identically for gallery photos (no
+          design data) and saved templates (a real snapshot), so the door never sorts items into two
+          behaviours. The card at the bottom is load-bearing: <i>“just something nice for a 5-year-old,
+          around ₹2,000”</i> is a decisive customer, and without an exit this door is a dead end for the
+          segment most ready to buy.`,
+        done: `<b>State the channel, never promise a time.</b> “Within 2 hours” is Spattoo committing on
+          the baker's behalf; if she is mid-bake when it lapses, we made her the one who broke it. The
+          name is <code>bakers.name</code>. No price appears anywhere — which is why quote turnaround is
+          the metric that decides whether the approach survives.`,
+      };
+
+      const state = { screen: 'entry', tpl: 'spotlight', labels: 'honest', view: 'desktop', cta: 'start' };
+
+      function palette() {
+        const t = TEMPLATES[state.tpl], tk = t.tokens;
+        const { primary, ctaColor } = t.defaults;
+        const tintBand = primary;                       // the hero/section band is the primary itself
+        return { ...tk, primary, font: SANS,
+          primaryInk: darken(primary, 0.32),
+          tintBand, onTint: onColor(primary), onTintSoft: lum(primary) > 0.6 ? 'rgba(36,26,29,.72)' : 'rgba(255,255,255,.8)',
+          tint: lighten(primary, 0.88), utilBg: lighten(primary, 0.9), utilInk: darken(primary, 0.14),
+          headerBg: '#FCFAF7', cta: ctaColor, onCta: onColor(ctaColor) };
+      }
+
+      const wave = (cls, d, fill) =>
+        `<svg class="${cls}" viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="${fill}"/></svg>`;
+
+      const chrome = () => `
+        <div class="utilbar">Pickup or delivery · Bengaluru</div>
+        <div class="header">
+          <div class="brand"><img src="./feelings-flavours-logo.png" alt="Feelings &amp; Flavours"></div>
+          <nav class="nav"><a>Our creations</a><a>Our story</a><a>Reviews</a></nav>
+          <button class="burger"><i></i><i></i><i></i></button>
+        </div>`;
+
+      const entryScreen = (p) => `
+        ${chrome()}
+        <div class="band" style="padding-top:10px">
+          ${wave('bot', WAVES[1], p.pageBg)}
+          <div class="inner">
+            <div class="hero">
+              <div>
+                <h1>You design,<br>we bake it</h1>
+                <p>Custom cakes for birthdays, weddings and every sweet occasion — designed by you, baked fresh to order.</p>
+                <button class="cta" id="ctaBtn">${CTA[state.cta].label} <span class="arrow">→</span></button>
+                <div class="ctaHint">${CTA[state.cta].hint}</div>
+              </div>
+              <div class="heroShot"><img src="./sample-cake-1.png" alt=""></div>
+            </div>
+          </div>
+        </div>`;
+
+      const doorsScreen = (p, L) => `
+        ${chrome()}
+        <div class="band">
+          ${wave('bot', WAVES[1], p.pageBg)}
+          <div class="inner">
+            <div class="eyebrow">Start your cake</div>
+            <h2 class="secTitle">How would you like to begin?</h2>
+            <p class="secSub">Three ways in — whichever you pick reaches the same kitchen and comes back as a quote.</p>
+          </div>
+        </div>
+        <div class="inner" style="padding-bottom:44px;margin-top:-56px">
+          <div class="doors">
+            <button class="door">
+              <div class="shot"><span class="flag">Most popular</span><img src="./sample-cake-1.png" alt=""></div>
+              <div class="body">
+                <h3>${L.design}</h3>
+                <p>${COPY.design}</p>
+                ${state.view === 'mobile' ? `<div class="cost">Takes a moment to load — best with a few minutes to spare.</div>` : ''}
+                <span class="go">Open the designer <span class="arrow">→</span></span>
+              </div>
+            </button>
+            <button class="door">
+              <div class="shot">
+                <div class="snaps">
+                  <div class="snap a"><i><img src="./sample-cake-2.png" alt=""></i></div>
+                  <div class="snap b"><i><img src="./sample-cake-1.png" alt=""></i></div>
+                </div>
+              </div>
+              <div class="body">
+                <h3>${L.photo}</h3><p>${COPY.photo}</p>
+                <span class="go">Upload a picture <span class="arrow">→</span></span>
+              </div>
+            </button>
+            <button class="door">
+              <div class="shot">
+                <div class="mosaic">
+                  <span><img src="./sample-cake-1.png" style="transform:translate(-50%,-50%) scale(1.55)" alt=""></span>
+                  <span><img src="./sample-cake-1.png" style="transform:translate(-50%,-50%) scale(1.9)" alt=""></span>
+                  <span><img src="./sample-cake-1.png" style="transform:translate(-50%,-50%) scale(1.35)" alt=""></span>
+                  <span><img src="./sample-cake-1.png" style="transform:translate(-50%,-50%) scale(1.72)" alt=""></span>
+                </div>
+              </div>
+              <div class="body">
+                <h3>${L.ideas}</h3><p>${COPY.ideas}</p>
+                <span class="go">Browse the gallery <span class="arrow">→</span></span>
+              </div>
+            </button>
+          </div>
+        </div>`;
+
+      const GALLERY = [
+        { img: './sample-cake-1.png', nm: 'Woodland two-tier', kind: 'A cake we made', z: 1.45 },
+        { img: './sample-cake-2.png', nm: 'Blush single tier',  kind: 'Saved template', z: 1.4 },
+        { img: './sample-cake-1.png', nm: 'Gold board classic', kind: 'A cake we made', z: 1.75 },
+        { img: './sample-cake-2.png', nm: 'Ivory, understated', kind: 'Saved template', z: 1.6 },
+        { img: './sample-cake-1.png', nm: 'Buttercream swirl',  kind: 'A cake we made', z: 1.3 },
+        { img: './sample-cake-2.png', nm: 'Soft rose',          kind: 'Saved template', z: 1.68 },
+      ];
+
+      const ideasScreen = (p) => `
+        ${chrome()}
+        <div class="band" style="padding-bottom:64px">
+          ${wave('bot', WAVES[2], p.pageBg)}
+          <div class="inner">
+            <div class="eyebrow">Our creations</div>
+            <h2 class="secTitle">Start from one of these</h2>
+            <p class="secSub">Anything here can be your starting point — we’ll make one like it.</p>
+          </div>
+        </div>
+        <div class="inner" style="padding-bottom:44px;margin-top:-24px">
+          <div class="gallery">
+            ${GALLERY.map((g) => `
+              <div class="item">
+                <div class="ph"><img src="${g.img}" alt="" style="transform:translate(-50%,-50%) scale(${g.z})"></div>
+                <div class="cap"><div class="nm">${g.nm}</div><div class="kind">${g.kind}</div>
+                  <div class="mk">Make one like this →</div></div>
+              </div>`).join('')}
+          </div>
+          <div class="escape">
+            <div><h4>None of these — tell us what it’s for</h4>
+              <p>An occasion, who it’s for, colours you like, a budget in mind. We’ll take it from there.</p></div>
+            <span class="go" style="font-weight:700;color:var(--primaryInk)">Tell us <span class="arrow">→</span></span>
+          </div>
+        </div>`;
+
+      const doneScreen = (p) => `
+        ${chrome()}
+        <div class="band" style="padding-bottom:74px">
+          ${wave('bot', WAVES[0], p.pageBg)}
+          <div class="inner done">
+            <div class="seal">✓</div>
+            <h2 class="secTitle">That’s with the kitchen</h2>
+            <p class="secSub" style="margin-bottom:0">Feelings &amp; Flavours will send your quote on WhatsApp.</p>
+          </div>
+        </div>
+        <div class="inner" style="padding-bottom:48px;margin-top:-34px">
+          <div class="sum">
+            <div class="row"><span>Starting from</span><span>A photo you sent</span></div>
+            <div class="row"><span>Flavour</span><span>Belgian chocolate</span></div>
+            <div class="row"><span>Size</span><span>1.5 kg</span></div>
+            <div class="row"><span>Needed by</span><span>Sat, 9 Aug</span></div>
+            <div class="row"><span>Delivery</span><span>Indiranagar</span></div>
+          </div>
+        </div>`;
+
+      function render() {
+        const p = palette();
+        const d = document.getElementById('device');
+        d.className = 'device' + (state.view === 'mobile' ? ' mobile' : '');
+        for (const [k, v] of Object.entries({
+          pageBg: p.pageBg, heading: p.heading, muted: p.muted, cardBorder: p.cardBorder, font: p.font,
+          primary: p.primary, primaryInk: p.primaryInk, tintBand: p.tintBand, tint: p.tint,
+          onTint: p.onTint, onTintSoft: p.onTintSoft, utilBg: p.utilBg, utilInk: p.utilInk,
+          headerBg: p.headerBg, cta: p.cta, onCta: p.onCta,
+        })) d.style.setProperty(`--${k}`, v);
+
+        const L = LABELS[state.labels];
+        d.innerHTML = state.screen === 'entry' ? entryScreen(p)
+                    : state.screen === 'doors' ? doorsScreen(p, L)
+                    : state.screen === 'ideas' ? ideasScreen(p)
+                    : doneScreen(p);
+        document.getElementById('note').innerHTML = NOTES[state.screen];
+
+        const cta = document.getElementById('ctaBtn');
+        if (cta) cta.addEventListener('click', () => {          // walk to the doors, so the tap is felt
+          state.screen = 'doors';
+          document.querySelectorAll('#screen button').forEach((x) =>
+            x.setAttribute('aria-pressed', String(x.dataset.k === 'doors')));
+          render();
+        });
+      }
+
+      function wire(id, key) {
+        document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener('click', () => {
+          document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', 'false'));
+          b.setAttribute('aria-pressed', 'true');
+          state[key] = b.dataset.k;
+          render();
+        }));
+      }
+      ['screen', 'tpl', 'labels', 'view', 'cta'].forEach((k) => wire(k, k));
+      render();
+    </script>
+  </body>
+</html>
