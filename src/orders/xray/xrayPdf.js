@@ -3,7 +3,7 @@ import { layoutDiagram, DIAGRAM } from './xrayProject.js';
 import { strengthColor } from './report.js';
 import { loadImage } from '../framePhoto.js';
 import { corsUrl } from '../../designer/utils/assetUrl.js';
-import { hasAllergen, dietaryLine } from '../dietary.js';
+import { dietTone, hasAllergen, dietaryLine } from '../dietary.js';
 
 // ── The X-Ray report, as a sheet of paper ────────────────────────────────────────────────────────
 // The screen version of this report is read at a desk. THIS one is carried to a bench, put down next
@@ -173,11 +173,17 @@ function drawHeader(sheet, { order, baker, logo, conflicts, spec }) {
   sheet.y += mm(4);
 
   // The dietary band, above the rule so it is the last thing read before the cake and
-  // impossible to skim past. Deliberately BLACK ON WHITE inside a heavy black frame,
-  // not the screen's tinted chip: this sheet gets printed on whatever mono laser is in
-  // the kitchen, and a requirement encoded as a colour would simply vanish. The screen
-  // may use colour to help scanning; paper cannot rely on it. (See dietary.js — also
-  // for why this is imperative wording and not a veg certification mark.)
+  // impossible to skim past.
+  //
+  // The TEXT stays black on white and says what it means — "EGGLESS — REQUIRED" — because
+  // this sheet gets printed on whatever mono laser is in the kitchen, and a requirement
+  // encoded as a colour would simply vanish. That rule has not changed.
+  //
+  // The FRAME is now tinted, which is safe precisely because it is additive: on a colour
+  // printer it helps the band catch the eye across a bench, and on a mono one it prints as
+  // a grey rule and costs nothing. Colour is never the only carrier. Tones come from
+  // dietary.js so paper and screen agree — green for a diet requirement, amber for an
+  // allergen, deliberately NOT red-vs-green (the one pair colour-blind readers confuse).
   const reqs = order?.dietary_requirements ?? [];
   if (reqs.length) {
     const allergen = hasAllergen(reqs);
@@ -190,8 +196,25 @@ function drawHeader(sheet, { order, baker, logo, conflicts, spec }) {
       inner += mm(0.5);
     }
     const boxH = inner + padY;
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = allergen ? mm(1.0) : mm(0.5);   // an allergen gets the heavier frame
+    const tone = dietTone(allergen ? 'allergen' : 'diet');
+
+    // The fill goes BEHIND the text that is already drawn. `destination-over` composites new
+    // pixels under existing ones, which avoids measuring the band twice or restructuring the
+    // draw order just to paint a background — the height is only known after the text is laid
+    // out. Restored immediately: leaving this mode set would silently reverse every later draw
+    // on the page.
+    const prevOp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = tone.bg;
+    ctx.fillRect(sheet.margin, boxTop, sheet.contentW, boxH);
+    ctx.globalCompositeOperation = prevOp;
+
+    // An allergen still earns the heavier frame. WEIGHT, not hue, carries that difference: a
+    // missed diet requirement is a refused cake, a missed allergen is a hospital visit, and the
+    // distinction has to survive a black-and-white printer. The tint is additive — on mono it
+    // prints as a pale grey panel and the words still say EGGLESS — REQUIRED.
+    ctx.strokeStyle = tone.fg;
+    ctx.lineWidth = allergen ? mm(1.0) : mm(0.5);
     ctx.strokeRect(sheet.margin, boxTop, sheet.contentW, boxH);
     sheet.y = boxTop + boxH + mm(4);
   }
