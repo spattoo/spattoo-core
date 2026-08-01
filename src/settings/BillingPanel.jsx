@@ -311,11 +311,10 @@ function PaymentsCard({ info, apiClient, primaryColor, bare = false }) {
 // The COUNTS COME FROM THE SERVER (`actions[].remaining`), never from dividing a balance by a price
 // held here. Prices live in `credit_costs` precisely so they can be retuned without a deploy; a
 // client carrying its own copy starts lying the moment they move.
-function SmartToolsCard({ apiClient, primaryColor }) {
+function SmartToolsCard({ apiClient, primaryColor, onBuyCredits }) {
   const [data, setData]       = useState(null);
   const [packs, setPacks]     = useState([]);
   const [shelf, setShelf]     = useState(null);   // { canBuy, reason, ceiling, resetsOn }
-  const [busyPack, setBusy]   = useState(null);
   const [err, setErr]         = useState(null);
   const [tick, setTick]       = useState(0);
   const [help, setHelp]       = useState(false);
@@ -414,44 +413,6 @@ function SmartToolsCard({ apiClient, primaryColor }) {
              : pct >= 70  ? 'You’re past three quarters of this month’s allowance.'
              :              null;
 
-  async function buy(packKey) {
-    setBusy(packKey); setErr(null);
-    try {
-      const d = await apiClient.purchaseAiCredits(packKey);
-      if (!window.Razorpay) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          s.onload = resolve; s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
-      await new Promise(resolve => {
-        // A one-time ORDER, not a subscription — so `order_id` + `amount`, where the plan checkout
-        // passes `subscription_id`. That is why this does not reuse runCheckout.
-        const rzp = new window.Razorpay({
-          key: d.key_id, order_id: d.order_id, amount: d.amount, currency: d.currency ?? 'INR',
-          name: 'Spattoo', description: packs.find(p => p.packKey === packKey)?.label ?? 'Top-up',
-          theme: { color: primaryColor },
-          handler: () => { resolve(); settle(); },
-          modal: { ondismiss: resolve },
-        });
-        rzp.open();
-      });
-    } catch (e) { setErr(e.message || 'Could not start the payment.'); }
-    finally { setBusy(null); }
-  }
-
-  // Credits are minted by the payment WEBHOOK, which lands asynchronously — so the balance is not
-  // updated the moment Checkout closes. Re-read a few times and then stop; the next open reconciles.
-  async function settle() {
-    for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 1500));
-      setTick(t => t + 1);       // this card
-      creditsChanged();          // and the header pill, which is on screen behind this panel
-    }
-  }
-
   return (
     <div style={card}>
       {header}
@@ -483,63 +444,29 @@ function SmartToolsCard({ apiClient, primaryColor }) {
 
       {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626' }}>{err}</div>}
 
-      {/* ── Top-ups ────────────────────────────────────────────────────────────────────────────
-          Two gates, two different sentences. "Your plan doesn't include this" points at an
-          upgrade; "you're already well stocked" points at nothing and should not feel like a
-          refusal. Both are stated plainly, with the date the allowance refreshes — "1 September"
-          rather than "next cycle", which makes someone go and check a calendar. */}
+      {/* The SHELF moved to BuyCreditsPanel. Sending someone here to buy credits put them in front
+          of their subscription, their invoices and a change-plan button — so a baker who wanted 400
+          credits was suddenly weighing whether to upgrade, a much bigger question than the one they
+          had. This card keeps the READOUT, which belongs beside the plan it comes with. */}
+      {shelf?.canBuy && (
+        <button type="button" onClick={onBuyCredits}
+          style={{
+            marginTop: 2, padding: '10px 0', width: '100%', borderRadius: 10,
+            border: `1.5px solid ${primaryColor}`, background: '#fff', color: primaryColor,
+            fontSize: 13, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer',
+          }}>
+          Buy credits
+        </button>
+      )}
+
       {shelf && !shelf.canBuy && (
-        <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: '#2C4433' }}>
             Credits refresh on {formatResetDate(shelf.resetsOn)}
           </div>
-          <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5, marginTop: 4 }}>
             Blaze includes top-ups — add credits whenever you need them, and they never expire.
           </div>
-        </div>
-      )}
-
-      {shelf?.canBuy && shelf.reason === 'stocked' && (
-        <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px' }}>
-          <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5 }}>
-            <strong style={{ color: '#2C4433' }}>You’re well stocked.</strong> You can add more once
-            your top-up balance drops below {shelf.ceiling}.
-          </div>
-        </div>
-      )}
-
-      {shelf?.canBuy && packs.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
-          <span style={{ ...label, color: '#B7C4BB' }}>Need more this month</span>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {/* Packs are priced in CREDITS, not in jobs. The endpoint also returns `buys` (what a
-                pack is worth in each tool) and it is deliberately unused here: "+20 build guides"
-                would say the pack is FOR build guides, when it spends anywhere. The help bubble
-                above carries what each tool costs, which is the same information without the
-                false earmarking. */}
-            {packs.map(p => (
-              <button
-                key={p.packKey} type="button" onClick={() => buy(p.packKey)}
-                disabled={!!busyPack || p.blocked}
-                title={p.blocked ? `Would take you over ${shelf?.ceiling} top-up credits. Add this once your balance drops.` : undefined}
-                style={{
-                  flex: '1 1 130px', textAlign: 'left',
-                  cursor: (busyPack || p.blocked) ? 'default' : 'pointer',
-                  background: '#fff', border: '1.5px solid #E8EFE9', borderRadius: 12,
-                  padding: '10px 13px', fontFamily: 'inherit',
-                  opacity: p.blocked ? 0.45 : (busyPack && busyPack !== p.packKey ? 0.5 : 1),
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>
-                  {busyPack === p.packKey ? 'Opening…' : formatMoney(p.pricePaise / 100)}
-                </div>
-                <div style={{ fontSize: 11, color: '#7C8B82', fontWeight: 600, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-                  +{p.credits} credits
-                </div>
-              </button>
-            ))}
-          </div>
-          <span style={{ fontSize: 10.5, color: '#B7C4BB', fontWeight: 600 }}>Prices exclude GST.</span>
         </div>
       )}
     </div>
@@ -552,7 +479,7 @@ function SmartToolsCard({ apiClient, primaryColor }) {
 // without it a baker who paid from that gate was dropped straight back onto the expired screen,
 // because bakerData is fetched once at mount and this panel only ever reloaded its OWN state.
 // NOT fired on open/refresh — only on a real change, so the host isn't refetched for nothing.
-export default function BillingPanel({ open, onClose, onSubscriptionChange, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
+export default function BillingPanel({ open, onClose, onBuyCredits, onSubscriptionChange, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [billing,        setBilling]        = useState(null);
   const [history,        setHistory]        = useState([]);
@@ -960,7 +887,7 @@ export default function BillingPanel({ open, onClose, onSubscriptionChange, apiC
                   Between "what you have" and "change what you have": a baker checking billing
                   wants their plan, then what it includes and how much is left, and only then the
                   option to switch. Renders nothing if the host hasn't wired fetchAiCredits. */}
-              <SmartToolsCard apiClient={apiClient} primaryColor={primaryColor} />
+              <SmartToolsCard apiClient={apiClient} primaryColor={primaryColor} onBuyCredits={onBuyCredits} />
 
               {/* ── Plan picker ──────────────────────────────────── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

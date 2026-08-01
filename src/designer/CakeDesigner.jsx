@@ -54,6 +54,7 @@ import FlavoursPanel from '../settings/FlavoursPanel';
 import TemplatesPanel from '../settings/TemplatesPanel';
 import BillingPanel from '../settings/BillingPanel';
 import CreditsPill from '../billing/CreditsPill.jsx';
+import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -1591,6 +1592,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
   const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
+  // Separate from Billing on purpose: someone topping up wants credits, not a plan conversation.
+  const [buyCreditsOpen,      setBuyCreditsOpen]      = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
   const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
@@ -5116,8 +5119,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           >
             {canResumeLapsedPlan ? `Resume ${lapsedPlanLabel}` : 'View plans'}
           </button>
+          <BuyCreditsPanel
+            open={buyCreditsOpen}
+            onClose={() => setBuyCreditsOpen(false)}
+            apiClient={apiClient}
+            primaryColor={primaryColor}
+          />
           <BillingPanel
             open={billingPanelOpen}
+            onBuyCredits={() => setBuyCreditsOpen(true)}
             onClose={() => setBillingPanelOpen(false)}
             onSubscriptionChange={refreshBakerProfile}
             apiClient={apiClient}
@@ -5149,7 +5159,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* Credits first in the cluster: it is a READOUT, not an action, and it belongs where
                 the eye lands before the controls rather than buried past them. */}
             {hasCap('billing:manage') && (
-              <CreditsPill apiClient={apiClient} onOpen={() => { setBillingPanelOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+              <CreditsPill apiClient={apiClient} onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
             )}
             {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
               <button
@@ -5742,7 +5752,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {!isMobile && hasCap('billing:manage') && (
             <div style={s.creditsFloat}>
               <CreditsPill apiClient={apiClient}
-                onOpen={() => { setBillingPanelOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+                onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
             </div>
           )}
 
@@ -6797,8 +6807,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       />
 
       {/* ── Billing panel ── */}
+      <BuyCreditsPanel
+        open={buyCreditsOpen}
+        onClose={() => setBuyCreditsOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+      />
       <BillingPanel
         open={billingPanelOpen}
+        onBuyCredits={() => setBuyCreditsOpen(true)}
         onClose={() => setBillingPanelOpen(false)}
         onSubscriptionChange={refreshBakerProfile}
         apiClient={apiClient}
