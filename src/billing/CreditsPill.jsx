@@ -16,11 +16,11 @@ import { onCreditsChanged } from './creditsBus.js';
 //
 // It shows ONE shared number, never a per-tool count: every tool draws on the same pool, so a job
 // count here would read as an earmark. Detail lives in Billing, one tap away.
-// `variant` matches the surface it sits on, because the two headers are different shapes:
-//   'pill'  — the mobile top bar, a horizontal row of controls
-//   'stack' — the 64px desktop rail, where every item is an icon above a label
-// Same data, same thresholds, same tap target; only the arrangement differs.
-export default function CreditsPill({ apiClient, onOpen, variant = 'pill' }) {
+// ONE shape, one placement rule: a horizontal chip, top-right on desktop (floating over the canvas)
+// and in the top bar on mobile. It used to have a second 'stack' form for the desktop sidebar rail;
+// that was dropped when the readout moved top-right, because two arrangements of the same number is
+// two things to keep in step for no gain.
+export default function CreditsPill({ apiClient, onOpen }) {
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -60,31 +60,6 @@ export default function CreditsPill({ apiClient, onOpen, variant = 'pill' }) {
   // The whole control opens Billing — there is no separate "+" buy button. Topping up belongs
   // beside the meter and the price list, not on a header chip that would sell credits to a baker
   // who has not been shown what they cost.
-  if (variant === 'stack') {
-    return (
-      <button
-        type="button" onClick={onOpen} title={title} aria-label={title}
-        style={{
-          background: 'none', border: 'none', outline: 'none', cursor: 'pointer', padding: 0,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-          width: 60, flexShrink: 0, fontFamily: "'Quicksand',sans-serif",
-          WebkitTapHighlightColor: 'transparent',
-        }}
-      >
-        <span style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: 38, height: 38, borderRadius: 12,
-          background: tone.bg, border: `1.5px solid ${tone.br}`,
-        }}>
-          <SparkGlyph color={tone.fg} />
-        </span>
-        <span style={{
-          fontSize: 10, fontWeight: 800, color: tone.fg,
-          fontVariantNumeric: 'tabular-nums', letterSpacing: 0.2,
-        }}>{left}</span>
-      </button>
-    );
-  }
 
   return (
     <button

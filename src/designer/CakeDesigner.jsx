@@ -5340,10 +5340,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={s.sidebarDivider} />
 
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            {hasCap('billing:manage') && (
-              <CreditsPill variant="stack" apiClient={apiClient}
-                onOpen={() => { setBillingPanelOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
-            )}
             {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
               <SidebarTooltip label="Settings">
                 <button
@@ -5736,6 +5732,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Canvas area ── */}
         <div style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
+
+          {/* Credits, top-right over the canvas — where every tool that meters usage puts them, and
+              where a baker looks for "what have I got left" without hunting a sidebar.
+              DESKTOP ONLY: mobile already carries it in the header, and a floating pill there would
+              cover the cake on the screen with least room to spare.
+              Outside the shrinking wrapper below, so opening a side panel slides the cake and
+              leaves the readout where it was. */}
+          {!isMobile && hasCap('billing:manage') && (
+            <div style={s.creditsFloat}>
+              <CreditsPill apiClient={apiClient}
+                onOpen={() => { setBillingPanelOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+            </div>
+          )}
 
           {/* Shrink the live canvas to the left when a side panel is open, so the cake stays fully
               visible beside it (the Canvas is absolute inset:0 of this div). On mobile the element
@@ -7279,6 +7288,9 @@ const s = {
   },
 
   // Canvas
+  // Above the canvas and any panel that slides in beside it, but below modals — a readout should
+  // never sit on top of something the baker is reading or dismissing.
+  creditsFloat: { position: 'absolute', top: 14, right: 16, zIndex: 6 },
   canvasArea: {
     flex:1, position:'relative', minHeight:0,
     // Match the 3D canvas's clear colour so the strip exposed when the piping popup shrinks
