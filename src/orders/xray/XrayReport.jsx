@@ -75,6 +75,12 @@ export default function XrayReport({ order, apiClient, onClose }) {
   // Per-decoration bbox + real width, keyed the way the stored steps are. Shared by the screen
   // card and the PDF so a decoration cannot be 5cm in one and 7cm in the other.
   // On a photo order a leader line is only drawable where the model actually reported a box.
+  const [buildGuides, setBuildGuides] = useState({});
+
+  // BELOW the buildGuides declaration, not above it. Both of these read it, and a useMemo that
+  // closes over a `const` declared later in the function body is a temporal dead zone — it threw
+  // "Cannot access before initialization" on first render and took the whole app down, not just
+  // X-Ray. Vite's library build did not catch it; the app bundle did, in production.
   const anchoredDiagram = useMemo(
     () => (fromPhoto ? diagramItems.filter(d => d.bbox) : diagramItems),
     [fromPhoto, diagramItems],
@@ -100,7 +106,6 @@ export default function XrayReport({ order, apiClient, onClose }) {
   }, [design, tinPlan, buildGuides]);
 
   // Build guides for the baker's own decorations — same rail, same fetch, different guide_type.
-  const [buildGuides, setBuildGuides] = useState({});
 
   useEffect(() => {
     let alive = true;
