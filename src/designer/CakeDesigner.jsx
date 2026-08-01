@@ -5131,7 +5131,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   return (
     <div style={{ ...s.page, animation: 'spattooFadeIn 0.35s ease' }}>
-      <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+      {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
+          cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
+      <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }
+        .spattoo-rail-nav::-webkit-scrollbar { display: none; }`}</style>
 
       {/* ── Mobile header ── */}
       {isMobile && (
@@ -5251,7 +5254,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={s.sidebar}>
           <SpatulaFrame />
           <div style={s.sidebarInner}>
-          <nav style={s.sidebarNav}>
+          <nav className="spattoo-rail-nav" style={s.sidebarNav}>
             {[
               { id: 'new',        label: 'New Cake',  icon: null,                         requires: 'design:create' },
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} />,  requires: 'order:view' },
@@ -7030,23 +7033,39 @@ const s = {
     width: 64, minWidth: 64, margin: 0,
     position: 'relative', overflow: 'visible',
     display: 'flex', flexShrink: 0, flex: 1,
+    minHeight: 0,             // see sidebarNav — the rail must be allowed to shrink, not grow
   },
   sidebarInner: {
     position: 'relative', zIndex: 1,
     flex: 1, width: '100%',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     padding: '96px 0 30px',   // clear the cap + hang-hole before the first nav item
+    minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
   sidebarDivider: {
     height: 1, width: 32,
     background: 'rgba(255,255,255,0.10)',
     margin: '6px 0', flexShrink: 0,
   },
+  // The rail holds ~12 items and they are flexShrink:0, so its intrinsic height is ~823px. A flex
+  // item defaults to min-height:auto — it will not shrink below its content — so on any viewport
+  // shorter than roughly 847px the whole chain (nav → sidebarInner → sidebar) grew PAST the page,
+  // and `page`'s overflow:hidden ate the difference. What it ate was the bottom of the spatula:
+  // SpatulaFrame draws its SVG to the sidebar's measured clientHeight, so the blade was rendered
+  // below the fold. Reported on a MacBook Air (~760-800px of viewport once Chrome's chrome and the
+  // bookmarks bar are gone); invisible on a 27" iMac, which has the height to spare.
+  //
+  // minHeight:0 lets the chain shrink to what is actually available, and the nav scrolls instead of
+  // pushing. space-evenly is kept deliberately — it spreads the items down the blade on a tall
+  // screen, and Chrome keeps the first item reachable once it scrolls. If a browser ever strands it
+  // above the scroll origin (the classic centred-content-in-a-scroller trap), the fix is auto
+  // margins on the first/last child rather than abandoning the spread.
   sidebarNav: {
-    flex: 1, width: '100%',
+    flex: 1, width: '100%', minHeight: 0,
     display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'space-evenly',
     padding: '4px 0', gap: 2,   // gap = floor spacing; space-evenly spreads items down the blade
+    overflowY: 'auto', scrollbarWidth: 'none',   // a scrollbar in a 64px rail is worse than none
   },
   // Stacked nav item: icon box on top, label below.
   navItem: {
