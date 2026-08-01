@@ -36,6 +36,13 @@ export default function XrayDecorationSteps({
   return (
     <div>
       <div style={s.sub}><span style={s.dot('#6A5A8C')} /> Decorations — how to make them</div>
+      {/* Said once for the whole section, as well as per row. The row badge marks an individual
+          guide as unreviewed; this says the FEATURE is AI, which is what a baker deciding whether
+          to trust the sheet actually needs to know. The same line is on the printed PDF, because
+          paper carries no context around it. */}
+      <div style={{ ...s.muted, marginTop: -4, marginBottom: 8 }}>
+        Written and illustrated by AI. Check it before you build.
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {rows.map(row => (
           <DecorationRow
@@ -410,8 +417,12 @@ function StageGrid({ stagesUrl, s }) {
         src={stagesUrl} alt=""
         style={{ width: '100%', maxWidth: 560, borderRadius: 10, border: '1.5px solid #E8E4DE', display: 'block' }}
       />
+      {/* "a guide to the shape, not a photograph" matters: these panels look like photographs of
+          real fondant, and a baker who takes one literally will expect their piece to match it
+          exactly. Deliberately does not say "your photo" — an element-backed guide is drawn from
+          the library picture, and only a photo order's is drawn from the customer's. */}
       <div style={{ ...s.muted, marginTop: 4 }}>
-        Drawn by AI from your photo — a guide to the shape, not a photograph of your cake.
+        Drawn by AI — a guide to the shape, not a photograph of this cake.
       </div>
     </div>
   );
