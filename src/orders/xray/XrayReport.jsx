@@ -90,8 +90,14 @@ export default function XrayReport({ order, apiClient, onClose }) {
         stagesUrl: storedSteps?.[d.id]?.stages_url ?? null,
       };
     }
+    // Element-backed decorations key on the ELEMENT, not on the decoration's position, because
+    // the guide and its picture are shared by every cake using that element. Both shapes land in
+    // one map so the PDF looks a decoration up the same way whichever kind of order it is.
+    for (const [elementId, row] of Object.entries(buildGuides ?? {})) {
+      if (row?.stages_url) out[elementId] = { ...(out[elementId] ?? {}), stagesUrl: row.stages_url };
+    }
     return out;
-  }, [design, tinPlan]);
+  }, [design, tinPlan, buildGuides]);
 
   // Build guides for the baker's own decorations — same rail, same fetch, different guide_type.
   const [buildGuides, setBuildGuides] = useState({});
@@ -179,8 +185,13 @@ export default function XrayReport({ order, apiClient, onClose }) {
         // The close-up on the printed sheet is a crop of the same photo the screen crops, and the
         // size is the same arithmetic — computed ONCE here and handed to the PDF, so paper and
         // screen cannot disagree about how big a decoration is.
+        // The photo is only croppable on a photo order — a designed order's thumbnail is our own
+        // 3D render, and its decorations are library elements with pictures of their own.
         photoUrl: fromPhoto ? order?.design_thumbnail_url : null,
-        decorationMeta: fromPhoto ? decorationMeta : null,
+        // Meta goes to BOTH kinds. On a photo order it carries the crop box and the real size; on
+        // a designed one it carries only the element's shared build sequence. Passing null for
+        // designed orders would have silently dropped that picture from the printed sheet.
+        decorationMeta,
       });
       downloadPdf(blob, `order-${shortRef(order) ?? 'cake'}-xray.pdf`);
     } catch (e) {

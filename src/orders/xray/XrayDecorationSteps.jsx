@@ -103,6 +103,8 @@ function elementRows(design, guides) {
       elementId: d.elementId,
       // A library element already has a picture of itself; no crop needed.
       imageUrl:  d.imageUrl ?? null,
+      // The shared build sequence for this element, expanded from its R2 key by the API.
+      stagesUrl: row?.stages_url ?? null,
       guide:     row?.guide ?? null,
       status:    row?.status ?? 'draft',
     });
