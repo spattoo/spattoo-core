@@ -169,6 +169,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
 
   return (
     <Panel onClose={close} title="Credits" width={420} bodyPadding={18}>
+      <style>{PACK_CSS}</style>
       {/* One wrapper because the panel body is the scroller, and the loading state needs a floor:
           without it the panel opens as a small box and grows as the balance arrives, which reads as
           two different windows. Sized to roughly what the loaded panel occupies. */}
@@ -313,6 +314,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
               )}
             </div>
             <button type="button" onClick={() => settle(spendable ?? 0)}
+              className="spattoo-pack"
               style={{ ...s.pack, justifyContent: 'center', cursor: 'pointer' }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Check again</span>
             </button>
@@ -329,17 +331,29 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
               <button
                 key={p.packKey} type="button" onClick={() => buy(p.packKey)}
                 disabled={!!busyPack || p.blocked}
-                title={p.blocked ? `Would take you over ${shelf?.ceiling} bought credits. Add this once your balance drops.` : undefined}
-                style={{ ...s.pack, opacity: p.blocked ? 0.45 : (busyPack && busyPack !== p.packKey ? 0.5 : 1),
+                className={p.blocked ? undefined : 'spattoo-pack'}
+                style={{ ...(p.blocked ? s.packOff : s.pack),
+                         opacity: busyPack && busyPack !== p.packKey ? 0.5 : 1,
                          cursor: (busyPack || p.blocked) ? 'default' : 'pointer' }}
               >
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#2C4433', fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                                color: p.blocked ? '#93A69A' : '#2C4433' }}>
                     +{p.credits} credits
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#7C8B82', fontWeight: 600, marginTop: 2 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 2,
+                                color: p.blocked ? '#A8B5AC' : '#7C8B82' }}>
                     {p.label} · never expires
                   </div>
+                  {/* WHY it cannot be bought, on the tile itself. This was a `title` tooltip, which
+                      does not exist on a phone — so on the device most bakers use, a pack was simply
+                      unbuyable with no explanation anywhere. */}
+                  {p.blocked && (
+                    <div style={{ fontSize: 10.5, color: '#B0906A', fontWeight: 700, marginTop: 5, lineHeight: 1.4 }}>
+                      Would take you over {shelf?.ceiling} bought credits — available once your
+                      balance drops.
+                    </div>
+                  )}
                 </div>
                 {/* OUR PRICE leads; the tax qualifies it.
                     Showing the tax-inclusive total as the headline made ₹175.82 look like what a
@@ -349,14 +363,24 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                     homework; "+ ₹26.82 GST" is the answer, and a baker deciding whether to spend
                     can add two numbers they can both see. It also means nothing new appears at
                     Checkout — ₹175.82 there is a sum they have already been shown the parts of. */}
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: primaryColor, fontVariantNumeric: 'tabular-nums' }}>
-                    {busyPack === p.packKey ? 'Opening…' : formatMoney((p.basePaise ?? p.pricePaise) / 100)}
-                  </div>
-                  {p.gstPaise > 0 && busyPack !== p.packKey && (
-                    <div style={{ fontSize: 10, color: '#B7C4BB', fontWeight: 600, marginTop: 1 }}>
-                      + {formatExact(p.gstPaise)} GST
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                                  color: p.blocked ? '#A8B5AC' : primaryColor }}>
+                      {busyPack === p.packKey ? 'Opening…' : formatMoney((p.basePaise ?? p.pricePaise) / 100)}
                     </div>
+                    {p.gstPaise > 0 && busyPack !== p.packKey && (
+                      <div style={{ fontSize: 10, color: p.blocked ? '#C3CBC6' : '#B7C4BB', fontWeight: 600, marginTop: 1 }}>
+                        + {formatExact(p.gstPaise)} GST
+                      </div>
+                    )}
+                  </div>
+                  {/* The verb the tile was missing. A price alone reads as a fact; a price with
+                      somewhere to go reads as an offer — and it is what separates these rows from
+                      the X-Ray costs above them, which are priced the same way and are NOT buyable.
+                      Absent when blocked: an arrow pointing nowhere is worse than no arrow. */}
+                  {!p.blocked && (
+                    <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1, color: '#C3D3C8', fontWeight: 700 }}>›</span>
                   )}
                 </div>
               </button>
@@ -506,9 +530,37 @@ const s = {
   ledgerSub:   { fontSize: 10.5, color: '#B7C4BB', fontWeight: 600, marginTop: 1 },
   ledgerAmt:   { fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums', flexShrink: 0 },
   note: { background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px' },
+  // ── Buyable, and not ────────────────────────────────────────────────────────────────────────
+  // These two must not be a matter of opacity. A pack used to be #fff on a #E8EFE9 border and the
+  // read-only X-Ray price list #F7FAF8 on the SAME border — so an offer and a fact were the same
+  // object, and the whole shelf read as text running down the page with nothing to press.
+  //
+  // So the surfaces now mean something: a WHITE, lifted, darker-bordered card is a thing you can
+  // buy; the tinted flat card is a thing you can only read. A blocked pack takes the tinted
+  // treatment rather than a faded copy of the buyable one, because it is — right now — a fact
+  // about your balance and not an offer.
   pack: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-    background: '#fff', border: '1.5px solid #E8EFE9', borderRadius: 12,
+    background: '#fff', border: '1.5px solid #CBDDD1', borderRadius: 12,
+    boxShadow: '0 1px 2px rgba(20,24,21,0.05)',
+    padding: '13px 15px', fontFamily: 'inherit', textAlign: 'left', width: '100%',
+    transition: 'border-color .15s, box-shadow .15s, transform .15s',
+  },
+  // flex-start, not centre: the reason line makes the left column three lines tall, and a centred
+  // price then floats halfway down with nothing to line up against. It belongs beside the pack it
+  // is the price of.
+  packOff: {
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
+    background: '#F7FAF8', border: '1px solid #EDF2EE', borderRadius: 12,
     padding: '13px 15px', fontFamily: 'inherit', textAlign: 'left', width: '100%',
   },
 };
+
+// Hover and press, which inline styles cannot express — and without them a card that IS pressable
+// gives no sign of it until you have already clicked. Same approach as the panel shell's own CSS.
+const PACK_CSS = `
+  .spattoo-pack:hover:not(:disabled) { border-color: #9DBBA8; box-shadow: 0 4px 14px rgba(20,24,21,0.10);
+    transform: translateY(-1px); }
+  .spattoo-pack:active:not(:disabled) { transform: translateY(0); box-shadow: 0 1px 2px rgba(20,24,21,0.06); }
+  .spattoo-pack:focus-visible { outline: 2px solid #7FA98C; outline-offset: 2px; }
+`;

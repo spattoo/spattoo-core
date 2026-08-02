@@ -192,7 +192,7 @@ function Demo() {
             fetchAiCreditPacks: async () => ({ canBuy: true, ceiling: 2000, packs: [
               { packKey: 'small',  credits: 150,  label: 'Small top-up',  basePaise: 14900, gstPaise: 2682 },
               { packKey: 'medium', credits: 400,  label: 'Medium top-up', basePaise: 34900, gstPaise: 6282 },
-              { packKey: 'large',  credits: 1000, label: 'Large top-up',  basePaise: 79900, gstPaise: 14382 },
+              { packKey: 'large',  credits: 1000, label: 'Large top-up',  basePaise: 79900, gstPaise: 14382, blocked: true },
             ] }),
             fetchAiCreditHistory: async () => ({ items: [], nextBefore: null }),
           }}
