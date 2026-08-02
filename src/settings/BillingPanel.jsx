@@ -229,6 +229,10 @@ function PaymentRow({ p, divider }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: '#1a1a1a' }}>{formatMoney(p.amount, p.currency)}</div>
         <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
           {new Date(p.charged_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+          {/* WHAT it bought, but only when that is not obvious. A plan charge is the expected
+              monthly amount and needs no caption; a one-off ₹149 beside it does — that is the
+              charge a baker squints at, and the one this list exists to explain. */}
+          {p.credits > 0 && <span style={{ color: '#7C8B82', fontWeight: 700 }}> · +{p.credits} credits</span>}
         </div>
       </div>
       <PaymentStatusPill status={p.status} />
