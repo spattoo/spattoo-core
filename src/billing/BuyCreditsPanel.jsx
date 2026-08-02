@@ -331,24 +331,29 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                     {p.label} · never expires
                   </div>
                 </div>
-                {/* THE AMOUNT THAT WILL BE CHARGED, not the stored base. The server sends both;
-                    showing the base beside a footnote saying "excludes GST" is what this screen did
-                    until 2026-08-02, while Checkout then billed the base and no tax at all. The
-                    price a baker reads here must be the number on their statement. */}
+                {/* OUR PRICE leads; the tax qualifies it.
+                    Showing the tax-inclusive total as the headline made ₹175.82 look like what a
+                    pack costs, when what we charge for it is ₹149 — the number that should anchor
+                    a decision, and the one that compares against a competitor's sticker.
+                    The qualifier is "+ 18% GST" rather than "+ ₹26.82": a second rupee figure
+                    beside the first invites a reader to add them up, which is the arithmetic we
+                    were trying to spare them. The exact rupees appear where they matter — on
+                    Razorpay's summary (via `description`) and on the invoice. */}
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: primaryColor, fontVariantNumeric: 'tabular-nums' }}>
-                    {busyPack === p.packKey ? 'Opening…' : formatExact(p.totalPaise ?? p.pricePaise)}
+                    {busyPack === p.packKey ? 'Opening…' : formatMoney((p.basePaise ?? p.pricePaise) / 100)}
                   </div>
                   {p.gstPaise > 0 && busyPack !== p.packKey && (
-                    <div style={{ fontSize: 10, color: '#B7C4BB', fontWeight: 600, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                      {formatExact(p.basePaise)} + {formatExact(p.gstPaise)} GST
+                    <div style={{ fontSize: 10, color: '#B7C4BB', fontWeight: 600, marginTop: 1 }}>
+                      + {p.ratePct ?? 18}% GST
                     </div>
                   )}
                 </div>
               </button>
             ))}
             <span style={{ fontSize: 10.5, color: '#B7C4BB', fontWeight: 600 }}>
-              Prices include 18% GST. A tax invoice is emailed to you.
+              Prices exclude GST. The total with tax is shown at checkout, and a tax invoice is
+              emailed to you.
             </span>
           </div>
         )}
@@ -435,7 +440,7 @@ const formatExact  = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString(
 function gstLine(d, credits) {
   const head = credits ? `${credits} credits` : 'Credits';
   if (!d?.gstPaise) return head;
-  return `${head} · ${formatExact(d.basePaise)} + ${formatExact(d.gstPaise)} GST (18%)`;
+  return `${head} · ${formatExact(d.basePaise)} + ${formatExact(d.gstPaise)} GST (${d.ratePct ?? 18}%)`;
 }
 
 // Date AND time, because two X-Rays on one afternoon are indistinguishable by date alone and
