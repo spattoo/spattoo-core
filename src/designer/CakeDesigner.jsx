@@ -14,6 +14,7 @@ import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/Cake
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneInsert, zoneSeatFields } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { CHROME_STOPS } from '../shared/chrome.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -895,10 +896,12 @@ function SpatulaFrame() {
       <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`}
         style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible' }}>
         <defs>
+          {/* The stops live in shared/chrome.js — panel headers render the same surface as CSS,
+              and "match the spatula" only holds if both read from one definition. */}
           <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#121214" />
-            <stop offset="0.5" stopColor="#08080a" />
-            <stop offset="1" stopColor="#020203" />
+            {CHROME_STOPS.map(({ offset, color }) => (
+              <stop key={offset} offset={offset} stopColor={color} />
+            ))}
           </linearGradient>
           <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
             <stop offset="0" stopColor="rgba(255,255,255,0.03)" />
@@ -1010,8 +1013,13 @@ function MobileSpatulaBar() {
     <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', top: '50%', left: 0, transform: 'translateY(-50%)', overflow: 'visible' }}>
         <defs>
+          {/* Same stops as the desktop silhouette and panel headers. This copy had drifted to a
+              0.55 midpoint against the other's 0.5 — nobody chose that, which is the argument for
+              one definition. */}
           <linearGradient id="mbar-body" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#121214" /><stop offset="0.55" stopColor="#08080a" /><stop offset="1" stopColor="#020203" />
+            {CHROME_STOPS.map(({ offset, color }) => (
+              <stop key={offset} offset={offset} stopColor={color} />
+            ))}
           </linearGradient>
           <radialGradient id="mbar-sheen" cx="0.5" cy="0.08" r="0.7">
             <stop offset="0" stopColor="rgba(255,255,255,0.03)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />

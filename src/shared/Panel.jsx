@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { WAVES, WAVE_VIEWBOX } from './waves.js';
+import { chromeGradient } from './chrome.js';
 
 // ── The one panel shell ─────────────────────────────────────────────────────────────────────────
 // Twelve files each defined their own overlay, and they had nothing in common. Five different
@@ -72,22 +74,43 @@ const sheetStyle = (isMobile, width) => ({
 const grab = { width: 36, height: 4, borderRadius: 2, background: '#D8DCD8',
                margin: '0 auto 10px', flexShrink: 0 };
 
-// The header is a tinted band, not more white. It gives a panel a spine — the thing every one of
-// these was missing — and echoes the storefront's tinted-band motif without borrowing its colour.
+// ── The header ──────────────────────────────────────────────────────────────────────────────────
+// A first pass made this a tint 1–2% off white with a hairline under it. Technically a band;
+// visually nothing — "I don't really see any change" was the correct verdict.
+//
+// So it takes the product's own shape instead. Every tinted section on a customer storefront ends
+// in a WAVE rather than a straight rule, and it is the most distinctive thing in the design system.
+// A panel header that ends the same way ties the app's chrome to the storefront and makes a popup
+// recognisable as ours at a glance — which a rounded white rectangle never will be. The wave is
+// drawn in the SURFACE colour so it reads as the body eating into the band, exactly as the
+// storefront's bands dissolve into the page.
+//
+// The band is the SPATULA's surface — chromeGradient(), the same stops the rail's silhouette is
+// drawn with — so a popup looks like it belongs to the rail it opened from. Deliberately not the
+// brand green: the primary button is near-black and the step dots take the BAKER's own colour, so
+// a green band would fight both.
+//
+// Only the band is new. Nothing below it changes — body, footer and every control are as they were.
+const WAVE_H = 14;   // how deep the curve bites into the body
+
 const headStyle = (isMobile) => ({
+  position: 'relative',
   display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
-  padding: isMobile ? '12px 18px 13px' : '15px 20px 14px',
-  background: PANEL.tint, borderBottom: `1px solid ${PANEL.line}`, flexShrink: 0,
+  padding: isMobile ? `14px 18px ${WAVE_H + 10}px` : `17px 20px ${WAVE_H + 10}px`,
+  background: chromeGradient(180), flexShrink: 0,
 });
 
-const titleStyle    = (isMobile) => ({ fontSize: isMobile ? 17 : 16, fontWeight: 800, color: PANEL.ink, margin: 0, lineHeight: 1.2 });
-const subtitleStyle = { fontSize: 12, color: PANEL.muted, fontWeight: 600, margin: '3px 0 0', lineHeight: 1.4 };
+const titleStyle    = (isMobile) => ({ fontSize: isMobile ? 18 : 17, fontWeight: 800,
+                                       color: '#FFFFFF', margin: 0, lineHeight: 1.2,
+                                       letterSpacing: '-0.01em' });
+const subtitleStyle = { fontSize: 12, color: 'rgba(255,255,255,0.62)', fontWeight: 600,
+                        margin: '3px 0 0', lineHeight: 1.4 };
 
 const closeStyle = (isMobile) => ({
-  border: 'none', background: 'rgba(44,68,51,0.06)', cursor: 'pointer', borderRadius: '50%',
+  border: 'none', background: 'rgba(255,255,255,0.16)', cursor: 'pointer', borderRadius: '50%',
   width: isMobile ? 34 : 28, height: isMobile ? 34 : 28, flexShrink: 0,
-  fontSize: 13, color: PANEL.body, fontWeight: 700, lineHeight: 1,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 13, color: '#FFFFFF', fontWeight: 700, lineHeight: 1,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1,
 });
 
 const subheadStyle = (isMobile) => ({
@@ -115,7 +138,7 @@ const footStyle = (isMobile) => ({
  * and from the ✕. Omit it for a panel the user must resolve some other way, and no ✕ is drawn.
  */
 export function Panel({ open = true, onClose, title, subtitle, width = 420, isMobile = false,
-                        bodyPadding, subhead, footer, showClose = true, children }) {
+                        bodyPadding, subhead, footer, showClose = true, wave = 0, children }) {
   useEffect(() => {
     if (!open || !onClose) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -139,13 +162,22 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
         {isMobile && <div style={grab} />}
         {(title || (onClose && showClose)) && (
           <div style={headStyle(isMobile)}>
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0, zIndex: 1 }}>
               {title && <h2 style={titleStyle(isMobile)}>{title}</h2>}
               {subtitle && <p style={subtitleStyle}>{subtitle}</p>}
             </div>
             {onClose && showClose && (
               <button type="button" aria-label="Close" style={closeStyle(isMobile)} onClick={onClose}>✕</button>
             )}
+            {/* The storefront's edge, at panel scale. Drawn in the surface colour so the body eats
+                into the band rather than a line being laid on top of it. */}
+            <svg
+              viewBox={WAVE_VIEWBOX} preserveAspectRatio="none" aria-hidden="true"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: -1, width: '100%',
+                       height: WAVE_H, display: 'block' }}
+            >
+              <path d={WAVES[wave % WAVES.length]} fill={PANEL.surface} />
+            </svg>
           </div>
         )}
         {/* Pinned under the header and above the scroll — step dots, tabs, a filter row. */}

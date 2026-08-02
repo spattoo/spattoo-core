@@ -5,6 +5,7 @@ import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme
 import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { WAVES } from '../shared/waves.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -41,11 +42,7 @@ function useContainerBreakpoint() {
 }
 
 // Varied, asymmetric wave paths so the bands don't all read as the same flat horizontal stripe.
-const WAVES = [
-  'M0,40 C300,90 720,4 1140,52 C1320,72 1400,40 1440,50 L1440,70 L0,70 Z',
-  'M0,55 C360,2 800,84 1200,30 C1350,10 1410,52 1440,40 L1440,70 L0,70 Z',
-  'M0,30 C260,78 640,8 1040,46 C1280,68 1380,28 1440,44 L1440,70 L0,70 Z',
-];
+// Moved to shared/waves.js — the app's panels use the same edge, and a second copy would drift.
 
 // Full-width tinted band with a wavy (curved) top + bottom edge — the recurring soft-curve motif
 // down the page. top/bottom can use DIFFERENT paths (asymmetry). innerStyle re-applies the content
