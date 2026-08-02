@@ -1270,12 +1270,51 @@ const ORDERS_MENU = [
 // A rail nav item that opens a submenu. The desktop rail and the mobile bottom bar
 // differ ONLY in where the dropdown is anchored (sideways vs upward), so the markup
 // lives here once instead of being pasted into both rails.
-function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onSelect, children }) {
+function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onSelect, escapeClip = false, children }) {
+  const hostRef = useRef(null);
+  const [fixedAt, setFixedAt] = useState(null);
+
+  // The desktop rail SCROLLS: sidebarNav carries overflow-y so a short viewport can't cut the
+  // spatula's blade. A scroll container clips on BOTH axes — CSS computes overflow-x to `auto` the
+  // moment overflow-y stops being `visible` — so this menu, absolutely positioned at
+  // left:calc(100% + 8px), was clipped away and Orders opened nothing. Measuring the anchor and
+  // switching to position:fixed escapes ancestor overflow. Deliberately NOT a portal: the menu stays
+  // a DOM child of the wrapper, so the existing click-outside test (containerRef.contains) still
+  // sees it. Mobile passes no escapeClip — its bar isn't a scroll container and keeps `absolute`.
+  useLayoutEffect(() => {
+    if (!escapeClip || !open) { setFixedAt(null); return undefined; }
+    const el = hostRef.current;
+    if (!el) return undefined;
+    const place = () => {
+      const r = el.getBoundingClientRect();
+      setFixedAt({ left: Math.round(r.right + 8), top: Math.round(r.top) });
+    };
+    place();
+    const scroller = el.closest('nav');
+    window.addEventListener('resize', place);
+    scroller?.addEventListener('scroll', place, { passive: true });
+    return () => {
+      window.removeEventListener('resize', place);
+      scroller?.removeEventListener('scroll', place);
+    };
+  }, [escapeClip, open]);
+
+  // one node, two refs — ours for measuring, the caller's for its click-outside test
+  const setRefs = (node) => {
+    hostRef.current = node;
+    if (typeof containerRef === 'function') containerRef(node);
+    else if (containerRef) containerRef.current = node;
+  };
+
+  const menuStyle = fixedAt ? { ...s.dropdown, position: 'fixed', top: fixedAt.top, left: fixedAt.left }
+    : anchorStyle ? { ...s.dropdown, ...anchorStyle }
+    : s.dropdown;
+
   return (
-    <div style={{ position: 'relative' }} ref={containerRef}>
+    <div style={{ position: 'relative' }} ref={setRefs}>
       {children}
       {open && (
-        <div style={anchorStyle ? { ...s.dropdown, ...anchorStyle } : s.dropdown}>
+        <div style={menuStyle}>
           <div style={s.dropdownSection}>{label}</div>
           {items.map(item => (
             <button key={item.id} style={s.dropdownItem} onClick={() => onSelect(item)}>
@@ -5314,9 +5353,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               );
               if (!menu) return button;
               return (
+                // escapeClip: this rail scrolls, and a scroll container clips the flyout — see RailSubmenu
                 <RailSubmenu key={id} label={label} items={menu}
                   open={navMenuId === id}
                   containerRef={navMenuId === id ? navMenuRef : null}
+                  escapeClip
                   onSelect={item => { openOrdersPanel(item.view); setNavMenuId(null); }}>
                   {button}
                 </RailSubmenu>
