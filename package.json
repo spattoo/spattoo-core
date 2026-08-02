@@ -25,7 +25,8 @@
     "check:dup": "jscpd src/designer src/orders src/customers src/dashboard src/admin src/billing src/shared src/storefront src/auth src/legal src/telemetry",
     "test": "vitest run",
     "verify": "npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:dup && npm test",
-    "pack:vendor": "npm run build && node scripts/pack-vendor.mjs"
+    "pack:vendor": "npm run build && node scripts/pack-vendor.mjs",
+    "release": "node scripts/release.mjs"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",
