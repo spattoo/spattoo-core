@@ -19,6 +19,22 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   const [err, setErr]     = useState(null);
   const [tick, setTick]   = useState(0);
 
+  // ── After checkout ───────────────────────────────────────────────────────────────
+  // Credits are minted by the payment WEBHOOK, so they do not exist the moment Checkout closes.
+  // That gap is the whole design problem here: a baker has just paid, and the one thing they need
+  // is to be told it worked.
+  //
+  // So the panel does NOT close. It becomes the confirmation — three honest states:
+  //   'waiting'  paid, credits not here yet
+  //   'done'     the balance actually moved, by how much
+  //   'slow'     we stopped looking before they arrived
+  //
+  // It never auto-closes. A panel that vanishes by itself reads as a dismissal, and with unlucky
+  // timing it disappears before the confirmation can be read.
+  const [phase, setPhase] = useState(null);     // null | 'waiting' | 'done' | 'slow'
+  const [gained, setGained] = useState(0);
+  const [lastPaymentId, setLastPaymentId] = useState(null);
+
   useEffect(() => {
     if (!open || !apiClient?.fetchAiCredits) return;
     let alive = true;
@@ -55,7 +71,13 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
           key: d.key_id, order_id: d.order_id, amount: d.amount, currency: d.currency ?? 'INR',
           name: 'Spattoo', description: packs.find(p => p.packKey === packKey)?.label ?? 'Credits',
           theme: { color: primaryColor },
-          handler: () => { resolve(); settle(); },
+          handler: (resp) => {
+            setLastPaymentId(resp?.razorpay_payment_id ?? null);
+            resolve();
+            // The balance BEFORE the purchase, captured here rather than read later: waiting until
+            // after the first poll would race the webhook and could baseline against the new value.
+            settle(data?.spendable ?? 0);
+          },
           modal: { ondismiss: resolve },
         });
         rzp.open();
@@ -64,25 +86,51 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
     finally { setBusy(null); }
   }
 
-  // Credits are minted by the payment WEBHOOK, which lands asynchronously — the balance is not
-  // updated the moment Checkout closes. Re-read a few times and then stop rather than spinning
-  // forever; the next open reconciles whatever arrived late.
-  async function settle() {
-    for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 1500));
-      setTick(t => t + 1);
-      creditsChanged();          // the header readout, which is a different component
+  // Poll until the balance CHANGES, not merely until we have refetched.
+  //
+  // Comparing against the pre-purchase balance is what makes "arrived" a fact rather than a guess —
+  // the old version re-read five times and assumed, so it could not tell success from silence and
+  // showed the same screen for both.
+  //
+  // Backs off rather than hammering: a webhook is usually a second or two, occasionally much longer
+  // when Razorpay retries. ~30s of looking, then say so plainly instead of pretending.
+  async function settle(before) {
+    setPhase('waiting');
+    const waits = [1200, 1500, 2000, 2500, 3000, 4000, 5000, 5000, 5000];
+    for (const wait of waits) {
+      await new Promise(r => setTimeout(r, wait));
+      const fresh = await apiClient.fetchAiCredits().catch(() => null);
+      creditsChanged();                    // the header readout is a different component
+      if (fresh) setData(fresh);
+      const now = fresh?.spendable ?? before;
+      if (now > before) {
+        setGained(now - before);
+        setPhase('done');
+        return;
+      }
     }
+    // Not a failure, and must not be dressed as one — the payment is captured and the credits are
+    // coming. But saying NOTHING here is the worst option: an unchanged balance with no explanation
+    // is indistinguishable from having been charged for nothing.
+    setPhase('slow');
+  }
+
+  // Reopening is a fresh visit: the last purchase's confirmation must not be the first thing a
+  // baker sees three days later.
+  function close() {
+    setPhase(null); setGained(0); setLastPaymentId(null);
+    setTick(t => t + 1);          // so the next open re-reads rather than showing a stale balance
+    onClose?.();
   }
 
   const spendable = data?.unlimited ? null : (data?.spendable ?? 0);
 
   return (
-    <div style={s.backdrop} onClick={onClose}>
+    <div style={s.backdrop} onClick={close}>
       <div style={s.sheet} onClick={e => e.stopPropagation()}>
         <div style={s.head}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#2C4433' }}>Credits</div>
-          <button type="button" onClick={onClose} style={s.close} aria-label="Close">×</button>
+          <button type="button" onClick={close} style={s.close} aria-label="Close">×</button>
         </div>
 
         {/* The number first and large. It is the question that brought them here. */}
@@ -115,7 +163,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
 
         {/* Two gates, two different sentences. "Your plan doesn't include this" points at an
             upgrade; "you're already well stocked" points at nothing and must not read as refusal. */}
-        {shelf && !shelf.canBuy && (
+        {!phase && shelf && !shelf.canBuy && (
           <div style={s.note}>
             <div style={{ fontSize: 12.5, fontWeight: 800, color: '#2C4433' }}>
               Your credits refresh on {formatResetDate(shelf.resetsOn)}
@@ -126,7 +174,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
           </div>
         )}
 
-        {shelf?.canBuy && shelf.reason === 'stocked' && (
+        {!phase && shelf?.canBuy && shelf.reason === 'stocked' && (
           <div style={s.note}>
             <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5 }}>
               <strong style={{ color: '#2C4433' }}>You’re well stocked.</strong> You can add more
@@ -135,7 +183,65 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
           </div>
         )}
 
-        {shelf?.canBuy && packs.length > 0 && (
+        {/* ── After a payment ─────────────────────────────────────────────────────────
+            Everything below stands in for the packs while a purchase is settling or has just
+            settled. Buying again is not the next thing anyone wants here, and offering it beside
+            an unconfirmed payment invites paying twice. */}
+        {phase === 'waiting' && (
+          <div style={s.note}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Payment received</div>
+            <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5, marginTop: 4 }}>
+              Adding your credits… this usually takes a few seconds.
+            </div>
+          </div>
+        )}
+
+        {phase === 'done' && (
+          <>
+            {/* The number they bought, said back to them. The big balance above has already
+                changed, but "it is bigger than it was" is not the same as being told it worked. */}
+            <div style={{ ...s.note, borderColor: '#CFE3D5', background: '#F4FAF6' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>
+                ✓ {gained} credits added
+              </div>
+              <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5, marginTop: 4 }}>
+                They never expire, and they are used only after your monthly credits run out.
+              </div>
+            </div>
+            <button type="button" onClick={close}
+              style={{ ...s.pack, justifyContent: 'center', cursor: 'pointer', background: primaryColor,
+                       border: 'none', color: '#fff', fontSize: 14, fontWeight: 800 }}>
+              Done
+            </button>
+          </>
+        )}
+
+        {/* Not an error, and must not be dressed as one — the payment IS captured. But an
+            unchanged balance with no explanation is indistinguishable from having been charged
+            for nothing, which is the single worst thing this screen could do. */}
+        {phase === 'slow' && (
+          <>
+            <div style={s.note}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Payment received</div>
+              <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600, lineHeight: 1.5, marginTop: 4 }}>
+                Your credits are taking longer than usual to arrive. They are on their way — nothing
+                is lost, and there is no need to pay again.
+              </div>
+              {/* The one handle they and we share if this has to be chased. */}
+              {lastPaymentId && (
+                <div style={{ fontSize: 10.5, color: '#B7C4BB', fontWeight: 600, marginTop: 6, userSelect: 'text' }}>
+                  Payment {lastPaymentId}
+                </div>
+              )}
+            </div>
+            <button type="button" onClick={() => settle(spendable ?? 0)}
+              style={{ ...s.pack, justifyContent: 'center', cursor: 'pointer' }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Check again</span>
+            </button>
+          </>
+        )}
+
+        {!phase && shelf?.canBuy && packs.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {/* Priced in CREDITS, never in jobs. The endpoint also returns `buys` (what a pack is
                 worth in each tool) and it stays unused: "+20 decoration guides" would say the pack
