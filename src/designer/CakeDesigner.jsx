@@ -58,6 +58,18 @@ import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
+// ── Staff accounts are hidden ────────────────────────────────────────────────────────
+// The feature WORKS — the modal, POST /api/baker/staff, the `staff:manage` capability and the
+// per-plan `max_team_members` entitlement all exist. What is not settled is whether we ship team
+// seats as a product at all, so it is not advertised on the pricing page and it should not be
+// discoverable in the app either. Selling nothing while quietly shipping it to whoever opens the
+// menu is the worst of both.
+//
+// A flag rather than deleting the buttons, because nothing here is wrong — only undecided. One
+// line to bring it back, and the modal below stays exercised by the same state it always was.
+// If seats are dropped for good, this and everything it guards can go together.
+const STAFF_UI_ENABLED = false;
+
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, gradient: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
 
@@ -5270,7 +5282,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>Flavours</button>}
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>Templates</button>}
                   {hasCap('billing:manage') && <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>}
-                  {hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add Staff</button>}
+                  {STAFF_UI_ENABLED && hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add Staff</button>}
                 </div>
               )}
             </div>}
@@ -5465,7 +5477,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>
                     Billing
                   </button>}
-                  {hasCap('staff:manage') && <button style={s.railDropdownItem}
+                  {STAFF_UI_ENABLED && hasCap('staff:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
                     Add Staff
                   </button>}
