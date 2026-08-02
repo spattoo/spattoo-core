@@ -28,6 +28,16 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
   const [error,    setError]    = useState(null);
+  // Per-kg rates, keyed by flavour id and held as the STRING the baker typed — not a
+  // number. A half-typed "1" must not become 1, an emptied box must stay empty rather
+  // than collapsing to 0, and re-rendering must never reformat what someone is mid-way
+  // through. Parsing happens once, on save.
+  const [prices, setPrices] = useState({});
+  // Two settings, not one: "here is what I make" and "here is what it costs" are
+  // different disclosures, and the common case is a baker who wants the first without
+  // the second.
+  const [showFlavours,    setShowFlavours]    = useState(true);
+  const [priceVisibility, setPriceVisibility] = useState('private');
 
   useEffect(() => {
     if (!open) return;
@@ -35,10 +45,19 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
     if (!apiClient.fetchBakerFlavours) { setFlavours([]); return; }
     setLoading(true);
     apiClient.fetchBakerFlavours()
-      .then(list => {
-        const arr = Array.isArray(list) ? list : [];
+      .then(res => {
+        // The route grew a wrapper when it gained the visibility settings; an array is
+        // still accepted so a core running against an older API keeps working.
+        const arr = Array.isArray(res) ? res : (res?.flavours ?? []);
         setFlavours(arr);
         setExcluded(new Set(arr.filter(f => f.excluded).map(f => f.id)));
+        setPrices(Object.fromEntries(
+          arr.filter(f => f.price_per_kg != null).map(f => [f.id, String(f.price_per_kg)]),
+        ));
+        if (res?.visibility) {
+          setShowFlavours(res.visibility.show_flavours !== false);
+          setPriceVisibility(res.visibility.price_visibility ?? 'private');
+        }
         // Effective state seeds the controls; the baseline is kept alongside so a chip
         // can show WHERE it came from. A baker cannot sensibly overrule a default they
         // cannot see is a default.
@@ -88,11 +107,34 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
     });
   }
 
+  // A rate the baker can't have meant. Blank is fine — it means "not priced", which the
+  // storefront renders as "ask" — but a typo shouldn't reach the server to be rejected
+  // there, and it certainly shouldn't reach a customer.
+  const badPrice = (id) => {
+    const raw = (prices[id] ?? '').trim();
+    if (!raw) return false;
+    const n = Number(raw);
+    return !Number.isFinite(n) || n < 0;
+  };
+  const priceErrors = (flavours ?? []).filter(f => badPrice(f.id));
+
   async function handleSave() {
-    if (!apiClient.updateBakerFlavourExclusions) return;
+    if (!apiClient.updateBakerFlavours) return;
+    if (priceErrors.length) { setError('Check the prices marked in red.'); return; }
     setSaving(true); setError(null); setSaved(false);
     try {
-      await apiClient.updateBakerFlavourExclusions([...excluded]);
+      // One call carries the flags, the rates and the visibility — they are saved by one
+      // button, so splitting them would let a baker end up half-saved with no way to tell.
+      await apiClient.updateBakerFlavours({
+        flavours: (flavours ?? []).map(f => ({
+          flavour_id: f.id,
+          excluded: excluded.has(f.id),
+          // '' means "unprice this" and must reach the server as null, not 0 — 0 is a
+          // baker advertising a free cake.
+          price_per_kg: (prices[f.id] ?? '').trim() === '' ? null : Number(prices[f.id]),
+        })),
+        visibility: { show_flavours: showFlavours, price_visibility: priceVisibility },
+      });
 
       if (apiClient.updateBakerDietaryExclusions) {
         await apiClient.updateBakerDietaryExclusions([...dietOff]);
@@ -186,6 +228,75 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
                   label="Offered flavours"
                   hint="Turn off any flavour you don't offer. Hidden flavours won't appear to customers placing an order. Under each one, mark anything you can't make it as — a customer who asks for that gets a note to check with you, and can still place the order."
                 >
+                  {/* What a customer can see, stated as a sentence rather than inferred
+                      from two switches. A baker must never have to guess whether the
+                      number they just typed is public — this line changing as they
+                      toggle is the whole explanation of the feature. */}
+                  <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11,
+                                padding: '11px 13px', marginTop: 8, display: 'flex',
+                                flexDirection: 'column', gap: 9 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#2C4433' }}>
+                      {!showFlavours
+                        ? 'Customers don’t see your flavour list.'
+                        : priceVisibility === 'public'
+                          ? 'Customers see your flavours and your prices.'
+                          : priceVisibility === 'verified'
+                            ? 'Customers see your flavours. Prices show once they verify a phone or email.'
+                            : 'Customers see your flavours. They don’t see prices.'}
+                    </div>
+
+                    {/* Not a <label>: Toggle is a div with its own onClick, not a form
+                        control, so a label would not forward the click and the words
+                        would be dead while the cursor promised otherwise. The handler is
+                        on the text ITSELF rather than on a wrapper — a wrapper would fire
+                        again for clicks that bubbled up from the toggle, and two toggles
+                        cancel out. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Toggle checked={showFlavours} onChange={() => setShowFlavours(v => !v)} />
+                      <span
+                        onClick={() => setShowFlavours(v => !v)}
+                        style={{ fontSize: 12, fontWeight: 600, color: '#4A5D51', cursor: 'pointer' }}
+                      >
+                        Show my flavour list
+                      </span>
+                    </div>
+
+                    {/* Inert when the list is hidden — there is nowhere to show a price
+                        for a list you are not showing, and offering the choice anyway
+                        would be offering one with no effect. */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6,
+                                  opacity: showFlavours ? 1 : 0.45,
+                                  pointerEvents: showFlavours ? 'auto' : 'none' }}>
+                      {[
+                        { key: 'private',  label: 'Prices private' },
+                        { key: 'verified', label: 'After verifying' },
+                        { key: 'public',   label: 'Prices public' },
+                      ].map(o => (
+                        <button
+                          key={o.key} type="button"
+                          onClick={() => setPriceVisibility(o.key)}
+                          aria-pressed={priceVisibility === o.key}
+                          style={{
+                            padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                            border: `1.5px solid ${priceVisibility === o.key ? '#2C4433' : '#E5E7EB'}`,
+                            background: priceVisibility === o.key ? '#2C4433' : '#fff',
+                            color: priceVisibility === o.key ? '#fff' : '#6B7280',
+                            fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700,
+                          }}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* The reason a baker who never publishes should still fill the rates
+                        in. Without this the price boxes look like a request to go public. */}
+                    <div style={{ fontSize: 10.5, color: '#9CA3AF', fontWeight: 600, lineHeight: 1.5 }}>
+                      Your prices are always used to work out a suggested quote for you, even when
+                      customers can&rsquo;t see them.
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
                     {flavours.length === 0 && (
                       <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>No flavours available yet.</span>
@@ -205,6 +316,45 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
                             </div>
                             <Toggle checked={offered} onChange={() => toggleFlavour(f.id)} />
                           </div>
+
+                          {/* Only for flavours on offer, for the same reason as the
+                              dietary chips below: pricing something you don't sell is
+                              dead work. The rate is NOT cleared when a flavour is
+                              switched off — it is kept, so a baker who turns mango off
+                              for the winter still has their number in April. */}
+                          {offered && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, paddingLeft: 2 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: 0.3 }}>
+                                PER KG
+                              </span>
+                              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                                <span style={{ position: 'absolute', left: 9, fontSize: 12.5, fontWeight: 700,
+                                               color: badPrice(f.id) ? '#DC2626' : '#9CA3AF', pointerEvents: 'none' }}>₹</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={prices[f.id] ?? ''}
+                                  onChange={e => setPrices(p => ({ ...p, [f.id]: e.target.value }))}
+                                  placeholder="—"
+                                  aria-label={`Price per kg for ${f.name}`}
+                                  aria-invalid={badPrice(f.id) || undefined}
+                                  style={{
+                                    width: 104, padding: '7px 10px 7px 22px', borderRadius: 9,
+                                    border: `1.5px solid ${badPrice(f.id) ? '#DC2626' : '#E5E7EB'}`,
+                                    fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
+                                    color: '#2C4433', boxSizing: 'border-box',
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                />
+                              </div>
+                              {/* Optional, and it has to LOOK optional. A baker who prices
+                                  nothing should feel finished, not nagged — this exists to
+                                  make pricing available, never compulsory. */}
+                              <span style={{ fontSize: 10.5, color: '#C3CBC6', fontWeight: 600 }}>
+                                {badPrice(f.id) ? 'Not a valid price' : 'optional'}
+                              </span>
+                            </div>
+                          )}
 
                           {/* Only for flavours actually on offer — declaring what you
                               can't do with a flavour you don't sell is dead work.
