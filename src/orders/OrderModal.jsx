@@ -3,6 +3,7 @@ import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 import { ACCEPT_IMAGE, validateImageFile, compressImage } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { isValidEmail } from '../shared/validators.js';
+import { Panel, PANEL } from '../shared/Panel.jsx';
 import { uploadThumbnail } from '../designer/utils/thumbnail.js';
 import {
   findFlavourConflicts, conflictSentence, conflictCallToAction, dietTone,
@@ -537,10 +538,33 @@ export default function OrderModal({
   // ── Success ─────────────────────────────────────────────────────────────────
   if (orderId) {
     return (
-      <div style={overlay(isMobile)} onClick={onClose}>
-        <div style={sheetStyle(isMobile)} onClick={e => e.stopPropagation()}>
-          {isMobile && <div style={handle} />}
-          <div style={{ textAlign: 'center', padding: isMobile ? '24px 20px 16px' : '16px 0 12px' }}>
+      // A confirmation carries its own Done button, so no header and no ✕ — but Esc and the
+      // backdrop still dismiss it, which onClose gives us.
+      <Panel
+        onClose={onClose}
+        showClose={false}
+        isMobile={isMobile}
+        width={360}
+        footer={
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            {!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer' && (
+              <button
+                style={{ ...btn(isMobile), ...brandBtn, width: '100%' }}
+                onClick={() => { onViewOrder(orderId); onClose(); }}
+              >
+                View Order
+              </button>
+            )}
+            <button
+              style={{ ...btn(isMobile), width: '100%', background: 'transparent', color: PANEL.body, border: `1.5px solid ${PANEL.line}`, boxShadow: 'none' }}
+              onClick={onClose}
+            >
+              {(!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer') ? 'Close' : 'Done'}
+            </button>
+          </div>
+        }
+      >
+          <div style={{ textAlign: 'center', padding: isMobile ? '8px 0 4px' : '4px 0' }}>
             <div style={{
               width: 64, height: 64, borderRadius: '50%', margin: '0 auto 16px',
               background: hexToRgba(primaryColor, 0.12),
@@ -566,75 +590,34 @@ export default function OrderModal({
               </div>
             )}
           </div>
-          <div style={{ padding: isMobile ? '0 20px' : '0', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer' && (
-              <button
-                style={{ ...btn(isMobile), ...brandBtn, width: '100%' }}
-                onClick={() => { onViewOrder(orderId); onClose(); }}
-              >
-                View Order
-              </button>
-            )}
-            <button
-              style={{ ...btn(isMobile), width: '100%', background: 'transparent', color: '#666', border: '1.5px solid #e0e0e0', boxShadow: 'none' }}
-              onClick={onClose}
-            >
-              {(!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer') ? 'Close' : 'Done'}
-            </button>
-          </div>
-          {isMobile && <div style={{ height: 'env(safe-area-inset-bottom, 16px)', flexShrink: 0 }} />}
-        </div>
-      </div>
+      </Panel>
     );
   }
 
   // ── Edit-mode: single-step "Update Design" modal ─────────────────────────────
   if (editingOrder) {
     return (
-      <>
-        <style>{`
-          .spattoo-modal input::placeholder,
-          .spattoo-modal textarea::placeholder {
-            font-family: 'Quicksand', sans-serif;
-            font-weight: 500;
-            color: #bbb;
-          }
-        `}</style>
-        <div style={overlay(isMobile)} onClick={onClose}>
-          <div className="spattoo-modal" style={sheetStyle(isMobile)} onClick={e => e.stopPropagation()}>
-            {isMobile && <div style={handle} />}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink: 0 }}>
-              <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>Update Design</span>
-              <button style={{ background: '#f3f4f6', border: 'none', cursor: 'pointer', borderRadius: '50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize: 13, color: '#333', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>✕</button>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', padding: isMobile ? '20px 20px' : '16px 0', display: 'flex', flexDirection: 'column', gap: isMobile ? 16 : 12 }}>
-              <UpdateDesignForm
-                isMobile={isMobile}
-                primaryColor={primaryColor}
-                submitting={submitting}
-                submitError={submitError}
-                onSubmit={async (comment) => {
-                  setSubmitting(true);
-                  setSubmitError(null);
-                  try {
-                    const result = await onSubmit({ comment });
-                    setOrderId(result?.orderId ?? 'ok');
-                  } catch (err) {
-                    setSubmitError(err.message || 'Failed to save. Please try again.');
-                  } finally {
-                    setSubmitting(false);
-                  }
-                }}
-                brandBtn={brandBtn}
-              />
-            </div>
-
-            {isMobile && <div style={{ height: 'env(safe-area-inset-bottom, 16px)', flexShrink: 0 }} />}
-          </div>
-        </div>
-      </>
+      <Panel onClose={onClose} isMobile={isMobile} width={360} title="Update Design">
+        <UpdateDesignForm
+          isMobile={isMobile}
+          primaryColor={primaryColor}
+          submitting={submitting}
+          submitError={submitError}
+          onSubmit={async (comment) => {
+            setSubmitting(true);
+            setSubmitError(null);
+            try {
+              const result = await onSubmit({ comment });
+              setOrderId(result?.orderId ?? 'ok');
+            } catch (err) {
+              setSubmitError(err.message || 'Failed to save. Please try again.');
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+          brandBtn={brandBtn}
+        />
+      </Panel>
     );
   }
 
@@ -667,29 +650,13 @@ export default function OrderModal({
 
   return (
     <>
-      <style>{`
-        @keyframes slideUp { from { transform:translateY(100%) } to { transform:translateY(0) } }
-        .spattoo-modal input::placeholder,
-        .spattoo-modal textarea::placeholder {
-          font-family: 'Quicksand', sans-serif;
-          font-weight: 500;
-          color: #bbb;
-        }
-      `}</style>
-      <div style={overlay(isMobile)} onClick={onClose}>
-        <div className="spattoo-modal" style={sheetStyle(isMobile)} onClick={e => e.stopPropagation()}>
-
-          {/* Drag handle */}
-          {isMobile && <div style={handle} />}
-
-          {/* Header */}
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink:0 }}>
-            <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>{manual ? 'New Order' : mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}</span>
-            <button style={{ background:'#f3f4f6', border:'none', cursor:'pointer', borderRadius:'50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize:13, color:'#333', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>✕</button>
-          </div>
-
-          {/* Step dots */}
-          <div style={{ display:'flex', padding: isMobile ? '0 20px 14px' : '0 0 14px', borderBottom:'1px solid #999999', flexShrink:0 }}>
+      <Panel
+        onClose={onClose}
+        isMobile={isMobile}
+        width={360}
+        title={manual ? 'New Order' : mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}
+        subhead={
+          <div style={{ display:'flex' }}>
             {STEP_DEFS.map((s, i) => {
               const done = i < step, active = i === step;
               return (
@@ -702,9 +669,44 @@ export default function OrderModal({
               );
             })}
           </div>
-
-          {/* Scrollable content */}
-          <div style={{ flex:1, overflowY:'auto', overscrollBehavior:'contain', padding: isMobile ? '20px 20px' : '16px 0', display:'flex', flexDirection:'column', gap: isMobile?16:12 }}>
+        }
+        bodyPadding={isMobile ? '20px 20px' : '16px 20px'}
+        footer={
+          <div style={{ display:'flex', flexDirection:'column', gap:10, width:'100%' }}>
+            {/* Customer consent, captured at the moment of the affirmative act (DPDP "Layer 2").
+                Submitting the quote IS the acceptance — so this is a passive notice, not a checkbox:
+                a customer sending their own photo to their baker should not be made to tick a box,
+                and asking once here is what lets us NOT ask on every upload. The consent EVENT is
+                written server-side by POST /api/customer/orders (source 'quote'), so it cannot be
+                skipped by the client. Customer mode only — a baker placing an order already accepted
+                at signup/gate. Sits directly above the submit button so it is unmissable. */}
+            {mode === 'customer' && isLastStep && (
+              <div style={{ fontSize: 11, lineHeight: 1.45, color: '#888', textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
+                By requesting a quote you agree to the{' '}
+                <a href={`${legalBase}/terms`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Terms of Service</a>
+                {' '}and{' '}
+                <a href={`${legalBase}/privacy`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Privacy Policy</a>.
+                {' '}Cartoon characters and brand themes are usually protected — your baker may not be able to use them.
+              </div>
+            )}
+            <div style={{ display:'flex', gap:10 }}>
+              {showBackInFooter && (
+                <button style={{ padding: isMobile?'15px 20px':'12px 18px', borderRadius:14, border:`1.5px solid ${PANEL.line}`, fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer', background:'#fff', color:PANEL.body, fontFamily:"'Quicksand',sans-serif", flexShrink:0 }}
+                  onClick={handleBack}>
+                  Back
+                </button>
+              )}
+              <button
+                style={{ ...btn(isMobile), ...brandBtn, flex:1, opacity: footerPrimaryDisabled ? 0.45 : 1 }}
+                disabled={footerPrimaryDisabled}
+                onClick={handleFooterPrimary}>
+                {footerPrimaryLabel}
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <>
 
             {/* ── Step: Customer (baker mode only) ── */}
             {currentStepKey === 'customer' && (
@@ -1054,86 +1056,17 @@ export default function OrderModal({
                 )}
               </>
             )}
-          </div>
-
-          {/* Customer consent, captured at the moment of the affirmative act (DPDP "Layer 2").
-              Submitting the quote IS the acceptance — so this is a passive notice, not a checkbox:
-              a customer sending their own photo to their baker should not be made to tick a box,
-              and asking once here is what lets us NOT ask on every upload. The consent EVENT is
-              written server-side by POST /api/customer/orders (source 'quote'), so it cannot be
-              skipped by the client. Customer mode only — a baker placing an order already accepted
-              at signup/gate. Sits directly above the submit button so it is unmissable. */}
-          {mode === 'customer' && isLastStep && (
-            <div style={{ fontSize: 11, lineHeight: 1.45, color: '#888', textAlign: 'center', padding: isMobile ? '10px 20px 0' : '10px 0 0', fontFamily: "'Quicksand',sans-serif" }}>
-              By requesting a quote you agree to the{' '}
-              <a href={`${legalBase}/terms`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Terms of Service</a>
-              {' '}and{' '}
-              <a href={`${legalBase}/privacy`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Privacy Policy</a>.
-              {' '}Cartoon characters and brand themes are usually protected — your baker may not be able to use them.
-            </div>
-          )}
-
-          {/* Sticky footer */}
-          <div style={{ display:'flex', gap:10, flexShrink:0, padding: isMobile ? '12px 20px 0' : '12px 0 0', borderTop:'1px solid #999999' }}>
-            {showBackInFooter && (
-              <button style={{ padding: isMobile?'15px 20px':'12px 18px', borderRadius:14, border:'1.5px solid #999999', fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer', background:'#fff', color:'#333', fontFamily:"'Quicksand',sans-serif", flexShrink:0 }}
-                onClick={handleBack}>
-                Back
-              </button>
-            )}
-            <button
-              style={{ ...btn(isMobile), ...brandBtn, flex:1, opacity: footerPrimaryDisabled ? 0.45 : 1 }}
-              disabled={footerPrimaryDisabled}
-              onClick={handleFooterPrimary}>
-              {footerPrimaryLabel}
-            </button>
-          </div>
-
-          {isMobile && <div style={{ height:'env(safe-area-inset-bottom, 16px)', flexShrink:0 }} />}
-
-        </div>
-      </div>
+        </>
+      </Panel>
     </>
   );
 }
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
-
-function overlay(isMobile) {
-  return {
-    position:'fixed', inset:0, background:'rgba(107,45,66,0.22)',
-    backdropFilter:'blur(4px)', WebkitBackdropFilter:'blur(4px)',
-    zIndex:100, display:'flex',
-    alignItems: isMobile ? 'flex-end' : 'center',
-    justifyContent:'center',
-    fontFamily:"'Quicksand',sans-serif",
-  };
-}
-
-function sheetStyle(isMobile) {
-  const base = { fontFamily: "'Quicksand', sans-serif" };
-  return isMobile ? {
-    ...base,
-    width:'100%', maxHeight:'92vh', background:'#fff',
-    borderRadius:'20px 20px 0 0',
-    display:'flex', flexDirection:'column',
-    boxShadow:'0 -4px 40px rgba(107,45,66,0.18)',
-    animation:'slideUp 0.28s cubic-bezier(0.32,0.72,0,1)',
-    paddingTop:10,
-  } : {
-    ...base,
-    width:360, maxWidth:'calc(100vw - 32px)', maxHeight:'90vh',
-    background:'#fff', borderRadius:20,
-    display:'flex', flexDirection:'column',
-    boxShadow:'0 8px 40px rgba(107,45,66,0.18)',
-    padding:'20px 24px 22px',
-  };
-}
-
-const handle = {
-  width:36, height:4, borderRadius:2, background:'#d8d4cf',
-  margin:'0 auto 12px', flexShrink:0,
-};
+// The overlay, sheet and drag handle that used to live here are now shared/Panel.jsx — this file
+// had three copies of the same shell, and every other panel in the app had its own. Its mobile
+// bottom-sheet behaviour is what the shared one adopted; its maroon scrim and 20px radius were the
+// outliers and are gone.
 
 function btn(isMobile) {
   return {
