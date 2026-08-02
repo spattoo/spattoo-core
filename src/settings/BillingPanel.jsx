@@ -234,6 +234,17 @@ function PaymentRow({ p, divider }) {
               charge a baker squints at, and the one this list exists to explain. */}
           {p.credits > 0 && <span style={{ color: '#7C8B82', fontWeight: 700 }}> · +{p.credits} credits</span>}
         </div>
+        {/* The Razorpay payment id, which is the ONLY handle a baker and we share when something
+            has to be looked up — a refund, a charge they do not recognise, a payment the bank shows
+            and we do not. It has always been stored and never shown, so support meant asking
+            someone to describe a transaction by amount and date.
+            Small and grey: reference material, not something to read. Selectable, because the
+            entire point is copying it into a message. */}
+        {p.razorpay_payment_id && (
+          <div style={{ fontSize: 10, color: '#C3CBC6', marginTop: 2, userSelect: 'text', fontVariantNumeric: 'tabular-nums' }}>
+            {p.razorpay_payment_id}
+          </div>
+        )}
       </div>
       <PaymentStatusPill status={p.status} />
     </div>
