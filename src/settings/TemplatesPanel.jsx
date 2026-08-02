@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
+import { dockedLeft } from '../shared/rail.js';
 
 // Templates — a top-level settings destination (peer of Flavours), reached from the Settings gear.
 //
@@ -67,7 +68,7 @@ export default function TemplatesPanel({ open, onClose, apiClient, primaryColor 
       `}</style>
 
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 300, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',

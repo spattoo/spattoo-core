@@ -3,6 +3,7 @@ import PlanCards from '../billing/PlanCards.jsx';
 import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
 import { creditsChanged } from '../billing/creditsBus.js';
 import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
+import { dockedLeft } from '../shared/rail.js';
 
 // GSTIN format (client-side, immediate feedback). The server does the authoritative checksum validation;
 // here we only gate the obviously-malformed so the button can enable/disable as the baker types.
@@ -728,7 +729,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
       `}</style>
 
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 310, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { dockedLeft } from '../shared/rail.js';
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
@@ -459,7 +460,7 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
   return (
     <>
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 300, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif", background: '#F7F5F0',
         boxShadow: '-4px 0 24px rgba(0,0,0,0.1)',

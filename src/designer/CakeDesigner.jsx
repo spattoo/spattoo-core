@@ -15,6 +15,7 @@ import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, sca
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
+import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
 import { Panel } from '../shared/Panel.jsx';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
@@ -875,13 +876,13 @@ function SpatulaFrame() {
     return () => ro.disconnect();
   }, []);
 
-  const W = 158, cx = W / 2, handleHalf = 30, hr = 9;
+  const W = RAIL.svgW, cx = W / 2, handleHalf = 30, hr = 9;
   const capTopY = 8, holeY = capTopY + handleHalf + 24;
   const bladeBotY = h - 12;
   const bladeFullY = bladeBotY - 194;     // blade body height (per tuned design)
   const shoulderY  = bladeFullY - 65;     // shoulder span
   const path = spatulaFramePath({
-    W, handleHalf, bladeHalf: 61, capTopY,
+    W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
   });
@@ -7170,7 +7171,7 @@ const s = {
   // raised stacking give the spatula blade room to bulge left and overlap the canvas.
   leftCol: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '12px 0 12px 40px', flexShrink: 0,
+    padding: `12px 0 12px ${RAIL.padLeft}px`, flexShrink: 0,
     position: 'relative', zIndex: 5,
   },
 
@@ -7204,7 +7205,7 @@ const s = {
   // this is just the 64px handle-width positioning context. The blade bulges out
   // (overflow visible). Nav + controls live in sidebarInner, above the silhouette.
   sidebar: {
-    width: 64, minWidth: 64, margin: 0,
+    width: RAIL.width, minWidth: RAIL.width, margin: 0,
     position: 'relative', overflow: 'visible',
     display: 'flex', flexShrink: 0, flex: 1,
     minHeight: 0,             // see sidebarNav — the rail must be allowed to shrink, not grow
@@ -7296,7 +7297,7 @@ const s = {
   // Main + flyout panels
   main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
   flyout: {
-    position: 'absolute', left: 76, top: 0, bottom: 0, zIndex: 20,
+    position: 'absolute', left: RAIL_FLYOUT_LEFT, top: 0, bottom: 0, zIndex: 20,
     width: 200,
     // Frosted/see-through so the cake shows through (esp. on mobile, where it overlays the cake). The
     // low alpha is what actually reveals the cake — 0.97 reads as solid white even with the blur.

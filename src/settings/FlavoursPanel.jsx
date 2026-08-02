@@ -3,6 +3,7 @@ import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import Chip from '../shared/Chip.jsx';
 import { dietTone } from '../orders/dietary.js';
 import DietaryOptionsSection from './DietaryOptionsSection.jsx';
+import { dockedLeft } from '../shared/rail.js';
 
 // Flavours — a top-level settings destination (peer of Store Settings), not a section
 // inside it, so the catalogue can grow without bloating the store-config screen.
@@ -129,7 +130,7 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
       `}</style>
 
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 300, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',

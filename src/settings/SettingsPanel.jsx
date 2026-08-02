@@ -6,6 +6,7 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
+import { dockedLeft } from '../shared/rail.js';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -282,7 +283,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
       `}</style>
 
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 300, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',

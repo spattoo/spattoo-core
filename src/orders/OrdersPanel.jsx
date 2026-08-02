@@ -12,6 +12,7 @@ import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { Panel } from '../shared/Panel.jsx';
+import { dockedLeft } from '../shared/rail.js';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
 const MAX_FINISHED_PHOTOS = 3;
@@ -1351,7 +1352,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
 
       <div style={{
         position: 'fixed', top: 0, right: 0, bottom: 0,
-        left: isMobile ? 0 : 76,
+        left: dockedLeft(isMobile),
         zIndex: 300,
         display: 'flex', flexDirection: 'column',
         animation: 'slideInRight 0.28s cubic-bezier(0.32,0.72,0,1)',
