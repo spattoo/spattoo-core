@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Panel, PanelBlock, ConfirmPanel, PANEL } from '../src/shared/Panel.jsx';
 import ColorGuide from '../src/chefsdesk/ColorGuide.jsx';
+import BuyCreditsPanel from '../src/billing/BuyCreditsPanel.jsx';
 
 // ── Panel shell harness ─────────────────────────────────────────────────────────────────────────
 // The twelve panels in this app each had their own overlay — five scrims, ten radii, z-indexes of
@@ -41,6 +42,7 @@ function Demo() {
             panels that actually use it. ColorGuide is the densest one in the app. */}
         <button style={btn(open === 'confirmPanel')} onClick={() => setOpen('confirmPanel')}>ConfirmPanel (real)</button>
         <button style={btn(open === 'colorGuide')}   onClick={() => setOpen('colorGuide')}>ColorGuide (real)</button>
+        <button style={btn(open === 'credits')}      onClick={() => setOpen('credits')}>Credits (real)</button>
         <button style={btn(isMobile)}           onClick={() => setIsMobile((m) => !m)}>
           {isMobile ? 'Mobile' : 'Desktop'}
         </button>
@@ -172,6 +174,30 @@ function Demo() {
       )}
 
       {open === 'colorGuide' && <ColorGuide onClose={() => setOpen(null)} />}
+
+      {/* The credits panel with a stubbed apiClient — enough to reach the loaded state. */}
+      {open === 'credits' && (
+        <BuyCreditsPanel
+          open
+          onClose={() => setOpen(null)}
+          apiClient={{
+            fetchAiCredits: async () => ({
+              spendable: 1105, allowance: 800, allowanceLeft: 555, walletBalance: 550,
+              resetsOn: '2026-09-01',
+              actions: [
+                { actionKey: 'xray_photo', label: 'X-Ray — read a cake photo', credits: 15 },
+                { actionKey: 'xray_decor', label: 'X-Ray — how to make a decoration', credits: 20 },
+              ],
+            }),
+            fetchAiCreditPacks: async () => ({ canBuy: true, ceiling: 2000, packs: [
+              { packKey: 'small',  credits: 150,  label: 'Small top-up',  basePaise: 14900, gstPaise: 2682 },
+              { packKey: 'medium', credits: 400,  label: 'Medium top-up', basePaise: 34900, gstPaise: 6282 },
+              { packKey: 'large',  credits: 1000, label: 'Large top-up',  basePaise: 79900, gstPaise: 14382 },
+            ] }),
+            fetchAiCreditHistory: async () => ({ items: [], nextBefore: null }),
+          }}
+        />
+      )}
     </div>
   );
 }

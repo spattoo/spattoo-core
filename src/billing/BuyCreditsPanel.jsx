@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { creditsChanged } from './creditsBus.js';
+import { Panel } from '../shared/Panel.jsx';
 
 // ── Buy credits ──────────────────────────────────────────────────────────────────────
 // A screen about ONE thing: how many credits you have and how to get more.
@@ -167,12 +168,11 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   const loading = !data;
 
   return (
-    <div style={s.backdrop} onClick={close}>
-      <div style={{ ...s.sheet, ...(loading ? { minHeight: 260 } : null) }} onClick={e => e.stopPropagation()}>
-        <div style={s.head}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#2C4433' }}>Credits</div>
-          <button type="button" onClick={close} style={s.close} aria-label="Close">×</button>
-        </div>
+    <Panel onClose={close} title="Credits" width={420} bodyPadding={18}>
+      {/* One wrapper because the panel body is the scroller, and the loading state needs a floor:
+          without it the panel opens as a small box and grows as the balance arrives, which reads as
+          two different windows. Sized to roughly what the loaded panel occupies. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, ...(loading ? { minHeight: 260 } : null) }}>
 
         {/* The number first and large. It is the question that brought them here — which is also
             why a placeholder beats a guess: a wrong balance shown for one second is read, and
@@ -436,7 +436,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
           are only used once the monthly ones are gone.
         </div>
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -481,21 +481,6 @@ const formatResetDate = (iso) => {
 };
 
 const s = {
-  backdrop: {
-    position: 'fixed', inset: 0, background: 'rgba(20,24,21,0.38)', zIndex: 3000,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-  },
-  sheet: {
-    width: 'min(420px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
-    background: '#fff', borderRadius: 16, padding: 18,
-    display: 'flex', flexDirection: 'column', gap: 14,
-    fontFamily: "'Quicksand', sans-serif", boxShadow: '0 18px 48px rgba(0,0,0,0.22)',
-  },
-  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  close: {
-    border: 'none', background: 'none', cursor: 'pointer', fontSize: 24, lineHeight: 1,
-    color: '#9BB5A2', padding: 0, width: 28, height: 28,
-  },
   balance: { display: 'flex', flexDirection: 'column', gap: 2 },
   // Sized to the real number's line box, so nothing shifts when it swaps in.
   numSkeleton: { width: 132, height: 41, borderRadius: 9, background: '#F1F5F2' },
