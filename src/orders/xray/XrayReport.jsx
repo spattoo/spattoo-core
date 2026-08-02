@@ -49,7 +49,24 @@ const s = {
 export default function XrayReport({ order, apiClient, onClose }) {
   // One resolution, shared with the launcher and the PDF (resolveXraySpec.js) — the sheet in the
   // kitchen and the screen in the office must be built from the same design.
-  const { design, fromPhoto, edited, stale, coverage, decorations: storedSteps } = resolveXraySpec(order);
+  const { design, fromPhoto, edited, stale, coverage, decorations: specSteps } = resolveXraySpec(order);
+
+  // Steps generated during THIS session, before the order has been refetched.
+  //
+  // `onGenerated` bumps guideRefresh, which re-reads ELEMENT guides — the right thing for a
+  // designed order and no help at all for a photo one, whose steps live on the order itself. So a
+  // baker generated a decoration, saw it appear, downloaded the sheet, and the sheet did not have
+  // it: the card was rendering from its own local state while the PDF read `order`, which was
+  // still the copy fetched before the click.
+  //
+  // Merging here rather than in the card is what makes that impossible — the screen, the printed
+  // sheet and the stage-image map all read one value. The comment on download() promises the two
+  // cannot disagree; this is what makes that true.
+  const [freshSteps, setFreshSteps] = useState({});
+  const storedSteps = useMemo(
+    () => (Object.keys(freshSteps).length ? { ...(specSteps ?? {}), ...freshSteps } : specSteps),
+    [specSteps, freshSteps],
+  );
 
   const [guides, setGuides] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -402,7 +419,10 @@ export default function XrayReport({ order, apiClient, onClose }) {
           photoUrl={order?.design_thumbnail_url}
           // Shared with the PDF, so the close-up and the printed size are the same on both.
           decorationMeta={decorationMeta}
-          onGenerated={() => setGuideRefresh(n => n + 1)} s={s}
+          onGenerated={(key, steps) => {
+            setGuideRefresh(n => n + 1);                       // element guides, for designed orders
+            if (key && steps) setFreshSteps(p => ({ ...p, [key]: steps }));
+          }} s={s}
         />
 
         {/* Annotated cake — now BOTH kinds of order, by two different routes to the same anchor.

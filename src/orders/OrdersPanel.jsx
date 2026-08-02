@@ -193,8 +193,14 @@ function PhotoXrayLauncher({ order, apiClient, variant }) {
     <>
       <IconAction
         glyph={<XrayGlyph />}
-        label={busy ? 'Reading photo…' : stale ? 'Photo changed — read again' : 'Build guide from photo'}
-        short={busy ? 'Reading…' : stale ? 'Re-read' : 'Build guide'}
+        // It is X-RAY, and calling it anything else here was a leftover from when this button
+        // produced something different. The feature has ONE name across the product, the credit
+        // price list and the terms; a second name on the one button that starts it teaches a baker
+        // that Spattoo has two things, and then that the other one is missing from the menu.
+        // What follows the name is what THIS order needs to get there — a photo has to be read
+        // first — but the destination is the same report either way.
+        label={busy ? 'Reading photo…' : stale ? 'Photo changed — X-Ray again' : 'X-Ray from photo'}
+        short={busy ? 'Reading…' : stale ? 'Re-read' : 'X-Ray'}
         onClick={generate}
         disabled={busy}
         variant={variant}

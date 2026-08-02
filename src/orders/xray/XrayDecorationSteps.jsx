@@ -155,7 +155,10 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
         // The sheet, if this run produced one. Held locally so a retry that succeeds shows the
         // picture at once rather than waiting for the parent's refetch.
         setFreshStages(res?.steps?.stages_url ?? null);
-        onGenerated?.();
+        // Hand the whole stored value up, not just a signal. A photo decoration's steps live on
+        // the ORDER, and nothing else here refetches it — so this is the only way the printed
+        // sheet learns about a decoration generated a moment ago.
+        onGenerated?.(row.elementId ? null : row.key, res?.steps ?? null);
         setOpen(true);
       }
     } catch (e) {
