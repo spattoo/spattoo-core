@@ -7,3 +7,14 @@ dist
 # npm pack output — the tarball belongs in spattoo-web/vendor/, never in this repo.
 # `git add -A` after a release sweeps it up otherwise (it did, in 0.1.161).
 *.tgz
+
+# Claude Code scratch. `worktrees/` holds real git worktrees checked out INSIDE the repo,
+# so an untracked directory appears the moment one exists — and `npm run release` refuses
+# to build from a dirty tree, which is how this was found. `settings.local.json` is per
+# machine by definition.
+#
+# Deliberately not the whole `.claude/` directory: a committed `.claude/settings.json` is
+# how project-wide hooks and permissions get shared, and blanket-ignoring the folder would
+# silently swallow it the day someone adds one.
+.claude/worktrees/
+.claude/settings.local.json
