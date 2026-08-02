@@ -325,12 +325,25 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                     {p.label} · never expires
                   </div>
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: primaryColor, fontVariantNumeric: 'tabular-nums' }}>
-                  {busyPack === p.packKey ? 'Opening…' : formatMoney(p.pricePaise / 100)}
+                {/* THE AMOUNT THAT WILL BE CHARGED, not the stored base. The server sends both;
+                    showing the base beside a footnote saying "excludes GST" is what this screen did
+                    until 2026-08-02, while Checkout then billed the base and no tax at all. The
+                    price a baker reads here must be the number on their statement. */}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: primaryColor, fontVariantNumeric: 'tabular-nums' }}>
+                    {busyPack === p.packKey ? 'Opening…' : formatMoney((p.totalPaise ?? p.pricePaise) / 100)}
+                  </div>
+                  {p.gstPaise > 0 && busyPack !== p.packKey && (
+                    <div style={{ fontSize: 10, color: '#B7C4BB', fontWeight: 600, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+                      {formatMoney(p.basePaise / 100)} + {formatMoney(p.gstPaise / 100)} GST
+                    </div>
+                  )}
                 </div>
               </button>
             ))}
-            <span style={{ fontSize: 10.5, color: '#B7C4BB', fontWeight: 600 }}>Prices exclude GST.</span>
+            <span style={{ fontSize: 10.5, color: '#B7C4BB', fontWeight: 600 }}>
+              Prices include 18% GST. A tax invoice is emailed to you.
+            </span>
           </div>
         )}
 
