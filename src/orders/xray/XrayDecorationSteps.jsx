@@ -218,9 +218,17 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
         <GuideBody
           guide={guide} row={row} photoUrl={photoUrl} s={s}
           stagesUrl={freshStages ?? row.stagesUrl}
-          // Offer a retry ONLY where a render was attempted and failed. Absent means "not
-          // generated", which the Generate button above already covers.
-          onRetryStages={row.stagesFailed && !freshStages && canGenerate ? generate : null}
+          // Offer the retry whenever a PHOTO decoration has words and no sheet.
+          //
+          // Not gated on `stages_failed`: that flag only started being written today, so every
+          // decoration that failed before it exists — which is precisely the set that needs the
+          // button — would never show one. The flag is a useful signal and a poor precondition.
+          //
+          // Sound without it, for a photo row: the steps and the sheet are generated in one
+          // request, so a guide that exists means a render was attempted. Words with no picture
+          // can only mean it failed. (Element rows are excluded — their retry goes through the
+          // catalogue route, which regenerates the whole guide and can charge.)
+          onRetryStages={!row.elementId && !freshStages && canGenerate ? generate : null}
           retrying={busy}
         />
       )}
