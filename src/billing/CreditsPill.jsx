@@ -22,6 +22,7 @@ import { onCreditsChanged } from './creditsBus.js';
 // two things to keep in step for no gain.
 export default function CreditsPill({ apiClient, onOpen }) {
   const [data, setData] = useState(null);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -53,6 +54,23 @@ export default function CreditsPill({ apiClient, onOpen }) {
              : pct >= 70  ? { fg: '#8A5200', bg: '#FFFBF2', br: '#EFE3CC' }
              :              { fg: '#4A5D51', bg: '#F4F8F5', br: '#E2EAE4' };
 
+  // ── The one-time note ────────────────────────────────────────────────────────────────────────
+  // The pill's colour is honest but easy to miss: it is a small chip someone is not looking at, and
+  // a baker who has learned to ignore a number in the corner will keep ignoring it as it turns
+  // amber. The email reaches people who read email; this reaches the rest, once, where they are
+  // already working.
+  //
+  // The SERVER decides whether there is anything to warn about (creditWarning), because that rule
+  // carries the 80% watermark and the "bought credits cover it" suppression. This file only decides
+  // how to say it and whether it has already been said.
+  //
+  // Keyed on resetsOn rather than a month the client computes: the reset instant already changes
+  // exactly once per allowance period, so it IS the period identifier — no date maths, and no way
+  // to drift from the IST boundary the ledger meters on.
+  const warning  = data.creditWarning;                       // 'low' | 'exhausted' | null
+  const noteKey  = warning ? `spattoo.creditNote.${warning}.${data.resetsOn ?? ''}` : null;
+  const showNote = !!warning && !dismissed && !readFlag(noteKey);
+
   const title = pct >= 100
     ? 'Smart tool credits — none left this month. Tap to top up.'
     : `Smart tool credits — ${left} left. Tap for details.`;
@@ -62,6 +80,34 @@ export default function CreditsPill({ apiClient, onOpen }) {
   // who has not been shown what they cost.
 
   return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+    {showNote && (
+      <div role="status" style={n.card}>
+        <div style={n.head}>
+          {warning === 'exhausted' ? 'Monthly credits used up' : 'Credits running low'}
+        </div>
+        <div style={n.body}>
+          {warning === 'exhausted'
+            ? <>You've used all {data.allowance} credits included with your plan this month.</>
+            : <>You have <b>{data.allowanceLeft} of {data.allowance}</b> monthly credits left.</>}
+          {/* The reset date, in both. It is what makes "wait" a real option rather than an
+              oversight, and a note that hid it to push a top-up would deserve to be dismissed. */}
+          {data.resetsOn && <> They refresh on <b>{formatReset(data.resetsOn)}</b>.</>}
+          {/* Bought credits change the situation entirely — nothing has actually stopped. */}
+          {data.walletBalance > 0 && <> You still have <b>{data.walletBalance} bought credits</b>, which don't expire.</>}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          {/* Offered only where the plan allows buying. A button that leads to "your plan can't"
+              is worse than no button. */}
+          {data.canBuy && (
+            <button type="button" onClick={() => { dismiss(); onOpen?.(); }} style={n.primary}>
+              Top up
+            </button>
+          )}
+          <button type="button" onClick={dismiss} style={n.ghost}>Got it</button>
+        </div>
+      </div>
+    )}
     <button
       type="button" onClick={onOpen} title={title} aria-label={title}
       style={{
@@ -76,8 +122,54 @@ export default function CreditsPill({ apiClient, onOpen }) {
       <SparkGlyph color={tone.fg} />
       {left}
     </button>
+    </div>
   );
+
+  // Dismissal is LOCAL, not a server flag. It is a nicety rather than a record, and reusing the
+  // server's per-month claim would mean the email — which claims first — suppressed this note
+  // entirely. Per-browser means a baker on a second device may see it once more; that is a better
+  // failure than never seeing it at all.
+  function dismiss() {
+    setDismissed(true);
+    writeFlag(noteKey);
+  }
 }
+
+// localStorage, wrapped: it throws in private browsing on some Safari versions, and a header chip
+// must never be the reason a page fails to render.
+function readFlag(key) {
+  if (!key) return true;
+  try { return window.localStorage.getItem(key) === '1'; } catch { return false; }
+}
+function writeFlag(key) {
+  if (!key) return;
+  try { window.localStorage.setItem(key, '1'); } catch { /* nothing worth breaking over */ }
+}
+
+const formatReset = (iso) => {
+  try { return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }); }
+  catch { return 'the 1st'; }
+};
+
+const n = {
+  card: {
+    position: 'absolute', top: 42, right: 0, zIndex: 20, width: 268,
+    background: '#fff', border: '1.5px solid #E8EFE9', borderRadius: 12, padding: '12px 13px',
+    boxShadow: '0 12px 32px rgba(20,24,21,0.16)', fontFamily: 'inherit', textAlign: 'left',
+    cursor: 'default',
+  },
+  head:  { fontSize: 13, fontWeight: 800, color: '#2C4433', marginBottom: 4 },
+  body:  { fontSize: 11.5, fontWeight: 600, color: '#7C8B82', lineHeight: 1.55 },
+  primary: {
+    flex: 1, padding: '7px 10px', borderRadius: 9, border: 'none', background: '#3D5A44',
+    color: '#fff', fontSize: 12, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer',
+  },
+  ghost: {
+    flex: 1, padding: '7px 10px', borderRadius: 9, border: '1.5px solid #E8EFE9',
+    background: '#fff', color: '#7C8B82', fontSize: 12, fontWeight: 800,
+    fontFamily: 'inherit', cursor: 'pointer',
+  },
+};
 
 // A spark, not a coin. These are not money — they are a monthly allowance most bakers never buy,
 // and a coin would say "you are spending" on every glance at the header.
