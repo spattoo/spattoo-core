@@ -35,7 +35,9 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   const [gained, setGained] = useState(0);
   const [lastPaymentId, setLastPaymentId] = useState(null);
   const [history, setHistory] = useState(null);   // null = not loaded yet, [] = nothing to show
-  const [allHistory, setAllHistory] = useState(false);
+  const [allHistory, setAllHistory] = useState(false);   // expanded past the first few rows
+  const [nextBefore, setNextBefore] = useState(null);    // cursor; null once the server says "that is all"
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     if (!open || !apiClient?.fetchAiCredits) return;
@@ -58,7 +60,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
     if (!open || !apiClient?.fetchAiCreditHistory) return;
     let alive = true;
     apiClient.fetchAiCreditHistory()
-      .then(r => { if (alive) setHistory(r?.items ?? []); })
+      .then(r => { if (!alive) return; setHistory(r?.items ?? []); setNextBefore(r?.nextBefore ?? null); })
       .catch(() => { if (alive) setHistory([]); });   // a missing ledger hides the section, never errors
     return () => { alive = false; };
   }, [open, apiClient, tick]);
@@ -128,10 +130,26 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
     setPhase('slow');
   }
 
+  // Fetch the next page and append. Keyset, so this cannot double-count a row when a credit is
+  // spent mid-scroll the way an offset page would.
+  async function loadMore() {
+    if (loadingMore || !nextBefore) return;
+    setLoadingMore(true);
+    try {
+      const r = await apiClient.fetchAiCreditHistory(nextBefore);
+      setHistory(h => [...(h ?? []), ...(r?.items ?? [])]);
+      // Trust the server's answer about whether there is more, including when it says no.
+      setNextBefore(r?.nextBefore ?? null);
+    } catch {
+      setNextBefore(null);           // stop offering something that is not working
+    } finally { setLoadingMore(false); }
+  }
+
   // Reopening is a fresh visit: the last purchase's confirmation must not be the first thing a
   // baker sees three days later.
   function close() {
     setPhase(null); setGained(0); setLastPaymentId(null);
+    setAllHistory(false); setNextBefore(null);   // the ledger collapses again, like every other section
     setTick(t => t + 1);          // so the next open re-reads rather than showing a stale balance
     onClose?.();
   }
@@ -348,13 +366,31 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                 </div>
               </div>
             ))}
-            {history.length > 6 && !allHistory && (
-              <button type="button" onClick={() => setAllHistory(true)}
-                style={{ background: 'none', border: 'none', padding: '6px 0 0', cursor: 'pointer',
-                         fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: '#7C8B82',
-                         textAlign: 'left' }}>
-                Show {history.length - 6} more
+            {/* ── Seeing all of it ─────────────────────────────────────────────────────
+                Two steps behind one control, because they are the same intent — "show me more"
+                — and a baker should not have to learn that the first few rows and the older
+                pages are fetched differently.
+                  collapsed          → reveal the rest of what is already loaded
+                  expanded + cursor  → go and fetch the next page
+                  expanded, no cursor→ nothing left; the button is gone rather than dead. */}
+            {(!allHistory ? history.length > 6 : !!nextBefore) && (
+              <button
+                type="button"
+                onClick={() => (allHistory ? loadMore() : setAllHistory(true))}
+                disabled={loadingMore}
+                style={{ background: 'none', border: 'none', padding: '8px 0 0',
+                         cursor: loadingMore ? 'default' : 'pointer',
+                         fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700,
+                         color: loadingMore ? '#B7C4BB' : '#7C8B82', textAlign: 'left' }}>
+                {loadingMore ? 'Loading…' : allHistory ? 'Load older' : `Show ${history.length - 6} more`}
               </button>
+            )}
+            {/* Said once, at the bottom, so someone who scrolled to the end knows they reached it
+                rather than wondering whether the list gave up. */}
+            {allHistory && !nextBefore && !loadingMore && history.length > 6 && (
+              <div style={{ fontSize: 10.5, color: '#C3CBC6', fontWeight: 600, padding: '8px 0 0' }}>
+                That's your full history.
+              </div>
             )}
           </div>
         )}
