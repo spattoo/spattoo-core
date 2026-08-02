@@ -11,6 +11,7 @@ import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
+import { Panel } from '../shared/Panel.jsx';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
 const MAX_FINISHED_PHOTOS = 3;
@@ -464,15 +465,30 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
   if (!atMax) slots.push(null);   // trailing "add" tile
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20,18,16,0.55)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-    }} onClick={busy ? undefined : onCancel}>
-      <div onClick={e => e.stopPropagation()} style={{
-        width: '100%', maxWidth: 440, background: '#fff', borderRadius: 18, padding: 22,
-        boxShadow: '0 18px 50px rgba(0,0,0,0.3)', fontFamily: 'inherit',
-      }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: '#1a1a1a' }}>Mark as ready</h3>
+    <Panel
+      onClose={busy ? undefined : onCancel}
+      title="Mark as ready"
+      width={440}
+      flow="block"
+      footer={
+        <>
+          <button onClick={onCancel} disabled={busy} style={{
+            flex: '0 0 auto', padding: '12px 18px', borderRadius: 11, border: '1.5px solid #E0DDD8',
+            background: '#fff', color: '#555', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>Cancel</button>
+          <button
+            onClick={() => onConfirm(photos.filter(p => p.key).map(p => p.key))}
+            disabled={busy || uploading}
+            style={{
+              flex: 1, padding: '12px', borderRadius: 11, border: 'none',
+              background: (busy || uploading) ? '#9BB5A2' : primaryColor, color: '#fff',
+              fontSize: 14, fontWeight: 800, cursor: (busy || uploading) ? 'default' : 'pointer', fontFamily: 'inherit',
+            }}>
+            {busy ? 'Marking ready…' : uploading ? 'Uploading…' : 'Mark as ready'}
+          </button>
+        </>
+      }
+    >
         <p style={{ margin: '0 0 16px', fontSize: 13.5, color: '#777', lineHeight: 1.5 }}>
           Add a few photos of the finished cake — your customer will see them in their "order ready" email.
           <b> Optional</b>; you can mark ready without any.
@@ -514,25 +530,7 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
 
         {pickError && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{pickError}</p>}
         {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
-
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onCancel} disabled={busy} style={{
-            flex: '0 0 auto', padding: '12px 18px', borderRadius: 11, border: '1.5px solid #E0DDD8',
-            background: '#fff', color: '#555', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
-          }}>Cancel</button>
-          <button
-            onClick={() => onConfirm(photos.filter(p => p.key).map(p => p.key))}
-            disabled={busy || uploading}
-            style={{
-              flex: 1, padding: '12px', borderRadius: 11, border: 'none',
-              background: (busy || uploading) ? '#9BB5A2' : primaryColor, color: '#fff',
-              fontSize: 14, fontWeight: 800, cursor: (busy || uploading) ? 'default' : 'pointer', fontFamily: 'inherit',
-            }}>
-            {busy ? 'Marking ready…' : uploading ? 'Uploading…' : 'Mark as ready'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Panel>
   );
 }
 

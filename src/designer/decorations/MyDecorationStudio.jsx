@@ -3,6 +3,7 @@ import PreviewTile from '../shared/PreviewTile.jsx';
 import TopperPreview from '../canvas/TopperPreview.jsx';
 import { useImageRegions } from '../shared/color/useImageRegions.js';
 import RightsAttestation from '../../legal/RightsAttestation.jsx';
+import { Panel } from '../../shared/Panel.jsx';
 import { PUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
 import { ZONE_LABELS, ZONES, DEFAULT_DECOR_R } from '../constants.js';
 
@@ -164,15 +165,37 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
   }
 
   return (
-    <div style={S.scrim} onPointerDown={onClose}>
-      <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
-        <div style={S.head}>
-          <div style={S.title}>{PUBLISH_LABEL}</div>
-          <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
-        </div>
+    <Panel
+      onClose={onClose}
+      title={PUBLISH_LABEL}
+      width={420}
+      bodyPadding={16}
+      flow="block"
+      footer={
+        <div style={S.foot}>
+          {/* The rights tick — the LAST thing above the button, because it is what the button means.
+              Same component, same wording and same unticked-by-default rule as the storefront publish. */}
+          <RightsAttestation
+            apiClient={apiClient}
+            checked={attested}
+            onChange={setAttested}
+            disabled={!!busy}
+          />
 
-        <div style={S.body}>
-          {/* The SAME sentences the Edit screen showed him before he got here (decorationCopy.js).
+          {/* A kind and at least one zone: without them the element has no behaviour, and the API would
+              refuse it anyway. And the tick: the server refuses an unattested promotion. */}
+          {(() => {
+            const blocked = !artUrl || !!busy || !kind || !zones.length || !attested;
+            return (
+              <button style={S.save(blocked)} onClick={save} disabled={blocked}>
+                {busy ?? PUBLISH_LABEL}
+              </button>
+            );
+          })()}
+        </div>
+      }
+    >
+      {/* The SAME sentences the Edit screen showed him before he got here (decorationCopy.js).
               The button he pressed and the screen it opened must agree about what he is doing. */}
           <div style={S.hint}>
             {PUBLISH_NOTE.map(line => <div key={line} style={{ marginBottom: 4 }}>{line}</div>)}
@@ -280,42 +303,14 @@ export default function MyDecorationStudio({ apiClient, tiers, elementTypes = []
           )}
 
           {error && <div style={S.err}>{error}</div>}
-        </div>
-
-        <div style={S.foot}>
-          {/* The rights tick — the LAST thing above the button, because it is what the button means.
-              Same component, same wording and same unticked-by-default rule as the storefront publish. */}
-          <RightsAttestation
-            apiClient={apiClient}
-            checked={attested}
-            onChange={setAttested}
-            disabled={!!busy}
-          />
-
-          {/* A kind and at least one zone: without them the element has no behaviour, and the API would
-              refuse it anyway. And the tick: the server refuses an unattested promotion. */}
-          {(() => {
-            const blocked = !artUrl || !!busy || !kind || !zones.length || !attested;
-            return (
-              <button style={S.save(blocked)} onClick={save} disabled={blocked}>
-                {busy ?? PUBLISH_LABEL}
-              </button>
-            );
-          })()}
-        </div>
-      </div>
-    </div>
+    </Panel>
   );
 }
 
 const S = {
-  scrim: { position: 'fixed', inset: 0, background: 'rgba(20,20,24,0.45)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  sheet: { width: '100%', maxWidth: 420, maxHeight: '92vh', background: '#fff', borderRadius: 18, display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Quicksand',sans-serif" },
-  head:  { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #eee' },
-  title: { fontSize: 15, fontWeight: 800, color: '#1a1a1a' },
-  x:     { border: 'none', background: 'none', fontSize: 16, color: '#888', cursor: 'pointer' },
-  body:  { padding: 16, overflowY: 'auto', flex: 1 },
-  foot:  { padding: 12, borderTop: '1px solid #eee' },
+  // The footer stacks rather than sitting in a row: the attestation is a sentence the button acts on,
+  // so it reads above it, not beside it.
+  foot:  { display: 'flex', flexDirection: 'column', gap: 10, width: '100%' },
 
   drop:  { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 170, borderRadius: 12, border: '2px dashed #d5d3da', background: '#faf9fb', cursor: 'pointer', overflow: 'hidden' },
   dropHint: { fontSize: 12.5, fontWeight: 700, color: '#8a7a80', textAlign: 'center', padding: '0 20px' },

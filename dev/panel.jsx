@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Panel, PanelBlock, PANEL } from '../src/shared/Panel.jsx';
+import { Panel, PanelBlock, ConfirmPanel, PANEL } from '../src/shared/Panel.jsx';
+import ColorGuide from '../src/chefsdesk/ColorGuide.jsx';
 
 // ── Panel shell harness ─────────────────────────────────────────────────────────────────────────
 // The twelve panels in this app each had their own overlay — five scrims, ten radii, z-indexes of
@@ -36,6 +37,10 @@ function Demo() {
         <button style={btn(open === 'form')}    onClick={() => setOpen('form')}>With header + subhead + footer</button>
         <button style={btn(open === 'confirm')} onClick={() => setOpen('confirm')}>Confirmation (no header)</button>
         <button style={btn(open === 'plain')}   onClick={() => setOpen('plain')}>Header only</button>
+        {/* The REAL converted components, not mock-ups of them — the shell is only proven by the
+            panels that actually use it. ColorGuide is the densest one in the app. */}
+        <button style={btn(open === 'confirmPanel')} onClick={() => setOpen('confirmPanel')}>ConfirmPanel (real)</button>
+        <button style={btn(open === 'colorGuide')}   onClick={() => setOpen('colorGuide')}>ColorGuide (real)</button>
         <button style={btn(isMobile)}           onClick={() => setIsMobile((m) => !m)}>
           {isMobile ? 'Mobile' : 'Desktop'}
         </button>
@@ -153,6 +158,20 @@ function Demo() {
           </p>
         </Panel>
       )}
+      {open === 'confirmPanel' && (
+        <ConfirmPanel
+          isMobile={isMobile}
+          title="Cancel your subscription?"
+          message="You'll keep your plan until the end of the current period. After that your storefront goes offline and your templates stay saved."
+          confirmLabel="Cancel subscription"
+          cancelLabel="Keep subscription"
+          danger
+          onConfirm={() => setOpen(null)}
+          onCancel={() => setOpen(null)}
+        />
+      )}
+
+      {open === 'colorGuide' && <ColorGuide onClose={() => setOpen(null)} />}
     </div>
   );
 }

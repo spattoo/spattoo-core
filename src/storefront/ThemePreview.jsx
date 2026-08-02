@@ -5,6 +5,7 @@ import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
 import { TEMPLATES } from './templates.js';
 import RightsAttestation from '../legal/RightsAttestation.jsx';
+import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
 
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
@@ -593,31 +594,27 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       {/* ONE design picker, reused by the gallery (multi-add) and the hero (single pick) controls —
           the opener sets the mode, which chooses the action + copy. No second picker. */}
       {designPicker && (
-        <div style={s.pickerOverlay} onClick={() => setDesignPicker(null)}>
-          <div style={s.pickerPanel} onClick={e => e.stopPropagation()}>
-            <div style={s.pickerHead}>
-              <span style={s.pickerTitle}>Your templates</span>
-              <button type="button" aria-label="Close" style={s.pickerClose} onClick={() => setDesignPicker(null)}>×</button>
-            </div>
-            <p style={s.pickerHint}>
-              {designPicker === 'hero'
-                ? 'Tap a template to show it as your hero cake.'
-                : 'Tap a template to add its picture to your gallery. You can add more than one.'}
-            </p>
-            <div style={s.pickerGrid}>
-              {designs.map(d => {
-                const thumb = d.thumbnail_url || d.thumbnail || d.url;
-                return (
-                  <button key={d.id} type="button" style={s.pickerCard} title={d.name || 'design'}
-                    onClick={() => (designPicker === 'hero' ? setHeroFromDesign(d) : addFromDesign(d))}>
-                    <div style={s.pickerThumb}><img src={thumb} alt={d.name || 'Cake design'} style={s.pickerImg} loading="lazy" /></div>
-                    <span style={s.pickerName}>{d.name || 'Cake design'}</span>
-                  </button>
-                );
-              })}
-            </div>
+        <Panel
+          onClose={() => setDesignPicker(null)}
+          title="Your templates"
+          subtitle={designPicker === 'hero'
+            ? 'Tap a template to show it as your hero cake.'
+            : 'Tap a template to add its picture to your gallery. You can add more than one.'}
+          width={560}
+        >
+          <div style={s.pickerGrid}>
+            {designs.map(d => {
+              const thumb = d.thumbnail_url || d.thumbnail || d.url;
+              return (
+                <button key={d.id} type="button" style={s.pickerCard} title={d.name || 'design'}
+                  onClick={() => (designPicker === 'hero' ? setHeroFromDesign(d) : addFromDesign(d))}>
+                  <div style={s.pickerThumb}><img src={thumb} alt={d.name || 'Cake design'} style={s.pickerImg} loading="lazy" /></div>
+                  <span style={s.pickerName}>{d.name || 'Cake design'}</span>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </Panel>
       )}
 
       {/* ── Publish confirmation — the ONE content-rights gate ──────────────────────────────────
@@ -628,35 +625,28 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           reflex, not evidence. Re-publishing (the "Update" button) re-affirms, which is right —
           the storefront now contains cakes that weren't there last time. */}
       {publishConfirm && (
-        <div style={s.confirmOverlay} onClick={() => !publishing && setPublishConfirm(false)}>
-          <div style={s.confirmCard} onClick={e => e.stopPropagation()}>
-            <div style={s.confirmTitle}>{published ? 'Update your storefront' : 'Publish your storefront'}</div>
-            <p style={s.confirmBody}>
-              {published
-                ? 'Your changes will go live on your public storefront.'
-                : 'Your storefront will go live and anyone with the link can see it.'}
-            </p>
-            <RightsAttestation
-              apiClient={apiClient}
-              checked={publishRights}
-              onChange={setPublishRights}
-              primaryColor={primary}
-              disabled={publishing}
-            />
-            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-              <button type="button" style={s.confirmCancel} disabled={publishing}
-                onClick={() => setPublishConfirm(false)}>
-                Cancel
-              </button>
-              <button type="button"
-                style={{ ...s.publish, flex: 1, background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})`, opacity: (!publishRights || publishing) ? 0.5 : 1, cursor: (!publishRights || publishing) ? 'not-allowed' : 'pointer' }}
-                disabled={!publishRights || publishing}
-                onClick={publish}>
-                {publishing ? 'Publishing…' : published ? 'Update' : 'Publish'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmPanel
+          title={published ? 'Update your storefront' : 'Publish your storefront'}
+          message={published
+            ? 'Your changes will go live on your public storefront.'
+            : 'Your storefront will go live and anyone with the link can see it.'}
+          confirmLabel={publishing ? 'Publishing…' : published ? 'Update' : 'Publish'}
+          onConfirm={publish}
+          onCancel={() => setPublishConfirm(false)}
+          busy={publishing}
+          confirmDisabled={!publishRights}
+          /* The one button in the app that wears the BAKER's colours rather than the app's, because
+             it is the act of putting the baker's own storefront in front of the world. */
+          confirmStyle={{ background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})` }}
+        >
+          <RightsAttestation
+            apiClient={apiClient}
+            checked={publishRights}
+            onChange={setPublishRights}
+            primaryColor={primary}
+            disabled={publishing}
+          />
+        </ConfirmPanel>
       )}
     </div>
   );
@@ -830,11 +820,6 @@ const s = {
   galleryUploading: { position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.55)', backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' },
   galleryCaption: { flex: 1, minWidth: 0, padding: '7px 9px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12, fontFamily: FONT, color: '#2C4433', outline: 'none' },
   galleryRemove: { flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: '1px solid #E3D3D3', background: '#fff', color: '#C0392B', fontSize: 16, lineHeight: 1, cursor: 'pointer' },
-  confirmOverlay: { position: 'fixed', inset: 0, background: 'rgba(20,28,22,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 },
-  confirmCard: { background: '#fff', borderRadius: 18, padding: '22px 22px 18px', width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', fontFamily: FONT },
-  confirmTitle: { fontSize: 17, fontWeight: 800, color: '#2C4433' },
-  confirmBody: { fontSize: 13, lineHeight: 1.5, color: '#6B7A6F', margin: '8px 0 4px' },
-  confirmCancel: { padding: '11px 18px', borderRadius: 12, border: '1.5px solid #D9DED9', background: '#fff', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT, flexShrink: 0 },
   addPhotos: { display: 'block', width: '100%', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
   // "Choose from your designs" — the authoritative (solid) action; upload is the dashed secondary one.
   pickDesigns: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', marginTop: 10, padding: '10px', borderRadius: 10, border: 'none', background: '#2C4433', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
@@ -845,12 +830,6 @@ const s = {
   heroCtrlBtns: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
   heroCtrlClear: { width: '100%', marginTop: 8, padding: '9px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', color: '#6B8C74', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT },
   // Design picker modal.
-  pickerOverlay: { position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(20,14,16,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  pickerPanel: { width: 'min(560px, 100%)', maxHeight: '84vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 16, boxShadow: '0 24px 70px rgba(20,14,16,0.4)', overflow: 'hidden' },
-  pickerHead: { flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #E3E8E4' },
-  pickerTitle: { fontSize: 15, fontWeight: 800, color: '#2C4433' },
-  pickerClose: { width: 32, height: 32, borderRadius: 9, border: 'none', background: '#F0F4F1', color: '#6B8C74', fontSize: 22, lineHeight: 1, cursor: 'pointer' },
-  pickerHint: { flexShrink: 0, margin: 0, padding: '10px 16px 0', fontSize: 12.5, fontWeight: 500, color: '#6B8C74', lineHeight: 1.5 },
   pickerGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12, padding: 16, overflowY: 'auto' },
   pickerCard: { display: 'flex', flexDirection: 'column', gap: 6, padding: 0, border: '1px solid #E3E8E4', borderRadius: 12, overflow: 'hidden', background: '#fff', cursor: 'pointer', textAlign: 'left', fontFamily: FONT },
   pickerThumb: { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(160deg, #F3F7F4, #E8EFE9)' },

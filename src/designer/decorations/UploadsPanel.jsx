@@ -3,6 +3,7 @@ import { ACCEPT_IMAGE, validateImageFile, compressImage, imageExt } from '../../
 import { useUploadLimits } from '../../shared/useUploadLimits.js';
 import { PUBLISH_LABEL, UNPUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
 import { DEFAULT_DECOR_R } from '../constants.js';
+import { Panel } from '../../shared/Panel.jsx';
 
 // An upload is a picture whose USE is not yet decided — it may be placed as a decoration, or chosen as
 // a photo-cake frame photo, which the customer can pinch-zoom into on the cake. So the ceiling sits
@@ -210,15 +211,45 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     const mine = canPromote && u.uploadedBy === 'baker';
     const working = busy === u.id;
     return (
-      <div style={S.scrim} onPointerDown={onClose}>
-        <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
-          <div style={S.head}>
-            <button style={S.back} onClick={() => setEditing(null)} aria-label="Back to uploads">←</button>
-            <div style={S.title}>{u.name || 'Untitled'}</div>
-            <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
+      <Panel
+        onClose={onClose}
+        onBack={() => setEditing(null)}
+        backLabel="Back to uploads"
+        title={u.name || 'Untitled'}
+        width={460}
+        bodyPadding={16}
+        flow="block"
+        footer={mine ? (
+          /* The ONE place an image is offered to, or withdrawn from, the baker's customers. A customer
+             never sees it: a customer's image is not hers to release to other customers (the API
+             refuses it — ToS 6.2), and hiding it is the courtesy; the server is the boundary. */
+          <div style={S.foot}>
+            {u.promoted ? (
+              <>
+                <button style={S.secondary} disabled={working} onClick={() => unlink(u)}>
+                  {working && busyWhat === 'unlink' ? 'Unpublishing…' : UNPUBLISH_LABEL}
+                </button>
+                <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
+                  It leaves your customers&rsquo; Decorations. Cakes already designed with it keep it.
+                </div>
+              </>
+            ) : (
+              <>
+                {/* WHAT THIS MEANS, before he decides — not on the next screen, after he already has.
+                    Publishing is the one act here whose consequences land on other people, and a baker
+                    should not have to discover them by doing it. */}
+                <div style={S.pubLabel}>What this means</div>
+                <ul style={S.pubNote}>
+                  {PUBLISH_NOTE.map(line => <li key={line} style={S.pubNoteItem}>{line}</li>)}
+                </ul>
+                <button style={S.primary} disabled={working} onClick={() => { setEditing(null); onPromote?.(u); }}>
+                  {PUBLISH_LABEL}
+                </button>
+              </>
+            )}
           </div>
-
-          <div style={S.body}>
+        ) : null}
+      >
             <div style={S.editArt}>
               <img src={u.url} alt={u.name || ''} style={S.editImg} />
             </div>
@@ -248,71 +279,37 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
             )}
 
             {error && <div style={S.err}>{error}</div>}
-          </div>
-
-          {/* The ONE place an image is offered to, or withdrawn from, the baker's customers. A customer
-              never sees it: a customer's image is not hers to release to other customers (the API
-              refuses it — ToS 6.2), and hiding it is the courtesy; the server is the boundary. */}
-          {mine && (
-            <div style={S.foot}>
-              {u.promoted ? (
-                <>
-                  <button style={S.secondary} disabled={working} onClick={() => unlink(u)}>
-                    {working && busyWhat === 'unlink' ? 'Unpublishing…' : UNPUBLISH_LABEL}
-                  </button>
-                  <div style={{ ...S.hint, textAlign: 'center', marginTop: 6 }}>
-                    It leaves your customers&rsquo; Decorations. Cakes already designed with it keep it.
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* WHAT THIS MEANS, before he decides — not on the next screen, after he already has.
-                      Publishing is the one act here whose consequences land on other people, and a baker
-                      should not have to discover them by doing it. */}
-                  <div style={S.pubLabel}>What this means</div>
-                  <ul style={S.pubNote}>
-                    {PUBLISH_NOTE.map(line => <li key={line} style={S.pubNoteItem}>{line}</li>)}
-                  </ul>
-                  <button style={S.primary} disabled={working} onClick={() => { setEditing(null); onPromote?.(u); }}>
-                    {PUBLISH_LABEL}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      </Panel>
     );
   }
 
   return (
-    <div style={S.scrim} onPointerDown={onClose}>
-      <div style={S.sheet} onPointerDown={e => e.stopPropagation()}>
-        <div style={S.head}>
-          <div style={S.title}>{selectMode ? 'Choose an image' : 'Uploads'}</div>
-          <button style={S.x} onClick={onClose} aria-label="Close">✕</button>
-        </div>
-
-        {/* Deleting is confirmed HERE, in the panel — and it says what it costs. Withdrawing an image
-            you have promoted takes it out of every customer's picker, which is not obvious from the
-            word "delete". */}
-        {confirming && (
-          <div style={S.confirm}>
-            <div style={S.confirmText}>
-              {confirming.promoted
-                ? <>Delete <b>{confirming.name || 'this image'}</b>? It will also leave your decorations, so your customers can no longer use it.</>
-                : <>Delete <b>{confirming.name || 'this image'}</b>?</>}
-            </div>
-            <div style={S.confirmRow}>
-              <button style={S.confirmCancel} disabled={busy === confirming.id}
-                onClick={() => setConfirming(null)}>Keep it</button>
-              <button style={S.confirmDelete} disabled={busy === confirming.id}
-                onClick={() => remove(confirming)}>{busy === confirming.id ? 'Deleting…' : 'Delete'}</button>
-            </div>
+    <Panel
+      onClose={onClose}
+      title={selectMode ? 'Choose an image' : 'Uploads'}
+      width={460}
+      bodyPadding={16}
+      flow="block"
+      /* Deleting is confirmed HERE, in the panel — and it says what it costs. Withdrawing an image
+         you have promoted takes it out of every customer's picker, which is not obvious from the
+         word "delete". It is pinned under the header rather than scrolling with the grid: a question
+         that scrolls out of sight while its own Delete button waits is not a confirmation. */
+      subhead={confirming ? (
+        <div style={S.confirm}>
+          <div style={S.confirmText}>
+            {confirming.promoted
+              ? <>Delete <b>{confirming.name || 'this image'}</b>? It will also leave your decorations, so your customers can no longer use it.</>
+              : <>Delete <b>{confirming.name || 'this image'}</b>?</>}
           </div>
-        )}
-
-        <div style={S.body}>
+          <div style={S.confirmRow}>
+            <button style={S.confirmCancel} disabled={busy === confirming.id}
+              onClick={() => setConfirming(null)}>Keep it</button>
+            <button style={S.confirmDelete} disabled={busy === confirming.id}
+              onClick={() => remove(confirming)}>{busy === confirming.id ? 'Deleting…' : 'Delete'}</button>
+          </div>
+        </div>
+      ) : null}
+    >
           {/* "A new one" is an ANSWER to "which image?", not a rival button elsewhere. Uploading here
               keeps the frame's photo on the same registered path as everything else. */}
           <label style={{ ...S.uploadBtn, ...(uploading ? { opacity: 0.6, cursor: 'default' } : null) }}>
@@ -392,20 +389,11 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
           )}
 
           {error && <div style={S.err}>{error}</div>}
-        </div>
-      </div>
-    </div>
+    </Panel>
   );
 }
 
 const S = {
-  scrim: { position: 'fixed', inset: 0, background: 'rgba(20,20,24,0.45)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  sheet: { width: '100%', maxWidth: 460, maxHeight: '92vh', background: '#fff', borderRadius: 18, display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Quicksand',sans-serif" },
-  head:  { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #eee', flexShrink: 0 },
-  title: { fontSize: 15, fontWeight: 800, color: '#1a1a1a' },
-  x:     { border: 'none', background: 'none', fontSize: 16, color: '#888', cursor: 'pointer' },
-  body:  { padding: 16, overflowY: 'auto', flex: 1 },
-
   uploadBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '11px 0', marginBottom: 14, borderRadius: 10, border: '1.5px dashed #cfcdd6', background: '#faf9fb', color: '#444', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' },
   grid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 },
   card:  { display: 'flex', flexDirection: 'column', gap: 6 },
@@ -425,11 +413,10 @@ const S = {
   name:  { fontSize: 11.5, fontWeight: 700, color: '#1a1a1a', textAlign: 'center', lineHeight: 1.3 },
   badge: { alignSelf: 'center', padding: '2px 8px', borderRadius: 20, background: '#EEF6EE', color: '#2E7D32', fontSize: 9.5, fontWeight: 800 },
 
-  back:  { border: 'none', background: 'none', fontSize: 17, color: '#888', cursor: 'pointer', padding: 0, marginRight: 8, fontFamily: 'inherit' },
-  // flexShrink 0: the sheet is a flex COLUMN, so a tall footer will otherwise be compressed by the
-  // body above it — and the compression lands on the note, which ends up half-hidden behind the very
-  // button it is explaining.
-  foot:  { padding: 14, borderTop: '1px solid #eee', flexShrink: 0 },
+  // Stacks: the consequences are a sentence the button acts on, not a sibling of it. The padding, the
+  // rule above it and the flexShrink that stops a tall footer being compressed by the body now come
+  // from the panel shell, which is where every footer in the app gets them.
+  foot:  { display: 'flex', flexDirection: 'column', width: '100%' },
   editArt: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, borderRadius: 12, background: '#faf9fb', border: '1.5px solid #eeecf1', marginBottom: 14, overflow: 'hidden' },
   editImg: { maxWidth: '100%', maxHeight: 260, objectFit: 'contain' },
   editAct: { width: '100%', padding: '12px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' },

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import PlanCards from '../billing/PlanCards.jsx';
 import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
 import { creditsChanged } from '../billing/creditsBus.js';
+import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
 
 // GSTIN format (client-side, immediate feedback). The server does the authoritative checksum validation;
 // here we only gate the obviously-malformed so the button can enable/disable as the baker types.
@@ -76,49 +77,12 @@ function StatusBadge({ status }) {
 }
 
 
-function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Keep subscription', onConfirm, onCancel, danger = false }) {
+// Billing's confirmations are the shared one, with billing's default for the cancel word: here
+// "cancel" is ambiguous — it could mean cancelling the subscription, which is the very thing being
+// asked about.
+function ConfirmDialog({ open, cancelLabel = 'Keep subscription', ...rest }) {
   if (!open) return null;
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 400,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)',
-      fontFamily: "'Quicksand', sans-serif",
-    }}>
-      <div style={{
-        background: '#fff', borderRadius: 20, padding: '28px 28px 24px',
-        width: 340, maxWidth: 'calc(100vw - 40px)',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-        display: 'flex', flexDirection: 'column', gap: 16,
-      }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{title}</div>
-        <div style={{ fontSize: 13, fontWeight: 500, color: '#6B7280', lineHeight: 1.6 }}>{message}</div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: '9px 20px', borderRadius: 10, border: '1.5px solid #E5E7EB',
-              background: '#fff', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#6B7280',
-            }}
-          >
-            {cancelLabel}
-          </button>
-          <button
-            onClick={onConfirm}
-            style={{
-              padding: '9px 20px', borderRadius: 10, border: 'none',
-              background: danger ? '#DC2626' : '#1a1a1a', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#fff',
-              boxShadow: danger ? '0 4px 12px rgba(220,38,38,0.3)' : 'none',
-            }}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return <ConfirmPanel cancelLabel={cancelLabel} {...rest} />;
 }
 
 // ── Checkout review — base + GST breakup + GSTIN capture, shown before Razorpay Checkout ──────────
@@ -138,12 +102,29 @@ function CheckoutReview({ open, planLabel, periodLabel, breakup, timingNote, cur
     </div>
   );
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)', fontFamily: "'Quicksand', sans-serif" }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: '26px 26px 22px', width: 380,
-        maxWidth: 'calc(100vw - 40px)', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>Review &amp; pay</div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#2C4433' }}>{planLabel} · {periodLabel}</div>
+    <Panel
+      onClose={saving ? undefined : onCancel}
+      title="Review & pay"
+      subtitle={`${planLabel} · ${periodLabel}`}
+      width={380}
+      footer={
+        <>
+          <button onClick={onCancel} disabled={saving} style={{ padding: '9px 20px', borderRadius: 10, border: '1.5px solid #E5E7EB',
+            background: '#fff', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#6B7280' }}>
+            Cancel
+          </button>
+          <button
+            onClick={() => onContinue(normalized === '' ? null : normalized)}
+            disabled={saving || formatBad}
+            style={{ flex: 1, padding: '9px 22px', borderRadius: 10, border: 'none',
+              background: (saving || formatBad) ? '#E2E8E4' : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+              cursor: (saving || formatBad) ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+              color: (saving || formatBad) ? '#9BB5A2' : '#fff' }}>
+            {saving ? 'Saving…' : 'Continue to payment'}
+          </button>
+        </>
+      }
+    >
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9, background: '#F8FAF9', borderRadius: 12, padding: '14px 16px' }}>
           {row('Base', formatPlanPrice(breakup.base, { currency }))}
@@ -168,23 +149,7 @@ function CheckoutReview({ open, planLabel, periodLabel, breakup, timingNote, cur
           {error && <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>{error}</div>}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 2 }}>
-          <button onClick={onCancel} disabled={saving} style={{ padding: '9px 20px', borderRadius: 10, border: '1.5px solid #E5E7EB',
-            background: '#fff', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#6B7280' }}>
-            Cancel
-          </button>
-          <button
-            onClick={() => onContinue(normalized === '' ? null : normalized)}
-            disabled={saving || formatBad}
-            style={{ padding: '9px 22px', borderRadius: 10, border: 'none',
-              background: (saving || formatBad) ? '#E2E8E4' : `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
-              cursor: (saving || formatBad) ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
-              color: (saving || formatBad) ? '#9BB5A2' : '#fff' }}>
-            {saving ? 'Saving…' : 'Continue to payment'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Panel>
   );
 }
 

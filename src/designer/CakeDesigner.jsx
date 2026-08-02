@@ -15,6 +15,7 @@ import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, sca
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
+import { Panel } from '../shared/Panel.jsx';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -1133,12 +1134,7 @@ function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
   const canSubmit = isPasswordValid(form.newPassword) && form.newPassword === form.confirmPassword && !loading;
 
   return (
-    <div style={s.modalOverlay} onClick={onClose}>
-      <div style={s.modal} onClick={e => e.stopPropagation()}>
-        <div style={s.modalHeader}>
-          <span style={s.modalTitle}>Change Password</span>
-          <button style={s.iconBtn} onClick={onClose}>✕</button>
-        </div>
+    <Panel onClose={onClose} title="Change Password" width={380}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={s.fieldLabel}>New password</span>
           <input style={s.modalInput} type="password" value={form.newPassword}
@@ -1165,8 +1161,7 @@ function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
           disabled={!canSubmit} onClick={handleSubmit}>
           {loading ? 'Updating...' : 'Update Password'}
         </button>
-      </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -1204,13 +1199,7 @@ function AddUserModal({ onClose, brandBtn, apiClient }) {
   const canSubmit = form.firstName.trim() && form.email.trim() && !loading;
 
   return (
-    <div style={s.modalOverlay} onClick={onClose}>
-      <div style={s.modal} onClick={e => e.stopPropagation()}>
-        <div style={s.modalHeader}>
-          <span style={s.modalTitle}>Add Staff</span>
-          <button style={s.iconBtn} onClick={onClose}>✕</button>
-        </div>
-
+    <Panel onClose={onClose} title="Add Staff" width={380}>
         {created ? (
           <>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#2e7d52' }}>Invitation sent.</div>
@@ -1249,8 +1238,7 @@ function AddUserModal({ onClose, brandBtn, apiClient }) {
             </button>
           </>
         )}
-      </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -6739,12 +6727,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Save as Template modal ── */}
       {saveModal && (
-        <div style={s.modalOverlay} onClick={() => setSaveModal(false)}>
-          <div style={s.modal} onClick={e => e.stopPropagation()}>
-            <div style={s.modalHeader}>
-              <span style={s.modalTitle}>Save as Template</span>
-              <button style={s.iconBtn} onClick={() => setSaveModal(false)}>✕</button>
-            </div>
+        <Panel onClose={() => setSaveModal(false)} title="Save as Template" width={380}>
             <input
               style={s.modalInput}
               placeholder="Template name..."
@@ -6810,8 +6793,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             >
               {saving ? 'Saving...' : 'Save as Template'}
             </button>
-          </div>
-        </div>
+        </Panel>
       )}
 
       {/* ── Color Guide modal ── */}
@@ -7550,23 +7532,6 @@ const s = {
     flexShrink:0,
   },
 
-  // Modal
-  modalOverlay: {
-    position: 'fixed', inset: 0, background: 'rgba(107,45,66,0.18)',
-    backdropFilter: 'blur(4px)', zIndex: 100,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  },
-  modal: {
-    background: '#fff', borderRadius: 20, padding: '20px 22px 22px',
-    width: 320, boxShadow: '0 8px 40px rgba(107,45,66,0.18)',
-    display: 'flex', flexDirection: 'column', gap: 10,
-  },
-  modalHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  },
-  modalTitle: {
-    fontSize: 13, fontWeight: 700, color: '#1a1a1a', letterSpacing: 0.3,
-  },
   modalInput: {
     border: '1.5px solid #d1d5db', borderRadius: 10, padding: '9px 12px',
     fontSize: 13, fontFamily: "'Quicksand',sans-serif", color: '#222',

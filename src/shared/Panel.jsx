@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { WAVES, WAVE_VIEWBOX } from './waves.js';
 import { chromeGradient } from './chrome.js';
 
@@ -106,11 +106,14 @@ const titleStyle    = (isMobile) => ({ fontSize: isMobile ? 18 : 17, fontWeight:
 const subtitleStyle = { fontSize: 12, color: 'rgba(255,255,255,0.62)', fontWeight: 600,
                         margin: '3px 0 0', lineHeight: 1.4 };
 
-const closeStyle = (isMobile) => ({
+// The ✕, and the same circle for a leading back arrow — a drill-down panel needs to look like one
+// panel going deeper, not a second panel replacing the first.
+const roundBtn = (isMobile) => ({
   border: 'none', background: 'rgba(255,255,255,0.16)', cursor: 'pointer', borderRadius: '50%',
   width: isMobile ? 34 : 28, height: isMobile ? 34 : 28, flexShrink: 0,
   fontSize: 13, color: '#FFFFFF', fontWeight: 700, lineHeight: 1,
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1,
+  fontFamily: 'inherit', padding: 0,
 });
 
 const subheadStyle = (isMobile) => ({
@@ -118,10 +121,13 @@ const subheadStyle = (isMobile) => ({
   borderBottom: `1px solid ${PANEL.line}`, background: PANEL.surface,
 });
 
-const bodyStyle = (isMobile, pad) => ({
+// Two vertical rhythms, because the panels genuinely have two. 'stack' spaces children evenly and is
+// what a form wants. 'block' is plain flow, for a body whose own children already carry the margins
+// that separate them — imposing a gap on top of those would double every space in the panel.
+const bodyStyle = (isMobile, pad, flow) => ({
   flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain',
   padding: pad ?? (isMobile ? '16px 18px 20px' : '18px 20px 20px'),
-  display: 'flex', flexDirection: 'column', gap: 14,
+  ...(flow === 'block' ? {} : { display: 'flex', flexDirection: 'column', gap: 14 }),
   color: PANEL.body,
 });
 
@@ -138,7 +144,15 @@ const footStyle = (isMobile) => ({
  * and from the ✕. Omit it for a panel the user must resolve some other way, and no ✕ is drawn.
  */
 export function Panel({ open = true, onClose, title, subtitle, width = 420, isMobile = false,
-                        bodyPadding, subhead, footer, showClose = true, wave = 0, children }) {
+                        bodyPadding, flow = 'stack', subhead, footer, showClose = true, wave = 0,
+                        onBack, backLabel = 'Back', children }) {
+  // A backdrop click closes only if the press STARTED on the backdrop. Without this, dragging a
+  // slider or a colour swatch and releasing past the panel's edge dispatches a click on the nearest
+  // common ancestor — the backdrop — and the panel vanishes mid-adjustment, discarding the edit. The
+  // decoration studio dodged this by closing on pointerdown instead, which loses a drag the other
+  // way: press on the backdrop, change your mind, release inside, and it has already closed.
+  const pressedBackdrop = useRef(false);
+
   useEffect(() => {
     if (!open || !onClose) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -149,7 +163,13 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
   if (!open) return null;
 
   return (
-    <div style={overlayStyle(isMobile)} onClick={onClose}>
+    <div
+      style={overlayStyle(isMobile)}
+      onPointerDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        if (onClose && pressedBackdrop.current && e.target === e.currentTarget) onClose();
+      }}
+    >
       <style>{PANEL_CSS}</style>
       <div
         className="spattoo-panel"
@@ -157,17 +177,19 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
         style={sheetStyle(isMobile, width)}
-        onClick={(e) => e.stopPropagation()}
       >
         {isMobile && <div style={grab} />}
         {(title || (onClose && showClose)) && (
           <div style={headStyle(isMobile)}>
-            <div style={{ minWidth: 0, zIndex: 1 }}>
+            {onBack && (
+              <button type="button" aria-label={backLabel} style={roundBtn(isMobile)} onClick={onBack}>←</button>
+            )}
+            <div style={{ minWidth: 0, zIndex: 1, marginRight: 'auto' }}>
               {title && <h2 style={titleStyle(isMobile)}>{title}</h2>}
               {subtitle && <p style={subtitleStyle}>{subtitle}</p>}
             </div>
             {onClose && showClose && (
-              <button type="button" aria-label="Close" style={closeStyle(isMobile)} onClick={onClose}>✕</button>
+              <button type="button" aria-label="Close" style={roundBtn(isMobile)} onClick={onClose}>✕</button>
             )}
             {/* The storefront's edge, at panel scale. Drawn in the surface colour so the body eats
                 into the band rather than a line being laid on top of it. */}
@@ -182,10 +204,67 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
         )}
         {/* Pinned under the header and above the scroll — step dots, tabs, a filter row. */}
         {subhead && <div style={subheadStyle(isMobile)}>{subhead}</div>}
-        <div className="spattoo-panel-body" style={bodyStyle(isMobile, bodyPadding)}>{children}</div>
+        <div className="spattoo-panel-body" style={bodyStyle(isMobile, bodyPadding, flow)}>{children}</div>
         {footer && <div style={footStyle(isMobile)}>{footer}</div>}
       </div>
     </div>
+  );
+}
+
+// ── Confirming something ────────────────────────────────────────────────────────────────────────
+// Three files had written the same dialog independently — a scrim, a small card, a title, a
+// paragraph, and a cancel/confirm pair — and all three had drifted: 340 / 420 / 440 wide, radius
+// 20 / 18 / 18, and cancel buttons in three greys. Asking "are you sure?" is one thing the app does,
+// so it is one component.
+//
+// `danger` is the only variant, because the only thing that changes between a confirmation you can
+// undo and one you cannot is how loud the confirming button should be.
+const confirmBtn = {
+  padding: '11px 20px', borderRadius: 11, border: 'none', cursor: 'pointer',
+  fontFamily: 'inherit', fontSize: 13.5, fontWeight: 800, color: '#FFFFFF',
+};
+const cancelBtn = {
+  ...confirmBtn, flex: '0 0 auto',
+  border: `1.5px solid ${PANEL.line}`, background: PANEL.surface, color: PANEL.body,
+};
+
+export function ConfirmPanel({
+  open = true, title, message, children,
+  confirmLabel = 'Confirm', cancelLabel = 'Cancel',
+  onConfirm, onCancel, danger = false, busy = false, confirmDisabled = false,
+  confirmStyle, width = 400, isMobile = false,
+}) {
+  const off = busy || confirmDisabled;
+  return (
+    <Panel
+      open={open}
+      onClose={busy ? undefined : onCancel}
+      title={title}
+      width={width}
+      isMobile={isMobile}
+      footer={
+        <>
+          <button type="button" style={cancelBtn} disabled={busy} onClick={onCancel}>{cancelLabel}</button>
+          <button
+            type="button"
+            disabled={off}
+            onClick={onConfirm}
+            style={{
+              ...confirmBtn, flex: 1,
+              background: danger ? '#DC2626' : '#1a1a1a',
+              opacity: off ? 0.5 : 1,
+              cursor: off ? 'not-allowed' : 'pointer',
+              ...confirmStyle,
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </>
+      }
+    >
+      {message && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: PANEL.body }}>{message}</p>}
+      {children}
+    </Panel>
   );
 }
 
