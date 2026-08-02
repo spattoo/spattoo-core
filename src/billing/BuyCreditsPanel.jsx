@@ -84,7 +84,13 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
         // subscription_id. That is why this cannot reuse the plan checkout helper.
         const rzp = new window.Razorpay({
           key: d.key_id, order_id: d.order_id, amount: d.amount, currency: d.currency ?? 'INR',
-          name: 'Spattoo', description: packs.find(p => p.packKey === packKey)?.label ?? 'Credits',
+          name: 'Spattoo',
+          // Razorpay's Price Summary shows ONE figure and we cannot add rows to it — the panel is
+          // theirs. `description` is the only text we control on that screen, so the split rides
+          // there: a baker who reached Checkout expecting ₹149 can see where ₹175.82 came from
+          // without going back. `d` carries the breakup from the same server function that computed
+          // the charge, so this line cannot disagree with the amount beside it.
+          description: gstLine(d, packs.find(p => p.packKey === packKey)?.credits),
           theme: { color: primaryColor },
           handler: (resp) => {
             setLastPaymentId(resp?.razorpay_payment_id ?? null);
@@ -331,11 +337,11 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                     price a baker reads here must be the number on their statement. */}
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: primaryColor, fontVariantNumeric: 'tabular-nums' }}>
-                    {busyPack === p.packKey ? 'Opening…' : formatMoney((p.totalPaise ?? p.pricePaise) / 100)}
+                    {busyPack === p.packKey ? 'Opening…' : formatExact(p.totalPaise ?? p.pricePaise)}
                   </div>
                   {p.gstPaise > 0 && busyPack !== p.packKey && (
                     <div style={{ fontSize: 10, color: '#B7C4BB', fontWeight: 600, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                      {formatMoney(p.basePaise / 100)} + {formatMoney(p.gstPaise / 100)} GST
+                      {formatExact(p.basePaise)} + {formatExact(p.gstPaise)} GST
                     </div>
                   )}
                 </div>
@@ -419,7 +425,18 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   );
 }
 
-const formatMoney = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
+// Whole rupees for a price list; paise matter once tax is in the number, because ₹175.82 rounded
+// to ₹176 is not what the statement will say.
+const formatMoney  = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
+const formatExact  = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// What Razorpay shows beneath the merchant name. Degrades to the plain thing if the server ever
+// sends no breakup — a missing GST line is a worse screen, a WRONG one is a dispute.
+function gstLine(d, credits) {
+  const head = credits ? `${credits} credits` : 'Credits';
+  if (!d?.gstPaise) return head;
+  return `${head} · ${formatExact(d.basePaise)} + ${formatExact(d.gstPaise)} GST (18%)`;
+}
 
 // Date AND time, because two X-Rays on one afternoon are indistinguishable by date alone and
 // "which of those was the one I cancelled" is exactly the question this list answers.
