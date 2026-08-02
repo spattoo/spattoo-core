@@ -16,6 +16,7 @@ const swatch = { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 };
 function Demo() {
   const [open, setOpen] = useState('form');
   const [isMobile, setIsMobile] = useState(false);
+  const [wave, setWave] = useState(0);
 
   const btn = (on) => ({
     border: `1px solid ${on ? PANEL.ink : '#DED8CF'}`, background: on ? PANEL.ink : '#fff',
@@ -38,6 +39,9 @@ function Demo() {
         <button style={btn(isMobile)}           onClick={() => setIsMobile((m) => !m)}>
           {isMobile ? 'Mobile' : 'Desktop'}
         </button>
+        <button style={btn(false)}              onClick={() => setWave((w) => (w + 1) % 3)}>
+          Wave {wave + 1}/3
+        </button>
       </div>
 
       <div style={{ fontSize: 11.5, color: '#6b6459', lineHeight: 1.6, maxWidth: 720 }}>
@@ -57,6 +61,7 @@ function Demo() {
         <Panel
           onClose={() => setOpen(null)}
           isMobile={isMobile}
+          wave={wave}
           width={360}
           title="New Order"
           subhead={
@@ -141,7 +146,7 @@ function Demo() {
       )}
 
       {open === 'plain' && (
-        <Panel onClose={() => setOpen(null)} isMobile={isMobile} title="Update Design"
+        <Panel onClose={() => setOpen(null)} isMobile={isMobile} wave={wave} title="Update Design"
                subtitle="The customer will see this change">
           <p style={{ fontSize: 13, color: PANEL.body, lineHeight: 1.6, margin: 0 }}>
             A panel with a header and nothing else — no subhead, no footer.
