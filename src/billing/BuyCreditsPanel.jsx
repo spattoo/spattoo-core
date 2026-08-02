@@ -161,22 +161,32 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   }
 
   const spendable = data?.unlimited ? null : (data?.spendable ?? 0);
+  // `data` is null until the fetch lands, and `?? 0` collapsed that into a real-looking ZERO — so
+  // the first thing a baker saw on opening was "0 credits to spend", which is the one number that
+  // would make them stop what they were doing. Not-loaded and none-left must never render alike.
+  const loading = !data;
 
   return (
     <div style={s.backdrop} onClick={close}>
-      <div style={s.sheet} onClick={e => e.stopPropagation()}>
+      <div style={{ ...s.sheet, ...(loading ? { minHeight: 260 } : null) }} onClick={e => e.stopPropagation()}>
         <div style={s.head}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#2C4433' }}>Credits</div>
           <button type="button" onClick={close} style={s.close} aria-label="Close">×</button>
         </div>
 
-        {/* The number first and large. It is the question that brought them here. */}
+        {/* The number first and large. It is the question that brought them here — which is also
+            why a placeholder beats a guess: a wrong balance shown for one second is read, and
+            believed, before the right one arrives. */}
         <div style={s.balance}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: '#2C4433', fontVariantNumeric: 'tabular-nums' }}>
-            {data?.unlimited ? 'Unlimited' : spendable}
-          </div>
-          {!data?.unlimited && (
-            <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600 }}>credits to spend</div>
+          {loading
+            ? <div style={s.numSkeleton} aria-hidden="true" />
+            : <div style={{ fontSize: 34, fontWeight: 800, color: '#2C4433', fontVariantNumeric: 'tabular-nums' }}>
+                {data.unlimited ? 'Unlimited' : spendable}
+              </div>}
+          {(loading || !data.unlimited) && (
+            <div style={{ fontSize: 12, color: loading ? '#C3CBC6' : '#7C8B82', fontWeight: 600 }}>
+              credits to spend
+            </div>
           )}
         </div>
 
@@ -487,6 +497,8 @@ const s = {
     color: '#9BB5A2', padding: 0, width: 28, height: 28,
   },
   balance: { display: 'flex', flexDirection: 'column', gap: 2 },
+  // Sized to the real number's line box, so nothing shifts when it swaps in.
+  numSkeleton: { width: 132, height: 41, borderRadius: 9, background: '#F1F5F2' },
   priceList: {
     background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px',
     display: 'flex', flexDirection: 'column', gap: 4,
