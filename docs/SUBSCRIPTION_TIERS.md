@@ -668,7 +668,7 @@ how they reached the pricing page as feature rows.
 | `can_buy_credits` | `services/aiCredits.js` | ✅ real |
 | `xray_reports` | `orders/OrdersPanel.jsx` | ✅ real (true on every tier since 2026-08-02) |
 | `max_saved_templates` | **nothing** | ❌ declared only — the pricing row was removed 2026-08-02 |
-| `custom_templates` | **nothing** | ❌ marked *deprecated… inert* in the registry, still sold on the page |
+| `custom_templates` | **nothing** | ⚪️ inert, and now TRUE on every tier (2026-08-02) — the page says ✓ everywhere, so nothing is mis-sold |
 | `ai_background_removal` | **nothing** | ❌ declared only, still sold on the page |
 | `max_team_members` | **nothing** | ❌ declared only; seats are not shipped and the row is off the page |
 
@@ -677,10 +677,26 @@ seed.** If the only hits are the declaration and the seed, it is not a feature �
 and selling an intention is how a page ends up promising a cap that does not exist (saved templates)
 or withholding from Flame something Flame already has (custom templates, background removal).
 
-**What this leaves Blaze differentiating on, honestly: credits (300 → 800), the ability to buy
-top-ups, and priority support.** Custom templates and background removal are its other two named
-hooks and neither is gated. That is a decision to make — enforce them, or stop selling them — not a
-row to quietly delete.
+**Custom templates was resolved by opening it (2026-08-02)** rather than by enforcing it: the
+capability was already available to every plan, so the honest fix was to say so. Flame gains a real
+selling point it always had.
+
+**Background removal is the one still outstanding** — `—` on Flame, `✓` on Blaze, gated by nothing.
+Enforce it, or open it as we did custom templates.
+
+**What Blaze differentiates on today: credits (300 → 800), the ability to buy top-ups, and priority
+support.** That is a thin story against Flame at 2.5× the price, and it is a pricing decision rather
+than a code one.
+
+### Also on the page now: the A4 edible print sheet
+
+Shipped long ago, gated by nothing, and never sold. A baker arranges the customer's photo frames on
+an A4 sheet at true size, checks them against cake-diameter guides (3–8"), and exports a print-ready
+PDF with cut marks — onto the edible sheets they already buy.
+
+Called **"Edible print sheet (A4)"** on the pricing page; in the app the button still says
+**"Open A4 simulator"**. Those should converge — *simulator* is honest about what it does but reads
+as jargon to someone scanning prices, while *edible print sheet* is the baker's own phrase.
 
 ## New entitlement keys this implies (not yet in the registry)
 ~~`max_xray_orders_monthly` (#16)~~ — **DROPPED 2026-08-02, never added.** It was to replace
