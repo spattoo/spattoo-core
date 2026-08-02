@@ -75,11 +75,19 @@ yet" is not a sentence anyone can put on a card.
 - **Alternative — trial = FLAME for 30 days.** Safer, keeps Blaze's hooks unspent, but a
   weaker trial that forfeits the reverse-trial advantage.
 
-Either beats today's hybrid, because either produces a one-line card. **Tradeoff to accept
-if we take Blaze:** a baker who trials Blaze then buys Flame experiences a downgrade (X-Ray
-drops to 5 confirmed orders, templates to 30). That IS the mechanism working — loss aversion
-is the point — but pre-empt it in the trial-ending email rather than letting them discover it
-as a bug report.
+Either beats today's hybrid, because either produces a one-line card.
+
+**Tradeoff to accept if we take Blaze — SMALLER THAN THIS SECTION ORIGINALLY ASSUMED
+(revised 2026-08-02).** It was written believing a Blaze trialist dropping to Flame lost
+X-Ray down to 5 orders a month. They do not: **photo X-Ray survives on every plan**, because
+it is paid for with credits (#16). What they actually lose is the DESIGNED-cake report,
+background removal, and custom templates — a taper, not a cliff, and the AI-powered X-Ray
+they leaned on during the trial keeps working.
+
+Credits go UP, not down, on that transition: the trial grants Spark's 100, Flame grants 300.
+
+That IS the mechanism working — loss aversion is the point — but pre-empt it in the
+trial-ending email rather than letting them discover it as a bug report.
 
 **This changes `seed_plan_entitlements.sql` for Spark, so it needs an explicit decision
 before it ships.**
@@ -377,7 +385,7 @@ edited a yearly price without updating `discount_pct`.
 | 14 | *(merged into #13)* | — | — | — | — | — | Number reserved; "Recreate from inspiration" + "Image→3D" are one baker-facing feature (same job). |
 | 15 | Background removal (utility — NOT a headline) | plumbing inside image upload | | | | ✅ | Not marketed/metered separately; folds into the upload flow |
 | | **— Production help —** | | | | | | |
-| 16 | X-Ray order reports | first 5 confirmed orders / month | first 5 confirmed orders / month | ✅ unlimited | ✅ unlimited | ✅ | Built (gating changes). **FIXED 2026-07-26: Flame was ❌ while Spark got `preview`** — upgrading from the free trial to a paid plan TOOK THE PREVIEW AWAY (non-monotonic; the same mistake already corrected for templates #21). Now a METERED TEASE, not a preview — see "Metered tease" below. Blaze remains the strongest hook. |
+| 16 | X-Ray order reports | from photos (credits) | from photos (credits) | ✅ + designed cakes | ✅ + designed cakes | ✅ | Built. **SUPERSEDED 2026-08-02: the "first 5 confirmed orders / month" tease was never implemented and is not going to be** — the AI credit meter replaced it, and better. TWO different things are gated here, only one of which is a plan feature: a PHOTO order's X-Ray calls the model and is paid for with CREDITS on every plan (`OrdersPanel.jsx`); a DESIGNED order's costs us nothing to produce and stays the Blaze+ hook (`xray_reports`). Gating the photo one on the boolean as well would take a baker's credits and then withhold what they bought. No count-based metering exists anywhere in the code, and none is needed. |
 | 17 | Craft guides | preview | ✅ | ✅ | ✅ | ✅ | Built |
 | 18 | Color guide (Chef's Desk) | ✅ | ✅ | ✅ | ✅ | ✅ | Built |
 | | **— Automation —** | | | | | | |
@@ -498,6 +506,22 @@ Source: [trial-to-paid benchmarks by trial type, ACV, length and card requiremen
 
 ## Metered tease — let them USE the hook, then run out (decided 2026-07-26)
 
+> **⚠️ NOT BUILT, AND NOT GOING TO BE — superseded 2026-08-02.** The PRINCIPLE below stands and
+> was adopted; the specific mechanism (first 5 confirmed orders/month for X-Ray) was never
+> implemented and should not be. **The AI credit meter does the same job and does it better:**
+> a photo X-Ray costs 15 credits on every plan, so a Flame baker experiences the feature and
+> runs out of it, which is exactly what this section asks for — but metered in the unit that
+> tracks OUR actual cost, with a balance the baker can see, a history they can audit, and a
+> top-up path that turns "ran out" into revenue instead of a wall.
+>
+> The order-count mechanism would have been a SECOND meter beside the credit one, measuring a
+> different thing, needing its own key, its own UI and its own explanation on the pricing page.
+> Two meters for one feature is how a pricing page becomes unreadable.
+>
+> What survives from this section: designed-cake X-Ray costs us nothing to run and stays a
+> Blaze+ boolean (`xray_reports`); photo X-Ray costs real money and is metered by credits.
+> See #16. Kept below because the REASONING is the reasoning behind the credit meter too.
+
 **A capped allowance of a premium feature beats hiding it, and beats a preview.** This is
 the documented pattern: *"usage caps let free users experience a feature, understand its
 value, and then hit a limit"* — explicitly preferred over locking the feature away. Slack
@@ -613,10 +637,10 @@ listed and subscribable", and for Forge at MVP those two are the same thing. A s
 reverse), which is not a case we have.
 
 ## New entitlement keys this implies (not yet in the registry)
-`max_xray_orders_monthly` (#16 — int; `null` = unlimited per the existing int convention.
-Spark `5`, Flame `5`, Blaze/Forge `null`. REPLACES the `xray_reports` boolean, which cannot
-express a graduated allowance. Named *orders*, not *reports*, because the meter counts
-confirmed ORDERS — see "Metered tease").
+~~`max_xray_orders_monthly` (#16)~~ — **DROPPED 2026-08-02, never added.** It was to replace
+the `xray_reports` boolean with a graduated allowance; `ai_credits_per_month` does that job
+already for the half of X-Ray that costs money, and `xray_reports` correctly gates the half
+that does not. Adding this key would have put two meters on one feature.
 `ai_credits_per_month` (#13, merged), `custom_storefront_template` (#6 — bool; Spark/Flame
 false = preview-only/standard, Blaze+ true = apply), `storefront_analytics` (#7), `max_saved_templates`
 (#21 — int; DEPRECATES the old `custom_templates` boolean, now redundant since every tier
