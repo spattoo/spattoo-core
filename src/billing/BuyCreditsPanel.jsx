@@ -335,17 +335,17 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                     Showing the tax-inclusive total as the headline made ₹175.82 look like what a
                     pack costs, when what we charge for it is ₹149 — the number that should anchor
                     a decision, and the one that compares against a competitor's sticker.
-                    The qualifier is "+ 18% GST" rather than "+ ₹26.82": a second rupee figure
-                    beside the first invites a reader to add them up, which is the arithmetic we
-                    were trying to spare them. The exact rupees appear where they matter — on
-                    Razorpay's summary (via `description`) and on the invoice. */}
+                    The qualifier names the RUPEES, not the rate. "+ 18% GST" is arithmetic
+                    homework; "+ ₹26.82 GST" is the answer, and a baker deciding whether to spend
+                    can add two numbers they can both see. It also means nothing new appears at
+                    Checkout — ₹175.82 there is a sum they have already been shown the parts of. */}
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: primaryColor, fontVariantNumeric: 'tabular-nums' }}>
                     {busyPack === p.packKey ? 'Opening…' : formatMoney((p.basePaise ?? p.pricePaise) / 100)}
                   </div>
                   {p.gstPaise > 0 && busyPack !== p.packKey && (
                     <div style={{ fontSize: 10, color: '#B7C4BB', fontWeight: 600, marginTop: 1 }}>
-                      + {p.ratePct ?? 18}% GST
+                      + {formatExact(p.gstPaise)} GST
                     </div>
                   )}
                 </div>
