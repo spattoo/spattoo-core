@@ -469,8 +469,11 @@ function StageGrid({ stagesUrl, s }) {
           real fondant, and a baker who takes one literally will expect their piece to match it
           exactly. Deliberately does not say "your photo" — an element-backed guide is drawn from
           the library picture, and only a photo order's is drawn from the customer's. */}
+      {/* The panels carry no numbers or captions of their own — image models garble both, and a
+          misnumbered sheet is worse than a silent one. So the pairing has to be said once: the
+          pictures run in the same order as the written steps under them. */}
       <div style={{ ...s.muted, marginTop: 4 }}>
-        Drawn by AI — a guide to the shape, not a photograph of this cake.
+        Panels follow the steps below, in order. Drawn by AI — a guide to the shape, not a photograph of this cake.
       </div>
     </div>
   );

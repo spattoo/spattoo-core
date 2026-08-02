@@ -779,7 +779,10 @@ function drawStageGrid(sheet, img) {
   sheet.ctx.lineWidth = Math.max(1, mm(0.2));
   sheet.ctx.strokeRect(sheet.margin, sheet.y, w, h);
   sheet.y += h + mm(1.5);
-  sheet.y += sheet.text('Drawn by AI from the reference photo — a guide to the shape, not a photograph of this cake.',
+  // The panels carry no numbers of their own — image models render them wrong often enough that a
+  // misnumbered sheet at the bench is worse than a silent one. The written steps below ARE the
+  // numbering, so the page has to say once that the two run together.
+  sheet.y += sheet.text('Panels follow the steps below, in order. Drawn by AI from the reference photo — a guide to the shape, not a photograph of this cake.',
     sheet.margin, sheet.y, { size: mm(3.0), weight: 600, color: MUTED }) + mm(2);
 }
 
