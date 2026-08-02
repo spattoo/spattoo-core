@@ -1262,9 +1262,15 @@ function OrderDesignViewer({ order, onClose }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // The Orders rail item's submenu. Both entries open the SAME Orders panel — `view` just
 // says which face of it to land on — so there is one orders destination, not two.
+// Two VIEWS of the same orders, plus the one ACTION that starts a new one. "New Order" is the
+// manual path — no 3D design, a customer's reference photo (or nothing) — which until now was only
+// reachable from inside the Orders panel or by picking a day on the calendar. It needs
+// `order:manage`: a view-only member must not be offered a form they cannot submit. It sits last so
+// the two views keep the positions people already reach for.
 const ORDERS_MENU = [
-  { id: 'orders-list',     label: 'Orders',   view: 'list' },
-  { id: 'orders-calendar', label: 'Calendar', view: 'calendar' },
+  { id: 'orders-list',     label: 'Orders',    view: 'list' },
+  { id: 'orders-calendar', label: 'Calendar',  view: 'calendar' },
+  { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
 ];
 
 // The rail's menu surface — the ONE place that knows a rail flyout is dark and hover-highlights.
@@ -1708,6 +1714,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // preserving existing baker apps. '*' = super admin. Enforcement is server-side;
   // this only hides controls a principal can't use.
   const hasCap = (cap) => !capabilities || !cap || capabilities.includes('*') || capabilities.includes(cap);
+  // Which Orders entries this person may see — decided once, read by both rails.
+  const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires));
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
   // Live co-design (Phase 1) — opt-in; fully inert unless enableLive/liveSessionId is set, so the
@@ -3580,12 +3588,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setOrdersPanelOpen(true);
   }
 
-  // A day picked in the Orders calendar starts the ordinary manual-order flow with the
-  // delivery date already chosen — same creation path, one field pre-filled.
-  function startOrderForDate(date) {
+  // The manual-order flow. A day picked in the Orders calendar passes that date so it arrives
+  // pre-filled; the rail's "New Order" passes none. One creation path, one optional field —
+  // not two ways to make an order.
+  function startOrderForDate(date = null) {
     setOrdersPanelOpen(false);
     setManualOrderDate(date);
     setManualOrderOpen(true);
+  }
+
+  // What an Orders-menu entry does, decided once — the desktop rail and the mobile bar both read
+  // this, so they cannot drift into meaning different things by the same label.
+  function selectOrdersMenuItem(item) {
+    setNavMenuId(null);
+    if (item.action === 'newOrder') { startOrderForDate(); return; }
+    openOrdersPanel(item.view);
   }
 
   async function handleManualOrderSubmit(formData) {
@@ -5344,7 +5361,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // it belongs under Orders rather than as its own rail destination. Declared
               // as `menu` config — any nav item gets a submenu the same way.
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view',
-                menu: ORDERS_MENU },
+                menu: ordersMenu },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
@@ -5388,7 +5405,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   escapeClip
                   onHoverOpen={() => { setNavMenuId(id); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}
                   onHoverClose={() => setNavMenuId(o => (o === id ? null : o))}
-                  onSelect={item => { openOrdersPanel(item.view); setNavMenuId(null); }}>
+                  onSelect={selectOrdersMenuItem}>
                   {button}
                 </RailSubmenu>
               );
@@ -6653,7 +6670,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'dashboard',  icon: <DashboardIcon size={20} />, requires: 'order:view' },
             { id: 'templates',  icon: <TemplatesIcon size={20} />, requires: 'design:create' },
             { id: 'elements',   icon: <ElementsIcon size={20} />,  requires: 'design:create' },
-            { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ORDERS_MENU },
+            { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
             { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
             { id: 'invite',     icon: <InviteIcon size={20} />,    requires: 'customer:manage' },
             { id: 'share',      icon: <ShareIcon size={20} />,     requires: 'design:create' },
@@ -6670,7 +6687,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   open={navMenuId === id}
                   containerRef={navMenuId === id ? navMenuRef : null}
                   anchorStyle={{ top: 'auto', bottom: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)' }}
-                  onSelect={item => { openOrdersPanel(item.view); setNavMenuId(null); }}>
+                  onSelect={selectOrdersMenuItem}>
                   <button
                     style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
                     onClick={() => { setNavMenuId(o => (o === id ? null : id)); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}>
