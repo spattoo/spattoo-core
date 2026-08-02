@@ -1267,12 +1267,38 @@ const ORDERS_MENU = [
   { id: 'orders-calendar', label: 'Calendar', view: 'calendar' },
 ];
 
+// The rail's menu surface — the ONE place that knows a rail flyout is dark and hover-highlights.
+// Every rail menu (Orders submenu, Settings, profile) goes through here, so a new one cannot
+// accidentally ship the white card that belongs under the mobile header.
+function RailMenu({ style, children }) {
+  return (
+    <div className="spattoo-rail-menu" style={style ? { ...s.railDropdown, ...style } : s.railDropdown}>
+      {children}
+    </div>
+  );
+}
+
 // A rail nav item that opens a submenu. The desktop rail and the mobile bottom bar
 // differ ONLY in where the dropdown is anchored (sideways vs upward), so the markup
 // lives here once instead of being pasted into both rails.
-function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onSelect, escapeClip = false, children }) {
+function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onSelect, escapeClip = false,
+                      onHoverOpen, onHoverClose, children }) {
   const hostRef = useRef(null);
   const [fixedAt, setFixedAt] = useState(null);
+  const closeTimer = useRef(null);
+
+  // Hover to open, on pointers that hover. The menu is a DOM child of this wrapper, so moving onto
+  // it does not fire mouseleave — but the 10px gap between button and menu is over neither, which
+  // is what the close DELAY buys. Cancelled on re-entry. Click still toggles, which is what a touch
+  // device gets, and the mobile bar passes no hover handlers at all.
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+  const hoverProps = typeof onHoverOpen === 'function' ? {
+    onMouseEnter: () => { clearTimeout(closeTimer.current); onHoverOpen(); },
+    onMouseLeave: () => {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = setTimeout(() => onHoverClose?.(), 220);
+    },
+  } : {};
 
   // The desktop rail SCROLLS: sidebarNav carries overflow-y so a short viewport can't cut the
   // spatula's blade. A scroll container clips on BOTH axes — CSS computes overflow-x to `auto` the
@@ -1306,22 +1332,21 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
     else if (containerRef) containerRef.current = node;
   };
 
-  const menuStyle = fixedAt ? { ...s.dropdown, position: 'fixed', top: fixedAt.top, left: fixedAt.left }
-    : anchorStyle ? { ...s.dropdown, ...anchorStyle }
-    : s.dropdown;
+  // Only the ANCHOR varies here — the surface itself lives in RailMenu.
+  const anchor = fixedAt ? { position: 'fixed', top: fixedAt.top, left: fixedAt.left } : anchorStyle;
 
   return (
-    <div style={{ position: 'relative' }} ref={setRefs}>
+    <div style={{ position: 'relative' }} ref={setRefs} {...hoverProps}>
       {children}
       {open && (
-        <div style={menuStyle}>
-          <div style={s.dropdownSection}>{label}</div>
+        <RailMenu style={anchor}>
+          <div style={s.railDropdownSection}>{label}</div>
           {items.map(item => (
-            <button key={item.id} style={s.dropdownItem} onClick={() => onSelect(item)}>
+            <button key={item.id} style={s.railDropdownItem} onClick={() => onSelect(item)}>
               {item.label}
             </button>
           ))}
-        </div>
+        </RailMenu>
       )}
     </div>
   );
@@ -5183,7 +5208,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }
-        .spattoo-rail-nav::-webkit-scrollbar { display: none; }`}</style>
+        .spattoo-rail-nav::-webkit-scrollbar { display: none; }
+        /* A :hover cannot be expressed inline, and inline styles win — hence !important. */
+        .spattoo-rail-menu button:hover { background: rgba(255,255,255,0.11) !important; color: #fff !important; }`}</style>
 
       {/* ── Mobile header ── */}
       {isMobile && (
@@ -5353,11 +5380,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               );
               if (!menu) return button;
               return (
-                // escapeClip: this rail scrolls, and a scroll container clips the flyout — see RailSubmenu
+                // escapeClip: this rail scrolls, and a scroll container clips the flyout — see RailSubmenu.
+                // Hover opens it here; the mobile bar below passes no hover handlers.
                 <RailSubmenu key={id} label={label} items={menu}
                   open={navMenuId === id}
                   containerRef={navMenuId === id ? navMenuRef : null}
                   escapeClip
+                  onHoverOpen={() => { setNavMenuId(id); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}
+                  onHoverClose={() => setNavMenuId(o => (o === id ? null : o))}
                   onSelect={item => { openOrdersPanel(item.view); setNavMenuId(null); }}>
                   {button}
                 </RailSubmenu>
@@ -5400,29 +5430,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
               </SidebarTooltip>
               {settingsOpen && (
-                <div style={{ ...s.dropdown, top: 'auto', bottom: 0 }}>
-                  <div style={s.dropdownSection}>Settings</div>
-                  {hasCap('store:manage') && <button style={s.dropdownItem}
+                <RailMenu style={{ top: 'auto', bottom: 0 }}>
+                  <div style={s.railDropdownSection}>Settings</div>
+                  {hasCap('store:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>
                     Store Settings
                   </button>}
-                  {hasCap('store:manage') && <button style={s.dropdownItem}
+                  {hasCap('store:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>
                     Flavours
                   </button>}
-                  {hasCap('store:manage') && <button style={s.dropdownItem}
+                  {hasCap('store:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>
                     Templates
                   </button>}
-                  {hasCap('billing:manage') && <button style={s.dropdownItem}
+                  {hasCap('billing:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>
                     Billing
                   </button>}
-                  {hasCap('staff:manage') && <button style={s.dropdownItem}
+                  {hasCap('staff:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
                     Add Staff
                   </button>}
-                </div>
+                </RailMenu>
               )}
             </div>}
 
@@ -5435,23 +5465,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
               </SidebarTooltip>
               {profileOpen && (
-                <div style={{ ...s.dropdown, top: 'auto', bottom: 0 }}>
-                  <div style={s.dropdownUserInfo}>
-                    <div style={s.dropdownName}>
+                <RailMenu style={{ top: 'auto', bottom: 0 }}>
+                  <div style={s.railDropdownUserInfo}>
+                    <div style={s.railDropdownName}>
                       {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
                     </div>
-                    {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
+                    {userData?.email && <div style={s.railDropdownEmail}>{userData.email}</div>}
                   </div>
-                  <div style={s.dropdownDivider} />
-                  {role !== 'customer' && <button style={s.dropdownItem}
+                  <div style={s.railDropdownDivider} />
+                  {role !== 'customer' && <button style={s.railDropdownItem}
                     onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>
                     Change Password
                   </button>}
-                  <button style={s.dropdownItem}
+                  <button style={s.railDropdownItem}
                     onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>
                     Sign out
                   </button>
-                </div>
+                </RailMenu>
               )}
             </div>
           </div>
@@ -7052,6 +7082,64 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
+// ── Menu surfaces: one shape, two tones ────────────────────────────────────────────────────────
+// A flyout menu appears in two places that want opposite colouring: under the MOBILE HEADER, which
+// is white, and out of the RAIL, which is a near-black moulded spatula. The rail's menus used the
+// white card and read as another application's UI docked onto it.
+//
+// The obvious fix — a second set of style objects — writes the layout twice, and the two copies
+// drift the moment someone nudges a padding. So the SHAPE is written once here and a TONE
+// contributes only colour. Adding a third tone is a colour block, not another copy of the metrics.
+const MENU_SHAPE = {
+  surface:  { position: 'absolute', top: 0, left: 'calc(100% + 8px)', borderRadius: 10,
+              minWidth: 160, zIndex: 50, display: 'flex', flexDirection: 'column',
+              padding: '6px 0', overflow: 'hidden' },
+  section:  { fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+              padding: '6px 14px 4px' },
+  item:     { background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+              padding: '8px 14px', fontSize: 13, fontFamily: "'Quicksand',sans-serif",
+              transition: 'background 0.13s, color 0.13s' },
+  userInfo: { padding: '10px 14px 8px' },
+  name:     { fontSize: 13, fontWeight: 700 },
+  email:    { fontSize: 11, marginTop: 2 },
+  divider:  { height: 1, margin: '4px 0' },
+};
+
+// Colour only. `rail` mirrors the spatula's own surface — its body gradient runs #121214 → #020203,
+// lifted a little so the menu reads as an object resting above the rail rather than a hole cut in
+// it — and carries the same hairline highlight the silhouette has, plus the rail's text opacities.
+const MENU_TONES = {
+  light: {
+    surface: { background: '#fff', border: '1px solid #999999',
+               boxShadow: '0 4px 20px rgba(107,45,66,0.14)' },
+    section: '#888', item: '#1a1a1a', itemWeight: 500,
+    name: '#1a1a1a', email: '#666', divider: '#999999',
+  },
+  rail: {
+    surface: { background: 'linear-gradient(168deg, #1b1b1f, #0e0e11 70%)',
+               border: '1px solid rgba(255,255,255,0.10)',
+               boxShadow: '0 16px 44px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.4)' },
+    section: 'rgba(255,255,255,0.38)', item: 'rgba(255,255,255,0.86)', itemWeight: 600,
+    name: 'rgba(255,255,255,0.92)', email: 'rgba(255,255,255,0.42)', divider: 'rgba(255,255,255,0.10)',
+  },
+};
+
+const menuTone = (key) => {
+  const t = MENU_TONES[key];
+  return {
+    surface:  { ...MENU_SHAPE.surface, ...t.surface },
+    section:  { ...MENU_SHAPE.section, color: t.section },
+    item:     { ...MENU_SHAPE.item, color: t.item, fontWeight: t.itemWeight },
+    userInfo: MENU_SHAPE.userInfo,
+    name:     { ...MENU_SHAPE.name, color: t.name },
+    email:    { ...MENU_SHAPE.email, color: t.email },
+    divider:  { ...MENU_SHAPE.divider, background: t.divider },
+  };
+};
+
+const LIGHT_MENU = menuTone('light');
+const RAIL_MENU  = menuTone('rail');
+
 const s = {
   page: {
     display:'flex', flexDirection:'column', height:'100vh',
@@ -7169,30 +7257,22 @@ const s = {
   },
 
   // Dropdowns
-  dropdown: {
-    position: 'absolute', top: 0, left: 'calc(100% + 8px)',
-    background: '#fff', borderRadius: 10,
-    border: '1px solid #999999',
-    boxShadow: '0 4px 20px rgba(107,45,66,0.14)',
-    minWidth: 160, zIndex: 50,
-    display: 'flex', flexDirection: 'column',
-    padding: '6px 0', overflow: 'hidden',
-  },
-  dropdownSection: {
-    fontSize: 10, fontWeight: 700, color: '#888',
-    letterSpacing: 1, textTransform: 'uppercase',
-    padding: '6px 14px 4px',
-  },
-  dropdownItem: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    textAlign: 'left', padding: '8px 14px',
-    fontSize: 13, fontWeight: 500, color: '#1a1a1a',
-    fontFamily: "'Quicksand',sans-serif",
-  },
-  dropdownUserInfo: { padding: '10px 14px 8px' },
-  dropdownName: { fontSize: 13, fontWeight: 700, color: '#1a1a1a' },
-  dropdownEmail: { fontSize: 11, color: '#666', marginTop: 2 },
-  dropdownDivider: { height: 1, background: '#999999', margin: '4px 0' },
+  // Both tones are derived from MENU_SHAPE above — the metrics exist once.
+  dropdown:            LIGHT_MENU.surface,
+  dropdownSection:     LIGHT_MENU.section,
+  dropdownItem:        LIGHT_MENU.item,
+  railDropdown:        RAIL_MENU.surface,
+  railDropdownSection: RAIL_MENU.section,
+  railDropdownItem:    RAIL_MENU.item,
+  railDropdownUserInfo: RAIL_MENU.userInfo,
+  railDropdownName:    RAIL_MENU.name,
+  railDropdownEmail:   RAIL_MENU.email,
+  railDropdownDivider: RAIL_MENU.divider,
+
+  dropdownUserInfo: LIGHT_MENU.userInfo,
+  dropdownName:    LIGHT_MENU.name,
+  dropdownEmail:   LIGHT_MENU.email,
+  dropdownDivider: LIGHT_MENU.divider,
 
   // Main + flyout panels
   main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
