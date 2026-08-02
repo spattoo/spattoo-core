@@ -34,6 +34,8 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   const [phase, setPhase] = useState(null);     // null | 'waiting' | 'done' | 'slow'
   const [gained, setGained] = useState(0);
   const [lastPaymentId, setLastPaymentId] = useState(null);
+  const [history, setHistory] = useState(null);   // null = not loaded yet, [] = nothing to show
+  const [allHistory, setAllHistory] = useState(false);
 
   useEffect(() => {
     if (!open || !apiClient?.fetchAiCredits) return;
@@ -47,6 +49,17 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
       setPacks(pk?.packs ?? []);
       setShelf(pk ? { canBuy: pk.canBuy, reason: pk.reason, ceiling: pk.ceiling, resetsOn: pk.resetsOn } : null);
     });
+    return () => { alive = false; };
+  }, [open, apiClient, tick]);
+
+  // The ledger, loaded separately from the balance: it is the slower of the two and the balance is
+  // what someone opened this for, so it must not wait behind a list.
+  useEffect(() => {
+    if (!open || !apiClient?.fetchAiCreditHistory) return;
+    let alive = true;
+    apiClient.fetchAiCreditHistory()
+      .then(r => { if (alive) setHistory(r?.items ?? []); })
+      .catch(() => { if (alive) setHistory([]); });   // a missing ledger hides the section, never errors
     return () => { alive = false; };
   }, [open, apiClient, tick]);
 
@@ -139,12 +152,43 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
             {data?.unlimited ? 'Unlimited' : spendable}
           </div>
           {!data?.unlimited && (
-            <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600 }}>
-              credits to spend
-              {data?.walletBalance > 0 && <> · {data.walletBalance} bought, never expire</>}
-            </div>
+            <div style={{ fontSize: 12, color: '#7C8B82', fontWeight: 600 }}>credits to spend</div>
           )}
         </div>
+
+        {/* ── The two buckets ──────────────────────────────────────────────────────────
+            The headline number is a SUM of two things with different rules — one resets on the
+            1st, one never expires — and showing only the total means a baker watching it fall
+            cannot tell whether they are running out of something that comes back next month or
+            something they paid for.
+            Shown whenever the account HAS a monthly allowance, not only when they have bought
+            credits: "bought 0" is the answer to "what happens when the monthly ones run out". */}
+        {!data?.unlimited && data?.allowance > 0 && (
+          <div style={s.split}>
+            <div style={s.splitRow}>
+              <div>
+                <div style={s.splitLabel}>Monthly</div>
+                <div style={s.splitSub}>
+                  of {data.allowance} · resets {formatResetDate(data.resetsOn)}
+                </div>
+              </div>
+              <div style={s.splitNum}>{data.allowanceLeft ?? 0}</div>
+            </div>
+            <div style={s.splitRow}>
+              <div>
+                <div style={s.splitLabel}>Bought</div>
+                <div style={s.splitSub}>never expire</div>
+              </div>
+              <div style={s.splitNum}>{data.walletBalance ?? 0}</div>
+            </div>
+            {/* The spend ORDER, said plainly. It is what makes the two numbers above mean
+                something, and it is a promise in the terms (B8.2) rather than an implementation
+                detail — so it belongs where the numbers are, not in a help page. */}
+            <div style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 600, paddingTop: 2 }}>
+              Monthly credits are used first.
+            </div>
+          </div>
+        )}
 
         {/* WHAT THEY BUY, before what they cost. A pack is meaningless without knowing what a
             credit does, and this is the one screen where someone is deciding to spend money. */}
@@ -274,6 +318,47 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
 
         {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#C0392B' }}>{err}</div>}
 
+        {/* ── Where the credits went ────────────────────────────────────────────────────
+            A metered resource a baker cannot audit is one they have to trust us about. This is
+            the surface where "I had 300 and now I have 240" becomes answerable.
+            Below the packs deliberately: someone opens this to see what they have or to buy more
+            far more often than to reconcile, so the ledger is available without being in the way.
+            Absent entirely when there is nothing to show — an empty "Recent activity" heading is
+            a worse answer than no heading. */}
+        {history?.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#9BB5A2', letterSpacing: 0.4,
+                          textTransform: 'uppercase', marginBottom: 4 }}>
+              Recent activity
+            </div>
+            {(allHistory ? history : history.slice(0, 6)).map(h => (
+              <div key={h.id} style={s.ledgerRow}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={s.ledgerLabel}>{h.label}</div>
+                  <div style={s.ledgerSub}>
+                    {formatStamp(h.at)}
+                    {/* The bucket, per row. A spend that straddled both says so rather than being
+                        rounded to whichever was larger — that IS the interesting case, and hiding
+                        it would make the "monthly first" rule above unverifiable. */}
+                    {h.spent && bucketOf(h) && <> · {bucketOf(h)}</>}
+                  </div>
+                </div>
+                <div style={{ ...s.ledgerAmt, color: h.spent ? '#7C8B82' : '#3D5A44' }}>
+                  {h.spent ? '−' : '+'}{h.credits}
+                </div>
+              </div>
+            ))}
+            {history.length > 6 && !allHistory && (
+              <button type="button" onClick={() => setAllHistory(true)}
+                style={{ background: 'none', border: 'none', padding: '6px 0 0', cursor: 'pointer',
+                         fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: '#7C8B82',
+                         textAlign: 'left' }}>
+                Show {history.length - 6} more
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Deliberately at the bottom and understated. Someone here wants credits, not a plan
             conversation — but if the real answer IS a bigger plan, the door should not be hidden. */}
         <div style={{ fontSize: 11.5, color: '#B7C4BB', fontWeight: 600, lineHeight: 1.5 }}>
@@ -286,6 +371,27 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
 }
 
 const formatMoney = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
+
+// Date AND time, because two X-Rays on one afternoon are indistinguishable by date alone and
+// "which of those was the one I cancelled" is exactly the question this list answers.
+const formatStamp = (iso) => {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+  } catch { return ''; }
+};
+
+// Which bucket paid. Both non-zero is a STRADDLE — the spend crossed the boundary mid-action —
+// and it is spelled out rather than collapsed, because it is the one case where the monthly-first
+// rule is visibly doing something.
+export function bucketOf(h) {
+  if (h.allowance && h.wallet) return `${h.allowance} monthly + ${h.wallet} bought`;
+  if (h.wallet)                return 'bought credits';
+  if (h.allowance)             return 'monthly credits';
+  return null;
+}
 const formatResetDate = (iso) => {
   if (!iso) return 'the 1st';
   try {
@@ -315,6 +421,22 @@ const s = {
     display: 'flex', flexDirection: 'column', gap: 4,
   },
   priceRow: { display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 },
+  split: {
+    background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px',
+    display: 'flex', flexDirection: 'column', gap: 9,
+  },
+  splitRow:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  splitLabel: { fontSize: 12.5, fontWeight: 800, color: '#2C4433' },
+  splitSub:   { fontSize: 11, color: '#9BB5A2', fontWeight: 600, marginTop: 1 },
+  splitNum:   { fontSize: 17, fontWeight: 800, color: '#2C4433', fontVariantNumeric: 'tabular-nums' },
+  ledgerRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    padding: '7px 0', borderBottom: '1px solid #F1F5F2',
+  },
+  ledgerLabel: { fontSize: 12.5, fontWeight: 700, color: '#4A5D51', overflow: 'hidden',
+                 textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  ledgerSub:   { fontSize: 10.5, color: '#B7C4BB', fontWeight: 600, marginTop: 1 },
+  ledgerAmt:   { fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums', flexShrink: 0 },
   note: { background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px' },
   pack: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
