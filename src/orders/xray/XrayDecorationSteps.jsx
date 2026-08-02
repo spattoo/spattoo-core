@@ -89,6 +89,9 @@ function photoRows(design, storedSteps, meta) {
       // The generated build sequence, if one was made. Stored as an R2 key and expanded to a URL
       // by the API (routes/orders.js withStageUrls) — core never learns the bucket.
       stagesUrl: storedSteps?.[d.id]?.stages_url ?? null,
+      // A render was ATTEMPTED and did not produce a sheet. Distinct from "never generated", and
+      // the whole reason the card can say something honest instead of quietly omitting a picture.
+      stagesFailed: storedSteps?.[d.id]?.stages_failed === true,
       // Photo steps are stored as { guide, label, … } per decoration inside xray_spec.
       guide:   storedSteps?.[d.id]?.guide ?? null,
       status:  'draft',                         // read off a photo, never reviewed by us
@@ -127,6 +130,7 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
   const [note, setNote] = useState(null);
   const [open, setOpen] = useState(false);
   const [fresh, setFresh] = useState(null);   // shown immediately, before the parent refetches
+  const [freshStages, setFreshStages] = useState(null);
 
   const guide = fresh ?? row.guide;
   // An element guide is shared and amortises across every cake using it; photo steps belong to this
@@ -148,6 +152,9 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
       if (res?.notModelled) setNote('This looks piped, printed or pre-made rather than modelled by hand — nothing was charged.');
       else {
         setFresh(res?.steps?.guide ?? res?.guide?.guide ?? res?.guide ?? null);
+        // The sheet, if this run produced one. Held locally so a retry that succeeds shows the
+        // picture at once rather than waiting for the parent's refetch.
+        setFreshStages(res?.steps?.stages_url ?? null);
         onGenerated?.();
         setOpen(true);
       }
@@ -207,7 +214,16 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
       {note && <div style={{ ...s.muted, marginTop: 6 }}>{note}</div>}
       {err && <div style={{ fontSize: 12, fontWeight: 700, color: '#C0392B', marginTop: 6 }}>{err}</div>}
 
-      {guide && open && <GuideBody guide={guide} row={row} photoUrl={photoUrl} s={s} />}
+      {guide && open && (
+        <GuideBody
+          guide={guide} row={row} photoUrl={photoUrl} s={s}
+          stagesUrl={freshStages ?? row.stagesUrl}
+          // Offer a retry ONLY where a render was attempted and failed. Absent means "not
+          // generated", which the Generate button above already covers.
+          onRetryStages={row.stagesFailed && !freshStages && canGenerate ? generate : null}
+          retrying={busy}
+        />
+      )}
       {open && <TemplateButton row={row} photoUrl={photoUrl} s={s} />}
     </div>
   );
@@ -218,11 +234,32 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
 // the cream-colour table above, and repeating them here would be a second place to get them wrong.
 const readable = (text) => String(text ?? '').replace(/\{(\w+)\}/g, (_, role) => role.replace(/_/g, ' '));
 
-function GuideBody({ guide, row, photoUrl, s }) {
+function GuideBody({ guide, row, photoUrl, s, stagesUrl, onRetryStages, retrying }) {
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <ReferenceAndColours guide={guide} row={row} photoUrl={photoUrl} s={s} />
-      <StageGrid stagesUrl={row.stagesUrl} s={s} />
+      <StageGrid stagesUrl={stagesUrl} s={s} />
+      {/* ── The sheet we could not draw ────────────────────────────────────────────────
+          The steps are the product and the sheet is the improvement, so a failed picture never
+          throws away a guide. But saying NOTHING left a baker with a guide that looked complete
+          and a picture they had no idea was missing — and, before this, no way to ask again.
+          Retrying costs them nothing: the words are already paid for and the render failed on our
+          side. */}
+      {!stagesUrl && onRetryStages && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                      background: '#FBF7F0', border: '1px solid #EFE3CC', borderRadius: 10, padding: '9px 11px' }}>
+          <span style={{ fontSize: 11.5, color: '#8A5200', fontWeight: 600, lineHeight: 1.5 }}>
+            We couldn't draw the step-by-step sheet for this one. The steps above are complete.
+          </span>
+          <button type="button" onClick={onRetryStages} disabled={retrying}
+            style={{ marginLeft: 'auto', padding: '5px 11px', borderRadius: 8,
+                     border: '1.5px solid #EFE3CC', background: '#fff', color: '#8A5200',
+                     fontSize: 11.5, fontWeight: 800, fontFamily: 'inherit',
+                     cursor: retrying ? 'default' : 'pointer' }}>
+            {retrying ? 'Drawing…' : 'Try the sheet again'}
+          </button>
+        </div>
+      )}
       {guide.materials?.length > 0 && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: '#8A857D', marginBottom: 5 }}>YOU WILL NEED</div>
