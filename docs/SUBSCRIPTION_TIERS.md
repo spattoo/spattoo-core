@@ -26,6 +26,26 @@ Presented correctly, Spark is a banner above the table — *"Every plan starts f
 days"* — and the table has THREE columns. Flame is then measured against what a baker uses
 today (a notebook, a phone gallery, Instagram DMs), which it beats comfortably.
 
+### The trial is the FIRST CARD in the row (refined 2026-08-02)
+
+The strip-above-the-table version failed the other way: a reader who came for prices scrolled
+straight past it into the columns, so the free month — the cheapest thing we have to offer — was the
+one thing they never saw.
+
+It is now the first of four cards. **That is not a reversal of the rule below, which is narrower
+than it reads: never a COMPARISON COLUMN.** The failure being guarded against is ticks that line up
+row-for-row against Flame, not presence in the row. So the card has messaging and a CTA — no price
+row, no ticks, nothing to run an eye across. The three beside it open with a NUMBER; this one opens
+with a SENTENCE, which is most of what stops it reading as a fourth tier.
+
+Copy, and why:
+- **"Experience Spattoo for a full month" / "Then decide which plan fits."** The word *trial* is
+  ours, not theirs. And the headline leads on the OFFER, not the price — "Free for 30 days" spent
+  the largest line on something the CTA and the footnote already said twice.
+- **"Everything in Flame"**, never *"every plan starts free for 30 days"*, which the strip did say
+  and which was untrue: the trial grants Flame's features, so a Blaze buyer reading it expects
+  thirty free days of Blaze and does not get it.
+
 ### Spark on the pricing page — a CARD, not a column (refined 2026-07-27)
 
 Spark **does** appear on the pricing page, as one of three cards. What it must never be is a
