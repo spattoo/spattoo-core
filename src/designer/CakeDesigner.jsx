@@ -1262,15 +1262,15 @@ function OrderDesignViewer({ order, onClose }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // The Orders rail item's submenu. Both entries open the SAME Orders panel — `view` just
 // says which face of it to land on — so there is one orders destination, not two.
-// Two VIEWS of the same orders, plus the one ACTION that starts a new one. "New Order" is the
-// manual path — no 3D design, a customer's reference photo (or nothing) — which until now was only
+// One ACTION that starts an order, then two VIEWS of the ones that exist. "New Order" is the manual
+// path — no 3D design, a customer's reference photo (or nothing) — which until now was only
 // reachable from inside the Orders panel or by picking a day on the calendar. It needs
-// `order:manage`: a view-only member must not be offered a form they cannot submit. It sits last so
-// the two views keep the positions people already reach for.
+// `order:manage`: a view-only member must not be offered a form they cannot submit, and for them
+// the list is simply first.
 const ORDERS_MENU = [
+  { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
   { id: 'orders-calendar', label: 'Calendar',  view: 'calendar' },
-  { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
 ];
 
 // The rail's menu surface — the ONE place that knows a rail flyout is dark and hover-highlights.
