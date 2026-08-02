@@ -656,6 +656,32 @@ listed and subscribable", and for Forge at MVP those two are the same thing. A s
 `is_listed` would only earn its keep if we ever need listed-but-not-subscribable (or the
 reverse), which is not a case we have.
 
+## ⚠️ Declared vs ENFORCED (audited 2026-08-02)
+
+An entitlement in `constants/entitlements.js` and `seed_plan_entitlements.sql` is a DECLARATION. It
+gates nothing until a route or a component reads it, and three of them never got that far — which is
+how they reached the pricing page as feature rows.
+
+| key | enforced by | status |
+|---|---|---|
+| `ai_credits_per_month` | `services/aiCredits.js` | ✅ real |
+| `can_buy_credits` | `services/aiCredits.js` | ✅ real |
+| `xray_reports` | `orders/OrdersPanel.jsx` | ✅ real (true on every tier since 2026-08-02) |
+| `max_saved_templates` | **nothing** | ❌ declared only — the pricing row was removed 2026-08-02 |
+| `custom_templates` | **nothing** | ❌ marked *deprecated… inert* in the registry, still sold on the page |
+| `ai_background_removal` | **nothing** | ❌ declared only, still sold on the page |
+| `max_team_members` | **nothing** | ❌ declared only; seats are not shipped and the row is off the page |
+
+**Before putting an entitlement on the pricing page, grep for the key outside the registry and the
+seed.** If the only hits are the declaration and the seed, it is not a feature — it is an intention,
+and selling an intention is how a page ends up promising a cap that does not exist (saved templates)
+or withholding from Flame something Flame already has (custom templates, background removal).
+
+**What this leaves Blaze differentiating on, honestly: credits (300 → 800), the ability to buy
+top-ups, and priority support.** Custom templates and background removal are its other two named
+hooks and neither is gated. That is a decision to make — enforce them, or stop selling them — not a
+row to quietly delete.
+
 ## New entitlement keys this implies (not yet in the registry)
 ~~`max_xray_orders_monthly` (#16)~~ — **DROPPED 2026-08-02, never added.** It was to replace
 the `xray_reports` boolean with a graduated allowance; `ai_credits_per_month` does that job
