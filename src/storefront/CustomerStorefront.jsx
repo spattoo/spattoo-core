@@ -110,6 +110,10 @@ export default function CustomerStorefront({
   // the API still demanded a token would fail at the last moment, after all the work was done.
   // Defaults to the strict answer, so a failed settings call never silently drops verification.
   const [otpRequired, setOtpRequired] = useState(true);
+  // Which channels the API will accept a code on, in its order of preference. Server-owned for the
+  // same reason otp_required is: offering SMS where the provider is not live (or DLT has not
+  // cleared) means a customer waits for a code that was scrubbed upstream.
+  const [otpChannels, setOtpChannels] = useState(['sms']);
 
   const [baker, setBaker]     = useState(bakerProp);
   const [invite, setInvite]   = useState(null);
@@ -163,25 +167,32 @@ export default function CustomerStorefront({
   // object every render would refetch the catalogue on every keystroke elsewhere on the page.
   const facetApi = useMemo(() => ({
     fetchStorefrontTemplates: () =>
-      getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(slug)}/templates`)
+      getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(bakerSlug)}/templates`)
         .then(r => r.templates ?? []),
     fetchStorefrontFlavours: () =>
-      getJSON(`${apiBaseUrl}/api/flavours?bakerSlug=${encodeURIComponent(slug)}`),
-  }), [apiBaseUrl, slug]);
+      getJSON(`${apiBaseUrl}/api/flavours?bakerSlug=${encodeURIComponent(bakerSlug)}`),
+  }), [apiBaseUrl, bakerSlug]);
 
   useEffect(() => {
-    if (!slug) return;
+    // The RESOLVED slug, not the prop. A host that passes `baker` without `slug` — the storefront
+    // preview and the dev harness both do — fetched no settings at all, so lead time, otp_required
+    // and otp_channels silently kept their defaults. Nothing errored; the values were simply never
+    // asked for.
+    if (bakerSlug === 'unknown') return;
     // A failure here is not worth a broken storefront — 0 is the default and means "no notice
     // required", which is what every baker has until somebody sets one.
-    getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(slug)}/settings`)
+    getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(bakerSlug)}/settings`)
       .then(r => {
         setLeadTimeDays(r?.lead_time_days ?? 0);
         // Only an explicit false switches it off. An older API that does not send the field at all
         // keeps verification on, which is the safe way round.
         setOtpRequired(r?.otp_required !== false);
+        // An older API sends nothing here; keep the previous single-channel behaviour rather than
+        // rendering an empty toggle.
+        if (Array.isArray(r?.otp_channels) && r.otp_channels.length) setOtpChannels(r.otp_channels);
       })
       .catch(() => {});
-  }, [slug, apiBaseUrl]);
+  }, [bakerSlug, apiBaseUrl]);
 
   // MUST sit above the early returns below: a hook skipped on the loading render and called on the
   // next one changes the hook order, which React treats as a fatal error.
@@ -607,6 +618,7 @@ export default function CustomerStorefront({
           apiBaseUrl={apiBaseUrl}
           captchaSiteKey={captchaSiteKey}
           otpRequired={otpRequired}
+          otpChannels={otpChannels}
           onClose={() => setShowFacets(false)}
           onSubmit={submitEnquiry}
         />

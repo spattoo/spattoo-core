@@ -65,7 +65,7 @@ function merge(draft, patch) {
 
 export default function FacetShell({
   baker, tierCount = 1, isMobile = false, palette, api, leadTimeDays = 0,
-  apiBaseUrl, captchaSiteKey, otpRequired = true, slug: slugProp,
+  apiBaseUrl, captchaSiteKey, otpRequired = true, otpChannels, slug: slugProp,
   onClose, onSubmit, renderFacet,
 }) {
   // The host resolves this and passes it — see CustomerStorefront. Falling back to baker.slug
@@ -173,7 +173,7 @@ export default function FacetShell({
                 <VerifyStep
                   apiBaseUrl={apiBaseUrl} slug={slug} bakerName={baker?.name || 'the baker'}
                   captchaSiteKey={captchaSiteKey} primary={primary}
-                  otpRequired={otpRequired}
+                  otpRequired={otpRequired} channels={otpChannels}
                   initialPhone={draft.contact.phone}
                   onBack={() => setVerifying(false)}
                   onVerified={(tok, phone) => {

@@ -18,22 +18,35 @@ import { useOtp } from '../useOtp.js';
 // here would ask the same question twice, and the second ask reads as though the first was not
 // believed.
 
+// What each channel calls itself, asks for, and how a phone keyboard should behave for it. One
+// table rather than ternaries at six call sites — adding WhatsApp later is a row, not a hunt.
+const CHANNEL = {
+  sms:   { pick: 'Text me',  ask: 'Phone number',   mode: 'tel',   sent: 'a 6-digit code to' },
+  email: { pick: 'Email me', ask: 'Email address',  mode: 'email', sent: 'a 6-digit code to' },
+};
+
 export default function VerifyStep({
   apiBaseUrl, slug, bakerName, captchaSiteKey, primary, initialPhone = '',
+  // Which channels the SERVER will accept, in its order of preference — read back from /settings so
+  // a channel we cannot deliver on is never offered. SMS to an Indian number needs DLT clearance;
+  // offering it before that is how a customer waits for a code a telco already scrubbed.
+  channels = ['sms'],
   otpRequired = true, onVerified, onBack,
 }) {
+  const [channel, setChannel] = useState(channels[0] ?? 'sms');
   const [phone, setPhone] = useState(initialPhone);
   const captchaConfigured = !!captchaSiteKey;
+  const ch = CHANNEL[channel] ?? CHANNEL.sms;
 
   const send = useCallback(async (captchaToken) => {
     await postJSON(`${apiBaseUrl}/api/storefront/${slug}/send-otp`, {
-      to: phone.trim(), channel: 'sms', captchaToken,
+      to: phone.trim(), channel, captchaToken,
     });
-  }, [apiBaseUrl, slug, phone]);
+  }, [apiBaseUrl, slug, phone, channel]);
 
   const verify = useCallback(async (code) => (
-    postJSON(`${apiBaseUrl}/api/storefront/${slug}/verify-otp`, { to: phone.trim(), channel: 'sms', code })
-  ), [apiBaseUrl, slug, phone]);
+    postJSON(`${apiBaseUrl}/api/storefront/${slug}/verify-otp`, { to: phone.trim(), channel, code })
+  ), [apiBaseUrl, slug, phone, channel]);
 
   const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim()) });
 
@@ -52,7 +65,7 @@ export default function VerifyStep({
         <h3 style={s.title}>How can {bakerName} reach you?</h3>
         <p style={s.sub}>{bakerName} will call or message you about your cake.</p>
         <input style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
-               inputMode="tel" placeholder="Phone number" autoFocus aria-label="Phone number" />
+               inputMode={ch.mode} placeholder={ch.ask} autoFocus aria-label={ch.ask} />
         <button type="button" style={s.primary(primary, ready)} disabled={!ready}
                 onClick={() => onVerified?.(null, phone.trim())}>
           Send to {bakerName}
@@ -79,9 +92,29 @@ export default function VerifyStep({
         {otp.step === 'start'
           // Says why, because "verify your number" with no reason reads as a hoop. The reason is
           // true and it is the customer's benefit, not ours.
-          ? `${bakerName} will call or message you about your cake, so we just need to check the number works.`
+          ? (channel === 'email'
+              ? `${bakerName} will be in touch about your cake, so we just need to check this reaches you.`
+              : `${bakerName} will call or message you about your cake, so we just need to check the number works.`)
           : <>We sent a 6-digit code to <b>{phone.trim()}</b>.</>}
       </p>
+
+      {/* Only when there is a genuine choice. One channel is not a decision, and rendering a single
+          disabled-looking tab would invite somebody to hunt for the other. */}
+      {otp.step === 'start' && channels.length > 1 && (
+        <div style={s.tabs} role="group" aria-label="How to send the code">
+          {channels.map(c => (
+            <button key={c} type="button" aria-pressed={channel === c}
+                    style={{ ...s.tab, ...(channel === c ? s.tabOn(primary) : null) }}
+                    onClick={() => {
+                      // The contact belongs to the channel, so switching clears it — an email left
+                      // in the box after a switch to SMS is a guaranteed failed send.
+                      if (c !== channel) { setChannel(c); setPhone(''); otp.setErr(null); }
+                    }}>
+              {CHANNEL[c]?.pick ?? c}
+            </button>
+          ))}
+        </div>
+      )}
 
       {captchaEl}
 
@@ -89,8 +122,8 @@ export default function VerifyStep({
         <>
           <input
             style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
-            inputMode="tel" placeholder="Phone number" autoFocus
-            aria-label="Phone number"
+            inputMode={ch.mode} placeholder={ch.ask} autoFocus
+            aria-label={ch.ask}
           />
           <button type="button" style={s.primary(primary, !!phone.trim() && !otp.sendBlocked(captchaConfigured))}
                   disabled={!phone.trim() || otp.sendBlocked(captchaConfigured)}
@@ -119,7 +152,9 @@ export default function VerifyStep({
             </button>
             {/* Back to the number, for the commonest failure of all: they typed it wrong. Without
                 this the only way out is to abandon the enquiry. */}
-            <button type="button" style={s.link} onClick={otp.reset}>Change number</button>
+            <button type="button" style={s.link} onClick={otp.reset}>
+              {channel === 'email' ? 'Change address' : 'Change number'}
+            </button>
           </div>
         </>
       )}
@@ -149,6 +184,10 @@ const s = {
     background: on ? primary : '#E3DBD1', color: on ? '#fff' : '#A2968A',
     font: 'inherit', fontSize: 14.5, fontWeight: 800, cursor: on ? 'pointer' : 'default',
   }),
+  tabs:  { display: 'flex', gap: 6 },
+  tab:   { flex: 1, padding: '9px 0', borderRadius: 10, border: '1.5px solid #E7DFD5', background: '#fff',
+           font: 'inherit', fontSize: 12.5, fontWeight: 700, color: '#7A6C60', cursor: 'pointer' },
+  tabOn: (primary) => ({ borderColor: primary, color: primary, background: '#F4F7F4' }),
   links: { display: 'flex', gap: 16, justifyContent: 'center' },
   link: { background: 'none', border: 'none', font: 'inherit', fontSize: 12.5, fontWeight: 700,
           color: '#7A6C60', cursor: 'pointer', padding: '4px 0', textDecoration: 'underline' },
