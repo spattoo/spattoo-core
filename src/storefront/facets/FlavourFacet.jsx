@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
+import { suggestFlavours, fallback } from './suggestFlavour.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -30,16 +31,9 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName }) {
   }, [api]);
 
   if (door === 'suggest') {
-    return (
-      <div style={s.note}>
-        <div style={s.noteTitle}>Not quite ready</div>
-        <p style={s.noteBody}>
-          Picking one for you is still being built. Have a look at what {bakerName} bakes for now —
-          there is a slice of each, so you can see what you are getting.
-        </p>
-        <button type="button" style={s.back} onClick={() => setDoor(null)}>← Back</button>
-      </div>
-    );
+    return <Suggester draft={draft} patch={patch} close={close} bakerName={bakerName}
+                      flavours={state.flavours} loading={state.loading}
+                      onBack={() => setDoor(null)} />;
   }
 
   if (door !== 'browse') {
@@ -127,6 +121,113 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName }) {
   );
 }
 
+// ── "I can't decide — help me pick" ─────────────────────────────────────────────────────────────
+// Two or three short questions, then a real recommendation with the reason it won.
+//
+// It SKIPS anything already known. If the date facet was told this is a birthday, that question is
+// not asked again — and the answers it does collect are written to the cake, so the details facet
+// will not ask either. The form shrinks as you go, which is the clearest signal a customer gets
+// that the thing is paying attention.
+const QUESTIONS = [
+  { key: 'forWhom',  title: "Who's it for?", options: [
+      ['child', 'A little one'], ['adult', 'A grown-up'],
+      ['couple', 'A couple'],    ['crowd', 'A crowd']] },
+  { key: 'occasion', title: "What's the occasion?", options: [
+      ['birthday', 'Birthday'],  ['anniversary', 'Anniversary'],
+      ['wedding', 'Wedding'],    ['other', 'Just because']] },
+  { key: 'mood',     title: 'Play it safe, or something different?', options: [
+      ['safe', 'Safe bet'], ['different', 'Something different']] },
+];
+
+function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }) {
+  // `mood` is the suggester's own question and belongs to nobody else, so it stays local. The other
+  // two are facts about the CAKE and are seeded from the draft — see `never ask twice`.
+  const [answers, setAnswers] = useState({
+    forWhom:  draft.details.forWhom  || undefined,
+    occasion: draft.details.occasion || undefined,
+  });
+  const [rejected, setRejected] = useState([]);   // ids the customer has waved away
+
+  const pending = QUESTIONS.filter(q => !answers[q.key]);
+
+  if (loading) return <div style={s.note}>Thinking…</div>;
+
+  if (pending.length) {
+    const q = pending[0];
+    return (
+      <div style={s.qWrap}>
+        <button type="button" style={s.back} onClick={onBack}>← Back</button>
+        <div style={s.qTitle}>{q.title}</div>
+        <div style={s.qOpts}>
+          {q.options.map(([value, label]) => (
+            <button key={value} type="button" style={s.qOpt}
+                    onClick={() => {
+                      setAnswers(a => ({ ...a, [q.key]: value }));
+                      // Written to the CAKE, not kept here — the suggester asked because it needed
+                      // to, but the answer is the cake's and the details facet must not ask again.
+                      if (q.key !== 'mood') patch({ details: { [q.key]: value } });
+                    }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const ranked = suggestFlavours(flavours, answers, { dietaryKeys: draft.details.dietaryKeys })
+    .filter(r => !rejected.includes(r.flavour.id));
+  const pick = ranked[0] ?? (rejected.length ? null : fallback(flavours, draft.details.dietaryKeys));
+
+  // Nothing survived. Say so plainly and still let them through — the one thing this must never do
+  // is invent a suggestion to avoid an empty screen.
+  if (!pick) {
+    const dietary = draft.details.dietaryKeys.length;
+    return (
+      <div style={s.note}>
+        <div style={s.noteTitle}>{dietary ? 'Ah — none of these fit' : 'Nothing leaps out'}</div>
+        <p style={s.noteBody}>
+          {bakerName} may still be able to help. Tell them what you are after and they will come
+          back to you.
+        </p>
+        <button type="button" style={s.back} onClick={onBack}>← Back to the flavours</button>
+      </div>
+    );
+  }
+
+  const f = pick.flavour;
+  return (
+    <div style={s.result}>
+      <button type="button" style={s.back} onClick={onBack}>← Back</button>
+      <Slice sponge={f.spongeColor} filling={f.fillingColor} height={104} />
+      <div style={s.resultName}>{f.name}</div>
+      {/* The sentence from the rule that actually argued for it — not a plausible one chosen
+          afterwards. That is the whole reason this is rules and not a model. */}
+      <p style={s.resultWhy}>
+        {pick.because}
+        {/* Said out loud when it applies, because on a close call the baker's own flavour is often
+            the deciding margin — and a reason that leaves out what decided it is only half true. */}
+        {pick.signature && ` And it's what ${bakerName} is known for.`}
+      </p>
+      <div style={s.resultActions}>
+        <button type="button" style={s.yes}
+                onClick={() => {
+                  patch({ flavours: draft.flavours.map((t, i) => i === 0
+                    ? { tier: 0, name: f.name, flavourId: f.id, source: f.source ?? 'global',
+                        spongeColor: f.spongeColor ?? null, fillingColor: f.fillingColor ?? null }
+                    : t) });
+                  close();
+                }}>
+          Yes, that one
+        </button>
+        <button type="button" style={s.another} onClick={() => setRejected(r => [...r, f.id])}>
+          Show me another
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const s = {
   door: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
@@ -155,6 +256,21 @@ const s = {
 
   done: { marginTop: 4, padding: '12px 0', borderRadius: 12, border: 'none', background: '#2C4433',
           color: '#fff', font: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+
+  qWrap:  { display: 'flex', flexDirection: 'column', gap: 12 },
+  qTitle: { fontSize: 17, fontWeight: 800, color: '#2A241F', lineHeight: 1.3 },
+  qOpts:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 },
+  qOpt:   { padding: '14px 12px', borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff',
+            font: 'inherit', fontSize: 13.5, fontWeight: 700, color: '#2A241F', cursor: 'pointer' },
+
+  result: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' },
+  resultName: { fontSize: 19, fontWeight: 800, color: '#2A241F' },
+  resultWhy:  { fontSize: 13, color: '#7A6C60', lineHeight: 1.55, margin: 0, maxWidth: 320 },
+  resultActions: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4 },
+  yes:     { padding: '12px 22px', borderRadius: 12, border: 'none', background: '#2C4433', color: '#fff',
+             font: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+  another: { padding: '12px 18px', borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff',
+             font: 'inherit', fontSize: 13.5, fontWeight: 700, color: '#7A6C60', cursor: 'pointer' },
 
   note: { display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, fontWeight: 600, color: '#7A6C60' },
   noteTitle: { fontSize: 14, fontWeight: 800, color: '#2A241F' },

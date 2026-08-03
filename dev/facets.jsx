@@ -9,10 +9,14 @@ const BAKER = { name: 'Feelings & Flavours', slug: 'feelings-flavours',
                 primary_color: '#2C4433', accent_color: '#6B8C74' };
 
 const FLAVOURS = [
-  { flavourId: 'f1', name: 'Belgian Dark', spongeColor: '#3B2415', fillingColor: '#23130B' },
-  { flavourId: 'f2', name: 'Red Velvet',   spongeColor: '#8E2436', fillingColor: '#F6F1E8' },
-  { flavourId: 'f3', name: 'Matcha',       spongeColor: '#A9BE7B', fillingColor: '#CFE0B0' },
-  { flavourId: 'f4', name: 'Strawberry',   spongeColor: '#F5E6D3', fillingColor: '#E4626F' },
+  { flavourId: 'f1', name: 'Belgian Dark', spongeColor: '#3B2415', fillingColor: '#23130B',
+    tasteFamily: 'chocolate', crowdPleaser: false },
+  { flavourId: 'f2', name: 'Red Velvet',   spongeColor: '#8E2436', fillingColor: '#F6F1E8',
+    tasteFamily: 'classic', crowdPleaser: true, isSignature: true },
+  { flavourId: 'f3', name: 'Matcha',       spongeColor: '#A9BE7B', fillingColor: '#CFE0B0',
+    tasteFamily: 'tea', crowdPleaser: false },
+  { flavourId: 'f4', name: 'Strawberry',   spongeColor: '#F5E6D3', fillingColor: '#E4626F',
+    tasteFamily: 'fruit', crowdPleaser: true },
 ];
 
 // The templates door is REAL now, so the stub declines to handle `design` and the shell falls
@@ -31,7 +35,9 @@ const API = {
   fetchStorefrontFlavours: async () => {
     await new Promise(r => setTimeout(r, 250));
     return FLAVOURS.map(f => ({ id: f.flavourId, name: f.name, source: 'global',
-                                spongeColor: f.spongeColor, fillingColor: f.fillingColor }));
+                                spongeColor: f.spongeColor, fillingColor: f.fillingColor,
+                                tasteFamily: f.tasteFamily, crowdPleaser: f.crowdPleaser,
+                                isSignature: f.isSignature, conflicts_with: f.conflicts_with ?? [] }));
   },
 };
 

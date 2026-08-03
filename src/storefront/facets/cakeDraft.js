@@ -168,14 +168,25 @@ export function toOrderPayload(draft) {
   };
 }
 
+// The suggester and the details facet both speak in KEYS — one small vocabulary, so a rule can
+// match on it and a later facet can tell it has already been answered. The baker reads English, so
+// the keys become words exactly once, here at the boundary. Anything unrecognised falls through as
+// whatever was typed, because a customer may write their own.
+export const FOR_WHOM_LABEL = {
+  child:  'a child', adult: 'a grown-up', couple: 'a couple', crowd: 'a crowd',
+};
+export const OCCASION_LABEL = {
+  birthday: 'Birthday', anniversary: 'Anniversary', wedding: 'Wedding', other: 'No special occasion',
+};
+
 // Occasion, who it is for and the message have no column on an order, and inventing three would be
 // a schema change to carry three sentences. They are worth keeping because they are exactly what
 // makes a quote right first time — so they ride in the instructions the baker already reads.
 function buildInstructions(draft) {
   const d = draft.details;
   const parts = [];
-  if (d.occasion.trim())            parts.push(`Occasion: ${d.occasion.trim()}`);
-  if (d.forWhom.trim())             parts.push(`For: ${d.forWhom.trim()}`);
+  if (d.occasion.trim())            parts.push(`Occasion: ${OCCASION_LABEL[d.occasion] ?? d.occasion.trim()}`);
+  if (d.forWhom.trim())             parts.push(`For: ${FOR_WHOM_LABEL[d.forWhom] ?? d.forWhom.trim()}`);
   if (d.message.trim())             parts.push(`Message on the cake: ${d.message.trim()}`);
   if (draft.size.servings != null)  parts.push(`Serves about ${draft.size.servings}`);
   if (d.specialInstructions.trim()) parts.push(d.specialInstructions.trim());
