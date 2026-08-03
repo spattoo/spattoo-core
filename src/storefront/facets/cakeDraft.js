@@ -119,7 +119,14 @@ export function toOrderPayload(draft) {
     ...(draft.design.snapshot ? { designSnapshot: draft.design.snapshot } : {}),
 
     weightKg: draft.size.weightKg ?? undefined,
-    flavours: draft.flavours.filter(f => f.name.trim()),
+
+    // PICKED field by field, not passed through. A facet holds whatever it finds useful — the
+    // flavour list carries sponge and filling colours so it can draw a slice — and spreading that
+    // straight into an order puts render data in front of a baker forever. This module owns the
+    // payload shape, so it states it rather than trusting five doors to remember.
+    flavours: draft.flavours
+      .filter(f => f.name.trim())
+      .map(({ tier, name, flavourId, source }) => ({ tier, name, flavourId, source })),
 
     // Everything the customer said that has no field of its own, gathered into the one place the
     // baker already reads. Occasion and who it is for are worth a quote being right first time.

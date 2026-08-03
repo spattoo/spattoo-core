@@ -91,6 +91,17 @@ describe('toOrderPayload', () => {
     expect(toOrderPayload(d).flavours.map(f => f.tier)).toEqual([0, 2]);
   });
 
+  it('does not leak a facet\'s display data into the order', () => {
+    // The flavour list carries sponge/filling colours so it can draw a slice. A door that spreads
+    // a flavour object must not put those in front of a baker — found by running the shell and
+    // reading the payload it produced.
+    const d = emptyDraft('bakery');
+    d.flavours[0] = { tier: 0, name: 'Matcha', flavourId: 'f3', source: 'global',
+                      spongeColor: '#A9BE7B', fillingColor: '#CFE0B0' };
+    expect(toOrderPayload(d).flavours[0]).toEqual(
+      { tier: 0, name: 'Matcha', flavourId: 'f3', source: 'global' });
+  });
+
   it('never sends the customer — identity is the session, server-side', () => {
     const d = emptyDraft('bakery');
     d.contact = { name: 'A', phone: '9876543210', email: 'a@b.c' };
