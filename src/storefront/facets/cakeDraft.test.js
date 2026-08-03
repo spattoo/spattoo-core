@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   emptyDraft, isFilled, emptyFacets, canSubmit, toOrderPayload,
-  saveDraft, loadDraft, clearDraft, today, FACETS,
+  saveDraft, loadDraft, clearDraft, today, FACETS, withTierCount,
 } from './cakeDraft.js';
 
 // The draft is the contract every facet writes through and the shape the baker's order is built
@@ -44,6 +44,34 @@ describe('facet completeness', () => {
     const d = emptyDraft('bakery');
     d.size.servings = 0;
     expect(isFilled(d, 'size')).toBe(true);
+  });
+});
+
+describe('withTierCount', () => {
+  it('keeps answered tiers when growing', () => {
+    let d = emptyDraft('bakery', 1);
+    d.flavours[0].name = 'Chocolate';
+    d = withTierCount(d, 3);
+    expect(d.flavours).toHaveLength(3);
+    expect(d.flavours[0].name).toBe('Chocolate');
+    expect(d.flavours[2]).toEqual({ tier: 2, name: '', flavourId: null, source: null });
+  });
+
+  it('drops from the end when shrinking — a lost layer takes its flavour with it', () => {
+    let d = emptyDraft('bakery', 3);
+    d.flavours[0].name = 'Chocolate';
+    d.flavours[2].name = 'Vanilla';
+    d = withTierCount(d, 2);
+    expect(d.flavours.map(f => f.name)).toEqual(['Chocolate', '']);
+  });
+
+  it('is a no-op at the same count, so it cannot churn a render', () => {
+    const d = emptyDraft('bakery', 2);
+    expect(withTierCount(d, 2)).toBe(d);
+  });
+
+  it('never goes below one tier', () => {
+    expect(withTierCount(emptyDraft('bakery', 2), 0).flavours).toHaveLength(1);
   });
 });
 

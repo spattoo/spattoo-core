@@ -19,7 +19,7 @@ const DOORS = [
   { kind: 'designed', label: "I'm feeling creative — let me build it myself in 3D" },
 ];
 
-export default function DesignFacet({ draft, patch, close, api, bakerName }) {
+export default function DesignFacet({ draft, patch, close, api, bakerName, setTierCount }) {
   // null = the three doors. Opening one replaces them; there is no step counter, because there are
   // no steps — a door is a way in, not a stage.
   const [door, setDoor] = useState(null);
@@ -31,6 +31,10 @@ export default function DesignFacet({ draft, patch, close, api, bakerName }) {
                               patch({ design: { kind: 'template', templateId: t.id,
                                                 templateName: t.name, thumbnailUrl: t.thumbnail_url,
                                                 photoKeys: [], snapshot: null } });
+                              // The template knows how many tiers it has, so the flavour facet
+                              // never has to ask — `never ask twice`, across facets. A fact one
+                              // of them learned belongs to the cake, not to whoever found it.
+                              if (t.tier_count) setTierCount(t.tier_count);
                               close();
                             }} />;
   }

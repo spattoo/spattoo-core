@@ -25,6 +25,16 @@ const NEUTRAL_FILLING = '#F3EDE1';
  * rather than invent one. A flavour added to the global list tomorrow has no colours until somebody
  * authors them, and it must not render as a black rectangle in the meantime.
  */
+// Drawn once, in a fixed coordinate space, and SCALED by the viewBox. The first version took a
+// height and kept a hardcoded 150px width, so asking for a small one produced a 150×92 slab that
+// overflowed its card into the neighbours — and every absolute coordinate in the outline would have
+// distorted if the width had simply been shrunk to match. Design space here, pixels at the edge.
+const W0 = 150;          // design width
+const BODY0 = 190;       // design height of the cake itself
+const PLATE0 = 20;       // room beneath it for the plate
+const H0 = BODY0 + PLATE0;
+const ASPECT = W0 / H0;
+
 export function Slice({ sponge, filling, height = 190 }) {
   const sp = sponge  || NEUTRAL_SPONGE;
   const fl = filling || NEUTRAL_FILLING;
@@ -42,27 +52,27 @@ export function Slice({ sponge, filling, height = 190 }) {
     { c: sp, h: 0.160 },
   ];
 
-  const W = 150, H = height, TOP = H * 0.13;   // TOP is the frosting cap above the sponge stack
-  const body = H - TOP;
+  const TOP = BODY0 * 0.13;          // the frosting cap above the sponge stack
+  const body = BODY0 - TOP;
 
-  let y = H;
+  let y = BODY0;
   const rows = bands.map((b, i) => {
     const h = b.h * body;
     y -= h;
-    return <rect key={i} x="0" y={y - 0.4} width={W} height={h + 0.8} fill={b.c} />;
+    return <rect key={i} x="0" y={y - 0.4} width={W0} height={h + 0.8} fill={b.c} />;
   });
 
   // A WEDGE, not a rectangle. The left edge is the cut — dead straight, because a knife made it —
   // and the right is the outside of the cake, which leans out slightly and rounds where the
   // frosting turns over the rim. That asymmetry is most of what makes it read as a slice.
   const outline =
-    `M 6 ${H} L 6 ${TOP + 6} Q 6 ${TOP - 2} 16 ${TOP - 3} ` +
-    `Q ${W / 2} ${TOP - 12} ${W - 14} ${TOP - 1} Q ${W - 5} ${TOP + 2} ${W - 4} ${TOP + 12} ` +
-    `L ${W - 2} ${H} Z`;
+    `M 6 ${BODY0} L 6 ${TOP + 6} Q 6 ${TOP - 2} 16 ${TOP - 3} ` +
+    `Q ${W0 / 2} ${TOP - 12} ${W0 - 14} ${TOP - 1} Q ${W0 - 5} ${TOP + 2} ${W0 - 4} ${TOP + 12} ` +
+    `L ${W0 - 2} ${BODY0} Z`;
 
   return (
-    <svg width={W} height={H + 20} viewBox={`0 0 ${W} ${H + 20}`} role="img"
-         aria-label="A slice of cake, cut to show the sponge and filling">
+    <svg width={Math.round(height * ASPECT)} height={height} viewBox={`0 0 ${W0} ${H0}`}
+         role="img" aria-label="A slice of cake, cut to show the sponge and filling">
       <defs>
         <clipPath id={`sl-${uid}`}><path d={outline} /></clipPath>
         <linearGradient id={`sh-${uid}`} x1="0" y1="0" x2="1" y2="0">
@@ -73,13 +83,13 @@ export function Slice({ sponge, filling, height = 190 }) {
       </defs>
 
       {/* The plate first, so the slice sits ON it rather than over it. */}
-      <ellipse cx={W / 2} cy={H + 8} rx={W / 2 - 4} ry="6" fill="#000" opacity="0.08" />
+      <ellipse cx={W0 / 2} cy={BODY0 + 8} rx={W0 / 2 - 4} ry="6" fill="#000" opacity="0.08" />
 
       <g clipPath={`url(#sl-${uid})`}>
         {rows}
         {/* The frosting cap, drawn past the top so the rounded rim is filled to the edge. */}
-        <rect x="0" y="-6" width={W} height={TOP + 8} fill={fl} />
-        <rect x="0" y="-6" width={W} height={H + 8} fill={`url(#sh-${uid})`} />
+        <rect x="0" y="-6" width={W0} height={TOP + 8} fill={fl} />
+        <rect x="0" y="-6" width={W0} height={BODY0 + 8} fill={`url(#sh-${uid})`} />
       </g>
 
       {/* A hairline round the whole thing, so a pale flavour still has an edge against a pale

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import CakeVisual from './CakeVisual.jsx';
 import DesignFacet from './DesignFacet.jsx';
+import FlavourFacet from './FlavourFacet.jsx';
 import {
-  FACETS, emptyDraft, loadDraft, saveDraft, isFilled, canSubmit,
+  FACETS, emptyDraft, loadDraft, saveDraft, isFilled, canSubmit, withTierCount,
 } from './cakeDraft.js';
 
 // ── The shell ───────────────────────────────────────────────────────────────────────────────────
@@ -32,7 +33,14 @@ const ENTRIES = [
   { facet: 'flavour', label: "I'll pick the flavour first" },
 ];
 
-function reduce(draft, patch) {
+function reduce(draft, action) {
+  // A tier-count change is a RESHAPE, not a merge: the flavour array has to grow or shrink while
+  // keeping what has already been answered, which a shallow merge cannot express.
+  if (action.__tierCount != null) return withTierCount(draft, action.__tierCount);
+  return merge(draft, action);
+}
+
+function merge(draft, patch) {
   // Facets MUTATE the shared draft rather than returning values this shell stitches together,
   // because any facet may fill a field that nominally belongs to another — the suggester asks the
   // occasion because it needs it, and the answer belongs to the cake. A shallow merge per top-level
@@ -94,7 +102,8 @@ export default function FacetShell({
             {open
               ? (renderFacet?.({ facet: open, draft, patch, close: () => setOpen(null), api })
                  ?? <Facet facet={open} draft={draft} patch={patch} api={api}
-                           bakerName={baker?.name} close={() => setOpen(null)} />)
+                           bakerName={baker?.name} close={() => setOpen(null)}
+                           setTierCount={(n) => patch({ __tierCount: n })} />)
               : (
                 <>
                   {ENTRIES.map(e => (
@@ -143,7 +152,8 @@ export default function FacetShell({
 // Which facet's body to show. A plain switch rather than a registry: there are four, they are
 // named in one place, and a registry would hide that from anyone reading this file.
 function Facet({ facet, ...props }) {
-  if (facet === 'design') return <DesignFacet {...props} />;
+  if (facet === 'design')  return <DesignFacet {...props} />;
+  if (facet === 'flavour') return <FlavourFacet {...props} />;
   return (
     <div style={{ fontSize: 13, fontWeight: 600, color: '#7A6C60' }}>
       This part is still being built.

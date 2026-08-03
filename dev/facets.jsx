@@ -28,31 +28,18 @@ const API = {
       { id: 't5', name: 'Wedding Three',    tier_count: 3, thumbnail_url: null },
     ];
   },
+  fetchStorefrontFlavours: async () => {
+    await new Promise(r => setTimeout(r, 250));
+    return FLAVOURS.map(f => ({ id: f.flavourId, name: f.name, source: 'global',
+                                spongeColor: f.spongeColor, fillingColor: f.fillingColor }));
+  },
 };
 
 function stubDoor({ facet, draft, patch, close }) {
-  if (facet === 'design') return null;   // the real DesignFacet handles it
+  if (facet === 'design' || facet === 'flavour') return null;   // real facets handle these
   const btn = { padding: '13px 16px', borderRadius: 12, border: '1.5px solid #E7DFD5',
                 background: '#fff', font: 'inherit', fontSize: 14, fontWeight: 700,
                 color: '#2A241F', cursor: 'pointer', textAlign: 'left' };
-
-  if (facet === 'flavour') return (
-    <>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#7A6C60' }}>I know my flavour</div>
-      {FLAVOURS.map(f => (
-        <button key={f.flavourId} style={btn} onClick={() => {
-          patch({ flavours: draft.flavours.map((t, i) => i === 0 ? { ...t, ...f, source: 'global' } : t) });
-        }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ display: 'inline-block', width: 22, height: 22, borderRadius: 5,
-                           background: f.spongeColor, border: '1px solid rgba(0,0,0,.12)' }} />
-            {f.name}
-          </span>
-        </button>
-      ))}
-      <button style={{ ...btn, borderStyle: 'dashed' }} onClick={close}>I can't decide — help me pick</button>
-    </>
-  );
 
   if (facet === 'size') return (
     <>

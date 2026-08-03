@@ -75,6 +75,25 @@ export function emptyDraft(bakerSlug, tierCount = 1) {
   };
 }
 
+/**
+ * Resize the per-tier flavour list, keeping what has already been answered.
+ *
+ * Called when the DESIGN facet learns the tier count — a template says how many tiers it has, so
+ * the flavour facet never has to ask. That is `never ask twice` working across facets: one of them
+ * knows a fact, and it belongs to the cake rather than to whoever found it.
+ *
+ * Growing preserves existing tiers and adds blanks. Shrinking drops from the end, which is the only
+ * honest choice — a three-tier cake becoming two has lost a layer, and the flavour that was on it
+ * is not evidence about either survivor.
+ */
+export function withTierCount(draft, tierCount) {
+  const n = Math.max(1, tierCount | 0);
+  if (draft.flavours.length === n) return draft;
+  const next = Array.from({ length: n }, (_, i) =>
+    draft.flavours[i] ?? { tier: i, name: '', flavourId: null, source: null });
+  return { ...draft, flavours: next };
+}
+
 /** Has this facet been given anything? Drives what is still worth asking for. */
 export function isFilled(draft, facet) {
   switch (facet) {
