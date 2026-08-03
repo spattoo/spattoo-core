@@ -269,3 +269,43 @@ describe('today()', () => {
     expect(today()).toBe(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
   });
 });
+
+describe('reference photos', () => {
+  it('counts the design facet as filled on a photo alone, with no kind', () => {
+    // Somebody who attached three pictures and nothing else has said something real about the cake.
+    const d = emptyDraft('bakery');
+    d.design.photos = [{ id: 'p1', name: 'cake.jpg' }];
+    expect(isFilled(d, 'design')).toBe(true);
+  });
+
+  it('is not filled by an empty photo list', () => {
+    expect(isFilled(emptyDraft('bakery'), 'design')).toBe(false);
+  });
+
+  it('takes referenceKeys from the CALLER, not the draft — they do not exist until upload', () => {
+    const d = emptyDraft('bakery');
+    d.contact.name = 'Ananya';
+    d.design.photos = [{ id: 'p1', name: 'a.jpg' }];   // ids, never keys
+    const out = toOrderPayload(d, 'bakery', { referenceKeys: ['orders/reference/abc.webp'] });
+    expect(out.referenceKeys).toEqual(['orders/reference/abc.webp']);
+  });
+
+  it('never leaks a local photo id into the order', () => {
+    const d = emptyDraft('bakery');
+    d.design.photos = [{ id: 'local-uuid', name: 'a.jpg' }];
+    const out = toOrderPayload(d, 'bakery', { referenceKeys: [] });
+    expect(JSON.stringify(out)).not.toContain('local-uuid');
+  });
+
+  it('omits referenceKeys entirely when nothing uploaded', () => {
+    const out = toOrderPayload(emptyDraft('bakery'), 'bakery', { referenceKeys: [] });
+    expect('referenceKeys' in out).toBe(false);
+  });
+
+  it('survives a draft round-trip — photos are ids, so localStorage can hold them', () => {
+    const d = emptyDraft('bakery');
+    d.design.photos = [{ id: 'p1', name: 'a.jpg' }, { id: 'p2', name: 'b.jpg' }];
+    saveDraft(d);
+    expect(loadDraft('bakery').design.photos).toEqual(d.design.photos);
+  });
+});

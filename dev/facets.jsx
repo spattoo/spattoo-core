@@ -57,6 +57,20 @@ window.fetch = async (url, init) => {
     }
     return new Response(JSON.stringify({ sent: true, channel: 'sms', to }), { status: 200 });
   }
+  if (u.includes('/sign-reference-upload')) {
+    await new Promise(r => setTimeout(r, 200));
+    const { contentType, contentLength } = JSON.parse(init.body);
+    window.__uploads = window.__uploads || [];
+    window.__uploads.push({ contentType, contentLength });
+    return new Response(JSON.stringify({
+      key: `orders/reference/stub-${window.__uploads.length}.webp`,
+      url: 'https://stub.r2.invalid/put',
+    }), { status: 200 });
+  }
+  if (u.startsWith('https://stub.r2.invalid/put')) {
+    await new Promise(r => setTimeout(r, 150));
+    return new Response('', { status: 200 });
+  }
   if (u.includes('/verify-otp')) {
     await new Promise(r => setTimeout(r, 300));
     const { code } = JSON.parse(init.body);

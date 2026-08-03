@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import PhotoDoor from './PhotoDoor.jsx';
 
 // ── The design facet ────────────────────────────────────────────────────────────────────────────
 // Three doors onto the same field. The customer picks the one they recognise themselves in, and
@@ -19,7 +20,7 @@ const DOORS = [
   { kind: 'designed', label: "I'm feeling creative — let me build it myself in 3D" },
 ];
 
-export default function DesignFacet({ draft, patch, close, api, bakerName, setTierCount }) {
+export default function DesignFacet({ draft, patch, close, api, bakerName, slug, setTierCount }) {
   // null = the three doors. Opening one replaces them; there is no step counter, because there are
   // no steps — a door is a way in, not a stage.
   const [door, setDoor] = useState(null);
@@ -42,15 +43,20 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, setTi
                             }} />;
   }
 
+  if (door === 'photo') {
+    return <PhotoDoor draft={draft} patch={patch} bakerName={bakerName} slug={slug}
+                      onBack={() => setDoor(null)} />;
+  }
+
   if (door) {
-    // The photo and designer doors are not built yet. Saying so plainly beats a door that opens on
-    // nothing — and beats hiding them, which would make the facet look thinner than it is.
+    // The DESIGNER door is not built yet. Saying so plainly beats a door that opens on nothing — and
+    // beats hiding it, which would make the facet look thinner than it is.
     return (
       <div style={s.soon}>
         <div style={s.soonTitle}>Not quite ready</div>
         <p style={s.soonBody}>
-          This way in is still being built. Pick a cake below for now, or tell {bakerName} what you
-          are after and they will take it from there.
+          This way in is still being built. Pick a cake below for now, or send a photo and tell
+          {' '}{bakerName} what you are after — they will take it from there.
         </p>
         <button type="button" style={s.back} onClick={() => setDoor(null)}>← Back</button>
       </div>

@@ -65,10 +65,13 @@ function merge(draft, patch) {
 
 export default function FacetShell({
   baker, tierCount = 1, isMobile = false, palette, api, leadTimeDays = 0,
-  apiBaseUrl, captchaSiteKey, otpRequired = true,
+  apiBaseUrl, captchaSiteKey, otpRequired = true, slug: slugProp,
   onClose, onSubmit, renderFacet,
 }) {
-  const slug = baker?.slug ?? 'unknown';
+  // The host resolves this and passes it — see CustomerStorefront. Falling back to baker.slug
+  // keeps the dev harnesses working, but a caller that supplies both must win, or the photo
+  // store gets written under one slug and read under another.
+  const slug = slugProp ?? baker?.slug ?? 'unknown';
   const [draft, patch] = useReducer(reduce, null, () => loadDraft(slug, tierCount));
   // null = the entry screen. A facet is opened, filled, and closed back to here — there is no
   // "next", because there is no order to go in.
@@ -163,7 +166,7 @@ export default function FacetShell({
             {open
               ? (renderFacet?.({ facet: open, draft, patch, close: () => setOpen(null), api })
                  ?? <Facet facet={open} draft={draft} patch={patch} api={api}
-                           bakerName={baker?.name} close={() => setOpen(null)}
+                           bakerName={baker?.name} slug={slug} close={() => setOpen(null)}
                            setTierCount={(n) => patch({ __tierCount: n })}
                            leadTimeDays={leadTimeDays} />)
               : verifying ? (

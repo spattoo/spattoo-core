@@ -53,7 +53,12 @@ export function emptyDraft(bakerSlug, tierCount = 1) {
     // downstream: a template and the designer both yield a real design, a photo yields a reference
     // the baker still has to read, and none yields an enquiry with no picture at all.
     design: { kind: null, templateId: null, templateName: null, thumbnailUrl: null,
-              photoKeys: [], snapshot: null,
+              // Reference photos the customer picked. Only { id, name } — the BYTES live in
+              // IndexedDB (see photoStore.js) because localStorage is strings and a few megabytes
+              // of image would blow the shared quota and take the rest of the draft with it.
+              // `photoKeys` stays empty until submit, when the blobs are uploaded on the verified
+              // session and the R2 keys come back.
+              photos: [], photoKeys: [], snapshot: null,
               // A CONSTRAINT the design carries, not an answer. A wedding template cannot be made
               // at half a kilo, so the size facet stops offering sizes below this — it does not
               // fill one in. Learning a floor is not the same as the customer having chosen.
@@ -101,7 +106,9 @@ export function withTierCount(draft, tierCount) {
 /** Has this facet been given anything? Drives what is still worth asking for. */
 export function isFilled(draft, facet) {
   switch (facet) {
-    case 'design':  return !!draft.design.kind;
+    // A photo IS an answer to the design facet, even with no `kind` — somebody who attached three
+    // pictures and nothing else has said something real about the cake.
+    case 'design':  return !!draft.design.kind || (draft.design.photos?.length ?? 0) > 0;
     case 'flavour': return draft.flavours.some(f => f.name.trim());
     case 'size':    return draft.size.servings != null || draft.size.weightKg != null;
     case 'date':    return !!draft.details.deliveryDate;
@@ -156,8 +163,15 @@ export function splitName(full) {
  * earlier version of this comment said identity is never sent — true of the other editor, wrong
  * about this one.
  */
-export function toOrderPayload(draft, bakerSlug) {
+/**
+ * `referenceKeys` is passed IN rather than read from the draft, because the keys do not exist until
+ * the moment of sending: the photos are uploaded on the verified session immediately before this is
+ * called. Falls back to the draft's own list so a caller that has nothing to upload — every path
+ * except the photo door — is unchanged.
+ */
+export function toOrderPayload(draft, bakerSlug, { referenceKeys } = {}) {
   const d = draft.details;
+  const keys = referenceKeys ?? draft.design.photoKeys;
   return {
     bakerSlug: bakerSlug ?? draft.bakerSlug,
     customer: {
@@ -167,7 +181,7 @@ export function toOrderPayload(draft, bakerSlug) {
     },
     // A photo enquiry has no design, so its reference keys stand in for one — the manual-order
     // shape, which the API and the Orders list already understand.
-    ...(draft.design.photoKeys.length ? { referenceKeys: draft.design.photoKeys } : {}),
+    ...(keys?.length ? { referenceKeys: keys } : {}),
     ...(draft.design.snapshot ? { designSnapshot: draft.design.snapshot } : {}),
 
     weightKg: draft.size.weightKg ?? undefined,

@@ -93,6 +93,13 @@ export default function CustomerStorefront({
   // not one we may make on their behalf. See plans/storefront-facets.md, "The labels".
   designLabel = 'Let’s make your cake',
 }) {
+  // ONE authority for "which baker is this". The prop is how the host addresses us; baker.slug is
+  // what the record says. They agree in production — but FacetShell used to derive its own from
+  // baker.slug while this component used the prop, and when a caller passed only one of them the
+  // photo store was written under one slug and read under the other. Nothing errored: the photos
+  // simply were not on the order. Resolved once here and passed down, so there is nothing to diverge.
+  const bakerSlug = slug ?? bakerProp?.slug ?? 'unknown';
+
   const [showFacets, setShowFacets] = useState(false);
   // Minimum notice, so the date facet can refuse dates inside it while the customer is still on
   // the page. 0 until the settings call answers — which is also the default, so a slow response
@@ -180,6 +187,41 @@ export default function CustomerStorefront({
   // next one changes the hook order, which React treats as a fatal error.
   const logo = useTrimmedLogo(logoUrl || baker?.logo_transparent_url || baker?.logo_url);
 
+  // Reference photos → R2, one at a time, on the verified session.
+  //
+  // Sequential rather than parallel: three 1MB PUTs racing on a phone connection is how the slowest
+  // of them times out, and a failure here happens at the worst possible moment. One at a time is
+  // slower in the best case and far more likely to finish in the common one.
+  //
+  // A missing blob is SKIPPED, not fatal. It means the browser evicted it or the draft came from
+  // another device; sending the rest of a real enquiry beats refusing the whole thing over a picture
+  // the customer can send later.
+  const uploadPhotos = useCallback(async (draft, session) => {
+    const photos = draft?.design?.photos ?? [];
+    if (!photos.length || !session?.access_token) return [];
+    const { getPhoto } = await import('./facets/photoStore.js');
+    const keys = [];
+    for (const p of photos) {
+      const blob = await getPhoto(bakerSlug, p.id);
+      if (!blob) continue;
+      const signed = await fetch(`${apiBaseUrl}/api/storefront/${encodeURIComponent(bakerSlug)}/sign-reference-upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ filename: p.name || 'photo.webp', contentType: blob.type, contentLength: blob.size }),
+      });
+      if (!signed.ok) {
+        const body = await signed.json().catch(() => ({}));
+        throw new Error(body.error || 'Could not upload your photo.');
+      }
+      const { url, key } = await signed.json();
+      // Straight to R2. The Content-Type must match what was signed or the PUT is rejected there.
+      const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob });
+      if (!put.ok) throw new Error('Could not upload your photo.');
+      keys.push(key);
+    }
+    return keys;
+  }, [apiBaseUrl, bakerSlug]);
+
   // ── Sending it ────────────────────────────────────────────────────────────
   // ⚠️ ALSO ABOVE THE EARLY RETURNS, for the reason stated three lines up. This one is a useCallback
   // and it lived below them until it crashed the storefront with React #310 — the first render
@@ -202,13 +244,22 @@ export default function CustomerStorefront({
     // walk the whole flow and read the copy, which is what they opened the customiser to judge.
     if (preview) throw new Error('This is a preview — enquiries are not sent from here.');
     const { toOrderPayload, clearDraft } = await import('./facets/cakeDraft.js');
+
+    // ── The photos go up FIRST, on the verified session ──────────────────────────────────────────
+    // Not before now, and not from an anonymous endpoint: the bucket is served publicly, so an
+    // upload without a proved contact is free file hosting on a Spattoo domain. Doing it here means
+    // every byte that reaches R2 has a phone number attached to it.
+    //
+    // Before the order, so a failed upload does not leave a half-described order the baker acts on
+    // — better no enquiry than one whose photos silently never arrived.
+    const referenceKeys = await uploadPhotos(draft, session);
     const res = await fetch(`${apiBaseUrl}/api/orders`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
       },
-      body: JSON.stringify(toOrderPayload(draft, slug)),
+      body: JSON.stringify(toOrderPayload(draft, bakerSlug, { referenceKeys })),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -216,9 +267,13 @@ export default function CustomerStorefront({
     }
     // Only once the server has it. Clearing on optimism would lose everything they typed on the
     // one occasion it mattered.
-    clearDraft(slug);
+    clearDraft(bakerSlug);
+    // The blobs are the baker's problem now — they live on the order. Keeping them would leave
+    // somebody's photographs in a browser store nothing will ever read again.
+    const { clearPhotos } = await import('./facets/photoStore.js');
+    await clearPhotos(bakerSlug);
     return res.json();
-  }, [apiBaseUrl, slug, preview]);
+  }, [apiBaseUrl, bakerSlug, preview, uploadPhotos]);
 
   // Loader stays until the baker is fetched AND the container breakpoint is measured — so the FIRST
   // storefront paint is already at the correct layout (no mobile→desktop / default→config flash).
@@ -548,6 +603,7 @@ export default function CustomerStorefront({
           leadTimeDays={leadTimeDays}
           isMobile={bp !== 'desktop'}
           palette={{ primary, accent }}
+          slug={bakerSlug}
           apiBaseUrl={apiBaseUrl}
           captchaSiteKey={captchaSiteKey}
           otpRequired={otpRequired}
