@@ -167,6 +167,43 @@ export default function CustomerStorefront({
   // next one changes the hook order, which React treats as a fatal error.
   const logo = useTrimmedLogo(logoUrl || baker?.logo_transparent_url || baker?.logo_url);
 
+  // ── Sending it ────────────────────────────────────────────────────────────
+  // ⚠️ ALSO ABOVE THE EARLY RETURNS, for the reason stated three lines up. This one is a useCallback
+  // and it lived below them until it crashed the storefront with React #310 — the first render
+  // returns the loader before reaching it, the second calls it, and the hook count changes. The
+  // dev harness never caught it because it mounts FacetShell directly; only the real storefront
+  // renders this component. Anything with a use* prefix belongs above line 173, without exception.
+  //
+  // POST /api/orders takes a bakerSlug and a customer, which is exactly the shape an anonymous
+  // storefront visitor can produce — no new endpoint was needed. It upserts the customer by
+  // phone/email, so a returning customer is matched rather than duplicated, and the order lands in
+  // the baker's existing Orders list with the statuses, calendar and quote flow already working.
+  // That is the whole reason an enquiry is an ORDER and not a new entity.
+  //
+  // `session` comes from the OTP step the shell runs immediately before this. The route takes the
+  // customer's contact FROM that token, never from the body — so the header is not an extra, it is
+  // the only thing that makes the enquiry addressable. It is absent only when the API has OTP
+  // suppressed, in which case the route accepts the body instead.
+  const submitEnquiry = useCallback(async (draft, session) => {
+    const { toOrderPayload, clearDraft } = await import('./facets/cakeDraft.js');
+    const res = await fetch(`${apiBaseUrl}/api/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify(toOrderPayload(draft, slug)),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Could not send that just now.');
+    }
+    // Only once the server has it. Clearing on optimism would lose everything they typed on the
+    // one occasion it mattered.
+    clearDraft(slug);
+    return res.json();
+  }, [apiBaseUrl, slug]);
+
   // Loader stays until the baker is fetched AND the container breakpoint is measured — so the FIRST
   // storefront paint is already at the correct layout (no mobile→desktop / default→config flash).
   // rootRef is attached to the loader too, so the breakpoint can measure before content renders.
@@ -243,35 +280,6 @@ export default function CustomerStorefront({
     if (expired) return;
     setShowFacets(true);
   }
-
-  // ── Sending it ────────────────────────────────────────────────────────────
-  // POST /api/orders is PUBLIC and takes a bakerSlug and a customer, which is exactly the shape an
-  // anonymous storefront visitor can produce — no new endpoint was needed. It upserts the customer
-  // by phone/email, so a returning customer is matched rather than duplicated, and the order lands
-  // in the baker's existing Orders list with the statuses, calendar and quote flow already working.
-  // That is the whole reason an enquiry is an ORDER and not a new entity.
-  // `session` comes from the OTP step the shell runs immediately before this. POST /api/orders takes
-  // the customer's contact FROM this token, never from the body — so the header is not an extra, it
-  // is the only thing that makes the enquiry addressable.
-  const submitEnquiry = useCallback(async (draft, session) => {
-    const { toOrderPayload, clearDraft } = await import('./facets/cakeDraft.js');
-    const res = await fetch(`${apiBaseUrl}/api/orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify(toOrderPayload(draft, slug)),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Could not send that just now.');
-    }
-    // Only once the server has it. Clearing on optimism would lose everything they typed on the
-    // one occasion it mattered.
-    clearDraft(slug);
-    return res.json();
-  }, [apiBaseUrl, slug]);
 
   // Nav items — only those with somewhere to go.
   // Real baker content; falls back to a clearly-marked sample so the section designs
