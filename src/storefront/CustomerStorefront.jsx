@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import FacetShell from './facets/FacetShell.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
@@ -78,6 +79,12 @@ export default function CustomerStorefront({
   onEditPortrait = null,   // customiser only: makes the portrait an upload affordance
   designLabel = 'Start designing',
 }) {
+  const [showFacets, setShowFacets] = useState(false);
+  // Minimum notice, so the date facet can refuse dates inside it while the customer is still on
+  // the page. 0 until the settings call answers — which is also the default, so a slow response
+  // never blocks a date that would have been fine.
+  const [leadTimeDays, setLeadTimeDays] = useState(0);
+
   const [baker, setBaker]     = useState(bakerProp);
   const [invite, setInvite]   = useState(null);
   const [loading, setLoading] = useState(!bakerProp);
@@ -122,6 +129,29 @@ export default function CustomerStorefront({
 
   // Prefer the bg-removed logo (floats cleanly on any surface), then trim its transparent margin —
   // the header caps by height, so padding inside the file is spent out of the mark's height budget.
+  // BOTH of these must sit above the early returns below, for the reason the next comment gives.
+  // They did not, at first: a hook skipped on the loading render and called on the loaded one is
+  // "Rendered more hooks than during the previous render", and the storefront renders nothing at
+  // all. The warning below is there because somebody already made this mistake once.
+  // What the facets read. Memoised on the slug, because the facets useEffect on it — a fresh
+  // object every render would refetch the catalogue on every keystroke elsewhere on the page.
+  const facetApi = useMemo(() => ({
+    fetchStorefrontTemplates: () =>
+      getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(slug)}/templates`)
+        .then(r => r.templates ?? []),
+    fetchStorefrontFlavours: () =>
+      getJSON(`${apiBaseUrl}/api/flavours?bakerSlug=${encodeURIComponent(slug)}`),
+  }), [apiBaseUrl, slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    // A failure here is not worth a broken storefront — 0 is the default and means "no notice
+    // required", which is what every baker has until somebody sets one.
+    getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(slug)}/settings`)
+      .then(r => setLeadTimeDays(r?.lead_time_days ?? 0))
+      .catch(() => {});
+  }, [slug, apiBaseUrl]);
+
   // MUST sit above the early returns below: a hook skipped on the loading render and called on the
   // next one changes the hook order, which React treats as a fatal error.
   const logo = useTrimmedLogo(logoUrl || baker?.logo_transparent_url || baker?.logo_url);
@@ -187,11 +217,20 @@ export default function CustomerStorefront({
   // `accepting_orders` comes from the public storefront API.
   const notAcceptingOrders = baker.accepting_orders === false;
 
+  // ── The front door ────────────────────────────────────────────────────────
+  // One button, in every hero variant, so changing what it DOES changes all of them.
+  //
+  // It used to go straight to the 3D designer. That is the highest-effort way in and it was the
+  // only one — a customer holding a photo, or who just wants chocolate, had nowhere to start. The
+  // chooser puts three ways in front of them and lets them begin wherever they already are.
+  //
+  // With only ONE way in it goes straight through: a chooser offering a single option is a
+  // pointless extra tap. That happens to a baker with no templates and no flavour list.
   function handleCta() {
     if (notAcceptingOrders) return;
     if (inviteId && invite?.valid) { setShowLogin(true); return; }
     if (expired) return;
-    onStartDesign?.(baker);
+    setShowFacets(true);
   }
 
   // Nav items — only those with somewhere to go.
@@ -435,6 +474,25 @@ export default function CustomerStorefront({
           accent={accent}
           pal={pal}
           onClose={() => setWelcomeOpen(false)}
+        />
+      )}
+
+      {showFacets && (
+        <FacetShell
+          baker={baker}
+          api={facetApi}
+          leadTimeDays={leadTimeDays}
+          isMobile={bp !== 'desktop'}
+          palette={{ primary, accent }}
+          onClose={() => setShowFacets(false)}
+          // Handing off to the designer is REAL — it is the path the button took before, so the
+          // 3D door and a chosen template both work today.
+          //
+          // Submitting an enquiry WITHOUT a design does not, and is deliberately not faked: an
+          // anonymous visitor cannot create an order, and there is no public enquiry endpoint yet.
+          // The draft survives in localStorage either way, so nothing a customer typed is lost
+          // when that endpoint lands.
+          onSubmit={() => { setShowFacets(false); onStartDesign?.(baker); }}
         />
       )}
 
