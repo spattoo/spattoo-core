@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import CakeVisual from './CakeVisual.jsx';
 import DesignFacet from './DesignFacet.jsx';
 import FlavourFacet from './FlavourFacet.jsx';
+import { SizeFacet, DateFacet } from './SizeDateFacets.jsx';
 import {
   FACETS, emptyDraft, loadDraft, saveDraft, isFilled, canSubmit, withTierCount,
 } from './cakeDraft.js';
@@ -53,7 +54,7 @@ function merge(draft, patch) {
 }
 
 export default function FacetShell({
-  baker, tierCount = 1, isMobile = false, palette, api,
+  baker, tierCount = 1, isMobile = false, palette, api, leadTimeDays = 0,
   onClose, onSubmit, renderFacet,
 }) {
   const slug = baker?.slug ?? 'unknown';
@@ -103,7 +104,8 @@ export default function FacetShell({
               ? (renderFacet?.({ facet: open, draft, patch, close: () => setOpen(null), api })
                  ?? <Facet facet={open} draft={draft} patch={patch} api={api}
                            bakerName={baker?.name} close={() => setOpen(null)}
-                           setTierCount={(n) => patch({ __tierCount: n })} />)
+                           setTierCount={(n) => patch({ __tierCount: n })}
+                           leadTimeDays={leadTimeDays} />)
               : (
                 <>
                   {ENTRIES.map(e => (
@@ -154,11 +156,8 @@ export default function FacetShell({
 function Facet({ facet, ...props }) {
   if (facet === 'design')  return <DesignFacet {...props} />;
   if (facet === 'flavour') return <FlavourFacet {...props} />;
-  return (
-    <div style={{ fontSize: 13, fontWeight: 600, color: '#7A6C60' }}>
-      This part is still being built.
-    </div>
-  );
+  if (facet === 'size')    return <SizeFacet {...props} />;
+  return <DateFacet {...props} />;
 }
 
 const s = {

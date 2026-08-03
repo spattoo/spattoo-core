@@ -53,7 +53,11 @@ export function emptyDraft(bakerSlug, tierCount = 1) {
     // downstream: a template and the designer both yield a real design, a photo yields a reference
     // the baker still has to read, and none yields an enquiry with no picture at all.
     design: { kind: null, templateId: null, templateName: null, thumbnailUrl: null,
-              photoKeys: [], snapshot: null },
+              photoKeys: [], snapshot: null,
+              // A CONSTRAINT the design carries, not an answer. A wedding template cannot be made
+              // at half a kilo, so the size facet stops offering sizes below this — it does not
+              // fill one in. Learning a floor is not the same as the customer having chosen.
+              minWeightKg: null },
 
     // TASTE. Per TIER, matching OrderModal exactly — a tiered cake can be a different flavour on
     // each layer, and flattening that to one field would quietly lose an order's worth of detail.

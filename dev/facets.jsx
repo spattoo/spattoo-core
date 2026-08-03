@@ -29,7 +29,8 @@ const API = {
       { id: 't2', name: 'Classic Round',    tier_count: 1, thumbnail_url: null },
       { id: 't3', name: 'Naked Berry',      tier_count: 1, thumbnail_url: null },
       { id: 't4', name: 'Chocolate Drip',   tier_count: 2, thumbnail_url: null },
-      { id: 't5', name: 'Wedding Three',    tier_count: 3, thumbnail_url: null },
+      { id: 't5', name: 'Wedding Three',    tier_count: 3, thumbnail_url: null,
+        attrs: { min_weight_kg: 3 } },
     ];
   },
   fetchStorefrontFlavours: async () => {
@@ -40,37 +41,6 @@ const API = {
                                 isSignature: f.isSignature, conflicts_with: f.conflicts_with ?? [] }));
   },
 };
-
-function stubDoor({ facet, draft, patch, close }) {
-  if (facet === 'design' || facet === 'flavour') return null;   // real facets handle these
-  const btn = { padding: '13px 16px', borderRadius: 12, border: '1.5px solid #E7DFD5',
-                background: '#fff', font: 'inherit', fontSize: 14, fontWeight: 700,
-                color: '#2A241F', cursor: 'pointer', textAlign: 'left' };
-
-  if (facet === 'size') return (
-    <>
-      {[10, 20, 40, 70].map(n => (
-        <button key={n} style={btn} onClick={() => { patch({ size: { servings: n, weightKg: n / 8 } }); close(); }}>
-          About {n} people
-        </button>
-      ))}
-    </>
-  );
-
-  return (
-    <>
-      <label style={{ fontSize: 12.5, fontWeight: 700, color: '#7A6C60' }}>When do you need it?</label>
-      <input type="date" value={draft.details.deliveryDate}
-             onChange={e => patch({ details: { deliveryDate: e.target.value } })}
-             style={{ padding: '12px 14px', borderRadius: 12, border: '1.5px solid #E7DFD5', font: 'inherit' }} />
-      <label style={{ fontSize: 12.5, fontWeight: 700, color: '#7A6C60', marginTop: 6 }}>Your phone</label>
-      <input value={draft.contact.phone} placeholder="So {baker} can reach you"
-             onChange={e => patch({ contact: { phone: e.target.value } })}
-             style={{ padding: '12px 14px', borderRadius: 12, border: '1.5px solid #E7DFD5', font: 'inherit' }} />
-      <button style={{ ...btn, marginTop: 6 }} onClick={close}>Done</button>
-    </>
-  );
-}
 
 function Demo() {
   const [open, setOpen] = useState(true);
@@ -93,7 +63,7 @@ function Demo() {
         {sent && <pre style={{ marginTop: 14, fontSize: 11, background: '#fff', padding: 12, borderRadius: 8, overflow: 'auto' }}>{sent}</pre>}
       </div>
       {open && (
-        <FacetShell baker={BAKER} isMobile={mobile} renderFacet={stubDoor} api={API}
+        <FacetShell baker={BAKER} isMobile={mobile} api={API} leadTimeDays={2}
           onClose={() => setOpen(false)}
           onSubmit={(d) => { import('../src/storefront/facets/cakeDraft.js').then(m => setSent(JSON.stringify(m.toOrderPayload(d), null, 2))); setOpen(false); }} />
       )}

@@ -30,7 +30,10 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, setTi
                             onPick={(t) => {
                               patch({ design: { kind: 'template', templateId: t.id,
                                                 templateName: t.name, thumbnailUrl: t.thumbnail_url,
-                                                photoKeys: [], snapshot: null } });
+                                                photoKeys: [], snapshot: null,
+                                                // The size facet uses this as a floor, never as an
+                                                // answer — see SizeDateFacets.
+                                                minWeightKg: t.attrs?.min_weight_kg ?? null } });
                               // The template knows how many tiers it has, so the flavour facet
                               // never has to ask — `never ask twice`, across facets. A fact one
                               // of them learned belongs to the cake, not to whoever found it.
