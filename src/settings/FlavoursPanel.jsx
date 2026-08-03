@@ -33,10 +33,10 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
   // than collapsing to 0, and re-rendering must never reformat what someone is mid-way
   // through. Parsing happens once, on save.
   const [prices, setPrices] = useState({});
-  // Two settings, not one: "here is what I make" and "here is what it costs" are
-  // different disclosures, and the common case is a baker who wants the first without
-  // the second.
-  const [showFlavours,    setShowFlavours]    = useState(true);
+  // Only prices are settled here. Whether the storefront DISPLAYS the flavour list is
+  // the menu section's own on/off in the storefront customiser — one control, where the
+  // section is. A `show_flavours` flag briefly lived here too and had to go: it also
+  // emptied the API response, which broke the order form's flavour picker.
   const [priceVisibility, setPriceVisibility] = useState('private');
 
   useEffect(() => {
@@ -54,10 +54,7 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
         setPrices(Object.fromEntries(
           arr.filter(f => f.price_per_kg != null).map(f => [f.id, String(f.price_per_kg)]),
         ));
-        if (res?.visibility) {
-          setShowFlavours(res.visibility.show_flavours !== false);
-          setPriceVisibility(res.visibility.price_visibility ?? 'private');
-        }
+        if (res?.visibility) setPriceVisibility(res.visibility.price_visibility ?? 'private');
         // Effective state seeds the controls; the baseline is kept alongside so a chip
         // can show WHERE it came from. A baker cannot sensibly overrule a default they
         // cannot see is a default.
@@ -133,7 +130,7 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
           // baker advertising a free cake.
           price_per_kg: (prices[f.id] ?? '').trim() === '' ? null : Number(prices[f.id]),
         })),
-        visibility: { show_flavours: showFlavours, price_visibility: priceVisibility },
+        visibility: { price_visibility: priceVisibility },
       });
 
       if (apiClient.updateBakerDietaryExclusions) {
@@ -228,45 +225,22 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
                   label="Offered flavours"
                   hint="Turn off any flavour you don't offer. Hidden flavours won't appear to customers placing an order. Under each one, mark anything you can't make it as — a customer who asks for that gets a note to check with you, and can still place the order."
                 >
-                  {/* What a customer can see, stated as a sentence rather than inferred
-                      from two switches. A baker must never have to guess whether the
-                      number they just typed is public — this line changing as they
-                      toggle is the whole explanation of the feature. */}
+                  {/* What a customer can see, stated as a sentence rather than left to be
+                      inferred from a control. A baker must never have to work out whether
+                      the number they just typed is public — this line changing as they
+                      choose is the whole explanation of the feature. */}
                   <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11,
                                 padding: '11px 13px', marginTop: 8, display: 'flex',
                                 flexDirection: 'column', gap: 9 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#2C4433' }}>
-                      {!showFlavours
-                        ? 'Customers don’t see your flavour list.'
-                        : priceVisibility === 'public'
-                          ? 'Customers see your flavours and your prices.'
-                          : priceVisibility === 'verified'
-                            ? 'Customers see your flavours. Prices show once they verify a phone or email.'
-                            : 'Customers see your flavours. They don’t see prices.'}
+                      {priceVisibility === 'public'
+                        ? 'Customers see your prices.'
+                        : priceVisibility === 'verified'
+                          ? 'Prices show once a customer verifies a phone or email.'
+                          : 'Customers don’t see your prices.'}
                     </div>
 
-                    {/* Not a <label>: Toggle is a div with its own onClick, not a form
-                        control, so a label would not forward the click and the words
-                        would be dead while the cursor promised otherwise. The handler is
-                        on the text ITSELF rather than on a wrapper — a wrapper would fire
-                        again for clicks that bubbled up from the toggle, and two toggles
-                        cancel out. */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Toggle checked={showFlavours} onChange={() => setShowFlavours(v => !v)} />
-                      <span
-                        onClick={() => setShowFlavours(v => !v)}
-                        style={{ fontSize: 12, fontWeight: 600, color: '#4A5D51', cursor: 'pointer' }}
-                      >
-                        Show my flavour list
-                      </span>
-                    </div>
-
-                    {/* Inert when the list is hidden — there is nowhere to show a price
-                        for a list you are not showing, and offering the choice anyway
-                        would be offering one with no effect. */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6,
-                                  opacity: showFlavours ? 1 : 0.45,
-                                  pointerEvents: showFlavours ? 'auto' : 'none' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {[
                         { key: 'private',  label: 'Prices private' },
                         { key: 'verified', label: 'After verifying' },
