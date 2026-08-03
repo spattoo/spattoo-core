@@ -15,20 +15,26 @@ const FLAVOURS = [
   { flavourId: 'f4', name: 'Strawberry',   spongeColor: '#F5E6D3', fillingColor: '#E4626F' },
 ];
 
+// The templates door is REAL now, so the stub declines to handle `design` and the shell falls
+// through to it. The stub API mimics the public GET /api/storefront/:slug/templates.
+const API = {
+  fetchStorefrontTemplates: async () => {
+    await new Promise(r => setTimeout(r, 350));   // so the loading state is visible
+    return [
+      { id: 't1', name: 'Two-tier Rosette', tier_count: 2, thumbnail_url: null },
+      { id: 't2', name: 'Classic Round',    tier_count: 1, thumbnail_url: null },
+      { id: 't3', name: 'Naked Berry',      tier_count: 1, thumbnail_url: null },
+      { id: 't4', name: 'Chocolate Drip',   tier_count: 2, thumbnail_url: null },
+      { id: 't5', name: 'Wedding Three',    tier_count: 3, thumbnail_url: null },
+    ];
+  },
+};
+
 function stubDoor({ facet, draft, patch, close }) {
+  if (facet === 'design') return null;   // the real DesignFacet handles it
   const btn = { padding: '13px 16px', borderRadius: 12, border: '1.5px solid #E7DFD5',
                 background: '#fff', font: 'inherit', fontSize: 14, fontWeight: 700,
                 color: '#2A241F', cursor: 'pointer', textAlign: 'left' };
-
-  if (facet === 'design') return (
-    <>
-      {[["I'm in a hurry — show me your designs", 'template'],
-        ["I've got a cake photo for reference", 'photo'],
-        ["I'm feeling creative — let me build it myself in 3D", 'designed']].map(([label, kind]) => (
-        <button key={kind} style={btn} onClick={() => { patch({ design: { kind } }); close(); }}>{label}</button>
-      ))}
-    </>
-  );
 
   if (facet === 'flavour') return (
     <>
@@ -94,7 +100,7 @@ function Demo() {
         {sent && <pre style={{ marginTop: 14, fontSize: 11, background: '#fff', padding: 12, borderRadius: 8, overflow: 'auto' }}>{sent}</pre>}
       </div>
       {open && (
-        <FacetShell baker={BAKER} isMobile={mobile} renderFacet={stubDoor}
+        <FacetShell baker={BAKER} isMobile={mobile} renderFacet={stubDoor} api={API}
           onClose={() => setOpen(false)}
           onSubmit={(d) => { import('../src/storefront/facets/cakeDraft.js').then(m => setSent(JSON.stringify(m.toOrderPayload(d), null, 2))); setOpen(false); }} />
       )}

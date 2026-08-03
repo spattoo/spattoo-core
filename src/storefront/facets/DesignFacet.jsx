@@ -1,0 +1,161 @@
+import { useEffect, useState } from 'react';
+
+// ── The design facet ────────────────────────────────────────────────────────────────────────────
+// Three doors onto the same field. The customer picks the one they recognise themselves in, and
+// each writes `design` on the shared draft — so nothing downstream has to know which was used
+// except where the shapes genuinely differ (a template and the designer yield a real design, a
+// photo yields a reference the baker still has to read).
+//
+// Templates are FIRST, and not because they are proof of anything. A template is a design somebody
+// authored — often Spattoo, from the global library — and it says the baker is willing and able to
+// make it, never that they ever have. It leads because it is the only door that produces something
+// COMPLETE: the system already knows its tiers, shape and decorations, so it can reach a quote with
+// nothing read or guessed. A photo is a request that must be interpreted, by X-Ray or by the baker
+// squinting at it, and that is a credit or a round-trip.
+
+const DOORS = [
+  { kind: 'template', label: "I'm in a hurry — show me some cakes you can make" },
+  { kind: 'photo',    label: "I've got a cake photo for reference" },
+  { kind: 'designed', label: "I'm feeling creative — let me build it myself in 3D" },
+];
+
+export default function DesignFacet({ draft, patch, close, api, bakerName }) {
+  // null = the three doors. Opening one replaces them; there is no step counter, because there are
+  // no steps — a door is a way in, not a stage.
+  const [door, setDoor] = useState(null);
+
+  if (door === 'template') {
+    return <TemplateGallery api={api} bakerName={bakerName} onBack={() => setDoor(null)}
+                            selectedId={draft.design.templateId}
+                            onPick={(t) => {
+                              patch({ design: { kind: 'template', templateId: t.id,
+                                                templateName: t.name, thumbnailUrl: t.thumbnail_url,
+                                                photoKeys: [], snapshot: null } });
+                              close();
+                            }} />;
+  }
+
+  if (door) {
+    // The photo and designer doors are not built yet. Saying so plainly beats a door that opens on
+    // nothing — and beats hiding them, which would make the facet look thinner than it is.
+    return (
+      <div style={s.soon}>
+        <div style={s.soonTitle}>Not quite ready</div>
+        <p style={s.soonBody}>
+          This way in is still being built. Pick a cake below for now, or tell {bakerName} what you
+          are after and they will take it from there.
+        </p>
+        <button type="button" style={s.back} onClick={() => setDoor(null)}>← Back</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {DOORS.map(d => (
+        <button key={d.kind} type="button" onClick={() => setDoor(d.kind)} style={s.door}>
+          <span style={s.doorLabel}>{d.label}</span>
+          {draft.design.kind === d.kind && <span style={s.doorTick}>✓</span>}
+        </button>
+      ))}
+    </>
+  );
+}
+
+// ── The gallery ─────────────────────────────────────────────────────────────────────────────────
+// Thumbnails and names, nothing else. The full design snapshot is not fetched here and the public
+// route does not serve it: it is what a browsing customer least needs and a competitor most wants.
+// Whoever actually starts from one asks for it by id.
+
+function TemplateGallery({ api, bakerName, onBack, onPick, selectedId }) {
+  const [state, setState] = useState({ loading: true, templates: [], error: null });
+
+  useEffect(() => {
+    let alive = true;
+    api.fetchStorefrontTemplates()
+      .then(list => alive && setState({ loading: false, templates: list ?? [], error: null }))
+      .catch(e => alive && setState({ loading: false, templates: [], error: e.message }));
+    return () => { alive = false; };
+  }, [api]);
+
+  if (state.loading) return <div style={s.note}>Fetching cakes…</div>;
+
+  if (state.error) {
+    return (
+      <div style={s.note}>
+        <div>Could not load these just now.</div>
+        <button type="button" style={s.back} onClick={onBack}>← Back</button>
+      </div>
+    );
+  }
+
+  // A baker with nothing to show must not get an empty grid and no explanation. This is a real
+  // state — a new baker who has excluded the global library and not yet made their own.
+  if (!state.templates.length) {
+    return (
+      <div style={s.note}>
+        <div>{bakerName} hasn&rsquo;t put any cakes up yet.</div>
+        <p style={s.soonBody}>Try one of the other ways in — a photo, or design one yourself.</p>
+        <button type="button" style={s.back} onClick={onBack}>← Back</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div style={s.galleryHead}>
+        <button type="button" style={s.back} onClick={onBack}>← Back</button>
+        {/* Capability, never authorship or a past bake — see plans/storefront-facets.md. */}
+        <span style={s.galleryHint}>Cakes {bakerName} can make</span>
+      </div>
+
+      <div style={s.grid}>
+        {state.templates.map(t => (
+          <button key={t.id} type="button" onClick={() => onPick(t)}
+                  style={{ ...s.card, ...(t.id === selectedId ? s.cardOn : null) }}
+                  aria-pressed={t.id === selectedId}>
+            <div style={s.thumbWrap}>
+              {t.thumbnail_url
+                ? <img src={t.thumbnail_url} alt="" loading="lazy" style={s.thumb} />
+                : <div style={s.noThumb} aria-hidden="true">🎂</div>}
+            </div>
+            <span style={s.cardName}>{t.name}</span>
+            {t.tier_count > 1 && <span style={s.cardMeta}>{t.tier_count} tiers</span>}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+const s = {
+  door: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    width: '100%', textAlign: 'left', cursor: 'pointer', padding: '15px 17px',
+    borderRadius: 13, border: '1.5px solid #E7DFD5', background: '#fff', font: 'inherit',
+  },
+  doorLabel: { fontSize: 14.5, fontWeight: 700, color: '#2A241F', lineHeight: 1.35 },
+  doorTick:  { fontWeight: 800, color: '#2C4433' },
+
+  galleryHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  galleryHint: { fontSize: 11.5, fontWeight: 700, color: '#A2968A' },
+  back: { border: 'none', background: 'none', font: 'inherit', fontSize: 12.5, fontWeight: 700,
+          color: '#7A6C60', cursor: 'pointer', padding: 0, alignSelf: 'flex-start' },
+
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 12 },
+  card: { display: 'flex', flexDirection: 'column', gap: 5, padding: 8, cursor: 'pointer',
+          borderRadius: 12, border: '1.5px solid #EDE5DB', background: '#fff', font: 'inherit' },
+  cardOn: { borderColor: '#2C4433', boxShadow: '0 0 0 2px rgba(44,68,51,0.12)' },
+  thumbWrap: { aspectRatio: '1 / 1', borderRadius: 9, background: '#FAF6F0', overflow: 'hidden',
+               display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  thumb:   { width: '100%', height: '100%', objectFit: 'contain' },
+  noThumb: { fontSize: 26, opacity: 0.35 },
+  cardName: { fontSize: 12, fontWeight: 700, color: '#2A241F', lineHeight: 1.3, textAlign: 'center' },
+  cardMeta: { fontSize: 10.5, fontWeight: 600, color: '#A2968A', textAlign: 'center' },
+
+  note: { display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, fontWeight: 600,
+          color: '#7A6C60' },
+  soon: { display: 'flex', flexDirection: 'column', gap: 8 },
+  soonTitle: { fontSize: 14, fontWeight: 800, color: '#2A241F' },
+  soonBody:  { fontSize: 12.5, color: '#7A6C60', lineHeight: 1.5, margin: 0 },
+};

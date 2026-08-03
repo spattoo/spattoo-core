@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import CakeVisual from './CakeVisual.jsx';
+import DesignFacet from './DesignFacet.jsx';
 import {
   FACETS, emptyDraft, loadDraft, saveDraft, isFilled, canSubmit,
 } from './cakeDraft.js';
@@ -44,7 +45,7 @@ function reduce(draft, patch) {
 }
 
 export default function FacetShell({
-  baker, tierCount = 1, isMobile = false, palette,
+  baker, tierCount = 1, isMobile = false, palette, api,
   onClose, onSubmit, renderFacet,
 }) {
   const slug = baker?.slug ?? 'unknown';
@@ -91,7 +92,9 @@ export default function FacetShell({
 
           <div style={s.panel(isMobile)}>
             {open
-              ? renderFacet?.({ facet: open, draft, patch, close: () => setOpen(null) })
+              ? (renderFacet?.({ facet: open, draft, patch, close: () => setOpen(null), api })
+                 ?? <Facet facet={open} draft={draft} patch={patch} api={api}
+                           bakerName={baker?.name} close={() => setOpen(null)} />)
               : (
                 <>
                   {ENTRIES.map(e => (
@@ -133,6 +136,17 @@ export default function FacetShell({
           </footer>
         )}
       </div>
+    </div>
+  );
+}
+
+// Which facet's body to show. A plain switch rather than a registry: there are four, they are
+// named in one place, and a registry would hide that from anyone reading this file.
+function Facet({ facet, ...props }) {
+  if (facet === 'design') return <DesignFacet {...props} />;
+  return (
+    <div style={{ fontSize: 13, fontWeight: 600, color: '#7A6C60' }}>
+      This part is still being built.
     </div>
   );
 }
