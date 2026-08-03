@@ -493,7 +493,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // The live storefront node — identical for every device frame (it self-measures its container to
   // choose mobile/tablet/desktop, so ONE instance covers all frames; no per-device render path).
   const storefront = ready
-    ? <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
+    // A REAL api base, so the chooser shows this baker's actual templates and flavours rather than
+    // empty doors. It previously passed '' and the preview silently rendered a storefront whose
+    // every server-backed part was missing — which reads as "my flavours are gone", not as "this is
+    // only a mock". `preview` then blocks the one thing that must not happen for real: sending an
+    // enquiry to the baker's own slug from their own settings screen.
+    ? <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview}
+                          apiBaseUrl={apiClient?.baseUrl ?? ''} preview
+                          onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
     : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CakeSpinner label="Loading…" /></div>;
   // Desktop frame scale: fit the 1280×834 window into the measured stage (never upscale past 1:1).
   const framePad = device === 'mobile' && !isWide ? 0 : (isWide ? 28 : 14);

@@ -78,6 +78,11 @@ export default function CustomerStorefront({
   onAuthenticated,
   onStartDesign,
   onEditPortrait = null,   // customiser only: makes the portrait an upload affordance
+  // The baker is looking at their OWN storefront inside the customiser. Everything renders and
+  // fetches for real — that is the point of a preview — but the enquiry must not SEND, because the
+  // preview carries the baker's real slug and would drop a junk order into the list they are about
+  // to go and work from.
+  preview = false,
   // The hero CTA on every layout. It used to open the 3D designer, so "Start designing" described
   // it; it now opens the CHOOSER, whose first question is whether you would rather begin from a
   // design or a flavour — so the old label promised one of the two doors before you had picked.
@@ -193,6 +198,9 @@ export default function CustomerStorefront({
   // the only thing that makes the enquiry addressable. It is absent only when the API has OTP
   // suppressed, in which case the route accepts the body instead.
   const submitEnquiry = useCallback(async (draft, session) => {
+    // Refused at the boundary rather than by hiding the button: the baker should still be able to
+    // walk the whole flow and read the copy, which is what they opened the customiser to judge.
+    if (preview) throw new Error('This is a preview — enquiries are not sent from here.');
     const { toOrderPayload, clearDraft } = await import('./facets/cakeDraft.js');
     const res = await fetch(`${apiBaseUrl}/api/orders`, {
       method: 'POST',
@@ -210,7 +218,7 @@ export default function CustomerStorefront({
     // one occasion it mattered.
     clearDraft(slug);
     return res.json();
-  }, [apiBaseUrl, slug]);
+  }, [apiBaseUrl, slug, preview]);
 
   // Loader stays until the baker is fetched AND the container breakpoint is measured — so the FIRST
   // storefront paint is already at the correct layout (no mobile→desktop / default→config flash).
