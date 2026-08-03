@@ -26,6 +26,15 @@ const FACET_TITLE = {
   date:    'When do you need it?',
 };
 
+// ── The entry screen's title ────────────────────────────────────────────────────────────────────
+// "Where would you like to start?" and NOT the hero button's words. The button says "Let's make your
+// cake"; repeating it here would spend the panel's one headline confirming what the customer just
+// read, when the thing they actually need is orientation — there are two doors and no wrong one.
+//
+// It also completes the sentence the doors already start: a question above two answers that both
+// begin "I'll start with…". The panel asks and the customer replies, which is the voice the whole
+// chooser is written in.
+
 // The two entries. Their labels differ in SHAPE, not one word — two lines differing by a single
 // word force the eye to compare rather than recognise, which is backwards for a screen whose job is
 // instant self-identification. And neither asks the customer to KNOW anything: "I know how it
@@ -131,7 +140,7 @@ export default function FacetShell({
           <div>
             <div style={s.eyebrow}>{baker?.name}</div>
             <h2 style={s.title}>
-              {open ? FACET_TITLE[open] : verifying ? 'Almost there' : 'Let’s make your cake'}
+              {open ? FACET_TITLE[open] : verifying ? 'Almost there' : 'Where would you like to start?'}
             </h2>
           </div>
           <button type="button"
