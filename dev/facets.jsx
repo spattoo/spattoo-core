@@ -42,6 +42,35 @@ const API = {
   },
 };
 
+// Stub the two OTP endpoints so the verification step can be DRIVEN here, not merely rendered.
+// The real ones need Supabase phone auth and an actual SMS; what this harness has to prove is the
+// wiring — that a code moves the step on, that the session reaches onSubmit, and that a bad code
+// surfaces instead of hanging. `000000` is the wrong-code path.
+const realFetch = window.fetch.bind(window);
+window.fetch = async (url, init) => {
+  const u = String(url);
+  if (u.includes('/send-otp')) {
+    await new Promise(r => setTimeout(r, 300));
+    const { to } = JSON.parse(init.body);
+    if (!/^\+?\d[\d\s-]{7,}$/.test(to)) {
+      return new Response(JSON.stringify({ error: 'Enter a valid phone number' }), { status: 400 });
+    }
+    return new Response(JSON.stringify({ sent: true, channel: 'sms', to }), { status: 200 });
+  }
+  if (u.includes('/verify-otp')) {
+    await new Promise(r => setTimeout(r, 300));
+    const { code } = JSON.parse(init.body);
+    if (code === '000000') {
+      return new Response(JSON.stringify({ error: 'Invalid or expired code' }), { status: 401 });
+    }
+    return new Response(JSON.stringify({
+      session: { access_token: 'stub-access-token', refresh_token: 'stub-refresh', expires_at: 0 },
+      verified: { channel: 'sms', to: '+919876543210' },
+    }), { status: 200 });
+  }
+  return realFetch(url, init);
+};
+
 function Demo() {
   const [open, setOpen] = useState(true);
   const [mobile, setMobile] = useState(false);
@@ -64,11 +93,21 @@ function Demo() {
       </div>
       {open && (
         <FacetShell baker={BAKER} isMobile={mobile} api={API} leadTimeDays={2}
+          apiBaseUrl="" captchaSiteKey={null}
           onClose={() => setOpen(false)}
-          onSubmit={async (d) => {
+          onSubmit={async (d, session) => {
             const m = await import('../src/storefront/facets/cakeDraft.js');
             const payload = m.toOrderPayload(d, BAKER.slug);
-            setSent(JSON.stringify(payload, null, 2));
+            // The token is shown alongside the payload because it is what carries the VERIFIED
+            // contact — an enquiry that arrives without it is one the baker cannot trust.
+            setSent(`Authorization: Bearer ${session?.access_token ?? '(none — unverified!)'}\n\n`
+                    + JSON.stringify(payload, null, 2));
+            // Lets the retry-after-failure path be driven: the session must survive so the second
+            // attempt does not ask for another code.
+            if (window.__failFirstSubmit) {
+              window.__failFirstSubmit = false;
+              throw new Error('Could not send that just now.');
+            }
             // Mimics POST /api/orders: it refuses without a first name, so the failure path is
             // reachable here rather than only in production.
             if (!payload.customer.firstName) throw new Error('customer.firstName is required');

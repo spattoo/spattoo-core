@@ -5,6 +5,7 @@ import HeroCake3D from './HeroCake3D.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
+import { useOtp } from './useOtp.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { WAVES } from '../shared/waves.js';
 
@@ -239,11 +240,17 @@ export default function CustomerStorefront({
   // by phone/email, so a returning customer is matched rather than duplicated, and the order lands
   // in the baker's existing Orders list with the statuses, calendar and quote flow already working.
   // That is the whole reason an enquiry is an ORDER and not a new entity.
-  const submitEnquiry = useCallback(async (draft) => {
+  // `session` comes from the OTP step the shell runs immediately before this. POST /api/orders takes
+  // the customer's contact FROM this token, never from the body — so the header is not an extra, it
+  // is the only thing that makes the enquiry addressable.
+  const submitEnquiry = useCallback(async (draft, session) => {
     const { toOrderPayload, clearDraft } = await import('./facets/cakeDraft.js');
     const res = await fetch(`${apiBaseUrl}/api/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify(toOrderPayload(draft, slug)),
     });
     if (!res.ok) {
@@ -507,6 +514,8 @@ export default function CustomerStorefront({
           leadTimeDays={leadTimeDays}
           isMobile={bp !== 'desktop'}
           palette={{ primary, accent }}
+          apiBaseUrl={apiBaseUrl}
+          captchaSiteKey={captchaSiteKey}
           onClose={() => setShowFacets(false)}
           onSubmit={submitEnquiry}
         />
@@ -620,51 +629,37 @@ function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, p
 function LoginModal({ invite, inviteId, apiBaseUrl, supabase, captchaSiteKey, primary, onClose, onAuthenticated }) {
   const channels = invite?.customer?.channels?.length ? invite.customer.channels : ['email'];
   const [channel, setChannel] = useState(channels[0]);
-  const [step, setStep]   = useState('start');
-  const [code, setCode]   = useState('');
-  const [busy, setBusy]   = useState(false);
-  const [err, setErr]     = useState(null);
-  const [captchaToken, setCaptchaToken] = useState(null);
-  const captchaRef = useRef(null);
   // OTP send hits the anon-key signInWithOtp, which Supabase captcha gates. The customer solves
   // Turnstile here and we forward the token to /send-otp. Null key → no-op (send not gated).
   const captchaConfigured = !!captchaSiteKey;
-  const resetCaptcha = () => { captchaRef.current?.reset(); setCaptchaToken(null); };
 
   const masked = channel === 'email' ? invite?.customer?.masked_email : invite?.customer?.masked_phone;
 
-  async function send() {
-    setBusy(true); setErr(null);
-    try {
-      await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/send-otp`, { channel, captchaToken: captchaToken ?? undefined });
-      setStep('code');
-    } catch (e) { setErr(e.message); } finally {
-      setBusy(false);
-      resetCaptcha();   // single-use token — a resend needs a fresh one
-    }
-  }
-
-  async function verify() {
-    setBusy(true); setErr(null);
-    try {
-      const { session, design_snapshot } = await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/verify-otp`, { channel, code });
+  // The send/verify dance is shared with the storefront's VerifyStep — see useOtp. Only the
+  // transport differs: this one names an invite and lets the SERVER look up the contact, because the
+  // whole point of an invite is that the baker already knows how to reach them.
+  const otp = useOtp({
+    send: (captchaToken) => postJSON(`${apiBaseUrl}/api/invite/${inviteId}/send-otp`, { channel, captchaToken }),
+    verify: (code) => postJSON(`${apiBaseUrl}/api/invite/${inviteId}/verify-otp`, { channel, code }),
+    onVerified: async ({ session, design_snapshot }) => {
       if (supabase && session) {
         await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
       }
       // Hand the baker's attached starting design (if any) to the host so it can seed the
       // designer on resume. Null for a plain invite — the host just opens a blank designer.
       onAuthenticated?.(session, design_snapshot ?? null);
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }
+    },
+  });
+  const { step, code, setCode, busy, err, send, verify } = otp;
 
   const m = modalStyles(primary);
   // ONE Turnstile widget for the modal (both the initial send and the resend). Rendered outside the
   // step ternary so it doesn't remount when we move to the code step.
   const captchaEl = (
-    <Captcha ref={captchaRef} siteKey={captchaSiteKey}
-      onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} style={{ margin: '4px 0' }} />
+    <Captcha ref={otp.captchaRef} siteKey={captchaSiteKey}
+      onVerify={otp.setCaptchaToken} onExpire={() => otp.setCaptchaToken(null)} style={{ margin: '4px 0' }} />
   );
-  const sendBlocked = busy || (captchaConfigured && !captchaToken);
+  const sendBlocked = otp.sendBlocked(captchaConfigured);
   return (
     <div style={m.overlay} onClick={onClose}>
       <div style={m.card} onClick={e => e.stopPropagation()}>

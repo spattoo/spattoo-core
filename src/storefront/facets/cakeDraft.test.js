@@ -76,9 +76,10 @@ describe('withTierCount', () => {
 });
 
 describe('canSubmit', () => {
-  it('refuses with no way to reach them', () => {
+  it('refuses without a name, however much they said about the cake', () => {
     const d = emptyDraft('bakery');
     d.flavours[0].name = 'Chocolate';
+    d.size.weightKg = 2;
     expect(canSubmit(d)).toBe(false);
   });
 
@@ -87,6 +88,18 @@ describe('canSubmit', () => {
     d.contact.name = 'Ananya';
     d.contact.phone = '9876543210';
     expect(canSubmit(d)).toBe(false);
+  });
+
+  // The gate deliberately does NOT ask for a phone: the verification step between this button and
+  // the send asks for one and proves it. Requiring a typed number here would gate the button on a
+  // weaker version of what the next screen establishes properly — and would have the date facet ask
+  // for a number the verify step immediately asks for again.
+  it('accepts a named contact with no phone typed — verification supplies it', () => {
+    const d = emptyDraft('bakery');
+    d.contact.name = 'Ananya';
+    d.flavours[0].name = 'Chocolate';
+    expect(d.contact.phone).toBe('');
+    expect(canSubmit(d)).toBe(true);
   });
 
   // The whole point: filling more gets a better quote, it is never the price of being heard.

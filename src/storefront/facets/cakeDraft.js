@@ -114,17 +114,22 @@ export const emptyFacets = (draft) => FACETS.filter(f => !isFilled(draft, f));
 /**
  * Enough to send?
  *
- * A way to reach them, plus ONE thing about the cake. Deliberately not completeness — requiring
- * every facet rebuilds the corridor this design exists to remove, and a baker would far rather have
- * "chocolate, 2kg, the 14th" than nothing at all. Filling more gets a faster, better quote; it is
- * never the price of being heard.
+ * A name, plus ONE thing about the cake. Deliberately not completeness — requiring every facet
+ * rebuilds the corridor this design exists to remove, and a baker would far rather have "chocolate,
+ * 2kg, the 14th" than nothing at all. Filling more gets a faster, better quote; it is never the
+ * price of being heard.
+ *
+ * ── WHY NOT A PHONE NUMBER TOO ──────────────────────────────────────────────────────────────────
+ * There is no reachability check here, and that is not an omission. The number is asked for and
+ * PROVED in the verification step between this button and the send, so by the time an enquiry
+ * exists the contact is not merely present but confirmed. Checking for a typed phone here would gate
+ * the button on a weaker version of a thing the next screen establishes properly, and would make the
+ * date facet ask for a number the verify step immediately asks for again.
  */
 export function canSubmit(draft) {
-  // A NAME as well as a way to reach them: POST /api/orders requires customer.firstName, and an
-  // order the baker cannot address is not an order. Still not completeness — one thing about the
-  // cake is enough.
-  const reachable = !!(draft.contact.phone.trim() || draft.contact.email.trim());
-  return !!draft.contact.name.trim() && reachable && FACETS.some(f => isFilled(draft, f));
+  // A NAME: POST /api/orders requires customer.firstName, and the token that carries the verified
+  // contact cannot supply one — nobody but the customer knows what they want to be called.
+  return !!draft.contact.name.trim() && FACETS.some(f => isFilled(draft, f));
 }
 
 /**

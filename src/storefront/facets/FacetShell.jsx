@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import CakeVisual from './CakeVisual.jsx';
 import DesignFacet from './DesignFacet.jsx';
 import FlavourFacet from './FlavourFacet.jsx';
+import VerifyStep from './VerifyStep.jsx';
 import { SizeFacet, DateFacet } from './SizeDateFacets.jsx';
 import {
   FACETS, emptyDraft, loadDraft, saveDraft, isFilled, canSubmit, withTierCount,
@@ -55,6 +56,7 @@ function merge(draft, patch) {
 
 export default function FacetShell({
   baker, tierCount = 1, isMobile = false, palette, api, leadTimeDays = 0,
+  apiBaseUrl, captchaSiteKey,
   onClose, onSubmit, renderFacet,
 }) {
   const slug = baker?.slug ?? 'unknown';
@@ -65,11 +67,35 @@ export default function FacetShell({
   const [sending, setSending] = useState(false);
   const [error, setError]     = useState(null);
   const [sent, setSent]       = useState(false);
+  // The number has to be proved before the enquiry can go anywhere, so "Send" opens verification
+  // rather than posting. Its own screen, not a field in the footer: it is a conversation with two
+  // steps and a wait for an SMS in the middle, and that does not belong under a button.
+  const [verifying, setVerifying] = useState(false);
+  // Kept so a FAILED send does not cost a second SMS. The code proved the number; if the POST then
+  // fell over on a flaky connection that proof is still good, and asking them to receive another
+  // code would punish them for our failure. Retry goes straight back to the network.
+  const [session, setSession] = useState(null);
 
   useEffect(() => { saveDraft(draft); }, [draft]);
 
   const remaining = useMemo(() => FACETS.filter(f => !isFilled(draft, f)), [draft]);
   const ready = canSubmit(draft);
+
+  // The one place the enquiry actually leaves. Both callers reach it — the verify step on success,
+  // and the footer on a retry after a failed send — so the sending/error/sent transitions live here
+  // once rather than being written twice and drifting.
+  async function send(d, tok) {
+    setSending(true); setError(null);
+    try {
+      await onSubmit?.(d, tok);
+      setSent(true);
+    } catch (e) {
+      setError(e.message || 'Could not send that just now.');
+      // Back to the cake, where the error is visible in the footer. Leaving them on a spent code
+      // step with a dead button would strand them.
+      setVerifying(false);
+    } finally { setSending(false); }
+  }
 
   // The flavour whose colours the slice is drawn in — the first tier that has one, since that is
   // the one being chosen. Resolved here rather than in the visual so the visual never has to know
@@ -104,11 +130,14 @@ export default function FacetShell({
         <header style={s.head}>
           <div>
             <div style={s.eyebrow}>{baker?.name}</div>
-            <h2 style={s.title}>{open ? FACET_TITLE[open] : "Let's make your cake"}</h2>
+            <h2 style={s.title}>
+              {open ? FACET_TITLE[open] : verifying ? 'Almost there' : "Let's make your cake"}
+            </h2>
           </div>
-          <button type="button" onClick={open ? () => setOpen(null) : onClose}
-                  aria-label={open ? 'Back' : 'Close'} style={s.close}>
-            {open ? '←' : '✕'}
+          <button type="button"
+                  onClick={open ? () => setOpen(null) : verifying ? () => setVerifying(false) : onClose}
+                  aria-label={open || verifying ? 'Back' : 'Close'} style={s.close}>
+            {open || verifying ? '←' : '✕'}
           </button>
         </header>
 
@@ -128,7 +157,22 @@ export default function FacetShell({
                            bakerName={baker?.name} close={() => setOpen(null)}
                            setTierCount={(n) => patch({ __tierCount: n })}
                            leadTimeDays={leadTimeDays} />)
-              : (
+              : verifying ? (
+                <VerifyStep
+                  apiBaseUrl={apiBaseUrl} slug={slug} bakerName={baker?.name || 'the baker'}
+                  captchaSiteKey={captchaSiteKey} primary={primary}
+                  initialPhone={draft.contact.phone}
+                  onBack={() => setVerifying(false)}
+                  onVerified={(tok, phone) => {
+                    // Keep the proved number on the draft. The server takes the contact from the
+                    // token and ignores this, but a draft that disagrees with what was sent would
+                    // mislead anyone who came back to it.
+                    patch({ contact: { phone } });
+                    setSession(tok);
+                    send({ ...draft, contact: { ...draft.contact, phone } }, tok);
+                  }}
+                />
+              ) : (
                 <>
                   {ENTRIES.map(e => (
                     <button key={e.facet} type="button" onClick={() => setOpen(e.facet)}
@@ -155,23 +199,20 @@ export default function FacetShell({
           </div>
         </div>
 
-        {!open && (
+        {!open && !verifying && (
           <footer style={s.foot}>
+            {/* Already verified — a previous send failed — so retry goes straight to the network.
+                Re-asking for a code they have already given would charge them for our failure. */}
             <button type="button" disabled={!ready || sending}
-                    onClick={async () => {
-                      setSending(true); setError(null);
-                      try { await onSubmit?.(draft); setSent(true); }
-                      catch (e) { setError(e.message || 'Could not send that just now.'); }
-                      finally { setSending(false); }
-                    }}
+                    onClick={() => { setError(null); session ? send(draft, session) : setVerifying(true); }}
                     style={s.send(primary, ready && !sending)}>
-              {sending ? 'Sending…' : `Send to ${baker?.name || 'the baker'}`}
+              {sending ? 'Sending…' : session ? 'Try again' : `Send to ${baker?.name || 'the baker'}`}
             </button>
             {/* Says what is missing, never how long anything will take. */}
             <div style={error ? s.err : s.hint}>
               {error ? error
                 : ready ? 'You can add more later — send it whenever you like.'
-                        : 'Tell us your name, how to reach you, and one thing about the cake.'}
+                        : 'Tell us your name and one thing about the cake.'}
             </div>
           </footer>
         )}
