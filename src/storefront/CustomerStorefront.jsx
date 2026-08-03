@@ -85,6 +85,11 @@ export default function CustomerStorefront({
   // the page. 0 until the settings call answers — which is also the default, so a slow response
   // never blocks a date that would have been fine.
   const [leadTimeDays, setLeadTimeDays] = useState(0);
+  // Whether an enquiry must prove its phone by OTP. The SERVER owns this (STOREFRONT_OTP_REQUIRED)
+  // and we read it back, so the two halves cannot disagree — a client that skipped the step while
+  // the API still demanded a token would fail at the last moment, after all the work was done.
+  // Defaults to the strict answer, so a failed settings call never silently drops verification.
+  const [otpRequired, setOtpRequired] = useState(true);
 
   const [baker, setBaker]     = useState(bakerProp);
   const [invite, setInvite]   = useState(null);
@@ -149,7 +154,12 @@ export default function CustomerStorefront({
     // A failure here is not worth a broken storefront — 0 is the default and means "no notice
     // required", which is what every baker has until somebody sets one.
     getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(slug)}/settings`)
-      .then(r => setLeadTimeDays(r?.lead_time_days ?? 0))
+      .then(r => {
+        setLeadTimeDays(r?.lead_time_days ?? 0);
+        // Only an explicit false switches it off. An older API that does not send the field at all
+        // keeps verification on, which is the safe way round.
+        setOtpRequired(r?.otp_required !== false);
+      })
       .catch(() => {});
   }, [slug, apiBaseUrl]);
 
@@ -516,6 +526,7 @@ export default function CustomerStorefront({
           palette={{ primary, accent }}
           apiBaseUrl={apiBaseUrl}
           captchaSiteKey={captchaSiteKey}
+          otpRequired={otpRequired}
           onClose={() => setShowFacets(false)}
           onSubmit={submitEnquiry}
         />

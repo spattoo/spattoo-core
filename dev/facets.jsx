@@ -75,12 +75,16 @@ function Demo() {
   const [open, setOpen] = useState(true);
   const [mobile, setMobile] = useState(false);
   const [sent, setSent] = useState(null);
+  // Mirrors STOREFRONT_OTP_REQUIRED on the API, which the real storefront reads back from
+  // /settings. Toggled here so the suppressed path is drivable, not merely reasoned about.
+  const [otpRequired, setOtpRequired] = useState(true);
   return (
     <div style={{ padding: 20 }}>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <button onClick={() => setOpen(true)}>Open</button>
         <button onClick={() => setMobile(m => !m)}>{mobile ? 'Mobile' : 'Desktop'}</button>
         <button onClick={() => { localStorage.clear(); location.reload(); }}>Clear draft</button>
+        <button onClick={() => setOtpRequired(v => !v)}>OTP {otpRequired ? 'required' : 'SUPPRESSED'}</button>
       </div>
       <div style={{ maxWidth: 760 }}>
         <b>Slice, every seeded flavour:</b>
@@ -93,7 +97,7 @@ function Demo() {
       </div>
       {open && (
         <FacetShell baker={BAKER} isMobile={mobile} api={API} leadTimeDays={2}
-          apiBaseUrl="" captchaSiteKey={null}
+          apiBaseUrl="" captchaSiteKey={null} otpRequired={otpRequired}
           onClose={() => setOpen(false)}
           onSubmit={async (d, session) => {
             const m = await import('../src/storefront/facets/cakeDraft.js');

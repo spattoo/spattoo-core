@@ -19,7 +19,8 @@ import { useOtp } from '../useOtp.js';
 // believed.
 
 export default function VerifyStep({
-  apiBaseUrl, slug, bakerName, captchaSiteKey, primary, initialPhone = '', onVerified, onBack,
+  apiBaseUrl, slug, bakerName, captchaSiteKey, primary, initialPhone = '',
+  otpRequired = true, onVerified, onBack,
 }) {
   const [phone, setPhone] = useState(initialPhone);
   const captchaConfigured = !!captchaSiteKey;
@@ -35,6 +36,31 @@ export default function VerifyStep({
   ), [apiBaseUrl, slug, phone]);
 
   const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim()) });
+
+  // ── OTP suppressed ────────────────────────────────────────────────────────────────────────────
+  // STOREFRONT_OTP_REQUIRED=false on the API, read back through /settings. Temporary, for the window
+  // where SMS delivery is not yet wired to Supabase.
+  //
+  // The step SURVIVES rather than being skipped, because the number is still needed — the baker's
+  // next action is to phone the customer whether or not we checked the line first. Only the proving
+  // goes. Skipping the screen entirely would drop the one field the enquiry cannot do without, and
+  // the copy would then have to lie about having checked it.
+  if (!otpRequired) {
+    const ready = !!phone.trim();
+    return (
+      <div style={s.wrap}>
+        <h3 style={s.title}>How can {bakerName} reach you?</h3>
+        <p style={s.sub}>{bakerName} will call or message you about your cake.</p>
+        <input style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
+               inputMode="tel" placeholder="Phone number" autoFocus aria-label="Phone number" />
+        <button type="button" style={s.primary(primary, ready)} disabled={!ready}
+                onClick={() => onVerified?.(null, phone.trim())}>
+          Send to {bakerName}
+        </button>
+        <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>Back to my cake</button>
+      </div>
+    );
+  }
 
   // ONE widget for the whole step, rendered outside the step branch so moving to the code entry
   // does not remount it — a remount would throw away a solved captcha the resend still needs.
