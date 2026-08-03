@@ -131,7 +131,7 @@ export default function FacetShell({
           <div>
             <div style={s.eyebrow}>{baker?.name}</div>
             <h2 style={s.title}>
-              {open ? FACET_TITLE[open] : verifying ? 'Almost there' : "Let's make your cake"}
+              {open ? FACET_TITLE[open] : verifying ? 'Almost there' : 'Let’s make your cake'}
             </h2>
           </div>
           <button type="button"

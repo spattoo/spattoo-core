@@ -78,7 +78,15 @@ export default function CustomerStorefront({
   onAuthenticated,
   onStartDesign,
   onEditPortrait = null,   // customiser only: makes the portrait an upload affordance
-  designLabel = 'Start designing',
+  // The hero CTA on every layout. It used to open the 3D designer, so "Start designing" described
+  // it; it now opens the CHOOSER, whose first question is whether you would rather begin from a
+  // design or a flavour — so the old label promised one of the two doors before you had picked.
+  //
+  // Deliberately NOT first person: outside the chooser the baker's storefront is inviting you, and
+  // inside it the customer speaks ("I'll start with the design"). "Let's" makes it joint, which is
+  // what actually happens. And not "your PERFECT cake" — that is a promise the baker has to keep,
+  // not one we may make on their behalf. See plans/storefront-facets.md, "The labels".
+  designLabel = 'Let’s make your cake',
 }) {
   const [showFacets, setShowFacets] = useState(false);
   // Minimum notice, so the date facet can refuse dates inside it while the customer is still on
@@ -833,6 +841,9 @@ function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLa
   );
 }
 // Full-bleed baker lifestyle photo with the tagline + CTA overlaid.
+// The CTA here carries `sf-cta` like the other three renderers do. That class is not only the hover
+// polish — it is where :focus-visible lives, so without it this hero's button had no visible
+// keyboard focus at all.
 function photoHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, heroImage }) {
   return (
     <section style={s.hero}>
@@ -845,7 +856,7 @@ function photoHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, ha
           {expired ? (
             <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
           ) : (
-            <button type="button" disabled={notAcceptingOrders}
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
               style={{ ...s.heroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
               onClick={handleCta}>
               {notAcceptingOrders ? 'Not taking new orders' : designLabel}

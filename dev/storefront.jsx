@@ -88,12 +88,13 @@ function Preview() {
           {ctaColor && <button type="button" onClick={() => setCtaColor('')} style={{ marginLeft: 4, font: 'inherit' }}>×</button>}
         </label>
       </div>
+      {/* designLabel is deliberately NOT passed — the host app does not pass it either, so the
+          preview has to show the component's own default or it previews a string nobody ships. */}
       <CustomerStorefront
         key={tpl + hero + font + highlight + ctaColor}
         baker={baker}
         apiBaseUrl=""
         supabase={null}
-        designLabel="Start designing"
         onStartDesign={() => alert('Start designing (preview)')}
       />
     </>
