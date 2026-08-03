@@ -100,6 +100,10 @@ export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) 
       <input id="sf-message" value={draft.details.message} placeholder="Happy Birthday Ananya"
              onChange={e => patch({ details: { message: e.target.value } })} style={s.input} />
 
+      <label style={s.label} htmlFor="sf-name">Who shall {bakerName} ask for?</label>
+      <input id="sf-name" value={draft.contact.name} placeholder="Your name"
+             onChange={e => patch({ contact: { name: e.target.value } })} style={s.input} />
+
       <label style={s.label} htmlFor="sf-phone">How can {bakerName} reach you?</label>
       <input id="sf-phone" value={draft.contact.phone} placeholder="Phone number" inputMode="tel"
              onChange={e => patch({ contact: { phone: e.target.value } })} style={s.input} />

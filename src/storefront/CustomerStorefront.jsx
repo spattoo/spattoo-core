@@ -233,6 +233,29 @@ export default function CustomerStorefront({
     setShowFacets(true);
   }
 
+  // ── Sending it ────────────────────────────────────────────────────────────
+  // POST /api/orders is PUBLIC and takes a bakerSlug and a customer, which is exactly the shape an
+  // anonymous storefront visitor can produce — no new endpoint was needed. It upserts the customer
+  // by phone/email, so a returning customer is matched rather than duplicated, and the order lands
+  // in the baker's existing Orders list with the statuses, calendar and quote flow already working.
+  // That is the whole reason an enquiry is an ORDER and not a new entity.
+  const submitEnquiry = useCallback(async (draft) => {
+    const { toOrderPayload, clearDraft } = await import('./facets/cakeDraft.js');
+    const res = await fetch(`${apiBaseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(toOrderPayload(draft, slug)),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Could not send that just now.');
+    }
+    // Only once the server has it. Clearing on optimism would lose everything they typed on the
+    // one occasion it mattered.
+    clearDraft(slug);
+    return res.json();
+  }, [apiBaseUrl, slug]);
+
   // Nav items — only those with somewhere to go.
   // Real baker content; falls back to a clearly-marked sample so the section designs
   // end-to-end (Feelings & Flavours has no story/portrait on its record yet).
@@ -485,14 +508,7 @@ export default function CustomerStorefront({
           isMobile={bp !== 'desktop'}
           palette={{ primary, accent }}
           onClose={() => setShowFacets(false)}
-          // Handing off to the designer is REAL — it is the path the button took before, so the
-          // 3D door and a chosen template both work today.
-          //
-          // Submitting an enquiry WITHOUT a design does not, and is deliberately not faked: an
-          // anonymous visitor cannot create an order, and there is no public enquiry endpoint yet.
-          // The draft survives in localStorage either way, so nothing a customer typed is lost
-          // when that endpoint lands.
-          onSubmit={() => { setShowFacets(false); onStartDesign?.(baker); }}
+          onSubmit={submitEnquiry}
         />
       )}
 

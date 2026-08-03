@@ -120,22 +120,46 @@ export const emptyFacets = (draft) => FACETS.filter(f => !isFilled(draft, f));
  * never the price of being heard.
  */
 export function canSubmit(draft) {
+  // A NAME as well as a way to reach them: POST /api/orders requires customer.firstName, and an
+  // order the baker cannot address is not an order. Still not completeness — one thing about the
+  // cake is enough.
   const reachable = !!(draft.contact.phone.trim() || draft.contact.email.trim());
-  return reachable && FACETS.some(f => isFilled(draft, f));
+  return !!draft.contact.name.trim() && reachable && FACETS.some(f => isFilled(draft, f));
+}
+
+/**
+ * A typed name, as the API's firstName/lastName.
+ *
+ * Everything after the first word is the surname, and a single word is a first name with no
+ * surname — which is correct for the many people who have one. Never rejected for "not looking
+ * like a name": whatever somebody types is what they are called.
+ */
+export function splitName(full) {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] ?? '', lastName: parts.slice(1).join(' ') || undefined };
 }
 
 // ── The order payload ───────────────────────────────────────────────────────────────────────────
 
 /**
- * The draft, as the shape OrderModal submits. Both editors must produce the same object or a baker
- * gets different orders depending on which screen the customer happened to use.
+ * The draft, as POST /api/orders takes it. Deliberately close to what OrderModal submits, so drift
+ * between the two editors is visible here rather than discovered by a baker receiving half an order.
  *
- * Customer identity is NOT sent: on the storefront the session establishes who they are
- * server-side, and OrderModal only sends `customer` in baker mode for exactly that reason.
+ * The CUSTOMER is sent, and that is the one place this differs from OrderModal's customer mode.
+ * There the session establishes who they are server-side; here the visitor is anonymous and has no
+ * session at all, which is precisely why POST /api/orders is public and takes `customer`. An
+ * earlier version of this comment said identity is never sent — true of the other editor, wrong
+ * about this one.
  */
-export function toOrderPayload(draft) {
+export function toOrderPayload(draft, bakerSlug) {
   const d = draft.details;
   return {
+    bakerSlug: bakerSlug ?? draft.bakerSlug,
+    customer: {
+      ...splitName(draft.contact.name),
+      phone: draft.contact.phone.trim() || undefined,
+      email: draft.contact.email.trim() || undefined,
+    },
     // A photo enquiry has no design, so its reference keys stand in for one — the manual-order
     // shape, which the API and the Orders list already understand.
     ...(draft.design.photoKeys.length ? { referenceKeys: draft.design.photoKeys } : {}),

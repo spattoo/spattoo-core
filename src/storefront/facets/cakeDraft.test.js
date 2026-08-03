@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   emptyDraft, isFilled, emptyFacets, canSubmit, toOrderPayload,
-  saveDraft, loadDraft, clearDraft, today, FACETS, withTierCount,
+  saveDraft, loadDraft, clearDraft, today, FACETS, withTierCount, splitName,
 } from './cakeDraft.js';
 
 // The draft is the contract every facet writes through and the shape the baker's order is built
@@ -84,13 +84,22 @@ describe('canSubmit', () => {
 
   it('refuses a contact with nothing about the cake', () => {
     const d = emptyDraft('bakery');
+    d.contact.name = 'Ananya';
     d.contact.phone = '9876543210';
     expect(canSubmit(d)).toBe(false);
   });
 
   // The whole point: filling more gets a better quote, it is never the price of being heard.
-  it('accepts one facet plus a contact — completeness is not required', () => {
+  it('refuses without a name — an order the baker cannot address is not an order', () => {
     const d = emptyDraft('bakery');
+    d.contact.phone = '9876543210';
+    d.flavours[0].name = 'Chocolate';
+    expect(canSubmit(d)).toBe(false);
+  });
+
+  it('accepts one facet plus a named contact — completeness is not required', () => {
+    const d = emptyDraft('bakery');
+    d.contact.name = 'Ananya';
     d.contact.phone = '9876543210';
     d.flavours[0].name = 'Chocolate';
     expect(canSubmit(d)).toBe(true);
@@ -130,10 +139,22 @@ describe('toOrderPayload', () => {
       { tier: 0, name: 'Matcha', flavourId: 'f3', source: 'global' });
   });
 
-  it('never sends the customer — identity is the session, server-side', () => {
+  it('SENDS the customer — a storefront visitor has no session to be identified by', () => {
+    // The opposite of OrderModal's customer mode, and deliberately: there a session establishes
+    // identity server-side; here the visitor is anonymous, which is why POST /api/orders is public
+    // and takes `customer` at all.
     const d = emptyDraft('bakery');
-    d.contact = { name: 'A', phone: '9876543210', email: 'a@b.c' };
-    expect('customer' in toOrderPayload(d)).toBe(false);
+    d.contact = { name: 'Ananya Sharma', phone: '9876543210', email: 'a@b.c' };
+    const p = toOrderPayload(d, 'bakery');
+    expect(p.bakerSlug).toBe('bakery');
+    expect(p.customer).toEqual({ firstName: 'Ananya', lastName: 'Sharma',
+                                 phone: '9876543210', email: 'a@b.c' });
+  });
+
+  it('treats a single word as a first name with no surname', () => {
+    // Which is correct for the many people who have one, and never a reason to reject a name.
+    expect(splitName('Ananya')).toEqual({ firstName: 'Ananya', lastName: undefined });
+    expect(splitName('  Ravi  Kumar  Nair ')).toEqual({ firstName: 'Ravi', lastName: 'Kumar Nair' });
   });
 
   it('a photo enquiry rides the manual-order shape', () => {

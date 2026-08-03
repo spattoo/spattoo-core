@@ -65,7 +65,16 @@ function Demo() {
       {open && (
         <FacetShell baker={BAKER} isMobile={mobile} api={API} leadTimeDays={2}
           onClose={() => setOpen(false)}
-          onSubmit={(d) => { import('../src/storefront/facets/cakeDraft.js').then(m => setSent(JSON.stringify(m.toOrderPayload(d), null, 2))); setOpen(false); }} />
+          onSubmit={async (d) => {
+            const m = await import('../src/storefront/facets/cakeDraft.js');
+            const payload = m.toOrderPayload(d, BAKER.slug);
+            setSent(JSON.stringify(payload, null, 2));
+            // Mimics POST /api/orders: it refuses without a first name, so the failure path is
+            // reachable here rather than only in production.
+            if (!payload.customer.firstName) throw new Error('customer.firstName is required');
+            await new Promise(r => setTimeout(r, 400));
+            return { orderId: 'ord_demo' };
+          }} />
       )}
     </div>
   );

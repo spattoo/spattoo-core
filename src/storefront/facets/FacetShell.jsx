@@ -62,6 +62,9 @@ export default function FacetShell({
   // null = the entry screen. A facet is opened, filled, and closed back to here — there is no
   // "next", because there is no order to go in.
   const [open, setOpen] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [error, setError]     = useState(null);
+  const [sent, setSent]       = useState(false);
 
   useEffect(() => { saveDraft(draft); }, [draft]);
 
@@ -75,6 +78,25 @@ export default function FacetShell({
 
   const primary = palette?.primary ?? baker?.primary_color ?? '#2C4433';
   const accent  = palette?.accent  ?? baker?.accent_color  ?? '#6B8C74';
+
+  // ── Sent ──────────────────────────────────────────────────────────────────────────────────────
+  // A fact, and one soft expectation. No duration and no channel: we cannot promise the baker's
+  // response time, and naming WhatsApp would be a promise about somebody else's behaviour — quotes
+  // go by email today and a baker may simply telephone. A missed promise here is worse than none.
+  if (sent) {
+    return (
+      <div style={s.scrim} onClick={onClose}>
+        <div style={s.sheet(isMobile)} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div style={s.doneWrap}>
+            <div style={s.doneTick(primary)}>✓</div>
+            <h2 style={s.doneTitle}>It&rsquo;s with {baker?.name || 'the baker'} now.</h2>
+            <p style={s.doneBody}>They&rsquo;ll be in touch with your price.</p>
+            <button type="button" style={s.send(primary, true)} onClick={onClose}>Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={s.scrim} onClick={onClose}>
@@ -135,14 +157,21 @@ export default function FacetShell({
 
         {!open && (
           <footer style={s.foot}>
-            <button type="button" disabled={!ready} onClick={() => onSubmit?.(draft)}
-                    style={s.send(primary, ready)}>
-              Send to {baker?.name || 'the baker'}
+            <button type="button" disabled={!ready || sending}
+                    onClick={async () => {
+                      setSending(true); setError(null);
+                      try { await onSubmit?.(draft); setSent(true); }
+                      catch (e) { setError(e.message || 'Could not send that just now.'); }
+                      finally { setSending(false); }
+                    }}
+                    style={s.send(primary, ready && !sending)}>
+              {sending ? 'Sending…' : `Send to ${baker?.name || 'the baker'}`}
             </button>
             {/* Says what is missing, never how long anything will take. */}
-            <div style={s.hint}>
-              {ready ? 'You can add more later — send it whenever you like.'
-                     : 'Tell us how to reach you, and one thing about the cake.'}
+            <div style={error ? s.err : s.hint}>
+              {error ? error
+                : ready ? 'You can add more later — send it whenever you like.'
+                        : 'Tell us your name, how to reach you, and one thing about the cake.'}
             </div>
           </footer>
         )}
@@ -213,4 +242,13 @@ const s = {
     font: 'inherit', fontSize: 15, fontWeight: 800, cursor: ready ? 'pointer' : 'default',
   }),
   hint: { fontSize: 11.5, color: '#A2968A', fontWeight: 600, textAlign: 'center', marginTop: 8 },
+  err:  { fontSize: 12, color: '#C0392B', fontWeight: 700, textAlign: 'center', marginTop: 8 },
+
+  doneWrap:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+               padding: '46px 26px 34px', textAlign: 'center' },
+  doneTick:  (primary) => ({ width: 54, height: 54, borderRadius: '50%', display: 'flex',
+                             alignItems: 'center', justifyContent: 'center', fontSize: 24,
+                             color: '#fff', background: primary, marginBottom: 4 }),
+  doneTitle: { fontSize: 21, fontWeight: 800, color: '#2A241F', margin: 0 },
+  doneBody:  { fontSize: 13.5, color: '#7A6C60', margin: '0 0 14px' },
 };
