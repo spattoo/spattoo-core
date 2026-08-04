@@ -10,6 +10,9 @@ import {
   visibleRequirements, unguaranteedRequirements, unguaranteedSentence,
 } from './dietary.js';
 import Chip from '../shared/Chip.jsx';
+// The SAME occasion list the storefront offers — they write the same column, and a baker
+// picking from a different set than their customer is how `other` quietly swallows half the data.
+import { OCCASIONS } from '../storefront/facets/cakeDraft.js';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
 const MAX_REFERENCE_PHOTOS = 3;
@@ -988,10 +991,7 @@ export default function OrderModal({
                     <span style={lbl}>Occasion</span>
                     <select style={inp} value={occasion} onChange={e => setOccasion(e.target.value)}>
                       <option value="">—</option>
-                      {[['birthday','Birthday'],['anniversary','Anniversary'],['wedding','Wedding'],
-                        ['baby_shower','Baby shower'],['engagement','Engagement'],['farewell','Farewell'],
-                        ['corporate','Corporate'],['festival','Festival'],['other','Other']]
-                        .map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      {OCCASIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
                   </label>
                   <label style={{ ...field, flex: '1 1 130px' }}>

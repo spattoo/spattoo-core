@@ -244,8 +244,31 @@ export const AGE_BAND_LABEL = {
   // the word should carry that. The stored value stays `senior`; only what a person reads changes.
   teen: 'a teenager', adult: 'a grown-up', senior: 'an elder',
 };
+/**
+ * Every occasion, in the order a customer should meet them — commonest first, `other` last.
+ *
+ * ONE list, because it was four: the date facet's chips, the suggester's question, the baker's
+ * OrderModal and this label map had each grown their own. Three of them knew only four values, so a
+ * customer with a baby shower had to answer "Just because" — which filed the order under `other`
+ * and made three suggester rules unreachable from the storefront, since nothing a customer could do
+ * would ever set `festival` or `corporate`. Matches migration 043's CHECK constraint exactly.
+ */
+export const OCCASIONS = [
+  ['birthday',    'Birthday'],
+  ['anniversary', 'Anniversary'],
+  ['wedding',     'Wedding'],
+  ['engagement',  'Engagement'],
+  ['baby_shower', 'Baby shower'],
+  ['festival',    'Festival'],
+  ['farewell',    'Farewell'],
+  ['corporate',   'Office do'],
+  ['other',       'Just because'],
+];
+
 export const OCCASION_LABEL = {
-  birthday: 'Birthday', anniversary: 'Anniversary', wedding: 'Wedding', other: 'No special occasion',
+  birthday: 'Birthday', anniversary: 'Anniversary', wedding: 'Wedding',
+  engagement: 'Engagement', baby_shower: 'Baby shower', festival: 'Festival',
+  farewell: 'Farewell', corporate: 'Office do', other: 'No special occasion',
 };
 
 // Occasion, who it is for and the message have no column on an order, and inventing three would be

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
 import { suggestFlavours, fallback, seasonFor } from './suggestFlavour.js';
+import { OCCASIONS } from './cakeDraft.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -133,9 +134,9 @@ const QUESTIONS = [
       ['child', 'A little one'],   ['adult', 'A grown-up'],
       ['couple', 'A couple'],      ['family', 'The family'],
       ['friends', 'Friends'],      ['colleagues', 'The office']] },
-  { key: 'occasion', title: "What's the occasion?", options: [
-      ['birthday', 'Birthday'],  ['anniversary', 'Anniversary'],
-      ['wedding', 'Wedding'],    ['other', 'Just because']] },
+  // The same list the details facet uses — they write the same field, so offering different sets
+  // would let the answer depend on which screen happened to ask.
+  { key: 'occasion', title: "What's the occasion?", options: OCCASIONS },
   { key: 'mood',     title: 'Play it safe, or something different?', options: [
       ['safe', 'Safe bet'], ['different', 'Something different']] },
 ];

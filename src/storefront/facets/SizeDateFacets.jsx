@@ -1,4 +1,4 @@
-import { today } from './cakeDraft.js';
+import { today, OCCASIONS } from './cakeDraft.js';
 
 // ── Size and date ───────────────────────────────────────────────────────────────────────────────
 // Both work the same way, and it is worth naming: a constraint learned somewhere ELSE narrows the
@@ -86,8 +86,7 @@ export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) 
 
       <label style={s.label} htmlFor="sf-occasion">What&rsquo;s the occasion?</label>
       <div style={s.chips}>
-        {[['birthday', 'Birthday'], ['anniversary', 'Anniversary'],
-          ['wedding', 'Wedding'], ['other', 'Just because']].map(([k, label]) => (
+        {OCCASIONS.map(([k, label]) => (
           <button key={k} type="button" aria-pressed={draft.details.occasion === k}
                   style={{ ...s.chip, ...(draft.details.occasion === k ? s.chipOn : null) }}
                   onClick={() => patch({ details: { occasion: k } })}>
