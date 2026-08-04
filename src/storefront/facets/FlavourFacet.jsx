@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
-import { suggestFlavours, fallback } from './suggestFlavour.js';
+import { suggestFlavours, fallback, seasonFor } from './suggestFlavour.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -176,9 +176,23 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
     );
   }
 
-  const ranked = suggestFlavours(flavours, answers, { dietaryKeys: draft.details.dietaryKeys })
-    .filter(r => !rejected.includes(r.flavour.id));
+  // Everything the CAKE already knows is scored, not just what this suggester asked. The age band
+  // came from the details facet and the season from the delivery date the customer picked — asking
+  // again would break "never ask twice", and not using them would waste answers already given.
+  const scored = suggestFlavours(flavours, {
+    ...answers,
+    ageBand: draft.details.ageBand || undefined,
+    // The DELIVERY month, not this one: a January order for an April party is an April cake.
+    season: draft.details.deliveryDate
+      ? seasonFor(Number(draft.details.deliveryDate.split('-')[1]))
+      : undefined,
+  }, { dietaryKeys: draft.details.dietaryKeys });
+
+  const ranked = scored.filter(r => !rejected.includes(r.flavour.id));
   const pick = ranked[0] ?? (rejected.length ? null : fallback(flavours, draft.details.dietaryKeys));
+  // The runners-up. Three total is the most a customer will actually weigh; beyond that a
+  // recommendation becomes a list, which is the thing they opened this door to avoid.
+  const alsoGood = ranked.slice(1, 3);
 
   // Nothing survived. Say so plainly and still let them through — the one thing this must never do
   // is invent a suggestion to avoid an empty screen.
@@ -197,6 +211,17 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
   }
 
   const f = pick.flavour;
+
+  // Both the top pick and a runner-up write the same thing. Extracted the moment there were two
+  // callers, rather than after they had drifted.
+  const pickFlavour = (flavour) => {
+    patch({ flavours: draft.flavours.map((t, i) => i === 0
+      ? { tier: 0, name: flavour.name, flavourId: flavour.id, source: flavour.source ?? 'global',
+          spongeColor: flavour.spongeColor ?? null, fillingColor: flavour.fillingColor ?? null }
+      : t) });
+    close();
+  };
+
   return (
     <div style={s.result}>
       <button type="button" style={s.back} onClick={onBack}>← Back</button>
@@ -210,15 +235,41 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
             the deciding margin — and a reason that leaves out what decided it is only half true. */}
         {pick.signature && ` And it's what ${bakerName} is known for.`}
       </p>
+      {/* ── The runners-up ────────────────────────────────────────────────────────────────────────
+          Shown because "here is THE flavour" overstates what a rules engine knows. Ranked, each with
+          its OWN reason, and deliberately no percentage: a match score computed from hand-written
+          weights would dress editorial judgement as measurement. See plans/order-signals.md. */}
+      {alsoGood.length > 0 && (
+        <div style={s.also}>
+          <div style={s.alsoHead}>Also worth a look</div>
+          {(() => {
+            // One rule often argues for several families at once — "a first birthday is usually
+            // mild" prefers classic AND fruit — so the same sentence can win for two flavours.
+            // Printing it twice reads as a bug, and writing a different sentence for the second
+            // would be inventing a reason it did not have. So it is said once; the rest stand on
+            // their name.
+            const said = new Set([pick.because]);
+            return alsoGood.map(r => {
+              const fresh = r.because && !said.has(r.because);
+              if (fresh) said.add(r.because);
+              return (
+                <button key={r.flavour.id} type="button" style={s.alsoRow}
+                        onClick={() => pickFlavour(r.flavour)}>
+                  <Slice sponge={r.flavour.spongeColor} filling={r.flavour.fillingColor} height={40} />
+                  <span style={s.alsoText}>
+                    <span style={s.alsoName}>{r.flavour.name}</span>
+                    {fresh && <span style={s.alsoWhy}>{r.because}</span>}
+                  </span>
+                </button>
+              );
+            });
+          })()}
+        </div>
+      )}
+
       <div style={s.resultActions}>
         <button type="button" style={s.yes}
-                onClick={() => {
-                  patch({ flavours: draft.flavours.map((t, i) => i === 0
-                    ? { tier: 0, name: f.name, flavourId: f.id, source: f.source ?? 'global',
-                        spongeColor: f.spongeColor ?? null, fillingColor: f.fillingColor ?? null }
-                    : t) });
-                  close();
-                }}>
+                onClick={() => pickFlavour(f)}>
           Yes, that one
         </button>
         <button type="button" style={s.another} onClick={() => setRejected(r => [...r, f.id])}>
@@ -242,6 +293,16 @@ const s = {
   hint: { fontSize: 11.5, fontWeight: 700, color: '#A2968A' },
   back: { border: 'none', background: 'none', font: 'inherit', fontSize: 12.5, fontWeight: 700,
           color: '#7A6C60', cursor: 'pointer', padding: 0, alignSelf: 'flex-start' },
+
+  also:     { display: 'flex', flexDirection: 'column', gap: 6, width: '100%', marginTop: 4 },
+  alsoHead: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase',
+              color: '#B3A79A' },
+  alsoRow:  { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+              padding: '8px 10px', borderRadius: 11, border: '1.5px solid #E7DFD5',
+              background: '#fff', font: 'inherit', cursor: 'pointer' },
+  alsoText: { display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 },
+  alsoName: { fontSize: 13, fontWeight: 700, color: '#2A241F' },
+  alsoWhy:  { fontSize: 11, color: '#7A6C60', lineHeight: 1.4 },
 
   tiers: { display: 'flex', flexWrap: 'wrap', gap: 6 },
   tierBtn: { padding: '7px 12px', borderRadius: 20, border: '1.5px solid #E7DFD5', background: '#fff',

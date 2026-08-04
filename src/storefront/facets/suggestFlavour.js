@@ -73,7 +73,80 @@ export const RULES = [
     prefer: ['classic', 'chocolate'], weight: 2,
     because: 'Hard to go wrong with, whoever is eating it.',
   },
+  {
+    id: 'first-birthday-mild',
+    when: { ageBand: 'first_birthday' },
+    prefer: ['classic', 'fruit'], avoid: ['coffee', 'tea', 'nut'], weight: 4,
+    because: 'A first birthday is usually mild — often the first cake they have ever tasted.',
+  },
+  {
+    id: 'teen-indulgent',
+    when: { ageBand: 'teen' },
+    prefer: ['chocolate', 'caramel'], avoid: ['classic'], weight: 2,
+    because: 'Teenagers reliably go for the richer end.',
+  },
+  {
+    id: 'senior-lighter',
+    when: { ageBand: 'senior' },
+    prefer: ['fruit', 'classic', 'indian'], avoid: ['caramel'], weight: 2,
+    because: 'Lighter and less sweet, which tends to suit an older palate better.',
+  },
+  {
+    id: 'corporate-safe',
+    when: { occasion: 'corporate' },
+    prefer: ['classic', 'chocolate'], avoid: ['indian', 'tea'], weight: 2,
+    because: 'An office cake has to please people you have never met.',
+  },
+  {
+    id: 'baby-shower-gentle',
+    when: { occasion: 'baby_shower' },
+    prefer: ['classic', 'fruit'], avoid: ['coffee'], weight: 2,
+    because: 'Gentle and light, and safe for anyone avoiding caffeine.',
+  },
+  {
+    id: 'festival-indian',
+    when: { occasion: 'festival' },
+    prefer: ['indian', 'nut'], weight: 2,
+    because: 'A festival cake usually wants to taste like the occasion.',
+  },
+  // ── Season ────────────────────────────────────────────────────────────────────────────────────
+  // Weight 1 on purpose: a NUDGE, never a decision. Seasonality is the softest thing here — real
+  // enough that mango in May is obviously right, but not something to overturn "it is for a child"
+  // with. See seasonFor() for what these mean and what they assume.
+  {
+    id: 'summer-fresh',
+    when: { season: 'summer' },
+    prefer: ['fruit'], avoid: ['caramel'], weight: 1,
+    because: 'Fruit flavours come into their own in the heat.',
+  },
+  {
+    id: 'winter-rich',
+    when: { season: 'winter' },
+    prefer: ['chocolate', 'caramel', 'nut'], weight: 1,
+    because: 'The season for something richer.',
+  },
 ];
+
+/**
+ * Which season a delivery MONTH falls in, for the Indian calendar this product serves.
+ *
+ * Taken from the DELIVERY date, not today — a cake ordered in January for an April party is an
+ * April cake, and scoring it on the month somebody happened to be browsing would be wrong in the
+ * one case seasonality is worth anything.
+ *
+ * ⚠️ ASSUMPTION, written down so it can be argued with: one map for the whole country, which is
+ * plainly wrong for somewhere with a different climate. It is here rather than per-region because a
+ * per-region table is right and nobody will fill it in — and because at weight 1 being wrong costs a
+ * nudge, not a recommendation. Revisit when there are enough bakers for a region to disagree.
+ *
+ * `month` is 1-12.
+ */
+export function seasonFor(month) {
+  if (month >= 3 && month <= 6)  return 'summer';    // Mar-Jun, the hot months
+  if (month >= 7 && month <= 9)  return 'monsoon';   // Jul-Sep — no rule keys on it yet, and that
+                                                     // is honest: nothing about it changes a flavour
+  return 'winter';                                   // Oct-Feb, the cool + festival season
+}
 
 /** Weight added for a flavour the baker has marked as theirs. A tiebreak, not an argument. */
 const SIGNATURE_WEIGHT = 1.5;

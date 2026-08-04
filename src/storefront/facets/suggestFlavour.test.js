@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { suggestFlavours, fallback, RULES } from './suggestFlavour.js';
+import { suggestFlavours, fallback, seasonFor, RULES } from './suggestFlavour.js';
 
 // The suggester makes a claim to a customer about to spend money on an occasion that matters. These
 // pin the parts where being wrong is worse than being silent.
@@ -116,5 +116,65 @@ describe('fallback', () => {
   it('is null when the dietary filter leaves nothing — never an invented suggestion', () => {
     const list = [f('a', 'A', 'indian', false, { conflicts_with: ['eggless'] })];
     expect(fallback(list, ['eggless'])).toBeNull();
+  });
+});
+
+describe('the signals added in phase 2', () => {
+  const CAT = [
+    f('choc',   'Chocolate',   'chocolate', true),
+    f('van',    'Vanilla',     'classic',   true),
+    f('straw',  'Strawberry',  'fruit',     true),
+    f('mocha',  'Mocha',       'coffee',    false),
+    f('pist',   'Pistachio',   'nut',       false),
+    f('butter', 'Butterscotch','caramel',   true),
+    f('rasm',   'Rasmalai',    'indian',    false),
+  ];
+
+  it('keeps a first birthday mild, and away from coffee and nuts', () => {
+    const [top] = suggestFlavours(CAT, { ageBand: 'first_birthday', mood: 'safe' });
+    expect(['classic', 'fruit']).toContain(top.flavour.tasteFamily);
+    const order = suggestFlavours(CAT, { ageBand: 'first_birthday', mood: 'safe' }).map(r => r.flavour.id);
+    // Ranked BELOW the mild ones rather than removed — an avoid is a score, only dietary removes.
+    for (const id of ['mocha', 'pist']) {
+      if (order.includes(id)) expect(order.indexOf(id)).toBeGreaterThan(order.indexOf(top.flavour.id));
+    }
+  });
+
+  it('reads the reason from the rule that won, for a first birthday', () => {
+    const [top] = suggestFlavours(CAT, { ageBand: 'first_birthday', mood: 'safe' });
+    expect(top.because).toMatch(/first cake they have ever tasted/i);
+  });
+
+  it('sends an office cake somewhere safe', () => {
+    const [top] = suggestFlavours(CAT, { occasion: 'corporate', mood: 'safe' });
+    expect(['classic', 'chocolate']).toContain(top.flavour.tasteFamily);
+  });
+
+  it('leans fruity in summer and rich in winter, from the same answers', () => {
+    const summer = suggestFlavours(CAT, { season: 'summer' }).map(r => r.flavour.id);
+    const winter = suggestFlavours(CAT, { season: 'winter' }).map(r => r.flavour.id);
+    expect(summer[0]).toBe('straw');
+    expect(['choc', 'butter', 'pist']).toContain(winter[0]);
+  });
+
+  it('season is a NUDGE — it cannot overturn a rule that argues the other way', () => {
+    // A child in summer still gets chocolate: kids-chocolate is weight 3, summer-fresh is 1.
+    const [top] = suggestFlavours(CAT, { recipient: 'child', season: 'summer', mood: 'safe' });
+    expect(top.flavour.tasteFamily).toBe('chocolate');
+  });
+
+  it('scores nothing on a monsoon delivery rather than inventing a preference', () => {
+    // No rule keys on monsoon, deliberately — nothing about rain changes a flavour.
+    const withSeason = suggestFlavours(CAT, { recipient: 'child', season: 'monsoon', mood: 'safe' });
+    const without    = suggestFlavours(CAT, { recipient: 'child', mood: 'safe' });
+    expect(withSeason.map(r => r.flavour.id)).toEqual(without.map(r => r.flavour.id));
+  });
+});
+
+describe('seasonFor', () => {
+  it('maps the Indian calendar as documented', () => {
+    expect([3, 4, 5, 6].map(seasonFor)).toEqual(['summer', 'summer', 'summer', 'summer']);
+    expect([7, 8, 9].map(seasonFor)).toEqual(['monsoon', 'monsoon', 'monsoon']);
+    expect([10, 11, 12, 1, 2].map(seasonFor)).toEqual(['winter', 'winter', 'winter', 'winter', 'winter']);
   });
 });
