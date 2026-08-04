@@ -25,22 +25,30 @@ const bpOf = w => (w >= 1024 ? 'desktop' : w >= 720 ? 'tablet' : 'mobile');
 // desktop-wide but the storefront box is ~mobile). Mobile-first, SSR-safe default 'mobile'.
 function useContainerBreakpoint() {
   const [bp, setBp] = useState(null);   // null = not measured yet → render a loader, not a guessed layout
+  // Viewport HEIGHT as well, because the hero's job is to get the CTA on screen and that is a
+  // question about height, not width. A fixed 300px cake fits a 844pt iPhone and pushes the button
+  // 45px off the bottom of a 640pt Android — same layout, same breakpoint, different outcome.
+  const [vh, setVh] = useState(null);
   const roRef = useRef(null);
   // Callback ref → (re)attaches the observer whenever the root node mounts, even if the first render
   // was a loading state without the node yet. ResizeObserver also covers window/container resizes.
   const setRef = useCallback(el => {
     if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
     if (el && typeof ResizeObserver !== 'undefined') {
-      const read = () => setBp(bpOf(el.clientWidth));
+      const read = () => {
+        setBp(bpOf(el.clientWidth));
+        if (typeof window !== 'undefined') setVh(window.innerHeight);
+      };
       read();
       const ro = new ResizeObserver(read);
       ro.observe(el);
       roRef.current = ro;
     } else if (typeof window !== 'undefined') {
       setBp(bpOf(window.innerWidth));
+      setVh(window.innerHeight);
     }
   }, []);
-  return [bp, setRef];
+  return [bp, setRef, vh];
 }
 
 // Varied, asymmetric wave paths so the bands don't all read as the same flat horizontal stripe.
@@ -124,7 +132,7 @@ export default function CustomerStorefront({
   const [menuOpen, setMenuOpen]   = useState(false);
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
-  const [bp, rootRef] = useContainerBreakpoint();
+  const [bp, rootRef, viewportH] = useContainerBreakpoint();
   const galRef = useRef(null);   // "Our creations" scroll row (hook must precede any early return)
 
   useEffect(() => {
@@ -197,6 +205,20 @@ export default function CustomerStorefront({
   // MUST sit above the early returns below: a hook skipped on the loading render and called on the
   // next one changes the hook order, which React treats as a fatal error.
   const logo = useTrimmedLogo(logoUrl || baker?.logo_transparent_url || baker?.logo_url);
+
+  // ── How tall the hero cake may be ──────────────────────────────────────────────────────────────
+  // The hero's job is to get the CTA on screen, and that is a question about HEIGHT. Everything
+  // above the button is fixed — contact bar, nav, headline, subtitle — so the cake is the only part
+  // that can give, and at a flat 300px it pushed the button 45px off the bottom of a 640pt phone
+  // while sitting comfortably on an 844pt one. Same breakpoint, same layout, different outcome.
+  //
+  // A share of the viewport rather than a number, capped so a tall screen does not get a comically
+  // large cake. Falls back to the old constant before the first measurement, so the first paint is
+  // never wrong in the direction that hides the button.
+  const heroCakeH = (full, mobile) => (
+    bp === 'desktop' ? full
+      : Math.round(Math.min(mobile, Math.max(180, (viewportH ?? 900) * 0.34)))
+  );
 
   // Reference photos → R2, one at a time, on the verified session.
   //
@@ -466,7 +488,7 @@ export default function CustomerStorefront({
       {/* ── HERO ── the template picks the type (tokens.hero.type); a baker hero photo overrides to
           the photo hero. ONE dispatch through the registry — no per-type branch here. */}
       {(HERO_RENDERERS[heroType] ?? HERO_RENDERERS['centered-cake'])({
-        s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroImage, heroDesign,
+        s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroImage, heroDesign, heroCakeH,
       })}
 
       {/* Body = ordered, toggleable sections (storefront_customizations.sections). Wavy bands
@@ -836,7 +858,7 @@ function HeroCakeMedia({ heroDesign, baker, height, ...cakeProps }) {
   if (heroDesign) return <img src={heroDesign} alt={baker?.name || 'Cake design'} style={{ width: '100%', height, objectFit: 'contain', display: 'block' }} />;
   return <HeroCake3D height={height} {...cakeProps} />;
 }
-function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, heroDesign }) {
+function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, heroDesign, heroCakeH }) {
   return (
     <section style={s.gradHero}>
       <div style={s.gradInner}>
@@ -857,14 +879,14 @@ function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLa
       {/* Big cake, anchored right and pushed off-edge so only ~half shows (section clips it).
           Draggable to rotate; NO studio grid so it floats cleanly on the gradient. */}
       <div style={s.gradMedia}>
-        <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : 400} spin={0.4} drip dripColor={pal.drip} />
+        <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : heroCakeH(560, 400)} spin={0.4} drip dripColor={pal.drip} />
       </div>
     </section>
   );
 }
 // The signature centred cake on a brand-tinted band with a wavy bottom (split on wide, stacked curve
 // on mobile). The 3D cake floats on the band (transparent canvas) inside the studio grid.
-function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroDesign }) {
+function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroDesign, heroCakeH }) {
   return wide ? (
     <section style={s.curveHero}>
       <div style={s.splitBand}>
@@ -883,7 +905,7 @@ function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLa
             )}
           </div>
           <div style={s.splitMedia}>
-            <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 460 : 380} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+            <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={heroCakeH(460, 380)} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
           </div>
         </div>
         <svg style={s.splitWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
@@ -897,7 +919,7 @@ function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLa
         <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
         {txt('hero_subtitle') && <p style={s.curveSub}>{txt('hero_subtitle')}</p>}
         <div style={s.curveCake}>
-          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={300} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={heroCakeH(300, 300)} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
         </div>
         <svg style={s.curveWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
           <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
