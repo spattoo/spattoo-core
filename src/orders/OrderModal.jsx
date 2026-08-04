@@ -300,6 +300,14 @@ export default function OrderModal({
     Array.from({ length: tierCount }, (_, i) => ({ tier: i, name: '', flavourId: null, source: null }))
   );
   const [specialInstructions, setSpecialInstructions] = useState('');
+  // ── What the cake is FOR (migration 043) ──────────────────────────────────────────────────────
+  // Captured here as well as on the storefront, and that is the point rather than a nicety: bakers
+  // create a lot of orders by hand from a phone call or a WhatsApp thread. Recording these only on
+  // the enquiry path would leave the dataset with a BIASED hole, not merely a smaller one — every
+  // customer who prefers to ring up would be missing from it.
+  const [occasion, setOccasion]     = useState('');
+  const [recipient, setRecipient]   = useState('');
+  const [cakeNumber, setCakeNumber] = useState('');
   // Dietary requirements the customer states — eggless / vegan / Jain / allergens.
   // ORDER-LEVEL, not per tier (unlike flavour): an eggless requirement is not
   // satisfied by an eggless top tier sitting on an egg-based base.
@@ -507,6 +515,11 @@ export default function OrderModal({
         weightKg:            weightKg ? parseFloat(weightKg) : undefined,
         flavours:            flavours.filter(f => f.name.trim()),
         specialInstructions: specialInstructions.trim() || undefined,
+        occasion:   occasion  || undefined,
+        recipient:  recipient || undefined,
+        // A whole number or nothing — never NaN, which the API would reject with a message about a
+        // field the baker cannot see.
+        cakeNumber: Number.isInteger(parseInt(cakeNumber, 10)) ? parseInt(cakeNumber, 10) : undefined,
         // Omitted entirely when nothing is selected: "none stated" is not the same as
         // the customer confirming the cake may contain anything.
         dietaryRequirementKeys: dietaryKeys.length ? dietaryKeys : undefined,
@@ -964,6 +977,39 @@ export default function OrderModal({
                       </div>
                     );
                   })()}
+                </div>
+
+                {/* Optional, and deliberately three small controls rather than a form: a baker
+                    taking this down mid-call will fill what they were told and skip the rest.
+                    An age BAND is not asked here — on a call the number is what gets said, and
+                    asking a baker to bucket it is asking them to do our filing. */}
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <label style={{ ...field, flex: '1 1 130px' }}>
+                    <span style={lbl}>Occasion</span>
+                    <select style={inp} value={occasion} onChange={e => setOccasion(e.target.value)}>
+                      <option value="">—</option>
+                      {[['birthday','Birthday'],['anniversary','Anniversary'],['wedding','Wedding'],
+                        ['baby_shower','Baby shower'],['engagement','Engagement'],['farewell','Farewell'],
+                        ['corporate','Corporate'],['festival','Festival'],['other','Other']]
+                        .map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ ...field, flex: '1 1 130px' }}>
+                    <span style={lbl}>Who&rsquo;s it for</span>
+                    <select style={inp} value={recipient} onChange={e => setRecipient(e.target.value)}>
+                      <option value="">—</option>
+                      {[['child','A child'],['adult','A grown-up'],['couple','A couple'],
+                        ['family','The family'],['friends','Friends'],['colleagues','The office']]
+                        .map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                  {(occasion === 'birthday' || occasion === 'anniversary') && (
+                    <label style={{ ...field, flex: '0 1 110px' }}>
+                      <span style={lbl}>{occasion === 'birthday' ? 'Age on cake' : 'Which year'}</span>
+                      <input style={inp} inputMode="numeric" value={cakeNumber} placeholder="e.g. 1"
+                             onChange={e => setCakeNumber(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+                    </label>
+                  )}
                 </div>
 
                 <label style={field}>
