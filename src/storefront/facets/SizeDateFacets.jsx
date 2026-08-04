@@ -15,8 +15,32 @@ import { today, OCCASIONS } from './cakeDraft.js';
 
 // Servings per kg. A CONVENTION, not a fact — it depends on how a cake is cut and who is eating —
 // so it is stated once here and always spoken as "about".
-const SERVINGS_PER_KG = 8;
+// Servings per kg — a RANGE, not a number, because it genuinely is one: it depends on how a cake is
+// cut and who is eating. 8 to 12 is the honest span for the portions this market cuts.
+//
+// Shown as a range for the same reason the code always said "about": a single figure invites a
+// customer to trust a precision nobody has. It also TILES — each band starts where the last ended,
+// so somebody feeding 15 has exactly one option to pick rather than a gap to guess in.
+const SERVINGS_PER_KG_LOW  = 8;
+const SERVINGS_PER_KG_HIGH = 12;
 const WEIGHTS = [0.5, 1, 1.5, 2, 3, 4, 5];
+
+/**
+ * The guest band each weight covers: [from, to].
+ *
+ * `to` is the weight at the generous end of the range. `from` is one more than the PREVIOUS band's
+ * top, so the ladder is continuous — 4-6, 7-12, 13-18 — rather than a set of overlapping estimates.
+ * The smallest band starts at its own lower bound, since nothing precedes it.
+ */
+function servingBands(weights) {
+  let prevTop = 0;
+  return weights.map(w => {
+    const to = Math.round(w * SERVINGS_PER_KG_HIGH);
+    const from = prevTop ? prevTop + 1 : Math.round(w * SERVINGS_PER_KG_LOW);
+    prevTop = to;
+    return { w, from, to };
+  });
+}
 
 /**
  * The tier ladder, drawn.
@@ -137,7 +161,7 @@ export function SizeFacet({ draft, patch, close, api }) {
                         const next = { tierCount: n };
                         if (min > 0 && (w == null || w < min)) {
                           next.weightKg = min;
-                          next.servings = Math.round(min * SERVINGS_PER_KG);
+                          next.servings = Math.round(min * SERVINGS_PER_KG_HIGH);
                         }
                         patch({ size: next });
                         // The tiers are also how many flavours the cake can have.
@@ -164,21 +188,23 @@ export function SizeFacet({ draft, patch, close, api }) {
       <div style={s.hint}>Roughly how many people is it feeding?</div>
 
       <div style={s.grid}>
-        {offered.map(w => {
+        {servingBands(offered).map(({ w, from, to }) => {
           const on = draft.size.weightKg === w;
           return (
             <button key={w} type="button" aria-pressed={on}
                     style={{ ...s.opt, ...(on ? s.optOn : null) }}
                     onClick={() => {
                       // Both are kept. Servings is what they said; weight is what the baker works
-                      // in. Throwing away either makes the other unrecoverable.
-                      patch({ size: { weightKg: w, servings: Math.round(w * SERVINGS_PER_KG) } });
+                      // in. Throwing away either makes the other unrecoverable. The band's TOP is
+                      // stored: it is the number that guarantees enough cake, and the one a baker
+                      // reading "feeds up to 12" can act on.
+                      patch({ size: { weightKg: w, servings: to } });
                       // Straight on to the shape — unless a template already settled it, in which
                       // case asking would be the "never ask twice" rule broken.
                       if (fromDesign > 0 || tierOptions.length < 2) close();
                       else setStep('shape');
                     }}>
-              <span style={s.optBig}>about {Math.round(w * SERVINGS_PER_KG)}</span>
+              <span style={s.optBig}>{from}&ndash;{to}</span>
               <span style={s.optSmall}>people · {w}kg</span>
             </button>
           );

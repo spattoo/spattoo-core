@@ -296,7 +296,9 @@ function buildInstructions(draft) {
   // Prose AND column, not either/or — the baker reads one place, we aggregate the other.
   if (d.cakeNumber !== '')          parts.push(`Number on the cake: ${d.cakeNumber}`);
   if (d.message.trim())             parts.push(`Message on the cake: ${d.message.trim()}`);
-  if (draft.size.servings != null)  parts.push(`Serves about ${draft.size.servings}`);
+  // "Up to", not "about": the stored figure is the TOP of the band the customer picked, so it is
+  // the number that guarantees enough cake rather than a midpoint nobody chose.
+  if (draft.size.servings != null)  parts.push(`Feeds up to ${draft.size.servings}`);
   if (d.specialInstructions.trim()) parts.push(d.specialInstructions.trim());
   return parts.join('\n');
 }

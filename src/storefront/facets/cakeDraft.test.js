@@ -194,7 +194,9 @@ describe('toOrderPayload', () => {
     expect(text).toContain('Occasion: First birthday');
     expect(text).toContain('For: Ananya');
     expect(text).toContain('Message on the cake: Happy Birthday Ananya');
-    expect(text).toContain('Serves about 20');
+    // The stored figure is the TOP of the band the customer picked, so the baker reads a number
+    // that guarantees enough cake rather than a midpoint nobody chose.
+    expect(text).toContain('Feeds up to 20');
   });
 
   it('sends no instructions rather than an empty string', () => {
