@@ -22,9 +22,14 @@ import {
 const FACET_TITLE = {
   design:  'The design',
   flavour: 'The flavour',
-  size:    'How many people?',
+  size:    'Size and shape',
   date:    'When do you need it?',
 };
+
+// The chip that INVITES someone in, which is not the same string as the heading once they are there.
+// "How many people?" is a good invitation and a poor header — the size facet asks a second question
+// about shape, and a header still saying "how many people" contradicts the body.
+const FACET_CHIP = { ...FACET_TITLE, size: 'How many people?' };
 
 // ── The entry screen's title ────────────────────────────────────────────────────────────────────
 // "Where would you like to start?" and NOT the hero button's words. The button says "Let's make your
@@ -224,7 +229,7 @@ export default function FacetShell({
                     <div style={s.rest}>
                       {remaining.filter(f => !ENTRIES.some(e => e.facet === f)).map(f => (
                         <button key={f} type="button" onClick={() => setOpen(f)} style={s.restBtn}>
-                          {FACET_TITLE[f]}
+                          {FACET_CHIP[f]}
                         </button>
                       ))}
                     </div>

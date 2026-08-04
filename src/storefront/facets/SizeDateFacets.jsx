@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { today, OCCASIONS } from './cakeDraft.js';
 
 // ── Size and date ───────────────────────────────────────────────────────────────────────────────
@@ -17,12 +18,122 @@ import { today, OCCASIONS } from './cakeDraft.js';
 const SERVINGS_PER_KG = 8;
 const WEIGHTS = [0.5, 1, 1.5, 2, 3, 4, 5];
 
-export function SizeFacet({ draft, patch, close }) {
-  // Set by whichever door learned it. A wedding template cannot be made at half a kilo, and
-  // offering it would produce an enquiry the baker has to decline.
-  const floor = draft.design.minWeightKg ?? 0;
+/**
+ * The tier ladder, drawn.
+ *
+ * A stack of outlines rather than the word "two tiers", because the customer is choosing a SHAPE
+ * and a shape is something you look at. Each tier narrows as it rises, which is what makes the
+ * silhouette read as a cake rather than a bar chart.
+ */
+function TierGlyph({ tiers, on }) {
+  const W = 52, H = 12, GAP = 2, BOARD = 3;
+  const height = tiers * (H + GAP) + BOARD + 4;
+  const stroke = on ? '#2C4433' : '#B3A79A';
+  return (
+    <svg width={W} height={height} viewBox={`0 0 ${W} ${height}`} aria-hidden="true"
+         style={{ display: 'block' }}>
+      {Array.from({ length: tiers }, (_, i) => {
+        // Widest at the BOTTOM. Each tier above steps in by a fixed amount, so a 3-tier silhouette
+        // tapers visibly rather than reading as a stack of identical bars.
+        const stepIn = (tiers - 1 - i) * 7;
+        const w = W - 8 - stepIn;
+        return (
+          <rect key={i} x={(W - w) / 2} y={i * (H + GAP) + 2} width={w} height={H} rx={2.5}
+                fill={on ? '#2C4433' : '#FFFDF9'} fillOpacity={on ? 0.14 : 1}
+                stroke={stroke} strokeWidth="1.5" />
+        );
+      })}
+      {/* The board. Without it a single tier is just a rectangle; with it, even one reads as a cake. */}
+      <rect x={2} y={height - BOARD - 1} width={W - 4} height={BOARD} rx={1.5}
+            fill={stroke} opacity={0.55} />
+    </svg>
+  );
+}
+
+/**
+ * Size, in two steps: how many people, then what shape.
+ *
+ * ── WHY SHAPE IS A SECOND QUESTION AND NOT A GUESS ──────────────────────────────────────────────
+ * Weight is not purely a function of guest count. A two-tier cake has a STRUCTURAL minimum whatever
+ * the headcount — so "about 8 people, 1kg" plus "two tiers" is an order nobody can bake, and until
+ * now nothing caught it. Asking the shape is what makes the floor knowable.
+ *
+ * People first, deliberately: it is the thing the customer already knows. Shape is a question they
+ * may never have considered, and asking it first would stall them on the harder one.
+ *
+ * ── THE FLOOR COMES FROM THE BAKER'S OWN TEMPLATES ──────────────────────────────────────────────
+ * Not a hardcoded "2 tiers = 2kg". Every template carries `tier_count` and `min_weight_kg`, so the
+ * minimum for a shape is read from cakes this baker actually offers. A baker whose two-tiers start
+ * at 1.5kg gets 1.5. With no templates to learn from we show no floor at all rather than invent one
+ * — the same rule the suggester follows.
+ */
+export function SizeFacet({ draft, patch, close, api }) {
+  // A template already answered both questions, so this facet only has to respect them.
+  const fromDesign = draft.design.minWeightKg ?? 0;
+  const [templates, setTemplates] = useState(null);
+  const [step, setStep] = useState('people');
+
+  useEffect(() => {
+    let alive = true;
+    api?.fetchStorefrontTemplates?.()
+      .then(t => alive && setTemplates(Array.isArray(t) ? t : []))
+      .catch(() => alive && setTemplates([]));
+    return () => { alive = false; };
+  }, [api]);
+
+  // Smallest weight this baker actually makes at each tier count. Read, never assumed.
+  const floorFor = (tiers) => {
+    const mins = (templates ?? [])
+      .filter(t => (t.tier_count ?? 1) === tiers)
+      .map(t => t.attrs?.min_weight_kg)
+      .filter(w => typeof w === 'number');
+    return mins.length ? Math.min(...mins) : 0;
+  };
+
+  const tierOptions = [1, 2, 3].filter(n => n === 1 || floorFor(n) > 0 || templates === null);
+  const chosenTiers = draft.size.tierCount ?? null;
+  const floor = Math.max(fromDesign, chosenTiers ? floorFor(chosenTiers) : 0);
   const offered = WEIGHTS.filter(w => w >= floor);
 
+  // ── Step 2: the shape ───────────────────────────────────────────────────────────────────────────
+  if (step === 'shape') {
+    return (
+      <>
+        <div style={s.hint}>How should it be built?</div>
+        <div style={s.tierRow}>
+          {tierOptions.map(n => {
+            const on = chosenTiers === n;
+            const min = floorFor(n);
+            return (
+              <button key={n} type="button" aria-pressed={on}
+                      style={{ ...s.tierOpt, ...(on ? s.optOn : null) }}
+                      onClick={() => {
+                        // Bumping the weight to the floor is the whole point of asking: a shape the
+                        // chosen size cannot carry is the order this facet exists to prevent.
+                        const w = draft.size.weightKg;
+                        const next = { tierCount: n };
+                        if (min > 0 && (w == null || w < min)) {
+                          next.weightKg = min;
+                          next.servings = Math.round(min * SERVINGS_PER_KG);
+                        }
+                        patch({ size: next });
+                        // The tiers are also how many flavours the cake can have.
+                        patch({ __tierCount: n });
+                        close();
+                      }}>
+                <TierGlyph tiers={n} on={on} />
+                <span style={s.tierLabel}>{n === 1 ? 'One tier' : `${n} tiers`}</span>
+                {min > 0 && <span style={s.optSmall}>from {min}kg</span>}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" style={s.back} onClick={() => setStep('people')}>← How many people</button>
+      </>
+    );
+  }
+
+  // ── Step 1: the people ──────────────────────────────────────────────────────────────────────────
   return (
     <>
       {/* Customers think in people and bakers think in kilograms. If the storefront does not do
@@ -39,7 +150,10 @@ export function SizeFacet({ draft, patch, close }) {
                       // Both are kept. Servings is what they said; weight is what the baker works
                       // in. Throwing away either makes the other unrecoverable.
                       patch({ size: { weightKg: w, servings: Math.round(w * SERVINGS_PER_KG) } });
-                      close();
+                      // Straight on to the shape — unless a template already settled it, in which
+                      // case asking would be the "never ask twice" rule broken.
+                      if (fromDesign > 0 || tierOptions.length < 2) close();
+                      else setStep('shape');
                     }}>
               <span style={s.optBig}>about {Math.round(w * SERVINGS_PER_KG)}</span>
               <span style={s.optSmall}>people · {w}kg</span>
@@ -50,7 +164,9 @@ export function SizeFacet({ draft, patch, close }) {
 
       {floor > 0 && (
         <div style={s.note}>
-          The design you picked starts at {floor}kg, so smaller sizes are not shown.
+          {fromDesign > 0
+            ? `The design you picked starts at ${floor}kg, so smaller sizes are not shown.`
+            : `A ${chosenTiers}-tier cake starts at ${floor}kg here, so smaller sizes are not shown.`}
         </div>
       )}
     </>
@@ -147,6 +263,14 @@ const s = {
   chip:  { padding: '8px 13px', borderRadius: 20, border: '1.5px solid #E7DFD5', background: '#fff',
            font: 'inherit', fontSize: 12.5, fontWeight: 700, color: '#7A6C60', cursor: 'pointer' },
   chipOn: { borderColor: '#2C4433', color: '#2C4433', background: '#F4F7F4' },
+
+  tierRow: { display: 'flex', gap: 10, flexWrap: 'wrap' },
+  tierOpt: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'pointer',
+             padding: '14px 18px', borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff',
+             font: 'inherit', minWidth: 92 },
+  tierLabel: { fontSize: 13, fontWeight: 700, color: '#2A241F' },
+  back:  { alignSelf: 'flex-start', background: 'none', border: 'none', font: 'inherit', fontSize: 12.5,
+           fontWeight: 700, color: '#7A6C60', cursor: 'pointer', padding: '4px 0', textDecoration: 'underline' },
 
   note: { fontSize: 11.5, fontWeight: 600, color: '#A2968A', lineHeight: 1.5 },
   bad:  { fontSize: 12, fontWeight: 700, color: '#C0392B' },

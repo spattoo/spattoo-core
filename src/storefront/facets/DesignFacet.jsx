@@ -31,6 +31,9 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
                             onPick={(t) => {
                               patch({ design: { kind: 'template', templateId: t.id,
                                                 templateName: t.name, thumbnailUrl: t.thumbnail_url,
+                                                // Free — the template carries it, so the order can
+                                                // record a shape without asking anyone.
+                                                shape: t.shape ?? null,
                                                 photoKeys: [], snapshot: null,
                                                 // The size facet uses this as a floor, never as an
                                                 // answer — see SizeDateFacets.
@@ -38,7 +41,13 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
                               // The template knows how many tiers it has, so the flavour facet
                               // never has to ask — `never ask twice`, across facets. A fact one
                               // of them learned belongs to the cake, not to whoever found it.
-                              if (t.tier_count) setTierCount(t.tier_count);
+                              // The template answers the size facet's shape question outright, so
+                              // it is written to the CAKE rather than left for the customer to
+                              // re-answer — "never ask twice", across facets.
+                              if (t.tier_count) {
+                                setTierCount(t.tier_count);
+                                patch({ size: { tierCount: t.tier_count } });
+                              }
                               close();
                             }} />;
   }

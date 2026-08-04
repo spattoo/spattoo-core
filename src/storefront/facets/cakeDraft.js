@@ -59,7 +59,7 @@ export function emptyDraft(bakerSlug, tierCount = 1) {
     // LOOK. `kind` says which door produced it, because the three are not interchangeable
     // downstream: a template and the designer both yield a real design, a photo yields a reference
     // the baker still has to read, and none yields an enquiry with no picture at all.
-    design: { kind: null, templateId: null, templateName: null, thumbnailUrl: null,
+    design: { kind: null, templateId: null, templateName: null, thumbnailUrl: null, shape: null,
               // Reference photos the customer picked. Only { id, name } — the BYTES live in
               // IndexedDB (see photoStore.js) because localStorage is strings and a few megabytes
               // of image would blow the shared quota and take the rest of the draft with it.
@@ -80,7 +80,10 @@ export function emptyDraft(bakerSlug, tierCount = 1) {
     // SIZE. Servings is what the customer knows; weight is what the baker works in. Both are kept
     // because the conversion is a convention rather than a fact, and throwing away what they
     // actually said would make it unrecoverable.
-    size: { servings: null, weightKg: null },
+    // tierCount is the cake's STRUCTURE, and it belongs to size rather than design because it is
+    // what makes a weight possible or impossible — a two-tier cake has a minimum whatever the guest
+    // count. Set by the size facet's second step, or by a template that already answered it.
+    size: { servings: null, weightKg: null, tierCount: null },
 
     // DATE and everything with no other home. Dietary is ORDER-level, not per tier — an eggless
     // requirement is about the person eating, not the layer.
@@ -196,6 +199,10 @@ export function toOrderPayload(draft, bakerSlug, { referenceKeys } = {}) {
     ...(draft.design.snapshot ? { designSnapshot: draft.design.snapshot } : {}),
 
     weightKg: draft.size.weightKg ?? undefined,
+    // The cake's form (migration 045). tierCount is asked or comes from a template; shape is only
+    // ever known from one, so it is absent on a flavour-only enquiry rather than guessed.
+    tierCount: draft.size.tierCount ?? undefined,
+    shape: draft.design.shape || undefined,
 
     // ── The signals (migration 043) ──────────────────────────────────────────────────────────────
     // Sent as FIELDS as well as appearing in specialInstructions. The prose is what the baker reads;
