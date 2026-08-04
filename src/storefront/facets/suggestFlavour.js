@@ -26,6 +26,12 @@
  * `avoid` name taste families. `weight` is how strongly it argues. `because` is what the customer
  * is told, and it must read as a reason a person would give — never as a rule id.
  *
+ * ── PLAIN ENGLISH, DELIBERATELY ─────────────────────────────────────────────────────────────────
+ * Most customers here read English as a second or third language. So: no idioms ("come into their
+ * own", "chocolate people"), no vocabulary that needs decoding ("indulgent", "palate"), and short
+ * sentences. These lines ARE the product — a recommendation without a reason is just a name — and a
+ * reason that has to be puzzled over builds no trust at all. Warm is fine; clever is not.
+ *
  * Data, not code, so a rule can be added without touching the scorer.
  */
 export const RULES = [
@@ -39,7 +45,7 @@ export const RULES = [
     id: 'kids-fruit-second',
     when: { recipient: 'child' },
     prefer: ['fruit'], weight: 1,
-    because: 'A good bet for children who are not chocolate people.',
+    because: 'A good second choice if they don’t like chocolate.',
   },
   {
     id: 'crowd-safe',
@@ -53,19 +59,19 @@ export const RULES = [
     id: 'couple-indulgent',
     when: { recipient: 'couple' },
     prefer: ['chocolate', 'nut'], weight: 2,
-    because: 'Rich and a little indulgent, which is the point of an anniversary.',
+    because: 'Rich and a little special, which is the point of an anniversary.',
   },
   {
     id: 'wedding-classic',
     when: { occasion: 'wedding' },
     prefer: ['classic', 'fruit'], avoid: ['coffee'], weight: 2,
-    because: 'Weddings tend to want something everyone recognises.',
+    because: 'Weddings usually call for something everyone knows.',
   },
   {
     id: 'adventurous',
     when: { mood: 'different' },
     prefer: ['tea', 'indian', 'nut', 'coffee'], avoid: ['classic'], weight: 3,
-    because: 'Less expected, and the one people remember afterwards.',
+    because: 'Less usual, and the one people remember afterwards.',
   },
   {
     id: 'safe-anything',
@@ -83,13 +89,13 @@ export const RULES = [
     id: 'teen-indulgent',
     when: { ageBand: 'teen' },
     prefer: ['chocolate', 'caramel'], avoid: ['classic'], weight: 2,
-    because: 'Teenagers reliably go for the richer end.',
+    because: 'Teenagers almost always want something rich.',
   },
   {
     id: 'senior-lighter',
     when: { ageBand: 'senior' },
     prefer: ['fruit', 'classic', 'indian'], avoid: ['caramel'], weight: 2,
-    because: 'Lighter and less sweet, which tends to suit an older palate better.',
+    because: 'Lighter and less sweet, which usually suits older guests better.',
   },
   {
     id: 'corporate-safe',
@@ -107,7 +113,7 @@ export const RULES = [
     id: 'festival-indian',
     when: { occasion: 'festival' },
     prefer: ['indian', 'nut'], weight: 2,
-    because: 'A festival cake usually wants to taste like the occasion.',
+    because: 'A festival cake should taste like the festival.',
   },
   // ── Season ────────────────────────────────────────────────────────────────────────────────────
   // Weight 1 on purpose: a NUDGE, never a decision. Seasonality is the softest thing here — real
@@ -117,13 +123,13 @@ export const RULES = [
     id: 'summer-fresh',
     when: { season: 'summer' },
     prefer: ['fruit'], avoid: ['caramel'], weight: 1,
-    because: 'Fruit flavours come into their own in the heat.',
+    because: 'Fruit flavours are best in the heat.',
   },
   {
     id: 'winter-rich',
     when: { season: 'winter' },
     prefer: ['chocolate', 'caramel', 'nut'], weight: 1,
-    because: 'The season for something richer.',
+    because: 'The right season for something richer.',
   },
 ];
 
@@ -149,10 +155,14 @@ export function seasonFor(month) {
 }
 
 // ── WHAT A SIGNATURE CLAIMS ─────────────────────────────────────────────────────────────────────
-// The baker MARKS these; nothing is derived from orders. So the customer-facing wording is "one the
-// kitchen picks out itself" and NOT "what this kitchen is known for" — the second asserts something
-// about reality (what people actually order here) that only order history could support, and a
-// baker's star is an aspiration as often as a fact. Saying the smaller true thing costs nothing.
+// The baker MARKS these; nothing is derived from orders. So the wording is "the baker recommends
+// this one" and NOT "what this kitchen is known for" — the second asserts something about reality
+// (what people actually order here) that only order history could support, and a star is an
+// aspiration as often as a fact. Starring IS recommending, so this says exactly what happened.
+//
+// Kept in plain English on purpose. Most customers here read English as a second or third language,
+// and an earlier attempt at precision — "one the kitchen picks out itself" — was more accurate and
+// much harder to read, which is a bad trade in a sentence meant to build trust in a few words.
 //
 // When there is enough order volume, the better move is not to DERIVE the flag but to PROPOSE it —
 // "you have made this forty times this quarter, star it?" — so it stays the baker's claim, made on
@@ -226,14 +236,14 @@ export function fallback(flavours, dietaryKeys = []) {
 
   const signature = eligible.find(f => f.isSignature);
   if (signature) return { flavour: signature, score: 0, signature: true,
-                          because: 'One the kitchen picks out itself.' };
+                          because: 'The baker recommends this one.' };
 
   const pleaser = eligible.find(f => f.crowdPleaser === true);
   if (pleaser) return { flavour: pleaser, score: 0, signature: false,
                         because: 'A safe bet with most people.' };
 
   return { flavour: eligible[0], score: 0, signature: false,
-           because: 'One to start from — have a look at the rest too.' };
+           because: 'A good place to start — do look at the others too.' };
 }
 
 // A hard exclusion. `conflicts_with` is what this baker has said they cannot make a flavour AS —
@@ -248,6 +258,6 @@ function reasonFor(rule, flavour) {
   if (rule) return rule.because;
   // Scored only on crowd_pleaser or on being the baker's own — say so plainly rather than
   // borrowing a rule's sentence that did not apply.
-  if (flavour.isSignature) return 'One the kitchen picks out itself.';
+  if (flavour.isSignature) return 'The baker recommends this one.';
   return 'A safe bet with most people.';
 }
