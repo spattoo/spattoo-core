@@ -14,7 +14,9 @@ const SAMPLE_BAKER = {
   instagram_handle: 'samplebakery',
   whatsapp: '+91 90000 00000',
   website_url: '',
-  logo_url: null,
+  // A real mark, so the harness previews the COMMON case. It was null, which meant every
+  // screenshot showed the no-logo fallback and the branded path was never actually looked at.
+  logo_url: '/feelings-flavours-logo.png',
   story: '',                       // empty → component's SAMPLE_STORY fallback
   portrait_url: null,
   storefront_customizations: {},

@@ -615,6 +615,7 @@ export default function CustomerStorefront({
           isMobile={bp !== 'desktop'}
           palette={{ primary, accent }}
           slug={bakerSlug}
+          logo={logo}
           apiBaseUrl={apiBaseUrl}
           captchaSiteKey={captchaSiteKey}
           otpRequired={otpRequired}

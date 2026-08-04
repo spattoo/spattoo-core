@@ -66,6 +66,10 @@ function merge(draft, patch) {
 export default function FacetShell({
   baker, tierCount = 1, isMobile = false, palette, api, leadTimeDays = 0,
   apiBaseUrl, captchaSiteKey, otpRequired = true, otpChannels, slug: slugProp,
+  // The baker's mark, already background-trimmed by the host. The storefront exists partly to BE
+  // their shop, and the chooser is where a customer now spends the longest — dropping to a text
+  // eyebrow the moment the panel opens hands the most attentive minutes back to us.
+  logo = null,
   onClose, onSubmit, renderFacet,
 }) {
   // The host resolves this and passes it — see CustomerStorefront. Falling back to baker.slug
@@ -126,6 +130,9 @@ export default function FacetShell({
       <div style={s.scrim} onClick={onClose}>
         <div style={s.sheet(isMobile)} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
           <div style={s.doneWrap}>
+            {/* Here most of all: this is the screen they remember, and the last thing they see
+                should be whose kitchen it went to. */}
+            {logo && <img src={logo} alt={baker?.name || 'Bakery'} style={s.doneLogo} />}
             <div style={s.doneTick(primary)}>✓</div>
             <h2 style={s.doneTitle}>It&rsquo;s with {baker?.name || 'the baker'} now.</h2>
             <p style={s.doneBody}>They&rsquo;ll be in touch with your price.</p>
@@ -141,7 +148,12 @@ export default function FacetShell({
       <div style={s.sheet(isMobile)} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
         <header style={s.head}>
           <div>
-            <div style={s.eyebrow}>{baker?.name}</div>
+            {/* The logo REPLACES the name rather than sitting beside it — both is a lockup nobody
+                designed, and a baker whose logo already contains their name would read it twice.
+                Falls back to the name, so a baker with no logo still gets a branded header. */}
+            {logo
+              ? <img src={logo} alt={baker?.name || 'Bakery'} style={s.logo} />
+              : <div style={s.eyebrow}>{baker?.name}</div>}
             <h2 style={s.title}>
               {open ? FACET_TITLE[open] : verifying ? 'Almost there' : 'Where would you like to start?'}
             </h2>
@@ -262,6 +274,10 @@ const s = {
   },
   eyebrow: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase',
              color: '#B3A79A' },
+  // Capped on BOTH axes: a wide wordmark and a square emblem are both common, and constraining one
+  // dimension only lets the other run away and shove the title out of the header.
+  logo:    { maxHeight: 26, maxWidth: 150, objectFit: 'contain', display: 'block' },
+  doneLogo:{ maxHeight: 34, maxWidth: 180, objectFit: 'contain', display: 'block', marginBottom: 4 },
   title:   { fontSize: 21, fontWeight: 800, color: '#2A241F', margin: '3px 0 0', letterSpacing: '-0.01em' },
   close:   { border: 'none', background: '#F1EBE3', width: 32, height: 32, borderRadius: '50%',
              cursor: 'pointer', fontSize: 14, color: '#6B5F55', flexShrink: 0 },
