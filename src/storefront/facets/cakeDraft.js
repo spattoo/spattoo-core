@@ -32,7 +32,14 @@
 // actually matters: accidental refresh, backgrounded phone, tab restore. Losing a draft because a
 // tab closed three days ago does not matter; they were not coming back.
 
-const STORAGE_VERSION = 1;
+// Bump whenever emptyDraft's SHAPE changes — a renamed or added field, not a changed value. Old
+// drafts are then discarded rather than migrated (see loadDraft).
+//
+// 2 — `forWhom` became `recipient`, and `ageBand`/`cakeNumber` arrived (2026-08-04). Not bumping it
+//     shipped a crash: a draft saved the day before passed the version check, the shallow merge
+//     replaced `details` wholesale, and `d.recipient.trim()` threw on submit — after the customer
+//     had filled everything in.
+const STORAGE_VERSION = 2;
 // Per BAKER. A customer comparing two bakeries must not carry chocolate from one into the other's
 // storefront — the draft is about a cake for this baker, not a shopping basket that follows them.
 const storageKey = (bakerSlug) => `spattoo.cakeDraft.${bakerSlug}`;
@@ -313,10 +320,19 @@ export function loadDraft(bakerSlug, tierCount = 1) {
     if (saved?.v !== STORAGE_VERSION) return fresh;
     if (!saved.savedAt || Date.now() - saved.savedAt > MAX_AGE_MS) return fresh;
 
+    // Merged PER TOP-LEVEL KEY, not shallowly. `{ ...fresh, ...saved }` replaces `details` with the
+    // saved object entirely, so a field added since — or renamed — is simply absent, and the first
+    // `.trim()` on it throws. The version bump above is the real guard; this is what makes
+    // forgetting to bump it a missing answer rather than a crash on the submit button.
+    const restored = { ...fresh, ...saved, bakerSlug };
+    for (const [k, v] of Object.entries(fresh)) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        restored[k] = { ...v, ...(saved[k] ?? {}) };
+      }
+    }
     // A date that has since passed is worse than no date — it is a wrong answer the customer has
     // to notice and correct, and they will not, because they already answered it. Everything else
     // in the draft survives.
-    const restored = { ...fresh, ...saved, bakerSlug };
     if (restored.details?.deliveryDate && restored.details.deliveryDate < today()) {
       restored.details = { ...restored.details, deliveryDate: '' };
     }

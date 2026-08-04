@@ -361,3 +361,41 @@ describe('order signals', () => {
     expect(out.ageBand).toBeUndefined();
   });
 });
+
+// ── A stale draft must never crash the storefront ───────────────────────────────────────────────
+// This shipped: `forWhom` became `recipient` without a STORAGE_VERSION bump, so a draft saved the
+// day before passed the version check, the shallow merge replaced `details` wholesale, and
+// `d.recipient.trim()` threw on SUBMIT — after the customer had filled everything in and pressed
+// the one button that mattered.
+describe('a draft from an older version of the app', () => {
+  const writeStale = (slug, details) => localStorage.setItem(
+    `spattoo.cakeDraft.${slug}`,
+    JSON.stringify({ v: 1, savedAt: Date.now(), bakerSlug: slug,
+                     details, flavours: [], size: {}, contact: {}, design: {} }),
+  );
+
+  it('is discarded, not half-restored', () => {
+    // The exact shape that broke: the OLD field name, and none of the new ones.
+    writeStale('bakery', { occasion: 'birthday', forWhom: 'child', message: 'Hi' });
+    const d = loadDraft('bakery');
+    expect(d.details.recipient).toBe('');       // present and safe, not undefined
+    expect(d.details.occasion).toBe('');        // v1 discarded wholesale
+  });
+
+  it('survives submit even if a shape change is ever missed again', () => {
+    // Same-version draft missing a field added later — what forgetting the bump looks like. The
+    // per-key merge must fill it from `fresh` rather than leaving it undefined.
+    localStorage.setItem('spattoo.cakeDraft.bakery', JSON.stringify({
+      v: 2, savedAt: Date.now(), bakerSlug: 'bakery',
+      details: { occasion: 'birthday' },        // no recipient, no ageBand, no message
+      flavours: [{ tier: 0, name: 'Chocolate', flavourId: 'f1', source: 'global' }],
+      size: {}, contact: { name: 'Ananya' }, design: {},
+    }));
+    const d = loadDraft('bakery');
+    expect(d.details.recipient).toBe('');
+    expect(d.details.message).toBe('');
+    expect(d.details.occasion).toBe('birthday');   // what WAS saved still survives
+    // The actual failure was here, not in the load.
+    expect(() => toOrderPayload(d, 'bakery')).not.toThrow();
+  });
+});
