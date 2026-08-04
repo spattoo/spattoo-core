@@ -82,12 +82,23 @@ export function SizeFacet({ draft, patch, close, api }) {
   }, [api]);
 
   // Smallest weight this baker actually makes at each tier count. Read, never assumed.
+  /**
+   * The smallest weight this baker actually makes at a given tier count.
+   *
+   * A template with NO min_weight_kg is unconstrained — the baker has not said it needs a minimum,
+   * so it can be made at any size on the ladder. That makes it a 0, not a row to skip.
+   *
+   * ⚠️ It skipped them, which inverted the answer. Super&bake has several one-tier templates and
+   * exactly one — "kpop" — carrying a minimum of 1kg. Dropping the others left `[1]`, so the floor
+   * came out at 1kg and the 0.5kg option vanished: one design's constraint applied to every
+   * one-tier cake the baker makes. A floor has to be the SMALLEST thing they can do, not the
+   * smallest thing anybody bothered to write down.
+   */
   const floorFor = (tiers) => {
-    const mins = (templates ?? [])
-      .filter(t => (t.tier_count ?? 1) === tiers)
-      .map(t => t.attrs?.min_weight_kg)
-      .filter(w => typeof w === 'number');
-    return mins.length ? Math.min(...mins) : 0;
+    const at = (templates ?? []).filter(t => (t.tier_count ?? 1) === tiers);
+    if (!at.length) return 0;
+    const mins = at.map(t => (typeof t.attrs?.min_weight_kg === 'number' ? t.attrs.min_weight_kg : 0));
+    return Math.min(...mins);
   };
 
   // The shapes this baker actually makes, from the tier counts their templates use — NOT from
