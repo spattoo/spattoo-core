@@ -95,53 +95,18 @@ export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) 
         ))}
       </div>
 
-      {/* ── A number on the cake ────────────────────────────────────────────────────────────────
-          Its own field because it is PRODUCTION data — the digits the baker pipes — and not an age.
-          25 on an anniversary cake is years married. Labelled by occasion so the customer is asked
-          the question they actually have. */}
-      {(draft.details.occasion === 'birthday' || draft.details.occasion === 'anniversary') && (
-        <>
-          <label style={s.label} htmlFor="sf-number">
-            {draft.details.occasion === 'birthday' ? 'A number on the cake?' : 'Which anniversary?'}
-          </label>
-          <input id="sf-number" value={draft.details.cakeNumber} inputMode="numeric"
-                 placeholder={draft.details.occasion === 'birthday' ? 'e.g. 1, 18, 50' : 'e.g. 25'}
-                 onChange={e => {
-                   const n = e.target.value.replace(/\D/g, '').slice(0, 4);
-                   // A number SUPERSEDES the band, and clearing it is not tidiness — the chips hide
-                   // once a number is typed, so a band picked first would be stranded and
-                   // unfixable. "A teenager" plus 50 is a row that contradicts itself, and this
-                   // data exists precisely to be aggregated later.
-                   patch({ details: { cakeNumber: n, ...(n ? { ageBand: '' } : null) } });
-                 }}
-                 style={{ ...s.input, maxWidth: 160 }} />
-        </>
-      )}
+      {/* ── What this facet deliberately does NOT ask ───────────────────────────────────────────
+          The message on the cake, the number, and the age band. All three were here; all three are
+          gone.
 
-      {/* ── Age band ────────────────────────────────────────────────────────────────────────────
-          Only for a birthday, and only when no number was given — a number on a birthday cake IS
-          the age, and asking both is the "never ask twice" rule broken in the most obvious way.
-          Coarse on purpose: an exact age plus the delivery date is a date of birth, and the message
-          above is usually the name. See plans/order-signals.md. */}
-      {draft.details.occasion === 'birthday' && !draft.details.cakeNumber && (
-        <>
-          <label style={s.label}>Roughly how old?</label>
-          <div style={s.chips}>
-            {[['first_birthday', 'Turning 1'], ['toddler', 'A toddler'], ['child', 'A child'],
-              ['teen', 'A teenager'], ['adult', 'A grown-up'], ['senior', 'An elder']].map(([k, label]) => (
-              <button key={k} type="button" aria-pressed={draft.details.ageBand === k}
-                      style={{ ...s.chip, ...(draft.details.ageBand === k ? s.chipOn : null) }}
-                      onClick={() => patch({ details: { ageBand: draft.details.ageBand === k ? '' : k } })}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+          At this moment the customer is asking "can you make it, and what will it cost". Those three
+          are PRODUCTION details the baker settles once the design is agreed, and asking for them
+          before a price has even been discussed is how a short enquiry turns into a form — the exact
+          thing this whole design exists to avoid.
 
-      <label style={s.label} htmlFor="sf-message">Anything written on the cake?</label>
-      <input id="sf-message" value={draft.details.message} placeholder="Happy Birthday Ananya"
-             onChange={e => patch({ details: { message: e.target.value } })} style={s.input} />
+          The baker collects them instead: the number has its own field in the order form, and the
+          wording goes in Special instructions. The draft still carries all three, so a future door
+          can fill them without re-plumbing the payload. */}
 
       {/* No name and no phone here. Both are asked on the verification screen, together, because
           that is one question — "who are you and how does {bakerName} reach you" — and splitting it
