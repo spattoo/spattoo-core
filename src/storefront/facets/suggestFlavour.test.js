@@ -102,10 +102,11 @@ describe('the reason is the whole reason', () => {
 });
 
 describe('fallback', () => {
-  it('prefers the signature, and says that is what it is', () => {
+  it('prefers the signature, and says what it actually is — the baker\'s own pick', () => {
     const list = [f('a', 'A', null, null), f('b', 'B', null, null, { isSignature: true })];
     expect(fallback(list).flavour.id).toBe('b');
-    expect(fallback(list).because).toMatch(/known for/i);
+    // NOT "known for" — that claims something about reality only order history could support.
+    expect(fallback(list).because).toMatch(/picks out itself/i);
   });
 
   it('falls to a crowd-pleaser next', () => {

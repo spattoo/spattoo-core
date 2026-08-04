@@ -148,6 +148,16 @@ export function seasonFor(month) {
   return 'winter';                                   // Oct-Feb, the cool + festival season
 }
 
+// ── WHAT A SIGNATURE CLAIMS ─────────────────────────────────────────────────────────────────────
+// The baker MARKS these; nothing is derived from orders. So the customer-facing wording is "one the
+// kitchen picks out itself" and NOT "what this kitchen is known for" — the second asserts something
+// about reality (what people actually order here) that only order history could support, and a
+// baker's star is an aspiration as often as a fact. Saying the smaller true thing costs nothing.
+//
+// When there is enough order volume, the better move is not to DERIVE the flag but to PROPOSE it —
+// "you have made this forty times this quarter, star it?" — so it stays the baker's claim, made on
+// evidence. See plans/order-signals.md, Phase 4.
+
 /** Weight added for a flavour the baker has marked as theirs. A tiebreak, not an argument. */
 const SIGNATURE_WEIGHT = 1.5;
 /** How strongly `crowd_pleaser` counts when the customer asked for a safe bet. */
@@ -216,7 +226,7 @@ export function fallback(flavours, dietaryKeys = []) {
 
   const signature = eligible.find(f => f.isSignature);
   if (signature) return { flavour: signature, score: 0, signature: true,
-                          because: 'What this kitchen is known for.' };
+                          because: 'One the kitchen picks out itself.' };
 
   const pleaser = eligible.find(f => f.crowdPleaser === true);
   if (pleaser) return { flavour: pleaser, score: 0, signature: false,
@@ -238,6 +248,6 @@ function reasonFor(rule, flavour) {
   if (rule) return rule.because;
   // Scored only on crowd_pleaser or on being the baker's own — say so plainly rather than
   // borrowing a rule's sentence that did not apply.
-  if (flavour.isSignature) return 'What this kitchen is known for.';
+  if (flavour.isSignature) return 'One the kitchen picks out itself.';
   return 'A safe bet with most people.';
 }

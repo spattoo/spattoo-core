@@ -231,9 +231,11 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
           afterwards. That is the whole reason this is rules and not a model. */}
       <p style={s.resultWhy}>
         {pick.because}
-        {/* Said out loud when it applies, because on a close call the baker's own flavour is often
-            the deciding margin — and a reason that leaves out what decided it is only half true. */}
-        {pick.signature && ` And it's what ${bakerName} is known for.`}
+        {/* Said out loud when it applies, because on a close call the baker's own pick is often the
+            deciding margin — and a reason that leaves out what decided it is only half true.
+            "Picks out themselves", not "is known for": the baker starred it, and nothing here has
+            seen a single order. See suggestFlavour.js. */}
+        {pick.signature && ` And it's one ${bakerName} picks out themselves.`}
       </p>
       {/* ── The runners-up ────────────────────────────────────────────────────────────────────────
           Shown because "here is THE flavour" overstates what a rules engine knows. Ranked, each with
