@@ -505,8 +505,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                     the storefront saves — and the baker knew the answer before the customer asked.
                     Set here, the storefront's date picker refuses those dates while they are still
                     on the page. Stored as a column, not in the settings blob (migration 042). */}
-                <Field label="Notice you need"
-                       hint="Customers can't pick a date sooner than this. 0 means same-day is fine.">
+                {/* Says WHO does WHAT. "Notice you need" is the baker's side of it and left them
+                    working out what the number actually controls; this names the customer and the
+                    action, which is what the field governs. */}
+                <Field label="How many days ahead customers must order"
+                       hint="They won't be able to pick a date sooner than this. Set 0 if same-day orders are fine.">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                     <input
                       type="number" min={0} max={90} inputMode="numeric"
