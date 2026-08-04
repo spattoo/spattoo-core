@@ -16,6 +16,13 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
   const isMobile = useIsMobile();
   const [flavours, setFlavours]                 = useState(null);
   const [excluded, setExcluded]                 = useState(() => new Set());
+  // ── Signatures ────────────────────────────────────────────────────────────────────────────────
+  // The one piece of per-baker taste knowledge worth collecting: the storefront's suggester scores
+  // global rules ("children go chocolate"), and this is the only place a baker's own judgement
+  // enters. A TIEBREAK there, never an argument — a signature tea still loses to chocolate on a
+  // child's birthday. Capped, because "what we're known for" means nothing if it is everything.
+  const MAX_SIGNATURES = 3;
+  const [signatures, setSignatures]             = useState(() => new Set());
   // Dietary vocabulary + this baker's declarations. `conflicts` is keyed
   // `${flavourId}|${requirementKey}` — a flat Set beats a nested map here because every
   // read and write is a single pair, and nesting would only add spread-merge noise.
@@ -51,6 +58,7 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
         const arr = Array.isArray(res) ? res : (res?.flavours ?? []);
         setFlavours(arr);
         setExcluded(new Set(arr.filter(f => f.excluded).map(f => f.id)));
+        setSignatures(new Set(arr.filter(f => f.is_signature).map(f => f.id)));
         setPrices(Object.fromEntries(
           arr.filter(f => f.price_per_kg != null).map(f => [f.id, String(f.price_per_kg)]),
         ));
@@ -126,6 +134,7 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
         flavours: (flavours ?? []).map(f => ({
           flavour_id: f.id,
           excluded: excluded.has(f.id),
+          is_signature: signatures.has(f.id),
           // '' means "unprice this" and must reach the server as null, not 0 — 0 is a
           // baker advertising a free cake.
           price_per_kg: (prices[f.id] ?? '').trim() === '' ? null : Number(prices[f.id]),
@@ -271,6 +280,18 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
                     </div>
                   </div>
 
+                  {/* A bare ☆ tells a baker nothing. Says what it DOES — a customer-facing effect,
+                      not a filing category — and names the cap, so the greyed-out stars read as a
+                      limit rather than a bug. */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 12,
+                                fontSize: 10.5, color: '#9CA3AF', fontWeight: 600, lineHeight: 1.5 }}>
+                    <span style={{ color: '#D4A017', fontSize: 13 }}>★</span>
+                    <span>
+                      Star up to {MAX_SIGNATURES} you&rsquo;re known for. When a customer asks the
+                      storefront to help them choose, these get a nudge{signatures.size > 0 ? '' : ' — none picked yet'}.
+                    </span>
+                  </div>
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
                     {flavours.length === 0 && (
                       <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>No flavours available yet.</span>
@@ -288,6 +309,33 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
                                 <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{f.description}</div>
                               )}
                             </div>
+                            {/* Only for something they actually sell — starring a flavour you do
+                                not offer is dead work, the same reason the price field hides. */}
+                            {offered && (
+                              <button type="button"
+                                      onClick={() => setSignatures(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(f.id)) next.delete(f.id);
+                                        else if (next.size < MAX_SIGNATURES) next.add(f.id);
+                                        return next;
+                                      })}
+                                      disabled={!signatures.has(f.id) && signatures.size >= MAX_SIGNATURES}
+                                      title={signatures.has(f.id)
+                                        ? 'One of your signatures'
+                                        : signatures.size >= MAX_SIGNATURES
+                                          ? `You've picked ${MAX_SIGNATURES} already — unstar one first`
+                                          : 'Mark as a signature'}
+                                      aria-pressed={signatures.has(f.id)}
+                                      aria-label={`Signature flavour: ${f.name}`}
+                                      style={{
+                                        border: 'none', background: 'none', cursor: 'pointer', padding: 4,
+                                        fontSize: 15, lineHeight: 1,
+                                        color: signatures.has(f.id) ? '#D4A017' : '#D1D5DB',
+                                        opacity: !signatures.has(f.id) && signatures.size >= MAX_SIGNATURES ? 0.35 : 1,
+                                      }}>
+                                {signatures.has(f.id) ? '★' : '☆'}
+                              </button>
+                            )}
                             <Toggle checked={offered} onChange={() => toggleFlavour(f.id)} />
                           </div>
 
