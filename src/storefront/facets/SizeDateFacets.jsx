@@ -90,7 +90,19 @@ export function SizeFacet({ draft, patch, close, api }) {
     return mins.length ? Math.min(...mins) : 0;
   };
 
-  const tierOptions = [1, 2, 3].filter(n => n === 1 || floorFor(n) > 0 || templates === null);
+  // The shapes this baker actually makes, from the tier counts their templates use — NOT from
+  // which of them happen to have a min_weight_kg.
+  //
+  // ⚠️ This was `[1,2,3].filter(n => n === 1 || floorFor(n) > 0)`, which conflated two questions:
+  // "does this baker make two-tier cakes?" and "do we know the minimum weight for one?". A baker
+  // with two-tier templates but no min_weight_kg set — which is most of them, since nothing forces
+  // that field — offered only "one tier", so the shape step was skipped and the question could not
+  // be reached at all. Offer the shape; show the floor only when it is known.
+  const tierOptions = (() => {
+    const counts = [...new Set((templates ?? []).map(t => Number(t.tier_count) || 1))]
+      .filter(n => n >= 1 && n <= 6).sort((a, b) => a - b);
+    return counts.length ? counts : [1];
+  })();
   const chosenTiers = draft.size.tierCount ?? null;
   const floor = Math.max(fromDesign, chosenTiers ? floorFor(chosenTiers) : 0);
   const offered = WEIGHTS.filter(w => w >= floor);
