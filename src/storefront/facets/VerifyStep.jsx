@@ -26,7 +26,7 @@ const CHANNEL = {
 };
 
 export default function VerifyStep({
-  apiBaseUrl, slug, bakerName, captchaSiteKey, primary, initialPhone = '',
+  apiBaseUrl, slug, bakerName, captchaSiteKey, primary, initialPhone = '', initialEmail = '', initialName = '',
   // Which channels the SERVER will accept, in its order of preference — read back from /settings so
   // a channel we cannot deliver on is never offered. SMS to an Indian number needs DLT clearance;
   // offering it before that is how a customer waits for a code a telco already scrubbed.
@@ -34,7 +34,14 @@ export default function VerifyStep({
   otpRequired = true, onVerified, onBack,
 }) {
   const [channel, setChannel] = useState(channels[0] ?? 'sms');
-  const [phone, setPhone] = useState(initialPhone);
+  // ONE field holding whichever contact the chosen channel wants. Seeded from the matching side of
+  // the draft — an email typed last time should not reappear in a box now labelled Phone number.
+  const [phone, setPhone] = useState((channels[0] ?? 'sms') === 'email' ? initialEmail : initialPhone);
+  // Asked HERE, with the contact, rather than inside the date facet. They are one question — who
+  // you are and how the baker reaches you — and splitting them made the Send button look dead for a
+  // reason that lived two screens away.
+  const [name, setName] = useState(initialName);
+  const named = !!name.trim();
   const captchaConfigured = !!captchaSiteKey;
   const ch = CHANNEL[channel] ?? CHANNEL.sms;
 
@@ -48,7 +55,7 @@ export default function VerifyStep({
     postJSON(`${apiBaseUrl}/api/storefront/${slug}/verify-otp`, { to: phone.trim(), channel, code })
   ), [apiBaseUrl, slug, phone, channel]);
 
-  const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim()) });
+  const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim(), name.trim(), channel) });
 
   // ── OTP suppressed ────────────────────────────────────────────────────────────────────────────
   // STOREFRONT_OTP_REQUIRED=false on the API, read back through /settings. Temporary, for the window
@@ -59,15 +66,17 @@ export default function VerifyStep({
   // goes. Skipping the screen entirely would drop the one field the enquiry cannot do without, and
   // the copy would then have to lie about having checked it.
   if (!otpRequired) {
-    const ready = !!phone.trim();
+    const ready = !!phone.trim() && named;
     return (
       <div style={s.wrap}>
-        <h3 style={s.title}>How can {bakerName} reach you?</h3>
+        <h3 style={s.title}>Who shall {bakerName} ask for?</h3>
         <p style={s.sub}>{bakerName} will call or message you about your cake.</p>
+        <input style={s.input} value={name} onChange={e => setName(e.target.value)}
+               placeholder="Your name" autoFocus aria-label="Your name" />
         <input style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
-               inputMode={ch.mode} placeholder={ch.ask} autoFocus aria-label={ch.ask} />
+               inputMode={ch.mode} placeholder={ch.ask} aria-label={ch.ask} />
         <button type="button" style={s.primary(primary, ready)} disabled={!ready}
-                onClick={() => onVerified?.(null, phone.trim())}>
+                onClick={() => onVerified?.(null, phone.trim(), name.trim(), channel)}>
           Send to {bakerName}
         </button>
         <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>Back to my cake</button>
@@ -86,7 +95,7 @@ export default function VerifyStep({
   return (
     <div style={s.wrap}>
       <h3 style={s.title}>
-        {otp.step === 'start' ? `How can ${bakerName} reach you?` : 'Enter the code'}
+        {otp.step === 'start' ? `Who shall ${bakerName} ask for?` : 'Enter the code'}
       </h3>
       <p style={s.sub}>
         {otp.step === 'start'
@@ -121,12 +130,16 @@ export default function VerifyStep({
       {otp.step === 'start' ? (
         <>
           <input
+            style={s.input} value={name} onChange={e => setName(e.target.value)}
+            placeholder="Your name" autoFocus aria-label="Your name"
+          />
+          <input
             style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
-            inputMode={ch.mode} placeholder={ch.ask} autoFocus
+            inputMode={ch.mode} placeholder={ch.ask}
             aria-label={ch.ask}
           />
-          <button type="button" style={s.primary(primary, !!phone.trim() && !otp.sendBlocked(captchaConfigured))}
-                  disabled={!phone.trim() || otp.sendBlocked(captchaConfigured)}
+          <button type="button" style={s.primary(primary, !!phone.trim() && named && !otp.sendBlocked(captchaConfigured))}
+                  disabled={!phone.trim() || !named || otp.sendBlocked(captchaConfigured)}
                   onClick={otp.send}>
             {otp.busy ? 'Sending…' : 'Send code'}
           </button>

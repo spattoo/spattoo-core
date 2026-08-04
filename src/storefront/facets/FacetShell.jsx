@@ -186,15 +186,21 @@ export default function FacetShell({
                   apiBaseUrl={apiBaseUrl} slug={slug} bakerName={baker?.name || 'the baker'}
                   captchaSiteKey={captchaSiteKey} primary={primary}
                   otpRequired={otpRequired} channels={otpChannels}
-                  initialPhone={draft.contact.phone}
+                  initialPhone={draft.contact.phone} initialEmail={draft.contact.email}
+                  initialName={draft.contact.name}
                   onBack={() => setVerifying(false)}
-                  onVerified={(tok, phone) => {
+                  onVerified={(tok, contact, name, channel) => {
                     // Keep the proved number on the draft. The server takes the contact from the
                     // token and ignores this, but a draft that disagrees with what was sent would
                     // mislead anyone who came back to it.
-                    patch({ contact: { phone } });
+                    // Routed by CHANNEL. It briefly wrote every verified contact to `phone`, so an
+                    // email arrived on the order as a phone number — invisible in production, where
+                    // the server reads the contact from the token, but wrong on the suppressed path
+                    // where the body is what the baker gets.
+                    const field = channel === 'email' ? { email: contact } : { phone: contact };
+                    patch({ contact: { ...field, name } });
                     setSession(tok);
-                    send({ ...draft, contact: { ...draft.contact, phone } }, tok);
+                    send({ ...draft, contact: { ...draft.contact, ...field, name } }, tok);
                   }}
                 />
               ) : (
@@ -233,12 +239,11 @@ export default function FacetShell({
                     style={s.send(primary, ready && !sending)}>
               {sending ? 'Sending…' : session ? 'Try again' : `Send to ${baker?.name || 'the baker'}`}
             </button>
-            {/* Says what is missing, never how long anything will take. */}
-            <div style={error ? s.err : s.hint}>
-              {error ? error
-                : ready ? 'You can add more later — send it whenever you like.'
-                        : 'Tell us your name and one thing about the cake.'}
-            </div>
+            {/* Errors only. There is no standing hint: the gate is now "one thing about the cake",
+                which the two doors and the chips above already make obvious, and a line explaining a
+                button you can see is disabled reads as nagging. Name and contact are asked for on
+                the next screen, where they belong together. */}
+            {error && <div style={s.err}>{error}</div>}
           </footer>
         )}
       </div>

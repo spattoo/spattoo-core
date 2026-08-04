@@ -76,47 +76,43 @@ describe('withTierCount', () => {
 });
 
 describe('canSubmit', () => {
-  it('refuses without a name, however much they said about the cake', () => {
-    const d = emptyDraft('bakery');
-    d.flavours[0].name = 'Chocolate';
-    d.size.weightKg = 2;
-    expect(canSubmit(d)).toBe(false);
-  });
-
-  it('refuses a contact with nothing about the cake', () => {
+  it('refuses when nothing has been said about the cake', () => {
     const d = emptyDraft('bakery');
     d.contact.name = 'Ananya';
     d.contact.phone = '9876543210';
     expect(canSubmit(d)).toBe(false);
   });
 
-  // The gate deliberately does NOT ask for a phone: the verification step between this button and
-  // the send asks for one and proves it. Requiring a typed number here would gate the button on a
-  // weaker version of what the next screen establishes properly — and would have the date facet ask
-  // for a number the verify step immediately asks for again.
-  it('accepts a named contact with no phone typed — verification supplies it', () => {
+  // Neither a name NOR a contact gates this button. Both are asked on the verification screen
+  // between it and the send — together, because "who are you and how do we reach you" is one
+  // question. Gating here made Send dead for a reason two screens away: somebody who had picked a
+  // flavour saw a disabled button and nothing on screen that could fix it.
+  it('accepts one facet with no name and no contact — the next screen asks for both', () => {
     const d = emptyDraft('bakery');
-    d.contact.name = 'Ananya';
     d.flavours[0].name = 'Chocolate';
+    expect(d.contact.name).toBe('');
     expect(d.contact.phone).toBe('');
     expect(canSubmit(d)).toBe(true);
   });
 
   // The whole point: filling more gets a better quote, it is never the price of being heard.
-  it('refuses without a name — an order the baker cannot address is not an order', () => {
+  it('accepts a single facet — completeness is not required', () => {
     const d = emptyDraft('bakery');
-    d.contact.phone = '9876543210';
-    d.flavours[0].name = 'Chocolate';
-    expect(canSubmit(d)).toBe(false);
-  });
-
-  it('accepts one facet plus a named contact — completeness is not required', () => {
-    const d = emptyDraft('bakery');
-    d.contact.name = 'Ananya';
-    d.contact.phone = '9876543210';
     d.flavours[0].name = 'Chocolate';
     expect(canSubmit(d)).toBe(true);
     expect(emptyFacets(d)).toEqual(['design', 'size', 'date']);
+  });
+
+  it('accepts any ONE of the four, not just the flavour', () => {
+    for (const fill of [
+      d => { d.design.photos = [{ id: 'p', name: 'a.jpg' }]; },
+      d => { d.size.weightKg = 2; },
+      d => { d.details.deliveryDate = '2026-09-01'; },
+    ]) {
+      const d = emptyDraft('bakery');
+      fill(d);
+      expect(canSubmit(d)).toBe(true);
+    }
   });
 });
 

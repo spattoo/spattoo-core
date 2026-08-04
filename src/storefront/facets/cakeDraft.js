@@ -121,22 +121,22 @@ export const emptyFacets = (draft) => FACETS.filter(f => !isFilled(draft, f));
 /**
  * Enough to send?
  *
- * A name, plus ONE thing about the cake. Deliberately not completeness — requiring every facet
+ * ONE thing about the cake. Deliberately not completeness — requiring every facet
  * rebuilds the corridor this design exists to remove, and a baker would far rather have "chocolate,
  * 2kg, the 14th" than nothing at all. Filling more gets a faster, better quote; it is never the
  * price of being heard.
  *
- * ── WHY NOT A PHONE NUMBER TOO ──────────────────────────────────────────────────────────────────
- * There is no reachability check here, and that is not an omission. The number is asked for and
- * PROVED in the verification step between this button and the send, so by the time an enquiry
- * exists the contact is not merely present but confirmed. Checking for a typed phone here would gate
- * the button on a weaker version of a thing the next screen establishes properly, and would make the
- * date facet ask for a number the verify step immediately asks for again.
+ * ── WHY NOT A NAME OR A PHONE ───────────────────────────────────────────────────────────────────
+ * Neither is checked here, and that is not an omission. Both are asked for on the VERIFICATION
+ * screen between this button and the send — together, because "who are you and how do we reach you"
+ * is one question. Gating this button on them made it dead for a reason two screens away: somebody
+ * who had picked a flavour saw a disabled Send and nothing on screen that could fix it.
+ *
+ * POST /api/orders still requires customer.firstName. It arrives from that screen, and the enquiry
+ * cannot be sent without passing through it.
  */
 export function canSubmit(draft) {
-  // A NAME: POST /api/orders requires customer.firstName, and the token that carries the verified
-  // contact cannot supply one — nobody but the customer knows what they want to be called.
-  return !!draft.contact.name.trim() && FACETS.some(f => isFilled(draft, f));
+  return FACETS.some(f => isFilled(draft, f));
 }
 
 /**

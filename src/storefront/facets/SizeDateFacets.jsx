@@ -100,13 +100,9 @@ export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) 
       <input id="sf-message" value={draft.details.message} placeholder="Happy Birthday Ananya"
              onChange={e => patch({ details: { message: e.target.value } })} style={s.input} />
 
-      {/* Name only. The phone is asked for — and proved — in the verification step just before the
-          enquiry sends, so asking here as well would put the same question on two screens, and the
-          second ask reads as though the first was not believed. */}
-      <label style={s.label} htmlFor="sf-name">Who shall {bakerName} ask for?</label>
-      <input id="sf-name" value={draft.contact.name} placeholder="Your name"
-             onChange={e => patch({ contact: { name: e.target.value } })} style={s.input} />
-
+      {/* No name and no phone here. Both are asked on the verification screen, together, because
+          that is one question — "who are you and how does {bakerName} reach you" — and splitting it
+          across two screens is what made the Send button look dead for a reason nobody could see. */}
       <button type="button" style={{ ...s.done, ...(tooSoon ? s.doneOff : null) }}
               disabled={!!tooSoon} onClick={close}>
         Done
