@@ -240,7 +240,9 @@ export const RECIPIENT_LABEL = {
 };
 export const AGE_BAND_LABEL = {
   first_birthday: 'a first birthday', toddler: 'a toddler', child: 'a child',
-  teen: 'a teenager', adult: 'a grown-up', senior: 'someone older',
+  // 'an elder', not 'someone older' — this is a cake for somebody's parent or grandparent, and
+  // the word should carry that. The stored value stays `senior`; only what a person reads changes.
+  teen: 'a teenager', adult: 'a grown-up', senior: 'an elder',
 };
 export const OCCASION_LABEL = {
   birthday: 'Birthday', anniversary: 'Anniversary', wedding: 'Wedding', other: 'No special occasion',

@@ -95,7 +95,7 @@ export const RULES = [
     id: 'senior-lighter',
     when: { ageBand: 'senior' },
     prefer: ['fruit', 'classic', 'indian'], avoid: ['caramel'], weight: 2,
-    because: 'Lighter and less sweet, which usually suits older guests better.',
+    because: 'Lighter and less sweet, which elders usually prefer.',
   },
   {
     id: 'corporate-safe',
@@ -163,6 +163,12 @@ export function seasonFor(month) {
 // Kept in plain English on purpose. Most customers here read English as a second or third language,
 // and an earlier attempt at precision — "one the kitchen picks out itself" — was more accurate and
 // much harder to read, which is a bad trade in a sentence meant to build trust in a few words.
+//
+// ── AND WARM ABOUT PEOPLE ───────────────────────────────────────────────────────────────────────
+// "Elders", never "older guests". This is a cake for somebody's parent or grandparent, and the word
+// should carry the respect that occasion has — which "elders" does in Indian English and "older"
+// plainly does not. The DB value stays `senior` because it is an internal identifier nobody reads;
+// only the label changes.
 //
 // When there is enough order volume, the better move is not to DERIVE the flag but to PROPOSE it —
 // "you have made this forty times this quarter, star it?" — so it stays the baker's claim, made on

@@ -129,7 +129,7 @@ export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) 
           <label style={s.label}>Roughly how old?</label>
           <div style={s.chips}>
             {[['first_birthday', 'Turning 1'], ['toddler', 'A toddler'], ['child', 'A child'],
-              ['teen', 'A teenager'], ['adult', 'A grown-up'], ['senior', 'Someone older']].map(([k, label]) => (
+              ['teen', 'A teenager'], ['adult', 'A grown-up'], ['senior', 'An elder']].map(([k, label]) => (
               <button key={k} type="button" aria-pressed={draft.details.ageBand === k}
                       style={{ ...s.chip, ...(draft.details.ageBand === k ? s.chipOn : null) }}
                       onClick={() => patch({ details: { ageBand: draft.details.ageBand === k ? '' : k } })}>
