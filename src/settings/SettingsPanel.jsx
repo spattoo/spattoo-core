@@ -498,8 +498,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 </Field>
               </Section>
 
-              {/* ── Orders ── */}
-              <Section title="Orders">
+              {/* ── Orders & Delivery ── */}
+              {/* One panel, because a baker setting up their shop is answering one question — how
+                  orders reach them and how cakes reach the customer. Two headings for four fields
+                  read as more configuration than there is. */}
+              <Section title="Orders & Delivery">
                 {/* The worst outcome in the whole enquiry funnel is a customer picking a date,
                     waiting a day, and being told it was never possible. It undoes every round-trip
                     the storefront saves — and the baker knew the answer before the customer asked.
@@ -534,10 +537,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                       : `The earliest a customer can pick is ${settings.lead_time_days} ${Number(settings.lead_time_days) === 1 ? 'day' : 'days'} from now.`}
                   </div>
                 </Field>
-              </Section>
 
-              {/* ── Delivery ── */}
-              <Section title="Delivery">
                 <Field label="Home Delivery" hint="Offer delivery to customers' addresses in addition to pickup.">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
                     <Toggle
