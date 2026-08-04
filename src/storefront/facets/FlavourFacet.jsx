@@ -129,9 +129,10 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName }) {
 // will not ask either. The form shrinks as you go, which is the clearest signal a customer gets
 // that the thing is paying attention.
 const QUESTIONS = [
-  { key: 'forWhom',  title: "Who's it for?", options: [
-      ['child', 'A little one'], ['adult', 'A grown-up'],
-      ['couple', 'A couple'],    ['crowd', 'A crowd']] },
+  { key: 'recipient', title: "Who's it for?", options: [
+      ['child', 'A little one'],   ['adult', 'A grown-up'],
+      ['couple', 'A couple'],      ['family', 'The family'],
+      ['friends', 'Friends'],      ['colleagues', 'The office']] },
   { key: 'occasion', title: "What's the occasion?", options: [
       ['birthday', 'Birthday'],  ['anniversary', 'Anniversary'],
       ['wedding', 'Wedding'],    ['other', 'Just because']] },
@@ -143,7 +144,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
   // `mood` is the suggester's own question and belongs to nobody else, so it stays local. The other
   // two are facts about the CAKE and are seeded from the draft — see `never ask twice`.
   const [answers, setAnswers] = useState({
-    forWhom:  draft.details.forWhom  || undefined,
+    recipient: draft.details.recipient || undefined,
     occasion: draft.details.occasion || undefined,
   });
   const [rejected, setRejected] = useState([]);   // ids the customer has waved away

@@ -78,7 +78,11 @@ export function emptyDraft(bakerSlug, tierCount = 1) {
     // DATE and everything with no other home. Dietary is ORDER-level, not per tier — an eggless
     // requirement is about the person eating, not the layer.
     details: { deliveryDate: '', deliveryTime: '', deliveryMode: 'pickup', deliveryAddress: '',
-               occasion: '', forWhom: '', dietaryKeys: [], message: '', specialInstructions: '' },
+               // `recipient` replaces the old `forWhom`, which mixed two axes: child/adult is WHO
+               // the cake is for, crowd is HOW MANY — and size is already the size facet. A
+               // conflated axis is harder to reason about than either question alone.
+               occasion: '', recipient: '', ageBand: '', cakeNumber: '',
+               dietaryKeys: [], message: '', specialInstructions: '' },
 
     contact: { name: '', phone: '', email: '' },
   };
@@ -186,6 +190,17 @@ export function toOrderPayload(draft, bakerSlug, { referenceKeys } = {}) {
 
     weightKg: draft.size.weightKg ?? undefined,
 
+    // ── The signals (migration 043) ──────────────────────────────────────────────────────────────
+    // Sent as FIELDS as well as appearing in specialInstructions. The prose is what the baker reads;
+    // these are what a question like "what do first birthdays order here?" can be asked of. Prose
+    // alone could only be answered by parsing English the baker is free to edit.
+    occasion:   d.occasion   || undefined,
+    recipient:  d.recipient  || undefined,
+    ageBand:    d.ageBand    || undefined,
+    // A whole number or nothing — never NaN, which would fail the API's validator with a message
+    // about a field the customer never saw.
+    cakeNumber: Number.isInteger(parseInt(d.cakeNumber, 10)) ? parseInt(d.cakeNumber, 10) : undefined,
+
     // PICKED field by field, not passed through. A facet holds whatever it finds useful — the
     // flavour list carries sponge and filling colours so it can draw a slice — and spreading that
     // straight into an order puts render data in front of a baker forever. This module owns the
@@ -219,8 +234,13 @@ export function toOrderPayload(draft, bakerSlug, { referenceKeys } = {}) {
 // match on it and a later facet can tell it has already been answered. The baker reads English, so
 // the keys become words exactly once, here at the boundary. Anything unrecognised falls through as
 // whatever was typed, because a customer may write their own.
-export const FOR_WHOM_LABEL = {
-  child:  'a child', adult: 'a grown-up', couple: 'a couple', crowd: 'a crowd',
+export const RECIPIENT_LABEL = {
+  child: 'a child', adult: 'a grown-up', couple: 'a couple',
+  family: 'the family', friends: 'friends', colleagues: 'colleagues',
+};
+export const AGE_BAND_LABEL = {
+  first_birthday: 'a first birthday', toddler: 'a toddler', child: 'a child',
+  teen: 'a teenager', adult: 'a grown-up', senior: 'someone older',
 };
 export const OCCASION_LABEL = {
   birthday: 'Birthday', anniversary: 'Anniversary', wedding: 'Wedding', other: 'No special occasion',
@@ -233,7 +253,9 @@ function buildInstructions(draft) {
   const d = draft.details;
   const parts = [];
   if (d.occasion.trim())            parts.push(`Occasion: ${OCCASION_LABEL[d.occasion] ?? d.occasion.trim()}`);
-  if (d.forWhom.trim())             parts.push(`For: ${FOR_WHOM_LABEL[d.forWhom] ?? d.forWhom.trim()}`);
+  if (d.recipient.trim())           parts.push(`For: ${RECIPIENT_LABEL[d.recipient] ?? d.recipient.trim()}`);
+  // Prose AND column, not either/or — the baker reads one place, we aggregate the other.
+  if (d.cakeNumber !== '')          parts.push(`Number on the cake: ${d.cakeNumber}`);
   if (d.message.trim())             parts.push(`Message on the cake: ${d.message.trim()}`);
   if (draft.size.servings != null)  parts.push(`Serves about ${draft.size.servings}`);
   if (d.specialInstructions.trim()) parts.push(d.specialInstructions.trim());

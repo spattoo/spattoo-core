@@ -31,25 +31,27 @@
 export const RULES = [
   {
     id: 'kids-chocolate',
-    when: { forWhom: 'child' },
+    when: { recipient: 'child' },
     prefer: ['chocolate'], avoid: ['coffee', 'tea'], weight: 3,
     because: 'Children almost always go for chocolate.',
   },
   {
     id: 'kids-fruit-second',
-    when: { forWhom: 'child' },
+    when: { recipient: 'child' },
     prefer: ['fruit'], weight: 1,
     because: 'A good bet for children who are not chocolate people.',
   },
   {
     id: 'crowd-safe',
-    when: { forWhom: 'crowd' },
+    // Was `forWhom: 'crowd'`, which conflated a recipient with an audience size. These three are
+    // the cases where the eater is a ROOM rather than a person — the thing the rule always meant.
+    when: { recipient: ['colleagues', 'friends', 'family'] },
     prefer: ['classic', 'chocolate', 'caramel'], avoid: ['tea', 'indian'], weight: 2,
     because: 'Feeding a crowd means pleasing people you have never met.',
   },
   {
     id: 'couple-indulgent',
-    when: { forWhom: 'couple' },
+    when: { recipient: 'couple' },
     prefer: ['chocolate', 'nut'], weight: 2,
     because: 'Rich and a little indulgent, which is the point of an anniversary.',
   },
@@ -78,8 +80,12 @@ const SIGNATURE_WEIGHT = 1.5;
 /** How strongly `crowd_pleaser` counts when the customer asked for a safe bet. */
 const PLEASER_WEIGHT = 2;
 
+// A rule's `when` value may be a LIST, meaning "any of these". Added when `crowd` left the recipient
+// vocabulary: "feeding people you have never met" is not one recipient, it is several — colleagues,
+// friends, the wider family — and three near-identical rules would have been worse than one.
 const matches = (rule, answers) =>
-  Object.entries(rule.when).every(([k, v]) => answers[k] === v);
+  Object.entries(rule.when).every(([k, v]) =>
+    (Array.isArray(v) ? v.includes(answers[k]) : answers[k] === v));
 
 /**
  * Score every flavour this baker offers and return them best-first.

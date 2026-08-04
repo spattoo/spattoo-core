@@ -187,7 +187,7 @@ describe('toOrderPayload', () => {
     // three sentences — but they are what makes a quote right first time.
     const d = emptyDraft('bakery');
     d.details.occasion = 'First birthday';
-    d.details.forWhom = 'Ananya';
+    d.details.recipient = 'Ananya';
     d.details.message = 'Happy Birthday Ananya';
     d.size.servings = 20;
     const text = toOrderPayload(d).specialInstructions;
@@ -303,5 +303,61 @@ describe('reference photos', () => {
     d.design.photos = [{ id: 'p1', name: 'a.jpg' }, { id: 'p2', name: 'b.jpg' }];
     saveDraft(d);
     expect(loadDraft('bakery').design.photos).toEqual(d.design.photos);
+  });
+});
+
+// ── The signals (migration 043) ─────────────────────────────────────────────────────────────────
+// The rule these pin: STRUCTURE what we aggregate, PROSE what the baker reads — and for occasion,
+// recipient and the cake number, BOTH. Prose alone is what made these unrecoverable before; prose
+// removed would take the baker's one place to read.
+describe('order signals', () => {
+  const filled = () => {
+    const d = emptyDraft('bakery');
+    Object.assign(d.details, {
+      occasion: 'birthday', recipient: 'child', ageBand: 'first_birthday',
+      cakeNumber: '1', message: 'Happy Birthday Aarav',
+    });
+    return d;
+  };
+
+  it('sends them as fields, not only as a sentence', () => {
+    const out = toOrderPayload(filled(), 'bakery');
+    expect(out.occasion).toBe('birthday');
+    expect(out.recipient).toBe('child');
+    expect(out.ageBand).toBe('first_birthday');
+    expect(out.cakeNumber).toBe(1);
+  });
+
+  it('STILL renders them in the instructions — the baker reads one place', () => {
+    const out = toOrderPayload(filled(), 'bakery');
+    expect(out.specialInstructions).toContain('Occasion: Birthday');
+    expect(out.specialInstructions).toContain('For: a child');
+    expect(out.specialInstructions).toContain('Number on the cake: 1');
+  });
+
+  it('sends cakeNumber as a NUMBER, never a string or NaN', () => {
+    const d = filled(); d.details.cakeNumber = '50';
+    expect(toOrderPayload(d, 'bakery').cakeNumber).toBe(50);
+
+    const junk = filled(); junk.details.cakeNumber = 'abc';
+    // undefined, not NaN — NaN would fail the API validator with a message about a field the
+    // customer never saw, and JSON.stringify turns it into null anyway.
+    expect(toOrderPayload(junk, 'bakery').cakeNumber).toBeUndefined();
+  });
+
+  it('omits every signal that was not answered rather than sending empty strings', () => {
+    const out = toOrderPayload(emptyDraft('bakery'), 'bakery');
+    for (const k of ['occasion', 'recipient', 'ageBand', 'cakeNumber']) {
+      expect(out[k]).toBeUndefined();
+    }
+  });
+
+  it('keeps the cake number out of the age band — they are different questions', () => {
+    // 25 on an anniversary cake is years married. The payload must not conflate them.
+    const d = emptyDraft('bakery');
+    Object.assign(d.details, { occasion: 'anniversary', cakeNumber: '25' });
+    const out = toOrderPayload(d, 'bakery');
+    expect(out.cakeNumber).toBe(25);
+    expect(out.ageBand).toBeUndefined();
   });
 });

@@ -18,13 +18,13 @@ const CATALOGUE = [
 
 describe('suggesting', () => {
   it('sends a child to chocolate, and says why', () => {
-    const [top] = suggestFlavours(CATALOGUE, { forWhom: 'child', mood: 'safe' });
+    const [top] = suggestFlavours(CATALOGUE, { recipient: 'child', mood: 'safe' });
     expect(top.flavour.tasteFamily).toBe('chocolate');
     expect(top.because).toMatch(/children/i);
   });
 
   it('prefers the crowd-pleasing chocolate over the one that divides a room', () => {
-    const ranked = suggestFlavours(CATALOGUE, { forWhom: 'child', mood: 'safe' });
+    const ranked = suggestFlavours(CATALOGUE, { recipient: 'child', mood: 'safe' });
     const order = ranked.map(r => r.flavour.id);
     expect(order.indexOf('choc')).toBeLessThan(order.indexOf('dark'));
   });
@@ -43,13 +43,13 @@ describe('suggesting', () => {
   it('never surfaces a flavour nobody has described', () => {
     // No tasteFamily means nobody has said what it is. Ranking it would be inventing an answer.
     const mystery = f('new', 'Something New', null, null);
-    const ranked = suggestFlavours([...CATALOGUE, mystery], { forWhom: 'child', mood: 'safe' });
+    const ranked = suggestFlavours([...CATALOGUE, mystery], { recipient: 'child', mood: 'safe' });
     expect(ranked.map(r => r.flavour.id)).not.toContain('new');
   });
 
   it('returns nothing rather than a bad answer when no rule applies', () => {
     const onlyTea = [f('matcha', 'Matcha', 'tea', false)];
-    expect(suggestFlavours(onlyTea, { forWhom: 'crowd', mood: 'safe' })).toEqual([]);
+    expect(suggestFlavours(onlyTea, { recipient: 'colleagues', mood: 'safe' })).toEqual([]);
   });
 });
 
@@ -74,7 +74,7 @@ describe('the baker gets a thumb on the scale, not an argument', () => {
   it('breaks a tie toward their signature', () => {
     const a = f('a', 'A', 'chocolate', true);
     const b = f('b', 'B', 'chocolate', true, { isSignature: true });
-    const [top] = suggestFlavours([a, b], { forWhom: 'child', mood: 'safe' });
+    const [top] = suggestFlavours([a, b], { recipient: 'child', mood: 'safe' });
     expect(top.flavour.id).toBe('b');
   });
 
@@ -83,7 +83,7 @@ describe('the baker gets a thumb on the scale, not an argument', () => {
     // preference is a tiebreak, and letting it win here would recommend badly on purpose.
     const tea  = f('t', 'Tea',  'tea',       false, { isSignature: true });
     const choc = f('c', 'Choc', 'chocolate', true);
-    const [top] = suggestFlavours([tea, choc], { forWhom: 'child', mood: 'safe' });
+    const [top] = suggestFlavours([tea, choc], { recipient: 'child', mood: 'safe' });
     expect(top.flavour.id).toBe('c');
   });
 });
