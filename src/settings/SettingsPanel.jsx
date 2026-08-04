@@ -498,6 +498,41 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 </Field>
               </Section>
 
+              {/* ── Orders ── */}
+              <Section title="Orders">
+                {/* The worst outcome in the whole enquiry funnel is a customer picking a date,
+                    waiting a day, and being told it was never possible. It undoes every round-trip
+                    the storefront saves — and the baker knew the answer before the customer asked.
+                    Set here, the storefront's date picker refuses those dates while they are still
+                    on the page. Stored as a column, not in the settings blob (migration 042). */}
+                <Field label="Notice you need"
+                       hint="Customers can't pick a date sooner than this. 0 means same-day is fine.">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    <input
+                      type="number" min={0} max={90} inputMode="numeric"
+                      value={settings.lead_time_days ?? 0}
+                      onChange={e => {
+                        const v = e.target.value;
+                        // Clamped here as well as in the API: 042 caps at 90 because a typo'd 300
+                        // would make a baker unbookable for most of a year, and nobody would think
+                        // to look at this field to find out why.
+                        setSetting('lead_time_days', v === '' ? 0 : Math.max(0, Math.min(90, Number(v) || 0)));
+                      }}
+                      style={{ width: 90, padding: '9px 11px', borderRadius: 9, border: '1px solid #E5E7EB',
+                               font: 'inherit', fontSize: 13, fontWeight: 600, color: '#2C4433' }}
+                    />
+                    <span style={{ fontSize: 13, color: '#6B7280', fontWeight: 600 }}>
+                      {Number(settings.lead_time_days ?? 0) === 1 ? 'day' : 'days'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#9CA3AF', fontWeight: 600, marginTop: 8, lineHeight: 1.5 }}>
+                    {Number(settings.lead_time_days ?? 0) === 0
+                      ? 'Customers can order for today.'
+                      : `The earliest a customer can pick is ${settings.lead_time_days} ${Number(settings.lead_time_days) === 1 ? 'day' : 'days'} from now.`}
+                  </div>
+                </Field>
+              </Section>
+
               {/* ── Delivery ── */}
               <Section title="Delivery">
                 <Field label="Home Delivery" hint="Offer delivery to customers' addresses in addition to pickup.">
