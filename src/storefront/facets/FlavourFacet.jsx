@@ -134,6 +134,25 @@ const QUESTIONS = [
       ['child', 'A little one'],   ['adult', 'A grown-up'],
       ['couple', 'A couple'],      ['family', 'The family'],
       ['friends', 'Friends'],      ['colleagues', 'The office']] },
+  // ── Age ────────────────────────────────────────────────────────────────────────────────────────
+  // Asked HERE and nowhere else. The details facet used to ask it, which was wrong twice over: the
+  // customer was answering a recommender's question while trying to enquire about a price, and
+  // everyone paid the toll whether or not they wanted a suggestion. Here it is asked only of people
+  // who chose "help me pick", and only when it can change the answer.
+  //
+  // `when` is what keeps that honest — an age band means nothing for a couple, the family, friends
+  // or the office, so it is not asked. The options narrow to the recipient for the same reason:
+  // offering "Turning 1" to someone buying for a grown-up is noise, and the range that matters for a
+  // child (one year old versus sixteen) is a different range entirely.
+  {
+    key: 'ageBand',
+    title: 'Roughly how old?',
+    when: a => a.recipient === 'child' || a.recipient === 'adult',
+    options: a => (a.recipient === 'child'
+      ? [['first_birthday', 'Turning 1'], ['toddler', 'A toddler'],
+         ['child', 'A child'], ['teen', 'A teenager']]
+      : [['adult', 'A grown-up'], ['senior', 'An elder']]),
+  },
   // The same list the details facet uses — they write the same field, so offering different sets
   // would let the answer depend on which screen happened to ask.
   { key: 'occasion', title: "What's the occasion?", options: OCCASIONS },
@@ -150,7 +169,10 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
   });
   const [rejected, setRejected] = useState([]);   // ids the customer has waved away
 
-  const pending = QUESTIONS.filter(q => !answers[q.key]);
+  // Unanswered AND relevant. A question whose `when` does not hold is skipped entirely rather than
+  // shown greyed — the form shrinking as you go is the clearest signal this thing is paying
+  // attention, and it is the opposite of a wizard's fixed steps.
+  const pending = QUESTIONS.filter(q => !answers[q.key] && (!q.when || q.when(answers)));
 
   if (loading) return <div style={s.note}>Thinking…</div>;
 
@@ -161,7 +183,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
         <button type="button" style={s.back} onClick={onBack}>← Back</button>
         <div style={s.qTitle}>{q.title}</div>
         <div style={s.qOpts}>
-          {q.options.map(([value, label]) => (
+          {(typeof q.options === 'function' ? q.options(answers) : q.options).map(([value, label]) => (
             <button key={value} type="button" style={s.qOpt}
                     onClick={() => {
                       setAnswers(a => ({ ...a, [q.key]: value }));

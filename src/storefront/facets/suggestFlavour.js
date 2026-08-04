@@ -33,8 +33,34 @@
  * reason that has to be puzzled over builds no trust at all. Warm is fine; clever is not.
  *
  * Data, not code, so a rule can be added without touching the scorer.
+ *
+ * ── ORDER MATTERS FOR THE REASON, NOT THE SCORE ─────────────────────────────────────────────────
+ * Every matching rule adds its weight, so the ranking does not care how they are listed. But the
+ * SENTENCE comes from the heaviest rule that argued, and ties break toward whichever is defined
+ * first. So the table runs specific → generic: AGE first (an age band narrows a recipient, so it is
+ * the finer statement), then recipient, then occasion, then mood, then season. A customer who has
+ * just answered a question should hear the answer to it — "children almost always go for chocolate"
+ * is a poor reply to somebody who said the cake is for a teenager, even though the flavour is right.
  */
 export const RULES = [
+  {
+    id: 'first-birthday-mild',
+    when: { ageBand: 'first_birthday' },
+    prefer: ['classic', 'fruit'], avoid: ['coffee', 'tea', 'nut'], weight: 4,
+    because: 'A first birthday is usually mild — often the first cake they have ever tasted.',
+  },
+  {
+    id: 'teen-indulgent',
+    when: { ageBand: 'teen' },
+    prefer: ['chocolate', 'caramel'], avoid: ['classic'], weight: 3,
+    because: 'Teenagers almost always want something rich.',
+  },
+  {
+    id: 'senior-lighter',
+    when: { ageBand: 'senior' },
+    prefer: ['fruit', 'classic', 'indian'], avoid: ['caramel'], weight: 2,
+    because: 'Lighter and less sweet, which elders usually prefer.',
+  },
   {
     id: 'kids-chocolate',
     when: { recipient: 'child' },
@@ -68,36 +94,6 @@ export const RULES = [
     because: 'Weddings usually call for something everyone knows.',
   },
   {
-    id: 'adventurous',
-    when: { mood: 'different' },
-    prefer: ['tea', 'indian', 'nut', 'coffee'], avoid: ['classic'], weight: 3,
-    because: 'Less usual, and the one people remember afterwards.',
-  },
-  {
-    id: 'safe-anything',
-    when: { mood: 'safe' },
-    prefer: ['classic', 'chocolate'], weight: 2,
-    because: 'Hard to go wrong with, whoever is eating it.',
-  },
-  {
-    id: 'first-birthday-mild',
-    when: { ageBand: 'first_birthday' },
-    prefer: ['classic', 'fruit'], avoid: ['coffee', 'tea', 'nut'], weight: 4,
-    because: 'A first birthday is usually mild — often the first cake they have ever tasted.',
-  },
-  {
-    id: 'teen-indulgent',
-    when: { ageBand: 'teen' },
-    prefer: ['chocolate', 'caramel'], avoid: ['classic'], weight: 2,
-    because: 'Teenagers almost always want something rich.',
-  },
-  {
-    id: 'senior-lighter',
-    when: { ageBand: 'senior' },
-    prefer: ['fruit', 'classic', 'indian'], avoid: ['caramel'], weight: 2,
-    because: 'Lighter and less sweet, which elders usually prefer.',
-  },
-  {
     id: 'corporate-safe',
     when: { occasion: 'corporate' },
     prefer: ['classic', 'chocolate'], avoid: ['indian', 'tea'], weight: 2,
@@ -115,6 +111,26 @@ export const RULES = [
     prefer: ['indian', 'nut'], weight: 2,
     because: 'A festival cake should taste like the festival.',
   },
+  // ── Mood, last of the real rules ──────────────────────────────────────────────────────────────
+  // Deliberately BELOW everything specific. Ties in `reasonFor` go to whichever rule is defined
+  // first, and these two are the most generic things the table can say — "hard to go wrong with,
+  // whoever is eating it" is true of almost any safe pick. Sitting above the age and occasion rules,
+  // this one won the explanation from `senior-lighter` at equal weight, so somebody who had just
+  // told us the cake was for an elder got a sentence that could have been written before they
+  // answered. The tap has to buy them something.
+  {
+    id: 'adventurous',
+    when: { mood: 'different' },
+    prefer: ['tea', 'indian', 'nut', 'coffee'], avoid: ['classic'], weight: 3,
+    because: 'Less usual, and the one people remember afterwards.',
+  },
+  {
+    id: 'safe-anything',
+    when: { mood: 'safe' },
+    prefer: ['classic', 'chocolate'], weight: 2,
+    because: 'Hard to go wrong with, whoever is eating it.',
+  },
+
   // ── Season ────────────────────────────────────────────────────────────────────────────────────
   // Weight 1 on purpose: a NUDGE, never a decision. Seasonality is the softest thing here — real
   // enough that mango in May is obviously right, but not something to overturn "it is for a child"
