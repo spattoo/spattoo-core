@@ -170,8 +170,12 @@ export default function FacetShell({
               whole reason this is not a wizard is that something happens on every tap, and that
               only lands if the thing is still visible when you tap. */}
           <div style={s.stage(isMobile, primary)}>
+            {/* Smaller on a phone than it was. The plan says the cake stays PINNED — "if it scrolls
+                away it is a form" — and that still holds; but at 170 it was a third of the sheet, and
+                the answer to its own open question ("unless it costs too much of a small screen") is
+                that six choices crowding the bottom edge is too much. */}
             <CakeVisual facet={open} flavour={shownFlavour} primary={primary} accent={accent}
-                        height={isMobile ? 170 : 230} />
+                        height={isMobile ? 124 : 230} />
           </div>
 
           <div style={s.panel(isMobile)}>
@@ -292,9 +296,15 @@ const s = {
   stage: (m, primary) => ({
     flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
     background: `linear-gradient(180deg, ${primary}0D, ${primary}03)`,
-    width: m ? '100%' : 340, padding: m ? '4px 0 10px' : '0 12px',
+    width: m ? '100%' : 340, padding: m ? '4px 0 6px' : '0 12px',
   }),
-  panel: (m) => ({ flex: 1, minHeight: 0, overflowY: 'auto', padding: m ? '14px 18px 4px' : '4px 22px 18px',
+  // ⚠️ The bottom padding on mobile was 4px, against 18px on desktop — backwards. A phone needs MORE
+  // room at the bottom, not less: the home indicator sits there, and a row of choices flush against
+  // the screen edge reads as cut off even when every pixel is present. safe-area-inset keeps it clear
+  // of the gesture bar on the devices that have one, and falls back to a plain 18px where env() is
+  // unsupported.
+  panel: (m) => ({ flex: 1, minHeight: 0, overflowY: 'auto',
+                   padding: m ? '14px 18px calc(18px + env(safe-area-inset-bottom, 0px))' : '4px 22px 18px',
                    display: 'flex', flexDirection: 'column', gap: 10 }),
 
   entry: (primary) => ({
@@ -310,7 +320,8 @@ const s = {
   restBtn: { padding: '8px 13px', borderRadius: 20, border: '1.5px solid #E7DFD5', background: '#fff',
              font: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#7A6C60', cursor: 'pointer' },
 
-  foot: { flexShrink: 0, padding: '12px 20px 18px', borderTop: '1px solid #F0E9E0', background: '#FFFDF9' },
+  foot: { flexShrink: 0, padding: '12px 20px calc(18px + env(safe-area-inset-bottom, 0px))',
+          borderTop: '1px solid #F0E9E0', background: '#FFFDF9' },
   send: (primary, ready) => ({
     width: '100%', padding: '14px 0', borderRadius: 14, border: 'none',
     background: ready ? primary : '#E3DBD1', color: ready ? '#fff' : '#A2968A',
