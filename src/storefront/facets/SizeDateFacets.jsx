@@ -222,7 +222,7 @@ export function SizeFacet({ draft, patch, close, api }) {
   );
 }
 
-export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) {
+export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName, accent = '#6B8C74' }) {
   // The earliest date this baker will accept. A customer learns it HERE rather than a day later,
   // which is the single worst failure this whole flow can produce.
   const earliest = addDays(today(), leadTimeDays);
@@ -231,20 +231,32 @@ export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) 
 
   return (
     <>
-      <label style={s.label} htmlFor="sf-date">When do you need it?</label>
+      {/* ── The earliest date, ABOVE the field and stated as an ANSWER ──────────────────────────
+          This said "{baker} needs at least 2 days notice", in faint grey, BELOW the input. Three
+          things wrong with that, and the wording was the smallest:
+
+            * "notice" is the BAKER's word for it. The customer's question is "when can I have it",
+              and the answer is a date — not an interval they have to add to today themselves.
+            * it sat below the field, so it was read AFTER tapping. Someone opening the picker met
+              greyed-out dates with no explanation on screen above them.
+            * it was styled as a footnote, in the lightest colour on the panel, next to nothing.
+
+          Now it is the first thing in the facet, in the baker's own accent, and it names the day.
+          A date is checkable against the calendar in somebody's head; "at least 2 days" is arithmetic
+          they have to do while a picker is open. */}
+      {leadTimeDays > 0 && (
+        <div style={s.earliest(accent)}>
+          <span style={s.earliestLabel}>Earliest {bakerName} can bake for you</span>
+          <span style={s.earliestDate}>{longDate(earliest)}</span>
+        </div>
+      )}
+
       <input
         id="sf-date" type="date" value={value} min={earliest}
+        aria-label="Delivery date"
         onChange={e => patch({ details: { deliveryDate: e.target.value } })}
         style={{ ...s.input, ...(tooSoon ? s.inputBad : null) }}
       />
-
-      {/* Stated up front, not only after they pick a bad date. Somebody planning for Saturday
-          should find out on the way in, not by being refused. */}
-      {leadTimeDays > 0 && (
-        <div style={s.note}>
-          {bakerName} needs at least {leadTimeDays} {leadTimeDays === 1 ? 'day' : 'days'} notice.
-        </div>
-      )}
       {tooSoon && (
         <div style={s.bad}>That is sooner than {bakerName} can manage — pick a later date.</div>
       )}
@@ -284,6 +296,15 @@ export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName }) 
   );
 }
 
+/** "Friday 7 August" — a day somebody can check against the calendar in their head, which an
+ *  interval ("at least 2 days") is not. Built from the parts for the same timezone reason as
+ *  addDays: `new Date('2026-08-07')` parses as UTC midnight and renders as the 6th in IST. */
+function longDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
 /** yyyy-mm-dd, n days on. Built from the parts rather than Date arithmetic so it cannot drift a
  *  day across a timezone the way toISOString does in IST. */
 function addDays(iso, n) {
@@ -320,6 +341,16 @@ const s = {
   tierLabel: { fontSize: 13, fontWeight: 700, color: '#2A241F' },
   back:  { alignSelf: 'flex-start', background: 'none', border: 'none', font: 'inherit', fontSize: 12.5,
            fontWeight: 700, color: '#7A6C60', cursor: 'pointer', padding: '4px 0', textDecoration: 'underline' },
+
+  // Not a footnote. It answers the question the facet asks, so it gets the baker's accent, a
+  // border, and the largest text in the block after the date itself.
+  earliest: (accent) => ({
+    display: 'flex', flexDirection: 'column', gap: 1,
+    padding: '10px 13px', borderRadius: 11,
+    border: `1.5px solid ${accent}44`, background: `${accent}0F`,
+  }),
+  earliestLabel: { fontSize: 11, fontWeight: 700, color: '#7A6C60', letterSpacing: 0.2 },
+  earliestDate:  { fontSize: 15, fontWeight: 800, color: '#2A241F' },
 
   note: { fontSize: 11.5, fontWeight: 600, color: '#A2968A', lineHeight: 1.5 },
   bad:  { fontSize: 12, fontWeight: 700, color: '#C0392B' },

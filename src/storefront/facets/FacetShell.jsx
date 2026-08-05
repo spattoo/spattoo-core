@@ -190,6 +190,7 @@ export default function FacetShell({
                            bakerName={baker?.name} slug={slug} close={() => setOpen(null)}
                            setTierCount={(n) => patch({ __tierCount: n })}
                            onStartDesign={onStartDesign}
+                           accent={accent}
                            leadTimeDays={leadTimeDays} />)
               : verifying ? (
                 <VerifyStep
