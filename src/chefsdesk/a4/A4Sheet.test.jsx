@@ -12,9 +12,10 @@ import PhotoSheet from '../../orders/PhotoSheet.jsx';
 // paint of both callers has none — and the standalone tool opens with none by definition. A sheet
 // that only survives once its images have loaded is broken for every user's first frame.
 
-const src = (id) => ({
+const src = (id, aspect = 1) => ({
   id,
   name: `Image ${id}`,
+  aspect,
   preview: `data:image/png;base64,${id}`,
   draw: () => {},
 });

@@ -55,10 +55,15 @@ export default function PhotoSheet({ order, onClose }) {
               // The export re-renders at the size the PDF needs rather than upscaling `preview` — an
               // edible sheet shows the difference. The cut-guide ring is drawn just behind the photo,
               // slightly proud of it, so there is a line to cut along after printing.
-              draw: (ctx, x, y, sPx) => {
-                const pad = Math.round(sPx * 0.012);
-                ctx.drawImage(renderCutGuide(mask, sPx), x - pad, y - pad, sPx + 2 * pad, sPx + 2 * pad);
-                ctx.drawImage(renderFramedPhoto(photo, mask, f.transform, sPx), x, y, sPx, sPx);
+              //
+              // Square by construction: the frame's mask is square and `renderFramedPhoto` cover-fits
+              // the photo into it, so a frame is placed at aspect 1 and stays there. `hPx` is accepted
+              // and unused rather than absent — the sheet has one draw signature, and a source that
+              // quietly took fewer arguments would be a shape only this caller knows about.
+              draw: (ctx, x, y, wPx, _hPx) => {
+                const pad = Math.round(wPx * 0.012);
+                ctx.drawImage(renderCutGuide(mask, wPx), x - pad, y - pad, wPx + 2 * pad, wPx + 2 * pad);
+                ctx.drawImage(renderFramedPhoto(photo, mask, f.transform, wPx), x, y, wPx, wPx);
               },
             },
           }));
@@ -71,6 +76,7 @@ export default function PhotoSheet({ order, onClose }) {
   const sources = useMemo(() => frames.map(f => ({
     id: f.id,
     name: f.name,
+    aspect: 1,                                 // a frame's mask is square — see `draw` above
     preview: painted[f.id]?.preview ?? null,   // null → the strip shows it as still loading
     draw: painted[f.id]?.draw ?? (() => {}),
   })), [frames, painted]);

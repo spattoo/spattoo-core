@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { buildA4Pdf, downloadPdf } from '../../orders/pdf.js';
+import { sized, resized, moved } from './geometry.js';
 
 // ── The A4 print sheet ────────────────────────────────────────────────────────────────────────────
 // A to-scale A4 page the baker lays images out on, then downloads as a print-ready PDF for an edible
@@ -25,13 +26,30 @@ import { buildA4Pdf, downloadPdf } from '../../orders/pdf.js';
 //   id      string   — stable; placements reference it
 //   name    string   — for the thumbnail's title
 //   preview string   — dataUrl shown in the palette strip and on the sheet
-//   draw    (ctx, x, y, sPx) => void
+//   aspect  number    — natural width ÷ height. 1 for anything cut to a (square) frame mask; a wide
+//                      name banner is >1. Decides the shape an item is BORN at; see below.
+//   draw    (ctx, x, y, wPx, hPx) => void
 //                    — paint onto the export canvas at device px. The source owns its WHOLE paint,
 //                      cut guide included, because what a cut guide even is depends on the shape.
 //
 // `preview` and `draw` are deliberately separate: the on-screen copy is a cheap raster the browser
 // can composite, while the export re-renders at 300dpi. Reusing the preview for the PDF would print
 // the screen's resolution, which on an edible sheet is visible.
+
+// ── Why w and h are BOTH fractions of the sheet's WIDTH ───────────────────────────────────────────
+// x is a fraction of the width and y a fraction of the height, because that is what positions a point
+// on a page. Sizes are different: an item's proportions must not change when the page does, so both
+// of its dimensions are measured against the SAME edge. A square is then simply `w === h`, and
+// `aspectRatio: w / h` hands the arithmetic to CSS.
+//
+// Measuring h against the height instead would make a square item `h = w * (W/H)` — a ratio smuggled
+// into the data, wrong the moment anything about the page changes, and invisible until something
+// prints out of shape.
+//
+// Items were square until this point (one `size`, `aspectRatio: '1 / 1'`), which is correct for a
+// photo cut to a mask and wrong for everything else a baker prints. A squashed name is the single
+// most likely way to waste an edible sheet, so resize scales w and h TOGETHER and proportions are
+// only ever set by the source's own aspect.
 
 const A4_ASPECT = 210 / 297;       // portrait W/H
 const A4_WIDTH_IN = 210 / 25.4;    // 8.27" — A4 width, used to size cake-fit guides to scale
@@ -57,7 +75,9 @@ export default function A4Sheet({
   fileName = 'print-sheet.pdf',
   onClose,
 }) {
-  const [items, setItems] = useState([]);      // [{ uid, sourceId, x, y, size }] as A4-width fractions
+  // [{ uid, sourceId, x, y, w, h }] — x of the sheet's width, y of its height, w and h BOTH of its
+  // width (see above).
+  const [items, setItems] = useState([]);
   const [sel, setSel] = useState(null);
   const [guide, setGuide] = useState(null);    // cake-fit guide { shape:'round'|'square'|'rect', w, h } inches, or null
   const [shape, setShape] = useState('round'); // which shape the size controls author
@@ -95,7 +115,7 @@ export default function A4Sheet({
   useEffect(() => {
     if (!autoPlaceFirst || placed.current || !sources.length) return;
     placed.current = true;
-    setItems([{ uid: uid(), sourceId: sources[0].id, x: 0.30, y: 0.10, size: 0.40 }]);
+    setItems([{ uid: uid(), sourceId: sources[0].id, x: 0.30, y: 0.10, ...sized(sources[0], 0.40) }]);
   }, [sources, autoPlaceFirst]);
 
   function scrollStrip(dir) {
@@ -106,7 +126,8 @@ export default function A4Sheet({
     setItems(list => {
       const n = list.length;
       const off = Math.min(0.12 * n, 0.4);
-      return [...list, { uid: uid(), sourceId, x: 0.15 + off, y: 0.12 + off, size: 0.35 }];
+      const src = sourceById(sourceId);
+      return [...list, { uid: uid(), sourceId, x: 0.15 + off, y: 0.12 + off, ...sized(src, 0.35) }];
     });
   }
   function removeItem(u) { setItems(list => list.filter(it => it.uid !== u)); if (sel === u) setSel(null); }
@@ -127,18 +148,12 @@ export default function A4Sheet({
     e.preventDefault(); e.stopPropagation(); setSel(it.uid);
     const rect = sheetRef.current.getBoundingClientRect();
     const W = rect.width, H = rect.height;
-    const start = { mx: e.clientX, my: e.clientY, x: it.x, y: it.y, size: it.size };
+    const start = { mx: e.clientX, my: e.clientY, x: it.x, y: it.y, w: it.w, h: it.h };
     const onMove = (ev) => {
       const dx = (ev.clientX - start.mx) / W, dy = (ev.clientY - start.my) / H;
-      if (mode === 'move') {
-        patch(it.uid, {
-          x: Math.max(0, Math.min(1 - it.size, start.x + dx)),
-          y: Math.max(0, Math.min(1 - it.size * (W / H), start.y + dy * 1)),
-        });
-      } else {
-        const size = Math.max(0.1, Math.min(1 - it.x, start.size + dx));
-        patch(it.uid, { size });
-      }
+      patch(it.uid, mode === 'move'
+        ? moved(start, { dx, dy, w: it.w, h: it.h }, W / H)
+        : resized(start, dx));
     };
     const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
     window.addEventListener('pointermove', onMove);
@@ -153,7 +168,10 @@ export default function A4Sheet({
         for (const it of items) {
           const src = sourceById(it.sourceId);
           if (!src) continue;
-          src.draw(ctx, Math.round(it.x * W), Math.round(it.y * H), Math.round(it.size * W));
+          // Both sizes scale by W — the same edge they are stored against, so what the baker laid out
+          // is what prints. Measuring the height against H here would stretch every item by the
+          // page's own aspect, which looks almost right and is not.
+          src.draw(ctx, Math.round(it.x * W), Math.round(it.y * H), Math.round(it.w * W), Math.round(it.h * W));
         }
       }, { dpi: 300, portrait: true });
       downloadPdf(blob, fileName);
@@ -249,8 +267,10 @@ export default function A4Sheet({
                 <div key={it.uid}
                   onPointerDown={e => startDrag(e, it, 'move')}
                   style={{
+                    // aspectRatio does the height: w and h are both width-fractions, so `w / h` is the
+                    // item's true shape and CSS resolves the pixels. No W/H conversion in the view.
                     position: 'absolute', left: `${it.x * 100}%`, top: `${it.y * 100}%`,
-                    width: `${it.size * 100}%`, aspectRatio: '1 / 1', cursor: 'move',
+                    width: `${it.w * 100}%`, aspectRatio: `${it.w} / ${it.h}`, cursor: 'move',
                     outline: seld ? '2px dashed #6c47ff' : 'none', touchAction: 'none',
                   }}>
                   {src?.preview && <img src={src.preview} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
