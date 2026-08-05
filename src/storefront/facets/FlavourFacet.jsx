@@ -184,6 +184,17 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
     occasion: draft.details.occasion || undefined,
   });
   const [rejected, setRejected] = useState([]);   // ids the customer has waved away
+  // ── The back stack ────────────────────────────────────────────────────────────────────────────
+  // Which questions THIS screen asked, in order. Without it "← Back" left the suggester entirely,
+  // and there was no way back to an answer at all: answers are written to the DRAFT, and `pending`
+  // skips anything already answered, so leaving and re-entering skipped the same questions again.
+  // Occasion and recipient were unreachable for good; only `mood` could be changed, and only
+  // because it is the one answer kept locally. Reported as "back button does not take me there".
+  //
+  // Only what this screen asked. A question seeded from the draft — the date facet already set the
+  // occasion — is not on the stack, so Back steps past it and leaves. Undoing another facet's
+  // answer from in here would be reaching into a screen the customer is not looking at.
+  const [asked, setAsked] = useState([]);
   // Whether the rest of the baker's range is open. Up here with the others and NOT beside the
   // markup that uses it: three early returns sit between, and a hook below any of them is the
   // React #310 this facet's sibling already shipped once. `check:hooks` now fails the build for it.
@@ -236,19 +247,37 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick?.flavour?.id, setPreview]);
 
+  // Pops the last question this screen asked and re-opens it. With nothing left to undo it leaves
+  // the suggester, so Back never becomes a button that does nothing.
+  //
+  // Clears the answer from the DRAFT as well as from here. Half-undoing would be worse than not
+  // undoing: the question would re-open while the details facet still held the old value, and
+  // whichever screen was read second would be believed.
+  const goBack = () => {
+    if (!asked.length) return onBack();
+    const last = asked[asked.length - 1];
+    setAsked(a => a.slice(0, -1));
+    setAnswers(a => ({ ...a, [last]: undefined }));
+    if (last !== 'mood') patch({ details: { [last]: '' } });   // `mood` is ours alone
+    // A changed answer is a changed question, so flavours waved away under the old one come back.
+    // Keeping them hidden would let a rejection from a different question quietly shape the result.
+    setRejected([]);
+  };
+
   if (loading) return <div style={s.note}>Thinking…</div>;
 
   if (pending.length) {
     const q = pending[0];
     return (
       <div style={s.qWrap}>
-        <button type="button" style={s.back} onClick={onBack}>← Back</button>
+        <button type="button" style={s.back} onClick={goBack}>← Back</button>
         <div style={s.qTitle}>{q.title}</div>
         <div style={s.qOpts}>
           {(typeof q.options === 'function' ? q.options(answers) : q.options).map(([value, label]) => (
             <button key={value} type="button" style={s.qOpt}
                     onClick={() => {
                       setAnswers(a => ({ ...a, [q.key]: value }));
+                      setAsked(a => [...a, q.key]);
                       // Written to the CAKE, not kept here — the suggester asked because it needed
                       // to, but the answer is the cake's and the details facet must not ask again.
                       if (q.key !== 'mood') patch({ details: { [q.key]: value } });
@@ -272,7 +301,12 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
           {bakerName} may still be able to help. Tell them what you are after and they will come
           back to you.
         </p>
-        <button type="button" style={s.back} onClick={onBack}>← Back to the flavours</button>
+        {/* Changing an answer is the thing most likely to help here, so Back steps into the
+            questions rather than out of the suggester — leaving is what the sentence above already
+            offers. */}
+        <button type="button" style={s.back} onClick={goBack}>
+          {asked.length ? '← Change an answer' : '← Back to the flavours'}
+        </button>
       </div>
     );
   }
@@ -311,7 +345,9 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
 
   return (
     <div style={s.result}>
-      <button type="button" style={s.back} onClick={onBack}>← Back</button>
+      <button type="button" style={s.back} onClick={goBack}>
+        {asked.length ? '← Change an answer' : '← Back'}
+      </button>
       {/* Named, so the recommendation announces itself as one. Without it the screen opened on a
           slice and a name with no more standing than the cards below it — which is how a customer's
           eye reached the runners-up first and read THEM as the answer. */}
