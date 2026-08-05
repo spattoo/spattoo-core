@@ -20,7 +20,7 @@ const DOORS = [
   { kind: 'designed', label: "I'm feeling creative — let me build it myself in 3D" },
 ];
 
-export default function DesignFacet({ draft, patch, close, api, bakerName, slug, setTierCount }) {
+export default function DesignFacet({ draft, patch, close, api, bakerName, slug, setTierCount, onStartDesign }) {
   // null = the three doors. Opening one replaces them; there is no step counter, because there are
   // no steps — a door is a way in, not a stage.
   const [door, setDoor] = useState(null);
@@ -58,8 +58,6 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
   }
 
   if (door) {
-    // The DESIGNER door is not built yet. Saying so plainly beats a door that opens on nothing — and
-    // beats hiding it, which would make the facet look thinner than it is.
     return (
       <div style={s.soon}>
         <div style={s.soonTitle}>Not quite ready</div>
@@ -75,7 +73,20 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
   return (
     <>
       {DOORS.map(d => (
-        <button key={d.kind} type="button" onClick={() => setDoor(d.kind)} style={s.door}>
+        <button key={d.kind} type="button" style={s.door}
+                onClick={() => {
+                  // ⚠️ The designer door said "Not quite ready" and that was a REGRESSION, not an
+                  // unbuilt feature. The 3D designer exists and the host has always handled
+                  // onStartDesign by routing to it — the hero CTA used to call it directly, and
+                  // putting the chooser in front replaced that call with `setShowFacets(true)`. So a
+                  // walk-up visitor lost the route while an invited customer kept it, and the
+                  // marketing site went on selling "your customers design their cake in 3D".
+                  //
+                  // Navigating on the CLICK, not from render: calling it while rendering is a side
+                  // effect in render and fires twice under StrictMode.
+                  if (d.kind === 'designed' && onStartDesign) { onStartDesign(); return; }
+                  setDoor(d.kind);
+                }}>
           <span style={s.doorLabel}>{d.label}</span>
           {draft.design.kind === d.kind && <span style={s.doorTick}>✓</span>}
         </button>

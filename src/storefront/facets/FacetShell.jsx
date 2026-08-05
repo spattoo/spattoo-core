@@ -70,7 +70,7 @@ function merge(draft, patch) {
 
 export default function FacetShell({
   baker, tierCount = 1, isMobile = false, palette, api, leadTimeDays = 0,
-  apiBaseUrl, captchaSiteKey, otpRequired = true, otpChannels, slug: slugProp,
+  apiBaseUrl, captchaSiteKey, otpRequired = true, otpChannels, slug: slugProp, onStartDesign,
   // The baker's mark, already background-trimmed by the host. The storefront exists partly to BE
   // their shop, and the chooser is where a customer now spends the longest — dropping to a text
   // eyebrow the moment the panel opens hands the most attentive minutes back to us.
@@ -189,6 +189,7 @@ export default function FacetShell({
                  ?? <Facet facet={open} draft={draft} patch={patch} api={api}
                            bakerName={baker?.name} slug={slug} close={() => setOpen(null)}
                            setTierCount={(n) => patch({ __tierCount: n })}
+                           onStartDesign={onStartDesign}
                            leadTimeDays={leadTimeDays} />)
               : verifying ? (
                 <VerifyStep

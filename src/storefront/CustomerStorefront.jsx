@@ -642,6 +642,7 @@ export default function CustomerStorefront({
           captchaSiteKey={captchaSiteKey}
           otpRequired={otpRequired}
           otpChannels={otpChannels}
+          onStartDesign={onStartDesign}
           onClose={() => setShowFacets(false)}
           onSubmit={submitEnquiry}
         />
