@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
-import { suggestFlavours, fallback, seasonFor } from './suggestFlavour.js';
+import { suggestFlavours, fallback, seasonFor, eligibleFlavours } from './suggestFlavour.js';
 import { OCCASIONS } from './cakeDraft.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
@@ -104,21 +104,32 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName }) {
         </div>
       )}
 
-      <div style={s.grid}>
-        {state.flavours.map(f => (
-          <button key={f.id} type="button" onClick={() => pick(f)}
-                  aria-pressed={f.id === chosenId}
-                  style={{ ...s.card, ...(f.id === chosenId ? s.cardOn : null) }}>
-            <Slice sponge={f.spongeColor} filling={f.fillingColor} height={72} />
-            <span style={s.name}>{f.name}</span>
-          </button>
-        ))}
-      </div>
+      <FlavourGrid flavours={state.flavours} chosenId={chosenId} onPick={pick} />
 
       {multi && (
         <button type="button" style={s.done} onClick={close}>Done</button>
       )}
     </>
+  );
+}
+
+// ── The grid of slices ──────────────────────────────────────────────────────────────────────────
+// Both doors end up here. "I know my flavour" opens it directly; "help me pick" opens it under the
+// recommendation, as the rest of the range. Shared so the two can never drift into looking like
+// different products — a customer who takes the second door and expands the list should be looking
+// at exactly what the first door would have shown them.
+function FlavourGrid({ flavours, chosenId = null, onPick }) {
+  return (
+    <div style={s.grid}>
+      {flavours.map(f => (
+        <button key={f.id} type="button" onClick={() => onPick(f)}
+                aria-pressed={f.id === chosenId}
+                style={{ ...s.card, ...(f.id === chosenId ? s.cardOn : null) }}>
+          <Slice sponge={f.spongeColor} filling={f.fillingColor} height={72} />
+          <span style={s.name}>{f.name}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -172,6 +183,10 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
     occasion: draft.details.occasion || undefined,
   });
   const [rejected, setRejected] = useState([]);   // ids the customer has waved away
+  // Whether the rest of the baker's range is open. Up here with the others and NOT beside the
+  // markup that uses it: three early returns sit between, and a hook below any of them is the
+  // React #310 this facet's sibling already shipped once. `check:hooks` now fails the build for it.
+  const [showAll, setShowAll] = useState(false);
 
   // Unanswered AND relevant. A question whose `when` does not hold is skipped entirely rather than
   // shown greyed — the form shrinking as you go is the clearest signal this thing is paying
@@ -239,6 +254,26 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
 
   const f = pick.flavour;
 
+  // ── Is there actually a next one? ─────────────────────────────────────────────────────────────
+  // The button used to be offered unconditionally, which made it a promise this could not keep: with
+  // one scoring flavour, rejecting it empties `ranked`, `pick` falls to null and the customer lands
+  // on "Nothing leaps out" — having asked for another and been shown an empty room. Naming it "the
+  // next closest" makes the promise explicit, so it is only offered when there IS one.
+  const hasNext = ranked.length > 1;
+
+  // ── The rest of the range ─────────────────────────────────────────────────────────────────────
+  // Everything this baker makes that is not already on screen. `suggestFlavours` returns only
+  // score > 0, so a baker with twenty-six flavours and three that score had twenty-three with no
+  // route to them at all — the recommendation was a dead end unless you backed out to a door
+  // labelled "I know my flavour", which is the opposite of what you just said.
+  //
+  // eligibleFlavours, NOT the raw list: the dietary exclusion is a hard filter, and showing MORE is
+  // not a reason to relax it. A rejected flavour DOES come back here, because this section is a
+  // statement of fact about the range rather than a recommendation.
+  const onScreen = new Set([f.id, ...alsoGood.map(r => r.flavour.id)]);
+  const rest = eligibleFlavours(flavours, draft.details.dietaryKeys)
+    .filter(x => !onScreen.has(x.id));
+
   // Both the top pick and a runner-up write the same thing. Extracted the moment there were two
   // callers, rather than after they had drifted.
   const pickFlavour = (flavour) => {
@@ -301,10 +336,34 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
                 onClick={() => pickFlavour(f)}>
           Yes, that one
         </button>
-        <button type="button" style={s.another} onClick={() => setRejected(r => [...r, f.id])}>
-          Show me another
-        </button>
+        {/* "Show me another" read as a shuffle — as though the next one came out of a hat. It never
+            did: `ranked` is sorted by score, so the next is the next-best argued case. Saying so
+            turns a random-feeling button into the one thing a ranked list is good for, and it is a
+            claim about ORDER, not a percentage — see the note on runners-up above. */}
+        {hasNext && (
+          <button type="button" style={s.another} onClick={() => setRejected(r => [...r, f.id])}>
+            Next closest match
+          </button>
+        )}
       </div>
+
+      {rest.length > 0 && (
+        <div style={s.rest}>
+          {showAll ? (
+            <>
+              <div style={s.alsoHead}>Everything else {bakerName} makes</div>
+              <FlavourGrid flavours={rest} onPick={pickFlavour} />
+            </>
+          ) : (
+            // Collapsed by default, and that is not timidity: this customer opened this door because
+            // a wall of names was too much to weigh. Handing all of them straight back would undo
+            // the thing they asked for. One tap is not a dead end; a wall is not a recommendation.
+            <button type="button" style={s.restBtn} onClick={() => setShowAll(true)}>
+              {bakerName} makes {rest.length} more — see {rest.length === 1 ? 'it' : 'them all'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -332,6 +391,12 @@ const s = {
   alsoText: { display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 },
   alsoName: { fontSize: 13, fontWeight: 700, color: '#2A241F' },
   alsoWhy:  { fontSize: 11, color: '#7A6C60', lineHeight: 1.4 },
+
+  rest:    { display: 'flex', flexDirection: 'column', gap: 8, width: '100%', marginTop: 10,
+             paddingTop: 12, borderTop: '1px solid #EDE5DB', textAlign: 'left' },
+  restBtn: { padding: '11px 14px', borderRadius: 11, border: '1.5px dashed #D9CEC1',
+             background: 'transparent', font: 'inherit', fontSize: 12.5, fontWeight: 700,
+             color: '#7A6C60', cursor: 'pointer', width: '100%' },
 
   tiers: { display: 'flex', flexWrap: 'wrap', gap: 6 },
   tierBtn: { padding: '7px 12px', borderRadius: 20, border: '1.5px solid #E7DFD5', background: '#fff',

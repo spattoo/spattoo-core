@@ -214,7 +214,7 @@ const matches = (rule, answers) =>
  * do. It can still appear as a fallback below.
  */
 export function suggestFlavours(flavours, answers, { dietaryKeys = [] } = {}) {
-  const eligible = flavours.filter(f => !conflicts(f, dietaryKeys));
+  const eligible = eligibleFlavours(flavours, dietaryKeys);
 
   const scored = eligible.map(f => {
     let score = 0;
@@ -253,7 +253,7 @@ export function suggestFlavours(flavours, answers, { dietaryKeys = [] } = {}) {
  * of those it is, so a customer is never told a guess is a recommendation.
  */
 export function fallback(flavours, dietaryKeys = []) {
-  const eligible = flavours.filter(f => !conflicts(f, dietaryKeys));
+  const eligible = eligibleFlavours(flavours, dietaryKeys);
   if (!eligible.length) return null;
 
   const signature = eligible.find(f => f.isSignature);
@@ -266,6 +266,22 @@ export function fallback(flavours, dietaryKeys = []) {
 
   return { flavour: eligible[0], score: 0, signature: false,
            because: 'A good place to start — do look at the others too.' };
+}
+
+/**
+ * The flavours this baker can actually make for THIS customer — everything they offer, minus what
+ * their dietary answers rule out.
+ *
+ * Exported because the suggester shows the customer the rest of the range after recommending, and
+ * that list has to obey the same exclusion the recommendation does. A full list built from the raw
+ * `flavours` array would offer somebody who said eggless a flavour this baker cannot make eggless —
+ * the exact thing the header of this file says is worse than suggesting nothing. Showing MORE
+ * options is not a reason to relax the one filter that keeps them honest.
+ *
+ * Two callers here did this filter inline before there was a third. One place to change it.
+ */
+export function eligibleFlavours(flavours, dietaryKeys = []) {
+  return flavours.filter(f => !conflicts(f, dietaryKeys));
 }
 
 // A hard exclusion. `conflicts_with` is what this baker has said they cannot make a flavour AS —

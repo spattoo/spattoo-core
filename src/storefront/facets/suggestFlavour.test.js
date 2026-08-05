@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { suggestFlavours, fallback, seasonFor, RULES } from './suggestFlavour.js';
+import { suggestFlavours, fallback, seasonFor, eligibleFlavours, RULES } from './suggestFlavour.js';
 
 // The suggester makes a claim to a customer about to spend money on an occasion that matters. These
 // pin the parts where being wrong is worse than being silent.
@@ -213,5 +213,30 @@ describe('the reason answers the question that was just asked', () => {
   it('still falls back to the generic reason when nothing narrower applies', () => {
     const [top] = suggestFlavours(CAT, { mood: 'safe' });
     expect(top.because).toMatch(/hard to go wrong/i);
+  });
+});
+
+// ── The rest of the range ─────────────────────────────────────────────────────────────────────────
+// The suggester shows what else the baker makes once it has recommended, so the recommendation is
+// not a dead end. That list is built from this, and the danger is that "show everything" quietly
+// becomes a way to offer what the dietary answers already ruled out.
+describe('everything else the baker makes', () => {
+  it('is the whole range when nothing is ruled out', () => {
+    expect(eligibleFlavours(CATALOGUE)).toHaveLength(CATALOGUE.length);
+  });
+
+  it('still drops what the baker cannot make that way', () => {
+    const names = eligibleFlavours(CATALOGUE, ['eggless']).map(x => x.name);
+    expect(names).not.toContain('Rasmalai');
+    expect(names).toContain('Chocolate');
+  });
+
+  it('reaches flavours no rule argued for', () => {
+    // The point of the whole change. Matcha scores nothing for a child — `suggestFlavours` returns
+    // only score > 0, so it is absent from the ranking entirely — yet the baker does make it and
+    // the customer is entitled to see it.
+    const ranked = suggestFlavours(CATALOGUE, { recipient: 'child' }).map(r => r.flavour.id);
+    expect(ranked).not.toContain('matcha');
+    expect(eligibleFlavours(CATALOGUE).map(x => x.id)).toContain('matcha');
   });
 });

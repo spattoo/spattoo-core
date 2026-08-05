@@ -8,6 +8,12 @@ import { Slice } from '../src/storefront/facets/CakeVisual.jsx';
 const BAKER = { name: 'Feelings & Flavours', slug: 'feelings-flavours',
                 primary_color: '#2C4433', accent_color: '#6B8C74' };
 
+// Ten, not the four this started with. A real baker's list is long — that is the whole reason the
+// suggester exists — and at four the suggester could show the top pick plus two runners-up and have
+// almost nothing left over, so "everything else Feelings & Flavours makes" never rendered here.
+// `f10` carries a conflict so the dietary exclusion is visible rather than theoretical, and two are
+// left without a tasteFamily because real catalogues have those: they score nothing and must still
+// be reachable in the full list.
 const FLAVOURS = [
   { flavourId: 'f1', name: 'Belgian Dark', spongeColor: '#3B2415', fillingColor: '#23130B',
     tasteFamily: 'chocolate', crowdPleaser: false },
@@ -17,6 +23,17 @@ const FLAVOURS = [
     tasteFamily: 'tea', crowdPleaser: false },
   { flavourId: 'f4', name: 'Strawberry',   spongeColor: '#F5E6D3', fillingColor: '#E4626F',
     tasteFamily: 'fruit', crowdPleaser: true },
+  { flavourId: 'f5', name: 'Salted Caramel', spongeColor: '#D9A566', fillingColor: '#8A5A22',
+    tasteFamily: 'caramel', crowdPleaser: true },
+  { flavourId: 'f6', name: 'Vanilla Bean', spongeColor: '#F6EEDC', fillingColor: '#EADFC4',
+    tasteFamily: 'classic', crowdPleaser: true },
+  { flavourId: 'f7', name: 'Mango',        spongeColor: '#F7E3A1', fillingColor: '#F0A93B',
+    tasteFamily: 'fruit', crowdPleaser: true },
+  { flavourId: 'f8', name: 'Coffee Walnut', spongeColor: '#6B4A32', fillingColor: '#C7A17A',
+    tasteFamily: 'coffee', crowdPleaser: false },
+  { flavourId: 'f9', name: 'Pineapple',    spongeColor: '#F6F0D8', fillingColor: '#EBD98A' },
+  { flavourId: 'f10', name: 'Rasmalai',    spongeColor: '#F3E7CE', fillingColor: '#E8D9A8',
+    tasteFamily: 'indian', crowdPleaser: false, conflicts_with: ['eggless'] },
 ];
 
 // The templates door is REAL now, so the stub declines to handle `design` and the shell falls
