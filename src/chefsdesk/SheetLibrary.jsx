@@ -23,7 +23,14 @@ export default function SheetLibrary({ apiClient, onOpen, onNew, onClose }) {
 
   useEffect(() => {
     let alive = true;
-    apiClient?.fetchPrintSheets?.()
+    // Promise.resolve() around the call rather than bare optional chaining. `apiClient?.x?.()` does
+    // not throw when a host has not wired the method — optional chaining short-circuits the WHOLE
+    // chain — but that is exactly the problem: `.then` never runs either, so `sheets` stays null and
+    // the library sits on "Loading your sheets…" for as long as anyone looks at it.
+    //
+    // Wrapped, the chain resolves with undefined and lands on the empty state, which is the honest
+    // answer to "a host that cannot list sheets".
+    Promise.resolve(apiClient?.fetchPrintSheets?.())
       .then(rows => { if (alive) setSheets(Array.isArray(rows) ? rows : []); })
       // An empty list and a failed fetch look identical on screen unless we say so, and "you have no
       // sheets" is a lie that makes a baker start rebuilding one they already have.

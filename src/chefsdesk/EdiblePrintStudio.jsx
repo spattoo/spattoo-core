@@ -1,8 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import UploadsPanel from '../designer/decorations/UploadsPanel.jsx';
 import A4Sheet from './a4/A4Sheet.jsx';
-import { plainSource } from './a4/plainSource.js';
+import { imageSource, framesIn, frameMaskOf } from './a4/imageSource.js';
 import SheetLibrary from './SheetLibrary.jsx';
+import FrameControls from './FrameControls.jsx';
 
 // ── Edible Print Studio ───────────────────────────────────────────────────────────────────────────
 // The baker's own door to the print sheet: choose images, lay them out on a to-scale A4, download a
@@ -33,6 +34,44 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
   const [picking, setPicking] = useState(false);
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+  const [frames, setFrames] = useState([]);
+  const [selected, setSelected] = useState(null);   // sourceId the baker has selected on the sheet
+  // What the baker chose is kept per UPLOAD, not per placement: two copies of the same photo on one
+  // sheet are the same photo, and framing one of them differently would be a second image wearing
+  // the first one's name in the strip.
+  const [framing, setFraming] = useState({});       // sourceId → { frame, transform }
+  // The upload rows behind the sources, kept so a source can be REBUILT when its frame changes
+  // without asking the server again. A ref rather than state: nothing renders from it, and it must
+  // be readable by a callback that ran before the next render.
+  const uploadsRef = useRef(new Map());
+
+  // The frames are the catalogue's photo-frame ELEMENTS — the same masks the cake renderer cuts
+  // with, so a heart printed here is the heart the cake has. Config-gated on
+  // placement_config.photo.mask, never on element type or slug (INVARIANTS #1/#6), which is what
+  // makes a frame added in admin appear here with no deploy.
+  useEffect(() => {
+    let alive = true;
+    // Promise.resolve() for the same reason SheetLibrary uses it: optional chaining short-circuits
+    // the whole chain, so an unwired host would skip the .catch too and leave this hanging.
+    Promise.resolve(apiClient?.fetchElements?.({ parentsOnly: true }))
+      .then(rows => { if (alive) setFrames(framesIn(rows ?? [])); })
+      .catch(() => {});   // no frames is a workable studio; every image simply prints unframed
+    return () => { alive = false; };
+  }, [apiClient]);
+
+  // Rebuild ONE source in place, keeping its id so placements already on the sheet still point at
+  // it. The sheet re-derives those items' heights from the new aspect on its own.
+  const reframe = useCallback(async (sourceId, next) => {
+    const upload = uploadsRef.current.get(sourceId);
+    if (!upload) return;
+    setFraming(f => ({ ...f, [sourceId]: next }));
+    try {
+      const rebuilt = await imageSource(upload, next);
+      setSources(list => list.map(s => (s.id === sourceId ? rebuilt : s)));
+    } catch {
+      setErr('Couldn’t apply that frame.');
+    }
+  }, []);
 
   // Add a chosen upload, unless it is already here. Re-picking the same image is a natural way to
   // ask for a SECOND copy of it, but the sheet keys placements by source id, so two sources sharing
@@ -43,9 +82,10 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
     setErr('');
     const id = String(upload.id);
     if (sources.some(s => s.id === id)) return;
+    uploadsRef.current.set(id, upload);
     try {
       setSources(list => list.some(s => s.id === id) ? list : [...list, PENDING(id, upload.name)]);
-      const src = await plainSource(upload);
+      const src = await imageSource(upload);
       setSources(list => list.map(s => (s.id === id ? src : s)));
     } catch {
       // Drop the placeholder — leaving it would offer a thumbnail that can never become addable.
@@ -59,7 +99,7 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
     return (
       <SheetLibrary
         apiClient={apiClient}
-        onNew={() => { setSources([]); setErr(''); setSheet(BLANK); }}
+        onNew={() => { setSources([]); setErr(''); setSelected(null); setFraming({}); setSheet(BLANK); }}
         onOpen={async (row) => {
           setErr('');
           try {
@@ -75,12 +115,31 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
             const byId = new Map(uploads.map(u => [String(u.id), u]));
             const wanted = [...new Set(saved.map(it => String(it.uploadId)))];
 
+            // The FRAMING travels with the layout: each saved item carries the mask it was cut with
+            // and the transform it was composed at, so reopening restores the picture the baker
+            // approved rather than a default crop of the same photo.
+            const savedFraming = new Map(
+              saved.map(it => [String(it.uploadId), { maskUrl: it.maskUrl ?? null, transform: it.transform ?? null }]),
+            );
+
             const resolved = await Promise.all(wanted.map(async (id) => {
               const upload = byId.get(id);
               if (!upload) return null;                 // deleted since the sheet was saved
-              try { return await plainSource(upload); } catch { return null; }
+              uploadsRef.current.set(id, upload);
+              const was = savedFraming.get(id) ?? {};
+              // Matched by MASK URL, not by element id: the mask is what actually cut the photo, and
+              // it survives a frame being re-pointed at a different element in the catalogue.
+              const frame = was.maskUrl ? frames.find(f => frameMaskOf(f) === was.maskUrl) ?? null : null;
+              try { return await imageSource(upload, { frame, transform: was.transform }); } catch { return null; }
             }));
 
+            setFraming(Object.fromEntries(
+              [...savedFraming].map(([id, was]) => [id, {
+                frame: was.maskUrl ? frames.find(f => frameMaskOf(f) === was.maskUrl) ?? null : null,
+                transform: was.transform,
+              }]),
+            ));
+            setSelected(null);
             setSources(resolved.filter(Boolean));
             setSheet({
               id: full.id,
@@ -110,7 +169,13 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
     // sourceId → uploadId, the other half of the translation done on open. What is PERSISTED names
     // images; what the sheet lays out names sources. Storing `sourceId` would leak the sheet's own
     // vocabulary into the database, where the next kind of source would make it a lie.
-    const items = sheetItems.map(({ sourceId, ...rest }) => ({ ...rest, uploadId: sourceId }));
+    // Each item also carries HOW its image was framed. Stored per item rather than per sheet because
+    // that is the shape the row already declares (migration 049) and because a sheet is a list of
+    // placements — nothing else about it would know where to put a transform.
+    const items = sheetItems.map(({ sourceId, ...rest }) => {
+      const src = sources.find(s => s.id === sourceId);
+      return { ...rest, uploadId: sourceId, maskUrl: src?.maskUrl ?? null, transform: src?.transform ?? null };
+    });
     try {
       if (sheet.id) {
         await apiClient.updatePrintSheet(sheet.id, { items, guide });
@@ -148,12 +213,21 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
         fileName={`${slug(sheet.name) || 'edible-print'}-sheet.pdf`}
         onAdd={() => setPicking(true)}
         addLabel="Add image"
+        onSelectSource={setSelected}
+        paletteExtra={
+          <FrameControls
+            frames={frames}
+            source={selected ? sources.find(s => s.id === selected) ?? null : null}
+            onChangeFrame={(frame) => reframe(selected, { frame, transform: framing[selected]?.transform ?? null })}
+            onChangeTransform={(transform) => reframe(selected, { frame: framing[selected]?.frame ?? null, transform })}
+          />
+        }
         onSave={save}
         saveLabel={saving ? 'Saving…' : sheet.id ? 'Save' : 'Save sheet'}
         saving={saving}
         // Back to the library, not out of the studio — Close on the library is the way out. A single
         // Close here would throw away an unsaved layout to reach a list.
-        onClose={() => { setSheet(null); setSources([]); setErr(''); }}
+        onClose={() => { setSheet(null); setSources([]); setErr(''); setSelected(null); setFraming({}); }}
       />
       {picking && (
         <UploadsPanel

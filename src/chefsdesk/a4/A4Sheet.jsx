@@ -89,6 +89,13 @@ export default function A4Sheet({
   onSave = null,
   saveLabel = 'Save',
   saving = false,
+  // Which source the baker has selected on the sheet, reported so a caller can offer controls FOR
+  // it. The sheet does not know or care what those controls do — it says what is selected, and the
+  // caller decides whether that means anything.
+  onSelectSource = null,
+  // Rendered under the strip. A slot, not a feature: the studio puts frame + fit controls here, the
+  // order sheet puts nothing, and neither teaches this file what a frame is.
+  paletteExtra = null,
   onClose,
 }) {
   // [{ uid, sourceId, x, y, w, h }] — x of the sheet's width, y of its height, w and h BOTH of its
@@ -134,6 +141,30 @@ export default function A4Sheet({
     setItems([{ uid: uid(), sourceId: sources[0].id, x: 0.30, y: 0.10, ...sized(sources[0], 0.40) }]);
   }, [sources, autoPlaceFirst]);
 
+  // A source's SHAPE can change under an item that is already placed — framing a wide banner in a
+  // heart makes it square, removing the frame gives it its own proportions back. The item follows,
+  // keeping the width the baker set and re-deriving the height.
+  //
+  // Without this the photo would be drawn into the box it had before the change: the exact squashed
+  // print the whole w/h model exists to prevent, arrived at from a direction the resize handle
+  // cannot cause.
+  useEffect(() => {
+    setItems(list => {
+      let changed = false;
+      const next = list.map(it => {
+        const src = sourceById(it.sourceId);
+        if (!src?.aspect) return it;
+        const h = it.w / src.aspect;
+        if (Math.abs(h - it.h) < 1e-6) return it;
+        changed = true;
+        return { ...it, h };
+      });
+      // Same array back when nothing moved — a new one every time sources re-render would restart
+      // this effect against its own output.
+      return changed ? next : list;
+    });
+  }, [sources]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   function scrollStrip(dir) {
     stripRef.current?.scrollBy({ left: dir * 148, behavior: 'smooth' });
   }
@@ -146,7 +177,14 @@ export default function A4Sheet({
       return [...list, { uid: uid(), sourceId, x: 0.15 + off, y: 0.12 + off, ...sized(src, 0.35) }];
     });
   }
-  function removeItem(u) { setItems(list => list.filter(it => it.uid !== u)); if (sel === u) setSel(null); }
+  function removeItem(u) { setItems(list => list.filter(it => it.uid !== u)); if (sel === u) select(null); }
+
+  // Selection is reported as a SOURCE id, not an item uid: a caller reasons about "this image", and
+  // the uid is bookkeeping for a placement that the caller never sees.
+  function select(uid) {
+    setSel(uid);
+    onSelectSource?.(uid ? (items.find(it => it.uid === uid)?.sourceId ?? null) : null);
+  }
 
   // Switch which shape the size controls author; clear any active guide so stale dims don't linger.
   function pickShape(sh) { setShape(sh); setGuide(null); }
@@ -161,7 +199,7 @@ export default function A4Sheet({
 
   // Pointer drag (move) / resize, in A4-width fractions.
   function startDrag(e, it, mode) {
-    e.preventDefault(); e.stopPropagation(); setSel(it.uid);
+    e.preventDefault(); e.stopPropagation(); select(it.uid);
     const rect = sheetRef.current.getBoundingClientRect();
     const W = rect.width, H = rect.height;
     const start = { mx: e.clientX, my: e.clientY, x: it.x, y: it.y, w: it.w, h: it.h };
@@ -195,7 +233,7 @@ export default function A4Sheet({
   }
 
   return (
-    <div style={s.overlay} onPointerDown={() => setSel(null)}>
+    <div style={s.overlay} onPointerDown={() => select(null)}>
       <style>{`.ps-strip::-webkit-scrollbar{display:none}`}</style>
       {showTip && (
         <div style={{ ...s.tipPopup, ...(isMobile ? { bottom: 16, right: 16 } : { top: 74, right: 24 }) }}
@@ -251,6 +289,8 @@ export default function A4Sheet({
             <button style={s.addBtn} onClick={onAdd}>+ {addLabel}</button>
           )}
           {error && <div style={{ ...s.hint, color: '#c0392b', marginTop: 10 }}>{error}</div>}
+
+          {paletteExtra}
 
           <div style={s.guideBlock}>
             <div style={{ ...s.paletteTitle, marginBottom: 10 }}>Check size</div>
