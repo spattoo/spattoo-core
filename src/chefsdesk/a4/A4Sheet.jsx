@@ -73,6 +73,11 @@ export default function A4Sheet({
   // it knows what failed to load and therefore what would help.
   error = '',
   fileName = 'print-sheet.pdf',
+  // How a caller offers "add another image". Omitted by the order sheet, whose sources are fixed —
+  // its images are the order's, and there is no meaningful way to add a photo the customer did not
+  // send. A button that opened an empty picker would be worse than no button.
+  onAdd = null,
+  addLabel = 'Add image',
   onClose,
 }) {
   // [{ uid, sourceId, x, y, w, h }] — x of the sheet's width, y of its height, w and h BOTH of its
@@ -224,6 +229,9 @@ export default function A4Sheet({
             </div>
             {stripOverflow && <button style={s.carArrow} onClick={() => scrollStrip(1)} aria-label="Scroll right">›</button>}
           </div>
+          {onAdd && (
+            <button style={s.addBtn} onClick={onAdd}>+ {addLabel}</button>
+          )}
           {error && <div style={{ ...s.hint, color: '#c0392b', marginTop: 10 }}>{error}</div>}
 
           <div style={s.guideBlock}>
@@ -322,6 +330,7 @@ const s = {
   carStrip: { flex: 1, minWidth: 0, display: 'flex', gap: 10, overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', paddingBottom: 2 },
   carArrow: { flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: '1.5px solid #d8cfd9', background: '#fff', color: '#5b5340', fontSize: 17, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 },
   hint: { fontSize: 11, color: '#8a7a80', lineHeight: 1.5 },
+  addBtn: { marginTop: 10, width: '100%', padding: '9px 0', borderRadius: 10, border: '1.5px dashed #b8c9bd', background: '#F6FAF7', color: '#3D5A44', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' },
   guideBlock: { marginTop: 16, paddingTop: 14, borderTop: '1px dashed #e6e2ea' },
   guideBtn: { padding: '5px 12px', borderRadius: 8, border: '1.5px solid #d8cfd9', background: '#fff', fontSize: 12, fontWeight: 700, color: '#8a7a80', cursor: 'pointer' },
   guideBtnOn: { borderColor: '#b08968', background: '#fbf3ec', color: '#8a5a36' },

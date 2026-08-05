@@ -47,6 +47,7 @@ import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/cr
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
 import ColorGuide from '../chefsdesk/ColorGuide';
+import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
 import OrderModal from '../orders/OrderModal';
 import OrdersPanel from '../orders/OrdersPanel';
 import CustomersPanel from '../customers/CustomersPanel';
@@ -1647,6 +1648,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [addUserModal,        setAddUserModal]        = useState(false);
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
+  const [printStudioOpen,     setPrintStudioOpen]     = useState(false);
+  // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked, matching how xray_reports is
+  // handled a few files over — one convention for "your plan does not include this" beats two.
+  const [printStudioEnabled,  setPrintStudioEnabled]  = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
   const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
   const [manualOrderDate,     setManualOrderDate]     = useState(null);    // pre-filled delivery date when started from the Orders calendar
@@ -1726,6 +1731,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which Orders entries this person may see — decided once, read by both rails.
   const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires));
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
+
+  // Which Chef's Desk tools this plan includes. Asked once, and only for someone who could see the
+  // menu at all — a customer designing a cake on a storefront has no plan to ask about, and the call
+  // is behind requireAuth.
+  useEffect(() => {
+    if (!canManageStore || !apiClient?.fetchEntitlements) return;
+    let alive = true;
+    apiClient.fetchEntitlements()
+      .then(res => { if (alive) setPrintStudioEnabled(res?.ent?.edible_print_studio === true); })
+      .catch(() => {});   // a failed lookup leaves the tool hidden, which is the safe way round
+    return () => { alive = false; };
+  }, [canManageStore, apiClient]);
 
   // Live co-design (Phase 1) — opt-in; fully inert unless enableLive/liveSessionId is set, so the
   // normal app is unchanged. Shares the single `design` atom over Supabase Realtime: the pen holder
@@ -5263,6 +5280,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
                   <div style={s.dropdownSection}>Chef's Desk</div>
                   <button style={s.dropdownItem} onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>Color Guide</button>
+                  {printStudioEnabled && (
+                    <button style={s.dropdownItem} onClick={() => { setPrintStudioOpen(true); setChefsDeskOpen(false); }}>Edible Print Studio</button>
+                  )}
                 </div>
               )}
             </div>}
@@ -5438,6 +5458,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>
                       Color Guide
                     </button>
+                    {/* Kept in step with the mobile dropdown above — the menu renders in two places,
+                        and an entry added to only one is invisible on whichever surface was missed. */}
+                    {printStudioEnabled && (
+                      <button style={s.dropdownItem}
+                        onClick={() => { setPrintStudioOpen(true); setChefsDeskOpen(false); }}>
+                        Edible Print Studio
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -6803,6 +6831,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onClose={() => setColorGuideOpen(false)}
           primaryColor={primaryColor}
           accentColor={accentColor}
+        />
+      )}
+
+      {/* ── Edible Print Studio ── */}
+      {printStudioOpen && (
+        <EdiblePrintStudio
+          apiClient={apiClient}
+          elementTypes={elementTypes}
+          onClose={() => setPrintStudioOpen(false)}
         />
       )}
 

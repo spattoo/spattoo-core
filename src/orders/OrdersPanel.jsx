@@ -28,7 +28,7 @@ function photoFrameCount(order) {
   return (order?.design_snapshot?.stickers ?? []).filter(s => s?.photoMask && s?.photoUrl).length;
 }
 
-// Order-detail section: surfaces the customer's uploaded photos and opens the A4 page simulator.
+// Order-detail section: surfaces the customer's uploaded photos and opens the Edible Print Studio.
 function CustomPhotosSection({ order }) {
   const [open, setOpen] = useState(false);
   const n = photoFrameCount(order);
