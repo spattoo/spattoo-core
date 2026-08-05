@@ -287,6 +287,10 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
   return (
     <div style={s.result}>
       <button type="button" style={s.back} onClick={onBack}>← Back</button>
+      {/* Named, so the recommendation announces itself as one. Without it the screen opened on a
+          slice and a name with no more standing than the cards below it — which is how a customer's
+          eye reached the runners-up first and read THEM as the answer. */}
+      <div style={s.pickTag}>Our pick for you</div>
       <Slice sponge={f.spongeColor} filling={f.fillingColor} height={104} />
       <div style={s.resultName}>{f.name}</div>
       {/* The sentence from the rule that actually argued for it — not a plausible one chosen
@@ -299,10 +303,39 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
             single order. Plain English deliberately — see suggestFlavour.js. */}
         {pick.signature && ` ${bakerName} recommends this one.`}
       </p>
+      {/* ── The actions sit AGAINST the recommendation, above the alternatives ────────────────────
+          They used to come after the runners-up, and that put two full-width bordered cards between
+          "Black Forest" and the button meant to accept it. Two things went wrong, both reported:
+
+            * "Yes, that one" is a phrase that POINTS, and its referent was two cards away, past two
+              other flavour names. Nothing on screen said which one "that" was.
+            * The runners-up looked like the actions. They were the only button-shaped things above
+              the fold, so the eye landed on them first and read them as the choice — the actual
+              recommendation reading as a heading over somebody else's options.
+
+          So the primary action is adjacent to the thing it acts on, and it NAMES it: "Choose Black
+          Forest" needs no referent at all and survives being scrolled away from. */}
+      <div style={s.resultActions}>
+        <button type="button" style={s.yes} onClick={() => pickFlavour(f)}>
+          Choose {f.name}
+        </button>
+        {/* "Show me another" read as a shuffle — as though the next one came out of a hat. It never
+            did: `ranked` is sorted by score, so the next is the next-best argued case. Saying so
+            turns a random-feeling button into the one thing a ranked list is good for, and it is a
+            claim about ORDER, not a percentage — see the note on runners-up below. */}
+        {hasNext && (
+          <button type="button" style={s.another} onClick={() => setRejected(r => [...r, f.id])}>
+            Next closest match
+          </button>
+        )}
+      </div>
+
       {/* ── The runners-up ────────────────────────────────────────────────────────────────────────
           Shown because "here is THE flavour" overstates what a rules engine knows. Ranked, each with
           its OWN reason, and deliberately no percentage: a match score computed from hand-written
-          weights would dress editorial judgement as measurement. See plans/order-signals.md. */}
+          weights would dress editorial judgement as measurement. See plans/order-signals.md.
+
+          Styled DOWN to sit below the decision rather than compete with it — see s.alsoRow. */}
       {alsoGood.length > 0 && (
         <div style={s.also}>
           <div style={s.alsoHead}>Also worth a look</div>
@@ -324,28 +357,17 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
                     <span style={s.alsoName}>{r.flavour.name}</span>
                     {fresh && <span style={s.alsoWhy}>{r.because}</span>}
                   </span>
+                  {/* Tapping a row CHOOSES that flavour and closes the facet, which is a large thing
+                      to happen with nothing on the row saying so. It looked like a list entry and
+                      behaved like a submit. The word is small and muted on purpose — enough to make
+                      the row's behaviour honest, not enough to compete with the decision above. */}
+                  <span style={s.alsoPick}>Choose</span>
                 </button>
               );
             });
           })()}
         </div>
       )}
-
-      <div style={s.resultActions}>
-        <button type="button" style={s.yes}
-                onClick={() => pickFlavour(f)}>
-          Yes, that one
-        </button>
-        {/* "Show me another" read as a shuffle — as though the next one came out of a hat. It never
-            did: `ranked` is sorted by score, so the next is the next-best argued case. Saying so
-            turns a random-feeling button into the one thing a ranked list is good for, and it is a
-            claim about ORDER, not a percentage — see the note on runners-up above. */}
-        {hasNext && (
-          <button type="button" style={s.another} onClick={() => setRejected(r => [...r, f.id])}>
-            Next closest match
-          </button>
-        )}
-      </div>
 
       {rest.length > 0 && (
         <div style={s.rest}>
@@ -382,13 +404,19 @@ const s = {
   back: { border: 'none', background: 'none', font: 'inherit', fontSize: 12.5, fontWeight: 700,
           color: '#7A6C60', cursor: 'pointer', padding: 0, alignSelf: 'flex-start' },
 
-  also:     { display: 'flex', flexDirection: 'column', gap: 6, width: '100%', marginTop: 4 },
+  also:     { display: 'flex', flexDirection: 'column', gap: 6, width: '100%', marginTop: 10 },
   alsoHead: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase',
               color: '#B3A79A' },
-  alsoRow:  { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
-              padding: '8px 10px', borderRadius: 11, border: '1.5px solid #E7DFD5',
-              background: '#fff', font: 'inherit', cursor: 'pointer' },
-  alsoText: { display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 },
+  // ── Deliberately quieter than it was ──────────────────────────────────────────────────────────
+  // A white fill and a 1.5px border made these the most button-like things on the screen, so they
+  // out-shouted the recommendation they were alternatives TO. Transparent, with a hairline border,
+  // they read as a list you may tap rather than the choice you came for.
+  alsoRow:  { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 11,
+              border: '1px solid #EDE5DB', background: 'transparent', font: 'inherit',
+              cursor: 'pointer' },
+  alsoText: { display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 },
+  alsoPick: { fontSize: 11, fontWeight: 800, color: '#7A9C86', flexShrink: 0 },
   alsoName: { fontSize: 13, fontWeight: 700, color: '#2A241F' },
   alsoWhy:  { fontSize: 11, color: '#7A6C60', lineHeight: 1.4 },
 
@@ -420,11 +448,17 @@ const s = {
             font: 'inherit', fontSize: 13.5, fontWeight: 700, color: '#2A241F', cursor: 'pointer' },
 
   result: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' },
+  pickTag: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase',
+             color: '#7A9C86' },
   resultName: { fontSize: 19, fontWeight: 800, color: '#2A241F' },
   resultWhy:  { fontSize: 13, color: '#7A6C60', lineHeight: 1.55, margin: 0, maxWidth: 320 },
-  resultActions: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4 },
-  yes:     { padding: '12px 22px', borderRadius: 12, border: 'none', background: '#2C4433', color: '#fff',
-             font: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+  resultActions: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 6,
+                   width: '100%' },
+  // Grows to fit the flavour's name now that it carries one — a fixed width would clip "Belgian
+  // Dark Chocolate Truffle", and a name that does not fit its own button is worse than no name.
+  yes:     { flex: '1 1 auto', padding: '12px 20px', borderRadius: 12, border: 'none',
+             background: '#2C4433', color: '#fff', font: 'inherit', fontSize: 14, fontWeight: 800,
+             cursor: 'pointer', lineHeight: 1.3 },
   another: { padding: '12px 18px', borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff',
              font: 'inherit', fontSize: 13.5, fontWeight: 700, color: '#7A6C60', cursor: 'pointer' },
 
