@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { buildA4Pdf, downloadPdf } from '../../orders/pdf.js';
 import { sized, resized, moved } from './geometry.js';
+import { chrome } from '../studioChrome.js';
 
 // ── The A4 print sheet ────────────────────────────────────────────────────────────────────────────
 // A to-scale A4 page the baker lays images out on, then downloads as a print-ready PDF for an edible
@@ -78,13 +79,23 @@ export default function A4Sheet({
   // send. A button that opened an empty picker would be worse than no button.
   onAdd = null,
   addLabel = 'Add image',
+  // Reopening a saved layout. Read ONCE, as the initial state — the sheet owns its items from then
+  // on, and a caller that kept pushing them back in would fight the baker's dragging. Callers switch
+  // sheets by remounting (a `key`), which is also what discards a layout cleanly.
+  initialItems = null,
+  initialGuide = null,
+  // Offered only when the caller can persist. The order sheet cannot: its layout is a way of
+  // printing one order's photos, not a document, and a Save there would ask "save to where?".
+  onSave = null,
+  saveLabel = 'Save',
+  saving = false,
   onClose,
 }) {
   // [{ uid, sourceId, x, y, w, h }] — x of the sheet's width, y of its height, w and h BOTH of its
   // width (see above).
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => (Array.isArray(initialItems) ? initialItems : []));
   const [sel, setSel] = useState(null);
-  const [guide, setGuide] = useState(null);    // cake-fit guide { shape:'round'|'square'|'rect', w, h } inches, or null
+  const [guide, setGuide] = useState(initialGuide);    // cake-fit guide { shape:'round'|'square'|'rect', w, h } inches, or null
   const [shape, setShape] = useState('round'); // which shape the size controls author
   const [rect, setRect] = useState({ l: '', w: '' });  // custom rectangle length × width (inch, as typed)
   const [busy, setBusy] = useState(false);
@@ -200,8 +211,15 @@ export default function A4Sheet({
             said "A4 print simulator", and the pricing page sold "Edible print sheet (A4)". Four
             names for one tool, so a baker who read the plan could not tell they had found the thing
             they paid for. All four are now "Edible Print Studio". */}
-        <div style={{ fontWeight: 800, fontSize: 16, color: '#2C4433' }}>Edible Print Studio</div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={s.title}>Edible Print Studio</div>
+        <div style={s.actions}>
+          {onSave && (
+            // Enabled on an EMPTY sheet too: clearing a layout and saving that is a deliberate act,
+            // and refusing it would make "remove everything" impossible to keep.
+            <button style={s.ghostBtn} disabled={saving} onClick={() => onSave(items, guide)}>
+              {saveLabel}
+            </button>
+          )}
           <button style={s.primaryBtn} disabled={busy || !items.length} onClick={download}>
             {busy ? 'Preparing…' : 'Download PDF'}
           </button>
@@ -286,7 +304,13 @@ export default function A4Sheet({
                     width: `${it.w * 100}%`, aspectRatio: `${it.w} / ${it.h}`, cursor: 'move',
                     outline: seld ? '2px dashed #6c47ff' : 'none', touchAction: 'none',
                   }}>
-                  {src?.preview && <img src={src.preview} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
+                  {src?.preview
+                    ? <img src={src.preview} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+                    // An item with nothing to draw — the image is still loading, or it was deleted
+                    // from Uploads after this sheet was saved. It keeps its PLACE either way: a
+                    // reopened sheet that silently dropped an item would look like a layout the baker
+                    // got wrong, and the space is the clue that something belongs there.
+                    : <div style={s.itemMissing}>{src ? '…' : 'Image deleted'}</div>}
                   {seld && (
                     <>
                       <div onPointerDown={e => startDrag(e, it, 'resize')} style={s.resizeHandle} />
@@ -316,10 +340,7 @@ export default function A4Sheet({
 }
 
 const s = {
-  overlay: { position: 'fixed', inset: 0, zIndex: 4000, background: '#FAFAF8', display: 'flex', flexDirection: 'column', fontFamily: 'inherit' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1.5px solid #E8E4DC', background: '#fff' },
-  primaryBtn: { padding: '9px 16px', borderRadius: 10, border: 'none', background: '#3D5A44', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' },
-  ghostBtn: { padding: '9px 14px', borderRadius: 10, border: '1.5px solid #ccc', background: '#fff', fontSize: 13, fontWeight: 700, color: '#555', cursor: 'pointer' },
+  ...chrome,   // overlay / header / title / actions / primaryBtn / ghostBtn — shared with the library
   body: { flex: 1, display: 'flex', overflow: 'hidden' },
   palette: { width: 260, flexShrink: 0, borderRight: '1.5px solid #E8E4DC', background: '#fff', padding: 16, overflowY: 'auto' },
   tipPopup: { position: 'absolute', zIndex: 10, width: 'min(300px, calc(100vw - 48px))', fontSize: 12, color: '#5b5340', lineHeight: 1.6, padding: '14px 34px 14px 16px', borderRadius: 12, border: '1px solid #E8E4DC', background: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.18)' },
@@ -331,6 +352,7 @@ const s = {
   carArrow: { flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: '1.5px solid #d8cfd9', background: '#fff', color: '#5b5340', fontSize: 17, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 },
   hint: { fontSize: 11, color: '#8a7a80', lineHeight: 1.5 },
   addBtn: { marginTop: 10, width: '100%', padding: '9px 0', borderRadius: 10, border: '1.5px dashed #b8c9bd', background: '#F6FAF7', color: '#3D5A44', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' },
+  itemMissing: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', border: '1.5px dashed #d8cfd9', borderRadius: 6, background: '#FBFAFB', color: '#a8998f', fontSize: 11, fontWeight: 700, padding: 6, boxSizing: 'border-box', pointerEvents: 'none' },
   guideBlock: { marginTop: 16, paddingTop: 14, borderTop: '1px dashed #e6e2ea' },
   guideBtn: { padding: '5px 12px', borderRadius: 8, border: '1.5px solid #d8cfd9', background: '#fff', fontSize: 12, fontWeight: 700, color: '#8a7a80', cursor: 'pointer' },
   guideBtnOn: { borderColor: '#b08968', background: '#fbf3ec', color: '#8a5a36' },
