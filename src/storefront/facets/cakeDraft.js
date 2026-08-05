@@ -35,11 +35,12 @@
 // Bump whenever emptyDraft's SHAPE changes — a renamed or added field, not a changed value. Old
 // drafts are then discarded rather than migrated (see loadDraft).
 //
+// 3 — `ageBand` became `celebration`, a party type rather than a person's age (2026-08-05).
 // 2 — `forWhom` became `recipient`, and `ageBand`/`cakeNumber` arrived (2026-08-04). Not bumping it
 //     shipped a crash: a draft saved the day before passed the version check, the shallow merge
 //     replaced `details` wholesale, and `d.recipient.trim()` threw on submit — after the customer
 //     had filled everything in.
-const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 // Per BAKER. A customer comparing two bakeries must not carry chocolate from one into the other's
 // storefront — the draft is about a cake for this baker, not a shopping basket that follows them.
 const storageKey = (bakerSlug) => `spattoo.cakeDraft.${bakerSlug}`;
@@ -91,7 +92,7 @@ export function emptyDraft(bakerSlug, tierCount = 1) {
                // `recipient` replaces the old `forWhom`, which mixed two axes: child/adult is WHO
                // the cake is for, crowd is HOW MANY — and size is already the size facet. A
                // conflated axis is harder to reason about than either question alone.
-               occasion: '', recipient: '', ageBand: '', cakeNumber: '',
+               occasion: '', recipient: '', celebration: '', cakeNumber: '',
                dietaryKeys: [], message: '', specialInstructions: '' },
 
     contact: { name: '', phone: '', email: '' },
@@ -210,7 +211,7 @@ export function toOrderPayload(draft, bakerSlug, { referenceKeys } = {}) {
     // alone could only be answered by parsing English the baker is free to edit.
     occasion:   d.occasion   || undefined,
     recipient:  d.recipient  || undefined,
-    ageBand:    d.ageBand    || undefined,
+    celebration: d.celebration || undefined,
     // A whole number or nothing — never NaN, which would fail the API's validator with a message
     // about a field the customer never saw.
     cakeNumber: Number.isInteger(parseInt(d.cakeNumber, 10)) ? parseInt(d.cakeNumber, 10) : undefined,

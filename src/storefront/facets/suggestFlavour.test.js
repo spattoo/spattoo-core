@@ -133,9 +133,9 @@ describe('the signals added in phase 2', () => {
   ];
 
   it('keeps a first birthday mild, and away from coffee and nuts', () => {
-    const [top] = suggestFlavours(CAT, { ageBand: 'first_birthday', mood: 'safe' });
+    const [top] = suggestFlavours(CAT, { celebration: 'first_birthday', mood: 'safe' });
     expect(['classic', 'fruit']).toContain(top.flavour.tasteFamily);
-    const order = suggestFlavours(CAT, { ageBand: 'first_birthday', mood: 'safe' }).map(r => r.flavour.id);
+    const order = suggestFlavours(CAT, { celebration: 'first_birthday', mood: 'safe' }).map(r => r.flavour.id);
     // Ranked BELOW the mild ones rather than removed — an avoid is a score, only dietary removes.
     for (const id of ['mocha', 'pist']) {
       if (order.includes(id)) expect(order.indexOf(id)).toBeGreaterThan(order.indexOf(top.flavour.id));
@@ -143,7 +143,7 @@ describe('the signals added in phase 2', () => {
   });
 
   it('reads the reason from the rule that won, for a first birthday', () => {
-    const [top] = suggestFlavours(CAT, { ageBand: 'first_birthday', mood: 'safe' });
+    const [top] = suggestFlavours(CAT, { celebration: 'first_birthday', mood: 'safe' });
     expect(top.because).toMatch(/first cake they have ever tasted/i);
   });
 
@@ -195,18 +195,18 @@ describe('the reason answers the question that was just asked', () => {
   it('a teenager is not told that children like chocolate', () => {
     // Both rules argue for chocolate, so the PICK is the same either way — only the sentence differs,
     // and "children almost always go for chocolate" is a poor reply to somebody who said teenager.
-    const [top] = suggestFlavours(CAT, { recipient: 'child', ageBand: 'teen', mood: 'safe' });
+    const [top] = suggestFlavours(CAT, { recipient: 'child', celebration: 'teen_party', mood: 'safe' });
     expect(top.because).toMatch(/teenagers/i);
     expect(top.because).not.toMatch(/children/i);
   });
 
   it('an elder hears the elder reason, not a generic safe bet', () => {
-    const [top] = suggestFlavours(CAT, { recipient: 'adult', ageBand: 'senior', mood: 'safe' });
+    const [top] = suggestFlavours(CAT, { recipient: 'adult', celebration: 'elders', mood: 'safe' });
     expect(top.because).toMatch(/elders/i);
   });
 
   it('a first birthday beats every other rule outright', () => {
-    const [top] = suggestFlavours(CAT, { recipient: 'child', ageBand: 'first_birthday', mood: 'safe' });
+    const [top] = suggestFlavours(CAT, { recipient: 'child', celebration: 'first_birthday', mood: 'safe' });
     expect(top.because).toMatch(/first cake/i);
   });
 

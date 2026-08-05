@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   emptyDraft, isFilled, emptyFacets, canSubmit, toOrderPayload,
-  saveDraft, loadDraft, clearDraft, today, FACETS, withTierCount, splitName,
+  saveDraft, loadDraft, clearDraft, today, FACETS, withTierCount, splitName, STORAGE_VERSION,
 } from './cakeDraft.js';
 
 // The draft is the contract every facet writes through and the shape the baker's order is built
@@ -316,7 +316,7 @@ describe('order signals', () => {
   const filled = () => {
     const d = emptyDraft('bakery');
     Object.assign(d.details, {
-      occasion: 'birthday', recipient: 'child', ageBand: 'first_birthday',
+      occasion: 'birthday', recipient: 'child', celebration: 'first_birthday',
       cakeNumber: '1', message: 'Happy Birthday Aarav',
     });
     return d;
@@ -326,7 +326,7 @@ describe('order signals', () => {
     const out = toOrderPayload(filled(), 'bakery');
     expect(out.occasion).toBe('birthday');
     expect(out.recipient).toBe('child');
-    expect(out.ageBand).toBe('first_birthday');
+    expect(out.celebration).toBe('first_birthday');
     expect(out.cakeNumber).toBe(1);
   });
 
@@ -349,7 +349,7 @@ describe('order signals', () => {
 
   it('omits every signal that was not answered rather than sending empty strings', () => {
     const out = toOrderPayload(emptyDraft('bakery'), 'bakery');
-    for (const k of ['occasion', 'recipient', 'ageBand', 'cakeNumber']) {
+    for (const k of ['occasion', 'recipient', 'celebration', 'cakeNumber']) {
       expect(out[k]).toBeUndefined();
     }
   });
@@ -360,7 +360,7 @@ describe('order signals', () => {
     Object.assign(d.details, { occasion: 'anniversary', cakeNumber: '25' });
     const out = toOrderPayload(d, 'bakery');
     expect(out.cakeNumber).toBe(25);
-    expect(out.ageBand).toBeUndefined();
+    expect(out.celebration).toBeUndefined();
   });
 });
 
@@ -388,8 +388,11 @@ describe('a draft from an older version of the app', () => {
     // Same-version draft missing a field added later — what forgetting the bump looks like. The
     // per-key merge must fill it from `fresh` rather than leaving it undefined.
     localStorage.setItem('spattoo.cakeDraft.bakery', JSON.stringify({
-      v: 2, savedAt: Date.now(), bakerSlug: 'bakery',
-      details: { occasion: 'birthday' },        // no recipient, no ageBand, no message
+      // The CURRENT version, read rather than hardcoded — this test asserts what happens when a
+      // shape change is missed, and pinning a number here means it silently stops testing that the
+      // first time somebody bumps it properly.
+      v: STORAGE_VERSION, savedAt: Date.now(), bakerSlug: 'bakery',
+      details: { occasion: 'birthday' },        // no recipient, no celebration, no message
       flavours: [{ tier: 0, name: 'Chocolate', flavourId: 'f1', source: 'global' }],
       size: {}, contact: { name: 'Ananya' }, design: {},
     }));

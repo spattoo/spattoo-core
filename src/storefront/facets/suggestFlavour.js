@@ -37,27 +37,27 @@
  * ── ORDER MATTERS FOR THE REASON, NOT THE SCORE ─────────────────────────────────────────────────
  * Every matching rule adds its weight, so the ranking does not care how they are listed. But the
  * SENTENCE comes from the heaviest rule that argued, and ties break toward whichever is defined
- * first. So the table runs specific → generic: AGE first (an age band narrows a recipient, so it is
- * the finer statement), then recipient, then occasion, then mood, then season. A customer who has
+ * first. So the table runs specific → generic: CELEBRATION first (a party type narrows a recipient,
+ * so it is the finer statement), then recipient, then occasion, then mood, then season. A customer who has
  * just answered a question should hear the answer to it — "children almost always go for chocolate"
  * is a poor reply to somebody who said the cake is for a teenager, even though the flavour is right.
  */
 export const RULES = [
   {
     id: 'first-birthday-mild',
-    when: { ageBand: 'first_birthday' },
+    when: { celebration: 'first_birthday' },
     prefer: ['classic', 'fruit'], avoid: ['coffee', 'tea', 'nut'], weight: 4,
     because: 'A first birthday is usually mild — often the first cake they have ever tasted.',
   },
   {
     id: 'teen-indulgent',
-    when: { ageBand: 'teen' },
+    when: { celebration: 'teen_party' },
     prefer: ['chocolate', 'caramel'], avoid: ['classic'], weight: 3,
     because: 'Teenagers almost always want something rich.',
   },
   {
     id: 'senior-lighter',
-    when: { ageBand: 'senior' },
+    when: { celebration: 'elders' },
     prefer: ['fruit', 'classic', 'indian'], avoid: ['caramel'], weight: 2,
     because: 'Lighter and less sweet, which elders usually prefer.',
   },
