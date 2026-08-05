@@ -185,12 +185,17 @@ export default function A4Sheet({
         <div style={{ ...s.tipPopup, ...(isMobile ? { bottom: 16, right: 16 } : { top: 74, right: 24 }) }}
           onPointerDown={e => e.stopPropagation()}>
           <button style={s.tipClose} onClick={() => setShowTip(false)} title="Dismiss">×</button>
-          <b>A4 print simulator</b> (to scale). Lay the images out at print size, then download a
-          print-ready PDF. Drag to move, drag a corner to resize.
+          <b>An A4 sheet, to scale.</b> Lay the images out at print size, check them against the cake
+          guides, then download a print-ready PDF. Drag to move, drag a corner to resize.
         </div>
       )}
       <div style={s.header}>
-        <div style={{ fontWeight: 800, fontSize: 16, color: '#2C4433' }}>Print sheet — A4</div>
+        {/* ── The tool's name, and it must match the one on the pricing page ──────────────────────
+            This said "Print sheet — A4", the button that opens it said "Open A4 simulator", the tip
+            said "A4 print simulator", and the pricing page sold "Edible print sheet (A4)". Four
+            names for one tool, so a baker who read the plan could not tell they had found the thing
+            they paid for. All four are now "Edible Print Studio". */}
+        <div style={{ fontWeight: 800, fontSize: 16, color: '#2C4433' }}>Edible Print Studio</div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button style={s.primaryBtn} disabled={busy || !items.length} onClick={download}>
             {busy ? 'Preparing…' : 'Download PDF'}

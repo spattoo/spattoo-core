@@ -41,12 +41,12 @@ function CustomPhotosSection({ order }) {
       </div>
       <div style={{ fontSize: 13, color: '#3D5A44', lineHeight: 1.6, marginBottom: 12 }}>
         The customer uploaded <b>{n}</b> custom photo{n > 1 ? 's' : ''} for this cake. Open the
-        A4 page simulator to size and arrange {n > 1 ? 'them' : 'it'} on a sheet, then download a
-        print-ready PDF for your edible printer.
+        Edible Print Studio to size and arrange {n > 1 ? 'them' : 'it'} on an A4 sheet, then download
+        a print-ready PDF for your edible printer.
       </div>
       <button onClick={() => setOpen(true)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: 'none', background: '#3D5A44', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-        <PhotoGlyph /> Open A4 simulator
+        <PhotoGlyph /> Open Edible Print Studio
       </button>
       {open && <PhotoSheet order={order} onClose={() => setOpen(false)} />}
     </div>
