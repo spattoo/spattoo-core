@@ -118,10 +118,25 @@ export default function FacetShell({
     } finally { setSending(false); }
   }
 
-  // The flavour whose colours the slice is drawn in — the first tier that has one, since that is
-  // the one being chosen. Resolved here rather than in the visual so the visual never has to know
-  // what a tier is.
-  const shownFlavour = draft.flavours.find(f => f.flavourId) ?? null;
+  // ── What the pinned slice is drawn in ─────────────────────────────────────────────────────────
+  // Normally the first tier that has a flavour, since that is the one being chosen. Resolved here
+  // rather than in the visual so the visual never has to know what a tier is.
+  //
+  // `preview` lets a facet borrow the stage for something not yet chosen. Only the suggester uses
+  // it, and it exists because the alternative was worse: the suggester drew its OWN slice under the
+  // pinned one, so the screen carried two cakes in different flavours — the customer's current pick
+  // above, the recommendation below — with nothing saying which was which. Reported from the live
+  // storefront as "two cake images… can we have only the recommended flavour".
+  //
+  // Previewing rather than deleting the stage keeps the rule this shell is built on ("if the cake
+  // scrolls away we have built a form again") AND makes the pinned cake finally earn being pinned:
+  // it now answers the question on screen instead of showing something else.
+  const [preview, setPreview] = useState(null);
+  const shownFlavour = preview ?? draft.flavours.find(f => f.flavourId) ?? null;
+
+  // A preview belongs to the facet that set it. Closing or switching facets must drop it, or the
+  // stage keeps showing a recommendation from a screen the customer has left.
+  useEffect(() => { setPreview(null); }, [open]);
 
   const primary = palette?.primary ?? baker?.primary_color ?? '#2C4433';
   const accent  = palette?.accent  ?? baker?.accent_color  ?? '#6B8C74';
@@ -190,7 +205,7 @@ export default function FacetShell({
                            bakerName={baker?.name} slug={slug} close={() => setOpen(null)}
                            setTierCount={(n) => patch({ __tierCount: n })}
                            onStartDesign={onStartDesign}
-                           accent={accent}
+                           accent={accent} setPreview={setPreview}
                            leadTimeDays={leadTimeDays} />)
               : verifying ? (
                 <VerifyStep

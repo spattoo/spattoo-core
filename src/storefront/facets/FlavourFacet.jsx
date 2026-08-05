@@ -17,7 +17,7 @@ import { OCCASIONS } from './cakeDraft.js';
 // — a template knows how many tiers it has — so this rarely has to ask, and when there is only one
 // tier the whole idea stays invisible.
 
-export default function FlavourFacet({ draft, patch, close, api, bakerName }) {
+export default function FlavourFacet({ draft, patch, close, api, bakerName, setPreview }) {
   const [door, setDoor] = useState(null);
   const [state, setState] = useState({ loading: true, flavours: [], error: null });
   // Which layer is being chosen. Only ever seen on a tiered cake.
@@ -34,6 +34,7 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName }) {
   if (door === 'suggest') {
     return <Suggester draft={draft} patch={patch} close={close} bakerName={bakerName}
                       flavours={state.flavours} loading={state.loading}
+                      setPreview={setPreview}
                       onBack={() => setDoor(null)} />;
   }
 
@@ -175,7 +176,7 @@ const QUESTIONS = [
       ['safe', 'Safe bet'], ['different', 'Something different']] },
 ];
 
-function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }) {
+function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, setPreview }) {
   // `mood` is the suggester's own question and belongs to nobody else, so it stays local. The other
   // two are facts about the CAKE and are seeded from the draft — see `never ask twice`.
   const [answers, setAnswers] = useState({
@@ -192,6 +193,48 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
   // shown greyed — the form shrinking as you go is the clearest signal this thing is paying
   // attention, and it is the opposite of a wizard's fixed steps.
   const pending = QUESTIONS.filter(q => !answers[q.key] && (!q.when || q.when(answers)));
+
+  // ── Scored ABOVE the early returns, so the preview effect can be a top-level hook ─────────────
+  // Everything the CAKE already knows is scored, not just what this suggester asked. The
+  // celebration came from the details facet and the season from the delivery date the customer
+  // picked — asking again would break "never ask twice", and not using them would waste answers
+  // already given.
+  //
+  // Guarded on `answered` rather than moved back below the returns: a hook may not sit under an
+  // early return (React #310, which this facet's sibling shipped once), so the choice is to compute
+  // here or not to preview at all. Scoring an empty list while the questions are still being asked
+  // is a few comparisons on an array this size.
+  const answered = !loading && !pending.length;
+  const scored = answered ? suggestFlavours(flavours, {
+    ...answers,
+    celebration: draft.details.celebration || undefined,
+    // The DELIVERY month, not this one: a January order for an April party is an April cake.
+    season: draft.details.deliveryDate
+      ? seasonFor(Number(draft.details.deliveryDate.split('-')[1]))
+      : undefined,
+  }, { dietaryKeys: draft.details.dietaryKeys }) : [];
+
+  const ranked = scored.filter(r => !rejected.includes(r.flavour.id));
+  const pick = answered
+    ? (ranked[0] ?? (rejected.length ? null : fallback(flavours, draft.details.dietaryKeys)))
+    : null;
+  // The runners-up. Three total is the most a customer will actually weigh; beyond that a
+  // recommendation becomes a list, which is the thing they opened this door to avoid.
+  const alsoGood = ranked.slice(1, 3);
+
+  // ── The pinned cake becomes the recommendation ────────────────────────────────────────────────
+  // The suggester used to draw its own slice, so the screen carried TWO cakes in different
+  // flavours — the customer's current pick pinned above, the recommendation below. Now there is one
+  // cake and it is the one being discussed.
+  //
+  // Keyed on the flavour ID, NOT the flavour object: `suggestFlavours` builds fresh objects every
+  // render, so an object dependency would set state → re-render → new object → set state again,
+  // forever. The id is stable for as long as the recommendation is.
+  useEffect(() => {
+    setPreview?.(pick?.flavour ?? null);
+    return () => setPreview?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pick?.flavour?.id, setPreview]);
 
   if (loading) return <div style={s.note}>Thinking…</div>;
 
@@ -217,24 +260,6 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
       </div>
     );
   }
-
-  // Everything the CAKE already knows is scored, not just what this suggester asked. The age band
-  // came from the details facet and the season from the delivery date the customer picked — asking
-  // again would break "never ask twice", and not using them would waste answers already given.
-  const scored = suggestFlavours(flavours, {
-    ...answers,
-    celebration: draft.details.celebration || undefined,
-    // The DELIVERY month, not this one: a January order for an April party is an April cake.
-    season: draft.details.deliveryDate
-      ? seasonFor(Number(draft.details.deliveryDate.split('-')[1]))
-      : undefined,
-  }, { dietaryKeys: draft.details.dietaryKeys });
-
-  const ranked = scored.filter(r => !rejected.includes(r.flavour.id));
-  const pick = ranked[0] ?? (rejected.length ? null : fallback(flavours, draft.details.dietaryKeys));
-  // The runners-up. Three total is the most a customer will actually weigh; beyond that a
-  // recommendation becomes a list, which is the thing they opened this door to avoid.
-  const alsoGood = ranked.slice(1, 3);
 
   // Nothing survived. Say so plainly and still let them through — the one thing this must never do
   // is invent a suggestion to avoid an empty screen.
@@ -291,7 +316,6 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack }
           slice and a name with no more standing than the cards below it — which is how a customer's
           eye reached the runners-up first and read THEM as the answer. */}
       <div style={s.pickTag}>Our pick for you</div>
-      <Slice sponge={f.spongeColor} filling={f.fillingColor} height={104} />
       <div style={s.resultName}>{f.name}</div>
       {/* The sentence from the rule that actually argued for it — not a plausible one chosen
           afterwards. That is the whole reason this is rules and not a model. */}
