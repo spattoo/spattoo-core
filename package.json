@@ -23,7 +23,7 @@
     "check:fonts": "node scripts/check-fonts.mjs",
     "check:cors": "node scripts/check-cors.mjs",
     "check:hooks": "node scripts/check-hooks.mjs",
-    "check:dup": "jscpd src/designer src/orders src/customers src/dashboard src/admin src/billing src/shared src/storefront src/auth src/legal src/telemetry",
+    "check:dup": "jscpd src/designer src/orders src/customers src/dashboard src/admin src/billing src/shared src/storefront src/auth src/legal src/telemetry src/chefsdesk",
     "test": "vitest run",
     "verify": "npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:hooks && npm run check:dup && npm test",
     "pack:vendor": "npm run build && node scripts/pack-vendor.mjs",
