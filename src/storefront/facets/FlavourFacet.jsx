@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
 import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS } from './suggestFlavour.js';
-import { OCCASIONS } from './cakeDraft.js';
+import { OCCASIONS, everyTier } from './cakeDraft.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -20,8 +20,6 @@ import { OCCASIONS } from './cakeDraft.js';
 export default function FlavourFacet({ draft, patch, close, api, bakerName, setPreview, facetBack }) {
   const [door, setDoor] = useState(null);
   const [state, setState] = useState({ loading: true, flavours: [], error: null });
-  // Which layer is being chosen. Only ever seen on a tiered cake.
-  const [tier, setTier] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -70,50 +68,23 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName, setP
     );
   }
 
-  const multi = draft.flavours.length > 1;
-  const chosenId = draft.flavours[tier]?.flavourId ?? null;
+  // One flavour for the whole cake — see `everyTier`. The Bottom/Top selector that used to sit
+  // above this list is gone: it met customers who had not been thinking about layers with two bare
+  // words and no way to tell whether tapping one had done anything.
+  //
+  // Choosing is therefore FINISHING again, on any cake. The facet used to stay open on a tiered one
+  // so each layer could be picked in turn, and with a single question there is nothing to stay open
+  // for.
+  const chosenId = draft.flavours[0]?.flavourId ?? null;
 
   const pick = (f) => {
-    patch({
-      flavours: draft.flavours.map((t, i) =>
-        i === tier
-          // The colours ride along on the DRAFT so the stage can draw the right slice — the draft
-          // is UI state and may carry whatever the UI needs. They do not reach the baker:
-          // toOrderPayload picks the four fields an order has, which is exactly why that boundary
-          // exists rather than trusting every door to send a tidy object.
-          ? { tier: i, name: f.name, flavourId: f.id, source: f.source ?? 'global',
-              spongeColor: f.spongeColor ?? null, fillingColor: f.fillingColor ?? null }
-          : t),
-    });
-    // On a single-tier cake, choosing IS finishing. On a tiered one it is not, so the facet stays
-    // open — closing after each layer would make a three-tier cake a three-trip errand.
-    if (!multi) close();
+    patch({ flavours: everyTier(draft, f) });
+    close();
   };
 
   return (
     <>
-      {multi && <div style={s.head}><span style={s.hint}>A flavour for each layer</span></div>}
-
-      {/* Only on a tiered cake. Bottom first, because that is how a cake is built and how the
-          person eating it will describe it. */}
-      {multi && (
-        <div style={s.tiers}>
-          {draft.flavours.map((t, i) => (
-            <button key={i} type="button" onClick={() => setTier(i)}
-                    aria-pressed={i === tier}
-                    style={{ ...s.tierBtn, ...(i === tier ? s.tierOn : null) }}>
-              {i === 0 ? 'Bottom' : i === draft.flavours.length - 1 ? 'Top' : `Layer ${i + 1}`}
-              {t.name ? ` · ${t.name}` : ''}
-            </button>
-          ))}
-        </div>
-      )}
-
       <FlavourGrid flavours={state.flavours} chosenId={chosenId} onPick={pick} />
-
-      {multi && (
-        <button type="button" style={s.done} onClick={close}>Done</button>
-      )}
     </>
   );
 }

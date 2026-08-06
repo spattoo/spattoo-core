@@ -118,6 +118,40 @@ export function withTierCount(draft, tierCount) {
   return { ...draft, flavours: next };
 }
 
+/**
+ * One flavour, on every tier.
+ *
+ * ── WHY "I KNOW MY FLAVOUR" NO LONGER ASKS PER TIER ───────────────────────────────────────────
+ * It did, with a Bottom / Top selector above the list. Two bare words, no explanation, and no way
+ * to tell whether tapping "Bottom" had done anything — met by a customer who had not been thinking
+ * about layers at all. The screen asked a question most people have not reached yet in order to
+ * answer the simpler one they had.
+ *
+ * It only appeared on a cake already known to have tiers, so it was never wrong — the tier count
+ * comes from the size facet's shape step and PERSISTS in the saved draft, which is how it turns up
+ * on a later visit that never mentioned layers.
+ *
+ * The DRAFT still carries a flavour per tier, because the order payload has since long before this
+ * screen existed and a baker's build sheet genuinely is per tier. Only the QUESTION is gone here:
+ * every tier gets the same answer. When per-tier choosing returns it is a UI on top of a shape that
+ * never changed, rather than a migration.
+ *
+ * ⚠️ SCOPED TO THAT ONE SCREEN, deliberately. The suggester still writes tier 0 only; that is left
+ * alone until there is a reason to change it.
+ */
+export function everyTier(draft, f) {
+  return draft.flavours.map((_, i) => ({
+    tier: i,
+    name: f.name,
+    flavourId: f.id,
+    source: f.source ?? 'global',
+    // Carried for the STAGE, which draws the slice. toOrderPayload picks the four fields an order
+    // has, so these never reach the baker.
+    spongeColor: f.spongeColor ?? null,
+    fillingColor: f.fillingColor ?? null,
+  }));
+}
+
 /** Has this facet been given anything? Drives what is still worth asking for. */
 export function isFilled(draft, facet) {
   switch (facet) {
