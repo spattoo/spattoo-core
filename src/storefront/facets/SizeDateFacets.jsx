@@ -96,6 +96,9 @@ export function SizeFacet({ draft, patch, close, api }) {
   const fromDesign = draft.design.minWeightKg ?? 0;
   const [templates, setTemplates] = useState(null);
   const [step, setStep] = useState('people');
+  // The weight the GUEST COUNT alone asked for, kept so the last step can say whether the shape
+  // changed it. draft.size.weightKg is the answer; this is where the answer started.
+  const [fromPeople, setFromPeople] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -142,6 +145,57 @@ export function SizeFacet({ draft, patch, close, api }) {
   const floor = Math.max(fromDesign, chosenTiers ? floorFor(chosenTiers) : 0);
   const offered = WEIGHTS.filter(w => w >= floor);
 
+  // ── Step 3: the weight, once nothing is left that could move it ─────────────────────────────────
+  // The whole reason this step exists. Weight is a CONCLUSION drawn from two answers — how many
+  // people, and what shape — and showing it beside the first one presented it as a fact about guest
+  // count alone. Here it arrives after both, and says which of them decided it.
+  //
+  // It is also the only place the customer meets the number in kilograms, which is the baker's unit
+  // and not theirs. Meeting it once, explained, beats meeting it on a button they were not thinking
+  // about kilograms on.
+  if (step === 'result') {
+    const kg = draft.size.weightKg;
+    // The band for the weight they are ACTUALLY getting, not the one they asked for. Keyed on
+    // `fromPeople` it read "about 3kg — enough for 4–6 people", which is false of a 3kg cake: the
+    // headline described the guest count while the number beside it described the cake. When a
+    // floor raises the weight the serving count rises with it, and the note below says why.
+    const band = servingBands(WEIGHTS).find(b => b.w === kg);
+    // Did the shape raise it? Only ever upward, and only to a minimum this baker actually makes.
+    const raised = fromPeople != null && kg > fromPeople;
+    return (
+      <>
+        <div style={s.hint}>So we are looking at</div>
+        <div style={s.answer}>
+          <span style={s.answerKg}>about {kg}kg</span>
+          {band && <span style={s.answerWho}>enough for {band.from}&ndash;{band.to} people</span>}
+        </div>
+
+        {/* Said plainly when it happened, because a number the customer did not choose needs a
+            reason. Silence here is what made the shape step look decorative. */}
+        {raised && (
+          <div style={s.note}>
+            A {chosenTiers}-tier cake starts at {kg}kg here, so we have taken it up from {fromPeople}kg.
+            It will feed more people than you asked for, which is the safer way to be wrong.
+          </div>
+        )}
+        {/* Equally plainly when it did NOT. "Nothing changed" is information: it tells a customer
+            their shape is not forcing a bigger cake, rather than leaving them wondering whether the
+            question they just answered counted for anything. */}
+        {!raised && chosenTiers > 1 && (
+          <div style={s.note}>
+            {chosenTiers} tiers fit at this size, so the guest count is what settles it.
+          </div>
+        )}
+
+        <button type="button" style={s.done} onClick={close}>That&rsquo;s right</button>
+        <button type="button" style={s.back}
+                onClick={() => setStep(tierOptions.length > 1 && !fromDesign ? 'shape' : 'people')}>
+          ← Change {tierOptions.length > 1 && !fromDesign ? 'the shape' : 'the number of people'}
+        </button>
+      </>
+    );
+  }
+
   // ── Step 2: the shape ───────────────────────────────────────────────────────────────────────────
   if (step === 'shape') {
     return (
@@ -166,7 +220,7 @@ export function SizeFacet({ draft, patch, close, api }) {
                         patch({ size: next });
                         // The tiers are also how many flavours the cake can have.
                         patch({ __tierCount: n });
-                        close();
+                        setStep('result');
                       }}>
                 <TierGlyph tiers={n} on={on} />
                 <span style={s.tierLabel}>{n === 1 ? 'One tier' : `${n} tiers`}</span>
@@ -199,13 +253,22 @@ export function SizeFacet({ draft, patch, close, api }) {
                       // stored: it is the number that guarantees enough cake, and the one a baker
                       // reading "feeds up to 12" can act on.
                       patch({ size: { weightKg: w, servings: to } });
-                      // Straight on to the shape — unless a template already settled it, in which
-                      // case asking would be the "never ask twice" rule broken.
-                      if (fromDesign > 0 || tierOptions.length < 2) close();
-                      else setStep('shape');
+                      setFromPeople(w);
+                      // On to the shape — unless a template already settled it, in which case
+                      // asking would be the "never ask twice" rule broken. Either way the weight
+                      // is shown at the END, once there is nothing left that could move it.
+                      setStep(fromDesign > 0 || tierOptions.length < 2 ? 'result' : 'shape');
                     }}>
+              {/* ── No kilograms on this button ────────────────────────────────────────────────
+                  It read "4–6 people · 0.5kg", which put the ANSWER on the first of two questions.
+                  A customer picked a guest count, saw a weight, then chose a shape and watched the
+                  weight sit still — so the shape step looked decorative. Reported as "it shows the
+                  weight before even asking the number of tiers… asking tier information does not
+                  change anything here."
+                  The weight is now shown once, on its own step, after everything that can move it
+                  has been asked. */}
               <span style={s.optBig}>{from}&ndash;{to}</span>
-              <span style={s.optSmall}>people · {w}kg</span>
+              <span style={s.optSmall}>people</span>
             </button>
           );
         })}
@@ -322,6 +385,14 @@ const s = {
            borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff', font: 'inherit' },
   optOn: { borderColor: '#2C4433', boxShadow: '0 0 0 2px rgba(44,68,51,0.12)' },
   optBig:   { fontSize: 15, fontWeight: 800, color: '#2A241F' },
+
+  // The conclusion, sized like one. It is the only number in this facet the customer did not pick
+  // themselves, so it carries the weight on the page that it carries in the order.
+  answer:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+              padding: '18px 12px', borderRadius: 14, background: '#F7F4EE',
+              border: '1px solid #EDE5DB' },
+  answerKg: { fontSize: 26, fontWeight: 800, color: '#2A241F', letterSpacing: '-0.01em' },
+  answerWho:{ fontSize: 12.5, fontWeight: 600, color: '#7A6C60' },
   optSmall: { fontSize: 11, fontWeight: 600, color: '#A2968A' },
 
   label: { fontSize: 12, fontWeight: 700, color: '#7A6C60', marginTop: 4 },
