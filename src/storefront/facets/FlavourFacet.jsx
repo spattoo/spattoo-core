@@ -264,6 +264,44 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
     setRejected([]);
   };
 
+  // ── Changing one answer, without walking back through the others ──────────────────────────────
+  // The back stack alone was not enough, and testing found both holes at once:
+  //
+  //   * IT IS THE WRONG SHAPE. Answering family → engagement → safe bet leaves a stack of three, so
+  //     reaching "Who's it for?" means stepping back through two questions and re-answering them.
+  //     "I clicked back, I want to change the who's it for, but that screen does not appear."
+  //   * IT DOES NOT SURVIVE A REFRESH. The draft is persisted, so on a fresh load `answers` is
+  //     seeded from it and those questions are skipped — while `asked` is empty, so Back just
+  //     leaves. Recipient is asked NOWHERE else in the product, so at that point it could not be
+  //     changed at all. "I refreshed and came again, even now i don't see the who's it for."
+  //
+  // So the answers are shown on the result and any one of them can be reopened directly. This works
+  // on a reloaded draft because it reads `answers`, not a record of what this session did.
+  const reopen = (key) => {
+    const idx = QUESTIONS.findIndex(q => q.key === key);
+    // The answer itself, plus any LATER one whose RELEVANCE depends on it. `celebration` is only
+    // asked for a child or a grown-up, so changing the recipient to "the family" would otherwise
+    // strand a party type that is no longer asked — and `matches` would go on scoring it.
+    const doomed = QUESTIONS.filter((q, i) => q.key === key || (i > idx && q.when));
+    setAnswers(a => {
+      const next = { ...a };
+      for (const q of doomed) next[q.key] = undefined;
+      return next;
+    });
+    setAsked(a => a.filter(k => !doomed.some(q => q.key === k)));
+    for (const q of doomed) if (q.key !== 'mood') patch({ details: { [q.key]: '' } });
+    setRejected([]);   // a changed question deserves a fresh ranking — see goBack
+  };
+
+  // What the recommendation is standing on, in the customer's own words. Only questions that are
+  // ANSWERED and still RELEVANT: a stranded celebration is not something to offer for editing.
+  const answerChips = QUESTIONS
+    .filter(q => answers[q.key] && (!q.when || q.when(answers)))
+    .map(q => {
+      const opts = typeof q.options === 'function' ? q.options(answers) : q.options;
+      return { key: q.key, label: opts.find(([v]) => v === answers[q.key])?.[1] ?? answers[q.key] };
+    });
+
   if (loading) return <div style={s.note}>Thinking…</div>;
 
   if (pending.length) {
@@ -301,12 +339,25 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
           {bakerName} may still be able to help. Tell them what you are after and they will come
           back to you.
         </p>
-        {/* Changing an answer is the thing most likely to help here, so Back steps into the
-            questions rather than out of the suggester — leaving is what the sentence above already
-            offers. */}
-        <button type="button" style={s.back} onClick={goBack}>
-          {asked.length ? '← Change an answer' : '← Back to the flavours'}
-        </button>
+        {/* Chips matter most HERE: nothing matched, and the way out is almost always a different
+            answer rather than a different bakery. */}
+      {/* ── What this is standing on ─────────────────────────────────────────────────────────────
+          Tapping one reopens that question and only that question — the other answers stay. This
+          is what "change my answer" has to mean: the customer wants ONE of them different, not to
+          re-run the interview. It also works on a draft restored from a previous visit, because it
+          reads the answers rather than a memory of this session. */}
+      {answerChips.length > 0 && (
+        <div style={s.chips}>
+          {answerChips.map(c => (
+            <button key={c.key} type="button" style={s.chip} onClick={() => reopen(c.key)}
+                    title="Change this">
+              {c.label}
+              <span style={s.chipEdit}>change</span>
+            </button>
+          ))}
+        </div>
+      )}
+        <button type="button" style={s.back} onClick={onBack}>← Back to the flavours</button>
       </div>
     );
   }
@@ -345,9 +396,23 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
 
   return (
     <div style={s.result}>
-      <button type="button" style={s.back} onClick={goBack}>
-        {asked.length ? '← Change an answer' : '← Back'}
-      </button>
+      <button type="button" style={s.back} onClick={onBack}>← Back</button>
+      {/* ── What this is standing on ─────────────────────────────────────────────────────────────
+          Tapping one reopens that question and only that question — the other answers stay. This
+          is what "change my answer" has to mean: the customer wants ONE of them different, not to
+          re-run the interview. It also works on a draft restored from a previous visit, because it
+          reads the answers rather than a memory of this session. */}
+      {answerChips.length > 0 && (
+        <div style={s.chips}>
+          {answerChips.map(c => (
+            <button key={c.key} type="button" style={s.chip} onClick={() => reopen(c.key)}
+                    title="Change this">
+              {c.label}
+              <span style={s.chipEdit}>change</span>
+            </button>
+          ))}
+        </div>
+      )}
       {/* Named, so the recommendation announces itself as one. Without it the screen opened on a
           slice and a name with no more standing than the cards below it — which is how a customer's
           eye reached the runners-up first and read THEM as the answer. */}
@@ -500,6 +565,13 @@ const s = {
 
   done: { marginTop: 4, padding: '12px 0', borderRadius: 12, border: 'none', background: '#2C4433',
           color: '#fff', font: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+
+  chips:    { display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', width: '100%' },
+  chip:     { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+              borderRadius: 20, border: '1px solid #E7DFD5', background: '#fff', font: 'inherit',
+              fontSize: 11.5, fontWeight: 700, color: '#5C5148', cursor: 'pointer' },
+  chipEdit: { fontSize: 10, fontWeight: 800, color: '#7A9C86', textTransform: 'uppercase',
+              letterSpacing: 0.4 },
 
   qWrap:  { display: 'flex', flexDirection: 'column', gap: 12 },
   qTitle: { fontSize: 17, fontWeight: 800, color: '#2A241F', lineHeight: 1.3 },
