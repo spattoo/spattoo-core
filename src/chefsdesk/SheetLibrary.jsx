@@ -53,18 +53,31 @@ export default function SheetLibrary({ apiClient, onOpen, onNew, onClose }) {
     }
   }
 
+  // Derived once and read twice — the header hides its "New sheet" exactly when the body shows one.
+  // Two separate conditions here would drift into showing both or neither.
+  const emptyState = sheets?.length === 0 && !err;
+
   return (
     <div style={s.overlay}>
-      <StudioHeader title="Edible Print Studio" onClose={onClose} actions={
-        <button style={s.primaryBtn} onClick={onNew}>New sheet</button>
-      } />
+      {/* ── One "New sheet" at a time ────────────────────────────────────────────────────────────
+          The empty state offers it too, and it is the better offer: it sits under a sentence
+          explaining what a sheet IS, which is what a baker with none of them needs. The header's
+          copy was a second identical button a few pixels away, saying nothing the first did not.
+          Barely noticeable on a laptop, where they sat at opposite ends of a wide window; on a
+          phone the stacked header put them one above the other, which reads as a mistake.
+
+          So the header offers it only when the empty state is not on screen — while the list is
+          LOADING (sheets === null), when the fetch failed, and once there are sheets to sit beside.
+          Then it is the only way to start one, and it is always there. */}
+      <StudioHeader title="Edible Print Studio" onClose={onClose}
+        actions={emptyState ? null : <button style={s.primaryBtn} onClick={onNew}>New sheet</button>} />
 
       <div style={s.body}>
         {err && <div style={s.err}>{err}</div>}
 
         {sheets === null && <div style={s.hint}>Loading your sheets…</div>}
 
-        {sheets?.length === 0 && !err && (
+        {emptyState && (
           <div style={s.empty}>
             <div style={s.emptyTitle}>No saved sheets yet</div>
             <p style={s.emptyBody}>

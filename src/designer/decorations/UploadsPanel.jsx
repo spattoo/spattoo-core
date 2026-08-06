@@ -38,7 +38,10 @@ function DotsGlyph({ size = 16 }) {
   );
 }
 
-export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose }) {
+export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose,
+                                      // Forwarded to Panel. Only set by a caller that is itself
+                                      // above Z.panel — see Z.overStudio.
+                                      zIndex }) {
   const [uploads, setUploads] = useState(null);   // null = loading
   const [busy, setBusy]       = useState(null);   // which image is mid-operation (disables its controls)
   // WHAT that operation is, so a control never speaks for another — a card mid-rename must not announce
@@ -286,6 +289,7 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
   return (
     <Panel
       onClose={onClose}
+      zIndex={zIndex}
       title={selectMode ? 'Choose an image' : 'Uploads'}
       width={460}
       bodyPadding={16}

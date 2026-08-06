@@ -11,6 +11,7 @@
 // Tool-specific styling stays with its tool. Only what BOTH screens are is here.
 
 import { useEffect, useState } from 'react';
+import { Z } from '../shared/Panel.jsx';
 
 // ── Is this a phone? ────────────────────────────────────────────────────────────────────────────
 // One definition, used by the header here and by A4Sheet's body layout, because two components
@@ -73,18 +74,25 @@ export function StudioHeader({ title, actions, onClose }) {
           afterthought. Equal columns also make every button a generous tap target.
           A grid rather than flex:1 on each child, because the children come from the CALLER — this
           shapes them without reaching into their props, so a screen can pass whatever it likes. */}
-      <div style={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: '1fr', gap: 8 }}>
-        {actions}
-      </div>
+      {/* No actions is a real state — the library hides its "New sheet" while the empty state is
+          offering one — and an empty row still costs its gap, leaving the title floating above a
+          band of nothing. */}
+      {actions && (
+        <div style={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: '1fr', gap: 8 }}>
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
 
 export const chrome = {
-  // Full-bleed and fixed: these are destinations, not dialogs. zIndex sits above the designer's own
-  // panels, which is what lets the studio be opened from inside it.
+  // Full-bleed and fixed: these are destinations, not dialogs. Z.studio sits above the designer's
+  // own panels, which is what lets the studio be opened from inside it — and it comes from the
+  // shared scale so that anything needing to sit ABOVE the studio can name that instead of guessing
+  // (Z.overStudio). A bare 4000 here is what left the uploads picker opening underneath it.
   overlay: {
-    position: 'fixed', inset: 0, zIndex: 4000, background: '#FAFAF8',
+    position: 'fixed', inset: 0, zIndex: Z.studio, background: '#FAFAF8',
     display: 'flex', flexDirection: 'column', fontFamily: 'inherit',
   },
   header: {

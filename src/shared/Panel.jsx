@@ -20,7 +20,14 @@ import { chromeGradient } from './chrome.js';
 
 // One scale, named, so stacking is decided rather than discovered. A popover opened FROM a panel
 // must sit above it; a toast above both.
-export const Z = { panel: 1000, popover: 1100, toast: 1200 };
+//
+// `studio` is a full-screen Chef's Desk tool — a DESTINATION, not a dialog, so it covers the whole
+// designer including its panels. `overStudio` is for a panel opened from inside one. Both are here
+// rather than as a literal in the studio's own styles, because a number that has to be above
+// another number is a relationship, and a relationship kept in two files is a relationship that
+// breaks: the studio sat at a bare 4000 and the uploads picker at Z.panel, so "Add image" opened
+// the picker faithfully, 3000 layers beneath an opaque surface. Nothing errored. Nothing appeared.
+export const Z = { panel: 1000, popover: 1100, toast: 1200, studio: 4000, overStudio: 4100 };
 
 export const PANEL = {
   font:    "'Quicksand', sans-serif",
@@ -47,8 +54,8 @@ const PANEL_CSS = `
     border: 3px solid ${PANEL.surface}; }
 `;
 
-const overlayStyle = (isMobile) => ({
-  position: 'fixed', inset: 0, zIndex: Z.panel,
+const overlayStyle = (isMobile, zIndex = Z.panel) => ({
+  position: 'fixed', inset: 0, zIndex,
   background: PANEL.scrim,
   backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
   display: 'flex', justifyContent: 'center',
@@ -145,6 +152,10 @@ const footStyle = (isMobile) => ({
  */
 export function Panel({ open = true, onClose, title, subtitle, width = 420, isMobile = false,
                         bodyPadding, flow = 'stack', subhead, footer, showClose = true, wave = 0,
+                        // Only for a panel opened from something that is ALREADY above Z.panel —
+                        // pass Z.overStudio from inside a full-screen tool. Left alone everywhere
+                        // else: the default is what keeps one scale meaningful.
+                        zIndex = Z.panel,
                         onBack, backLabel = 'Back', children }) {
   // A backdrop click closes only if the press STARTED on the backdrop. Without this, dragging a
   // slider or a colour swatch and releasing past the panel's edge dispatches a click on the nearest
@@ -164,7 +175,7 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
 
   return (
     <div
-      style={overlayStyle(isMobile)}
+      style={overlayStyle(isMobile, zIndex)}
       onPointerDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
       onClick={(e) => {
         if (onClose && pressedBackdrop.current && e.target === e.currentTarget) onClose();

@@ -53,6 +53,17 @@ describe('StudioHeader on a phone', () => {
     expect(html).toContain('Save sheet');
     expect(html).toContain('Download PDF');
   });
+
+  // The library hides its "New sheet" while the empty state is offering one, so no-actions is a
+  // state that really happens. An empty row still costs its gap and leaves the title floating above
+  // a band of nothing.
+  it('draws no actions row at all when there are none', () => {
+    asPhone();
+    const html = render({ actions: null });
+    expect(html).not.toContain('grid-auto-columns:1fr');
+    expect(html).toContain('Edible Print Studio');
+    expect(html).toContain('aria-label="Close"');
+  });
 });
 
 describe('StudioHeader on a laptop', () => {

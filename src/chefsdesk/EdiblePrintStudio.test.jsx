@@ -53,3 +53,18 @@ describe('EdiblePrintStudio renders', () => {
     )).not.toThrow();
   });
 });
+
+// ── One "New sheet", not two ─────────────────────────────────────────────────────────────────────
+// The header and the empty state each offered one. On a laptop they sat at opposite ends of a wide
+// window and read as a header action plus a call to action; on a phone the stacked header put them
+// one above the other, two identical buttons a few pixels apart.
+//
+// This pins the FIRST paint, which is the loading state — effects do not run under
+// renderToStaticMarkup, so `sheets` is still null here and the empty state has not rendered yet.
+// That is exactly the state where the header's button must survive: it is the only one on screen.
+// The mutual exclusion itself is StudioHeader's no-actions branch (studioChrome.test.jsx) driven by
+// one derived `emptyState` in SheetLibrary, which is why it cannot show both.
+it('offers exactly one New sheet, never two', () => {
+  const html = renderToStaticMarkup(<EdiblePrintStudio apiClient={apiClient} onClose={() => {}} />);
+  expect(html.match(/New sheet/g)).toHaveLength(1);
+});

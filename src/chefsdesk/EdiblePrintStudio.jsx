@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import UploadsPanel from '../designer/decorations/UploadsPanel.jsx';
+import { Z } from '../shared/Panel.jsx';
 import A4Sheet from './a4/A4Sheet.jsx';
 import { imageSource, framesIn, frameMaskOf } from './a4/imageSource.js';
 import SheetLibrary from './SheetLibrary.jsx';
@@ -233,6 +234,9 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
         <UploadsPanel
           apiClient={apiClient}
           elementTypes={elementTypes}
+          // The studio is a full-screen surface at Z.studio; a picker at the default Z.panel opens
+          // faithfully and invisibly beneath it.
+          zIndex={Z.overStudio}
           // Choosing, not managing: no promote controls, and a tap means "use this one".
           selectMode
           canPromote={false}
