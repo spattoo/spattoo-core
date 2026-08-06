@@ -158,8 +158,20 @@ const QUESTIONS = [
   // The same list the details facet uses — they write the same field, so offering different sets
   // would let the answer depend on which screen happened to ask.
   { key: 'occasion', title: "What's the occasion?", options: OCCASIONS },
-  { key: 'mood',     title: 'Play it safe, or something different?', options: [
-      ['safe', 'Safe bet'], ['different', 'Something different'],
+  // ── The wording, and why not "adventurous" ────────────────────────────────────────────────────
+  // "Something different" was flat — it describes a category, not a thing anybody wants. The ask
+  // was for "let me go adventurous" or "I'll introduce a new flavour to the party", and the second
+  // instinct is the right one: name the ACT, not a personality.
+  //
+  // Not "adventurous" itself. This file's rule is no vocabulary that needs decoding for somebody
+  // reading their second or third language, and it names exactly that class of word. "Surprise
+  // them" is two plain words and says what actually happens.
+  //
+  // The TITLE had to move with it. "Play it safe, or something different?" offered two things when
+  // there are now three, so it was quietly wrong the moment the hint was added — and with the first
+  // button renamed to "Play it safe" it would have asked the question and answered it in one line.
+  { key: 'mood',     title: 'How should we choose?', options: [
+      ['safe', 'Play it safe'], ['different', 'Surprise them'],
       // The third door. "Safe" and "different" are both us asking the customer to characterise a
       // cake they have not tasted; this asks about something they already know, which is easier to
       // answer and much better evidence. See HINTS in suggestFlavour.js.
