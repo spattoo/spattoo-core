@@ -26,6 +26,18 @@ export default function NotificationBell({ apiClient, onOpenLink }) {
   const [unread, setUnread] = useState(0);
   const [items, setItems]   = useState(null);   // null = never loaded
   const [open, setOpen]     = useState(false);
+  // Starts false and corrects on mount, rather than reading window during render. settings/controls
+  // exports a useIsMobile that reads window.innerWidth in its useState initialiser — importing it
+  // here would throw on the server and in renderToStaticMarkup, which is how this component is
+  // tested. A one-frame desktop layout on a phone is invisible; a crash is not.
+  const [narrow, setNarrow] = useState(false);
+
+  useEffect(() => {
+    const check = () => setNarrow(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const load = useCallback(() => {
     if (!apiClient?.fetchNotifications) return Promise.resolve();
@@ -79,7 +91,15 @@ export default function NotificationBell({ apiClient, onOpenLink }) {
           {/* Click-away, behind the panel. Without it the only way out is the bell itself, which a
               baker will not think to press again. */}
           <div style={s.backdrop} onClick={() => setOpen(false)} />
-          <div style={s.panel} role="dialog" aria-label="Notifications">
+          {/* ── Where the panel sits ──────────────────────────────────────────────────────────────
+              WIDE: anchored to the bell, hanging down-left from its right edge. The bell is top-right
+              there, so the panel lands on screen.
+
+              NARROW: pinned to the VIEWPORT instead. On a phone the bell sits near the LEFT of the
+              header, and a 320px panel anchored to its right edge extends off the left of the
+              screen — which does not scroll into view, it simply clips, and a baker reads "sand"
+              where a customer's name should be. */}
+          <div style={narrow ? s.panelNarrow : s.panel} role="dialog" aria-label="Notifications">
             <div style={s.head}>
               <span style={s.headTitle}>Notifications</span>
               {unread > 0 && (
@@ -161,6 +181,12 @@ const s = {
   panel: { position: 'absolute', right: 0, top: 'calc(100% + 8px)', zIndex: 1200, width: 320,
            maxHeight: 420, overflowY: 'auto', background: '#fff', borderRadius: 14,
            border: '1px solid #E8EFE9', boxShadow: '0 18px 48px rgba(20,24,21,0.22)' },
+  // Fixed to the viewport, not to the bell. `left` and `right` together set the width, so it fits
+  // whatever the screen is — no 320 to overflow, and nothing to clip. maxHeight in vh because a
+  // fixed panel cannot be measured against a parent that is not its offset context.
+  panelNarrow: { position: 'fixed', left: 12, right: 12, top: 64, zIndex: 1200,
+                 maxHeight: '65vh', overflowY: 'auto', background: '#fff', borderRadius: 14,
+                 border: '1px solid #E8EFE9', boxShadow: '0 18px 48px rgba(20,24,21,0.22)' },
   head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '12px 14px', borderBottom: '1px solid #F1F5F2' },
   headTitle: { fontSize: 12, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', color: '#8a9a8e' },
