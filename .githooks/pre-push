@@ -5,6 +5,34 @@
 # known dev-dependency advisory doesn't wall off every push. Bypass: git push --no-verify
 . "$(git rev-parse --show-toplevel)/.githooks/_lib.sh"
 
+# ── main is reached through a PR, never by pushing ──────────────────────────────────────────────
+# Refuses BEFORE anything leaves the machine, which is the point: a direct push to main is not
+# undoable by the person who made it — the ref has moved for everyone by the time you notice.
+#
+# The server-side ruleset is the real enforcement; this exists because it fails EARLIER and with a
+# sentence, and because it works on a plan that has no rulesets. Both, not either.
+#
+# ── stdin is read ONCE ─────────────────────────────────────────────────────────────────────────
+# git feeds the ref list on stdin and it can only be consumed once, so it is captured to a file and
+# every loop below reads from there. Redirected, never piped: `while read ... done < file` runs in
+# THIS shell, while `cat file | while read` runs in a subshell where a FAIL=1 set inside the loop is
+# discarded at the closing done. The secret scan below sets exactly that variable, so piping here
+# would leave it green while finding things.
+REFS_FILE=$(mktemp)
+cat > "$REFS_FILE"
+trap 'rm -f "$REFS_FILE"' EXIT
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      printf 'x Push blocked: %s takes changes through a pull request.\n' "${remote_ref#refs/heads/}"
+      printf '  Push your branch, then open a PR into %s.\n' "${remote_ref#refs/heads/}"
+      printf '  Deliberate exception (a release, a hotfix you own): git push --no-verify\n'
+      exit 1
+      ;;
+  esac
+done < "$REFS_FILE"
+
 FAIL=0
 
 gitleaks_available
@@ -17,7 +45,7 @@ case $? in
         *)                  RANGE="$remote_sha..$local_sha" ;;
       esac
       secret_scan_range "$RANGE" || FAIL=1
-    done
+    done < "$REFS_FILE"
     ;;
   2) exit 1 ;;                                          # missing scanner - already explained
 esac
