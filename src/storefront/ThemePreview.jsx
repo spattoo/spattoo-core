@@ -66,6 +66,10 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // by a baker who has not yet seen a storefront, and three weeks later they publish anyway. This
   // sits on the action that causes the harm.
   const [flavourCheck, setFlavourCheck] = useState(null);
+  /** Tiered templates with no minimum weight. 0 = nothing to say. */
+  const [tieredNoMin, setTieredNoMin] = useState(0);
+  /** The review step, shown before the rights confirm and ONLY when there is something wrong. */
+  const [review, setReview] = useState(false);
   // Gallery: [{ id, key, url, caption }] — key is the R2 key to persist (null while uploading).
   const [gallery, setGallery] = useState([]);
   const [galleryDirty, setGalleryDirty] = useState(false);
@@ -108,11 +112,12 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       .then(r => {
         if (!alive) return;
         const list = r?.flavours ?? [];
-        setFlavourCheck({ curated: r?.curated !== false, offered: list.filter(f => !f.excluded).length });
+        const offered = list.filter(f => !f.excluded);
+        setFlavourCheck({ curated: r?.curated !== false, names: offered.map(f => f.name) });
       })
       // Fails SILENT, not closed. A lookup that errors must not invent a warning about the baker's
       // flavours, and must never be a reason they cannot publish.
-      .catch(() => { if (alive) setFlavourCheck({ curated: true, offered: 0 }); });
+      .catch(() => { if (alive) setFlavourCheck({ curated: true, names: [] }); });
     return () => { alive = false; };
   }, [open, apiClient]);
 
@@ -155,7 +160,16 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       .catch(() => setTestimonials([]));
     // The baker's saved cake designs (with thumbnails) — the "pick from your designs" source.
     Promise.resolve(apiClient?.fetchTemplates?.())
-      .then(r => { const list = Array.isArray(r) ? r : (r?.templates || []); setDesigns(list.filter(t => t && (t.thumbnail_url || t.thumbnail || t.url))); })
+      .then(r => {
+        const list = Array.isArray(r) ? r : (r?.templates || []);
+        setDesigns(list.filter(t => t && (t.thumbnail_url || t.thumbnail || t.url)));
+        // Counted off the WHOLE list, not the thumbnailed subset above: a template without a
+        // picture is still a cake a customer can order, and the floor is what stops them ordering
+        // a three-tier one at 1kg. See SizeFacet's floorFor — with no minimum it returns 0, so the
+        // shape step can never move the weight and the check it exists for never fires.
+        setTieredNoMin(list.filter(t =>
+          (t?.tier_count ?? 1) > 1 && typeof t?.attrs?.min_weight_kg !== 'number').length);
+      })
       .catch(() => setDesigns([]));
   }, [open]);
 
@@ -329,6 +343,12 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       setHlUploading(null);
     }
   }
+
+  // Something to say, or nothing. Both halves are about what a CUSTOMER can do the moment this
+  // goes live: order a flavour the baker does not make, or order a tiered cake at a size nobody
+  // can build.
+  const uncurated  = !!flavourCheck && !flavourCheck.curated && flavourCheck.names.length > 0;
+  const needsReview = uncurated || tieredNoMin > 0;
 
   if (!open) return null;
 
@@ -568,7 +588,13 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {isWide && published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
           <button type="button" style={{ ...s.publish, background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})`, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy}
-            onClick={() => { setPublishRights(false); setPublishConfirm(true); }}>
+            onClick={() => {
+              setPublishRights(false);
+              // Silent when there is nothing wrong. A review screen on every colour tweak becomes
+              // wallpaper, and wallpaper is what the rights tick two screens later must not become.
+              // Appearing only when it has something to say is what makes it worth reading.
+              if (needsReview) setReview(true); else setPublishConfirm(true);
+            }}>
             {publishing ? 'Publishing…' : busy ? 'Uploading…' : published ? 'Update' : 'Publish'}
           </button>
         </div>
@@ -680,6 +706,62 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           Asked at Publish — never per design save or per photo: a tick clicked fifty times is
           reflex, not evidence. Re-publishing (the "Update" button) re-affirms, which is right —
           the storefront now contains cakes that weren't there last time. */}
+      {/* ── Before it goes live ──────────────────────────────────────────────────────────────────
+          Two things a baker cannot see from the preview, both about what a CUSTOMER will be able to
+          do the moment this is public. Shown only when one of them is actually wrong.
+
+          Informational throughout: no ticks, and Continue is never disabled. A baker who genuinely
+          offers every flavour, or who really does build tiered cakes at any size, is not blocked by
+          a screen that only knows what it can read. It is a look, not a gate. */}
+      {review && (
+        <ConfirmPanel
+          title="Before it goes live"
+          message="Two things customers will be able to do the moment your storefront is public."
+          confirmLabel="Looks right — continue"
+          onConfirm={() => { setReview(false); setPublishConfirm(true); }}
+          onCancel={() => setReview(false)}
+          confirmStyle={{ background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})` }}
+        >
+          {uncurated && (
+            <div style={s.reviewBlock}>
+              <div style={s.reviewHead}>They can order any of these {flavourCheck.names.length} flavours</div>
+              {/* The NAMES, not a count. A baker recognises "Rasmalai" as something they have never
+                  made; they cannot recognise "26". That recognition is the entire point of the
+                  screen, and a number cannot produce it. */}
+              <div style={s.pills}>
+                {flavourCheck.names.map(n => <span key={n} style={s.pill}>{n}</span>)}
+              </div>
+              <p style={s.reviewBody}>
+                Every flavour is switched on until you say otherwise. Keep this list up to date —
+                you can change it any time in Settings.
+              </p>
+              <button type="button" style={s.reviewBtn}
+                      onClick={() => { setReview(false); onClose?.(); }}>
+                Review my flavours
+              </button>
+            </div>
+          )}
+
+          {tieredNoMin > 0 && (
+            <div style={s.reviewBlock}>
+              <div style={s.reviewHead}>
+                {tieredNoMin === 1 ? 'One tiered design has' : `${tieredNoMin} tiered designs have`} no
+                minimum weight
+              </div>
+              <p style={s.reviewBody}>
+                Without one, a customer can order a tiered cake at a size it cannot be built at —
+                the storefront has nothing to stop them. Set a minimum on each tiered design and it
+                will hold the size for you.
+              </p>
+              <button type="button" style={s.reviewBtn}
+                      onClick={() => { setReview(false); onClose?.(); }}>
+                Review my designs
+              </button>
+            </div>
+          )}
+        </ConfirmPanel>
+      )}
+
       {publishConfirm && (
         <ConfirmPanel
           title={published ? 'Update your storefront' : 'Publish your storefront'}
@@ -695,34 +777,11 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
              it is the act of putting the baker's own storefront in front of the world. */
           confirmStyle={{ background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})` }}
         >
-          {/* ── "Is that right?" ──────────────────────────────────────────────────────────────────
-              Shown only to a baker who has never opened the flavour screen, which is exactly the
-              state in which every flavour is offered by default rather than by choice.
-
-              INFORMATIONAL, not a second tick. The rights attestation below is a legal
-              affirmation, and a second checkbox beside it would train the eye to clear both
-              without reading — the file already argues that "a tick clicked fifty times is reflex,
-              not evidence", and adding one would start doing that to the tick that matters.
-
-              So it states the number, offers the screen, and lets them publish. A baker who does
-              offer everything is not blocked; one who does not sees it at the last moment it is
-              still cheap to fix. */}
-          {flavourCheck && !flavourCheck.curated && flavourCheck.offered > 0 && (
-            <div style={s.flavourWarn}>
-              <div style={s.flavourWarnHead}>
-                You are offering all {flavourCheck.offered} flavours
-              </div>
-              <p style={s.flavourWarnBody}>
-                Customers will be able to ask for any of them. If there are some you don&rsquo;t
-                make, switch them off first — you can change this any time in Settings.
-              </p>
-              <button type="button" style={s.flavourWarnBtn} disabled={publishing}
-                      onClick={() => { setPublishConfirm(false); onClose?.(); }}>
-                Review my flavours
-              </button>
-            </div>
-          )}
-
+          {/* The rights attestation is ALONE here, deliberately. It is a legal affirmation, and
+              anything stacked around it trains the eye to clear the screen rather than read it —
+              this file already argues that "a tick clicked fifty times is reflex, not evidence".
+              What a customer will be able to order is a different question, asked on its own screen
+              before this one. */}
           <RightsAttestation
             apiClient={apiClient}
             checked={publishRights}
@@ -888,13 +947,19 @@ const s = {
   // Mobile: persistent bottom bar — device toggle (left) + Edit (right).
   bottomBar:{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: '#fff', borderTop: '1px solid #E3E8E4' },
   // Amber, not red: nothing has gone wrong. It is a "did you mean this?" at the last cheap moment.
-  flavourWarn:     { marginBottom: 14, padding: '13px 14px', borderRadius: 12,
-                     background: '#FBF0DA', border: '1px solid #EAD9AE' },
-  flavourWarnHead: { fontSize: 13.5, fontWeight: 800, color: '#7A5A12' },
-  flavourWarnBody: { fontSize: 12.5, lineHeight: 1.5, color: '#7A6C60', margin: '5px 0 10px' },
-  flavourWarnBtn:  { border: '1px solid #D9C79A', background: '#fff', borderRadius: 9,
-                     padding: '8px 13px', cursor: 'pointer', fontFamily: FONT, fontSize: 12.5,
-                     fontWeight: 700, color: '#7A5A12' },
+  reviewBlock: { marginBottom: 14, padding: '13px 14px', borderRadius: 12,
+                 background: '#FBF0DA', border: '1px solid #EAD9AE' },
+  reviewHead:  { fontSize: 13.5, fontWeight: 800, color: '#7A5A12' },
+  reviewBody:  { fontSize: 12.5, lineHeight: 1.5, color: '#7A6C60', margin: '5px 0 10px' },
+  reviewBtn:   { border: '1px solid #D9C79A', background: '#fff', borderRadius: 9,
+                 padding: '8px 13px', cursor: 'pointer', fontFamily: FONT, fontSize: 12.5,
+                 fontWeight: 700, color: '#7A5A12' },
+  // Capped and scrollable: a baker with forty flavours must not push Continue off the screen, and
+  // the names are for scanning rather than reading end to end.
+  pills:       { display: 'flex', flexWrap: 'wrap', gap: 5, margin: '9px 0 4px',
+                 maxHeight: 132, overflowY: 'auto' },
+  pill:        { fontSize: 11.5, fontWeight: 700, color: '#7A5A12', background: '#fff',
+                 border: '1px solid #EAD9AE', borderRadius: 20, padding: '3px 9px' },
 
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   // Warm rather than grey: this is an invitation to upgrade, not a disabled control. Reads as a

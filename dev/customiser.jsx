@@ -52,6 +52,13 @@ const apiClient = {
     flavours: Array.from({ length: 18 }, (_, i) => ({ id: `f${i}`, name: `Flavour ${i + 1}`, excluded: false })),
   }),
   fetchEntitlements: async () => ({ ent: { premium_themes: false } }),
+  // Two tiered designs with NO min_weight_kg, which is the state the publish review exists to
+  // catch — and the state every one of Super&bake's tiered templates is actually in.
+  fetchTemplates: async () => ([
+    { id: 'd1', name: 'Classic Round',   tier_count: 1, thumbnail_url: SAMPLE_DESIGNS[0]?.thumbnail_url ?? null, attrs: { min_weight_kg: 1 } },
+    { id: 'd2', name: 'Two-tier Rose',   tier_count: 2, thumbnail_url: SAMPLE_DESIGNS[0]?.thumbnail_url ?? null, attrs: null },
+    { id: 'd3', name: 'Wedding Three',   tier_count: 3, thumbnail_url: null, attrs: {} },
+  ]),
 };
 
 function Harness() {
