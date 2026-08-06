@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { chrome } from './studioChrome.js';
+import { chrome, StudioHeader } from './studioChrome.jsx';
 
 // ── The Edible Print Studio's front door ──────────────────────────────────────────────────────────
 // A baker's saved sheets, plus "New sheet". Opening the studio lands HERE rather than on a blank
@@ -55,13 +55,9 @@ export default function SheetLibrary({ apiClient, onOpen, onNew, onClose }) {
 
   return (
     <div style={s.overlay}>
-      <div style={s.header}>
-        <div style={s.title}>Edible Print Studio</div>
-        <div style={s.actions}>
-          <button style={s.primaryBtn} onClick={onNew}>New sheet</button>
-          <button style={s.ghostBtn} onClick={onClose}>Close</button>
-        </div>
-      </div>
+      <StudioHeader title="Edible Print Studio" onClose={onClose} actions={
+        <button style={s.primaryBtn} onClick={onNew}>New sheet</button>
+      } />
 
       <div style={s.body}>
         {err && <div style={s.err}>{err}</div>}

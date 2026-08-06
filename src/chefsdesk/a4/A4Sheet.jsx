@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { buildA4Pdf, downloadPdf } from '../../orders/pdf.js';
 import { sized, resized, moved } from './geometry.js';
-import { chrome } from '../studioChrome.js';
+import { chrome, StudioHeader, useStudioNarrow } from '../studioChrome.jsx';
 
 // ── The A4 print sheet ────────────────────────────────────────────────────────────────────────────
 // A to-scale A4 page the baker lays images out on, then downloads as a print-ready PDF for an edible
@@ -106,19 +106,17 @@ export default function A4Sheet({
   const [shape, setShape] = useState('round'); // which shape the size controls author
   const [rect, setRect] = useState({ l: '', w: '' });  // custom rectangle length × width (inch, as typed)
   const [busy, setBusy] = useState(false);
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 760);
   const [showTip, setShowTip] = useState(true);   // the intro is a dismissible tip card — hide it for more sheet room
   const [stripOverflow, setStripOverflow] = useState(false);  // true → photo strip scrolls, show carousel arrows
   const sheetRef = useRef(null);
   const stripRef = useRef(null);
 
+  // The same 760px the header reshapes at, from the same hook. Two components disagreeing about
+  // where "mobile" starts is how a header stacks while the body under it does not.
+  const isMobile = useStudioNarrow();
+
   const sourceById = (id) => sources.find(src => src.id === id);
 
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 760);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   // Show carousel arrows only when the strip actually overflows its width (any count, any width).
   useEffect(() => {
@@ -243,27 +241,26 @@ export default function A4Sheet({
           guides, then download a print-ready PDF. Drag to move, drag a corner to resize.
         </div>
       )}
-      <div style={s.header}>
-        {/* ── The tool's name, and it must match the one on the pricing page ──────────────────────
-            This said "Print sheet — A4", the button that opens it said "Open A4 simulator", the tip
-            said "A4 print simulator", and the pricing page sold "Edible print sheet (A4)". Four
-            names for one tool, so a baker who read the plan could not tell they had found the thing
-            they paid for. All four are now "Edible Print Studio". */}
-        <div style={s.title}>Edible Print Studio</div>
-        <div style={s.actions}>
-          {onSave && (
-            // Enabled on an EMPTY sheet too: clearing a layout and saving that is a deliberate act,
-            // and refusing it would make "remove everything" impossible to keep.
-            <button style={s.ghostBtn} disabled={saving} onClick={() => onSave(items, guide)}>
-              {saveLabel}
-            </button>
-          )}
-          <button style={s.primaryBtn} disabled={busy || !items.length} onClick={download}>
-            {busy ? 'Preparing…' : 'Download PDF'}
+      {/* ── The tool's name, and it must match the one on the pricing page ────────────────────────
+          This said "Print sheet — A4", the button that opens it said "Open A4 simulator", the tip
+          said "A4 print simulator", and the pricing page sold "Edible print sheet (A4)". Four names
+          for one tool, so a baker who read the plan could not tell they had found the thing they
+          paid for. All four are now "Edible Print Studio".
+
+          StudioHeader owns the layout, including the phone's stacked form and its × — shared with
+          the library so the two screens cannot drift apart. */}
+      <StudioHeader title="Edible Print Studio" onClose={onClose} actions={<>
+        {onSave && (
+          // Enabled on an EMPTY sheet too: clearing a layout and saving that is a deliberate act,
+          // and refusing it would make "remove everything" impossible to keep.
+          <button style={s.ghostBtn} disabled={saving} onClick={() => onSave(items, guide)}>
+            {saveLabel}
           </button>
-          <button style={s.ghostBtn} onClick={onClose}>Close</button>
-        </div>
-      </div>
+        )}
+        <button style={s.primaryBtn} disabled={busy || !items.length} onClick={download}>
+          {busy ? 'Preparing…' : 'Download PDF'}
+        </button>
+      </>} />
 
       <div style={{ ...s.body, flexDirection: isMobile ? 'column' : 'row', overflowY: isMobile ? 'auto' : 'hidden' }}>
         {/* Palette */}
