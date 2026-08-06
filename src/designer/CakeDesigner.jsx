@@ -88,6 +88,21 @@ const STAFF_UI_ENABLED = false;
 // starts from nothing and duplicates the storefront, goes quiet. One line brings it back.
 const INVITE_UI_ENABLED = false;
 
+// ── The Design Together rail item ───────────────────────────────────────────────────────────────
+// Not in V1. Live co-design — baker and customer in the same room, editing one cake — is built and
+// works, but it is a feature that has to be SUPPORTED once it exists: two people, a socket, and a
+// baker on a phone in a kitchen. It is not what V1 is being judged on.
+//
+// Note this is a SECOND gate, not the only one. `codesign.live` already hides the item when the
+// host provides no session API — that is a capability check, answering "can this build do it". This
+// one answers "do we SHIP it", which is a different question with a different owner, so it gets its
+// own line rather than being smuggled into the capability test.
+//
+// The machinery underneath stays live: SessionPanel, the Realtime channel, and the invite-into-
+// session flow are all untouched, so an existing session still works and nothing rots. Only the way
+// IN from the rail is closed.
+const CODESIGN_UI_ENABLED = false;
+
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, gradient: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
 
@@ -5460,7 +5475,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
               ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
-              ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
+              ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
             ].filter(item => hasCap(item.requires)).map(({ id, label, icon, menu }) => {
               const active = menu ? navMenuId === id
                 : id === 'elements' ? elementsOpen : id === 'uploads' ? uploadsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
@@ -6784,7 +6799,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
             ...(INVITE_UI_ENABLED ? [{ id: 'invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
             { id: 'share',      icon: <ShareIcon size={20} />,     requires: 'design:create' },
-            ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
+            ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer' ? [{ id: 'codesign', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
           ].filter(item => hasCap(item.requires)).map(({ id, icon, menu }) => {
             const active = menu ? navMenuId === id
               : id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
