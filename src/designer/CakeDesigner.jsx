@@ -58,6 +58,7 @@ import FlavoursPanel from '../settings/FlavoursPanel';
 import TemplatesPanel from '../settings/TemplatesPanel';
 import BillingPanel from '../settings/BillingPanel';
 import CreditsPill from '../billing/CreditsPill.jsx';
+import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
@@ -1743,6 +1744,32 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which Orders entries this person may see — decided once, read by both rails.
   const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires));
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
+
+  // ── Opening what a notification points at ──────────────────────────────────────────────────────
+  // The API decides the destination (lib/notificationLink.js) and hands over a PATH like
+  // `/?order=123`. It is a query param and not a route because the baker app is one page — the order
+  // list is a panel in here, not a screen you can navigate to — so a link says WHAT TO OPEN and this
+  // opens it. Same mechanism `?session=` already uses for live co-design.
+  //
+  // Parsed rather than assigned to window.location: navigating would reload the designer, throwing
+  // away an unsaved cake to show an order. Nobody would forgive that twice.
+  const openNotificationLink = useCallback((link) => {
+    if (!link) return;
+    const params = new URLSearchParams(String(link).split('?')[1] ?? '');
+    const orderId = params.get('order');
+    const panel   = params.get('panel');
+
+    if (orderId || panel === 'orders') {
+      setOrdersFilter(null);
+      setOrdersInitialView('list');
+      setNewOrderId(orderId || null);   // OrdersPanel's initialOrderId — selects it on open
+      setOrdersPanelOpen(true);
+      return;
+    }
+    if (panel === 'billing') { setBuyCreditsOpen(true); return; }
+    // An unknown panel means a newer API than this bundle. Doing nothing is better than guessing at
+    // a screen — the notification is already marked read and the bell still lists it.
+  }, []);
 
   // Which Chef's Desk tools this plan includes. Asked once, and only for someone who could see the
   // menu at all — a customer designing a cake on a storefront has no plan to ask about, and the call
@@ -5291,6 +5318,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {hasCap('billing:manage') && (
               <CreditsPill apiClient={apiClient} onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
             )}
+            {/* Beside the credits readout, and gated the same way the rest of the baker chrome is.
+                Renders nothing at all when the host has not wired fetchNotifications. */}
+            {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink} />}
             {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
               <button
                 style={{ ...s.sidebarBtn, color: chefsDeskOpen ? '#1a1a1a' : '#555', background: chefsDeskOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
@@ -5897,10 +5927,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cover the cake on the screen with least room to spare.
               Outside the shrinking wrapper below, so opening a side panel slides the cake and
               leaves the readout where it was. */}
-          {!isMobile && hasCap('billing:manage') && (
+          {!isMobile && (hasCap('billing:manage') || canManageStore) && (
             <div style={s.creditsFloat}>
-              <CreditsPill apiClient={apiClient}
-                onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+              {hasCap('billing:manage') && (
+                <CreditsPill apiClient={apiClient}
+                  onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+              )}
+              {/* Kept in step with the header cluster above — two placements of the same furniture,
+                  the trap Chef's Desk already taught us to watch for. */}
+              {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink} />}
             </div>
           )}
 
