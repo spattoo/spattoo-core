@@ -4,7 +4,8 @@ Read this before changing element placement, rendering, or the right‑side popu
 These rules exist because they were each violated and cost painful rework. Keep them true.
 
 > **Scope:** the CROSS-CUTTING principles here — **DRY / reuse-scan (#3), config-driven not
-> type-branching (#1/#6), no pictographic emoji (#7), and verify-in-the-real-app** — are
+> type-branching (#1/#6), no pictographic emoji (#7), mobile-compatible UI (#9), and
+> verify-in-the-real-app** — are
 > **PROJECT-WIDE**: they apply to every screen/module (storefront, settings/customiser, admin, api),
 > not just the designer. They're stated once, authoritatively, in the root `CLAUDE.md`
 > ("REUSE & CONFIG-DRIVEN … ALL MODULES"). Everything else below is designer-SPECIFIC
@@ -214,6 +215,41 @@ is exactly where they hide.
 (Cautionary tales: "✨ Create automatic cluster" → plain "Create cluster"; the 🎂 order-preview
 placeholder → plain "No preview" / `PhotoGlyph`.)
 
+## 9. Every UI works on a phone — a baker's screen is a phone
+**PROJECT-WIDE** (like #1/#3/#6/#7). A baker reads a new enquiry standing in a kitchen, on the
+handset in their apron. Anything that only works at desktop width is broken for the person it was
+built for.
+
+Two separate failures, and the second is the one that keeps happening:
+
+**WIDTH.** A hardcoded pixel width overflows a narrow screen. The fix is already in this codebase —
+`SessionPanel.jsx` pairs `width: 300` with `maxWidth: 'calc(100% - 24px)'`. Copy that, do not invent
+a second way.
+
+**ANCHORING — the subtle one.** A panel positioned *relative to a control* is only on-screen if that
+control is where you assumed. The notification bell sits top-RIGHT on desktop and near the LEFT of
+the header on mobile; a 320px panel anchored `right: 0` to it therefore hung off the left edge of the
+phone — and an overflowing panel does not scroll into view, **it clips**. A baker read "sand" where a
+customer's name should have been. No width guard would have caught it, because the width was fine and
+the position was not.
+
+- A control whose placement DIFFERS by breakpoint cannot have a fixed anchor. Pin the panel to the
+  VIEWPORT on narrow (`position: fixed`, `left`/`right` insets setting the width) and keep the
+  anchored dropdown on wide.
+- Tap targets are fingers, not cursors: ~40px minimum, and never rely on hover to reveal an action.
+- Long content — customer names, cake titles, flavour lists — must wrap or ellipsis, never widen its
+  container.
+
+**Detecting narrow, safely.** `settings/controls.jsx` exports a `useIsMobile` that reads
+`window.innerWidth` in its `useState` initialiser. It throws on the server and under
+`renderToStaticMarkup`, so it is unusable in any component that is server-rendered or has a render
+test. In those, start `false` and correct in an effect — a one-frame desktop layout on a phone is
+invisible; a crash is not. (Worth fixing at the source; until then, know which you are importing.)
+
+**No gate protects this**, and that is not an oversight: the width half is checkable and the
+anchoring half is not, so a gate would pass the exact bug that caused this rule to exist. Check it by
+looking — see Verification.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —
@@ -260,6 +296,8 @@ scale 1 tucks the edges slightly *inward* and hides the bug.)
 - [ ] No copy-pasted logic: grepped for an existing helper first; a rule used in 2+ places lives in
       ONE pure function both call (e.g. `deOverlapSeat`, `edgeSeatSeed`) — not a second copy.
 - [ ] All element kinds still behave: topper, top&side, scattered, picks, image‑topper, piping.
+- [ ] **Checked at PHONE width**, not just desktop — no clipped panel, no overflow, no anchor that
+      assumes a control's desktop position (#9). A baker's screen is a phone.
 - [ ] **Verified visually** in the real app, not by reading code — see below.
 
 ## Verification
@@ -270,7 +308,18 @@ element type on each surface, screenshot, and inspect. Use `waitUntil:'domconten
 socket never goes idle).
 
 ## Quality gates
-Aspirational until added (none exist yet — `spattoo-core` has no CI/lint/test setup):
-- `npm run check:paths` — fail if element‑type/slug literals appear in render/popup code (prevents #1/#2).
-- Contract test (needs `vitest`) — run every element type through the same placement invariants.
+`npm run verify` runs all of these; the commit hook runs it. (This section used to read "none exist
+yet — spattoo-core has no CI/lint/test setup". That stopped being true and the doc did not notice,
+which is the failure mode this file exists to prevent.)
+- `check:paths` — element-type/slug literals in render/popup code (#1/#2).
+- `check:fonts` — no third-party font CDN; every `<Text>` names its font.
+- `check:cors` — every `crossOrigin` image load goes through `corsUrl()`.
+- `check:hooks` — no hook below an early return (React #310, shipped twice from one file).
+- `check:dup` — jscpd over every module directory. **Add a new directory here when you create one**,
+  or the one thing it is for — a second copy appearing unnoticed — is exactly what it will miss.
+- `npm test` — vitest, including render tests. A scope error in JSX is valid JavaScript: it survives
+  the build and every other gate, and only appears when something RENDERS the component.
+
+Not gated, and deliberately: **#9 (mobile)**. The width half is checkable, the anchoring half is not,
+and a gate that passed the bug which prompted the rule would be worse than none.
 - Playwright visual‑regression — per element × placement, diffed against baselines.
