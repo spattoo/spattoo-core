@@ -53,6 +53,14 @@ function reduce(draft, action) {
   // A tier-count change is a RESHAPE, not a merge: the flavour array has to grow or shrink while
   // keeping what has already been answered, which a shallow merge cannot express.
   if (action.__tierCount != null) return withTierCount(draft, action.__tierCount);
+  // Start over. Rebuilt from `emptyDraft` rather than patched key by key, so a field added to the
+  // draft later is cleared by this without anybody remembering to add it here. Keeps the SLUG,
+  // because the draft belongs to this baker and always did.
+  //
+  // Back to ONE tier deliberately: the tier count is an answer like any other, and a reset that
+  // silently kept "two tiers" would leave the customer's next cake shaped by the one they just
+  // threw away.
+  if (action.__reset) return emptyDraft(draft.bakerSlug, 1);
   return merge(draft, action);
 }
 
@@ -92,6 +100,10 @@ export default function FacetShell({
   // rather than posting. Its own screen, not a field in the footer: it is a conversation with two
   // steps and a wait for an SMS in the middle, and that does not belong under a button.
   const [verifying, setVerifying] = useState(false);
+  // Two-step, because this throws away everything the customer has entered and there is no undo.
+  // Inline rather than a modal: a confirmation dialog over a sheet that is itself a dialog is a lot
+  // of ceremony for a link most people will never touch.
+  const [confirmReset, setConfirmReset] = useState(false);
   // Kept so a FAILED send does not cost a second SMS. The code proved the number; if the POST then
   // fell over on a flaky connection that proof is still good, and asking them to receive another
   // code would punish them for our failure. Retry goes straight back to the network.
@@ -101,6 +113,9 @@ export default function FacetShell({
 
   const remaining = useMemo(() => FACETS.filter(f => !isFilled(draft, f)), [draft]);
   const ready = canSubmit(draft);
+  // Nothing answered yet means nothing to start over from, and a reset link on an empty screen is
+  // just a button that does nothing.
+  const anyAnswered = remaining.length < FACETS.length;
 
   // The one place the enquiry actually leaves. Both callers reach it — the verify step on success,
   // and the footer on a retry after a failed send — so the sending/error/sent transitions live here
@@ -269,6 +284,33 @@ export default function FacetShell({
                       ))}
                     </div>
                   )}
+
+                  {/* ── Start over ───────────────────────────────────────────────────────────────
+                      The draft SURVIVES the tab closing, which is the point of it — somebody can
+                      put their phone down mid-cake and come back. The cost is that a customer
+                      returning days later meets a half-answered cake with no way to clear it, and
+                      until now the only cure was clearing site data.
+
+                      Quiet, and at the bottom: it is the least likely thing anybody came here to
+                      do, and it sits below the doors so it can never be the first thing tapped. */}
+                  {anyAnswered && (
+                    <div style={s.resetWrap}>
+                      {confirmReset ? (
+                        <>
+                          <span style={s.resetAsk}>Clear everything and start again?</span>
+                          <button type="button" style={s.resetYes}
+                                  onClick={() => { patch({ __reset: true }); setConfirmReset(false); }}>
+                            Yes, start over
+                          </button>
+                          <button type="button" style={s.resetNo}
+                                  onClick={() => setConfirmReset(false)}>Cancel</button>
+                        </>
+                      ) : (
+                        <button type="button" style={s.resetLink}
+                                onClick={() => setConfirmReset(true)}>Start over</button>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
           </div>
@@ -357,6 +399,14 @@ const s = {
   tick: (primary) => ({ color: primary, fontWeight: 800, fontSize: 14 }),
 
   rest:    { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  resetWrap: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  resetLink: { border: 'none', background: 'none', font: 'inherit', fontSize: 12, fontWeight: 700,
+               color: '#A2968A', cursor: 'pointer', padding: 0, textDecoration: 'underline' },
+  resetAsk:  { fontSize: 12.5, fontWeight: 700, color: '#7A6C60' },
+  resetYes:  { border: '1.5px solid #C0392B', background: '#fff', borderRadius: 9, padding: '6px 11px',
+               font: 'inherit', fontSize: 12, fontWeight: 800, color: '#C0392B', cursor: 'pointer' },
+  resetNo:   { border: 'none', background: 'none', font: 'inherit', fontSize: 12, fontWeight: 700,
+               color: '#7A6C60', cursor: 'pointer', padding: '6px 4px' },
   restBtn: { padding: '8px 13px', borderRadius: 20, border: '1.5px solid #E7DFD5', background: '#fff',
              font: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#7A6C60', cursor: 'pointer' },
 
