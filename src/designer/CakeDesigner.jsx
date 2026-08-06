@@ -2003,6 +2003,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // content becomes world-visible.
   async function handleSaveTemplate() {
     if (!templateName.trim()) return;
+    // ── A tiered template needs its floor ────────────────────────────────────────────────────────
+    // Required on TIERED designs only. A single-tier cake has no structural minimum — it is whatever
+    // size the customer asks for — so demanding a number there is friction on the common case for a
+    // problem that does not exist on it.
+    //
+    // Without one, storefront floorFor() returns 0 and the size facet's shape step cannot move the
+    // weight at all: a customer can order three tiers at 1kg and nothing stops them. That is the
+    // check the step exists for, and it never fires.
+    //
+    // Client-side only, deliberately. Core is vendored and ships separately from the API, so a
+    // server rule rejecting tiered templates without a weight would start failing saves from any
+    // cached older client.
+    if (design.tiers.length > 1 && templateWeight === '') {
+      setSaveMsg({ ok: false, text: 'A tiered design needs a minimum weight — the lightest you can build it at.' });
+      return;
+    }
     if (!onSaveTemplate) {
       setSaveMsg({ ok: false, text: 'Saving templates is unavailable here.' });
       return;
@@ -6875,10 +6891,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ))}
             </div>
 
+            {/* ── "Minimum weight", not "Weight" ─────────────────────────────────────────────────
+                It read "Weight (kg)" with a placeholder of "e.g. 1.5", and both point at the wrong
+                answer: saving a three-tier showpiece, that asks how much THIS cake weighs, so a
+                baker types the weight of the thing they just designed. The column then reads as a
+                floor, and the storefront refuses every three-tier order under it.
+                Empty was honest — floorFor returns 0 and simply does not constrain. A confident
+                wrong number is worse, and silently costs orders. So the label asks the question the
+                field answers, and the placeholder reads as a floor rather than a typical cake.
+                Not "smallest size": size means inches to a baker, and cakes are sold by weight. */}
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Weight (kg)</div>
-                <input style={{ ...s.modalInput }} type="number" min="0" step="0.5" placeholder="e.g. 1.5" value={templateWeight} onChange={e => setTemplateWeight(e.target.value)} />
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>
+                  Minimum weight (kg){design.tiers.length > 1 ? ' *' : ''}
+                </div>
+                <input style={{ ...s.modalInput }} type="number" min="0" step="0.5" placeholder="e.g. 2" value={templateWeight} onChange={e => setTemplateWeight(e.target.value)} />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Age Range</div>
@@ -6888,6 +6915,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <input style={{ ...s.modalInput, width: '50%' }} type="number" min="0" step="1" placeholder="Max" value={templateMaxAge} onChange={e => setTemplateMaxAge(e.target.value)} />
                 </div>
               </div>
+            </div>
+
+            {/* Under the ROW, not under the field — a helper line inside one of two flex columns
+                makes them different heights and the inputs stop lining up. Names the CONSEQUENCE
+                rather than the field, because "minimum weight" is already clear and what a baker
+                needs to know is why it is being asked for. */}
+            <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5, marginTop: -2 }}>
+              {design.tiers.length > 1
+                ? 'The lightest you can build this at — it stops a customer ordering ' +
+                  `${design.tiers.length} tiers at 1kg.`
+                : 'Optional. The lightest you can build this at, if it has one.'}
             </div>
 
             {filterTags.filter(t => t.category === 'occasion').length > 0 && (
