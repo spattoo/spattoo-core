@@ -133,19 +133,35 @@ export default function FlavourWheel({ flavours, bakerName, onConfirm, onSkip })
             const [x2, y2] = polar(C, C, R, to);
             const fill = f.spongeColor || '#EDE5DB';
             const mid = from + segAngle / 2;
-            const [lx, ly] = polar(C, C, R * 0.64, mid);
-            // Flip the labels on the left half so they read outward instead of upside down. A wheel
-            // whose bottom third has to be read by tilting your head is a wheel nobody reads.
-            const flip = mid > 90 && mid < 270 ? 180 : 0;
             return (
               <g key={f.id}>
                 <path d={`M ${C} ${C} L ${x1} ${y1} A ${R} ${R} 0 ${segAngle > 180 ? 1 : 0} 1 ${x2} ${y2} Z`}
                       fill={fill} stroke="#FFFDF9" strokeWidth="2" />
-                <text x={lx} y={ly} fill={readableOn(fill)} fontSize="10.5" fontWeight="800"
-                      textAnchor="middle" dominantBaseline="middle"
-                      transform={`rotate(${mid + flip} ${lx} ${ly})`}>
-                  {f.name.length > 14 ? `${f.name.slice(0, 13)}…` : f.name}
-                </text>
+                {/* ── RADIAL, running out from the hub ──────────────────────────────────────────
+                    Rotate the segment's spoke to vertical, then turn the text a quarter-turn so its
+                    baseline lies ALONG that spoke and reads from the hub outward.
+
+                    It was tangential before — placed on an arc and rotated to match — which is what
+                    made "Pineapple" read upside down while "Lotus Biscoff" ran vertically: a name's
+                    legibility depended on which segment it landed in.
+
+                    Radially, the left half comes out inverted, and that is the correct behaviour
+                    rather than a bug to patch: every real wheel does it, because the alternative is
+                    flipping some labels and breaking the one thing a wheel has going for it, which
+                    is that every segment is treated exactly alike. A wheel with two conventions
+                    reads as a mistake; a wheel with one reads as a wheel.
+
+                    Anchored at the hub end with textAnchor="start", so long names grow toward the
+                    rim where the segment is widest — the direction with room, instead of crowding
+                    the point where every segment meets. */}
+                <g transform={`rotate(${mid} ${C} ${C})`}>
+                  <text x={C} y={C - R * 0.24} fill={readableOn(fill)}
+                        fontSize="11" fontWeight="800"
+                        textAnchor="start" dominantBaseline="middle"
+                        transform={`rotate(-90 ${C} ${C - R * 0.24})`}>
+                    {f.name.length > 17 ? `${f.name.slice(0, 16)}…` : f.name}
+                  </text>
+                </g>
               </g>
             );
           })}
