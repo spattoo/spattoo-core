@@ -54,6 +54,18 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // Fails CLOSED: a lookup that errors leaves this false, so a premium theme stays locked rather
   // than offering something the save would then reject.
   const [canPremium, setCanPremium] = useState(false);
+  // ── The flavour list, checked at PUBLISH ──────────────────────────────────────────────────────
+  // null = not looked up yet. `{ curated, offered }` once known.
+  //
+  // Publish is the moment this matters: a global flavour with no settings row is OFFERED (see
+  // spattoo-api lib/flavourList.js), so a baker who has never opened the flavour screen is about to
+  // put EVERY flavour Spattoo ships in front of their customers — including ones they do not make.
+  // The first customer to ask for one is how they would otherwise find out.
+  //
+  // Checked here rather than only nudging at first login, because a nudge on day one is dismissed
+  // by a baker who has not yet seen a storefront, and three weeks later they publish anyway. This
+  // sits on the action that causes the harm.
+  const [flavourCheck, setFlavourCheck] = useState(null);
   // Gallery: [{ id, key, url, caption }] — key is the R2 key to persist (null while uploading).
   const [gallery, setGallery] = useState([]);
   const [galleryDirty, setGalleryDirty] = useState(false);
@@ -86,6 +98,24 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   // Up here with the other hooks, not beside the picker: `if (!open) return null` sits below, and a
   // hook under an early return is the React #310 that check:hooks now blocks.
+  // Fetched when the panel opens, not when the confirm does: the confirm must render its warning
+  // immediately or not at all. A spinner inside a publish dialog invites the baker to click through
+  // it, which is the opposite of what this is for.
+  useEffect(() => {
+    if (!open || !apiClient?.fetchBakerFlavours) return;
+    let alive = true;
+    apiClient.fetchBakerFlavours()
+      .then(r => {
+        if (!alive) return;
+        const list = r?.flavours ?? [];
+        setFlavourCheck({ curated: r?.curated !== false, offered: list.filter(f => !f.excluded).length });
+      })
+      // Fails SILENT, not closed. A lookup that errors must not invent a warning about the baker's
+      // flavours, and must never be a reason they cannot publish.
+      .catch(() => { if (alive) setFlavourCheck({ curated: true, offered: 0 }); });
+    return () => { alive = false; };
+  }, [open, apiClient]);
+
   useEffect(() => {
     if (!open || !apiClient?.fetchEntitlements) return;
     let alive = true;
@@ -665,6 +695,34 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
              it is the act of putting the baker's own storefront in front of the world. */
           confirmStyle={{ background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})` }}
         >
+          {/* ── "Is that right?" ──────────────────────────────────────────────────────────────────
+              Shown only to a baker who has never opened the flavour screen, which is exactly the
+              state in which every flavour is offered by default rather than by choice.
+
+              INFORMATIONAL, not a second tick. The rights attestation below is a legal
+              affirmation, and a second checkbox beside it would train the eye to clear both
+              without reading — the file already argues that "a tick clicked fifty times is reflex,
+              not evidence", and adding one would start doing that to the tick that matters.
+
+              So it states the number, offers the screen, and lets them publish. A baker who does
+              offer everything is not blocked; one who does not sees it at the last moment it is
+              still cheap to fix. */}
+          {flavourCheck && !flavourCheck.curated && flavourCheck.offered > 0 && (
+            <div style={s.flavourWarn}>
+              <div style={s.flavourWarnHead}>
+                You are offering all {flavourCheck.offered} flavours
+              </div>
+              <p style={s.flavourWarnBody}>
+                Customers will be able to ask for any of them. If there are some you don&rsquo;t
+                make, switch them off first — you can change this any time in Settings.
+              </p>
+              <button type="button" style={s.flavourWarnBtn} disabled={publishing}
+                      onClick={() => { setPublishConfirm(false); onClose?.(); }}>
+                Review my flavours
+              </button>
+            </div>
+          )}
+
           <RightsAttestation
             apiClient={apiClient}
             checked={publishRights}
@@ -829,6 +887,15 @@ const s = {
   themeChip:{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: '1px solid #D9DED9', background: '#fff', fontFamily: FONT, whiteSpace: 'nowrap' },
   // Mobile: persistent bottom bar — device toggle (left) + Edit (right).
   bottomBar:{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: '#fff', borderTop: '1px solid #E3E8E4' },
+  // Amber, not red: nothing has gone wrong. It is a "did you mean this?" at the last cheap moment.
+  flavourWarn:     { marginBottom: 14, padding: '13px 14px', borderRadius: 12,
+                     background: '#FBF0DA', border: '1px solid #EAD9AE' },
+  flavourWarnHead: { fontSize: 13.5, fontWeight: 800, color: '#7A5A12' },
+  flavourWarnBody: { fontSize: 12.5, lineHeight: 1.5, color: '#7A6C60', margin: '5px 0 10px' },
+  flavourWarnBtn:  { border: '1px solid #D9C79A', background: '#fff', borderRadius: 9,
+                     padding: '8px 13px', cursor: 'pointer', fontFamily: FONT, fontSize: 12.5,
+                     fontWeight: 700, color: '#7A5A12' },
+
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   // Warm rather than grey: this is an invitation to upgrade, not a disabled control. Reads as a
   // plan badge next to "Soon", which is a statement about us and stays neutral.

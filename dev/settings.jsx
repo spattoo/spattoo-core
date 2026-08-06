@@ -26,7 +26,32 @@ const STUBS = {
     store_hours: null,
     lead_time_days: 2,
   }),
-  fetchStorefrontThemes: async () => ([{ id: 1, key: 'spotlight', label: 'Standard', is_active: true }]),
+  fetchStorefrontThemes: async () => ([
+    { id: 1, key: 'spotlight',  name: 'Spotlight',  is_active: true,  is_premium: false },
+    // Premium and coming-soon, so the picker's two non-default card states are both visible. A
+    // premium theme shows "Blaze" unless fetchEntitlements says otherwise; "Soon" wins on the
+    // inactive one, because a theme nobody can select is not an upgrade prompt.
+    { id: 2, key: 'patisserie', name: 'Patisserie', is_active: true,  is_premium: true },
+    { id: 3, key: 'aurora',     name: 'Aurora',     is_active: false, is_premium: true },
+  ]),
+  // Blaze-and-below by default, so the locked card is what the harness shows. Flip to true to see
+  // the unlocked side.
+  fetchEntitlements: async () => ({ ent: { premium_themes: false, edible_print_studio: false } }),
+  // `curated: false` is the state a brand-new baker is in: no settings rows, so EVERY flavour is
+  // offered by default. It is what makes the publish confirm's "you are offering all N flavours"
+  // notice render — the whole reason that notice exists is a state nobody would think to set up
+  // by hand.
+  fetchBakerFlavours: async () => ({
+    curated: false,
+    flavours: [
+      { id: 'f1', name: 'Chocolate',    excluded: false, conflicts_with: [], baseline_conflicts: [] },
+      { id: 'f2', name: 'Vanilla',      excluded: false, conflicts_with: [], baseline_conflicts: [] },
+      { id: 'f3', name: 'Red Velvet',   excluded: false, conflicts_with: [], baseline_conflicts: [] },
+      { id: 'f4', name: 'Rasmalai',     excluded: false, conflicts_with: [], baseline_conflicts: [] },
+      { id: 'f5', name: 'Butterscotch', excluded: false, conflicts_with: [], baseline_conflicts: [] },
+    ],
+    visibility: { price_visibility: 'private' },
+  }),
   updateBakerProfile:  async (b) => { console.log('PUT /baker/profile', b); return { ok: true }; },
   updateBakerSettings: async (b) => { console.log('PUT /baker/settings', b); return { ok: true }; },
   getSignedUploadUrl:  async () => ({ url: '', key: '', publicUrl: '' }),

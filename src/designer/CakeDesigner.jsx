@@ -1652,6 +1652,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked, matching how xray_reports is
   // handled a few files over — one convention for "your plan does not include this" beats two.
   const [printStudioEnabled,  setPrintStudioEnabled]  = useState(false);
+  // ── Has the baker ever curated their flavour list? ────────────────────────────────────────────
+  // false = never opened the screen, which is not "no preference": a global flavour with no
+  // settings row is OFFERED (spattoo-api lib/flavourList.js), so this baker's storefront would
+  // carry every flavour Spattoo ships, including ones they do not make.
+  //
+  // Marks the Flavours menu item until it is dealt with. Not a dismissible banner and not a
+  // first-run popup: a popup on day one is cleared by a baker who has not yet seen a storefront,
+  // and a dismissal would hide a thing that is still true. This disappears when the list is
+  // curated — including by a baker who genuinely offers everything and saves it unchanged — so it
+  // is self-limiting rather than nagging. The gate that actually catches it is at PUBLISH
+  // (ThemePreview), which is the moment the list becomes public.
+  const [flavoursUncurated, setFlavoursUncurated] = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
   const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
   const [manualOrderDate,     setManualOrderDate]     = useState(null);    // pre-filled delivery date when started from the Orders calendar
@@ -1735,6 +1747,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which Chef's Desk tools this plan includes. Asked once, and only for someone who could see the
   // menu at all — a customer designing a cake on a storefront has no plan to ask about, and the call
   // is behind requireAuth.
+  useEffect(() => {
+    if (!canManageStore || !apiClient?.fetchBakerFlavours) return;
+    let alive = true;
+    apiClient.fetchBakerFlavours()
+      .then(r => { if (alive) setFlavoursUncurated(r?.curated === false); })
+      .catch(() => {});   // a failed lookup marks nothing, like the entitlement one below
+    return () => { alive = false; };
+  }, [canManageStore, apiClient, flavoursPanelOpen]);
+
   useEffect(() => {
     if (!canManageStore || !apiClient?.fetchEntitlements) return;
     let alive = true;
@@ -5296,7 +5317,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
                   <div style={s.dropdownSection}>Settings</div>
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>Store Settings</button>}
-                  {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>Flavours</button>}
+                  {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>
+                    Flavours{flavoursUncurated && <span style={s.needsLook} title="Every flavour is switched on by default">all on</span>}
+                  </button>}
                   {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>Templates</button>}
                   {hasCap('billing:manage') && <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>}
                   {STAFF_UI_ENABLED && hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add Staff</button>}
@@ -5492,7 +5515,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </button>}
                   {hasCap('store:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>
-                    Flavours
+                    Flavours{flavoursUncurated && <span style={s.needsLook} title="Every flavour is switched on by default">all on</span>}
                   </button>}
                   {hasCap('store:manage') && <button style={s.railDropdownItem}
                     onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>
@@ -7317,6 +7340,11 @@ const s = {
   // Both tones are derived from MENU_SHAPE above — the metrics exist once.
   dropdown:            LIGHT_MENU.surface,
   dropdownSection:     LIGHT_MENU.section,
+  // A quiet amber note on the Flavours entry, not a red dot: nothing is broken, the list simply
+  // has not been looked at, and every flavour is on. It clears itself the moment the baker saves.
+  needsLook:           { marginLeft: 8, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4,
+                         textTransform: 'uppercase', color: '#7A5A12', background: '#FBF0DA',
+                         border: '1px solid #EAD9AE', borderRadius: 10, padding: '1px 6px' },
   dropdownItem:        LIGHT_MENU.item,
   railDropdown:        RAIL_MENU.surface,
   railDropdownSection: RAIL_MENU.section,

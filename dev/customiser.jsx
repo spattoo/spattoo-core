@@ -43,6 +43,15 @@ const apiClient = {
     const d = SAMPLE_DESIGNS.find(x => x.id === id);
     return { key: `storefront/gallery/hero-${id}.webp`, url: d?.thumbnail_url };
   },
+  // `curated: false` is a brand-new baker: no settings rows, so EVERY global flavour is offered by
+  // default (spattoo-api lib/flavourList.js). It is the state that makes the publish confirm's
+  // "you are offering all N flavours" notice render, and the one nobody would think to set up by
+  // hand — which is exactly why the harness seeds it.
+  fetchBakerFlavours: async () => ({
+    curated: false,
+    flavours: Array.from({ length: 18 }, (_, i) => ({ id: `f${i}`, name: `Flavour ${i + 1}`, excluded: false })),
+  }),
+  fetchEntitlements: async () => ({ ent: { premium_themes: false } }),
 };
 
 function Harness() {
