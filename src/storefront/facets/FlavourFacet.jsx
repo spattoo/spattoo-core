@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
+import FlavourWheel from './FlavourWheel.jsx';
 import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS } from './suggestFlavour.js';
 import { OCCASIONS, everyTier } from './cakeDraft.js';
 
@@ -125,7 +126,7 @@ function FlavourGrid({ flavours, chosenId = null, onPick }) {
 // One named set rather than the same comparison written at three call sites, which is how `hint`
 // came within a keystroke of being written into `details` — a stray key on the draft, persisted to
 // localStorage, belonging to no field anybody had declared.
-const LOCAL_ONLY = new Set(['mood', 'hint']);
+const LOCAL_ONLY = new Set(['mood', 'hint', 'wheel']);
 
 const QUESTIONS = [
   { key: 'recipient', title: "Who's it for?", options: [
@@ -170,6 +171,15 @@ const QUESTIONS = [
   // mean try another.
   { key: 'mood',     title: 'How should we choose?', options: [
       ['safe', 'Safe bet'], ['different', 'Something different'],
+      // ── The two ways to be helped ─────────────────────────────────────────────────────────────
+      // Everything behind this door is the answer to "I can't decide". The rules engine argues from
+      // the occasion and the audience; the wheel does not argue at all — and somebody the reasoning
+      // did not convince is not going to be convinced by more reasoning. So the fourth option is
+      // not a lesser suggestion, it is the other kind of help.
+      //
+      // "Spin the wheel" and not "Let luck decide": both are plain, but only one tells you what
+      // happens next, and the fun is the part worth advertising on the button.
+      ['wheel', 'Spin the wheel'],
       // The third door. "Safe" and "different" are both us asking the customer to characterise a
       // cake they have not tasted; this asks about something they already know, which is easier to
       // answer and much better evidence. See HINTS in suggestFlavour.js.
@@ -183,6 +193,16 @@ const QUESTIONS = [
     title: 'What do they already like?',
     when: a => a.mood === 'hint',
     options: HINTS.map(h => [h.key, `${h.emoji}  ${h.label}`]),
+  },
+  // Rendered by FlavourWheel rather than as option buttons — `custom` is the only thing that marks
+  // it apart. Everything else about being a QUESTION still applies: `pending` sequences it, the
+  // answer chips let it be changed, and the Back arrow walks it, none of which a bespoke screen
+  // would have inherited.
+  {
+    key: 'wheel',
+    title: 'Give it a spin',
+    when: a => a.mood === 'wheel',
+    custom: true,
   },
 ];
 
@@ -236,9 +256,19 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
   }, { dietaryKeys: draft.details.dietaryKeys }) : [];
 
   const ranked = scored.filter(r => !rejected.includes(r.flavour.id));
-  const pick = answered
-    ? (ranked[0] ?? (rejected.length ? null : fallback(flavours, draft.details.dietaryKeys)))
+  // ── A spin is not a ranking ───────────────────────────────────────────────────────────────────
+  // The wheel's answer bypasses the scorer entirely, and the sentence says exactly what happened.
+  // Running it through `suggestFlavours` would attach a rule's reasoning to a result no rule
+  // produced — "children almost always go for chocolate" under a flavour that came up because a
+  // wheel stopped there is the one dishonest thing this screen could do.
+  const spun = answers.wheel
+    ? flavours.find(f => f.id === answers.wheel) ?? null
     : null;
+  const pick = spun
+    ? { flavour: spun, score: 0, signature: !!spun.isSignature, because: 'You spun for this one.' }
+    : answered
+      ? (ranked[0] ?? (rejected.length ? null : fallback(flavours, draft.details.dietaryKeys)))
+      : null;
   // The runners-up. Three total is the most a customer will actually weigh; beyond that a
   // recommendation becomes a list, which is the thing they opened this door to avoid.
   const alsoGood = ranked.slice(1, 3);
@@ -308,6 +338,13 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
   const answerChips = QUESTIONS
     .filter(q => answers[q.key] && (!q.when || q.when(answers)))
     .map(q => {
+      // The wheel has no option list — its answer is a flavour id, so the chip shows the flavour.
+      // Without this `opts.find` runs on undefined and the whole result screen throws, which is a
+      // white screen at the exact moment the customer has been told what they are getting.
+      if (q.custom) {
+        const f = flavours.find(x => x.id === answers[q.key]);
+        return { key: q.key, label: f ? `🎡  ${f.name}` : 'Spun' };
+      }
       const opts = typeof q.options === 'function' ? q.options(answers) : q.options;
       return { key: q.key, label: opts.find(([v]) => v === answers[q.key])?.[1] ?? answers[q.key] };
     });
@@ -321,6 +358,24 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
 
   if (pending.length) {
     const q = pending[0];
+
+    // The wheel answers its own question, so it renders instead of the option grid. Confirming
+    // stores the flavour ID as this question's answer, which is what every other question does —
+    // that is why the chips and the Back arrow need no special case for it.
+    if (q.custom && q.key === 'wheel') {
+      return (
+        <FlavourWheel
+          flavours={eligibleFlavours(flavours, draft.details.dietaryKeys)}
+          bakerName={bakerName}
+          onConfirm={(f) => setAnswers(a => ({ ...a, wheel: f.id }))}
+          // A way out for somebody who spun for fun and now wants the reasoned answer. It clears
+          // `mood` rather than setting a different one, so the customer is asked how to choose
+          // again rather than being pushed down a path they did not pick.
+          onSkip={() => setAnswers(a => ({ ...a, mood: undefined, wheel: undefined }))}
+        />
+      );
+    }
+
     return (
       <div style={s.qWrap}>
         <div style={s.qTitle}>{q.title}</div>
@@ -429,7 +484,10 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
       {/* Named, so the recommendation announces itself as one. Without it the screen opened on a
           slice and a name with no more standing than the cards below it — which is how a customer's
           eye reached the runners-up first and read THEM as the answer. */}
-      <div style={s.pickTag}>Our pick for you</div>
+      {/* "Our pick for you" over a flavour a wheel stopped on would be taking credit for chance —
+          and the sentence directly below it already says otherwise, so the screen would contradict
+          itself in two lines. */}
+      <div style={s.pickTag}>{spun ? 'The wheel says' : 'Our pick for you'}</div>
       <div style={s.resultName}>{f.name}</div>
       {/* The sentence from the rule that actually argued for it — not a plausible one chosen
           afterwards. That is the whole reason this is rules and not a model. */}
