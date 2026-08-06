@@ -1327,6 +1327,9 @@ function RailMenu({ style, children }) {
 // differ ONLY in where the dropdown is anchored (sideways vs upward), so the markup
 // lives here once instead of being pasted into both rails.
 function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onSelect, escapeClip = false,
+                      // The wrapper is a flex child of whatever rail draws it. The mobile bar needs
+                      // it to shrink with its siblings; the desktop rail leaves this alone.
+                      style = null,
                       onHoverOpen, onHoverClose, children }) {
   const hostRef = useRef(null);
   const [fixedAt, setFixedAt] = useState(null);
@@ -1381,7 +1384,7 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
   const anchor = fixedAt ? { position: 'fixed', top: fixedAt.top, left: fixedAt.left } : anchorStyle;
 
   return (
-    <div style={{ position: 'relative' }} ref={setRefs} {...hoverProps}>
+    <div style={{ position: 'relative', ...style }} ref={setRefs} {...hoverProps}>
       {children}
       {open && (
         <RailMenu style={anchor}>
@@ -1837,6 +1840,75 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // invite binds the customer to it and the link routes them into the live room. Null = a
   // normal (non-live) invite.
   const [inviteLiveSessionId, setInviteLiveSessionId] = useState(null);
+
+  // ── The rail, declared ONCE ─────────────────────────────────────────────────────────────────────
+  // Every destination in the spatula rail, in order. Both surfaces read this array: the desktop rail
+  // draws it with labels, the mobile bottom bar draws the same items as icons.
+  //
+  // ── WHY ONE LIST ────────────────────────────────────────────────────────────────────────────────
+  // It was two, plus two copies of the click handler and two copies of the "is it active" ternary —
+  // four places that had to agree about one menu, kept in step by a comment asking the next person
+  // to remember. They stopped agreeing: Uploads was added to the rail as its own destination and
+  // never reached the phone, so a baker holding a phone had NO route to their own images. The
+  // desktop `active` ternary knew about uploadsOpen and the mobile one did not, which is the same
+  // divergence a second time in the same feature.
+  //
+  // A missing nav item is invisible to every gate we have. It is not a crash, not a duplicate block
+  // (the lists were formatted differently), and no test renders this rail. The only defence is that
+  // there is nothing to keep in step.
+  //
+  // 'new' is in the list so the desktop rail can draw it first; the mobile bar filters it out and
+  // draws its own circled +, which is a different SHAPE, not a different item.
+  const railItems = useMemo(() => [
+    { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create' },
+    { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
+    { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create' },
+    { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create' },
+    // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own images —
+    // photos, decorations), not a kind of decoration. It is also where uploading now happens, so
+    // burying it three taps deep inside another panel made no sense.
+    { id: 'uploads',    label: 'Uploads',     icon: <UploadsIcon size={20} />,   requires: 'element:manage' },
+    // Orders carries a submenu: the calendar is a VIEW of the same orders, so it belongs under
+    // Orders rather than as its own rail destination. Declared as `menu` config — any nav item gets
+    // a submenu the same way.
+    { id: 'orders',     label: 'Orders',      icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
+    { id: 'customers',  label: 'Customers',   icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
+    ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
+    { id: 'share',      label: 'Share',       icon: <ShareIcon size={20} />,     requires: 'design:create' },
+    ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
+      ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
+  ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities]);
+
+  // What tapping one DOES. One function, both surfaces — the phone's copy of this had also lost
+  // 'uploads', so even re-adding the item to the mobile array would have drawn a dead button.
+  const openRailItem = (id, menu) => {
+    if (menu) {
+      setNavMenuId(o => (o === id ? null : id));
+      setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false);
+      return;
+    }
+    if (id === 'new')       handleNewCake();
+    if (id === 'elements')  openElements();
+    if (id === 'uploads')   setUploadsOpen(true);
+    if (id === 'tools')     openTools();
+    if (id === 'templates') openTemplates();
+    if (id === 'dashboard') setDashboardOpen(true);
+    if (id === 'customers') setCustomersPanelOpen(true);
+    if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
+    if (id === 'share')     onShareStore?.();
+    if (id === 'codesign')  setCodesignPanelOpen(true);
+  };
+
+  // Whether it reads as the current destination. Also shared: the two copies of this had drifted
+  // too, and a lit-up item is a smaller bug than a missing one only because it is visible.
+  const railItemActive = (id, menu) => (menu ? navMenuId === id
+    : id === 'elements'  ? elementsOpen
+    : id === 'uploads'   ? uploadsOpen
+    : id === 'templates' ? templatesOpen
+    : id === 'tools'     ? toolsOpen
+    : id === 'codesign'  ? codesignPanelOpen
+    : false);
+
 
   useEffect(() => {
     if (apiClient?.fetchBakerSettings) {
@@ -5474,43 +5546,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <SpatulaFrame />
           <div style={s.sidebarInner}>
           <nav className="spattoo-rail-nav" style={s.sidebarNav}>
-            {[
-              { id: 'new',        label: 'New Cake',  icon: null,                         requires: 'design:create' },
-              { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} />,  requires: 'order:view' },
-              { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} />,  requires: 'design:create' },
-              { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />, requires: 'design:create' },
-              // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own
-              // images — photos, decorations), not a kind of decoration. It is also where uploading now
-              // happens, so burying it three taps deep inside another panel made no sense.
-              { id: 'uploads',    label: 'Uploads',   icon: <UploadsIcon size={20} />,  requires: 'element:manage' },
-              // Orders carries a submenu: the calendar is a VIEW of the same orders, so
-              // it belongs under Orders rather than as its own rail destination. Declared
-              // as `menu` config — any nav item gets a submenu the same way.
-              { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view',
-                menu: ordersMenu },
-              { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
-              ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
-              { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
-              ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
-            ].filter(item => hasCap(item.requires)).map(({ id, label, icon, menu }) => {
-              const active = menu ? navMenuId === id
-                : id === 'elements' ? elementsOpen : id === 'uploads' ? uploadsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+            {railItems.map(({ id, label, icon, menu }) => {
+              const active = railItemActive(id, menu);
               const isNew  = id === 'new';
               const button = (
                 <button key={id} style={s.navItem}
-                  onClick={() => {
-                    if (menu) { setNavMenuId(o => (o === id ? null : id)); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); return; }
-                    if (id === 'new')       handleNewCake();
-                    if (id === 'elements')  openElements();
-                    if (id === 'uploads')   setUploadsOpen(true);
-                    if (id === 'tools')     openTools();
-                    if (id === 'templates') openTemplates();
-                    if (id === 'dashboard') setDashboardOpen(true);
-                    if (id === 'customers') setCustomersPanelOpen(true);
-                    if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
-                    if (id === 'share')     onShareStore?.();
-                    if (id === 'codesign')  setCodesignPanelOpen(true);
-                  }}>
+                  onClick={() => openRailItem(id, menu)}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
                       ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -6811,25 +6852,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <MobileSpatulaBar />
           <div style={s.mobileNavRow}>
           {/* New cake — circle + as first nav item */}
-          <button style={{ ...s.sidebarBtn, borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' }} onClick={handleNewCake}>
+          <button style={{ ...s.sidebarBtn, ...s.mobileNavBtn, borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' }} onClick={handleNewCake}>
             <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           </button>
 
-          {[
-            { id: 'dashboard',  icon: <DashboardIcon size={20} />, requires: 'order:view' },
-            { id: 'templates',  icon: <TemplatesIcon size={20} />, requires: 'design:create' },
-            { id: 'elements',   icon: <ElementsIcon size={20} />,  requires: 'design:create' },
-            { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
-            { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
-            ...(INVITE_UI_ENABLED ? [{ id: 'invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
-            { id: 'share',      icon: <ShareIcon size={20} />,     requires: 'design:create' },
-            ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer' ? [{ id: 'codesign', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
-          ].filter(item => hasCap(item.requires)).map(({ id, icon, menu }) => {
-            const active = menu ? navMenuId === id
-              : id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : id === 'tools' ? toolsOpen : id === 'codesign' ? codesignPanelOpen : false;
+          {/* The SAME railItems the desktop rail draws, minus 'new' — the + is drawn above, as a
+              circle, which is a different shape rather than a different list. This bar used to
+              carry its own copy of the array and its own copy of the click handler, and the copies
+              had already drifted: Uploads was added to the rail and never reached the phone, so a
+              baker on a phone had no way into their own images at all. */}
+          {railItems.filter(item => item.id !== 'new').map(({ id, icon, menu }) => {
+            const active = railItemActive(id, menu);
             if (menu) {
               return (
                 // Same RailSubmenu as the desktop rail, anchored UPWARD — this rail is
@@ -6838,11 +6874,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <RailSubmenu key={id} label="Orders" items={menu}
                   open={navMenuId === id}
                   containerRef={navMenuId === id ? navMenuRef : null}
+                  style={s.mobileNavBtn}
                   anchorStyle={{ top: 'auto', bottom: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)' }}
                   onSelect={selectOrdersMenuItem}>
                   <button
-                    style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
-                    onClick={() => { setNavMenuId(o => (o === id ? null : id)); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}>
+                    style={{ ...s.sidebarBtn, width: '100%', ...(active ? s.sidebarBtnActive : {}) }}
+                    onClick={() => openRailItem(id, menu)}>
                     {icon}
                   </button>
                 </RailSubmenu>
@@ -6850,17 +6887,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             }
             return (
               <button key={id}
-                style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
-                onClick={() => {
-                  if (id === 'elements')  openElements();
-                  if (id === 'tools')     openTools();
-                  if (id === 'templates') openTemplates();
-                  if (id === 'dashboard') setDashboardOpen(true);
-                  if (id === 'customers') setCustomersPanelOpen(true);
-                  if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
-                  if (id === 'share')     onShareStore?.();
-                  if (id === 'codesign')  setCodesignPanelOpen(true);
-                }}>
+                style={{ ...s.sidebarBtn, ...s.mobileNavBtn, ...(active ? s.sidebarBtnActive : {}) }}
+                onClick={() => openRailItem(id, menu)}>
                 {icon}
               </button>
             );
@@ -7852,6 +7880,20 @@ const s = {
     left: 48, right: 12, height: 40,
     display: 'flex', alignItems: 'center', justifyContent: 'space-around',
   },
+  // ── Why the bar's buttons are not 40px ────────────────────────────────────────────────────────
+  // Unlike the desktop rail, this row cannot grow: `left: 48` clears the spatula's cap and hang-hole
+  // and `right: 12` stops at the tip of the blade, so its width is the SCREEN's, minus 60. sidebarBtn
+  // is a fixed 40 wide with flexShrink: 0 — eight of those need 320px, and an iPhone SE gives the row
+  // 267. justify-content cannot compress children that refuse to shrink, so they simply ran past the
+  // end of the bar and the last item (Share) sat off the edge, invisible.
+  //
+  // Found by counting getBoundingClientRect on the real bar, not by looking: an item overflowing a
+  // row that has no visible boundary looks exactly like an item that was never added — the same way
+  // Uploads' absence looked, which is what was being fixed when this appeared.
+  //
+  // flex-basis 0 with a 40 cap: full size when there is room, evenly compressed when there is not,
+  // and never wider than the desktop rail's. The icons stay 20px, so the squeeze is padding.
+  mobileNavBtn: { flex: '1 1 0', minWidth: 0, maxWidth: 40 },
   flyoutMobile: {
     position: 'relative',
     left: 'auto', top: 'auto', bottom: 'auto',
