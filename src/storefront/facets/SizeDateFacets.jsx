@@ -91,7 +91,7 @@ function TierGlyph({ tiers, on }) {
  * at 1.5kg gets 1.5. With no templates to learn from we show no floor at all rather than invent one
  * — the same rule the suggester follows.
  */
-export function SizeFacet({ draft, patch, close, api }) {
+export function SizeFacet({ draft, patch, close, api, facetBack }) {
   // A template already answered both questions, so this facet only has to respect them.
   const fromDesign = draft.design.minWeightKg ?? 0;
   const [templates, setTemplates] = useState(null);
@@ -145,6 +145,14 @@ export function SizeFacet({ draft, patch, close, api }) {
   const floor = Math.max(fromDesign, chosenTiers ? floorFor(chosenTiers) : 0);
   const offered = WEIGHTS.filter(w => w >= floor);
 
+  // Registered during render so the shell's one Back arrow walks these three steps before closing
+  // the facet. Returning false on the first step is what hands the arrow back to the shell.
+  if (facetBack) facetBack.current = () => {
+    if (step === 'result') { setStep(tierOptions.length > 1 && !fromDesign ? 'shape' : 'people'); return true; }
+    if (step === 'shape')  { setStep('people'); return true; }
+    return false;
+  };
+
   // ── Step 3: the weight, once nothing is left that could move it ─────────────────────────────────
   // The whole reason this step exists. Weight is a CONCLUSION drawn from two answers — how many
   // people, and what shape — and showing it beside the first one presented it as a fact about guest
@@ -188,10 +196,6 @@ export function SizeFacet({ draft, patch, close, api }) {
         )}
 
         <button type="button" style={s.done} onClick={close}>That&rsquo;s right</button>
-        <button type="button" style={s.back}
-                onClick={() => setStep(tierOptions.length > 1 && !fromDesign ? 'shape' : 'people')}>
-          ← Change {tierOptions.length > 1 && !fromDesign ? 'the shape' : 'the number of people'}
-        </button>
       </>
     );
   }
@@ -229,7 +233,7 @@ export function SizeFacet({ draft, patch, close, api }) {
             );
           })}
         </div>
-        <button type="button" style={s.back} onClick={() => setStep('people')}>← How many people</button>
+
       </>
     );
   }

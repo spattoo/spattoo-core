@@ -17,7 +17,7 @@ import { OCCASIONS } from './cakeDraft.js';
 // — a template knows how many tiers it has — so this rarely has to ask, and when there is only one
 // tier the whole idea stays invisible.
 
-export default function FlavourFacet({ draft, patch, close, api, bakerName, setPreview }) {
+export default function FlavourFacet({ draft, patch, close, api, bakerName, setPreview, facetBack }) {
   const [door, setDoor] = useState(null);
   const [state, setState] = useState({ loading: true, flavours: [], error: null });
   // Which layer is being chosen. Only ever seen on a tiered cake.
@@ -31,10 +31,18 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName, setP
     return () => { alive = false; };
   }, [api]);
 
+  // Registered during render, so the shell's one Back arrow steps through THIS facet's screens
+  // before closing it. Returning false at the door chooser is what lets the arrow close the facet
+  // — the shell does not have to know a "door" exists.
+  //
+  // The Suggester registers over this while it is mounted, because it renders after us and has its
+  // own stack of questions to walk first. When it unmounts we re-register on the next render.
+  if (facetBack) facetBack.current = () => { if (door) { setDoor(null); return true; } return false; };
+
   if (door === 'suggest') {
     return <Suggester draft={draft} patch={patch} close={close} bakerName={bakerName}
                       flavours={state.flavours} loading={state.loading}
-                      setPreview={setPreview}
+                      setPreview={setPreview} facetBack={facetBack}
                       onBack={() => setDoor(null)} />;
   }
 
@@ -58,7 +66,6 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName, setP
     return (
       <div style={s.note}>
         <div>{state.error ? 'Could not load these just now.' : `${bakerName} hasn't listed any flavours yet.`}</div>
-        <button type="button" style={s.back} onClick={() => setDoor(null)}>← Back</button>
       </div>
     );
   }
@@ -85,10 +92,7 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName, setP
 
   return (
     <>
-      <div style={s.head}>
-        <button type="button" style={s.back} onClick={() => setDoor(null)}>← Back</button>
-        {multi && <span style={s.hint}>A flavour for each layer</span>}
-      </div>
+      {multi && <div style={s.head}><span style={s.hint}>A flavour for each layer</span></div>}
 
       {/* Only on a tiered cake. Bottom first, because that is how a cake is built and how the
           person eating it will describe it. */}
@@ -176,7 +180,7 @@ const QUESTIONS = [
       ['safe', 'Safe bet'], ['different', 'Something different']] },
 ];
 
-function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, setPreview }) {
+function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, setPreview, facetBack }) {
   // `mood` is the suggester's own question and belongs to nobody else, so it stays local. The other
   // two are facts about the CAKE and are seeded from the draft — see `never ask twice`.
   const [answers, setAnswers] = useState({
@@ -302,13 +306,17 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
       return { key: q.key, label: opts.find(([v]) => v === answers[q.key])?.[1] ?? answers[q.key] };
     });
 
+  // Overwrites FlavourFacet's registration (we render after it). One arrow now walks:
+  //   result → the last question asked → … → the two doors → the entry screen → closed
+  // and each press moves exactly one step, which is what "remembers the previous step" means.
+  if (facetBack) facetBack.current = () => { goBack(); return true; };
+
   if (loading) return <div style={s.note}>Thinking…</div>;
 
   if (pending.length) {
     const q = pending[0];
     return (
       <div style={s.qWrap}>
-        <button type="button" style={s.back} onClick={goBack}>← Back</button>
         <div style={s.qTitle}>{q.title}</div>
         <div style={s.qOpts}>
           {(typeof q.options === 'function' ? q.options(answers) : q.options).map(([value, label]) => (
@@ -357,7 +365,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
           ))}
         </div>
       )}
-        <button type="button" style={s.back} onClick={onBack}>← Back to the flavours</button>
+
       </div>
     );
   }
@@ -396,7 +404,6 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
 
   return (
     <div style={s.result}>
-      <button type="button" style={s.back} onClick={onBack}>← Back</button>
       {/* ── What this is standing on ─────────────────────────────────────────────────────────────
           Tapping one reopens that question and only that question — the other answers stay. This
           is what "change my answer" has to mean: the customer wants ONE of them different, not to

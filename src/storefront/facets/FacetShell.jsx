@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import CakeVisual from './CakeVisual.jsx';
 import DesignFacet from './DesignFacet.jsx';
 import FlavourFacet from './FlavourFacet.jsx';
@@ -134,9 +134,25 @@ export default function FacetShell({
   const [preview, setPreview] = useState(null);
   const shownFlavour = preview ?? draft.flavours.find(f => f.flavourId) ?? null;
 
+  // ── ONE back button, and it remembers where you were ──────────────────────────────────────────
+  // There were two — this header arrow and an inline "← Back" inside the facet — with five
+  // different destinations between them across the facets. Which screen you landed on depended on
+  // which button you happened to hit, so the same arrow could take you two steps or none.
+  // Reported as "two back buttons, both land on the same screen… it behaves so random".
+  //
+  // The open facet REGISTERS a handler here and returns true if it consumed the Back — the
+  // suggester popping a question, the size facet stepping back to the guest count. Only when a
+  // facet is at its own first screen (returns false, or never registered) does Back close the
+  // facet. So one arrow walks the whole stack, one step at a time, and the facets keep owning
+  // their own steps rather than the shell having to know what a "shape step" is.
+  //
+  // A ref, not state: it is written during a facet's render and only ever read inside an event
+  // handler, so it must not trigger one.
+  const facetBack = useRef(null);
+
   // A preview belongs to the facet that set it. Closing or switching facets must drop it, or the
   // stage keeps showing a recommendation from a screen the customer has left.
-  useEffect(() => { setPreview(null); }, [open]);
+  useEffect(() => { setPreview(null); facetBack.current = null; }, [open]);
 
   const primary = palette?.primary ?? baker?.primary_color ?? '#2C4433';
   const accent  = palette?.accent  ?? baker?.accent_color  ?? '#6B8C74';
@@ -179,7 +195,9 @@ export default function FacetShell({
             </h2>
           </div>
           <button type="button"
-                  onClick={open ? () => setOpen(null) : verifying ? () => setVerifying(false) : onClose}
+                  onClick={open
+                    ? () => { if (!facetBack.current?.()) setOpen(null); }
+                    : verifying ? () => setVerifying(false) : onClose}
                   aria-label={open || verifying ? 'Back' : 'Close'} style={s.close}>
             {open || verifying ? '←' : '✕'}
           </button>
@@ -205,7 +223,7 @@ export default function FacetShell({
                            bakerName={baker?.name} slug={slug} close={() => setOpen(null)}
                            setTierCount={(n) => patch({ __tierCount: n })}
                            onStartDesign={onStartDesign}
-                           accent={accent} setPreview={setPreview}
+                           accent={accent} setPreview={setPreview} facetBack={facetBack}
                            leadTimeDays={leadTimeDays} />)
               : verifying ? (
                 <VerifyStep
