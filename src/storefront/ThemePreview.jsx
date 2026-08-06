@@ -46,6 +46,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [portraitUrl, setPortraitUrl] = useState(value?.portrait_url || null);
   const [portraitKey, setPortraitKey] = useState(undefined);
   const [uploadingPortrait, setUploadingPortrait] = useState(false);
+  // ── Whether this baker may choose a PREMIUM theme (Blaze+) ────────────────────────────────────
+  // The gate itself is on the write — PATCH /baker/profile refuses a premium theme without the
+  // entitlement, and that is what actually protects it. This only decides whether the card is
+  // tappable, so a Flame baker meets a lock instead of a 403 after choosing.
+  //
+  // Fails CLOSED: a lookup that errors leaves this false, so a premium theme stays locked rather
+  // than offering something the save would then reject.
+  const [canPremium, setCanPremium] = useState(false);
   // Gallery: [{ id, key, url, caption }] — key is the R2 key to persist (null while uploading).
   const [gallery, setGallery] = useState([]);
   const [galleryDirty, setGalleryDirty] = useState(false);
@@ -75,6 +83,17 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // fit whatever room the stage has. transform:scale is visual only — it doesn't change clientWidth —
   // so the storefront's ResizeObserver still measures 1280 and picks its real `desktop` layout.
   const [frameAreaRef, stageSize] = useMeasure();
+
+  // Up here with the other hooks, not beside the picker: `if (!open) return null` sits below, and a
+  // hook under an early return is the React #310 that check:hooks now blocks.
+  useEffect(() => {
+    if (!open || !apiClient?.fetchEntitlements) return;
+    let alive = true;
+    apiClient.fetchEntitlements()
+      .then(r => { if (alive) setCanPremium(r?.ent?.premium_themes === true); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [open, apiClient]);
 
   useEffect(() => {
     if (!open) { setReady(false); return; }   // reset so each open shows the loader until synced
@@ -530,7 +549,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       {!isWide && mobileTab === 'preview' && (
         <div style={s.themeTopWrap}>
           <span style={s.themeTopLabel}>Theme</span>
-          <ThemePicker layout="row" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} />
+          <ThemePicker layout="row" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} canPremium={canPremium} />
         </div>
       )}
 
@@ -543,7 +562,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               bottom bar (see below), so the Edit screen is pure per-theme config — no dead theme list. */}
           {isWide && (<>
             <div style={s.ctrlLabel}>Theme</div>
-            <ThemePicker layout="column" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} />
+            <ThemePicker layout="column" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} canPremium={canPremium} />
           </>)}
 
           {/* Phase 3 — the panel is rendered from the template's control list (order matters). */}
@@ -752,18 +771,29 @@ function DeviceToggle({ device, onChange }) {
 // Theme selector — ONE component for both placements: a vertical card list in the desktop sidebar
 // (layout='column') and a horizontal scrolling chip bar on the mobile preview (layout='row'). Same
 // data + selection; only the arrangement differs, so there's no duplicate theme-list logic.
-function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column' }) {
+function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column', canPremium = false }) {
   const row = layout === 'row';
   return (
     <div style={row ? s.themeBar : s.themeList}>
       {themes.map(t => {
         const sel = t.id === themeId, off = !t.is_active;
+        // Shown to every plan rather than filtered out. A premium theme a Flame baker can see and
+        // not choose is an upgrade prompt; one they never knew existed is not — and a list quietly
+        // shorter than the pricing page implies is its own confusion.
+        const locked = t.is_premium && !canPremium;
+        const dim = off || locked;
         return (
-          <button key={t.id} type="button" disabled={off} onClick={() => onSelect(t.id)}
+          <button key={t.id} type="button" disabled={dim} onClick={() => onSelect(t.id)}
+            title={locked ? 'Available on Blaze and above' : undefined}
             style={{ ...(row ? s.themeChip : s.themeBtn), borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1,
-              ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
+              ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: dim ? 0.5 : 1, cursor: dim ? 'default' : 'pointer' }}>
             <span style={{ fontWeight: 800, color: '#2C4433', fontSize: row ? 13 : 13.5 }}>{t.name}</span>
-            {off ? <span style={s.soon}>Soon</span> : sel && !row ? <span style={{ color: primary, fontWeight: 800, fontSize: 12 }}>✓</span> : null}
+            {/* "Soon" wins when a theme is both: an inactive theme cannot be chosen on ANY plan, so
+                telling a Flame baker to upgrade for it would sell them something that does not
+                work yet. */}
+            {off ? <span style={s.soon}>Soon</span>
+                 : locked ? <span style={s.locked}>Blaze</span>
+                 : sel && !row ? <span style={{ color: primary, fontWeight: 800, fontSize: 12 }}>✓</span> : null}
           </button>
         );
       })}
@@ -800,6 +830,9 @@ const s = {
   // Mobile: persistent bottom bar — device toggle (left) + Edit (right).
   bottomBar:{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: '#fff', borderTop: '1px solid #E3E8E4' },
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
+  // Warm rather than grey: this is an invitation to upgrade, not a disabled control. Reads as a
+  // plan badge next to "Soon", which is a statement about us and stays neutral.
+  locked:   { fontSize: 9.5, fontWeight: 800, color: '#9A6B16', background: '#FBF0DA', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   portraitRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #D9DED9', background: '#fff', cursor: 'pointer' },
   portraitThumb: { width: 46, height: 46, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   fontList: { display: 'flex', flexDirection: 'column', gap: 8 },
