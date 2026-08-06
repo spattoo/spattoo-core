@@ -302,16 +302,45 @@ export const AGE_BAND_LABEL = {
  * and made three suggester rules unreachable from the storefront, since nothing a customer could do
  * would ever set `festival` or `corporate`. Matches migration 043's CHECK constraint exactly.
  */
+// ── The occasions ─────────────────────────────────────────────────────────────────────────────────
+// Not only a form field. This is the clearest place the product tells a customer what a cake is FOR,
+// and a short list quietly answers "birthdays and weddings".
+//
+// A baby shower with a cake was not a thing in India a few years ago and is ordinary now. That did
+// not happen because bakers waited for demand — it happened because the occasion became visible. A
+// list that names an occasion is a list that suggests it, which is why five were added at once
+// rather than waiting for somebody to ask for each.
+//
+// EVENTS FIRST, roughly in the order a life runs, then work, then the two that are REASONS rather
+// than events. "To say I love you" and "Just because" both answer "no event" and belong together at
+// the end; scattered among the weddings they would read as a category error.
+//
+// ⚠️ THIS LIST IS HALF OF A CONTRACT. `orders.occasion` carries a CHECK constraint (spattoo-api
+// migration 059) and a value it does not know surfaces as an unreadable 500 on a customer's
+// enquiry. Add here and there, or not at all. `check:occasions` fails the build if they drift.
 export const OCCASIONS = [
-  ['birthday',    'Birthday'],
-  ['anniversary', 'Anniversary'],
-  ['wedding',     'Wedding'],
-  ['engagement',  'Engagement'],
-  ['baby_shower', 'Baby shower'],
-  ['festival',    'Festival'],
-  ['farewell',    'Farewell'],
-  ['corporate',   'Office do'],
-  ['other',       'Just because'],
+  ['birthday',      'Birthday'],
+  ['anniversary',   'Anniversary'],
+  ['wedding',       'Wedding'],
+  ['engagement',    'Engagement'],
+  ['bridal_shower', 'Bridal shower'],
+  ['baby_shower',   'Baby shower'],
+  // "New home", never "Housewarming". A Griha Pravesh is a long day of ritual and cake is not yet
+  // part of it, so "housewarming" names a party that in many homes is not what happens. The
+  // milestone is true either way — the traditional day, the evening after, or friends coming round
+  // to a new flat.
+  ['new_home',      'New home'],
+  ['graduation',    'Graduation'],
+  // Distinct from "Office do", which is a TEAM event. This is one person being celebrated.
+  ['new_job',       'New job or promotion'],
+  ['festival',      'Festival'],
+  ['farewell',      'Farewell'],
+  ['corporate',     'Office do'],
+  // A MOTIVE, not an event, and it earns the place twice: it covers Valentine's without pinning a
+  // date, and unlike `other` it is a real signal — the suggester can argue "rich and a little
+  // special" from it, where "Just because" tells it nothing.
+  ['love',          'To say I love you'],
+  ['other',         'Just because'],
 ];
 
 export const OCCASION_LABEL = {

@@ -111,6 +111,26 @@ export const RULES = [
     prefer: ['indian', 'nut'], weight: 2,
     because: 'A festival cake should taste like the festival.',
   },
+  // ── The two occasions added with 059 that have honest reasoning ─────────────────────────────────
+  // `graduation`, `new_job` and `bridal_shower` are deliberately UNRULED. There is no flavour case
+  // for them I can make and defend, and an invented rule is worse than silence: it would put a
+  // confident sentence under a recommendation that was really driven by the recipient. Unruled
+  // simply means the suggester leans on the answers it does understand.
+  {
+    id: 'new-home-crowd',
+    when: { occasion: 'new_home' },
+    prefer: ['classic', 'chocolate', 'caramel'], weight: 2,
+    because: 'A new home usually means a full house to feed.',
+  },
+  {
+    // Its own sentence, not `couple-indulgent`'s. That one argues from WHO is eating it and says
+    // "the point of an anniversary"; this argues from WHY the cake exists, and the two would read
+    // as a copy-paste sitting next to each other.
+    id: 'love-rich',
+    when: { occasion: 'love' },
+    prefer: ['chocolate', 'nut', 'caramel'], weight: 2,
+    because: 'Something rich — here the cake is the message.',
+  },
   // ── Mood, last of the real rules ──────────────────────────────────────────────────────────────
   // Deliberately BELOW everything specific. Ties in `reasonFor` go to whichever rule is defined
   // first, and these two are the most generic things the table can say — "hard to go wrong with,
