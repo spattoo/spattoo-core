@@ -75,6 +75,19 @@ import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 // If seats are dropped for good, this and everything it guards can go together.
 const STAFF_UI_ENABLED = false;
 
+// ── The Invite rail item ────────────────────────────────────────────────────────────────────────
+// Hidden, not removed. Inviting a customer by email predates the storefront: it was how a baker got
+// somebody into a design at all. The storefront is now the single front door for customers — they
+// arrive at a published shop, pick, and send an enquiry — so a second, parallel way in mostly
+// invites the question of which one is the real one.
+//
+// A flag rather than a deletion, because the invite machinery is not broken and it is not
+// unreachable: "Share the draft" and the live co-design session BOTH open the same InvitePanel, and
+// both still make sense — they invite a customer to a SPECIFIC design that already exists, which is
+// a different act from "come and start something". Only the standalone rail entry, the one that
+// starts from nothing and duplicates the storefront, goes quiet. One line brings it back.
+const INVITE_UI_ENABLED = false;
+
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, gradient: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
 
@@ -5445,7 +5458,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} />,     requires: 'order:view',
                 menu: ordersMenu },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} />,  requires: 'customer:manage' },
-              { id: 'invite',     label: 'Invite',    icon: <InviteIcon size={20} />,     requires: 'customer:manage' },
+              ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
               { id: 'share',      label: 'Share',     icon: <ShareIcon size={20} />,      requires: 'design:create' },
               ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
             ].filter(item => hasCap(item.requires)).map(({ id, label, icon, menu }) => {
@@ -6769,7 +6782,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'elements',   icon: <ElementsIcon size={20} />,  requires: 'design:create' },
             { id: 'orders',     icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
             { id: 'customers',  icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
-            { id: 'invite',     icon: <InviteIcon size={20} />,    requires: 'customer:manage' },
+            ...(INVITE_UI_ENABLED ? [{ id: 'invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
             { id: 'share',      icon: <ShareIcon size={20} />,     requires: 'design:create' },
             ...(codesign.live && role !== 'customer' ? [{ id: 'codesign', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
           ].filter(item => hasCap(item.requires)).map(({ id, icon, menu }) => {
