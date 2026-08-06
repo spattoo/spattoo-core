@@ -5521,41 +5521,52 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               );
             })}
 
-            {/* Chef's Desk — baker fulfilment tools (Color Guide, …). A menu, extensible as more
-                chef tools land; opens a dropdown anchored to the nav item. */}
-            {canManageStore && (
-              <div style={{ position: 'relative' }} ref={chefsDeskRef}>
-                <button style={s.navItem}
-                  onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
-                  <span style={{ ...s.sidebarBtn, ...(chefsDeskOpen ? s.sidebarBtnActive : {}) }}>
-                    <ToolsIcon size={20} />
-                  </span>
-                  <span style={{ ...s.navLabel, ...(chefsDeskOpen ? { color: '#fff' } : {}) }}>Chef's Desk</span>
-                </button>
-                {chefsDeskOpen && (
-                  <div style={s.dropdown}>
-                    <div style={s.dropdownSection}>Chef's Desk</div>
-                    <button style={s.dropdownItem}
-                      onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>
-                      Color Guide
-                    </button>
-                    {/* Kept in step with the mobile dropdown above — the menu renders in two places,
-                        and an entry added to only one is invisible on whichever surface was missed. */}
-                    {printStudioEnabled && (
-                      <button style={s.dropdownItem}
-                        onClick={() => { setPrintStudioOpen(true); setChefsDeskOpen(false); }}>
-                        Edible Print Studio
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </nav>
 
           <div style={s.sidebarDivider} />
 
           <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            {/* ── Chef's Desk — baker fulfilment tools (Color Guide, Edible Print Studio, …) ────────
+                BELOW the divider, with Settings and Profile, and deliberately not inside <nav>.
+                The nav scrolls (sidebarNav: overflowY auto) with its scrollbar hidden on purpose — a
+                scrollbar in a 64px rail is worse than none. Chef's Desk was the LAST item in it, so
+                on a viewport too short for the full rail it sat below the fold with no scrollbar, no
+                cut-off item and nothing else to suggest anything was down there. It was not missing;
+                it was unreachable, which looks identical. The same MacBook Air height that clipped
+                the spatula blade (see sidebarNav) is what clipped this.
+
+                Here it is outside the scroller entirely, so it cannot be scrolled away at any height.
+                It also belongs here: this cluster is the persistent TOOLS a baker reaches for
+                regardless of what is on the canvas, while nav is DESTINATIONS. Chef's Desk is the
+                former, and it is now a peer of Settings in look as well as position — SidebarTooltip
+                + RailMenu, the same two shared components, rather than its own dropdown. */}
+            {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
+              <SidebarTooltip label="Chef's Desk">
+                <button
+                  style={{ ...s.sidebarBtn, ...(chefsDeskOpen ? s.sidebarBtnActive : {}) }}
+                  onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
+                  <ToolsIcon size={20} />
+                </button>
+              </SidebarTooltip>
+              {chefsDeskOpen && (
+                <RailMenu style={{ top: 'auto', bottom: 0 }}>
+                  <div style={s.railDropdownSection}>Chef's Desk</div>
+                  <button style={s.railDropdownItem}
+                    onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>
+                    Color Guide
+                  </button>
+                  {/* Kept in step with the mobile dropdown above — the menu renders in two places,
+                      and an entry added to only one is invisible on whichever surface was missed. */}
+                  {printStudioEnabled && (
+                    <button style={s.railDropdownItem}
+                      onClick={() => { setPrintStudioOpen(true); setChefsDeskOpen(false); }}>
+                      Edible Print Studio
+                    </button>
+                  )}
+                </RailMenu>
+              )}
+            </div>}
+
             {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
               <SidebarTooltip label="Settings">
                 <button
