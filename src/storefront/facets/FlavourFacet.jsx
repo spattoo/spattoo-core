@@ -158,20 +158,18 @@ const QUESTIONS = [
   // The same list the details facet uses — they write the same field, so offering different sets
   // would let the answer depend on which screen happened to ask.
   { key: 'occasion', title: "What's the occasion?", options: OCCASIONS },
-  // ── The wording, and why not "adventurous" ────────────────────────────────────────────────────
-  // "Something different" was flat — it describes a category, not a thing anybody wants. The ask
-  // was for "let me go adventurous" or "I'll introduce a new flavour to the party", and the second
-  // instinct is the right one: name the ACT, not a personality.
+  // ── The title, which the third option made stale ──────────────────────────────────────────────
+  // "Play it safe, or something different?" named TWO things and there are three — quietly wrong
+  // from the moment the hint was added, since a question that lists its own answers has to list all
+  // of them. "How should we choose?" is one every button answers.
   //
-  // Not "adventurous" itself. This file's rule is no vocabulary that needs decoding for somebody
-  // reading their second or third language, and it names exactly that class of word. "Surprise
-  // them" is two plain words and says what actually happens.
-  //
-  // The TITLE had to move with it. "Play it safe, or something different?" offered two things when
-  // there are now three, so it was quietly wrong the moment the hint was added — and with the first
-  // button renamed to "Play it safe" it would have asked the question and answered it in one line.
+  // The BUTTON labels were tried as "Play it safe" / "Surprise them" and put back. "I'll try a
+  // different one" was considered and rejected for a concrete reason worth keeping: at this point
+  // nothing has been shown, so "a different one" has no referent — the same fault as the old "Yes,
+  // that one" — and it collides with "Next closest match" one screen later, which genuinely does
+  // mean try another.
   { key: 'mood',     title: 'How should we choose?', options: [
-      ['safe', 'Play it safe'], ['different', 'Surprise them'],
+      ['safe', 'Safe bet'], ['different', 'Something different'],
       // The third door. "Safe" and "different" are both us asking the customer to characterise a
       // cake they have not tasted; this asks about something they already know, which is easier to
       // answer and much better evidence. See HINTS in suggestFlavour.js.
