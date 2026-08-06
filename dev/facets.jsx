@@ -34,6 +34,10 @@ const FLAVOURS = [
   { flavourId: 'f9', name: 'Pineapple',    spongeColor: '#F6F0D8', fillingColor: '#EBD98A' },
   { flavourId: 'f10', name: 'Rasmalai',    spongeColor: '#F3E7CE', fillingColor: '#E8D9A8',
     tasteFamily: 'indian', crowdPleaser: false, conflicts_with: ['eggless'] },
+  // Named for the HINT path: "they already like Biscoff, and this is it" only fires when the baker
+  // actually makes it, and that is the case worth being able to see.
+  { flavourId: 'f11', name: 'Biscoff Crunch', spongeColor: '#C9A46B', fillingColor: '#B98A4E',
+    tasteFamily: 'caramel', crowdPleaser: true },
 ];
 
 // The templates door is REAL now, so the stub declines to handle `design` and the shell falls

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { suggestFlavours, fallback, seasonFor, eligibleFlavours, RULES } from './suggestFlavour.js';
+import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS, RULES } from './suggestFlavour.js';
 
 // The suggester makes a claim to a customer about to spend money on an occasion that matters. These
 // pin the parts where being wrong is worse than being silent.
@@ -238,5 +238,49 @@ describe('everything else the baker makes', () => {
     const ranked = suggestFlavours(CATALOGUE, { recipient: 'child' }).map(r => r.flavour.id);
     expect(ranked).not.toContain('matcha');
     expect(eligibleFlavours(CATALOGUE).map(x => x.id)).toContain('matcha');
+  });
+});
+
+// ── The hint ──────────────────────────────────────────────────────────────────────────────────────
+// "They already like X" is the strongest claim this thing makes, so these pin the two ways it could
+// lie: saying "this is it" about something that is not it, and letting an inference bury a taste the
+// customer named.
+describe('a hint about what they already like', () => {
+  const withBiscoff = [...CATALOGUE, f('bis', 'Biscoff Crunch', 'caramel', true)];
+
+  it('names the flavour when the baker actually makes it', () => {
+    const [top] = suggestFlavours(withBiscoff, { hint: 'biscoff' });
+    expect(top.flavour.name).toBe('Biscoff Crunch');
+    expect(top.because).toMatch(/already like Biscoff, and this is it/);
+  });
+
+  it('falls back to the family with a WEAKER sentence, never a superlative', () => {
+    // No Biscoff here, so caramel is the nearest thing — and it must not claim to be "the closest",
+    // which is false whenever a name match exists elsewhere on the screen.
+    const [top] = suggestFlavours([...CATALOGUE, f('sc', 'Salted Caramel', 'caramel', true)], { hint: 'biscoff' });
+    expect(top.flavour.name).toBe('Salted Caramel');
+    expect(top.because).toMatch(/Not Biscoff, but along the same lines/);
+    expect(top.because).not.toMatch(/closest/);
+  });
+
+  // ⚠️ Biscoff is speculoos, not burnt sugar; matcha is not masala chai. `match` is about the
+  // TASTE, never the family — two flavours can share a family and taste nothing alike.
+  it('does not claim a same-family flavour IS the hint', () => {
+    const [top] = suggestFlavours(CATALOGUE, { hint: 'masala_chai' });
+    expect(top.flavour.name).toBe('Matcha');                    // tea, so it still wins
+    expect(top.because).not.toMatch(/this is it/);              // but it is not chai
+  });
+
+  it('is not vetoed by a rule that avoids its family', () => {
+    // crowd-safe AVOIDS tea. The customer said they like chai; an inference about feeding a crowd
+    // must not talk them out of it.
+    const ranked = suggestFlavours(CATALOGUE, { recipient: 'family', hint: 'masala_chai' });
+    expect(ranked[0].flavour.name).toBe('Matcha');
+  });
+
+  it('spans every taste family, so no family is unreachable through this door', () => {
+    const families = new Set(HINTS.flatMap(h => h.prefer));
+    for (const fam of ['chocolate', 'fruit', 'classic', 'nut', 'caramel', 'coffee', 'tea', 'indian'])
+      expect(families).toContain(fam);
   });
 });

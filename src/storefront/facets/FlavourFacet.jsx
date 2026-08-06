@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
-import { suggestFlavours, fallback, seasonFor, eligibleFlavours } from './suggestFlavour.js';
+import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS } from './suggestFlavour.js';
 import { OCCASIONS } from './cakeDraft.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
@@ -145,6 +145,17 @@ function FlavourGrid({ flavours, chosenId = null, onPick }) {
 // not asked again — and the answers it does collect are written to the cake, so the details facet
 // will not ask either. The form shrinks as you go, which is the clearest signal a customer gets
 // that the thing is paying attention.
+// ── Which answers belong to the CAKE, and which to this screen ────────────────────────────────────
+// `recipient`, `celebration` and `occasion` are facts about the order and are written to the draft,
+// so no other facet asks for them again. `mood` and `hint` are not: "play it safe" and "they like
+// Biscoff" are how this customer wants THIS recommendation made, not properties of the cake, and
+// there is nowhere on an order for them to go.
+//
+// One named set rather than the same comparison written at three call sites, which is how `hint`
+// came within a keystroke of being written into `details` — a stray key on the draft, persisted to
+// localStorage, belonging to no field anybody had declared.
+const LOCAL_ONLY = new Set(['mood', 'hint']);
+
 const QUESTIONS = [
   { key: 'recipient', title: "Who's it for?", options: [
       ['child', 'A little one'],   ['adult', 'A grown-up'],
@@ -177,7 +188,21 @@ const QUESTIONS = [
   // would let the answer depend on which screen happened to ask.
   { key: 'occasion', title: "What's the occasion?", options: OCCASIONS },
   { key: 'mood',     title: 'Play it safe, or something different?', options: [
-      ['safe', 'Safe bet'], ['different', 'Something different']] },
+      ['safe', 'Safe bet'], ['different', 'Something different'],
+      // The third door. "Safe" and "different" are both us asking the customer to characterise a
+      // cake they have not tasted; this asks about something they already know, which is easier to
+      // answer and much better evidence. See HINTS in suggestFlavour.js.
+      ['hint', 'I’ll give a hint']] },
+  // ── The hint ──────────────────────────────────────────────────────────────────────────────────
+  // A QUESTION rather than a special screen, so it inherits everything the others already have:
+  // `pending` sequences it, the answer chips let it be changed, and the Back arrow walks it. A
+  // bespoke panel would have had to re-earn all three.
+  {
+    key: 'hint',
+    title: 'What do they already like?',
+    when: a => a.mood === 'hint',
+    options: HINTS.map(h => [h.key, `${h.emoji}  ${h.label}`]),
+  },
 ];
 
 function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, setPreview, facetBack }) {
@@ -262,7 +287,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
     const last = asked[asked.length - 1];
     setAsked(a => a.slice(0, -1));
     setAnswers(a => ({ ...a, [last]: undefined }));
-    if (last !== 'mood') patch({ details: { [last]: '' } });   // `mood` is ours alone
+    if (!LOCAL_ONLY.has(last)) patch({ details: { [last]: '' } });   
     // A changed answer is a changed question, so flavours waved away under the old one come back.
     // Keeping them hidden would let a rejection from a different question quietly shape the result.
     setRejected([]);
@@ -293,7 +318,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
       return next;
     });
     setAsked(a => a.filter(k => !doomed.some(q => q.key === k)));
-    for (const q of doomed) if (q.key !== 'mood') patch({ details: { [q.key]: '' } });
+    for (const q of doomed) if (!LOCAL_ONLY.has(q.key)) patch({ details: { [q.key]: '' } });
     setRejected([]);   // a changed question deserves a fresh ranking — see goBack
   };
 
@@ -326,7 +351,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
                       setAsked(a => [...a, q.key]);
                       // Written to the CAKE, not kept here — the suggester asked because it needed
                       // to, but the answer is the cake's and the details facet must not ask again.
-                      if (q.key !== 'mood') patch({ details: { [q.key]: value } });
+                      if (!LOCAL_ONLY.has(q.key)) patch({ details: { [q.key]: value } });
                     }}>
               {label}
             </button>

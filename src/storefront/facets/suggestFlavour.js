@@ -149,6 +149,83 @@ export const RULES = [
   },
 ];
 
+// ── "I'll give a hint" ──────────────────────────────────────────────────────────────────────────
+// The suggester asks about the OCCASION and the AUDIENCE. It never asked about TASTE, which is the
+// most direct evidence there is: what somebody already likes beats anything we can infer from a
+// party. And a familiar treat is far easier to answer than a taste family — "do they like Biscoff"
+// lands instantly where "do they prefer caramel or coffee" does not.
+//
+// ── MATCHED BY NAME FIRST, FAMILY ONLY AS A FALLBACK ────────────────────────────────────────────
+// The first draft of this mapped every hint down to one of the eight families, and it was wrong in
+// the way that mattered: BISCOFF IS NOT CARAMEL. It is speculoos — a spiced caramelised biscuit —
+// and a customer who says Biscoff and is handed salted caramel has been given a different thing.
+// The same goes for Ferrero and Rasmalai. These are not families; they ARE flavours, and flattening
+// them into a family throws away the one specific thing the customer just told us.
+//
+// So a hint looks for the flavour BY NAME on this baker's own list first. If Super&bake makes
+// Biscoff, the answer is Biscoff — the strongest and most honest recommendation this thing can
+// produce. Only when there is no match does it fall back to the nearest family, and it says a
+// DIFFERENT sentence when it does, because "the closest thing they make" is a weaker claim than
+// "they make it" and must not be dressed as the same.
+//
+// ── THE LIST SPANS ALL EIGHT FAMILIES ───────────────────────────────────────────────────────────
+// Deliberately, including `indian` and `tea`. A list of Western confectionery would mean a baker's
+// Rasmalai or Masala Chai could never be reached through this door — quietly steering every
+// customer away from exactly the flavours that make an Indian bakery distinctive.
+//
+// `match` is tried against the flavour's name, case-insensitively, as a substring. Substring rather
+// than exact because bakers name things "Belgian Dark Chocolate" and "Biscoff Crunch", and a hint
+// that only fired on a perfect string would almost never fire at all.
+export const HINTS = [
+  { key: 'dairy_milk',   emoji: '🍫', label: 'Dairy Milk',
+    match: ['dairy milk', 'milk chocolate'],            prefer: ['chocolate'] },
+  { key: 'biscoff',      emoji: '🍪', label: 'Biscoff',
+    match: ['biscoff', 'lotus', 'speculoos'],           prefer: ['caramel'] },
+  { key: 'ferrero',      emoji: '🌰', label: 'Ferrero',
+    match: ['ferrero', 'hazelnut', 'nutella', 'praline'], prefer: ['nut', 'chocolate'] },
+  { key: 'kitkat',       emoji: '🍬', label: 'KitKat',
+    match: ['kitkat', 'kit kat'],                       prefer: ['chocolate'] },
+  { key: 'lemon_tart',   emoji: '🍋', label: 'Lemon Tart',
+    match: ['lemon'],                                   prefer: ['fruit', 'classic'] },
+  { key: 'cappuccino',   emoji: '☕', label: 'Cappuccino',
+    match: ['cappuccino', 'coffee', 'mocha', 'latte', 'espresso'], prefer: ['coffee'] },
+  { key: 'butterscotch', emoji: '🍨', label: 'Butterscotch Ice Cream',
+    match: ['butterscotch'],                            prefer: ['caramel'] },
+  { key: 'strawberry',   emoji: '🍓', label: 'Strawberry Milkshake',
+    match: ['strawberry'],                              prefer: ['fruit'] },
+  { key: 'vanilla',      emoji: '🍦', label: 'Vanilla Ice Cream',
+    match: ['vanilla'],                                 prefer: ['classic'] },
+  { key: 'rasmalai',     emoji: '🍮', label: 'Rasmalai',
+    match: ['rasmalai', 'ras malai', 'rabri'],          prefer: ['indian'] },
+  // ⚠️ NOT 'matcha', and not 'earl grey'. Both are the `tea` family and neither tastes remotely
+  // like masala chai — matching them produced "they already like Masala Chai, and this is it" over
+  // a Matcha cake. That is the Biscoff mistake again: `match` is about the TASTE, never the family.
+  // A genuinely different flavour in the same family belongs in the fallback, which says so.
+  { key: 'masala_chai',  emoji: '🫖', label: 'Masala Chai',
+    match: ['masala chai', 'chai'],                     prefer: ['tea'] },
+];
+
+// ── Both weights sit ABOVE the rule table, and that is the point ──────────────────────────────────
+// A hint is the customer telling us what they like. Every rule is us INFERRING from a party they
+// described. An inference must not overturn evidence.
+//
+// The fallback started at 3 and did exactly that: for "the family" plus a Masala Chai hint, the
+// `crowd-safe` rule AVOIDS tea (−2) and a signature adds 1.5, so the answer came back Red Velvet
+// with a reason that never mentioned the hint. The customer had named a taste and been told about
+// feeding a crowd.
+//
+// So the family fallback (5) survives one rule's avoid and still beats the heaviest rule that
+// argues, and the name match (8) is untouchable. A hint should always be visible in the answer —
+// if it is not, the door was decorative.
+const HINT_NAME_WEIGHT   = 8;
+const HINT_FAMILY_WEIGHT = 5;
+
+const hintFor = (key) => HINTS.find(h => h.key === key) ?? null;
+const nameMatches = (flavour, hint) => {
+  const n = (flavour.name ?? '').toLowerCase();
+  return hint.match.some(m => n.includes(m));
+};
+
 /**
  * Which season a delivery MONTH falls in, for the Indian calendar this product serves.
  *
@@ -215,10 +292,23 @@ const matches = (rule, answers) =>
  */
 export function suggestFlavours(flavours, answers, { dietaryKeys = [] } = {}) {
   const eligible = eligibleFlavours(flavours, dietaryKeys);
+  const hint = answers.hint ? hintFor(answers.hint) : null;
 
   const scored = eligible.map(f => {
     let score = 0;
     let best = null;   // the rule arguing hardest FOR this flavour
+
+    // ── A rule may not VETO what the customer asked for ─────────────────────────────────────────
+    // Raising the hint's weight was not enough and was the wrong lever anyway. For "the family"
+    // plus a Masala Chai hint, `crowd-safe` AVOIDS tea, so Matcha was pushed below a signature Red
+    // Velvet however heavy the hint got — an inference about crowds cancelling a taste the customer
+    // had just named.
+    //
+    // So when the hint backs a flavour, avoid penalties are skipped FOR THAT FLAVOUR. The rules
+    // still argue for everything else, and still rank among themselves; they simply do not get to
+    // talk somebody out of the thing they said they liked.
+    const hintBacks = !!hint &&
+      (nameMatches(f, hint) || (f.tasteFamily && hint.prefer.includes(f.tasteFamily)));
 
     for (const rule of RULES) {
       if (!matches(rule, answers)) continue;
@@ -226,7 +316,7 @@ export function suggestFlavours(flavours, answers, { dietaryKeys = [] } = {}) {
         score += rule.weight;
         if (!best || rule.weight > best.weight) best = rule;
       }
-      if (f.tasteFamily && rule.avoid?.includes(f.tasteFamily)) score -= rule.weight;
+      if (!hintBacks && f.tasteFamily && rule.avoid?.includes(f.tasteFamily)) score -= rule.weight;
     }
 
     // "Safe bet" is a question about the ROOM, not about the flavour's family, so it is scored
@@ -236,10 +326,35 @@ export function suggestFlavours(flavours, answers, { dietaryKeys = [] } = {}) {
 
     if (f.isSignature) score += SIGNATURE_WEIGHT;
 
+    // ── The hint, scored and worded outside the rule table ──────────────────────────────────────
+    // Not a RULES row, because a rule matches on a taste FAMILY and this has to look at the
+    // flavour's NAME. Handled here so the name case can outrank everything the table can say.
+    //
+    // The two outcomes get two sentences on purpose. "They already like it, and this is it" is a
+    // fact. "The closest thing on this list" is a judgement, and saying the first when only the
+    // second is true would be the exact overclaim this whole file exists to avoid.
+    let hintWhy = null;
+    if (hint) {
+      if (nameMatches(f, hint)) {
+        score += HINT_NAME_WEIGHT;
+        hintWhy = `They already like ${hint.label}, and this is it.`;
+      } else if (f.tasteFamily && hint.prefer.includes(f.tasteFamily)) {
+        score += HINT_FAMILY_WEIGHT;
+        // NO superlative. This read "the closest thing on this list", which is false the moment a
+        // name match exists — it appeared on a runner-up while the actual Biscoff sat directly
+        // above it. A sentence is attached per FLAVOUR and cannot see what else was ranked, so it
+        // must be true of that flavour alone whatever else is on screen.
+        hintWhy = `Not ${hint.label}, but along the same lines.`;
+      }
+    }
+
     // `signature` is reported separately rather than folded into the sentence, because only the
     // caller knows the baker's name — and because when it was the deciding margin, saying so is
     // the difference between a true reason and the whole reason.
-    return { flavour: f, score, because: reasonFor(best, f), signature: !!f.isSignature };
+    // The hint OWNS the sentence when it fired. `reasonFor` returns the heaviest rule that argued,
+    // and no rule can outrank "they already like this" — a customer who has just named a flavour
+    // and is told "children almost always go for chocolate" has been answered by the wrong screen.
+    return { flavour: f, score, because: hintWhy ?? reasonFor(best, f), signature: !!f.isSignature };
   });
 
   return scored.filter(x => x.score > 0).sort((a, b) => b.score - a.score);
