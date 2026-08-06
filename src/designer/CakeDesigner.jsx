@@ -5315,12 +5315,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {/* Credits first in the cluster: it is a READOUT, not an action, and it belongs where
                 the eye lands before the controls rather than buried past them. */}
-            {hasCap('billing:manage') && (
-              <CreditsPill apiClient={apiClient} onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
-            )}
             {/* Beside the credits readout, and gated the same way the rest of the baker chrome is.
                 Renders nothing at all when the host has not wired fetchNotifications. */}
             {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink} />}
+            {hasCap('billing:manage') && (
+              <CreditsPill apiClient={apiClient} onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
+            )}
             {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
               <button
                 style={{ ...s.sidebarBtn, color: chefsDeskOpen ? '#1a1a1a' : '#555', background: chefsDeskOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
@@ -5929,13 +5929,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               leaves the readout where it was. */}
           {!isMobile && (hasCap('billing:manage') || canManageStore) && (
             <div style={s.creditsFloat}>
+              {/* Bell first: credits is a READOUT and belongs closest to the edge where the eye
+                  rests, while the bell is a control that gets pressed. Kept in step with the header
+                  cluster above — two placements of the same furniture, the trap Chef's Desk already
+                  taught us to watch for. */}
+              {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink} />}
               {hasCap('billing:manage') && (
                 <CreditsPill apiClient={apiClient}
                   onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
               )}
-              {/* Kept in step with the header cluster above — two placements of the same furniture,
-                  the trap Chef's Desk already taught us to watch for. */}
-              {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink} />}
             </div>
           )}
 
@@ -7548,7 +7550,9 @@ const s = {
   // Canvas
   // Above the canvas and any panel that slides in beside it, but below modals — a readout should
   // never sit on top of something the baker is reading or dismissing.
-  creditsFloat: { position: 'absolute', top: 14, right: 16, zIndex: 6 },
+  // A ROW. Without display:flex the children are block-level, so a second item (the bell) drops
+  // onto its own line under the pill instead of sitting beside it.
+  creditsFloat: { position: 'absolute', top: 14, right: 16, zIndex: 6, display: 'flex', alignItems: 'center', gap: 8 },
   canvasArea: {
     flex:1, position:'relative', minHeight:0,
     // Match the 3D canvas's clear colour so the strip exposed when the piping popup shrinks
