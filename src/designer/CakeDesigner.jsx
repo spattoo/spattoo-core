@@ -6461,7 +6461,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                a baker taps to find empty — which is the usual argument against splitting it out. */
             if (((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen)
                 && stopsEligible && !hasActiveGroup) {
-              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : 'Blend', node: (
+              // "Gradient", not "Blend". Blend was a width compromise from when Shape made four tabs;
+              // three fit the real word, and the panel inside this tab has always called it a
+              // gradient — a tab whose label disagrees with its own contents is a small lie.
+              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : 'Gradient', node: (
                 <GradientControls
                   stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
                   label={isGlazeTier ? 'Glaze colors' : 'Gradient colors'} maxStops={maxStops}
