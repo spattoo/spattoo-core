@@ -781,6 +781,16 @@ function ElementsIcon({ size = 20 }) {
 }
 
 // Uploads — a picture (frame + hill + sun), matching the stroke weight of the other rail icons.
+function TourIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.2 9.2a2.9 2.9 0 1 1 3.6 3.6c-.5.2-.8.7-.8 1.2v.5" />
+      <circle cx="12" cy="17.4" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 function UploadsIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1788,6 +1798,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Privacy & Data, opened from the LAPSED gate. Separate from the settings-menu route because that
   // whole menu is unrendered once access is blocked — see the exit row on the gate.
   const [lapsedPrivacyOpen, setLapsedPrivacyOpen] = useState(false);
+  // Bumped by the "Take a tour" rail item. A counter, not a flag: "asked again" is the event, and a
+  // boolean cannot say it twice without the caller resetting it.
+  const [tourNonce, setTourNonce] = useState(0);
   // Separate from Billing on purpose: someone topping up wants credits, not a plan conversation.
   const [buyCreditsOpen,      setBuyCreditsOpen]      = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
@@ -1971,7 +1984,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     { id: 'share',      label: 'Share',       icon: <ShareIcon size={20} />,     requires: 'design:create' },
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
-  ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities]);
+    // ── Take a tour ────────────────────────────────────────────────────────────────────────────
+    // Customer only, and LAST — a first-timer needs it and everyone else is trying to get past it.
+    // In railItems rather than bolted onto a header so both surfaces get it from the one list, which
+    // is what stopped Uploads going missing from the phone; splitMobileNav puts it behind More on a
+    // narrow screen, which is exactly where a replay button belongs.
+    //
+    // `requires: null` — hasCap treats a null capability as allowed. There is no capability for
+    // "wants help", and inventing one would put a support affordance behind a permission.
+    ...(orderMode === 'customer'
+      ? [{ id: 'tour', label: 'Take a tour', short: 'Tour', icon: <TourIcon size={20} />, requires: null }] : []),
+  ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities, orderMode]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -2004,6 +2027,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (id === 'customers') setCustomersPanelOpen(true);
     if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
     if (id === 'share')     onShareStore?.();
+    if (id === 'tour')      setTourNonce(n => n + 1);
     if (id === 'codesign')  setCodesignPanelOpen(true);
   };
 
@@ -5603,7 +5627,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           of the mode branching instead of being buried in a tour component.
 
           Renders null the rest of the time (seen, or not a customer), so it costs nothing. */}
-      <CustomerTour active={orderMode === 'customer'} />
+      <CustomerTour active={orderMode === 'customer'} startNonce={tourNonce} />
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }

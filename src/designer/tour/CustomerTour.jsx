@@ -45,10 +45,13 @@ const seen = () => {
 const markSeen = () => { try { window.localStorage.setItem(SEEN_KEY, new Date().toISOString()); } catch { /* ignore */ } };
 
 /**
- * `active` — the host decides WHO gets this (customer mode only). Kept a prop rather than read here
- * so the rule lives with the rest of the mode branching instead of being buried in a tour.
+ * `active`     — the host decides WHO gets this (customer mode only). Kept a prop rather than read
+ *                here so the rule lives with the rest of the mode branching, not buried in a tour.
+ * `startNonce` — bump it to replay, from the "Take a tour" rail item. A COUNTER rather than a
+ *                boolean because the interesting event is "asked again", and a boolean cannot say
+ *                that twice in a row without the caller resetting it.
  */
-export default function CustomerTour({ active = false }) {
+export default function CustomerTour({ active = false, startNonce = 0 }) {
   const narrow = useNarrow(760);
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
@@ -63,6 +66,20 @@ export default function CustomerTour({ active = false }) {
     const t = setTimeout(() => setRunning(true), 400);
     return () => clearTimeout(t);
   }, [active]);
+
+  // Asked for by hand. Ignores `seen` entirely — that flag answers "should this appear uninvited",
+  // which is a different question from "does this person want it now".
+  //
+  // It also settles something the automatic run cannot: localStorage is per ORIGIN, and every baker's
+  // storefront is its own subdomain ({slug}.spattoo.com), so a customer ordering from two bakeries
+  // gets the automatic tour twice. Rather than reach for a cookie on the parent domain to suppress
+  // the second one, a button that is always there makes repetition cost nothing and forgetting cost
+  // nothing either.
+  useEffect(() => {
+    if (!active || !startNonce) return;
+    setI(0);
+    setRunning(true);
+  }, [active, startNonce]);
 
   // Measure the current step's target. Re-measured on resize and scroll because both move it — the
   // rail is fixed but the quote bar is not, and a phone's address bar collapsing counts as a resize.
