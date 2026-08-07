@@ -415,6 +415,19 @@ export function loadDraft(bakerSlug, tierCount = 1) {
   }
 }
 
+/**
+ * Forget this baker's draft.
+ *
+ * Existed for "Start over" before anything called it on SUCCESS, which is the other moment it is
+ * needed: the draft surviving a closed tab is the point of it, and the cost is that a customer who
+ * orders and returns a week later would otherwise meet the answers to a cake they have already
+ * bought, sitting there as though they were mid-enquiry.
+ *
+ * PER BAKER, because the key is — somebody comparing two bakeries keeps the other draft.
+ *
+ * On SUCCESS only. A failed send keeps everything: a timed-out POST is our problem, and rebuilding
+ * a cake is not the customer's penalty for it.
+ */
 export function clearDraft(bakerSlug) {
   try { localStorage.removeItem(storageKey(bakerSlug)); } catch { /* see saveDraft */ }
 }

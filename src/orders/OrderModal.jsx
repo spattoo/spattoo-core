@@ -12,7 +12,7 @@ import {
 import Chip from '../shared/Chip.jsx';
 // The SAME occasion list the storefront offers — they write the same column, and a baker
 // picking from a different set than their customer is how `other` quietly swallows half the data.
-import { OCCASIONS } from '../storefront/facets/cakeDraft.js';
+import { OCCASIONS, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
 const MAX_REFERENCE_PHOTOS = 3;
@@ -297,25 +297,49 @@ export default function OrderModal({
   // Available flavours list
   const [availableFlavours, setAvailableFlavours] = useState([]);
 
+  // ── What the storefront already asked ─────────────────────────────────────────────────────────
+  // A customer who came through the storefront answered flavour, size, date and occasion BEFORE
+  // opening the designer. Asking again is the flow's rudest moment — it reads as though nothing was
+  // listening — so the draft seeds this form and they CONFIRM rather than re-enter.
+  //
+  // Same origin, so this costs nothing: StorefrontClient keeps the whole journey on the baker's
+  // subdomain ("/{slug}" and "/{slug}/design"), which is why localStorage carries across with no URL
+  // params and no round trip.
+  //
+  // Read ONCE at mount, into initialisers. A later read would fight the customer's edits — they are
+  // allowed to change their mind in here, and the draft must not keep pulling them back.
+  //
+  // Customer mode only: a baker taking an order by hand is not the person whose draft this is.
+  const seed = useRef(mode === 'customer' && bakerSlug ? loadDraft(bakerSlug, tierCount) : null).current;
+  const sd = seed?.details ?? {};
+
   // Cake details
-  const [weightKg, setWeightKg] = useState('');
+  const [weightKg, setWeightKg] = useState(seed?.size?.weightKg != null ? String(seed.size.weightKg) : '');
+  // Length comes from tierCount — the DESIGN just built — not from the draft. Somebody who said "one
+  // tier" on the storefront and then designed three has changed their mind by doing it, and the cake
+  // in front of them is the truthful one. Names seed per tier where the draft has them.
   const [flavours, setFlavours] = useState(
-    Array.from({ length: tierCount }, (_, i) => ({ tier: i, name: '', flavourId: null, source: null }))
+    Array.from({ length: tierCount }, (_, i) => {
+      const d = seed?.flavours?.[i];
+      return d?.name?.trim()
+        ? { tier: i, name: d.name, flavourId: d.flavourId ?? null, source: d.source ?? null }
+        : { tier: i, name: '', flavourId: null, source: null };
+    })
   );
-  const [specialInstructions, setSpecialInstructions] = useState('');
+  const [specialInstructions, setSpecialInstructions] = useState(sd.specialInstructions || '');
   // ── What the cake is FOR (migration 043) ──────────────────────────────────────────────────────
   // Captured here as well as on the storefront, and that is the point rather than a nicety: bakers
   // create a lot of orders by hand from a phone call or a WhatsApp thread. Recording these only on
   // the enquiry path would leave the dataset with a BIASED hole, not merely a smaller one — every
   // customer who prefers to ring up would be missing from it.
-  const [occasion, setOccasion]     = useState('');
-  const [recipient, setRecipient]   = useState('');
-  const [cakeNumber, setCakeNumber] = useState('');
+  const [occasion, setOccasion]     = useState(sd.occasion  || '');
+  const [recipient, setRecipient]   = useState(sd.recipient || '');
+  const [cakeNumber, setCakeNumber] = useState(sd.cakeNumber ?? '');
   // Dietary requirements the customer states — eggless / vegan / Jain / allergens.
   // ORDER-LEVEL, not per tier (unlike flavour): an eggless requirement is not
   // satisfied by an eggless top tier sitting on an egg-based base.
   const [dietaryOptions, setDietaryOptions] = useState([]);
-  const [dietaryKeys,    setDietaryKeys]    = useState([]);
+  const [dietaryKeys,    setDietaryKeys]    = useState(sd.dietaryKeys ?? []);
 
   // What this bakery actually deals in. A diet option they don't offer is dropped; an
   // allergen NEVER is — see visibleRequirements() for why hiding one would be the worst
@@ -351,10 +375,12 @@ export default function OrderModal({
 
   // Delivery. Pre-filled when the order was started from a day in the Orders calendar —
   // it is the same order creation either way, the date is simply already chosen.
-  const [deliveryDate,    setDeliveryDate]    = useState(initialDeliveryDate || '');
-  const [deliveryTime,    setDeliveryTime]    = useState('');
-  const [deliveryMode,    setDeliveryMode]    = useState('pickup');
-  const [deliveryAddress, setDeliveryAddress] = useState('');
+  // initialDeliveryDate wins over the draft: it means a baker started this from a specific day in
+  // the calendar, which is a choice made just now, where the draft is something typed earlier.
+  const [deliveryDate,    setDeliveryDate]    = useState(initialDeliveryDate || sd.deliveryDate || '');
+  const [deliveryTime,    setDeliveryTime]    = useState(sd.deliveryTime || '');
+  const [deliveryMode,    setDeliveryMode]    = useState(sd.deliveryMode || 'pickup');
+  const [deliveryAddress, setDeliveryAddress] = useState(sd.deliveryAddress || '');
 
   // Submit state
   const [submitting,   setSubmitting]   = useState(false);
@@ -532,6 +558,11 @@ export default function OrderModal({
         deliveryAddress:     deliveryMode === 'home_delivery' ? deliveryAddress : undefined,
       });
       setOrderId(result?.orderId ?? 'ok');
+      // It is theirs now — the same rule the storefront's own submit follows. On SUCCESS only, so a
+      // failed request keeps everything and nobody rebuilds a cake because a POST timed out.
+      // Customer mode only, and NOT on the Update Design path below: that edits an order which
+      // already exists and is not the placing of anything.
+      if (mode === 'customer' && bakerSlug) clearDraft(bakerSlug);
     } catch (err) {
       setSubmitError(err.message || 'Failed to place order. Please try again.');
     } finally {

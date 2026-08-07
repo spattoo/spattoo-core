@@ -5,7 +5,7 @@ import FlavourFacet from './FlavourFacet.jsx';
 import VerifyStep from './VerifyStep.jsx';
 import { SizeFacet, DateFacet } from './SizeDateFacets.jsx';
 import {
-  FACETS, emptyDraft, loadDraft, saveDraft, isFilled, canSubmit, withTierCount,
+  FACETS, emptyDraft, loadDraft, saveDraft, clearDraft, isFilled, canSubmit, withTierCount,
 } from './cakeDraft.js';
 
 // ── The shell ───────────────────────────────────────────────────────────────────────────────────
@@ -124,6 +124,9 @@ export default function FacetShell({
     setSending(true); setError(null);
     try {
       await onSubmit?.(d, tok);
+      // It is theirs now. Clearing here and not before: a failed send keeps everything, because a
+      // timed-out POST is our problem and rebuilding a cake is not the customer's penalty for it.
+      clearDraft(slug);
       setSent(true);
     } catch (e) {
       setError(e.message || 'Could not send that just now.');
