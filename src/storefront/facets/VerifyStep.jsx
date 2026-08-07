@@ -32,8 +32,11 @@ export default function VerifyStep({
   // offering it before that is how a customer waits for a code a telco already scrubbed.
   channels = ['sms'],
   otpRequired = true, onVerified, onBack,
+  // The customer's own words, held on the draft by FacetShell. See `noteField` below.
+  note = '', onNote,
 }) {
   const [channel, setChannel] = useState(channels[0] ?? 'sms');
+  const [noteOpen, setNoteOpen] = useState(false);
   // ONE field holding whichever contact the chosen channel wants. Seeded from the matching side of
   // the draft — an email typed last time should not reappear in a box now labelled Phone number.
   const [phone, setPhone] = useState((channels[0] ?? 'sms') === 'email' ? initialEmail : initialPhone);
@@ -57,6 +60,40 @@ export default function VerifyStep({
 
   const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim(), name.trim(), channel) });
 
+  // ── "Anything else?" ──────────────────────────────────────────────────────────────────────────
+  // The facets ask the four questions worth asking everybody. This is the fifth, which is different
+  // every time — no nuts, it is a surprise, leave it with the neighbour, my daughter drew this.
+  // Nothing structured holds that, and without it the only place to say it was a WhatsApp message
+  // after the enquiry, which is the round trip this whole flow exists to remove.
+  //
+  // COLLAPSED. Most people have nothing to add, and an open textarea on the last screen before
+  // sending reads as one more thing between them and being done.
+  //
+  // ASKED HERE, not on the entry screen, which is where it was first built. A textarea among the
+  // two doors makes the chooser look like a form and invites somebody to start writing when the
+  // screen's whole argument is that they should be picking. At the point of sending it is a natural
+  // last question.
+  //
+  // Rendered in BOTH branches — OTP and suppressed — because it belongs to the act of sending, not
+  // to the act of proving a number. Defined once rather than pasted twice.
+  //
+  // It rides in `special_instructions`, which cakeDraft's buildInstructions() already appends LAST,
+  // after the occasion and the message: the baker reads the generated lines first and the
+  // customer's own words at the end, where they read as a remark rather than another field. No
+  // schema change — the column, the payload and the composition were all already there.
+  const noteField = onNote && (
+    (noteOpen || note.trim()) ? (
+      <textarea
+        style={s.noteInput} rows={3} maxLength={500}
+        autoFocus={noteOpen && !note}
+        placeholder="Anything else? Allergies, delivery details, how you'd like it to look…"
+        value={note} onChange={e => onNote(e.target.value)} aria-label="A note for the baker"
+      />
+    ) : (
+      <button type="button" style={s.noteOpen} onClick={() => setNoteOpen(true)}>+ Add a note</button>
+    )
+  );
+
   // ── OTP suppressed ────────────────────────────────────────────────────────────────────────────
   // STOREFRONT_OTP_REQUIRED=false on the API, read back through /settings. Temporary, for the window
   // where SMS delivery is not yet wired to Supabase.
@@ -75,6 +112,7 @@ export default function VerifyStep({
                placeholder="Your name" autoFocus aria-label="Your name" />
         <input style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
                inputMode={ch.mode} placeholder={ch.ask} aria-label={ch.ask} />
+        {noteField}
         <button type="button" style={s.primary(primary, ready)} disabled={!ready}
                 onClick={() => onVerified?.(null, phone.trim(), name.trim(), channel)}>
           Send to {bakerName}
@@ -138,6 +176,9 @@ export default function VerifyStep({
             inputMode={ch.mode} placeholder={ch.ask}
             aria-label={ch.ask}
           />
+          {/* On the CONTACT phase only. The code screen is one job — read six digits, type six
+              digits — and a textarea there would be a second thing to do while a timer runs. */}
+          {noteField}
           <button type="button" style={s.primary(primary, !!phone.trim() && named && !otp.sendBlocked(captchaConfigured))}
                   disabled={!phone.trim() || !named || otp.sendBlocked(captchaConfigured)}
                   onClick={otp.send}>
@@ -187,6 +228,14 @@ async function postJSON(url, body) {
 }
 
 const s = {
+  noteOpen:  { alignSelf: 'flex-start', border: 'none', background: 'none', font: 'inherit',
+               fontSize: 12.5, fontWeight: 700, color: '#7A6C60', cursor: 'pointer', padding: '2px 0' },
+  // 500 is generous for a remark and short of an essay. There is no cap on the API side, and the
+  // whole thing is pasted into the baker's email — the limit is a courtesy to whoever reads it.
+  noteInput: { width: '100%', boxSizing: 'border-box', resize: 'vertical', font: 'inherit',
+               fontSize: 13.5, lineHeight: 1.5, color: '#2A241F', padding: '10px 12px',
+               borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff' },
+
   wrap:  { display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 2px 4px' },
   title: { fontSize: 18, fontWeight: 800, color: '#2A241F', margin: 0, letterSpacing: '-0.01em' },
   sub:   { fontSize: 13, color: '#7A6C60', margin: 0, lineHeight: 1.5 },

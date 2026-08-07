@@ -247,6 +247,16 @@ export default function FacetShell({
                   otpRequired={otpRequired} channels={otpChannels}
                   initialPhone={draft.contact.phone} initialEmail={draft.contact.email}
                   initialName={draft.contact.name}
+                  // ── Anything the facets could not ask for ─────────────────────────────────────
+                  // Lives on the DRAFT, not inside the verify step, so it survives going back to
+                  // the cake and comes back with a draft restored days later.
+                  //
+                  // Asked HERE and not on the entry screen, which is where it was first built. A
+                  // textarea sitting among the two doors makes the chooser look like a form and
+                  // invites somebody to start writing when the screen's whole argument is that they
+                  // should be picking. At the point of sending, the question is a natural last one.
+                  note={draft.details.specialInstructions}
+                  onNote={v => patch({ details: { specialInstructions: v } })}
                   onBack={() => setVerifying(false)}
                   onVerified={(tok, contact, name, channel) => {
                     // Keep the proved number on the draft. The server takes the contact from the
