@@ -54,9 +54,14 @@ export default function VerifyStep({
     });
   }, [apiBaseUrl, slug, phone, channel]);
 
+  // `name` rides along so the customer row the API binds on success is not nameless. It is
+  // best-effort on the server — an unnamed prospect is better than a failed login — but the name is
+  // sitting in a field two inches above this button, so there is no reason to throw it away and
+  // make the baker meet "(no name)" in their list.
   const verify = useCallback(async (code) => (
-    postJSON(`${apiBaseUrl}/api/storefront/${slug}/verify-otp`, { to: phone.trim(), channel, code })
-  ), [apiBaseUrl, slug, phone, channel]);
+    postJSON(`${apiBaseUrl}/api/storefront/${slug}/verify-otp`,
+             { to: phone.trim(), channel, code, name: name.trim() || undefined })
+  ), [apiBaseUrl, slug, phone, channel, name]);
 
   const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim(), name.trim(), channel) });
 
