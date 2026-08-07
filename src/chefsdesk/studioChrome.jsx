@@ -10,27 +10,15 @@
 //
 // Tool-specific styling stays with its tool. Only what BOTH screens are is here.
 
-import { useEffect, useState } from 'react';
 import { Z } from '../shared/Panel.jsx';
+import { useNarrow } from '../shared/useNarrow.js';
 
 // ── Is this a phone? ────────────────────────────────────────────────────────────────────────────
-// One definition, used by the header here and by A4Sheet's body layout, because two components
-// disagreeing about where "mobile" starts is how a header stacks while the thing under it does not.
-//
-// SSR-safe on purpose: `typeof window` guards the initialiser, so importing this into anything
-// server-rendered — or into renderToStaticMarkup, which is how both studio screens are tested —
-// does not throw. Reading the width in the initialiser rather than in the effect also means a phone
-// never paints one desktop frame first, which on a header that RESHAPES is a visible jump.
-export function useStudioNarrow(breakpoint = 760) {
-  const [narrow, setNarrow] = useState(typeof window !== 'undefined' && window.innerWidth < breakpoint);
-  useEffect(() => {
-    const onResize = () => setNarrow(window.innerWidth < breakpoint);
-    onResize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [breakpoint]);
-  return narrow;
-}
+// Kept as a named re-export rather than deleted: A4Sheet imports `useStudioNarrow` for its body
+// layout, and the studio's 760 breakpoint is a fact about THIS tool's header, not a global. The
+// implementation moved to shared/useNarrow.js when PastDueBanner became the third component asking
+// the same question — see the note there.
+export const useStudioNarrow = (breakpoint = 760) => useNarrow(breakpoint);
 
 // ── The header ──────────────────────────────────────────────────────────────────────────────────
 // A component, not just styles, because the two screens must not merely LOOK alike — they have to

@@ -20,7 +20,18 @@ import { CakeDesigner } from '../src/index.js';
 //
 // `capabilities` therefore stays null, and hasCap treats null as "everything allowed", so every
 // rail item renders — exactly the state worth inspecting.
-const apiClient = new Proxy({}, { get: () => async () => null });
+// `?past_due` makes fetchBakerProfile answer with a baker mid-dunning, so PastDueBanner can be
+// looked at in place — above the real rail, at whatever width the window is. Every other method
+// still answers null.
+const pastDue = new URLSearchParams(location.search).has('past_due');
+const overrides = pastDue ? {
+  fetchBakerProfile: async () => ({
+    baker: { name: 'My Bakery', subscription_status: 'past_due', subscription_plan_display: 'Blaze' },
+  }),
+} : {};
+const apiClient = new Proxy(overrides, {
+  get: (target, k) => target[k] ?? (async () => null),
+});
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} onOrder={() => {}} onShareStore={() => {}} />,

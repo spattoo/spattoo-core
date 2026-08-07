@@ -60,6 +60,7 @@ import BillingPanel from '../settings/BillingPanel';
 import CreditsPill from '../billing/CreditsPill.jsx';
 import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
+import PastDueBanner from '../billing/PastDueBanner.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -5412,6 +5413,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   return (
     <div style={{ ...s.page, animation: 'spattooFadeIn 0.35s ease' }}>
+      {/* ── The dunning warning ──────────────────────────────────────────────────────────────────
+          FIRST child of `page`, above both the desktop rail and the mobile header, because they
+          both live inside this column — one placement, both surfaces, no second copy to drift.
+          Renders null unless the status is past_due, so it costs nothing the rest of the time.
+
+          It is here rather than in BillingPanel because the whole problem is that the baker is NOT
+          in Billing: they missed the email, everything looks normal, and in about three days
+          Razorpay halts and the lock screen appears. A warning only visible to someone who went
+          looking for it is not a warning. */}
+      <PastDueBanner
+        status={bakerData?.subscription_status}
+        onOpenBilling={() => setBillingPanelOpen(true)}
+      />
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }

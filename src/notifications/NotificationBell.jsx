@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 
 // ── The bell ─────────────────────────────────────────────────────────────────────────────────────
 // An unread count in the header, and a list behind it. Sits beside CreditsPill and follows the same
@@ -26,18 +27,9 @@ export default function NotificationBell({ apiClient, onOpenLink }) {
   const [unread, setUnread] = useState(0);
   const [items, setItems]   = useState(null);   // null = never loaded
   const [open, setOpen]     = useState(false);
-  // Starts false and corrects on mount, rather than reading window during render. settings/controls
-  // exports a useIsMobile that reads window.innerWidth in its useState initialiser — importing it
-  // here would throw on the server and in renderToStaticMarkup, which is how this component is
-  // tested. A one-frame desktop layout on a phone is invisible; a crash is not.
-  const [narrow, setNarrow] = useState(false);
-
-  useEffect(() => {
-    const check = () => setNarrow(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
+  // 768 is this component's own number — the panel is 320 wide and needs a header to hang off.
+  // The SSR guard lives in the shared hook now, not here.
+  const narrow = useNarrow(768);
 
   const load = useCallback(() => {
     if (!apiClient?.fetchNotifications) return Promise.resolve();
