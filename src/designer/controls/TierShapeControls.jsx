@@ -19,6 +19,21 @@ const GLYPH_FIELD = {
 // There is deliberately NO shape SWITCHER here: a cake's shape is chosen when you start it ("New" →
 // ShapePicker), not swapped in place on an existing cake (which would silently reshape a design the
 // customer already built). This panel only tunes the CURRENT shape.
+/**
+ * Whether this tier has any shape config to show — i.e. whether rendering the component would
+ * produce anything at all.
+ *
+ * Most tiers answer no: a round cake has no per-shape knob, so the component renders empty. That was
+ * invisible while this sat in a scrolling column, and became a visible defect once the mobile sheet
+ * gained tabs — every round cake got a "Shape" tab you could tap to find nothing in. Asking here
+ * rather than in the caller keeps the answer beside the branches it describes, so a new family's
+ * control lands in one file rather than two.
+ */
+export function hasShapeControls(tier) {
+  const family = tierGeometry(tier).family;
+  return isGlyphFamily(family) || family === 'rounded_rect';
+}
+
 export default function TierShapeControls({ tier, index, onShapeConfig, onCornerR }) {
   const family = tierGeometry(tier).family;
   return (

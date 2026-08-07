@@ -43,7 +43,7 @@ import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams 
 import { applyTextStyleConfig } from './textStyles.js';
 import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
 import ShapePicker from './controls/ShapePicker.jsx';
-import TierShapeControls from './controls/TierShapeControls.jsx';
+import TierShapeControls, { hasShapeControls } from './controls/TierShapeControls.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
@@ -6479,18 +6479,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ) });
             }
 
-            // Per-tier SHAPE controls (the Shape picker + each family's own config knob — a
-            // number's digits, a rounded_rect's corner radius) all live in ONE component,
-            // config-driven by the tier's family, so a new shape's control lands there.
+            /* Per-tier SHAPE config — a number's digits, a rounded_rect's corner radius — all in ONE
+               component, config-driven by the tier's family.
+
+               Only offered when that family HAS a knob. A round cake has none, so the component
+               renders empty, and as a tab that meant every ordinary cake carried a "Shape" you could
+               tap to find nothing in. There is deliberately no shape SWITCHER here (a shape is chosen
+               at "New", not swapped under a design the customer already built), so for most tiers
+               there is genuinely nothing to show — and for a number cake this is the only route back
+               to the digits, which is why it is conditioned rather than dropped. */
             if (selectedEl?.type === 'tier') {
-              sections.push({ id: 'shape', label: 'Shape', node: (
-                <TierShapeControls
-                  tier={design.tiers[selectedEl.index]}
-                  index={selectedEl.index}
-                  onShapeConfig={setTierShapeConfig}
-                  onCornerR={setTierCornerR}
-                />
-              ) });
+              if (hasShapeControls(design.tiers[selectedEl.index])) {
+                sections.push({ id: 'shape', label: 'Shape', node: (
+                  <TierShapeControls
+                    tier={design.tiers[selectedEl.index]}
+                    index={selectedEl.index}
+                    onShapeConfig={setTierShapeConfig}
+                    onCornerR={setTierCornerR}
+                  />
+                ) });
+              }
 
               // Frosting type (material) — buttercream | whipped | fondant | naked, driving the
               // frostings registry — plus the surface technique for the types that texture, and that
