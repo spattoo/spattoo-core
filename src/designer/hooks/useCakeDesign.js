@@ -613,7 +613,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, texts: prev.texts.filter(t => t.id !== id) }));
   }
 
-  // ── Age numbers — gold balloon-number toppers standing on the cake top ──────────
+  // ── Number toppers — gold balloon-number toppers standing on the cake top ──────
+  // Called "Number topper" everywhere a baker can see it. The KEY stays `ages`, and the adder
+  // `addAge`, because both are written into every saved design snapshot — renaming them is a data
+  // migration in exchange for a word nobody reads. See the label in CakeDesigner for why it is not
+  // called an age: a 5 on a cake is usually somebody's age, and the product should not sound like
+  // it is collecting one when it plainly is not.
   // Reuses the cream tube-sweep geometry (buildCreamWriting) + gold material; a fat tube on a
   // single-stroke digit reads as a metallic number candle. `value` is a digit string ('5','25');
   // size = standing height (world units), thickness = tube radius (balloon chunkiness), font picks

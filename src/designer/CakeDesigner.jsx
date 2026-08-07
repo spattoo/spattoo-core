@@ -5824,7 +5824,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     8
                   </div>
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Age Number</div>
+                    {/* ── "Number topper", never "Age Number" ────────────────────────────────────
+                        A 5 on a cake is usually somebody's age, and naming the element after that
+                        makes the product sound like it is asking for one. It is not, and it does not
+                        store one — this is a gold digit standing on the top, and "topper" is what
+                        the thing is called in a bakery anyway.
+                        Same reasoning that moved the storefront from an age band to a celebration
+                        type (spattoo-api migration 046): the recommender never needed the person's
+                        age, and neither does a decoration. Nothing about children's data should be
+                        implied by a label when no data is involved.
+                        The internal key stays `age` / `ages` / addAge — it is written into every
+                        saved design snapshot, so renaming it is a data migration for a word no
+                        customer sees. Label here, key untouched. */}
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Number topper</div>
                     <div style={{ fontSize: 10, color: '#888' }}>Gold number standing on top</div>
                   </div>
                 </button>
@@ -6160,11 +6172,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           <div style={s.rotateHint}>Drag to rotate</div>
 
-          {/* ── Age Number edit popup (right-side) — self-contained, not cap-driven ── */}
+          {/* ── Number topper edit popup (right-side) — self-contained, not cap-driven ── */}
           {selectedAge && (
             <div style={isMobile ? s.wheelPanelMobile : s.wheelPanel}>
               <div style={s.wheelHeader}>
-                <span style={s.wheelTitle}>Age Number</span>
+                <span style={s.wheelTitle}>Number topper</span>
                 <button style={s.iconBtn} onClick={() => setSelectedEl(null)}>✕</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '2px' }}>
