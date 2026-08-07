@@ -65,6 +65,29 @@ for (const [label, dir] of [['core', CORE], ['web', WEB]]) {
 }
 ok('both checkouts are clean');
 
+// ── 0b. web is caught up too, BEFORE anything is bumped ────────────────────────────────────────
+// This used to live down in "Updating web", after core was tagged and pushed and after packing —
+// and it could not work there, because packing DIRTIES web: pack:vendor writes the new tarball and
+// (since the prune) deletes old ones, and `git rebase` refuses on a dirty tree. It only ever passed
+// because an untracked tarball alone is something rebase tolerates; the moment a tracked file was
+// deleted too, every release died here with core already pushed.
+//
+// Doing it now costs nothing and fails cheaply: no bump, no tag, no push, nothing to unwind. It
+// also means the version below is computed against a web checkout that is already current.
+step(`Syncing web with origin/${BRANCH}`);
+run('git', ['fetch', 'origin', BRANCH], WEB);
+if (!DRY) {
+  try {
+    execFileSync('git', ['rebase', `origin/${BRANCH}`], { cwd: WEB, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch {
+    try { execFileSync('git', ['rebase', '--abort'], { cwd: WEB, stdio: 'ignore' }); } catch { /* none in progress */ }
+    die(`web does not rebase cleanly onto origin/${BRANCH}.\n` +
+        `  Nothing has been released — resolve it and run again:\n` +
+        `    git -C ${WEB} rebase origin/${BRANCH}`);
+  }
+}
+ok('web is up to date');
+
 // ── 1. take everything already on the release branch ───────────────────────────────────────────
 // Rebase rather than merge, and rebase FIRST: the version is computed from the remote below, and
 // computing it before catching up would read a stale list of tags.
@@ -74,7 +97,11 @@ if (!DRY) {
   try {
     execFileSync('git', ['rebase', REF], { cwd: CORE, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch {
-    execFileSync('git', ['rebase', '--abort'], { cwd: CORE, stdio: 'ignore' });
+    // Swallowed: `rebase --abort` FAILS when no rebase is in progress, which is exactly the case
+    // when the rebase was refused outright (a dirty tree) rather than stopped on a conflict. An
+    // unguarded abort throws from inside the handler that exists to explain the problem, and the
+    // explanation is replaced by a raw execFileSync dump.
+    try { execFileSync('git', ['rebase', '--abort'], { cwd: CORE, stdio: 'ignore' }); } catch { /* none in progress */ }
     die(`core does not rebase cleanly onto ${REF}.\n` +
         `  Resolve it by hand, then run release again:\n    git -C ${CORE} rebase ${REF}`);
   }
@@ -139,21 +166,9 @@ ok(`vendored spattoo-designer-${VERSION}.tgz`);
 
 // ── 6. point web at it ─────────────────────────────────────────────────────────────────────────
 // The step most often forgotten by hand, and the one whose omission is invisible: web keeps
-// building, keeps deploying, and keeps serving the previous core.
+// building, keeps deploying, and keeps serving the previous core. (Web was rebased back at 0b, on a
+// clean tree — packing has dirtied it by now.)
 step('Updating web');
-run('git', ['fetch', 'origin', BRANCH], WEB);
-if (!DRY) {
-  try {
-    execFileSync('git', ['rebase', `origin/${BRANCH}`], { cwd: WEB, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch {
-    execFileSync('git', ['rebase', '--abort'], { cwd: WEB, stdio: 'ignore' });
-    die(`web does not rebase cleanly onto origin/${BRANCH}.\n` +
-        `  Core ${VERSION} IS pushed; finish web by hand:\n` +
-        `    git -C ${WEB} rebase origin/${BRANCH}\n` +
-        `    then point apps/app/package.json at spattoo-designer-${VERSION}.tgz, npm install, commit, push`);
-  }
-}
-
 const webPkgPath = join(WEB, 'apps', 'app', 'package.json');
 const webPkgRaw  = readFileSync(webPkgPath, 'utf8');
 const bumped     = webPkgRaw.replace(/spattoo-designer-\d+\.\d+\.\d+\.tgz/g, `spattoo-designer-${VERSION}.tgz`);
