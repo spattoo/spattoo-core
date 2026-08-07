@@ -34,6 +34,7 @@ export function PrivacyDataSection({ apiClient }) {
   const [busy, setBusy]         = useState(false);
   const [err, setErr]           = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [saved, setSaved] = useState(false);   // the download said something — see download()
   const [reason, setReason]     = useState('');
 
   const load = useCallback(() => {
@@ -81,14 +82,32 @@ export function PrivacyDataSection({ apiClient }) {
     finally { setBusy(false); }
   }
 
+  // ── Downloading the record ────────────────────────────────────────────────────────────────────
+  // Reported as "I clicked it and nothing happened". Nothing visible DID happen: the browser saves
+  // to Downloads without a dialog, and this handler said nothing at all — no toast, no state, no
+  // change to the button. A silent success and a silent failure look identical, so the only
+  // available reading is that it is broken.
+  //
+  // It now confirms, naming the file so somebody knows what to look for.
   function download() {
-    const blob = new Blob([JSON.stringify({ exported_at: new Date().toISOString(), consent_events: history }, null, 2)],
-      { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'spattoo-consent-record.json';
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = new Blob([JSON.stringify({ exported_at: new Date().toISOString(), consent_events: history }, null, 2)],
+        { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'spattoo-consent-record.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      // Revoked on the NEXT tick, not the line after click(). Chrome usually starts the download
+      // synchronously so the old code usually worked — "usually" being the problem. Revoking a
+      // blob: URL the browser has not finished reading cancels the download, silently, which is
+      // exactly the symptom being investigated here.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 4000);
+    } catch (e) {
+      // A failure has to say so. It is the whole point of the block above.
+      setErr(e.message || 'Could not prepare the download.');
+    }
   }
 
   const pending = deletion?.deletion_status === 'pending_erasure';
@@ -128,6 +147,11 @@ export function PrivacyDataSection({ apiClient }) {
           style={{ alignSelf: 'flex-start', padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${GREEN}`, background: '#fff', color: GREEN, fontSize: 13, fontWeight: 700, fontFamily: 'inherit', cursor: history.length ? 'pointer' : 'not-allowed', opacity: history.length ? 1 : 0.5 }}>
           Download my record
         </button>
+        {saved && (
+          <span style={{ fontSize: 12.5, color: GREEN, fontWeight: 700 }}>
+            Saved as spattoo-consent-record.json — check your downloads.
+          </span>
+        )}
       </Section>
 
       {/* 2. Optional data uses — only rendered when there's something to manage */}

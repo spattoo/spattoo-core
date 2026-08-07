@@ -26,6 +26,15 @@ const STUBS = {
     store_hours: null,
     lead_time_days: 2,
   }),
+  // Two accepted agreements, so the "Your agreements" list and its download button are both live.
+  // With none the button is disabled and the section reads "No agreements recorded yet" — which is
+  // one of the two things "I clicked it and nothing happened" can mean.
+  fetchConsentHistory: async () => ({ events: [
+    { docKey: 'tos',     version: '2026-08-01', action: 'accepted', at: '2026-08-01T09:12:00Z' },
+    { docKey: 'privacy', version: '2026-08-01', action: 'accepted', at: '2026-08-01T09:12:00Z' },
+  ] }),
+  fetchLegalCurrent:   async () => ({ documents: [] }),
+  fetchDeletionStatus: async () => null,
   fetchStorefrontThemes: async () => ([
     { id: 1, key: 'spotlight',  name: 'Spotlight',  is_active: true,  is_premium: false },
     // Premium and coming-soon, so the picker's two non-default card states are both visible. A
