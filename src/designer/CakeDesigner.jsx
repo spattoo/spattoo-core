@@ -1,4 +1,4 @@
-import { Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { Fragment, Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
@@ -195,6 +195,40 @@ function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
   );
 }
 
+/**
+ * A horizontally scrolling row that admits it scrolls.
+ *
+ * Fifteen presets, seven visible, and the seventh landed 5px short of the edge — near enough to a
+ * clean end that the row read as "these are the colours". Exactly the defect the sheet had
+ * vertically, rotated ninety degrees, so it gets the same answer: a fade at the edge that is there
+ * while there is more and gone when there is not.
+ */
+function ScrollFadeRow({ children, style }) {
+  const ref = useRef(null);
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const read = () => setMore(el.scrollWidth - el.scrollLeft - el.clientWidth > 4);
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', read); ro.disconnect(); };
+  }, [children]);
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <div ref={ref} className="spattoo-noscrollbar" style={style}>{children}</div>
+      {more && (
+        <div aria-hidden="true" style={{
+          position: 'absolute', top: 0, bottom: 0, right: 0, width: 30, pointerEvents: 'none',
+          background: 'linear-gradient(to right, rgba(255,253,249,0), rgba(255,253,249,0.95))',
+        }} />
+      )}
+    </div>
+  );
+}
+
 // ── Color picker (react-colorful) ─────────────────────────────────────────────
 function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = false }) {
   // Common cake piping colour presets
@@ -227,7 +261,7 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = f
   if (compact) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-        <div className="spattoo-swatch-row" style={{
+        <ScrollFadeRow style={{
           display: 'flex', gap: 8, overflowX: 'auto', padding: '2px 0 4px',
           scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
         }}>
@@ -239,7 +273,7 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = f
                  style={{ flexShrink: 0, width: 1, alignSelf: 'stretch', margin: '4px 2px', background: 'rgba(0,0,0,0.16)' }} />
           )}
           {cakeColors.map((c, i) => swatch(c, `cake-${i}`))}
-        </div>
+        </ScrollFadeRow>
         <HexColorPicker color={color} onChange={onChange}
                         style={{ width: '100%', height: 150 }} />
       </div>
@@ -1063,6 +1097,48 @@ function PlusGlyph({ size = 20 }) {
   );
 }
 
+/** Double chevron: "there is more below". Two rather than one because a single chevron in this
+ *  position reads as a collapse control — something that would fold the sheet away — where a
+ *  doubled one is the scroll idiom. */
+function ChevronsDown({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m7 6 5 5 5-5" /><path d="m7 13 5 5 5-5" />
+    </svg>
+  );
+}
+
+/**
+ * The mobile edit sheet's scrolling body.
+ *
+ * A tab normally fits, so this normally does nothing. When it does not — a long frosting section on
+ * a short phone — the chevron appears and disappears the moment you reach the bottom. It exists
+ * because the previous design failed exactly here: content ran past a hard edge with no marker, six
+ * pixels above the Actions bar, and the two read as a floor. A cut with no sign is not an
+ * affordance; it is content nobody knows about.
+ */
+function SheetBody({ children }) {
+  const ref = useRef(null);
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const read = () => setMore(el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', read); ro.disconnect(); };
+  }, [children]);
+  return (
+    <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', width: '100%' }}>
+      <div ref={ref} className="spattoo-noscrollbar" style={s.sheetBody}>{children}</div>
+      {more && <div style={s.sheetMore} aria-hidden="true"><ChevronsDown /></div>}
+    </div>
+  );
+}
+
 // ── Sidebar tooltip ───────────────────────────────────────────────────────────
 function SidebarTooltip({ label, children }) {
   const [visible, setVisible] = useState(false);
@@ -1287,10 +1363,12 @@ function OrderDesignViewer({ order, onClose }) {
  *  spatula band it replaces was 76, so the 3D canvas gets 20px back on every phone. */
 const MOBILE_BAR_H = 56;
 
-/** Opening height of the mobile edit sheet: grip + header + one row of 44px swatches. */
-const EDIT_PANEL_COMPACT = 152;
 /** Floor for the drag — below this the grip and header have nowhere to sit. */
 const EDIT_PANEL_MIN = 108;
+/** Ceiling for a self-sizing sheet, as a fraction of the viewport. A tab taller than this scrolls,
+ *  and says so — see the chevron. Past ~60% the cake stops being big enough to judge a colour on,
+ *  which is the entire reason any of this is here. */
+const EDIT_PANEL_MAX_VH = 0.6;
 
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
@@ -1739,14 +1817,25 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [role, setRole] = useState(null);  // principal role from /me (e.g. 'customer'); null = unknown
   const [windowWidth, setWindowWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
   const [mobilePanelHeight, setMobilePanelHeight] = useState(260);
-  // The edit sheet (colour, frosting, shape) opens SHORT. Measured, it was opening at 552px — 65% of
-  // an 852px phone — with the cake's centre 200px behind it, so the one thing a colour picker exists
-  // to show you was the one thing you could not see. 152 is the handle, the header and a row of
-  // 44px swatches: the common edit, with the cake still in view. Drag up for the rest.
+  // ── The edit sheet sizes itself to ONE section ────────────────────────────────────────────────
+  // It opened at 552px — 65% of an 852px phone, the cake's centre 200px behind it. Shortening it to
+  // a fixed 152 fixed that and introduced a worse problem: the colour picker was sliced in half by
+  // the sheet's bottom edge, six pixels above the Actions bar, and the two read as one solid floor.
+  // Nobody would guess a picker was under there, so the sheet looked like seven swatches and a
+  // decorative stripe.
   //
-  // Deliberately NOT reset when the sheet reopens. Once the canvas resizes to sit above it (below),
-  // a tall sheet no longer hides anything, so a baker who pulled it up meant to.
-  const [editPanelH, setEditPanelH] = useState(EDIT_PANEL_COMPACT);
+  // So nothing is cut any more. The sheet shows one TAB at a time and takes exactly the height that
+  // tab needs (capped — see EDIT_PANEL_MAX_VH). `editDragH` is null until a baker drags, and resets
+  // when they switch tab or element, so each view fits itself and a drag is an override of the view
+  // in front of them rather than a setting they have to undo.
+  const [editTab,   setEditTab]   = useState(null);
+  const [editDragH, setEditDragH] = useState(null);
+  // The sheet's real, rendered height. The canvas insets by exactly this, so "the cake is never
+  // behind the sheet" holds whether the height came from the content or from a drag. The effect
+  // that measures it lives below, beside showRightPanel — it depends on it, and a `const` cannot be
+  // read from an effect declared above its definition.
+  const [editSheetH, setEditSheetH] = useState(0);
+  const editSheetRef = useRef(null);
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const chefsDeskRef     = useRef(null);
@@ -4036,6 +4125,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Recompose per-group editing is gated on the group's `editable` flag, not allowed_actions.color.
     || (hasActiveGroup && colorOpen);
 
+  // Measured rather than assumed: the height can come from the content, from a drag, or from the
+  // 60% cap, and the canvas has to inset by whichever it actually was.
+  useLayoutEffect(() => {
+    const el = editSheetRef.current;
+    if (!el) { setEditSheetH(0); return undefined; }
+    const read = () => setEditSheetH(Math.round(el.getBoundingClientRect().height));
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showRightPanel, isMobile, editTab, editDragH]);
+
   // ── Decoration edit stack ────────────────────────────────────────────────
   // Every editable decoration (sticker + topper + text) is a card in a right-side
   // accordion, mirroring the cream-piping popup: the selected one expands to its
@@ -5497,7 +5598,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }
         .spattoo-rail-nav::-webkit-scrollbar { display: none; }
-        .spattoo-swatch-row::-webkit-scrollbar { display: none; }
+        .spattoo-noscrollbar::-webkit-scrollbar { display: none; }
         /* A :hover cannot be expressed inline, and inline styles win — hence !important. */
         .spattoo-rail-menu button:hover { background: rgba(255,255,255,0.11) !important; color: #fff !important; }`}</style>
 
@@ -6152,7 +6253,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{
             position: 'absolute', inset: 0,
             right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0),
-            bottom: isMobile && showRightPanel ? editPanelH : 0,
+            bottom: isMobile && showRightPanel ? editSheetH : 0,
             transition: 'right 0.18s ease, bottom 0.18s ease',
           }}>
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
@@ -6275,7 +6376,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               area, it sat inside the sheet's box and showed through the frosting — legible enough to
               read, which is worse than either hiding it or moving it. It still applies while the
               sheet is open: you can rotate the cake to check the colour you just picked. */}
-          <div style={{ ...s.rotateHint, ...(isMobile && showRightPanel ? { bottom: editPanelH + 12 } : {}) }}>
+          <div style={{ ...s.rotateHint, ...(isMobile && showRightPanel ? { bottom: editSheetH + 12 } : {}) }}>
             Drag to rotate
           </div>
 
@@ -6318,46 +6419,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           )}
 
           {/* ── Right edit panel — driven by element caps ── */}
-          {showRightPanel && (
-            <div style={isMobile ? { ...s.wheelPanelMobile, height: editPanelH }
-              // When the element edit stack is open on the right, sit the colour wheel to its LEFT
-              // (and above it) instead of overlapping behind it. editPopup is right:10 width:200.
-              : { ...s.wheelPanel, ...(elementStackOpen ? { right: 230, zIndex: 30 } : {}) }}>
-              {/* The grip the other two sheets always had and this one did not — the only bottom
-                  sheet a baker could not shrink, which is why it was the one covering the cake.
-                  Capped at 88% of the viewport so the header behind it never disappears entirely. */}
-              {isMobile && (
-                <div style={s.panelHandle}
-                     onPointerDown={e => startPanelDrag(e, editPanelH, setEditPanelH,
-                       EDIT_PANEL_MIN, Math.round(window.innerHeight * 0.88))}>
-                  <div style={s.panelHandlePill} />
-                </div>
-              )}
-              <div style={s.wheelHeader}>
-                <span style={s.wheelTitle}>
-                  {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
-                  : selectedEl?.type === 'piping'  ? `${TIER_LABELS[selectedEl.tierIndex]} ${selectedEl.zone === 'top' ? 'Top' : 'Base'}`
-                  : selectedEl?.type === 'text'    ? 'Text Color'
-                  : selectedEl?.type === 'sticker'
-                      ? (activeGroupLabel ?? design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker')
-                  : selectedEl?.type === 'decorEl' ? (activeGroupLabel ?? '')
-                  : ''}
-                </span>
-                <button style={s.iconBtn} onClick={() => {
-                  if (tierPanelVisible) setSelectedEl(null);
-                  else { setColorOpen(false); }
-                }}>✕</button>
-              </div>
+          {showRightPanel && (() => {
+            /* ── One sheet, one section at a time ────────────────────────────────────────────────
+               The panel used to stack colour, gradient, shape and frosting in a single scrolling
+               column. On a desktop that is fine — it is a tall column beside the cake. On a phone it
+               made a sheet nothing could show honestly: too tall and it covered the cake, short
+               enough to spare the cake and its contents were sliced with no sign anything was below.
 
-              {/* Color wheel — tier (always), piping/text (when colorOpen) */}
-              {((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen) && (() => {
-                // Offer same-material colors so a reused hue renders exactly: tier → other
-                // tier colors (matte), any element → other element colors (sheened). The
-                // current selection's own color is dropped (no point reoffering it).
-                const pool = selectedEl?.type === 'tier' ? collectTierColors(design) : collectElementColors(design);
-                const cakeColors = [...new Set(pool)]
-                  .filter(c => c.toLowerCase() !== currentColor.toLowerCase());
-                return (
+               Tabs remove the dilemma rather than trading one horn for the other. Each section is
+               shown whole, the sheet is exactly as tall as that section needs, and every section is
+               one tap away with no back button.
+
+               Desktop renders every section stacked, exactly as before — it has the room, and a tab
+               strip beside a cake is a click where there was none. */
+            const sections = [];
+
+            if (((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen)) {
+              // Offer same-material colors so a reused hue renders exactly: tier → other tier colors
+              // (matte), any element → other element colors (sheened). The current selection's own
+              // color is dropped (no point reoffering it).
+              const pool = selectedEl?.type === 'tier' ? collectTierColors(design) : collectElementColors(design);
+              const cakeColors = [...new Set(pool)].filter(c => c.toLowerCase() !== currentColor.toLowerCase());
+              sections.push({ id: 'colour', label: 'Colour', node: (
+                <>
                   <ColorWheel
                     key={`${selectedEl.type}-${selectedEl.index ?? selectedEl.tierIndex ?? selectedEl.id ?? 'x'}-${selectedEl.zone ?? ''}`}
                     color={wheelColor}
@@ -6365,12 +6449,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     cakeColors={cakeColors}
                     compact={isMobile}
                   />
-                );
-              })()}
+                </>
+              ) });
+            }
 
-              {/* Gradient controls — config-gated (allowed_actions.gradient). Reuses the shared
-                  GradientControls component (also used by the piping popup). */}
-              {stopsEligible && (colorOpen || tierPanelVisible) && !hasActiveGroup && (
+            /* Gradient is its OWN tab, not part of Colour. Measured together they came to 446px on a
+               393 phone — over the 60% cap, so the one tab that must never be cut was the one that
+               scrolled. Apart, Colour fits whole.
+
+               It is only pushed when it has something to show (`stopsEligible`), so it is never a tab
+               a baker taps to find empty — which is the usual argument against splitting it out. */
+            if (((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen)
+                && stopsEligible && !hasActiveGroup) {
+              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : 'Blend', node: (
                 <GradientControls
                   stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
                   label={isGlazeTier ? 'Glaze colors' : 'Gradient colors'} maxStops={maxStops}
@@ -6385,78 +6476,129 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   balance={isGlazeTier ? undefined : (isTierGradient ? gradBalance : undefined)}
                   onBalanceChange={b => writeGradient(gradStops, gradMode, b)}
                 />
-              )}
+              ) });
+            }
 
-              {/* Per-tier SHAPE controls (the Shape picker + each family's own config knob — a number's
-                  digits, a rounded_rect's corner radius) all live in ONE component, config-driven by the
-                  tier's family, so a new shape's control lands there, not another inline block here. */}
-              {selectedEl?.type === 'tier' && (
+            // Per-tier SHAPE controls (the Shape picker + each family's own config knob — a
+            // number's digits, a rounded_rect's corner radius) all live in ONE component,
+            // config-driven by the tier's family, so a new shape's control lands there.
+            if (selectedEl?.type === 'tier') {
+              sections.push({ id: 'shape', label: 'Shape', node: (
                 <TierShapeControls
                   tier={design.tiers[selectedEl.index]}
                   index={selectedEl.index}
                   onShapeConfig={setTierShapeConfig}
                   onCornerR={setTierCornerR}
                 />
-              )}
+              ) });
 
-              {/* Frosting type (material) — tiers only. Colour stays on the ColorWheel above;
-                  this picks buttercream | whipped | fondant | naked, driving the frostings registry. */}
-              {selectedEl?.type === 'tier' && (
-                <FrostingTypePicker
-                  value={design.tiers[selectedEl.index]?.frostingType ?? 'buttercream'}
-                  onChange={t => setTierFrostingType(selectedEl.index, t)}
-                />
-              )}
-
-              {/* Frosting style (surface technique) — tiers whose type textures (cream, not fondant).
-                  Geometry only; composes with the type's material. */}
-              {selectedEl?.type === 'tier' && frostingAllowsStyles(design.tiers[selectedEl.index]?.frostingType ?? 'buttercream') && (() => {
-                const tier = design.tiers[selectedEl.index];
-                const type = tier?.frostingType ?? 'buttercream';
-                const options = stylesForFrosting(type);               // this material's ordered styles
-                // Clamp display to the offered set (smooth-safe) — guards stale state from older designs.
-                const style = options.some(o => o.value === tier?.frostingStyle) ? tier.frostingStyle : DEFAULT_STYLE;
-                const userParams = userStyleParams(style);
-                return (
-                  <>
+              // Frosting type (material) — buttercream | whipped | fondant | naked, driving the
+              // frostings registry — plus the surface technique for the types that texture, and that
+              // style's own customer-facing params. All one decision, so one tab.
+              const tier  = design.tiers[selectedEl.index];
+              const type  = tier?.frostingType ?? 'buttercream';
+              const opts  = frostingAllowsStyles(type) ? stylesForFrosting(type) : null;
+              const style = opts?.some(o => o.value === tier?.frostingStyle) ? tier.frostingStyle : DEFAULT_STYLE;
+              const userParams = opts ? userStyleParams(style) : [];
+              sections.push({ id: 'frosting', label: 'Frosting', node: (
+                <>
+                  <FrostingTypePicker
+                    value={type}
+                    onChange={t => setTierFrostingType(selectedEl.index, t)}
+                  />
+                  {opts && (
                     <FrostingStylePicker
                       value={style}
-                      options={options}
+                      options={opts}
                       onChange={st => setTierFrostingStyle(selectedEl.index, st)}
                     />
-                    {/* Generic, schema-driven controls — the customer-facing (user:true) params of the
-                        active style. Same panel for every texture; advanced params stay authoring-only. */}
-                    {userParams.length > 0 && (
-                      <StyleControls
-                        params={userParams}
-                        values={resolveStyleParams(style, tier?.styleParams)}
-                        onChange={(key, value) => setTierStyleParam(selectedEl.index, key, value)}
-                      />
-                    )}
-                  </>
-                );
-              })()}
+                  )}
+                  {userParams.length > 0 && (
+                    <StyleControls
+                      params={userParams}
+                      values={resolveStyleParams(style, tier?.styleParams)}
+                      onChange={(key, value) => setTierStyleParam(selectedEl.index, key, value)}
+                    />
+                  )}
+                </>
+              ) });
+            }
 
-
-              {/* Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the
-                  canvas resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range
-                  that ignored placement_config.scale and a photo frame's cake cap (INVARIANTS #1/#3). */}
-              {caps?.resize && selectedEl?.type === 'sticker' && (() => {
-                const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
-                const ctl = sizeControlOf(sticker);
-                if (!sticker || !ctl) return null;
-                return (
+            // Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the canvas
+            // resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range that
+            // ignored placement_config.scale and a photo frame's cake cap (INVARIANTS #1/#3).
+            if (caps?.resize && selectedEl?.type === 'sticker') {
+              const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
+              const ctl = sizeControlOf(sticker);
+              if (sticker && ctl) {
+                sections.push({ id: 'size', label: 'Size', node: (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
                     <SizeDial size={ctl.value} min={ctl.min} max={ctl.max} step={ctl.step}
                       onChange={v => resizeSticker(sticker, v)} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(ctl.value * 100)}%</span>
                   </div>
-                );
-              })()}
+                ) });
+              }
+            }
 
-            </div>
-          )}
+            if (!sections.length) return null;
+            // A tab that no longer exists (the selection changed under it) falls back to the first,
+            // rather than showing an empty sheet.
+            const active   = sections.find(x => x.id === editTab) ?? sections[0];
+            const showTabs = isMobile && sections.length > 1;
+
+            return (
+              <div ref={isMobile ? editSheetRef : null}
+                   style={isMobile ? { ...s.wheelPanelMobile, ...(editDragH ? { height: editDragH } : {}) }
+                     // When the element edit stack is open on the right, sit the colour wheel to its
+                     // LEFT (and above it) instead of overlapping behind it. editPopup is right:10 width:200.
+                     : { ...s.wheelPanel, ...(elementStackOpen ? { right: 230, zIndex: 30 } : {}) }}>
+                {/* The grip the other two sheets always had and this one did not. It is no longer
+                    load-bearing — nothing is hidden behind a drag any more — so it is now what it
+                    should always have been: an optional way to make the picker bigger. */}
+                {isMobile && (
+                  <div style={s.panelHandle}
+                       onPointerDown={e => startPanelDrag(e, editSheetH, setEditDragH,
+                         EDIT_PANEL_MIN, Math.round(window.innerHeight * 0.88))}>
+                    <div style={s.panelHandlePill} />
+                  </div>
+                )}
+                <div style={s.wheelHeader}>
+                  <span style={s.wheelTitle}>
+                    {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
+                    : selectedEl?.type === 'piping'  ? `${TIER_LABELS[selectedEl.tierIndex]} ${selectedEl.zone === 'top' ? 'Top' : 'Base'}`
+                    : selectedEl?.type === 'text'    ? 'Text Color'
+                    : selectedEl?.type === 'sticker'
+                        ? (activeGroupLabel ?? design.stickers.find(s => s.id === selectedEl.id)?.name ?? 'Sticker')
+                    : selectedEl?.type === 'decorEl' ? (activeGroupLabel ?? '')
+                    : ''}
+                  </span>
+                  <button style={s.iconBtn} onClick={() => {
+                    if (tierPanelVisible) setSelectedEl(null);
+                    else { setColorOpen(false); }
+                  }}>✕</button>
+                </div>
+
+                {showTabs && (
+                  <div style={s.editTabs} role="tablist">
+                    {sections.map(sec => (
+                      <button key={sec.id} role="tab" aria-selected={sec.id === active.id}
+                              style={{ ...s.editTab, ...(sec.id === active.id ? s.editTabOn : {}) }}
+                              // The drag is an override of THIS view, so switching view drops it and
+                              // the next tab sizes to its own content.
+                              onClick={() => { setEditTab(sec.id); setEditDragH(null); }}>
+                        {sec.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {isMobile
+                  ? <SheetBody key={active.id}>{active.node}</SheetBody>
+                  : sections.map(sec => <Fragment key={sec.id}>{sec.node}</Fragment>)}
+              </div>
+            );
+          })()}
 
           {/* ── Unified element stack: decorations + piping in one accordion ── */}
           {elementStackOpen && (
@@ -6929,8 +7071,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
       </div>{/* end main */}
 
-      {/* ── Order + actions bar ── */}
-      {selectedEl?.type !== 'text' && (
+      {/* ── Order + actions bar ──────────────────────────────────────────────────────────────────
+          Hidden on a phone while the edit sheet is open. Two reasons, and the second is the one that
+          mattered: "Create order for customer" and "Share the draft" are order-level acts that
+          nobody wants mid-recolour — and sitting six pixels under the sheet, it turned the sheet's
+          bottom edge into a floor. A baker seeing a cut-off picker directly above a solid button bar
+          reads the whole thing as finished, which is precisely what was reported. */}
+      {selectedEl?.type !== 'text' && !(isMobile && showRightPanel) && (
         (hasCap('template:manage') || hasCap('customer:manage')) && isMobile ? (
           /* Baker/staff on mobile: a compact ⋮ actions menu + Share, so the bar doesn't crowd the canvas.
              Customers (no manage caps) fall through to the prominent CTA below. */
@@ -8110,6 +8257,28 @@ const s = {
     zIndex: 1, order: 0,
     boxShadow: '0 -2px 16px rgba(0,0,0,0.10)',
   },
+  // Tabs, not a scrolling stack. 44 minimum so the strip is not a row of targets the bar below it
+  // would be criticised for.
+  editTabs: { display: 'flex', gap: 4, padding: '0 0 10px', flexShrink: 0, width: '100%' },
+  editTab: {
+    flex: '1 1 0', minWidth: 0, minHeight: 44, padding: '9px 6px', borderRadius: 9, border: 'none',
+    background: 'rgba(0,0,0,0.05)', color: '#6b6b6b', fontSize: 12, fontWeight: 700,
+    fontFamily: "'Quicksand',sans-serif", cursor: 'pointer',
+  },
+  editTabOn: { background: '#2C4433', color: '#fff' },
+  sheetBody: {
+    flex: '1 1 auto', minHeight: 0, width: '100%', overflowY: 'auto',
+    display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',
+    scrollbarWidth: 'none',
+  },
+  // Sits OVER the last few pixels of the body, not after it — a marker that took its own row would
+  // add height to the thing whose height is the problem.
+  sheetMore: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: 32, pointerEvents: 'none',
+    display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 1,
+    color: '#8a7c70',
+    background: 'linear-gradient(to bottom, rgba(255,253,249,0), rgba(255,253,249,0.92))',
+  },
   panelHandle: {
     width: '100%', display: 'flex', justifyContent: 'center',
     padding: '6px 0 10px', cursor: 'ns-resize', touchAction: 'none', flexShrink: 0,
@@ -8120,11 +8289,12 @@ const s = {
   wheelPanelMobile: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
-    // `height` comes from editPanelH — a fixed, dragged height rather than `maxHeight: '80%'`, so
-    // the canvas above can inset by exactly the same number. With a max-height the sheet's real
-    // height depended on its content and the two would disagree, which is how the cake ends up
-    // behind it again. Content scrolls inside.
-    overflowY: 'auto', display: 'flex', flexDirection: 'column',
+    // Height comes from the CONTENT of the active tab, capped. A fixed height was the previous
+    // attempt and it is what sliced the colour picker in half. The canvas insets by the sheet's
+    // MEASURED height (editSheetH), so content-sized, dragged and capped all hold the same promise:
+    // the cake is never behind the sheet.
+    maxHeight: `${Math.round(EDIT_PANEL_MAX_VH * 100)}%`,
+    overflow: 'hidden', display: 'flex', flexDirection: 'column',
     // Frosted (was near-solid 0.97) to match the element stack — the cake shows through.
     background: 'rgba(255,255,255,0.55)',
     backdropFilter: 'blur(18px)',
