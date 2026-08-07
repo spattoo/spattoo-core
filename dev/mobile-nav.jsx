@@ -98,6 +98,19 @@ const visibleItems = (flags) => ALL_ITEMS.filter(i => !i.flag || flags[i.flag]);
 // Every tappable thing carries data-t. An item overflowing a row with no visible boundary looks
 // exactly like an item that was never added — which is how Share went missing — so the numbers are
 // read off getBoundingClientRect and printed, per option, on every change.
+/** The real viewport, for life-size mode. A mock phone drawn 375px wide on a desktop is the right
+ *  PROPORTIONS and the wrong SIZE — and target size is the entire question here, so on a phone the
+ *  bars are rendered at the device's own width, where a 31px target is actually 31px under a thumb. */
+function useViewport() {
+  const [v, setV] = useState(() => (typeof window === 'undefined' ? 1200 : window.innerWidth));
+  useLayoutEffect(() => {
+    const on = () => setV(window.innerWidth);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return v;
+}
+
 function useTargets(ref, deps) {
   const [m, setM] = useState({ n: 0, minW: 0, minH: 0, clipped: 0 });
   useLayoutEffect(() => {
@@ -178,8 +191,25 @@ function SpatulaSvg({ W }) {
 // ── One card: heading, phone, and the readout underneath ────────────────────────────────────────
 // The metrics sit OUTSIDE the phone frame — inside it they would be clipped by the bezel's
 // overflow, and they are commentary on the phone rather than part of the screen.
-function Card({ title, blurb, width, m, barH, note, children }) {
+function Card({ title, blurb, width, m, barH, note, bare, children }) {
   const bad = (m.minW && m.minW < MIN_TARGET) || (m.minH && m.minH < MIN_TARGET);
+
+  // Life-size: no mock phone, no bezel. The bar IS the bottom of the real screen, and the readout
+  // floats above it. Everything else about the option is identical — same component, same styles.
+  if (bare) {
+    return (
+      <>
+        <div style={st.liveReadout}>
+          <b style={{ color: '#2A241F' }}>{title}</b>
+          <span>{barH}px tall · smallest target <b style={{ color: bad ? '#b3261e' : '#111' }}>{m.minW}×{m.minH}</b></span>
+          <span style={{ color: bad ? '#b3261e' : '#2C4433', fontWeight: 800 }}>
+            {bad ? `under ${MIN_TARGET}` : `clears ${MIN_TARGET}`}{m.clipped > 0 ? ` · ${m.clipped} off the bar` : ''}
+          </span>
+        </div>
+        {children}
+      </>
+    );
+  }
   // The card tracks the phone's width. Fixed at 300 it was NARROWER than a 375px phone, so each
   // frame overflowed its own card and sat on top of the next one — and the sheet, correctly clipped
   // by its own phone, appeared to spill into the neighbour.
@@ -216,12 +246,12 @@ const Row = ({ k, v, warn }) => (
    Reproduced exactly: the band is BASE_H tall with `lift` under it, and the icon row is inset
    `left: 48 / right: 12` to clear the cap and stop at the blade tip. Buttons are `flex: 1 1 0` with
    a 40px cap — the override that had to be written when eight fixed-40s would not fit. */
-function Baseline({ width, flags, active, onPick }) {
+function Baseline({ width, flags, active, onPick, bare }) {
   const ref = useRef(null);
   const items = visibleItems(flags);
   const m = useTargets(ref, [width, flags.invite, flags.codesign]);
   return (
-    <Card title="Now · spatula" width={width} m={m} barH={BASE_H + BASE.lift}
+    <Card title="Now · spatula" width={width} m={m} barH={BASE_H + BASE.lift} bare={bare}
           blurb="Row pinned left 48 / right 12 — the screen minus 60, whatever the phone.">
       <div style={{ position: 'relative', height: BASE_H, marginBottom: BASE.lift, flexShrink: 0 }}>
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
@@ -249,7 +279,7 @@ function Baseline({ width, flags, active, onPick }) {
    Five slots, full width, no shape tax. The reclaimed room buys LABELS, which is the quiet win: an
    icon-only bottom nav asks every baker to learn eight glyphs, and there was never space to stop
    asking. Everything else is one tap away in a sheet, where it is listed BY NAME. */
-function OptionA({ width, flags, active, onPick }) {
+function OptionA({ width, flags, active, onPick, bare }) {
   const ref = useRef(null);
   const [sheet, setSheet] = useState(false);
   const items = visibleItems(flags);
@@ -259,7 +289,7 @@ function OptionA({ width, flags, active, onPick }) {
   const restActive = rest.some(i => i.id === active);
 
   return (
-    <Card title="A · strip + More" width={width} m={m} barH={STRIP_H} note={`+${rest.length} in sheet`}
+    <Card title="A · strip + More" width={width} m={m} barH={STRIP_H} note={`+${rest.length} in sheet`} bare={bare}
           blurb="Four primary; the rest one tap away, by name. Room for labels.">
       {sheet && <div style={st.scrim} onClick={() => setSheet(false)} />}
       {sheet && (
@@ -301,7 +331,7 @@ function OptionA({ width, flags, active, onPick }) {
    "Off the bar" in the readout is not a bug here — it is the cost being stated out loud. In the
    baseline the same number meant an item nobody could reach; here it means an item behind a swipe.
    Both are items a baker cannot see. */
-function OptionB({ width, flags, active, onPick, arrow }) {
+function OptionB({ width, flags, active, onPick, arrow, bare }) {
   const ref = useRef(null);
   const scroller = useRef(null);
   const items = visibleItems(flags);
@@ -315,7 +345,7 @@ function OptionB({ width, flags, active, onPick, arrow }) {
   const nudge = () => scroller.current?.scrollBy({ left: 132, behavior: 'smooth' });
 
   return (
-    <Card title="B · strip + scroll" width={width} m={m} barH={STRIP_H} note={`${items.length} items`}
+    <Card title="B · strip + scroll" width={width} m={m} barH={STRIP_H} note={`${items.length} items`} bare={bare}
           blurb="Everything kept. The half-cut item at the right edge is the affordance.">
       <div ref={ref} style={{ ...st.strip, padding: 0, position: 'relative' }}>
         <div ref={scroller} onScroll={onScroll} style={st.scroller} className="no-sb">
@@ -339,34 +369,78 @@ function OptionB({ width, flags, active, onPick, arrow }) {
   );
 }
 
+const OPTIONS = [
+  { key: 'base', short: 'Now',  Comp: Baseline },
+  { key: 'a',    short: 'A',    Comp: OptionA },
+  { key: 'b',    short: 'B',    Comp: OptionB },
+];
+
 function Harness() {
   const [width, setWidth] = useState(375);
   const [flags, setFlags] = useState({ invite: false, codesign: false });
   const [arrow, setArrow] = useState(false);
   const [active, setActive] = useState('elements');
+  const vw = useViewport();
+  // Three 375px phones plus gaps need ~1200. Below that they cannot sit side by side, so the page
+  // switches to life-size rather than shrinking them — which is the better view on a phone anyway.
+  const wide = vw >= 1200;
+  const [live, setLive] = useState('a');
   const n = visibleItems(flags).length;
+
+  const controls = (
+    <>
+      {wide && (
+        <>
+          <span style={st.ctlLabel}>Phone</span>
+          {[[320, 'SE'], [375, '13 mini'], [393, '15 Pro']].map(([w, name]) => (
+            <button key={w} onClick={() => setWidth(w)} style={{ ...st.chip, ...(width === w ? st.chipOn : {}) }}>
+              {name} · {w}
+            </button>
+          ))}
+          <span style={st.sep} />
+        </>
+      )}
+      <span style={st.ctlLabel}>Rail items ({n})</span>
+      {[['invite', 'Invite'], ['codesign', 'Together']].map(([k, label]) => (
+        <button key={k} onClick={() => setFlags(f => ({ ...f, [k]: !f[k] }))}
+                style={{ ...st.chip, ...(flags[k] ? st.chipOn : {}) }}>{label}</button>
+      ))}
+      <span style={st.sep} />
+      <button onClick={() => setArrow(v => !v)} style={{ ...st.chip, ...(arrow ? st.chipOn : {}) }}>
+        B: arrow
+      </button>
+    </>
+  );
+
+  // ── Life-size ─────────────────────────────────────────────────────────────────────────────────
+  // One option at a time, bar pinned to the bottom of the REAL screen at the REAL width. The whole
+  // question is whether a 31px target is tappable, and no mock phone can answer that.
+  if (!wide) {
+    const { Comp } = OPTIONS.find(o => o.key === live) ?? OPTIONS[1];
+    return (
+      <div style={st.live}>
+        <div style={{ ...st.bar, marginBottom: 0, padding: '8px 10px' }}>{controls}</div>
+        <div style={st.liveCanvas}>
+          <div style={st.cake} />
+          <div style={st.caption}>FRONT · drag to rotate</div>
+        </div>
+        <div style={st.liveSwitch}>
+          {OPTIONS.map(o => (
+            <button key={o.key} onClick={() => setLive(o.key)}
+                    style={{ ...st.chip, ...(live === o.key ? st.chipOn : {}) }}>{o.short}</button>
+          ))}
+        </div>
+        <Comp bare width={vw} flags={flags} active={active} onPick={setActive} arrow={arrow} />
+      </div>
+    );
+  }
 
   return (
     <div style={st.page}>
       <div style={st.bar}>
         <b style={{ fontSize: 13, color: '#2A241F' }}>Mobile nav</b>
         <span style={st.sep} />
-        <span style={st.ctlLabel}>Phone</span>
-        {[[320, 'SE'], [375, '13 mini'], [393, '15 Pro']].map(([w, name]) => (
-          <button key={w} onClick={() => setWidth(w)} style={{ ...st.chip, ...(width === w ? st.chipOn : {}) }}>
-            {name} · {w}
-          </button>
-        ))}
-        <span style={st.sep} />
-        <span style={st.ctlLabel}>Rail items ({n})</span>
-        {[['invite', 'Invite'], ['codesign', 'Design Together']].map(([k, label]) => (
-          <button key={k} onClick={() => setFlags(f => ({ ...f, [k]: !f[k] }))}
-                  style={{ ...st.chip, ...(flags[k] ? st.chipOn : {}) }}>{label}</button>
-        ))}
-        <span style={st.sep} />
-        <button onClick={() => setArrow(v => !v)} style={{ ...st.chip, ...(arrow ? st.chipOn : {}) }}>
-          B: scroll arrow
-        </button>
+        {controls}
       </div>
 
       <div style={st.stage}>
@@ -464,6 +538,16 @@ const st = {
     color: 'rgba(255,255,255,0.72)', fontFamily: "'Quicksand',sans-serif", minHeight: 68,
   },
   sheetLabel: { fontSize: 10.5, fontWeight: 700 },
+
+  // Life-size layout: a flex column filling the viewport, with the bar as the last child so it sits
+  // on the bottom edge exactly as it would in the app.
+  live: { position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: '#f4f2ee', overflow: 'hidden' },
+  liveCanvas: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, minHeight: 0 },
+  liveSwitch: { display: 'flex', gap: 6, justifyContent: 'center', padding: '0 0 10px', flexShrink: 0 },
+  liveReadout: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0,
+    padding: '8px 12px', fontSize: 11.5, color: '#7A6C60', textAlign: 'center',
+  },
 
   metrics: { width: '100%', padding: '10px 12px', background: '#fff', border: '1px solid #e0dbd2', borderRadius: 10 },
   row: { display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: '#7A6C60', padding: '2px 0' },
