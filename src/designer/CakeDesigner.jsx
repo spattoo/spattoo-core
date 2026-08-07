@@ -2,6 +2,7 @@ import { Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCal
 import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
+import { splitMobileNav, strandedMenus } from './mobileNav.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
@@ -987,104 +988,44 @@ function SpatulaFrame() {
   );
 }
 
-// ── Mobile: the spatula laid horizontally as the bottom nav bar ─────────────────
-// Cap + hang-hole on the LEFT, handle (icons sit on it), paddle on the RIGHT that
-// bulges both up and down. Transpose of the vertical silhouette; symmetric top/
-// bottom. handleHalf/bladeHalf are half-THICKNESSES (vertical).
-function spatulaBarPath({ W, H, capLeftX, handleHalf, bladeHalf, shoulderX, bladeFullX, bladeRightX, topCornerR, botCornerR }) {
-  const cy = H / 2;
-  const capR = handleHalf;
-  const capCX = capLeftX + capR;
-  const Tt = cy - handleHalf, Tb = cy + handleHalf;   // handle top / bottom
-  const Bt = cy - bladeHalf,  Bb = cy + bladeHalf;     // blade top / bottom
-  const sh = bladeFullX - shoulderX;
-  const crt = Math.min(topCornerR, bladeHalf);
-  const crb = Math.min(botCornerR, bladeHalf);
-  return [
-    `M ${capCX} ${Tt}`,
-    `L ${shoulderX} ${Tt}`,
-    `C ${shoulderX + sh * 0.5} ${Tt} ${bladeFullX - sh * 0.5} ${Bt} ${bladeFullX} ${Bt}`,
-    `L ${bladeRightX - crt} ${Bt}`,
-    `Q ${bladeRightX} ${Bt} ${bladeRightX} ${Bt + crt}`,
-    `L ${bladeRightX} ${Bb - crb}`,
-    `Q ${bladeRightX} ${Bb} ${bladeRightX - crb} ${Bb}`,
-    `L ${bladeFullX} ${Bb}`,
-    `C ${bladeFullX - sh * 0.5} ${Bb} ${shoulderX + sh * 0.5} ${Tb} ${shoulderX} ${Tb}`,
-    `L ${capCX} ${Tb}`,
-    `A ${capR} ${capR} 0 0 1 ${capCX} ${Tt}`,
-    'Z',
-  ].join(' ');
+// ── Mobile: the spatula comes off the bottom bar ────────────────────────────────
+// The horizontal silhouette (spatulaBarPath / MobileSpatulaBar / MOBILE_BAR) lived here and drew a
+// spatula behind the phone's nav icons. It is gone, and the reason is measured rather than aesthetic.
+//
+// Its icon row had to be inset `left: 48` to clear the cap and hang-hole and `right: 12` to stop at
+// the blade tip, so the row was always the SCREEN's width minus 60 — a tax that did not shrink when
+// the phone did. Eight 40px buttons need 320px; a 320px phone gave the row 260. That is why
+// `mobileNavBtn` had to override sidebarBtn's fixed width, and it still landed at 31x40 on a small
+// phone and 40x40 on a large one: under the 44px floor on EVERY phone, because the 40px cap was a
+// ceiling a wider screen could not lift. It is also how Share came to sit off the end of the bar,
+// invisible — an item overflowing a row with no visible boundary looks exactly like an item that was
+// never added.
+//
+// The shape is not lost. The desktop rail still draws it (SpatulaFrame), where there is room for it,
+// and SpatulaMarkIcon below carries it into the phone's More button — so the charm moves to somewhere
+// it costs nothing instead of paying rent on the most contested 60px in the app.
+//
+// dev/mobile-nav.html holds the comparison this came from, with the numbers live.
+
+/** The spatula, small enough to be an icon. Marks the phone's More button, so the drawer reads as
+ *  "the rest of Spattoo" rather than a generic ellipsis. Solid rather than stroked: at 20px the
+ *  handle and blade of an outlined spatula collapse into an indistinct stick. */
+function SpatulaMarkIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M9.4 2.4h5.2c.75 0 1.3.58 1.3 1.3v6.1c0 1.45-.62 2.3-1.5 3.0l-.55.44v7.2a1.85 1.85 0 0 1-3.7 0v-7.2l-.55-.44c-.88-.7-1.5-1.55-1.5-3.0V3.7c0-.72.55-1.3 1.3-1.3Z" />
+    </svg>
+  );
 }
 
-// Absolutely-positioned SVG that fills the mobile bottom-nav band (measured width)
-// and draws the horizontal spatula behind the icons. pointer-events none.
-const MOBILE_BAR = { handleHalf: 19, bladeHalf: 34, bladeLen: 135, shoulderSpan: 36, topCornerR: 4, botCornerR: 54, holeOff: 4, lift: 4 };
-const MOBILE_BAR_H = MOBILE_BAR.bladeHalf * 2 + 4;   // band height (paddle fits)
-
-function MobileSpatulaBar() {
-  const ref = useRef(null);
-  const [w, setW] = useState(360);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => setW(el.clientWidth || 360);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const { handleHalf, bladeHalf, bladeLen, shoulderSpan, topCornerR, botCornerR, holeOff } = MOBILE_BAR;
-  const W = w, H = MOBILE_BAR_H, cy = H / 2;
-  const capLeftX = 6, bladeRightX = W - 6;
-  const shoulderX = bladeRightX - bladeLen;
-  const bladeFullX = shoulderX + shoulderSpan;
-  const holeX = capLeftX + handleHalf + holeOff, hr = 7;
-  const path = spatulaBarPath({ W, H, capLeftX, handleHalf, bladeHalf, shoulderX, bladeFullX, bladeRightX, topCornerR, botCornerR });
-  const hole = `M ${holeX} ${cy - hr} a ${hr} ${hr} 0 1 0 0 ${2 * hr} a ${hr} ${hr} 0 1 0 0 ${-2 * hr} Z`;
-
+/** The + that starts a cake. railItems carries `icon: null` for it because both bars draw it as a
+ *  ring rather than a glyph — a different SHAPE, not a different item. */
+function PlusGlyph({ size = 20 }) {
   return (
-    <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', top: '50%', left: 0, transform: 'translateY(-50%)', overflow: 'visible' }}>
-        <defs>
-          {/* Same stops as the desktop silhouette and panel headers. This copy had drifted to a
-              0.55 midpoint against the other's 0.5 — nobody chose that, which is the argument for
-              one definition. */}
-          <linearGradient id="mbar-body" x1="0" y1="0" x2="0" y2="1">
-            {CHROME_STOPS.map(({ offset, color }) => (
-              <stop key={offset} offset={offset} stopColor={color} />
-            ))}
-          </linearGradient>
-          <radialGradient id="mbar-sheen" cx="0.5" cy="0.08" r="0.7">
-            <stop offset="0" stopColor="rgba(255,255,255,0.03)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
-          </radialGradient>
-          <filter id="mbar-soft" x="-10%" y="-60%" width="120%" height="220%">
-            <feDropShadow dx="0" dy="5" stdDeviation="11" floodColor="#000" floodOpacity="0.24" />
-          </filter>
-          {/* 3D: thin edge sheen + thin inner shadow (flat, not chunky) */}
-          <filter id="mbar-spec" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
-            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.62" specularExponent="22" lightingColor="#d7dbe2" result="s">
-              <feDistantLight azimuth="235" elevation="30" />
-            </feSpecularLighting>
-            <feComposite in="s" in2="SourceAlpha" operator="in" />
-          </filter>
-          <filter id="mbar-inner" x="-30%" y="-30%" width="160%" height="160%">
-            <feComponentTransfer in="SourceAlpha"><feFuncA type="table" tableValues="1 0" /></feComponentTransfer>
-            <feGaussianBlur stdDeviation="3.5" result="ab" />
-            <feOffset in="ab" dx="0" dy="-0.5" result="o" />
-            <feFlood floodColor="#000" floodOpacity="0.45" />
-            <feComposite in2="o" operator="in" result="sh" />
-            <feComposite in="sh" in2="SourceAlpha" operator="in" />
-          </filter>
-        </defs>
-        <path d={`${path} ${hole}`} fill="url(#mbar-body)" fillRule="evenodd" filter="url(#mbar-soft)" />
-        <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#mbar-inner)" />
-        <path d={path} fill="#000" filter="url(#mbar-spec)" />
-        <path d={`${path} ${hole}`} fill="url(#mbar-sheen)" fillRule="evenodd" />
-        <circle cx={holeX} cy={cy} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.4" />
-      </svg>
-    </div>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
   );
 }
 
@@ -1308,6 +1249,10 @@ function OrderDesignViewer({ order, onClose }) {
 // reachable from inside the Orders panel or by picking a day on the calendar. It needs
 // `order:manage`: a view-only member must not be offered a form they cannot submit, and for them
 // the list is simply first.
+/** Bottom strip height, before the home-indicator inset. Icon (20) + label (12) + padding. The
+ *  spatula band it replaces was 76, so the 3D canvas gets 20px back on every phone. */
+const MOBILE_BAR_H = 56;
+
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
@@ -1870,7 +1815,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // 'new' is in the list so the desktop rail can draw it first; the mobile bar filters it out and
   // draws its own circled +, which is a different SHAPE, not a different item.
   const railItems = useMemo(() => [
-    { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create' },
+    // `short` is for the phone's strip, where a slot is ~70px and a label is 9.5px. Only the items
+    // that can appear THERE need one; the More sheet is three-across and fits the full name.
+    { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create', short: 'New' },
     { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
     { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create' },
     { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create' },
@@ -1888,6 +1835,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
   ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities]);
+
+  // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
+  // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
+  // list is the whole point, and the last time they did not, Uploads went missing from the phone.
+  const { primary: mobilePrimary, secondary: mobileSecondary } = useMemo(() => splitMobileNav(railItems), [railItems]);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+
+  useEffect(() => {
+    if (!import.meta.env?.DEV) return;
+    const stranded = strandedMenus(railItems);
+    if (stranded.length) {
+      console.error(`[nav] ${stranded.join(', ')} carries a submenu but sits in the More sheet, which has no surface to render one. Add it to MOBILE_PRIMARY, or give the sheet a submenu.`);
+    }
+  }, [railItems]);
 
   // What tapping one DOES. One function, both surfaces — the phone's copy of this had also lost
   // 'uploads', so even re-adding the item to the mobile array would have drawn a dead button.
@@ -1918,6 +1879,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     : id === 'tools'     ? toolsOpen
     : id === 'codesign'  ? codesignPanelOpen
     : false);
+
+  // More lights up when the destination you are looking at lives inside it — otherwise the strip
+  // would show nothing selected while a panel from the sheet is open, and the bar would read as
+  // though you were nowhere.
+  const mobileSecondaryActive = mobileSecondary.some(i => railItemActive(i.id, i.menu));
 
 
   useEffect(() => {
@@ -6923,55 +6889,80 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )
       )}
 
-      {/* ── Mobile bottom nav ── */}
+      {/* ── Mobile bottom nav ─────────────────────────────────────────────────────────────────────
+          A flat strip: four destinations and a More sheet. Both halves come from the SAME railItems
+          the desktop rail draws and go through the same openRailItem — the phone used to keep its
+          own copy of the list and its own click handler, and the copies drifted until Uploads
+          existed on the rail and nowhere on the phone. */}
       {isMobile && (
-        <div style={s.mobileBottomNav}>
-          <MobileSpatulaBar />
-          <div style={s.mobileNavRow}>
-          {/* New cake — circle + as first nav item */}
-          <button style={{ ...s.sidebarBtn, ...s.mobileNavBtn, borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' }} onClick={handleNewCake}>
-            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
+        <>
+          {/* The scrim stops ABOVE the strip rather than covering it. A dimmed nav bar looks
+              disabled at the exact moment its most useful job is letting you leave — tapping a
+              different destination should switch, not merely dismiss. */}
+          {mobileMoreOpen && <div style={s.mobileSheetScrim} onClick={() => setMobileMoreOpen(false)} />}
+          {mobileMoreOpen && (
+            <div style={s.mobileSheet} role="menu">
+              <div style={s.mobileSheetGrip} />
+              <div style={s.mobileSheetGrid}>
+                {mobileSecondary.map(({ id, icon, label }) => (
+                  <button key={id} role="menuitem"
+                          style={{ ...s.mobileSheetItem, ...(railItemActive(id) ? s.mobileSheetItemOn : {}) }}
+                          onClick={() => { setMobileMoreOpen(false); openRailItem(id); }}>
+                    {icon}
+                    <span style={s.mobileSheetLabel}>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* The SAME railItems the desktop rail draws, minus 'new' — the + is drawn above, as a
-              circle, which is a different shape rather than a different list. This bar used to
-              carry its own copy of the array and its own copy of the click handler, and the copies
-              had already drifted: Uploads was added to the rail and never reached the phone, so a
-              baker on a phone had no way into their own images at all. */}
-          {railItems.filter(item => item.id !== 'new').map(({ id, icon, menu }) => {
-            const active = railItemActive(id, menu);
-            if (menu) {
+          <div style={s.mobileBottomNav}>
+            {mobilePrimary.map(({ id, icon, label, short, menu }) => {
+              const active = railItemActive(id, menu);
+              // The + is a ring rather than a glyph — a different SHAPE for the same item, which is
+              // why 'new' stays in railItems instead of being drawn separately.
+              const slot = (
+                <button style={{ ...s.mobileNavSlot, ...(active ? s.mobileNavSlotOn : {}) }}
+                        onClick={() => openRailItem(id, menu)}>
+                  <span style={id === 'new' ? s.mobileNavPlus : s.mobileNavIcon}>
+                    {id === 'new' ? <PlusGlyph size={20} /> : icon}
+                  </span>
+                  <span style={s.mobileNavLabel}>{short ?? label}</span>
+                </button>
+              );
+              // Every slot gets the SAME wrapper, including the ones with no submenu. RailSubmenu
+              // supplies one for Orders, and without a matching wrapper elsewhere the buttons were
+              // direct flex children sized `1 1 auto` — basis from CONTENT, so "New" came out 47px
+              // beside a much wider "Decorations". Equal-width slots are the point of a strip, and
+              // the narrowest one is what decides whether the bar clears 44px.
+              if (!menu) return <div key={id} style={s.mobileNavSlotWrap}>{slot}</div>;
+              // Same RailSubmenu as the desktop rail, anchored UPWARD — this bar is pinned to the
+              // bottom of the screen (the Settings menu re-anchors the same way). One submenu
+              // component, two anchors.
               return (
-                // Same RailSubmenu as the desktop rail, anchored UPWARD — this rail is
-                // pinned to the bottom of the screen (the Settings menu re-anchors the
-                // same way). One submenu component, two anchors.
-                <RailSubmenu key={id} label="Orders" items={menu}
+                <RailSubmenu key={id} label={label} items={menu}
                   open={navMenuId === id}
                   containerRef={navMenuId === id ? navMenuRef : null}
-                  style={s.mobileNavBtn}
+                  style={s.mobileNavSlotWrap}
                   anchorStyle={{ top: 'auto', bottom: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)' }}
                   onSelect={selectOrdersMenuItem}>
-                  <button
-                    style={{ ...s.sidebarBtn, width: '100%', ...(active ? s.sidebarBtnActive : {}) }}
-                    onClick={() => openRailItem(id, menu)}>
-                    {icon}
-                  </button>
+                  {slot}
                 </RailSubmenu>
               );
-            }
-            return (
-              <button key={id}
-                style={{ ...s.sidebarBtn, ...s.mobileNavBtn, ...(active ? s.sidebarBtnActive : {}) }}
-                onClick={() => openRailItem(id, menu)}>
-                {icon}
-              </button>
-            );
-          })}
+            })}
+
+            {mobileSecondary.length > 0 && (
+              <div style={s.mobileNavSlotWrap}>
+                <button style={{ ...s.mobileNavSlot, ...(mobileMoreOpen || mobileSecondaryActive ? s.mobileNavSlotOn : {}) }}
+                        aria-expanded={mobileMoreOpen} aria-haspopup="menu"
+                        onClick={() => { setMobileMoreOpen(o => !o); setNavMenuId(null); }}>
+                  <span style={s.mobileNavIcon}><SpatulaMarkIcon size={20} /></span>
+                  <span style={s.mobileNavLabel}>More</span>
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
 
       {/* ── Save as Template modal ── */}
@@ -7960,31 +7951,70 @@ const s = {
     background: '#fff', borderBottom: '1px solid #f0e8ea',
     position: 'relative', zIndex: 10,
   },
-  // Spatula-shaped bottom bar: a transparent band tall enough for the paddle to
-  // bulge both ways; MobileSpatulaBar draws the silhouette, icons sit on the handle.
+  // ── The phone's bottom strip ──────────────────────────────────────────────────────────────────
+  // Flat and full-bleed, in the same chrome family as the desktop spatula — the SHAPE goes, the
+  // material stays, so the phone does not read as a different product.
+  //
+  // What the shape was costing is in the note where spatulaBarPath used to live: the icon row had to
+  // be inset 60px to clear the silhouette, which held every target under the 44px floor on every
+  // phone. Full-bleed, five slots divide the whole width — ~63px on a 320 screen, ~78 on a 393 —
+  // and the room left over is what pays for the labels.
+  //
+  // The safe-area inset is padding rather than height: on a phone with a home indicator the strip
+  // grows to sit above it, and on one without it costs nothing.
   mobileBottomNav: {
-    position: 'relative', overflow: 'visible', flexShrink: 0,
-    height: MOBILE_BAR_H, background: 'transparent', marginBottom: MOBILE_BAR.lift,
+    flexShrink: 0, display: 'flex', alignItems: 'stretch',
+    height: MOBILE_BAR_H, paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+    boxSizing: 'content-box',
+    background: '#0b0b0d', borderTop: '1px solid rgba(255,255,255,0.07)',
+    position: 'relative', zIndex: 12,
   },
-  mobileNavRow: {
-    position: 'absolute', zIndex: 1, top: '50%', transform: 'translateY(-50%)',
-    left: 48, right: 12, height: 40,
-    display: 'flex', alignItems: 'center', justifyContent: 'space-around',
+  // RailSubmenu wraps its child in a positioned div; this makes that wrapper an equal slot so the
+  // item carrying a submenu is the same width as the ones that do not.
+  mobileNavSlotWrap: { flex: '1 1 0', minWidth: 0, display: 'flex' },
+  mobileNavSlot: {
+    flex: '1 1 auto', minWidth: 0, border: 'none', background: 'none', cursor: 'pointer', padding: 0,
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+    color: 'rgba(255,255,255,0.5)', fontFamily: "'Quicksand', sans-serif",
+    WebkitTapHighlightColor: 'transparent',
   },
-  // ── Why the bar's buttons are not 40px ────────────────────────────────────────────────────────
-  // Unlike the desktop rail, this row cannot grow: `left: 48` clears the spatula's cap and hang-hole
-  // and `right: 12` stops at the tip of the blade, so its width is the SCREEN's, minus 60. sidebarBtn
-  // is a fixed 40 wide with flexShrink: 0 — eight of those need 320px, and an iPhone SE gives the row
-  // 267. justify-content cannot compress children that refuse to shrink, so they simply ran past the
-  // end of the bar and the last item (Share) sat off the edge, invisible.
-  //
-  // Found by counting getBoundingClientRect on the real bar, not by looking: an item overflowing a
-  // row that has no visible boundary looks exactly like an item that was never added — the same way
-  // Uploads' absence looked, which is what was being fixed when this appeared.
-  //
-  // flex-basis 0 with a 40 cap: full size when there is room, evenly compressed when there is not,
-  // and never wider than the desktop rail's. The icons stay 20px, so the squeeze is padding.
-  mobileNavBtn: { flex: '1 1 0', minWidth: 0, maxWidth: 40 },
+  mobileNavSlotOn: { color: '#fff' },
+  mobileNavIcon: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: 24 },
+  mobileNavPlus: {
+    width: 24, height: 24, borderRadius: '50%', border: '1.6px solid currentColor',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  // Ellipsis rather than wrap: a two-line label makes one slot taller than its neighbours and the
+  // whole strip stops looking like a row.
+  mobileNavLabel: {
+    fontSize: 9.5, fontWeight: 700, letterSpacing: 0.2, lineHeight: 1.2,
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
+  },
+
+  // ── The More sheet ────────────────────────────────────────────────────────────────────────────
+  // Three across, icon over NAME. The sheet is where the room to spell things out actually pays:
+  // an icon-only bar asks a baker to learn eight glyphs, and this is the half that stops asking.
+  mobileSheetScrim: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    bottom: `calc(${MOBILE_BAR_H}px + env(safe-area-inset-bottom, 0px))`,
+    background: 'rgba(0,0,0,0.42)', zIndex: 11,
+  },
+  mobileSheet: {
+    position: 'absolute', left: 0, right: 0,
+    bottom: `calc(${MOBILE_BAR_H}px + env(safe-area-inset-bottom, 0px))`,
+    zIndex: 12, background: '#141416', borderRadius: '18px 18px 0 0', padding: '8px 10px 16px',
+    boxShadow: '0 -8px 28px rgba(0,0,0,0.35)',
+  },
+  mobileSheetGrip: { width: 34, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.22)', margin: '2px auto 12px' },
+  mobileSheetGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 },
+  mobileSheetItem: {
+    border: 'none', background: 'none', cursor: 'pointer', borderRadius: 12, padding: '12px 4px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minHeight: 68,
+    color: 'rgba(255,255,255,0.72)', fontFamily: "'Quicksand', sans-serif",
+    WebkitTapHighlightColor: 'transparent',
+  },
+  mobileSheetItemOn: { background: 'rgba(255,255,255,0.14)', color: '#fff' },
+  mobileSheetLabel: { fontSize: 10.5, fontWeight: 700, textAlign: 'center', lineHeight: 1.25 },
   flyoutMobile: {
     position: 'relative',
     left: 'auto', top: 'auto', bottom: 'auto',
