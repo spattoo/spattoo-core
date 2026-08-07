@@ -115,4 +115,59 @@ try {
   rmSync(work, { recursive: true, force: true });
 }
 
+// ── 5. keep the last few, delete the rest ────────────────────────────────────
+// Every release wrote a ~1.5 MB tarball here and nothing ever removed one, so `vendor/` had reached
+// 194 files and 296 MB — of which spattoo-web installs exactly ONE, the version named in
+// apps/app/package.json. The other 193 were dead weight in every checkout.
+//
+// Old tarballs are not needed for reproducibility: they are in git history, so checking out an old
+// commit brings that commit's tarball back with it. Deleting them going forward costs nothing.
+//
+// ⚠️ THIS DOES NOT SHRINK .git, and cannot. A delete is a new commit — every tarball ever committed
+// stays in history, which is why .git is 823 MB against a 296 MB working tree. Reclaiming that needs
+// filter-repo/BFG, a force-push over main and dev, and everyone re-cloning; a decision for a quiet
+// moment, not a side effect of a release script.
+//
+// KEEP is 3 — the one just packed plus two behind it, so a rollback is a package.json edit rather
+// than a fetch. The version currently referenced by the web app is kept regardless of age: pruning
+// the tarball a live deploy installs from would break the next build, and "it was old" is no
+// defence when the site will not build.
+const KEEP = 3;
+
+// Numeric compare, never lexical: '0.1.100' sorts BELOW '0.1.99' as a string, which would delete
+// the newest releases and keep the oldest.
+const versionOf = (f) => (f.match(/^spattoo-designer-(.+)\.tgz$/) ?? [])[1] ?? null;
+const cmp = (a, b) => {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pb[i] ?? 0) - (pa[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+};
+
+try {
+  // What the web app installs today. Read from ITS package.json rather than assumed to be the
+  // newest — a rollback leaves the reference pointing at something older on purpose.
+  let referenced = null;
+  const pkgPath = join(dest, '..', 'apps', 'app', 'package.json');
+  if (existsSync(pkgPath)) {
+    const dep = JSON.parse(readFileSync(pkgPath, 'utf8'))?.dependencies?.['@spattoo/designer'] ?? '';
+    referenced = (dep.match(/spattoo-designer-(.+)\.tgz/) ?? [])[1] ?? null;
+  }
+
+  const versions = readdirSync(dest).map(versionOf).filter(Boolean).sort(cmp);
+  const keep = new Set([...versions.slice(0, KEEP), version, referenced].filter(Boolean));
+  const drop = versions.filter((v) => !keep.has(v));
+
+  for (const v of drop) rmSync(join(dest, `spattoo-designer-${v}.tgz`), { force: true });
+  if (drop.length) {
+    ok(`pruned ${drop.length} old tarball${drop.length === 1 ? '' : 's'} — kept ${[...keep].sort(cmp).join(', ')}`);
+  }
+} catch (e) {
+  // Never fail a release over housekeeping. The tarball is packed and verified by this point; a
+  // vendor directory with too many files in it is untidy, not broken.
+  console.log(`  · prune skipped: ${e.message}`);
+}
+
 console.log(`\n✓ ${out} is exactly ${sh('git', ['rev-parse', '--short', 'HEAD'])}\n`);
