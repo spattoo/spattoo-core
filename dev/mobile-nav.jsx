@@ -71,7 +71,12 @@ const SpatulaMark = ({ size = 20 }) => (
 // circled +, which is a different SHAPE rather than a different item — same as the shipped code.
 const ALL_ITEMS = [
   { id: 'new',       label: 'New',         Icon: PlusIcon,      isNew: true },
-  { id: 'dashboard', label: 'Dashboard',   Icon: DashboardIcon },
+  // The badge is the point, not decoration. A slot buys ACCESS; a badge buys ATTENTION, and they
+  // are not the same purchase. The dashboard's job is "is anything waiting for me" — deliveries
+  // today, orders still pending — and a baker who has to open it to find out has already paid for
+  // the answer. With a count on the icon, the common case (nothing due) costs no taps at all, and
+  // the uncommon one announces itself from whatever screen they are on.
+  { id: 'dashboard', label: 'Dashboard',   Icon: DashboardIcon, badge: 3 },
   { id: 'templates', label: 'Templates',   Icon: TemplatesIcon },
   { id: 'elements',  label: 'Decorations', Icon: ElementsIcon },
   { id: 'uploads',   label: 'Uploads',     Icon: UploadsIcon },
@@ -82,10 +87,17 @@ const ALL_ITEMS = [
   { id: 'codesign',  label: 'Together',    Icon: CoDesignIcon,  flag: 'codesign' },
 ];
 
-/* Option A's four. Chosen as what a baker on a PHONE is doing: making a cake, and answering an
-   enquiry. Dashboard, Customers, Uploads, Share and the flagged pair are errands — real, but not
-   what you open the app on a phone to do, and each is one tap away rather than zero. */
-const PRIMARY = ['new', 'templates', 'elements', 'orders'];
+/* ── Option A's four ────────────────────────────────────────────────────────────────────────────
+   Not the desktop rail's priorities in a smaller box. A phone and a desk are used for different
+   halves of this job: designing a 3D cake is a DESK act — big canvas, precise dragging, time — and
+   the phone is where a baker checks what is due and answers an enquiry. So the strip leans toward
+   running the bakery, and the design tools stay one tap away.
+
+   Templates lost its slot to Dashboard, which is the swap worth arguing about. Templates is a
+   STARTING move — used once, at the top of a design, and the + already leads there. Dashboard is a
+   recurring check: what is coming, what is pending, what sold. A slot in a five-wide bar is worth
+   more to the thing you return to than to the thing you begin with. */
+const PRIMARY = ['new', 'dashboard', 'elements', 'orders'];
 
 const MIN_TARGET = 44;                  // Apple HIG; Material says 48dp. 44 is the charitable floor.
 const STRIP_H    = 56;                  // icon (20) + label (12) + padding — and 20px back to the canvas
@@ -185,6 +197,18 @@ function SpatulaSvg({ W }) {
       <path d={path} fill="#000" filter="url(#mn-spec)" />
       <circle cx={holeX} cy={cy} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.4" />
     </svg>
+  );
+}
+
+/** The icon in a strip slot, with its badge. One renderer for both strips: the last time the two
+ *  bars each carried their own copy of the item list, Uploads reached the rail and never reached the
+ *  phone, and nobody noticed until a baker had no way into their own images. */
+function SlotIcon({ Icon, isNew, badge }) {
+  return (
+    <span style={{ position: 'relative', display: 'flex', ...(isNew ? st.plusRing : {}) }}>
+      <Icon size={20} />
+      {badge > 0 && <span style={st.badge}>{badge > 9 ? '9+' : badge}</span>}
+    </span>
   );
 }
 
@@ -306,10 +330,10 @@ function OptionA({ width, flags, active, onPick, bare }) {
         </div>
       )}
       <div ref={ref} style={st.strip}>
-        {primary.map(({ id, Icon, label, isNew }) => (
+        {primary.map(({ id, Icon, label, isNew, badge }) => (
           <button key={id} data-t onClick={() => onPick(id)}
                   style={{ ...st.slot, ...(active === id ? st.slotOn : {}) }}>
-            <span style={isNew ? st.plusRing : undefined}><Icon size={20} /></span>
+            <SlotIcon Icon={Icon} isNew={isNew} badge={badge} />
             <span style={st.label}>{label}</span>
           </button>
         ))}
@@ -349,10 +373,10 @@ function OptionB({ width, flags, active, onPick, arrow, bare }) {
           blurb="Everything kept. The half-cut item at the right edge is the affordance.">
       <div ref={ref} style={{ ...st.strip, padding: 0, position: 'relative' }}>
         <div ref={scroller} onScroll={onScroll} style={st.scroller} className="no-sb">
-          {items.map(({ id, Icon, label, isNew }) => (
+          {items.map(({ id, Icon, label, isNew, badge }) => (
             <button key={id} data-t onClick={() => onPick(id)}
                     style={{ ...st.slot, ...st.scrollSlot, ...(active === id ? st.slotOn : {}) }}>
-              <span style={isNew ? st.plusRing : undefined}><Icon size={20} /></span>
+              <SlotIcon Icon={Icon} isNew={isNew} badge={badge} />
               <span style={st.label}>{label}</span>
             </button>
           ))}
@@ -499,6 +523,14 @@ const st = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
     color: 'rgba(255,255,255,0.5)', fontFamily: "'Quicksand',sans-serif",
   },
+  // Sits on the icon, not beside the label — a count next to a 9.5px word reads as part of the word.
+  badge: {
+    position: 'absolute', top: -5, left: 12, minWidth: 15, height: 15, padding: '0 4px',
+    borderRadius: 999, background: '#b3261e', color: '#fff', fontSize: 9.5, fontWeight: 800,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+    border: '1.5px solid #0b0b0d', fontVariantNumeric: 'tabular-nums',
+  },
+
   slotOn: { color: '#fff' },
   label: { fontSize: 9.5, fontWeight: 700, letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' },
   plusRing: {
