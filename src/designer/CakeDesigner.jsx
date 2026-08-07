@@ -7132,6 +7132,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       <SettingsPanel
         open={settingsPanelOpen}
         onClose={() => setSettingsPanelOpen(false)}
+        // The publish review's "Review my flavours". Closes Settings on the way so the baker lands
+        // ON the flavour list rather than behind it — the customiser has already closed itself.
+        onReviewFlavours={() => { setSettingsPanelOpen(false); setFlavoursPanelOpen(true); }}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}

@@ -30,7 +30,7 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 //   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
 //   onClose     () => void
-export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onClose }) {
+export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onReviewFlavours, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
   // A baker with no colour on file falls back to the SELECTED template's designed defaults (not a
@@ -735,8 +735,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
                 Every flavour is switched on until you say otherwise. Keep this list up to date —
                 you can change it any time in Settings.
               </p>
+              {/* Takes them to the FLAVOURS screen, not merely out of here. It used to call
+                  onClose alone, which shut the customiser and dropped the baker back on Store
+                  Settings — a button labelled "Review my flavours" that reviewed nothing and left
+                  them to find it. Reported from the app.
+                  The host owns that panel, so it is a callback: this component cannot open a
+                  sibling screen and should not learn how. */}
               <button type="button" style={s.reviewBtn}
-                      onClick={() => { setReview(false); onClose?.(); }}>
+                      onClick={() => { setReview(false); onClose?.(); onReviewFlavours?.(); }}>
                 Review my flavours
               </button>
             </div>
@@ -748,15 +754,18 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
                 {tieredNoMin === 1 ? 'One tiered design has' : `${tieredNoMin} tiered designs have`} no
                 minimum weight
               </div>
+              {/* ⚠️ NO BUTTON HERE, deliberately. There is nowhere to send them: Settings →
+                  Templates is an on/off list of SPATTOO's templates and says so itself — "a
+                  baker's OWN templates are NOT listed here". A minimum weight can only be set on
+                  the save dialog, when a design is saved.
+                  So the copy says where it happens instead. A "Review my designs" button that
+                  opened a screen which cannot change the thing it names would be the same fault as
+                  the flavours button above, one step harder to spot. */}
               <p style={s.reviewBody}>
                 Without one, a customer can order a tiered cake at a size it cannot be built at —
-                the storefront has nothing to stop them. Set a minimum on each tiered design and it
-                will hold the size for you.
+                the storefront has nothing to stop them. Open the design and save it again with a
+                minimum weight, and it will hold the size for you.
               </p>
-              <button type="button" style={s.reviewBtn}
-                      onClick={() => { setReview(false); onClose?.(); }}>
-                Review my designs
-              </button>
             </div>
           )}
         </ConfirmPanel>
