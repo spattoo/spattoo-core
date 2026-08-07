@@ -1,15 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 import { dockedLeft } from '../shared/rail.js';
-
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return mobile;
-}
 
 function fmt(iso) {
   if (!iso) return null;
@@ -376,7 +367,7 @@ function CustomerList({ customers, selected, onSelect, onToggle, togglingIds, is
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 export default function CustomersPanel({ open, onClose, onBack, apiClient, primaryColor = '#1a1a1a', externalFilter = null, onViewOrder }) {
-  const isMobile = useIsMobile();
+  const isMobile = useNarrow(768);
   const [customers,  setCustomers]  = useState([]);
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState(null);

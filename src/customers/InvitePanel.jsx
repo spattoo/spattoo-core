@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 import CustomerSearch from './CustomerSearch.jsx';
 import { isValidEmail } from '../shared/validators.js';
 import { dockedLeft } from '../shared/rail.js';
@@ -25,7 +26,9 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
   const [result, setResult] = useState(null);   // { link, invite, delivery }
   const [copied, setCopied] = useState(false);
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  // Was a bare read, evaluated once: correct on load and then stale, so rotating the phone left the
+  // panel on the wrong layout until something else happened to re-render it.
+  const isMobile = useNarrow(768);
   if (!open) return null;
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));

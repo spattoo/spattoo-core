@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 import PlanCards from '../billing/PlanCards.jsx';
 import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
 import { creditsChanged } from '../billing/creditsBus.js';
@@ -8,16 +9,6 @@ import { dockedLeft } from '../shared/rail.js';
 // GSTIN format (client-side, immediate feedback). The server does the authoritative checksum validation;
 // here we only gate the obviously-malformed so the button can enable/disable as the baker types.
 const GSTIN_FORMAT_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
-
-function useIsMobile() {
-  const [m, setM] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setM(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return m;
-}
 
 const STATUS_META = {
   trial:     { label: 'Trial',     color: '#1a1a1a', bg: '#FDF5F7' },
@@ -461,7 +452,7 @@ function SmartToolsCard({ apiClient, primaryColor, onBuyCredits }) {
 // because bakerData is fetched once at mount and this panel only ever reloaded its OWN state.
 // NOT fired on open/refresh — only on a real change, so the host isn't refetched for nothing.
 export default function BillingPanel({ open, onClose, onBuyCredits, onSubscriptionChange, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
-  const isMobile = useIsMobile();
+  const isMobile = useNarrow(768);
   const [billing,        setBilling]        = useState(null);
   const [history,        setHistory]        = useState([]);
   const [periods,        setPeriods]        = useState([]);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen } from './dietary.js';
 import {
   buildStatusIndex, DEFAULT_STATUS_INDEX,
@@ -220,16 +221,6 @@ function PhotoXrayLauncher({ order, apiClient, variant }) {
       )}
     </>
   );
-}
-
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return mobile;
 }
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
@@ -1270,7 +1261,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 // ── Root ──────────────────────────────────────────────────────────────────────
 
 export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
-  const isMobile = useIsMobile();
+  const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
@@ -1525,7 +1516,7 @@ function CancelOrderLink({ onClick, disabled }) {
 // `hideCancel` lets a caller (mobile OrderDetail) lift the Cancel action into its
 // own button row above the stepper, so the stepper renders the timeline only.
 function StatusProgress({ status, onChange, disabled, readOnly = false, hideCancel = false, statusIndex = DEFAULT_STATUS_INDEX }) {
-  const isMobile       = useIsMobile();
+  const isMobile       = useNarrow(768);
   const flowSteps      = statusIndex.flowSteps;
   const isClosedStatus = isClosed(statusIndex, status);   // cancelled / declined / expired
   const currentIdx     = flowSteps.findIndex(s => s.key === status);

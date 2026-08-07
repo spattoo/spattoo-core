@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 import { UI_FONT } from '../shared/fonts.js';
 import CustomerStorefront from './CustomerStorefront.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
@@ -851,15 +852,10 @@ function useMeasure() {
   return [setRef, size];
 }
 
-function useIsWide(bp = 900) {
-  const [w, setW] = useState(typeof window !== 'undefined' ? window.innerWidth >= bp : true);
-  useEffect(() => {
-    const f = () => setW(window.innerWidth >= bp);
-    window.addEventListener('resize', f);
-    return () => window.removeEventListener('resize', f);
-  }, [bp]);
-  return w;
-}
+// The inverse of the shared hook, kept under its own name because "is there room for two columns"
+// is what this file actually asks. Equivalent under SSR too: no window means "not narrow", which is
+// the `true` default this had.
+const useIsWide = (bp = 900) => !useNarrow(bp);
 
 const FONT = UI_FONT;
 // Desktop preview frame — a fixed 1280-wide browser window (viewport 800 + a 34px chrome bar). The

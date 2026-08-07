@@ -1,15 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 import { dockedLeft } from '../shared/rail.js';
-
-function useIsMobile() {
-  const [m, setM] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setM(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return m;
-}
 
 const STATUS_META = {
   pending:     { label: 'Pending',   color: '#92400E', bg: '#FEF9C3' },
@@ -236,7 +227,7 @@ function DeliveryRow({ order }) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrders, onNavigateCustomers, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
-  const isMobile = useIsMobile();
+  const isMobile = useNarrow(768);
   const [data,            setData]            = useState(null);
   const [loading,         setLoading]         = useState(false);
   const [error,           setError]           = useState(null);

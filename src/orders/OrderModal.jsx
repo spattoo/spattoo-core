@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 import { ACCEPT_IMAGE, validateImageFile, compressImage } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
@@ -124,16 +125,6 @@ function CheckIcon({ size = 13 }) {
       <polyline points="2,6 5,9 10,3" />
     </svg>
   );
-}
-
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 600);
-  useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 600);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return mobile;
 }
 
 function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onSubmit, brandBtn }) {
@@ -274,7 +265,7 @@ export default function OrderModal({
   initialDeliveryDate = null,   // 'YYYY-MM-DD' when started from a day in the Orders calendar
   legalBase = DEFAULT_LEGAL_BASE,   // host's marketing origin — where /terms + /privacy are served
 }) {
-  const isMobile = useIsMobile();
+  const isMobile = useNarrow(600);
   const { maxImageBytes } = useUploadLimits(apiClient);
 
   // Reference photos (manual orders only) — [{ key, preview }]; only `key` is sent.
