@@ -63,6 +63,7 @@ import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { PrivacyDataSection } from '../settings/PrivacyDataPanel.jsx';
 import PastDueBanner, { PAST_DUE_BAR_H } from '../billing/PastDueBanner.jsx';
+import CustomerTour from './tour/CustomerTour.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -5594,6 +5595,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         status={bakerData?.subscription_status}
         onOpenBilling={() => setBillingPanelOpen(true)}
       />
+
+      {/* ── First visit, for a CUSTOMER only ─────────────────────────────────────────────────────
+          A baker learns this app over weeks and would resent being walked through it; a customer
+          gets one visit, on a phone, from a link somebody sent them, and has never seen a cake they
+          can turn. `active` is passed rather than read inside, so the who lives here with the rest
+          of the mode branching instead of being buried in a tour component.
+
+          Renders null the rest of the time (seen, or not a customer), so it costs nothing. */}
+      <CustomerTour active={orderMode === 'customer'} />
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }
@@ -5735,7 +5745,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               const active = railItemActive(id, menu);
               const isNew  = id === 'new';
               const button = (
-                <button key={id} style={s.navItem}
+                <button key={id} style={s.navItem} data-tour={id}
                   onClick={() => openRailItem(id, menu)}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
@@ -6212,7 +6222,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )}
 
         {/* ── Canvas area ── */}
-        <div style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
+        {/* data-tour: the cake itself is a WebGL canvas with no addressable parts, so the tour
+            spotlights this whole area — which is exactly what "drag to spin it" refers to. */}
+        <div data-tour="canvas" style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
 
           {/* Credits, top-right over the canvas — where every tool that meters usage puts them, and
               where a baker looks for "what have I got left" without hunting a sidebar.
@@ -7116,6 +7128,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           /* Customer prominent CTA, and the full desktop button row — unchanged. */
           <div style={{ ...s.orderBar, ...(isMobile ? { padding: '6px 16px 10px' } : { maxWidth: 680, margin: '0 auto', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }), display: 'flex', gap: 8 }}>
             <button
+              data-tour="quote"
               style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
               onClick={handleOrder}>
               {editingOrder ? 'Update Design' : orderMode === 'customer' ? 'Request a Quote' : 'Order This Cake'}
@@ -7168,6 +7181,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // why 'new' stays in railItems instead of being drawn separately.
               const slot = (
                 <button style={{ ...s.mobileNavSlot, ...(active ? s.mobileNavSlotOn : {}) }}
+                        data-tour={id}
                         onClick={() => openRailItem(id, menu)}>
                   <span style={id === 'new' ? s.mobileNavPlus : s.mobileNavIcon}>
                     {id === 'new' ? <PlusGlyph size={20} /> : icon}

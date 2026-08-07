@@ -40,6 +40,19 @@ const apiClient = new Proxy(overrides, {
   get: (target, k) => target[k] ?? (async () => null),
 });
 
+// `?customer` renders in customer mode, which is the only mode CustomerTour runs in. The tour also
+// checks localStorage, so it shows once and then never again — clearing the key is how you get it
+// back, and doing that here beats hand-editing devtools every time.
+const customer = new URLSearchParams(location.search).has('customer');
+if (new URLSearchParams(location.search).has('retour')) {
+  try { localStorage.removeItem('spattoo.tour.customer.v1'); } catch { /* ignore */ }
+}
+
 createRoot(document.getElementById('root')).render(
-  <CakeDesigner apiClient={apiClient} onOrder={() => {}} onShareStore={() => {}} />,
+  <CakeDesigner
+    apiClient={apiClient}
+    orderMode={customer ? 'customer' : 'baker'}
+    onOrder={() => {}}
+    onShareStore={() => {}}
+  />,
 );
