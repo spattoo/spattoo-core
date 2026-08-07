@@ -196,14 +196,17 @@ function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
 }
 
 // ── Color picker (react-colorful) ─────────────────────────────────────────────
-function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
+function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = false }) {
   // Common cake piping colour presets
   const PRESETS = [
     '#ffffff','#f5e6c8','#f5b8c8','#e8a0b0','#c8b5e8',
     '#b5c8e8','#b5e8d5','#f0c040','#e87040','#5c3d2e',
     '#3e2010','#1a1a1a','#d4af37','#8b1a1a','#2e5c3e',
   ];
-  const dot = Math.max(18, Math.round(width / 9.8));   // swatch size scales with panel width
+  // 44 on a phone, and not because it looks better: measured on the real panel these were 22px, half
+  // the touch floor, in FOUR wrapped rows. The wrapping is what made the sheet tall enough to hide
+  // the cake — so the fix for the target size and the fix for the height are the same fix.
+  const dot = compact ? 44 : Math.max(18, Math.round(width / 9.8));
   const swatch = (c, key) => (
     <div key={key} onClick={() => onChange(c)} style={{
       width: dot, height: dot, borderRadius: '50%', background: c, cursor: 'pointer',
@@ -212,6 +215,37 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
       boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
     }} />
   );
+
+  // ── Phone: swatches FIRST, in one row that scrolls ──────────────────────────────────────────
+  // Order is the whole point. The sheet opens short, so whatever is at the top is what a baker can
+  // reach without doing anything — and picking a preset is the common case, while the gradient
+  // picker is the rare one. It used to be the other way round: the picker sat on top and the
+  // swatches were below the fold of a sheet that covered the cake anyway.
+  //
+  // The picker stays, directly underneath. It does not need a disclosure of its own because the
+  // sheet's drag handle already is one — pull up and it is there.
+  if (compact) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+        <div className="spattoo-swatch-row" style={{
+          display: 'flex', gap: 8, overflowX: 'auto', padding: '2px 0 4px',
+          scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+        }}>
+          {PRESETS.map(c => swatch(c, c))}
+          {cakeColors.length > 0 && (
+            // A rule rather than a heading: "Colors from cake" cost a whole line of the sheet's
+            // height to label six swatches that are self-evident once they are beside the presets.
+            <div aria-label="Colors from cake"
+                 style={{ flexShrink: 0, width: 1, alignSelf: 'stretch', margin: '4px 2px', background: 'rgba(0,0,0,0.16)' }} />
+          )}
+          {cakeColors.map((c, i) => swatch(c, `cake-${i}`))}
+        </div>
+        <HexColorPicker color={color} onChange={onChange}
+                        style={{ width: '100%', height: 150 }} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       <HexColorPicker color={color} onChange={onChange} style={{ width, height: Math.round(width * 0.72) }} />
@@ -1253,6 +1287,11 @@ function OrderDesignViewer({ order, onClose }) {
  *  spatula band it replaces was 76, so the 3D canvas gets 20px back on every phone. */
 const MOBILE_BAR_H = 56;
 
+/** Opening height of the mobile edit sheet: grip + header + one row of 44px swatches. */
+const EDIT_PANEL_COMPACT = 152;
+/** Floor for the drag — below this the grip and header have nowhere to sit. */
+const EDIT_PANEL_MIN = 108;
+
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
@@ -1700,6 +1739,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [role, setRole] = useState(null);  // principal role from /me (e.g. 'customer'); null = unknown
   const [windowWidth, setWindowWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
   const [mobilePanelHeight, setMobilePanelHeight] = useState(260);
+  // The edit sheet (colour, frosting, shape) opens SHORT. Measured, it was opening at 552px — 65% of
+  // an 852px phone — with the cake's centre 200px behind it, so the one thing a colour picker exists
+  // to show you was the one thing you could not see. 152 is the handle, the header and a row of
+  // 44px swatches: the common edit, with the cake still in view. Drag up for the rest.
+  //
+  // Deliberately NOT reset when the sheet reopens. Once the canvas resizes to sit above it (below),
+  // a tall sheet no longer hides anything, so a baker who pulled it up meant to.
+  const [editPanelH, setEditPanelH] = useState(EDIT_PANEL_COMPACT);
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const chefsDeskRef     = useRef(null);
@@ -3678,13 +3725,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setTemplatesOpen(false);
   }
 
-  function handlePanelDrag(e) {
+  /**
+   * Drag a bottom sheet taller or shorter. One implementation, every sheet — the edit panel was the
+   * only one without a handle at all, which made it the only sheet a baker could not get out of the
+   * way of the cake.
+   */
+  function startPanelDrag(e, startH, setH, min = 80, max = 560) {
     e.preventDefault();
     const startY = e.clientY;
-    const startH = mobilePanelHeight;
     function onMove(ev) {
       const delta = startY - ev.clientY; // drag up → taller panel
-      setMobilePanelHeight(Math.min(560, Math.max(80, startH + delta)));
+      setH(Math.min(max, Math.max(min, startH + delta)));
     }
     function onUp() {
       document.removeEventListener('pointermove', onMove);
@@ -3693,6 +3744,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
   }
+  const handlePanelDrag = (e) => startPanelDrag(e, mobilePanelHeight, setMobilePanelHeight);
 
   function handleOrder() {
     setOrderModalOpen(true);
@@ -5445,6 +5497,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }
         .spattoo-rail-nav::-webkit-scrollbar { display: none; }
+        .spattoo-swatch-row::-webkit-scrollbar { display: none; }
         /* A :hover cannot be expressed inline, and inline styles win — hence !important. */
         .spattoo-rail-menu button:hover { background: rgba(255,255,255,0.11) !important; color: #fff !important; }`}</style>
 
@@ -6084,7 +6137,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               visible beside it (the Canvas is absolute inset:0 of this div). On mobile the element
               stack does NOT shrink the canvas — it's a translucent overlay, so the cake stays
               full-width and centred UNDER the popup (you see it through the frosted cards). */}
-          <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0), transition: 'right 0.18s ease' }}>
+          {/* ── The viewport gives way to the edit sheet, rather than hiding behind it ─────────────
+              Desktop has always done this on the horizontal axis: the canvas takes `right: 276` when
+              the tools panel opens, so the cake sits BESIDE the panel instead of under it. Mobile
+              passed 0 and had no vertical equivalent, so the edit sheet simply covered the cake —
+              and a colour picker that hides the thing being coloured is not doing its job.
+
+              Insetting the bottom re-frames the 3D view into what is left (the canvas element
+              resizes, so the cake re-centres in the strip above the sheet). It is a guarantee rather
+              than a mitigation: however tall the sheet is dragged, the cake cannot go behind it.
+
+              Only the edit sheet needs this. The flyout panels are `position: relative` in the column
+              and already take their own space. */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0),
+            bottom: isMobile && showRightPanel ? editPanelH : 0,
+            transition: 'right 0.18s ease, bottom 0.18s ease',
+          }}>
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
               config={canvasConfig}
@@ -6201,7 +6271,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             );
           })()}
 
-          <div style={s.rotateHint}>Drag to rotate</div>
+          {/* Rides above the edit sheet rather than behind it. Pinned to `bottom: 12` of the canvas
+              area, it sat inside the sheet's box and showed through the frosting — legible enough to
+              read, which is worse than either hiding it or moving it. It still applies while the
+              sheet is open: you can rotate the cake to check the colour you just picked. */}
+          <div style={{ ...s.rotateHint, ...(isMobile && showRightPanel ? { bottom: editPanelH + 12 } : {}) }}>
+            Drag to rotate
+          </div>
 
           {/* ── Number topper edit popup (right-side) — self-contained, not cap-driven ── */}
           {selectedAge && (
@@ -6243,10 +6319,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* ── Right edit panel — driven by element caps ── */}
           {showRightPanel && (
-            <div style={isMobile ? s.wheelPanelMobile
+            <div style={isMobile ? { ...s.wheelPanelMobile, height: editPanelH }
               // When the element edit stack is open on the right, sit the colour wheel to its LEFT
               // (and above it) instead of overlapping behind it. editPopup is right:10 width:200.
               : { ...s.wheelPanel, ...(elementStackOpen ? { right: 230, zIndex: 30 } : {}) }}>
+              {/* The grip the other two sheets always had and this one did not — the only bottom
+                  sheet a baker could not shrink, which is why it was the one covering the cake.
+                  Capped at 88% of the viewport so the header behind it never disappears entirely. */}
+              {isMobile && (
+                <div style={s.panelHandle}
+                     onPointerDown={e => startPanelDrag(e, editPanelH, setEditPanelH,
+                       EDIT_PANEL_MIN, Math.round(window.innerHeight * 0.88))}>
+                  <div style={s.panelHandlePill} />
+                </div>
+              )}
               <div style={s.wheelHeader}>
                 <span style={s.wheelTitle}>
                   {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
@@ -6277,6 +6363,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     color={wheelColor}
                     onChange={handleWheelChange}
                     cakeColors={cakeColors}
+                    compact={isMobile}
                   />
                 );
               })()}
@@ -8033,7 +8120,11 @@ const s = {
   wheelPanelMobile: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
-    maxHeight: '80%', overflowY: 'auto',
+    // `height` comes from editPanelH — a fixed, dragged height rather than `maxHeight: '80%'`, so
+    // the canvas above can inset by exactly the same number. With a max-height the sheet's real
+    // height depended on its content and the two would disagree, which is how the cake ends up
+    // behind it again. Content scrolls inside.
+    overflowY: 'auto', display: 'flex', flexDirection: 'column',
     // Frosted (was near-solid 0.97) to match the element stack — the cake shows through.
     background: 'rgba(255,255,255,0.55)',
     backdropFilter: 'blur(18px)',
