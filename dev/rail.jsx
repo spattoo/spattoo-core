@@ -23,10 +23,17 @@ import { CakeDesigner } from '../src/index.js';
 // `?past_due` makes fetchBakerProfile answer with a baker mid-dunning, so PastDueBanner can be
 // looked at in place — above the real rail, at whatever width the window is. Every other method
 // still answers null.
-const pastDue = new URLSearchParams(location.search).has('past_due');
-const overrides = pastDue ? {
+// `?status=past_due` for the dunning banner, `?status=expired` (or cancelled / paused) for the
+// lapsed gate and its exit row. Both are states you cannot reach by using the app normally, which is
+// exactly why they are the ones worth being able to open on demand.
+const status = new URLSearchParams(location.search).get('status')
+            || (new URLSearchParams(location.search).has('past_due') ? 'past_due' : null);
+const overrides = status ? {
   fetchBakerProfile: async () => ({
-    baker: { name: 'My Bakery', subscription_status: 'past_due', subscription_plan_display: 'Blaze' },
+    baker: {
+      name: 'My Bakery', subscription_status: status,
+      subscription_plan_display: 'Blaze', first_paid_at: '2026-01-01T00:00:00Z',
+    },
   }),
 } : {};
 const apiClient = new Proxy(overrides, {

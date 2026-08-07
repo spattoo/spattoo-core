@@ -60,7 +60,8 @@ import BillingPanel from '../settings/BillingPanel';
 import CreditsPill from '../billing/CreditsPill.jsx';
 import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
-import PastDueBanner from '../billing/PastDueBanner.jsx';
+import { PrivacyDataSection } from '../settings/PrivacyDataPanel.jsx';
+import PastDueBanner, { PAST_DUE_BAR_H } from '../billing/PastDueBanner.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -1721,11 +1722,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
   const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
+  // Privacy & Data, opened from the LAPSED gate. Separate from the settings-menu route because that
+  // whole menu is unrendered once access is blocked — see the exit row on the gate.
+  const [lapsedPrivacyOpen, setLapsedPrivacyOpen] = useState(false);
   // Separate from Billing on purpose: someone topping up wants credits, not a plan conversation.
   const [buyCreditsOpen,      setBuyCreditsOpen]      = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
   const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
+  // Read twice — by the banner and by the desktop logo's offset — so the two can never disagree
+  // about whether the bar is on screen. Declared HERE, immediately after bakerData: it was above
+  // it, which is a temporal dead zone — valid JavaScript, clean build, 567 passing tests, and a
+  // blank screen the moment anything renders. The same trap railItems hit earlier today.
+  const pastDue = bakerData?.subscription_status === 'past_due';
   // Uploaded logos carry a transparent margin (29–38% on the ones we have), and every surface caps
   // by height — so that margin is spent out of the height budget and the mark reads small. Trimmed
   // once per URL at render, which fixes existing logos without a re-upload or a backfill.
@@ -5391,6 +5400,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           >
             {canResumeLapsedPlan ? `Resume ${lapsedPlanLabel}` : 'View plans'}
           </button>
+
+          {/* ── The way OUT ───────────────────────────────────────────────────────────────────────
+              This screen used to offer exactly one action: pay. Everything else — the rail, Settings,
+              Privacy & Data — is not rendered once the status is blocked, so the account-deletion
+              request lived behind the paywall it is the alternative to.
+
+              That is a DPDP problem, not a UX one. Erasure is a s.12 RIGHT and grievance redressal a
+              s.13 one, and a statutory right cannot be conditioned on paying. The API never made that
+              mistake: POST /baker/account/delete asks only for auth and the account:delete capability,
+              with no entitlement or subscription check, so a lapsed baker's token has always worked.
+              The button to call it was the missing part — the same shape as Uploads missing from the
+              phone rail, and the uploads picker opening underneath the studio.
+
+              Deliberately quiet: small, secondary, below the primary action. A baker who came here to
+              resume should not be steered towards deleting, and one who came to leave should not have
+              to email us to do it.
+
+              DELETION ONLY — no download. DPDP has no data-portability right: it was in the 2019 and
+              2021 Bills and was dropped before the 2023 Act passed. s.11 gives access to a SUMMARY,
+              which the grievance route answers. ("Download my record" inside the panel is the CONSENT
+              TRAIL — which documents were accepted and when — not a data export.) */}
+          <div style={s.lapsedExit}>
+            <button type="button" style={s.lapsedExitLink} onClick={() => setLapsedPrivacyOpen(true)}>
+              Delete your account
+            </button>
+            <span aria-hidden style={{ opacity: 0.45 }}>·</span>
+            <a style={s.lapsedExitLink} href={`${legalBase}/grievance`} target="_blank" rel="noreferrer">
+              Contact us
+            </a>
+          </div>
+
+          {/* The SAME PrivacyDataSection the settings menu renders, in a plain Panel rather than the
+              whole SettingsPanel — a locked-out baker has no use for colours and storefront copy, and
+              showing settings that cannot be saved would be its own small lie. */}
+          {lapsedPrivacyOpen && (
+            <Panel onClose={() => setLapsedPrivacyOpen(false)} title="Privacy & Data" width={520} flow="block">
+              <PrivacyDataSection apiClient={apiClient} />
+            </Panel>
+          )}
+
           <BuyCreditsPanel
             open={buyCreditsOpen}
             onClose={() => setBuyCreditsOpen(false)}
@@ -5516,7 +5565,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Absolute positioning buys the width without spending any height.
           Left offset clears the rail: 40px leftCol padding + 64px rail. */}
       {!isMobile && (
-        <div style={s.desktopLogo}>
+        // top is offset by the past-due bar when it is showing: this element is out of flow, so it
+        // is the ONE thing in `page` that a new first child does not push down. See PAST_DUE_BAR_H.
+        <div style={{ ...s.desktopLogo, top: s.desktopLogo.top + (pastDue ? PAST_DUE_BAR_H : 0) }}>
           {logoSrc
             ? <img src={logoSrc} alt="" style={s.topLogoImg} />
             : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
@@ -7392,6 +7443,17 @@ const LIGHT_MENU = menuTone('light');
 const RAIL_MENU  = menuTone('rail');
 
 const s = {
+  // The lapsed gate's secondary row. Small and low-contrast on purpose: it must be FINDABLE without
+  // competing with "Resume" — the point is that leaving is possible, not that it is suggested.
+  lapsedExit: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+    marginTop: 18, fontSize: 12.5, color: '#9BB5A2', flexWrap: 'wrap',
+  },
+  lapsedExitLink: {
+    background: 'none', border: 'none', padding: 0, font: 'inherit', color: '#6B7280',
+    textDecoration: 'underline', cursor: 'pointer',
+  },
+
   page: {
     display:'flex', flexDirection:'column', height:'100vh',
     background:'#f4f4f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',

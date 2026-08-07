@@ -35,6 +35,18 @@ import { useNarrow } from '../shared/useNarrow.js';
 
 const AMBER = { ink: '#B45309', bg: '#FEF3C7', line: '#FDE68A' };
 
+// ── The bar's height on a WIDE screen, exported ─────────────────────────────────────────────────
+// CakeDesigner's desktop logo is `position: absolute; top: 14` anchored to `page`, deliberately out
+// of flow — "absolutely positioned so it costs the column no height", because 52px of header chrome
+// pushes the spatula down and clips its blade. Everything else in `page` is a flex child and moves
+// down when this bar appears; the logo, being out of flow, does not, and lands ON TOP of the text.
+// Caught by looking at it, which is the only way it could have been.
+//
+// A constant rather than a measurement, and that is safe for one reason: the logo only renders when
+// !isMobile, and at that width this bar is always ONE row. The narrow layout wraps to two, but
+// nothing is out of flow there — the mobile header is a normal flex child.
+export const PAST_DUE_BAR_H = 40;   // 10 top + ~20 line + 10 bottom, matching s.bar below
+
 export default function PastDueBanner({ status, onOpenBilling }) {
   // 640, not the studio's 760: this is one sentence and one button, so it has room for longer than
   // a header with three controls does. The shared hook is what keeps the two from disagreeing about
@@ -65,12 +77,14 @@ const s = {
   // Chef's Desk item.
   bar: {
     flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
-    padding: '10px 16px', background: AMBER.bg, borderBottom: `1px solid ${AMBER.line}`,
+    height: PAST_DUE_BAR_H, boxSizing: 'border-box',
+    padding: '0 16px', background: AMBER.bg, borderBottom: `1px solid ${AMBER.line}`,
     fontFamily: "'Quicksand',sans-serif", color: AMBER.ink, fontSize: 13, lineHeight: 1.4,
   },
   // On a phone the sentence needs the full width, so the button takes a row of its own rather than
   // competing with it — the same reshape the print studio's header does, for the same reason.
-  barNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: '10px 14px' },
+  // Height goes back to auto here: two rows, and nothing out of flow to clear it.
+  barNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 8, height: 'auto', padding: '10px 14px' },
   text: { flex: 1, minWidth: 0 },
   btn: {
     flexShrink: 0, padding: '9px 16px', minHeight: 40, borderRadius: 10, border: 'none',
