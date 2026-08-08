@@ -63,7 +63,7 @@ import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { PrivacyDataSection } from '../settings/PrivacyDataPanel.jsx';
 import PastDueBanner, { PAST_DUE_BAR_H } from '../billing/PastDueBanner.jsx';
-import CustomerTour from './tour/CustomerTour.jsx';
+import DesignTour from './tour/DesignTour.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -1985,15 +1985,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
     // ── Take a tour ────────────────────────────────────────────────────────────────────────────
-    // Customer only, and LAST — a first-timer needs it and everyone else is trying to get past it.
-    // In railItems rather than bolted onto a header so both surfaces get it from the one list, which
-    // is what stopped Uploads going missing from the phone; splitMobileNav puts it behind More on a
-    // narrow screen, which is exactly where a replay button belongs.
+    // BOTH roles. A baker designs on the same canvas with the same decorations, so the tour is the
+    // same tour; what differs is that it never runs at a baker uninvited (see autoStart below).
+    //
+    // In railItems rather than bolted onto a header so both surfaces get it from the one list —
+    // the thing that stopped Uploads going missing from the phone.
+    //
+    // ⚠️ PLACEMENT IS NOT SETTLED. It is last, which puts it behind More on a phone via
+    // splitMobileNav, and that is wrong: somebody who does not know how the app works will not
+    // think to open More. Moving it earlier is one line, but the bar has four slots, so promoting it
+    // displaces a destination — which may mean the rail is the wrong home on mobile and a persistent
+    // "?" outside the four-slot budget is the right one. Being tested before deciding.
     //
     // `requires: null` — hasCap treats a null capability as allowed. There is no capability for
     // "wants help", and inventing one would put a support affordance behind a permission.
-    ...(orderMode === 'customer'
-      ? [{ id: 'tour', label: 'Take a tour', short: 'Tour', icon: <TourIcon size={20} />, requires: null }] : []),
+    { id: 'tour', label: 'Take a tour', short: 'Tour', icon: <TourIcon size={20} />, requires: null },
   ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities, orderMode]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
@@ -5627,7 +5633,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           of the mode branching instead of being buried in a tour component.
 
           Renders null the rest of the time (seen, or not a customer), so it costs nothing. */}
-      <CustomerTour active={orderMode === 'customer'} startNonce={tourNonce} />
+      <DesignTour
+        mode={orderMode === 'customer' ? 'customer' : 'baker'}
+        // Uninvited for a CUSTOMER only. A baker opens this app every day; a tour they did not ask
+        // for is noise, and the rail item is there whenever they do want it.
+        autoStart={orderMode === 'customer'}
+        startNonce={tourNonce}
+      />
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }

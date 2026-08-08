@@ -1,17 +1,24 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { Z } from '../../shared/Panel.jsx';
 
-// ── The customer's first minute ──────────────────────────────────────────────────────────────────
+// ── The first minute in the designer ─────────────────────────────────────────────────────────────
 // A customer arrives from a link the baker sent, on a phone, having never seen a 3D cake designer.
 // Nothing on screen says the cake can be TURNED, that a tier can be tapped, or what to do once it
 // looks right. They are not short of intent — they came to order a cake — they are short of a first
 // move.
 //
-// ── WHY IT IS NOT THE BAKER'S TOUR ──────────────────────────────────────────────────────────────
-// A baker wants Orders, Templates and the storefront link; a customer will never open any of them,
-// and their rail does not even carry them (canManageStore is false, and order:view / customer:manage
-// gate the rest away). So this points at designing, and only at designing.
+// ── IT IS THE SAME TOUR FOR BOTH, BECAUSE DESIGNING IS THE SAME JOB ─────────────────────────────
+// A baker designs on the same canvas with the same decorations. What differs is not the tour, it is
+// WHO GETS IT UNINVITED: a customer has one visit and needs the nudge; a baker opens the app every
+// day and would resent it, so they get the "Take a tour" rail item and no automatic run.
+//
+// This does not try to teach a baker their whole app — Orders, Chef's Desk and the storefront link
+// are a different subject with a different audience. It points at designing, and only at designing.
+//
+// The one thing that genuinely differs is the last step: the same button says "Request a Quote" to a
+// customer and "Order This Cake" to a baker, and telling a baker the bakery will come back to them
+// would be nonsense.
 //
 // ── WHY NOT ON "FIRST LOGIN" ────────────────────────────────────────────────────────────────────
 // A customer OTP-verifies at the ENQUIRY end of the journey, after the cake is designed. A tour tied
@@ -32,11 +39,13 @@ const SEEN_KEY = 'spattoo.tour.customer.v1';   // v1: bump to re-show after the 
 // Step 1 covers rotate AND tap-a-tier together. They were two steps, and the second could not be
 // anchored honestly — the cake is a WebGL canvas, so there is no element for "the bottom tier", and
 // a second spotlight on the same rectangle reads as the tour being stuck.
-const STEPS = [
+const stepsFor = (mode) => [
   { target: 'canvas',   title: 'Turn it around',  body: 'Drag to spin the cake. Tap a tier to change its colour or frosting.' },
   { target: 'elements', title: 'Add decorations', body: 'Toppers, piping, flowers — browse and place them on the cake.' },
   { target: 'uploads',  title: 'Use your photo',  body: 'Upload a picture to put on the cake, or a design you want copied.' },
-  { target: 'quote',    title: 'Ask for a price', body: 'Happy with it? Send it to the bakery and they will come back with a quote.' },
+  mode === 'customer'
+    ? { target: 'quote', title: 'Ask for a price', body: 'Happy with it? Send it to the bakery and they will come back with a quote.' }
+    : { target: 'quote', title: 'Turn it into an order', body: 'Happy with it? Save it against a customer and it lands in your orders.' },
 ];
 
 const seen = () => {
@@ -45,13 +54,19 @@ const seen = () => {
 const markSeen = () => { try { window.localStorage.setItem(SEEN_KEY, new Date().toISOString()); } catch { /* ignore */ } };
 
 /**
- * `active`     — the host decides WHO gets this (customer mode only). Kept a prop rather than read
- *                here so the rule lives with the rest of the mode branching, not buried in a tour.
+ * `mode`       — 'customer' | 'baker'. Changes the last step's words and nothing else.
+ * `autoStart`  — does it appear UNINVITED on a first visit. True for a customer, false for a baker.
+ *                A separate prop from `mode` on purpose: "who is this" and "should it interrupt
+ *                them" are two decisions, and folding them together is how the second one gets made
+ *                by accident the next time a third mode appears.
  * `startNonce` — bump it to replay, from the "Take a tour" rail item. A COUNTER rather than a
  *                boolean because the interesting event is "asked again", and a boolean cannot say
  *                that twice in a row without the caller resetting it.
  */
-export default function CustomerTour({ active = false, startNonce = 0 }) {
+export default function DesignTour({ mode = 'customer', autoStart = false, startNonce = 0 }) {
+  // Memoised on mode: `measure` closes over STEPS, and a fresh array every render would mean the
+  // resize listener holding whichever copy existed when it was bound.
+  const STEPS = useMemo(() => stepsFor(mode), [mode]);
   const narrow = useNarrow(760);
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
@@ -60,12 +75,12 @@ export default function CustomerTour({ active = false, startNonce = 0 }) {
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    if (!active || seen()) return;
+    if (!autoStart || seen()) return;
     // One frame's grace: the rail and the canvas mount with the designer, and measuring before they
     // exist gives a null rect and a bubble parked in the corner.
     const t = setTimeout(() => setRunning(true), 400);
     return () => clearTimeout(t);
-  }, [active]);
+  }, [autoStart]);
 
   // Asked for by hand. Ignores `seen` entirely — that flag answers "should this appear uninvited",
   // which is a different question from "does this person want it now".
@@ -76,10 +91,10 @@ export default function CustomerTour({ active = false, startNonce = 0 }) {
   // the second one, a button that is always there makes repetition cost nothing and forgetting cost
   // nothing either.
   useEffect(() => {
-    if (!active || !startNonce) return;
+    if (!startNonce) return;
     setI(0);
     setRunning(true);
-  }, [active, startNonce]);
+  }, [startNonce]);
 
   // Measure the current step's target. Re-measured on resize and scroll because both move it — the
   // rail is fixed but the quote bar is not, and a phone's address bar collapsing counts as a resize.
@@ -87,7 +102,7 @@ export default function CustomerTour({ active = false, startNonce = 0 }) {
     if (!running) return;
     const el = document.querySelector(`[data-tour="${STEPS[i]?.target}"]`);
     setRect(el ? el.getBoundingClientRect() : null);
-  }, [running, i]);
+  }, [running, i, STEPS]);
 
   useEffect(() => {
     measure();
