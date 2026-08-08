@@ -238,18 +238,32 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = f
     '#b5c8e8','#b5e8d5','#f0c040','#e87040','#5c3d2e',
     '#3e2010','#1a1a1a','#d4af37','#8b1a1a','#2e5c3e',
   ];
-  // 44 on a phone, and not because it looks better: measured on the real panel these were 22px, half
-  // the touch floor, in FOUR wrapped rows. The wrapping is what made the sheet tall enough to hide
-  // the cake — so the fix for the target size and the fix for the height are the same fix.
-  const dot = compact ? 44 : Math.max(18, Math.round(width / 9.8));
-  const swatch = (c, key) => (
-    <div key={key} onClick={() => onChange(c)} style={{
-      width: dot, height: dot, borderRadius: '50%', background: c, cursor: 'pointer',
-      border: color.toLowerCase() === c.toLowerCase() ? '2.5px solid #1a1a1a' : '1.5px solid #999999',
-      boxSizing: 'border-box', flexShrink: 0,
-      boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-    }} />
-  );
+  // ── What you SEE and what you can TAP are different sizes ───────────────────────────────────
+  // These were 22px, half the touch floor, in four wrapped rows. Making the whole circle 44 fixed the
+  // target and overshot the drawing — a row of 44px discs reads as buttons rather than colour chips,
+  // and dominates a sheet where the picker is the main event.
+  //
+  // So the circle is 32 and the tap area around it is still 44. The floor is about what a thumb can
+  // hit, not about how big the paint is, and conflating the two is why it looked wrong.
+  const HIT = 44;
+  const dot = compact ? 32 : Math.max(18, Math.round(width / 9.8));
+  const swatch = (c, key) => {
+    const circle = (
+      <div style={{
+        width: dot, height: dot, borderRadius: '50%', background: c,
+        border: color.toLowerCase() === c.toLowerCase() ? '2.5px solid #1a1a1a' : '1.5px solid #999999',
+        boxSizing: 'border-box', flexShrink: 0,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+      }} />
+    );
+    if (!compact) return <div key={key} onClick={() => onChange(c)} style={{ cursor: 'pointer', display: 'flex' }}>{circle}</div>;
+    return (
+      <div key={key} onClick={() => onChange(c)} style={{
+        width: HIT, height: HIT, flexShrink: 0, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>{circle}</div>
+    );
+  };
 
   // ── Phone: swatches FIRST, in one row that scrolls ──────────────────────────────────────────
   // Order is the whole point. The sheet opens short, so whatever is at the top is what a baker can
@@ -262,8 +276,10 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = f
   if (compact) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+        {/* gap 2, not 8: each swatch already carries 6px of invisible tap area on either side, so a
+            wider gap here is spacing added to spacing. */}
         <ScrollFadeRow style={{
-          display: 'flex', gap: 8, overflowX: 'auto', padding: '2px 0 4px',
+          display: 'flex', gap: 2, overflowX: 'auto', padding: '2px 0 4px',
           scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
         }}>
           {PRESETS.map(c => swatch(c, c))}
@@ -8346,7 +8362,11 @@ const s = {
     background: 'rgba(0,0,0,0.05)', color: '#6b6b6b', fontSize: 12, fontWeight: 700,
     fontFamily: "'Quicksand',sans-serif", cursor: 'pointer',
   },
-  editTabOn: { background: '#2C4433', color: '#fff' },
+  // #1a1a1a is what "selected" is throughout this app — the toolbar's active button, the rotation
+  // slider, and `gradientModeOn`, which is the control sitting inside the very next tab. The brand
+  // green belongs to the storefront and the marketing site; using it here made the tab strip the one
+  // green thing in a black chrome.
+  editTabOn: { background: '#1a1a1a', color: '#fff' },
   sheetBody: {
     flex: '1 1 auto', minHeight: 0, width: '100%', overflowY: 'auto',
     display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',
