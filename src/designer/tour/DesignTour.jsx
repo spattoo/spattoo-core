@@ -33,6 +33,33 @@ import { Z } from '../../shared/Panel.jsx';
 
 const SEEN_KEY = 'spattoo.tour.customer.v1';   // v1: bump to re-show after the steps change
 
+// ── Where "seen" lives, and why it is two different places ──────────────────────────────────────
+// BAKER — a column, baker_appusers.tour_seen_at (migration 060), read from /me and written by
+// POST /me/tour-seen. They are authenticated from the first render, so there is no reason to guess:
+// it survives a new laptop and a cleared browser, and it is per PERSON rather than per bakery.
+//
+// CUSTOMER — a cookie, because a column is impossible. DesignFacet opens the designer straight from
+// the "let me build it myself in 3D" door with no OTP; verification happens later, at enquiry. At
+// the moment this has to decide, there is no customer row to read and no session to write with.
+//
+// ── WHY A COOKIE RATHER THAN localStorage ───────────────────────────────────────────────────────
+// localStorage is per ORIGIN, and every baker's storefront is its own subdomain — so a customer
+// ordering from two bakeries was told the same thing twice. A cookie can be set on the PARENT
+// domain, which every {slug}.spattoo.com shares, so one viewing covers all of them.
+//
+// The domain is DERIVED from location.hostname, never configured: the last two labels of whatever
+// we are actually served from. That is `.spattoo.dev` in dev and `.spattoo.com` in production with
+// no env var, no build flag and nothing to remember at deploy — the bug this avoids is a cookie
+// pinned to the wrong domain on the day the real one goes live, which fails by silently never
+// matching. localhost gets no domain attribute at all (host-only), because a single label cannot
+// be a cookie domain.
+export const cookieDomain = (hostname) => {
+  const parts = String(hostname).split('.');
+  // An IP address, `localhost`, or `{slug}.localhost` — host-only, no Domain attribute.
+  if (parts.length < 2 || /^[\d.]+$/.test(hostname) || parts[parts.length - 1] === 'localhost') return '';
+  return `; domain=.${parts.slice(-2).join('.')}`;
+};
+
 // Anchored by data-tour, not by class or DOM shape: a tour that breaks when a wrapper div appears is
 // worse than no tour, because nobody notices it stopped pointing at the right thing.
 //
@@ -48,22 +75,41 @@ const stepsFor = (mode) => [
     : { target: 'quote', title: 'Turn it into an order', body: 'Happy with it? Save it against a customer and it lands in your orders.' },
 ];
 
-const seen = () => {
-  try { return !!window.localStorage.getItem(SEEN_KEY); } catch { return true; }   // private mode → skip
+const seenCookie = () => {
+  try { return document.cookie.split('; ').some(c => c.startsWith(`${SEEN_KEY}=`)); } catch { return true; }
 };
-const markSeen = () => { try { window.localStorage.setItem(SEEN_KEY, new Date().toISOString()); } catch { /* ignore */ } };
+
+// A year, and SameSite=Lax: this is read on a top-level page load and never cross-site, so Lax is
+// the tightest setting that still works. Secure only on https — set unconditionally it would be
+// dropped on http://localhost and the tour would repeat forever in local dev.
+const markSeenCookie = () => {
+  try {
+    const secure = window.location.protocol === 'https:' ? '; secure' : '';
+    const base = `${SEEN_KEY}=${Date.now()}; path=/; max-age=31536000; samesite=lax${secure}`;
+    document.cookie = base + cookieDomain(window.location.hostname);
+    // Verify it stuck, and fall back to host-only if it did not. A browser SILENTLY REFUSES a cookie
+    // whose Domain is a public suffix — `spattoo-app-dev.vercel.app` derives `.vercel.app`, which is
+    // exactly that — and a refusal is indistinguishable from success at the point of writing. Left
+    // alone, the tour would repeat on every load of a preview deployment with nothing to explain it.
+    if (!seenCookie()) document.cookie = base;
+  } catch { /* ignore */ }
+};
 
 /**
  * `mode`       — 'customer' | 'baker'. Changes the last step's words and nothing else.
- * `autoStart`  — does it appear UNINVITED on a first visit. True for a customer, false for a baker.
+ * `autoStart`  — may it appear UNINVITED at all. A customer, yes; a baker who has never seen it,
+ *                yes; a baker who has, no — the host reads that from /me and passes the answer.
  *                A separate prop from `mode` on purpose: "who is this" and "should it interrupt
  *                them" are two decisions, and folding them together is how the second one gets made
  *                by accident the next time a third mode appears.
  * `startNonce` — bump it to replay, from the "Take a tour" rail item. A COUNTER rather than a
  *                boolean because the interesting event is "asked again", and a boolean cannot say
  *                that twice in a row without the caller resetting it.
+ * `onSeen`      — told once, the first time it is shown. The host persists it: a column for a
+ *                baker, nothing for a customer (the cookie below is theirs). Kept out of here so
+ *                this file never has to know there is an API.
  */
-export default function DesignTour({ mode = 'customer', autoStart = false, startNonce = 0 }) {
+export default function DesignTour({ mode = 'customer', autoStart = false, startNonce = 0, onSeen }) {
   // Memoised on mode: `measure` closes over STEPS, and a fresh array every render would mean the
   // resize listener holding whichever copy existed when it was bound.
   const STEPS = useMemo(() => stepsFor(mode), [mode]);
@@ -75,12 +121,15 @@ export default function DesignTour({ mode = 'customer', autoStart = false, start
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    if (!autoStart || seen()) return;
+    // The cookie is the CUSTOMER's memory only. A baker's lives in baker_appusers.tour_seen_at, and
+    // the host has already folded that into `autoStart` — checking the cookie for them too would let
+    // a browser override a fact the server holds.
+    if (!autoStart || (mode === 'customer' && seenCookie())) return;
     // One frame's grace: the rail and the canvas mount with the designer, and measuring before they
     // exist gives a null rect and a bubble parked in the corner.
     const t = setTimeout(() => setRunning(true), 400);
     return () => clearTimeout(t);
-  }, [autoStart]);
+  }, [autoStart, mode]);
 
   // Asked for by hand. Ignores `seen` entirely — that flag answers "should this appear uninvited",
   // which is a different question from "does this person want it now".
@@ -114,7 +163,16 @@ export default function DesignTour({ mode = 'customer', autoStart = false, start
     };
   }, [measure]);
 
-  const finish = useCallback(() => { markSeen(); setRunning(false); }, []);
+  const finish = useCallback(() => setRunning(false), []);
+
+  // Marked when it is SHOWN, not when it is finished. Somebody who reads the first bubble and closes
+  // the tab has been told; re-offering it next time would punish them for not clicking through. It
+  // also means the one write happens whether they press Got it, press Skip, or simply leave.
+  useEffect(() => {
+    if (!running) return;
+    if (mode === 'customer') markSeenCookie();
+    onSeen?.();
+  }, [running, mode, onSeen]);
 
   // A missing target is SKIPPED, never shown as an empty bubble. Uploads needs element:manage, and a
   // host that has not granted it should lose that one step rather than the whole tour.

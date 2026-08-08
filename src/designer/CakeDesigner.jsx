@@ -1801,6 +1801,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Bumped by the "Take a tour" rail item. A counter, not a flag: "asked again" is the event, and a
   // boolean cannot say it twice without the caller resetting it.
   const [tourNonce, setTourNonce] = useState(0);
+  // Has THIS PERSON seen it — from /me, so it survives a new device. Customers are not identified
+  // when the tour runs (DesignFacet opens the designer before any OTP), so theirs is a cookie
+  // inside DesignTour and this stays null for them.
+  //
+  // NULL = not answered yet, and that is the whole point of three states rather than two. Starting
+  // at `false` means "never seen" for the ~200ms before /me returns, and DesignTour's start timer is
+  // 400ms — so a baker who HAS seen it would be shown it again on every single load, in the gap.
+  const [tourSeen, setTourSeen] = useState(null);
   // Separate from Billing on purpose: someone topping up wants credits, not a plan conversation.
   const [buyCreditsOpen,      setBuyCreditsOpen]      = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
@@ -2064,6 +2072,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       apiClient.fetchMe().then(me => {
         setCapabilities(me?.capabilities ?? null);
         setRole(me?.role ?? null);
+        // baker_appusers.tour_seen_at (migration 060). Undefined on an API that predates it, which
+        // must read as NOT seen — a baker on an old server should still be offered the tour, not
+        // silently denied it.
+        setTourSeen(me?.tourSeen === true);
         // Avatar initials: in customer mode fetchBakerProfile returns no `user`, so
         // /api/me is where the logged-in principal's name comes from (baker or customer).
         if (me?.firstName || me?.lastName) {
@@ -5635,10 +5647,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Renders null the rest of the time (seen, or not a customer), so it costs nothing. */}
       <DesignTour
         mode={orderMode === 'customer' ? 'customer' : 'baker'}
-        // Uninvited for a CUSTOMER only. A baker opens this app every day; a tour they did not ask
-        // for is noise, and the rail item is there whenever they do want it.
-        autoStart={orderMode === 'customer'}
+        // A customer always (their cookie decides inside); a baker only if they have never seen it.
+        // Bakers DO get it uninvited on a genuine first run — what they must not get is it again on
+        // a second laptop, which is the whole reason the flag moved to a column.
+        autoStart={orderMode === 'customer' || tourSeen === false}
         startNonce={tourNonce}
+        // Fire-and-forget: the tour is already on screen, so a failed write must do nothing visible.
+        // Worst case it is offered once more elsewhere — exactly the old localStorage behaviour.
+        onSeen={() => {
+          if (orderMode === 'customer' || tourSeen === true) return;
+          setTourSeen(true);
+          apiClient?.markTourSeen?.()?.catch?.(() => {});
+        }}
       />
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
