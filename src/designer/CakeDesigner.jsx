@@ -8100,7 +8100,25 @@ const s = {
   // The mobile header is 52 tall and shares its width with the bell, the credits pill, Chef's Desk,
   // Settings and the profile — there, a wider name takes room from controls that have nowhere to go.
   // The desktop row has the name at one end and that same cluster ~1100px away at the other.
-  desktopLogoText: { fontSize: 24, maxWidth: 420 },
+  desktopLogoText: {
+    // Pacifico, the face spattoo-web already self-hosts and describes as "the bakery wordmark only"
+    // — which is exactly this job: a bakery's name standing in for a logo it does not have. It reads
+    // as a MARK rather than a label, which is the actual gap when nothing has been uploaded.
+    //
+    // fontWeight 400 explicitly, overriding topLogoText's 700: Pacifico ships a single weight, so
+    // 700 would be a browser-synthesised fake bold — a script face smeared thicker, which looks
+    // like a rendering fault rather than emphasis.
+    //
+    // It is NOT preloaded (next/font, preload: false — the storefront faces are theme-conditional
+    // and most page views never show one), so a baker with no logo sees the fallback face briefly
+    // and then the swap. Accepted rather than fixed: `display: swap` keeps the name readable
+    // throughout, it only affects bakers without a logo, and preloading a script face for every user
+    // to serve a minority is the worse trade. Change layout.tsx if that ever stops being true.
+    fontFamily: "'Pacifico', cursive",
+    fontWeight: 400,
+    fontSize: 26,
+    maxWidth: 420,
+  },
 
   // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
   // this is just the 64px handle-width positioning context. The blade bulges out
