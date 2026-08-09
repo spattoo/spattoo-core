@@ -1004,7 +1004,19 @@ function SpatulaFrame() {
     return () => ro.disconnect();
   }, []);
 
-  const W = RAIL.svgW, cx = W / 2, handleHalf = 30, hr = 9;
+  // ── No hang-hole ──────────────────────────────────────────────────────────────────────────────
+  // It was the most expensive detail in the rail. The first nav item had to clear the hole's bottom
+  // edge (y=71), which is what `sidebarInner`'s top padding was buying — a whole menu item's worth
+  // of the most valuable space in the rail, spent on a feature of a real spatula that hangs on a
+  // hook. Without it the clearance is the CAP's bottom (y=38), and the silhouette is still
+  // unmistakably a spatula: the shape is the cap, the taper and the blade, not the hole.
+  //
+  // `holeY` survives as an anchor because the cream swirls are positioned relative to it — they are
+  // a separate decoration that happens to have been measured from the hole.
+  const W = RAIL.svgW, cx = W / 2, handleHalf = 30;
+  // The cap's bottom is capTopY + handleHalf = 38 — the clearance sidebarInner's top padding now
+  // buys, instead of the hole's 71. Stated here rather than derived, because the padding is CSS on
+  // the other side of the file; if this geometry moves, that number moves with it.
   const capTopY = 8, holeY = capTopY + handleHalf + 24;
   const bladeBotY = h - 12;
   const bladeFullY = bladeBotY - 194;     // blade body height (per tuned design)
@@ -1014,7 +1026,6 @@ function SpatulaFrame() {
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
   });
-  const hole = `M ${cx} ${holeY - hr} a ${hr} ${hr} 0 1 0 0 ${2 * hr} a ${hr} ${hr} 0 1 0 0 ${-2 * hr} Z`;
   const swirls = [
     `M ${cx + 12} ${holeY - 16} C ${cx + 32} ${holeY + 10} ${cx + 8} ${holeY + 46} ${cx - 10} ${holeY + 34} C ${cx - 24} ${holeY + 24} ${cx - 14} ${holeY + 2} ${cx + 2} ${holeY}`,
     `M ${cx - 4} ${holeY + 70} C ${cx + 22} ${holeY + 180} ${cx - 22} ${holeY + 300} ${cx + 8} ${holeY + 430}`,
@@ -1060,7 +1071,7 @@ function SpatulaFrame() {
           </filter>
           <clipPath id="spat-sil"><path d={path} /></clipPath>
         </defs>
-        <path d={`${path} ${hole}`} fill="url(#spat-body)" fillRule="evenodd" filter="url(#spat-soft)" />
+        <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
         <g clipPath="url(#spat-sil)">
           <g filter="url(#spat-blur)">
             {swirls.slice(1).map((d, i) => (
@@ -1073,11 +1084,10 @@ function SpatulaFrame() {
           <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#spat-blurHole)" />
         </g>
         {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
-        <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#spat-inner)" />
+        <path d={path} fill="#000" filter="url(#spat-inner)" />
         <path d={path} fill="#000" filter="url(#spat-spec)" />
-        <path d={`${path} ${hole}`} fill="url(#spat-sheen)" fillRule="evenodd" />
+        <path d={path} fill="url(#spat-sheen)" />
         <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
-        <circle cx={cx} cy={holeY} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
       </svg>
     </div>
   );
@@ -7893,7 +7903,9 @@ const s = {
     position: 'relative', zIndex: 1,
     flex: 1, width: '100%',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '96px 0 30px',   // clear the cap + hang-hole before the first nav item
+    // 96 cleared the cap AND the hang-hole (whose bottom edge was y=71). With the hole gone the
+    // clearance is the cap's own bottom at y=38, plus breathing room — worth a whole menu item.
+    padding: '48px 0 30px',
     minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
   sidebarDivider: {
@@ -7936,7 +7948,10 @@ const s = {
   },
   sidebarBtn: {
     background: 'none', border: 'none', cursor: 'pointer',
-    width: 40, height: 40, borderRadius: 12,
+    // 34, not 40: it holds a 20px icon, so 40 was 10px of padding around each one — and multiplied
+    // by nine rail items that is more than a whole item's worth of the column. A mouse target, not a
+    // thumb one, so the 44px touch floor does not apply here (the phone strip keeps its 44).
+    width: 34, height: 34, borderRadius: 11,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     color: 'rgba(255,255,255,0.45)',
     transition: 'background 0.15s, color 0.15s',
