@@ -113,6 +113,7 @@ export function toCanvasConfig(design) {
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
+        grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
@@ -468,6 +469,28 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, dusting: null } : t),
+    }));
+  }
+
+  // ── Piped grass on a tier's top ─────────────────────────────────────────────
+  // A per-tier SURFACE TREATMENT, stored like dusting and foil rather than as stickers. Grass is a
+  // few thousand tufts; as stickers that would be a few thousand rows in the snapshot, every one of
+  // them individually selectable and draggable, for something nobody wants to move a blade of.
+  // Here it is one small object and the canvas instances it.
+  //
+  // Absent/null = no grass, so every existing design is unchanged and the field costs nothing until
+  // a baker asks for it. `setTierGrass(i, null)` removes it.
+  function setTierGrass(index, grass) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, grass } : t),
+    }));
+  }
+
+  function updateGrass(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.grass) ? { ...t, grass: { ...t.grass, ...changes } } : t),
     }));
   }
 
@@ -1119,6 +1142,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
+    setTierGrass, updateGrass,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

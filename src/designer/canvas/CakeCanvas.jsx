@@ -29,6 +29,7 @@ import {
   FLAT_STICKER_Y_OFFSET,
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
+import GrassPatch from './GrassPatch.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
@@ -2250,6 +2251,17 @@ function CakeScene({
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onTierClick(i); }}
           />
+          {/* Piped grass on this tier's top. Outside CakeTier because it is not part of the cake's
+              body or its borders — it is a treatment laid ON the finished top, the way the football
+              cake has smooth buttercream underneath and grass over it. Rendered from the resolved
+              tierData so it fits the tier's real footprint, round or sheet. */}
+          {tier.grass && (
+            <GrassPatch
+              shape={tierShape(tier)}
+              topY={tier.baseY + tier.height}
+              {...tier.grass}
+            />
+          )}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
               position={[tier.radius + 0.35, tier.baseY + (selectedPiping.zone === 'top' ? tier.height + 0.1 : 0.1), 0]}

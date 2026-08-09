@@ -20,6 +20,7 @@ import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
 import { Panel } from '../shared/Panel.jsx';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
+import { GRASS_DEFAULTS } from './geometry/grass.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
@@ -1516,7 +1517,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3149,6 +3150,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function handleDeselect() { clearAllSelections(); }
 
+  // ── Grass ───────────────────────────────────────────────────────────────────
+  // Applied to the TOP tier: grass covers a surface, and the only top surface fully in view is the
+  // topmost one — on a stack, a lower tier's top is mostly hidden under the tier above it. The card
+  // lets it be moved to another tier afterwards; this is just where it lands.
+  function grassTierIndex() { return Math.max(0, design.tiers.length - 1); }
+
+  function addGrass() {
+    const i = grassTierIndex();
+    // Seeded from the SAME defaults the admin studio tunes against, so what was judged there is what
+    // appears here. No second copy of the numbers.
+    if (!design.tiers[i]?.grass) setTierGrass(i, { ...GRASS_DEFAULTS, color: '#4caf3d' });
+    selectExclusive({ type: 'grass' });
+  }
+
+  function removeGrass() {
+    design.tiers.forEach((t, i) => { if (t.grass) setTierGrass(i, null); });
+    clearAllSelections();
+  }
+
+  // Which tier currently carries grass (the card edits that one).
+  const grassTier = design.tiers.findIndex(t => t.grass);
+
+  function moveGrassToTier(next) {
+    const cur = grassTier;
+    if (cur === next || next == null) return;
+    const g = design.tiers[cur]?.grass;
+    if (!g) return;
+    setTierGrass(cur, null);
+    setTierGrass(next, g);
+  }
+
   function handleTierClick(i) {
     closeAllPopups();
     // Clicking the already-selected tier toggles it off; otherwise the tier becomes the sole selection.
@@ -4389,6 +4421,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust') || design.tiers.some(t => t.dusting?.splashes?.length)) {
     decorationCards.unshift({ key: 'luster-dust', type: 'tool', tool: 'luster-dust', name: 'Luster Dust', thumb: null });
   }
+  // Grass shows a card for as long as any tier HAS grass — unlike the tools above it, which also
+  // appear while merely selected. Grass is applied the moment you pick it (there is nothing to
+  // compose first), so "has grass" and "should show a card" are the same condition.
+  if (design.tiers.some(t => t.grass)) {
+    decorationCards.unshift({ key: 'grass', type: 'grass', name: 'Grass', thumb: null });
+  }
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
     decorationCards.unshift({ key: 'cream-pen', type: 'tool', tool: 'pen', name: 'Cream Pen', thumb: null });
   }
@@ -4416,6 +4454,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'pattern' ? selectedEl.patternId === card.patternId
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : card.type === 'foil' ? true
+         : card.type === 'grass' ? true
          : card.type === 'cream' ? true
          : card.type === 'tool' ? selectedEl.tool === card.tool
          : selectedEl?.id === card.id);
@@ -4442,6 +4481,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cluster-place' ? { type: 'cluster-place', elementId: card.elementId }
       : card.type === 'foil'          ? { type: 'foil', elementId: card.elementId }
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
+      : card.type === 'grass'         ? { type: 'grass' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
       : card.type === 'pattern'       ? { type: 'pattern', patternId: card.patternId, patternElementId: card.patternElementId }
       : card.type === 'group'         ? { type: 'group', groupId: card.groupId }
@@ -5543,6 +5583,67 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  // Grass editor body — inline expanded body of its stack card.
+  //
+  // A baker gets THREE controls, not the studio's ten. Splay, droop, strand count, thickness, length
+  // variation and jitter are what make it look like grass at all — they were tuned once in the admin
+  // studio and are the same on every cake. Density, height and colour are the ones a cake actually
+  // differs by: a putting green is short and dense, a meadow is long and sparse.
+  function renderGrassBody() {
+    const i = grassTier;
+    const g = design.tiers[i]?.grass;
+    if (!g) return null;
+    const GRASS_COLORS = ['#7bc043', '#5bc236', '#4caf3d', '#3f8f2b', '#2e7d32', '#1b5e20'];
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Piped over the top of the tier, like a grass nozzle.
+        </div>
+
+        {design.tiers.length > 1 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Tier</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {design.tiers.map((_, ti) => (
+                <button key={ti} onClick={() => moveGrassToTier(ti)}
+                  style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                    border: '1.5px solid #999999', background: ti === i ? '#1a1a1a' : '#fff', color: ti === i ? '#fff' : '#1a1a1a' }}>
+                  {ti + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: 8 }}>
+          {/* Density reads as "more grass to the right", so the slider is inverted over spacing —
+              spacing is the number the geometry wants, density is the thing a person adjusts. */}
+          <PenSlider label="Density" value={0.24 - (g.spacing ?? GRASS_DEFAULTS.spacing)} min={0.04} max={0.2} step={0.002}
+            onChange={v => updateGrass(i, { spacing: +(0.24 - v).toFixed(3) })} fmt={() => `${Math.round((0.2 - (g.spacing ?? 0.075)) / 0.16 * 100)}%`} />
+          <PenSlider label="Height" value={g.height ?? GRASS_DEFAULTS.height} min={0.06} max={0.4} step={0.005}
+            onChange={v => updateGrass(i, { height: v })} fmt={v => v.toFixed(2)} />
+        </div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Grass colour</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="color" value={g.color ?? '#4caf3d'} onChange={e => updateGrass(i, { color: e.target.value })}
+            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
+          {GRASS_COLORS.map(c => (
+            <button key={c} onClick={() => updateGrass(i, { color: c })} title={c}
+              style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
+                border: (g.color ?? '#4caf3d') === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
+          ))}
+        </div>
+
+        <button onClick={removeGrass}
+          style={{ marginTop: 12, width: '100%', padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
+            background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
+          Remove grass
+        </button>
+      </>
+    );
+  }
+
   // Luster Dust editor body — inline expanded body of its stack card (like the cream pen above).
   function renderDustBody() {
     return (
@@ -6187,6 +6288,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Luster Dust</div>
                     <div style={{ fontSize: 10, color: '#888' }}>Flick metallic gold dust on the cake</div>
+                  </div>
+                </button>
+                {/* Grass sits with the TOOLS, beside luster dust — both are treatments applied to a
+                    surface, not objects you place. It is emphatically not under the Cream Pen: that
+                    is for writing and simple shapes, and nobody looks for a lawn inside a pen. */}
+                <button
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addGrass(); setElementsOpen(false); }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(160deg, #7bc043, #2e7d32)', flexShrink: 0 }} />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Grass</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Pipe grass over the top of a tier</div>
                   </div>
                 </button>
                 <button
@@ -6859,6 +6972,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'cluster' ? renderClusterBody(card)
                            : card.type === 'foil' ? renderFoilBody(card)
                            : card.type === 'cream' ? renderCreamBody()
+                           : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
