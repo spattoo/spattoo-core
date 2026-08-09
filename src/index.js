@@ -2,6 +2,12 @@ export { default as CakeDesigner } from './designer/CakeDesigner.jsx';
 export { default as PatternBuilder } from './designer/PatternBuilder.jsx';
 export { default as PatternBuilderCanvas, placementPosition, getOverlappingIds, ALL_TIER_GEOM } from './designer/canvas/PatternBuilderCanvas.jsx';
 export { default as CakeCanvas, CakeThumbnailCanvas, CakePreview } from './designer/canvas/CakeCanvas.jsx';
+// One catalogue element on a cake, placed by the designer's OWN addSticker and drawn by its own
+// scene — so the admin preview is a mount of the designer, not a second renderer that drifts.
+// `zoneMode` rides along because a caller choosing a zone must resolve the element's mode the same
+// way the designer does.
+export { default as ElementPreview } from './designer/preview/ElementPreview.jsx';
+export { zoneMode, zoneCfg, zoneSeat, zoneInsert } from './designer/placement.js';
 // The shape picker's camera and its capture helper. Exported because the Cake Shape Studio SAVES a
 // thumbnail through this exact view and the picker falls back to a live tile through it — one camera, or
 // a shape would change appearance the moment somebody photographed it. captureThumbnailBlob is the ONE
