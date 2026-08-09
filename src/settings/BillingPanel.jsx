@@ -523,6 +523,31 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // ── The selection must name a plan that is on the page ─────────────────────────────────────────
+  // reload() pre-selects the baker's OWN tier so opening this screen reads as "resume this one", and
+  // it runs in PARALLEL with the plan fetch — so at that moment there is no catalogue to check the
+  // choice against. This corrects it once there is.
+  //
+  // It matters because Spark is filtered out of the chooser: a trialing baker was left selecting a
+  // card that is not rendered — nothing highlighted, and a CTA reading "Upgrade to Spark" for the
+  // plan they are already on. It also covers a plan that has since been retired, which is the same
+  // bug arriving a different way.
+  //
+  // Corrected in the ONE piece of state the checkout handlers already read, rather than derived
+  // alongside it. A second, parallel value that the buttons use and the charge does not is exactly
+  // how a screen comes to bill for something other than what it highlighted.
+  //
+  // First OFFERED plan, not a hardcoded 'flame': the list arrives ordered by sort_order, so this
+  // stays right if the cheapest paid tier is ever renamed, repriced or reordered.
+  useEffect(() => {
+    if (!plans.length) return;
+    setSelectedTier(cur => (
+      plans.some(pl => pl.name === cur && pl.name !== 'spark')
+        ? cur
+        : plans.find(pl => pl.name !== 'spark')?.name ?? cur
+    ));
+  }, [plans]);
+
   // Open Razorpay Checkout for a just-created subscription and reconcile from the server afterwards.
   // Shared by every paid flow (subscribe / upgrade / downgrade / reactivate / payment-method change) so
   // the Checkout wiring lives in ONE place — the only thing that differs upstream is what createSubscription
@@ -633,9 +658,25 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
   const isDowngradeScheduled = !!scheduledTo && scheduledTo !== billing?.tier;   // scheduled change to a different tier
   const realCancel           = cancelScheduled && !scheduledTo;                  // a true cancel (no pending change)
   const windingDown          = isActive && realCancel;                           // cancelled + in grace → reactivatable
-  // Spark is the free baseline — a PAID baker can't re-select it (returning to free = Cancel). A baker
-  // still on Spark keeps seeing it. Shared PlanCards (onboarding) is unaffected — this filters here only.
-  const selectablePlans = (isActive && !isOnSpark) ? plans.filter(p => p.name !== 'spark') : plans;
+  // ── Spark is never in this list ────────────────────────────────────────────────────────────────
+  // It is a TRIAL, not a tier — the marketing pricing page says exactly that and keeps it out of its
+  // columns for the same reason. Nobody can arrive at it from here anyway: provisioning grants it
+  // once at signup (services/bakerProvisioning.js) and POST /billing/activate-spark refuses a second
+  // with 409 SPARK_ALREADY_USED. A card the server is certain to reject is worse than no card.
+  //
+  // This read `(isActive && !isOnSpark)`, so the filter switched OFF at precisely the wrong moment:
+  // a baker whose Blaze had EXPIRED is not active, so Spark came back to the top of their list —
+  // free, above the paid plans, offered to the one person who has definitively used it up. The
+  // intent was "a paying baker cannot re-select the free tier"; what it said was "…only while they
+  // are paying".
+  //
+  // A baker still ON Spark still sees their own plan — that is rendered from `billing.tier` above,
+  // not from this list.
+  //
+  // Filtered here rather than by flipping `is_active`, which is how Forge left the picker (migration
+  // 058). Forge had no users; Spark has every trialing baker, and is_active would pull it out of
+  // GET /plans for every reader. One line at the call site has no blast radius.
+  const selectablePlans = plans.filter(p => p.name !== 'spark');
 
   // Rank + display name come from the DB catalog (sort_order is the tier rank).
   const planByName   = Object.fromEntries(plans.map(p => [p.name, p]));
