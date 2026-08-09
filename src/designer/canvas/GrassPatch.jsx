@@ -19,7 +19,7 @@ export default function GrassPatch({
   droop   = GRASS_DEFAULTS.droop,
   thickness = GRASS_DEFAULTS.thickness,
   lengthVary = GRASS_DEFAULTS.lengthVary,
-  region = null, seed = 7,
+  bandInner = null, seed = 7,
   onStats,
 }) {
   const geo = useMemo(
@@ -27,8 +27,8 @@ export default function GrassPatch({
     [strands, height, thickness, splay, droop, lengthVary, seed],
   );
   const seats = useMemo(
-    () => grassSeats({ shape, spacing, jitter, seed: seed + 1, region }),
-    [shape, spacing, jitter, seed, region],
+    () => grassSeats({ shape, spacing, jitter, seed: seed + 1, bandInner }),
+    [shape, spacing, jitter, seed, bandInner],
   );
 
   const ref = useRef(null);

@@ -5615,6 +5615,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
 
+        {/* Coverage. A band leaves the middle clear so whatever is under the grass still shows —
+            the football cake, where the pitch rings a design rather than burying it. Stored as the
+            INNER edge because that is what the geometry wants; shown as a width because that is
+            what a person is adjusting. */}
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Coverage</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['Whole top', null], ['Rim band', 0.55]].map(([label, inner]) => {
+              const on = (g.bandInner ?? null) === null ? inner === null : inner !== null;
+              return (
+                <button key={label} onClick={() => updateGrass(i, { bandInner: inner })}
+                  style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                    border: '1.5px solid #999999', background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a' }}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {g.bandInner != null && (
+          <div style={{ marginTop: 8 }}>
+            <PenSlider label="Band width" value={1 - g.bandInner} min={0.12} max={0.9} step={0.02}
+              onChange={v => updateGrass(i, { bandInner: +(1 - v).toFixed(2) })}
+              fmt={v => `${Math.round(v * 100)}%`} />
+          </div>
+        )}
+
         <div style={{ marginTop: 8 }}>
           {/* Density reads as "more grass to the right", so the slider is inverted over spacing —
               spacing is the number the geometry wants, density is the thing a person adjusts. */}

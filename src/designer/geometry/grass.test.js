@@ -87,9 +87,36 @@ describe('grassSeats', () => {
 
   // The football-cake look: grass hugging the rim, the middle left clear for the design underneath.
   it('a rim band leaves the middle empty', () => {
-    const band = grassSeats({ shape: round, spacing: 0.08, region: { from: 0.55, to: 1 } });
+    const band = grassSeats({ shape: round, spacing: 0.08, bandInner: 0.55 });
     expect(band.length).toBeGreaterThan(0);
     expect(band.every(s => Math.hypot(s.x, s.z) >= round.radius * 0.55 - 1e-6)).toBe(true);
+  });
+
+  // The band is a scaled copy of the tier's OUTLINE, not a radius — which is the whole point on a
+  // sheet. Measuring distance from the centre (the first version) put a CIRCULAR hole in a
+  // rectangle: the short edges lost their band entirely while the corners kept a fat one. Here the
+  // hole is a rectangle, so the band has even width all the way round and the corners stay grassed.
+  it('follows the outline on a sheet, instead of cutting a circular hole', () => {
+    const band = grassSeats({ shape: sheet, spacing: 0.06, bandInner: 0.6 });
+    expect(band.length).toBeGreaterThan(0);
+    // Nothing inside the scaled rectangle…
+    expect(band.every(s => !(Math.abs(s.x) <= sheet.halfW * 0.6 && Math.abs(s.z) <= sheet.halfD * 0.6))).toBe(true);
+    // …and the band survives on the SHORT edges, which a circular hole of this size would have eaten.
+    const nearShortEdge = band.filter(s => Math.abs(s.z) > sheet.halfD * 0.75 && Math.abs(s.x) < sheet.halfW * 0.3);
+    expect(nearShortEdge.length).toBeGreaterThan(0);
+  });
+
+  it('a wider band (smaller inner) keeps more tufts', () => {
+    const narrow = grassSeats({ shape: round, spacing: 0.07, bandInner: 0.8 }).length;
+    const wide   = grassSeats({ shape: round, spacing: 0.07, bandInner: 0.3 }).length;
+    expect(wide).toBeGreaterThan(narrow);
+  });
+
+  it('null bandInner covers the whole top', () => {
+    const full = grassSeats({ shape: round, spacing: 0.08 });
+    const band = grassSeats({ shape: round, spacing: 0.08, bandInner: 0.55 });
+    expect(full.length).toBeGreaterThan(band.length);
+    expect(full.some(s => Math.hypot(s.x, s.z) < round.radius * 0.3)).toBe(true);
   });
 
   it('varies yaw and scale so a field does not read as wallpaper', () => {

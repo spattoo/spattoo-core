@@ -131,9 +131,15 @@ export function buildGrassTuft(opts = {}) {
 // round, sheet, heart and number tiers all work through ONE path rather than a branch per family
 // (INVARIANTS #1). `inset` keeps the patch off the very edge; pass 1 to run right to it.
 //
+// `bandInner` (0..1, null = cover the whole top) hollows out the middle to leave grass hugging the
+// rim — the football-cake look, where the design shows through and the grass rings it. It is a SCALE
+// of the tier's own outline, not a radius: measuring distance from the centre would put a circular
+// ring on a sheet cake instead of a band that follows the edge. Same containment test, run at a
+// smaller scale, so the hole is the tier's shape and corners stay grassed.
+//
 // Returns [{ x, z, yaw, scale }] — yaw and scale vary per seat so a field of identical tufts does
 // not read as wallpaper.
-export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, region = null }) {
+export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, bandInner = null }) {
   const s    = spacing ?? GRASS_DEFAULTS.spacing;
   const j    = jitter  ?? GRASS_DEFAULTS.jitter;
   const rand = rng(seed);
@@ -149,12 +155,9 @@ export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, reg
       const px = x + (rand() - 0.5) * s * j;
       const pz = z + (rand() - 0.5) * rowH * j;
       if (!topContains(shape, px, pz, inset)) continue;
-      // A band instead of the whole surface — the football-cake look, grass hugging the rim with the
-      // middle left clear. Expressed as a fraction of the reach so it survives any tier size.
-      if (region) {
-        const f = Math.hypot(px, pz) / (ext || 1);
-        if (f < (region.from ?? 0) || f > (region.to ?? 1)) continue;
-      }
+      // Hollow the middle out for a rim band. The hole is the tier's own outline scaled down, so it
+      // follows a heart or a sheet as faithfully as a circle.
+      if (bandInner != null && topContains(shape, px, pz, bandInner)) continue;
       out.push({ x: px, z: pz, yaw: rand() * Math.PI * 2, scale: 0.8 + rand() * 0.4 });
     }
   }
