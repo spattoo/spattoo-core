@@ -1568,6 +1568,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // The food-foil ("gold leaf") element is identified by CONFIG, never slug (#1): kind === 'tier_finish'.
   // (Declared after elementById so it doesn't read it before initialization.)
   const foilElement = [...elementById.values()].find(e => e.placement_config?.kind === 'tier_finish') ?? null;
+
+  // ── Can this decoration be dragged? ─────────────────────────────────────────────────────────────
+  // Read from the ELEMENT, never from the sticker's own allowedActions. Two reasons, and the second
+  // is the one that would have caused a regression:
+  //
+  //   * Capabilities are admin master data. An admin unticking Movable should pin decorations that
+  //     are ALREADY on cakes, not just the next one placed — the same way `delete` behaves.
+  //   * Every sticker placed before this was wired carries an explicit `move: false`, because the
+  //     placement path defaulted it that way while nothing read it. Those values are baked into
+  //     saved design_snapshots too. Gating on the sticker's copy would have frozen every decoration
+  //     on every cake and in every saved order, which no migration of the catalogue could undo.
+  //
+  // Absent → movable: an element that never expressed an opinion, or a promoted upload with no
+  // catalogue row at all, keeps the behaviour it has always had. Only an explicit false pins it.
+  const isStickerMovable = useCallback(
+    (sticker) => elementById.get(sticker?.elementId)?.allowed_actions?.move !== false,
+    [elementById],
+  );
   // The "Cream layer" element is a tier finish too, identified by CONFIG not slug (#1): it carries a
   // placement_config.second_cream block (lift/noise/fill_side seeds). It drives tier.creamLayers (raised
   // second-buttercream bands), NOT a sticker — so it routes to the cream card, never the generic path.
@@ -6388,6 +6406,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onMoveMany={handleMoveMany}
               stickerToolbar={null}
               stickerResize={stickerResize}
+              isStickerMovable={isStickerMovable}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}

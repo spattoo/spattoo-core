@@ -324,6 +324,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (!didDrag.current || !startHit.current) return;
+            if (!canMove) return;                     // pinned — allowed_actions.move === false
             if (facetWall) {
               const bh = boxHit(pointerRay(ev, gl.domElement, camera), shp.halfW, shp.halfD);
               if (bh) onMove_prop(textEl.id, { u: nearestU(shp, bh.x, bh.z), y: bh.y });
@@ -1417,7 +1418,15 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
 }
 
 
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null }) {
+// `canMove` defaults TRUE. Every decoration on every cake moves today, so a capability that arrived
+// defaulting to false would freeze the lot — and the caller derives it from the ELEMENT, never from
+// the sticker's own allowedActions, which carries a stale `move: false` on everything placed before
+// the flag was wired. See isStickerMovable in CakeDesigner.
+//
+// Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
+// toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
+// picked up, looked at and edited — it just does not go anywhere.
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -1633,7 +1642,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   );
 }
 
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null }) {
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -1768,6 +1777,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       const dx = ev.clientX - startPos.current.x;
       const dy = ev.clientY - startPos.current.y;
       if (dx * dx + dy * dy > 25) didDrag.current = true;
+      if (!canMove) return;                           // pinned — allowed_actions.move === false
       if (didDrag.current && startHit.current) {
         const hit = planeHit(pointerRay(ev, gl.domElement, camera), plane);
         if (!hit) return;
@@ -2084,6 +2094,15 @@ function CakeScene({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
+  // Is THIS decoration allowed to be dragged? A function rather than a flag on the sticker, because
+  // the answer comes from the ELEMENT (admin master data), and the sticker's own allowedActions
+  // carries a stale `move: false` on everything placed before the capability was wired. Reading the
+  // catalogue also means an admin unticking Movable takes effect on decorations already on cakes,
+  // not only on the next one placed — which is what a capability flag ought to mean.
+  //
+  // Defaults to movable when the host does not supply it: this component is used by previews and
+  // the thumbnail scene, and none of them should invent a restriction.
+  isStickerMovable = () => true,
   // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
   // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
   stickerResize = null,
@@ -2372,6 +2391,7 @@ function CakeScene({
               onOrbitEnable={orbitEnable}
               toolbar={isSelected ? stickerToolbar : null}
               resize={stickerResize}
+              canMove={isStickerMovable(sticker)}
             />
           );
         }
@@ -2395,6 +2415,7 @@ function CakeScene({
             onOrbitEnable={orbitEnable}
             toolbar={isSelected ? stickerToolbar : null}
             resize={stickerResize}
+            canMove={isStickerMovable(sticker)}
           />
         );
       })}
@@ -2680,6 +2701,7 @@ export default function CakeCanvas({
   // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
   // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
   stickerResize = null,
+  isStickerMovable,
   hitTestRef,
   snapCameraRef,
   cameraPosition = CAMERA_POSITION,
@@ -2803,6 +2825,7 @@ export default function CakeCanvas({
         onMoveMany={onMoveMany}
         stickerToolbar={stickerToolbar}
         stickerResize={stickerResize}
+        isStickerMovable={isStickerMovable}
         onWritingClick={onWritingClick}
         onWritingMove={onWritingMove}
         writingSelected={writingSelected}

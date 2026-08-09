@@ -906,7 +906,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             // capability that ignored the element. Defaults to true, so an element that never set the
             // flag is deletable exactly as before; only an explicit `false` pins it to the cake.
             delete:    element.allowed_actions?.delete    ?? true,
-            move:      element.allowed_actions?.move      ?? false,
+            // Defaults TRUE, for the same reason `delete` two lines up does: every decoration on
+            // every cake moves today, and a capability that arrives defaulting to false silently
+            // freezes all of them. Only an explicit `false` pins one down.
+            //
+            // It defaulted to false while NOTHING read it, so the value is meaningless in every
+            // sticker and every design_snapshot written before now — which is exactly why the canvas
+            // reads the ELEMENT rather than this copy. See isStickerMovable in CakeDesigner.
+            move:      element.allowed_actions?.move      ?? true,
             // Opt-IN, matching how admin authors capabilities everywhere (ManageElements /
             // PhotoFrameStudio default `tilt: false`). The old `?? true` contradicted that convention,
             // so every element — including a promoted decoration whose type never asked for it — got a
