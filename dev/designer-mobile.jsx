@@ -21,6 +21,14 @@ const CAPS = [
   'element:manage', 'store:manage', 'billing:manage',
 ];
 
+// Explicit branches, not a lookup with `??`: `{ none: null }['none']` IS null, and `null ?? default`
+// falls straight back to the default — so the one option that has to produce null was the one
+// option that could not.
+const LOGO_PARAM = new URLSearchParams(location.search).get('logo');
+const LOGO_SRC = LOGO_PARAM === 'none' ? null
+               : LOGO_PARAM === 'wide' ? '/sample-logo-wordmark.png'
+               : '/feelings-flavours-logo.png';
+
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
   // the busiest case, which is the one that used to overflow.
@@ -36,10 +44,14 @@ const STUBS = {
     baker: {
       name: 'Sample Bakery', slug: 'sample',
       primary_color: '#2C4433', accent_color: '#6B8C74',
-      // A real mark, so the branded path is what the harness shows. Null meant every screenshot
-      // was the no-logo fallback — the same gap dev/storefront.jsx already had to close. Swap to
-      // sample-logo-wordmark.png for the wide (~6:1) case; the two stress opposite dimensions.
-      logo_url: '/feelings-flavours-logo.png', storefront_published: true,
+      // A real mark by default, so the branded path is what the harness shows — null meant every
+      // screenshot was the no-logo fallback, the same gap dev/storefront.jsx had to close.
+      //
+      // `?logo=none` switches to the TEXT fallback, and `?logo=wide` to a ~6:1 wordmark. Both paths
+      // matter and they fail differently: the mark is capped by height, the wordmark by width, and
+      // the text is a different size again. A harness that can only show one of the three is how a
+      // branch goes unlooked-at for months.
+      logo_url: LOGO_SRC, storefront_published: true,
     },
     user: { firstName: 'Asha', lastName: 'Otto' },
   }),

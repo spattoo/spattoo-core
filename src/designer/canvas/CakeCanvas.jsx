@@ -98,7 +98,7 @@ export function configureSceneEnv(partial) { if (partial) Object.assign(SCENE_EN
 // which overexposed the cake top + camera-facing wall and washed the diffuse colour toward white
 // head-on (true colour only appeared once orbited). `shadows` enables the key's shadow (live scene
 // only). The ONE light rig — edit here, every scene follows.
-function SceneLights({ shadows = false }) {
+export function SceneLights({ shadows = false }) {
   return (
     <>
       <ambientLight intensity={0.45} />
@@ -115,7 +115,7 @@ function SceneLights({ shadows = false }) {
 // preset. IBL only — no `background` prop — so the rendered frame carries no sky behind the cake and
 // the capture is free to choose its own (utils/thumbnail.js flattens onto white). Shared so the
 // live scene and CakeThumbnailScene can never drift (they browned differently on dev before this).
-function SceneEnv() {
+export function SceneEnv() {
   return envMapUrl()
     ? <SafeEnvironment files={envMapUrl()} environmentIntensity={SCENE_ENV.intensity} />
     : <SafeEnvironment preset={SCENE_ENV.presetFallback} environmentIntensity={SCENE_ENV.intensity} />;

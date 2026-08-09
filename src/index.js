@@ -72,6 +72,14 @@ export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from '.
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
+// Piped grass (Wilton 233). Geometry + seats are separate on purpose: the renderer INSTANCES one
+// tuft across thousands of seats, so the admin studio tunes the tuft and previews the field.
+export { buildGrassTuft, grassSeats, grassTriangleCount, GRASS_DEFAULTS } from './designer/geometry/grass.js';
+export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
+// The shipping light rig. Exported so an admin studio tunes a look under the SAME lights the designer
+// renders it under — a colour picked beneath a brighter key is simply the wrong colour, and the
+// designer's own rig carries a note about exactly that overexposure washing the cake top toward white.
+export { SceneLights, SceneEnv } from './designer/canvas/CakeCanvas.jsx';
 // Solid relief slab geometry — exported so the admin Relief Sticker Studio previews the SAME extruded
 // solid the designer renders for placement_config.relief.solid (one builder, no drift).
 export { buildSolidReliefGeometry } from './designer/geometry/solidRelief.js';

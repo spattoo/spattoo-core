@@ -5886,7 +5886,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ ...s.desktopLogo, top: (pastDue ? PAST_DUE_BAR_H : 0) }}>
           {logoSrc
             ? <img src={logoSrc} alt="" style={s.topLogoImg} />
-            : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
+            : <div style={{ ...s.topLogoText, ...s.desktopLogoText }}>{bakerData?.name ?? 'My Bakery'}</div>
           }
         </div>
       )}
@@ -7945,6 +7945,20 @@ const s = {
     lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
     maxWidth: 260, fontFamily: "'Quicksand',sans-serif",
   },
+  // ── The same name, bigger, on the desktop header ──────────────────────────────────────────────
+  // A baker WITHOUT a logo was reading their bakery's name at 15px next to a header row built to
+  // hold a 40px mark — so the branded storefronts looked considered and the unbranded ones looked
+  // unfinished, for no reason other than which asset they happened to have uploaded.
+  //
+  // 24 rather than 40: text at its cap height reads larger than a mark of the same box, so matching
+  // the number would overpower the row. At 24 with lineHeight 1.2 the line is 29px in a 64px row,
+  // which sits with the same weight as the logo it replaces.
+  //
+  // Desktop only, and NOT folded into topLogoText, because the two rows are not the same problem.
+  // The mobile header is 52 tall and shares its width with the bell, the credits pill, Chef's Desk,
+  // Settings and the profile — there, a wider name takes room from controls that have nowhere to go.
+  // The desktop row has the name at one end and that same cluster ~1100px away at the other.
+  desktopLogoText: { fontSize: 24, maxWidth: 420 },
 
   // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
   // this is just the 64px handle-width positioning context. The blade bulges out
