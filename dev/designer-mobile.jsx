@@ -36,7 +36,10 @@ const STUBS = {
     baker: {
       name: 'Sample Bakery', slug: 'sample',
       primary_color: '#2C4433', accent_color: '#6B8C74',
-      logo_url: null, storefront_published: true,
+      // A real mark, so the branded path is what the harness shows. Null meant every screenshot
+      // was the no-logo fallback — the same gap dev/storefront.jsx already had to close. Swap to
+      // sample-logo-wordmark.png for the wide (~6:1) case; the two stress opposite dimensions.
+      logo_url: '/feelings-flavours-logo.png', storefront_published: true,
     },
     user: { firstName: 'Asha', lastName: 'Otto' },
   }),

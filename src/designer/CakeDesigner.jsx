@@ -1398,6 +1398,16 @@ function OrderDesignViewer({ order, onClose }) {
 // the list is simply first.
 /** Bottom strip height, before the home-indicator inset. Icon (20) + label (12) + padding. The
  *  spatula band it replaces was 76, so the 3D canvas gets 20px back on every phone. */
+/** The tallest a baker's logo renders in a header. mobileHeader is 52 tall and shares topLogoImg,
+ *  so this cannot grow without that header growing with it. */
+const HEADER_LOGO_MAX_H = 40;
+
+/** The desktop header row. DERIVED from the logo cap plus even breathing room, never picked: at a
+ *  hand-chosen 52 a max-height logo sat 14 from the top and ended at 54, pushing its own mark two
+ *  pixels through the rule that is supposed to contain it. Tie the two together and the biggest
+ *  logo a baker can upload still lands inside the row. */
+const DESKTOP_HEADER_H = HEADER_LOGO_MAX_H + 24;
+
 const MOBILE_BAR_H = 56;
 
 /** Floor for the drag — below this the grip and header have nowhere to sit. */
@@ -5854,10 +5864,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           52px of column height on chrome pushes the spatula down and clips its blade.
           Absolute positioning buys the width without spending any height.
           Left offset clears the rail: 40px leftCol padding + 64px rail. */}
+      {/* ── The header rule ──────────────────────────────────────────────────────────────────────
+          The logo and the bell/credits cluster already sat on one line (both top: 14, both out of
+          flow) — a header row in geometry with nothing to say so, which is why the name read as
+          stranded on the canvas rather than placed.
+
+          A rule, not a filled bar: it defines the row while leaving the workspace edge-to-edge.
+
+          It starts at the rail's right edge, not at 0. Full width it swallows the spatula's rounded
+          cap, because the rail runs to the very top of the page — found by drawing it.
+
+          Out of flow like the two clusters it belongs to, so it costs no layout height: the canvas
+          keeps its size and the cake does not move. */}
+      {!isMobile && (
+        <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0) }} />
+      )}
+
       {!isMobile && (
         // top is offset by the past-due bar when it is showing: this element is out of flow, so it
         // is the ONE thing in `page` that a new first child does not push down. See PAST_DUE_BAR_H.
-        <div style={{ ...s.desktopLogo, top: s.desktopLogo.top + (pastDue ? PAST_DUE_BAR_H : 0) }}>
+        <div style={{ ...s.desktopLogo, top: (pastDue ? PAST_DUE_BAR_H : 0) }}>
           {logoSrc
             ? <img src={logoSrc} alt="" style={s.topLogoImg} />
             : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
@@ -7889,9 +7915,16 @@ const s = {
 
   // Desktop logo — absolutely positioned so it costs the column no height. See the
   // comment at the render site for why a header band is not an option here.
+  // Full-height and centred rather than pinned at top: 14. A logo is any height up to the cap and
+  // the text fallback is 18, so a fixed offset put each of them at a different distance from the
+  // rule. Centred, every one of them sits in the middle of the row by construction.
   desktopLogo: {
-    position: 'absolute', top: 14, left: 120, zIndex: 6,
+    position: 'absolute', top: 0, left: 120, height: DESKTOP_HEADER_H, zIndex: 6,
     display: 'flex', alignItems: 'center', pointerEvents: 'none',
+  },
+  desktopHeaderRule: {
+    position: 'absolute', left: RAIL.padLeft + RAIL.width, right: 0, height: DESKTOP_HEADER_H,
+    borderBottom: '1px solid #e2e0db', zIndex: 5, pointerEvents: 'none',
   },
   // Header logo slot — used by both mobileHeader and desktopHeader. It is deliberately
   // width-auto: baker logos range from square marks to ~6:1 wordmarks, so the height is
@@ -7904,7 +7937,7 @@ const s = {
   // 40 not 34: off-flow the desktop logo no longer competes with the rail for height, and
   // most uploads carry transparent padding, so a chunk of this box is margin, not mark.
   // Capped at 40 rather than higher because mobileHeader shares this and is only 52 tall.
-  topLogoImg: { maxHeight: 40, maxWidth: 240, objectFit: 'contain', display: 'block' },
+  topLogoImg: { maxHeight: HEADER_LOGO_MAX_H, maxWidth: 240, objectFit: 'contain', display: 'block' },
   // Fallback when a baker has not uploaded a logo. Sized for a header line, not the
   // old 64px rail box — hence one line with an ellipsis rather than centred wrapping.
   topLogoText: {
@@ -8172,7 +8205,7 @@ const s = {
   // never sit on top of something the baker is reading or dismissing.
   // A ROW. Without display:flex the children are block-level, so a second item (the bell) drops
   // onto its own line under the pill instead of sitting beside it.
-  creditsFloat: { position: 'absolute', top: 14, right: 16, zIndex: 6, display: 'flex', alignItems: 'center', gap: 8 },
+  creditsFloat: { position: 'absolute', top: 0, right: 16, height: DESKTOP_HEADER_H, zIndex: 6, display: 'flex', alignItems: 'center', gap: 8 },
   canvasArea: {
     flex:1, position:'relative', minHeight:0,
     // Match the 3D canvas's clear colour so the strip exposed when the piping popup shrinks
