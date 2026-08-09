@@ -2060,22 +2060,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     { id: 'share',      label: 'Share',       icon: <ShareIcon size={20} />,     requires: 'design:create' },
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
-    // ── Take a tour ────────────────────────────────────────────────────────────────────────────
-    // BOTH roles. A baker designs on the same canvas with the same decorations, so the tour is the
-    // same tour; what differs is that it never runs at a baker uninvited (see autoStart below).
+    // ── "Take a tour" is not a rail item ──────────────────────────────────────────────────────
+    // Removed from the rail: the column is short of vertical room (the hang-hole came out for the
+    // same reason), and a tour is the one entry here that a baker needs once rather than daily.
     //
-    // In railItems rather than bolted onto a header so both surfaces get it from the one list —
-    // the thing that stopped Uploads going missing from the phone.
-    //
-    // ⚠️ PLACEMENT IS NOT SETTLED. It is last, which puts it behind More on a phone via
-    // splitMobileNav, and that is wrong: somebody who does not know how the app works will not
-    // think to open More. Moving it earlier is one line, but the bar has four slots, so promoting it
-    // displaces a destination — which may mean the rail is the wrong home on mobile and a persistent
-    // "?" outside the four-slot budget is the right one. Being tested before deciding.
-    //
-    // `requires: null` — hasCap treats a null capability as allowed. There is no capability for
-    // "wants help", and inventing one would put a support affordance behind a permission.
-    { id: 'tour', label: 'Take a tour', short: 'Tour', icon: <TourIcon size={20} />, requires: null },
+    // ⚠️ THIS LEAVES NO WAY BACK IN. `autoStart` is `customer || tourSeen === false`, so once a
+    // baker's tour_seen_at is stamped the tour never runs again, and this item was the only manual
+    // re-entry. If it should be reachable, the Settings menu is the natural home — but that menu is
+    // written TWICE (desktop rail + mobile header), so it wants sharing before a thirteenth entry is
+    // added to one of them and not the other. `tourNonce` / `startNonce` / `TourIcon` are left in
+    // place deliberately — unused today, and exactly what a new home would need.
   ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities, orderMode]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
@@ -2109,7 +2103,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (id === 'customers') setCustomersPanelOpen(true);
     if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
     if (id === 'share')     onShareStore?.();
-    if (id === 'tour')      setTourNonce(n => n + 1);
     if (id === 'codesign')  setCodesignPanelOpen(true);
   };
 
