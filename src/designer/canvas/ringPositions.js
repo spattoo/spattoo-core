@@ -64,6 +64,41 @@ export function perimeterSinglePos({ perim, off, baseY, angle }) {
   return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
 }
 
+// ── The inverse of perimeterSinglePos / the round single branch ─────────────────
+// Given a point the baker dragged to, what ANGLE does it correspond to? This is what makes a
+// single-mode piece movable: the ring model is parametric, so a drag has to come back as an angle
+// or the next rebuild throws it away.
+//
+// It has to invert BOTH branches of ringPositions' single case, and they do not share a convention:
+//
+//   round   pos = [cos(angle) * r, baseY, sin(angle) * r]        → angle = atan2(z, x)
+//   perim   f = frac((angle - PIPING_FRONT_ANGLE) / 2π)          → angle = f * 2π + FRONT
+//           pos = perim.at(f * len) offset along its normal
+//
+// The round case is exact. The perimeter case cannot be — `perim.at` is an arc-length walk with no
+// closed form to invert — so it samples the OFFSET outline and takes the nearest, exactly as
+// perimeterRing samples to lay beads out. 720 samples is half a degree on a round-ish outline,
+// which is finer than a fingertip on a phone; the drag is a human gesture, not a measurement.
+//
+// Returned angle is NOT normalised to [0, 2π): the sliders read absolute angles and a piece dragged
+// anticlockwise past front should not jump a full turn. Callers that need a range can wrap it.
+export function angleAtPoint({ x, z, radius, off = 0, shape = null }) {
+  const perim = (shape?.kind === 'rect' || shape?.outline) ? pipingPerimeter(shape) : null;
+  if (!perim) return Math.atan2(z, x);
+
+  const dense = 720;
+  let bestF = 0, bestD = Infinity;
+  for (let i = 0; i < dense; i++) {
+    const f = i / dense;
+    const p = perim.at(f * perim.length);
+    const dx = (p.x + off * p.nx) - x;
+    const dz = (p.z + off * p.nz) - z;
+    const d = dx * dx + dz * dz;
+    if (d < bestD) { bestD = d; bestF = f; }
+  }
+  return bestF * 2 * Math.PI + PIPING_FRONT_ANGLE;
+}
+
 // Evenly-spaced shells around ANY perimeter (heart, number, polygon…). Generalises rectEdgeRing's clean
 // garland to a free-form outline by doing what rectEdgeRing does for a rectangle: build a proper ROUND-
 // JOIN offset of the outline (the corners come out ROUNDED, like a rounded-rect), then walk that smooth

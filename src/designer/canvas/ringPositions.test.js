@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ringPositions, buildSwagRing } from './ringPositions.js';
+import { ringPositions, buildSwagRing, angleAtPoint } from './ringPositions.js';
 
 // A measured instance ~0.2 wide/deep, normalised scale 1 → step = 0.2 * 0.9 = 0.18.
 const A = { shellScale: 1, bbWidth: 0.2, bbDepth: 0.2 };
@@ -61,5 +61,62 @@ describe('buildSwagRing', () => {
       expect(p.tq).toHaveLength(4);
       expect(p.pos[1]).toBeLessThanOrEqual(1.0 + 1e-9);
     }
+  });
+});
+
+// ── angleAtPoint: the inverse, which is what makes single mode MOVABLE ──────────────────────────
+// A single-mode piece lives on the ring as an angle, so a drag has to come back as an angle or the
+// next rebuild discards it. Round-tripping is the only assertion worth making: forward through
+// ringPositions, back through angleAtPoint, and land where you started. Anything else tests my
+// arithmetic rather than the property that matters.
+describe('angleAtPoint — round tier', () => {
+  const radius = 1.2, off = -0.1, baseY = 1;
+
+  it.each([0, Math.PI / 6, Math.PI / 2, Math.PI, -Math.PI / 3, 2.7])('round-trips %f', (angle) => {
+    const [x, , z] = ringPositions({
+      A, radius, off, baseY, arrangement: 'single', instances: [{ id: 'a', angle }],
+    })[0].pos;
+    // atan2 returns (-π, π], so compare as points on the circle rather than as numbers — 
+    // -π/3 and 5π/3 are the same place and only one of them comes back.
+    const got = angleAtPoint({ x, z, radius, off });
+    expect(Math.cos(got)).toBeCloseTo(Math.cos(angle), 6);
+    expect(Math.sin(got)).toBeCloseTo(Math.sin(angle), 6);
+  });
+
+  // A drag lands NEAR the ring, never exactly on it — the finger is off by a few pixels and the
+  // surface hit is wherever the ray met the mesh. The angle must come from the DIRECTION, so a
+  // point at the wrong radius still reads as the right place on the ring.
+  it('ignores how far from the ring the point is', () => {
+    expect(angleAtPoint({ x: 0.3, z: 0.3, radius, off })).toBeCloseTo(Math.PI / 4, 6);
+    expect(angleAtPoint({ x: 9,   z: 9,   radius, off })).toBeCloseTo(Math.PI / 4, 6);
+  });
+});
+
+describe('angleAtPoint — shaped tier', () => {
+  // A rectangle exercises the branch that CANNOT be inverted in closed form: the forward pass walks
+  // the perimeter by arc length, so the inverse samples and takes the nearest.
+  const shape = { kind: 'rect', halfW: 1, halfD: 0.6, cornerR: 0.15 };
+  const radius = 1, off = 0, baseY = 0;
+
+  it.each([0, 0.9, 2.2, 4.4, 5.9])('round-trips %f within a sample step', (angle) => {
+    const [x, , z] = ringPositions({
+      A, radius, off, baseY, arrangement: 'single', shape, instances: [{ id: 'a', angle }],
+    })[0].pos;
+    const got = angleAtPoint({ x, z, radius, off, shape });
+    // 720 samples → half a degree; assert the POINT matches rather than the number, since two
+    // angles either side of a corner can be a hair apart and still land on the same spot.
+    const back = ringPositions({
+      A, radius, off, baseY, arrangement: 'single', shape, instances: [{ id: 'b', angle: got }],
+    })[0].pos;
+    expect(back[0]).toBeCloseTo(x, 2);
+    expect(back[2]).toBeCloseTo(z, 2);
+  });
+
+  // The two branches use DIFFERENT conventions — round is a bare atan2, the perimeter one is a
+  // fraction measured from PIPING_FRONT_ANGLE. Passing a shape must therefore change the answer,
+  // and this is the assertion that fails if someone "simplifies" them into one.
+  it('is not the same function as the round case', () => {
+    const at = { x: 0.4, z: 0.9, radius, off };
+    expect(angleAtPoint({ ...at, shape })).not.toBeCloseTo(angleAtPoint(at), 3);
   });
 });
