@@ -5920,13 +5920,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 former, and it is now a peer of Settings in look as well as position — SidebarTooltip
                 + RailMenu, the same two shared components, rather than its own dropdown. */}
             {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
-              <SidebarTooltip label="Chef's Desk">
-                <button
-                  style={{ ...s.sidebarBtn, ...(chefsDeskOpen ? s.sidebarBtnActive : {}) }}
-                  onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
+              {/* Labelled like every item above it. These two sit below the divider because they are
+                  TOOLS rather than destinations, but that is a grouping distinction — it was never a
+                  reason to name them differently. Icon-only, they asked a baker to either recognise a
+                  crossed-whisk glyph or hover to find out, in a rail where nothing else does. The
+                  tooltip goes with the label arriving: repeating the visible word on hover is noise.
+                  The profile avatar below keeps ITS tooltip, because a name is not on screen. */}
+              <button style={s.navItem}
+                onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
+                <span style={{ ...s.sidebarBtn, ...(chefsDeskOpen ? s.sidebarBtnActive : {}) }}>
                   <ToolsIcon size={20} />
-                </button>
-              </SidebarTooltip>
+                </span>
+                <span style={{ ...s.navLabel, ...(chefsDeskOpen ? { color: '#fff' } : {}) }}>Chef&rsquo;s Desk</span>
+              </button>
               {chefsDeskOpen && (
                 <RailMenu style={{ top: 'auto', bottom: 0 }}>
                   <div style={s.railDropdownSection}>Chef's Desk</div>
@@ -5947,13 +5953,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </div>}
 
             {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
-              <SidebarTooltip label="Settings">
-                <button
-                  style={{ ...s.sidebarBtn, ...(settingsOpen ? s.sidebarBtnActive : {}) }}
-                  onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
+              <button style={s.navItem}
+                onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
+                <span style={{ ...s.sidebarBtn, ...(settingsOpen ? s.sidebarBtnActive : {}) }}>
                   <GearIcon size={20} />
-                </button>
-              </SidebarTooltip>
+                </span>
+                <span style={{ ...s.navLabel, ...(settingsOpen ? { color: '#fff' } : {}) }}>Settings</span>
+              </button>
               {settingsOpen && (
                 <RailMenu style={{ top: 'auto', bottom: 0 }}>
                   <div style={s.railDropdownSection}>Settings</div>
