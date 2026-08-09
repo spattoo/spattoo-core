@@ -1586,6 +1586,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     (sticker) => elementById.get(sticker?.elementId)?.allowed_actions?.move !== false,
     [elementById],
   );
+  // The same capability, for a piping LAYER. A layer stores the element id as `id` (makePipingLayer),
+  // not `elementId` — the only difference between this and the sticker read. Same catalogue, same
+  // "absent → movable" rule, so one admin tick governs a rosette whether it is placed as a decoration
+  // or piped onto a rim.
+  const isPipingMovable = useCallback(
+    (layer) => elementById.get(layer?.id)?.allowed_actions?.move !== false,
+    [elementById],
+  );
   // The "Cream layer" element is a tier finish too, identified by CONFIG not slug (#1): it carries a
   // placement_config.second_cream block (lift/noise/fill_side seeds). It drives tier.creamLayers (raised
   // second-buttercream bands), NOT a sticker — so it routes to the cream card, never the generic path.
@@ -1901,8 +1909,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
 
-  const primaryColor = bakerData?.primary_color || '#1a1a1a';
-  const accentColor  = bakerData?.accent_color  || '#333333';
+  // ── The baker's brand is the STOREFRONT's, not the app's ──────────────────────────────────────
+  // These two feed every control in the baker app — every panel takes them as primaryColor /
+  // accentColor, and ThemePreview names the concept outright (`appPrimary` / `appAccent`, "the APP
+  // brand"). They used to read bakerData, which meant a bakery's brand pair was turned into a
+  // gradient on every button in the product. Most pairs do not survive that: they are chosen to sit
+  // on a storefront's own background, next to that bakery's photographs, and a colour that reads as
+  // warm and considered there reads as muddy on a 40px control against app chrome.
+  //
+  // So the app keeps its own black, everywhere, for every baker — and the brand goes where it was
+  // chosen for: the storefront, which is the surface a baker's customers actually see. The
+  // storefront is unaffected by this; CustomerStorefront and ThemePreview read the profile's
+  // primary_color/accent_color directly and never went through here.
+  const primaryColor = '#1a1a1a';
+  const accentColor  = '#333333';
+
+  // Identity, not chrome: the avatar says WHOSE account this is, so it keeps the bakery's colour —
+  // it is the one place in the app where the brand is the content rather than the decoration.
+  const brandPrimary = bakerData?.primary_color || primaryColor;
   const brandBtn = {
     background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
     boxShadow: `0 4px 16px ${hexToRgba(primaryColor, 0.25)}`,
@@ -2840,6 +2864,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   function handlePipingSetInstanceAngle(tierIndex, zone, index, angle) {
     updateRing(tierIndex, zone, (p) => ({
+      ...p,
+      instances: (p.instances ?? []).map((x, idx) => idx === index ? { ...x, angle } : x),
+    }));
+  }
+
+  // Dragging a single-mode piece on the CAKE. Writes the same field as the angle slider above — a
+  // drag and the slider are two ways to set one number, not two features.
+  //
+  // Addresses the layer by layerId rather than going through updateRing, which resolves the ring from
+  // the currently EXPANDED card: you can drag a piece with no card open (or with a different card
+  // open), and it must still be that piece that moves.
+  function handlePipingInstanceMove(tierIndex, zone, layerId, index, angle) {
+    updatePipingLayer(tierIndex, zone, layerId, (p) => ({
       ...p,
       instances: (p.instances ?? []).map((x, idx) => idx === index ? { ...x, angle } : x),
     }));
@@ -5756,7 +5793,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               )}
             </div>}
             <div style={{ position: 'relative' }} ref={profileRef}>
-              <button style={{ ...s.sidebarProfileBtn, background: primaryColor }}
+              <button style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
                 onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
                 {initials}
               </button>
@@ -5947,7 +5984,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ position: 'relative' }} ref={profileRef}>
               <SidebarTooltip label={userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'Profile'}>
                 <button
-                  style={{ ...s.sidebarProfileBtn, background: primaryColor }}
+                  style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
                   onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
                   {initials}
                 </button>
@@ -6376,6 +6413,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onPipingCancel={() => setPipingTarget(null)}
               pipingStyles={[]}
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
+              onPipingInstanceMove={handlePipingInstanceMove}
+              isPipingMovable={isPipingMovable}
               selectedTextId={selectedTextId}
               onTextSelect={handleTextSelect}
               onTextMove={(id, pos) => updateText(id, pos)}

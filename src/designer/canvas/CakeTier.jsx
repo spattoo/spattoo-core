@@ -1,6 +1,8 @@
 import { useMemo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
+import { pointerRay, planeHit } from '../utils/raycasting.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { buildGlazeDrip } from '../shared/glaze/glazeDrip.js';
@@ -22,7 +24,7 @@ import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
-import { ringPositions } from './ringPositions.js';
+import { ringPositions, angleAtPoint } from './ringPositions.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 function extractGeo(scene) {
@@ -236,12 +238,13 @@ function geomBBox(geometry, gradient) {
 // the SHARED gradientMaterial helper (same one stickers use), so there is no piping-specific
 // gradient code. Gradient blends per-mesh in the geometry's local frame (each dollop is two-tone,
 // like a two-colour piping bag).
-function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selected, castShadow = true }) {
+function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selected, castShadow = true, userData = null }) {
   const matRef = useRef(null);
   const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
   useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox); }, [gradient, bbox]);
   return (
-    <mesh geometry={geometry} rotation={rotation} scale={scale} castShadow={castShadow}>
+    <mesh geometry={geometry} rotation={rotation} scale={scale} castShadow={castShadow}
+      {...(userData ? { userData } : {})}>
       <meshPhysicalMaterial ref={matRef}
         {...creamMaterialProps(softness, color)}
         emissive={selected ? color : '#000000'}
@@ -251,13 +254,68 @@ function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selec
   );
 }
 
+// Marks a shell the pointer can grab. Read in TWO places, which is why it is a module const rather
+// than an inline object: r3f sets it as `mesh.userData`, and CakeCanvas' CAPTURE-phase pointerdown
+// raycast reads it to suspend OrbitControls before the orbit listener sees the press. Without that
+// second read, pressing a piece would rotate the cake and the drag would never start — the same
+// mechanism decorations use via `isStickerHitPlane`.
+const PIPING_HANDLE_DATA = { isPipingHandle: true };
+
+// Drag has to travel a few pixels before it counts as a drag rather than a click, or selecting a
+// piece would nudge it. Matches the decoration draggables' threshold (5px, compared squared).
+const DRAG_SLOP_SQ = 25;
+
+// ── Dragging a single-mode piece around its ring ──────────────────────────────
+// A single-mode piece is POSITIONED PARAMETRICALLY — `instances[].angle` in, a world position out of
+// ringPositions. So a drag cannot write a position: the next rebuild would overwrite it. It has to
+// come back as an angle, which is what angleAtPoint() is for (the tested inverse of both single-mode
+// branches). That gives the gesture exactly one degree of freedom, which is also the RIGHT constraint
+// — a rim piece belongs on the rim, and dragging it inward onto the top surface would bury it.
+//
+// Returns a factory: `dragHandler(i)` is the pointerdown handler for the i-th piece. Null when the
+// ring isn't in single mode or the host wired no move callback, and Shell then attaches no handler
+// and no userData at all — a ring/festoon/wrap keeps its current behaviour untouched.
+//
+// `canMove` gates the WRITE, not the press, deliberately: a pinned piece must still select when you
+// tap it. Gating pointerdown instead would make an unmovable piece unselectable, which is the trap
+// the decoration gating already had to avoid.
+function useSinglePieceDrag({ active, canMove, onMoveInstance, radius, off, baseY, shape }) {
+  const { camera, gl } = useThree();
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -baseY), [baseY]);
+  return useMemo(() => {
+    if (!active || !onMoveInstance) return null;
+    return (index) => (e) => {
+      // No stopPropagation: the ring group's onClick is what selects this piping layer, and that
+      // must keep working whether the press turns into a drag or stays a tap.
+      const canvas = gl.domElement;
+      const start = { x: e.clientX, y: e.clientY };
+      let dragged = false;
+      function onMove(ev) {
+        const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+        if (dx * dx + dy * dy > DRAG_SLOP_SQ) dragged = true;
+        if (!dragged || !canMove) return;
+        const hit = planeHit(pointerRay(ev, canvas, camera), plane);
+        if (!hit) return;   // ray parallel to the ring's plane (camera at eye level) — ignore the frame
+        onMoveInstance(index, angleAtPoint({ x: hit.x, z: hit.z, radius, off, shape }));
+      }
+      function onUp() {
+        canvas.removeEventListener('pointermove', onMove);
+        canvas.removeEventListener('pointerup', onUp);
+      }
+      canvas.addEventListener('pointermove', onMove);
+      canvas.addEventListener('pointerup', onUp);
+    };
+  }, [active, canMove, onMoveInstance, radius, off, shape, camera, gl, plane]);
+}
+
 // One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
-function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, gradient, selected }) {
+function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, gradient, selected, onPointerDown = null }) {
   return (
-    <group position={pos} quaternion={tq}>
+    <group position={pos} quaternion={tq} {...(onPointerDown ? { onPointerDown } : {})}>
       <group rotation={[0, -rotY + Math.PI / 2 + ryGroup, 0]}>
         <CreamMesh geometry={geometry} rotation={meshRot} scale={shellScale}
-          color={color} softness={softness} gradient={gradient} selected={selected} />
+          color={color} softness={softness} gradient={gradient} selected={selected}
+          userData={onPointerDown ? PIPING_HANDLE_DATA : null} />
       </group>
     </group>
   );
@@ -266,7 +324,7 @@ function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, s
 // Render every position, alternating between version A and the alternate B per `pattern`
 // (a repeating cycle like "AB" or "AAB"). B uses its own geometry, rotation, and a radial/
 // height shift relative to A. When B is absent / not active, every shell is A (unchanged).
-function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected }) {
+function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected, dragHandler = null }) {
   const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
@@ -282,7 +340,8 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
     return (
       <Shell key={u.key ?? i} pos={pos} rotY={u.rotY} tq={u.tq}
         ryGroup={isB ? ryB : ryA} meshRot={isB ? meshB : meshA}
-        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected} />
+        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected}
+        onPointerDown={dragHandler ? dragHandler(i) : null} />
     );
   });
 }
@@ -293,18 +352,26 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
 // Clones are memoised so re-renders are cheap and geometry/materials stay shared across instances.
 // (Swag `tq` tilt and per-instance selection tint are intentionally omitted — decorations don't
 // swag, and INVARIANTS #5a bans material-tint selection; the ring's card carries selection.)
-function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0] }) {
+function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0], dragHandler = null }) {
   const clones = useMemo(() => {
     if (!scene) return [];
     return positions.map(() => { const c = scene.clone(true); c.scale.setScalar(shellScale); return c; });
   }, [positions, scene, shellScale]);
   const ry = (baseRotation?.[1] ?? 0) * DEG;
+  // A decoration keeps its own GLB scene, so there is no CreamMesh to hang PIPING_HANDLE_DATA on —
+  // tag the clone's meshes directly, so CakeCanvas' capture-phase raycast suspends orbit for these
+  // too. Cleared again when the ring stops being draggable (mode change / capability untick).
+  const draggable = !!dragHandler;
+  useEffect(() => {
+    clones.forEach(c => c.traverse(o => { if (o.isMesh) o.userData.isPipingHandle = draggable || undefined; }));
+  }, [clones, draggable]);
   return clones.map((obj, i) => {
     const u = positions[i];
     return (
       <group key={u.key ?? i}
         position={[u.pos[0], u.pos[1] - minY * shellScale, u.pos[2]]}
-        rotation={[0, (u.rotY ?? 0) + ry, 0]}>
+        rotation={[0, (u.rotY ?? 0) + ry, 0]}
+        {...(dragHandler ? { onPointerDown: dragHandler(i) } : {})}>
         <primitive object={obj} />
       </group>
     );
@@ -408,6 +475,7 @@ function TopPipingRingImpl({
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
+  canMove = true, onMoveInstance = null,
 }) {
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
@@ -442,20 +510,34 @@ function TopPipingRingImpl({
 
   const altActive = altEnabled && arrangement !== 'single';
 
+  // Rim sits ON the top surface: pull shells inward so their outer face is flush with the edge.
+  // extraRadialOffset (incl. the user's radial control) may pull the cream inward, but never push it
+  // past the edge — clamp the outer face to the rim.
+  // Hoisted out of `positions` because the DRAG needs it too: angleAtPoint has to offset the sampled
+  // outline by exactly the same amount the forward pass did, or a dragged piece on a shaped tier
+  // lands on the angle of a slightly different outline than the one it is drawn on.
+  const off = useMemo(() => {
+    if (!A) return 0;
+    const half = seatHalfDepth(A.bbDepth * A.shellScale);   // half the shell's measured depth (shared seat rule)
+    let   o    = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
+    // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
+    if (shape?.strokeW) o = Math.max(o, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
+    return o;
+  }, [A, extraRadialOffset, shape]);
+
   const positions = useMemo(() => {
     if (!A) return [];
-    // Rim sits ON the top surface: pull shells inward so their outer face is flush
-    // with the edge. extraRadialOffset (incl. the user's radial control) may pull the
-    // cream inward, but never push it past the edge — clamp the outer face to the rim.
-    const half = seatHalfDepth(A.bbDepth * A.shellScale);   // half the shell's measured depth (shared seat rule)
-    let   off  = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
-    // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
-    if (shape?.strokeW) off = Math.max(off, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     return ringPositions({
       A, radius, off, baseY: topY + yOffset,
       spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
-  }, [A, radius, topY, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+  }, [A, radius, topY, yOffset, off, spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+
+  // Only single mode is draggable: a ring/swag/festoon/wrap has no per-piece angle to write to.
+  const dragHandler = useSinglePieceDrag({
+    active: arrangement === 'single' && !wrap && !bend,
+    canMove, onMoveInstance, radius, off, baseY: topY + yOffset, shape,
+  });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped from the rim edge,
   // instead of repeating a discrete shell. Round cakes only (rect falls through to shells).
@@ -488,7 +570,7 @@ function TopPipingRingImpl({
   return (
     <group onClick={onClick}>
       {finish === 'element'
-        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={topRotation} />
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={topRotation} dragHandler={dragHandler} />
         : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
@@ -496,7 +578,7 @@ function TopPipingRingImpl({
         : renderShells({
             positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-            color, softness, gradient, selected,
+            color, softness, gradient, selected, dragHandler,
           })}
     </group>
   );
@@ -527,6 +609,7 @@ function BottomPipingRingImpl({
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
+  canMove = true, onMoveInstance = null,
 }) {
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
@@ -559,21 +642,33 @@ function BottomPipingRingImpl({
 
   const altActive = altEnabled && arrangement !== 'single';
 
+  // Board: inner face sits on the wall by default, so growing the size pushes the cream OUTWARD (and
+  // up), never into the cake. The radial control (extraRadialOffset) shifts it in/out; outward travel
+  // is capped at PIPING_RADIAL_PLAY of the radius so the border stays attached rather than drifting
+  // onto the board. Inward travel is unrestricted.
+  // Hoisted for the drag — see the matching note on the top ring.
+  const off = useMemo(() => {
+    if (!A) return 0;
+    const half = (A.bbDepth / 2) * A.shellScale;
+    let   o    = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
+    // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
+    if (shape?.strokeW) o = Math.min(o, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
+    return o;
+  }, [A, extraRadialOffset, radius, shape]);
+
   const positions = useMemo(() => {
     if (!A) return [];
-    // Board: inner face sits on the wall by default, so growing the size pushes the cream
-    // OUTWARD (and up), never into the cake. The radial control (extraRadialOffset) shifts it
-    // in/out; outward travel is capped at PIPING_RADIAL_PLAY of the radius so the border stays
-    // attached rather than drifting onto the board. Inward travel is unrestricted.
-    const half = (A.bbDepth / 2) * A.shellScale;
-    let   off  = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
-    // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
-    if (shape?.strokeW) off = Math.min(off, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     return ringPositions({
       A, radius, off, baseY: yBase + yOffset,
       spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
-  }, [A, radius, yBase, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+  }, [A, radius, yBase, yOffset, off, spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+
+  // Only single mode is draggable — see the top ring.
+  const dragHandler = useSinglePieceDrag({
+    active: arrangement === 'single' && !wrap && !bend,
+    canMove, onMoveInstance, radius, off, baseY: yBase + yOffset, shape,
+  });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
   // base, instead of repeating a discrete shell. Round cakes only (rect falls through).
@@ -645,7 +740,7 @@ function BottomPipingRingImpl({
   return (
     <group onClick={onClick}>
       {finish === 'element'
-        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} />
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} dragHandler={dragHandler} />
         : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
@@ -653,7 +748,7 @@ function BottomPipingRingImpl({
         : renderShells({
             positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-            color, softness, gradient, selected,
+            color, softness, gradient, selected, dragHandler,
           })}
     </group>
   );
@@ -1234,6 +1329,12 @@ export default function CakeTier({
   bottomPipingSelected = false,
   onTopPipingClick,
   onBottomPipingClick,
+  // Drag a single-mode piece round its ring: (zone, layerId, index, angle) => void. Absent (previews,
+  // the thumbnail scene) = no drag wiring at all. `pipingMovable(layer)` is the capability read — the
+  // host owns it because only the host has the catalogue; default movable so a preview never invents
+  // a restriction (same contract as isStickerMovable).
+  onPipingInstanceMove = null,
+  pipingMovable = () => true,
   onClick,
 }) {
   const topY    = yBase + height;
@@ -1410,6 +1511,8 @@ export default function CakeTier({
       drip={p.drip ?? false} dripConfig={p.dripConfig ?? null}
       dripGloss={p.dripGloss ?? DRIP_GLOSS_DEFAULT} dripLength={p.dripLength ?? 1} dripFlood={p.dripFlood ?? false}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
+      canMove={pipingMovable(p)}
+      onMoveInstance={onPipingInstanceMove ? (index, angle) => onPipingInstanceMove('rim', p.layerId, index, angle) : null}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
 
@@ -1438,6 +1541,8 @@ export default function CakeTier({
       festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
       wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
+      canMove={pipingMovable(p)}
+      onMoveInstance={onPipingInstanceMove ? (index, angle) => onPipingInstanceMove('board', p.layerId, index, angle) : null}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
 

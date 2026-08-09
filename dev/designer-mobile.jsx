@@ -28,9 +28,17 @@ const STUBS = {
     id: 'u1', role: 'owner', capabilities: CAPS,
     baker: { id: 'b1', name: 'Sample Bakery', slug: 'sample' },
   }),
+  // The real contract is { baker, user } — CakeDesigner reads `baker` off the result and ignores a
+  // flat object entirely. Stubbed flat, this harness ran with NO baker profile at all: no name, no
+  // logo, no brand colour, and an avatar showing '?'. Which meant the one thing it looked like it
+  // was exercising — per-baker branding — was the one thing it never touched.
   fetchBakerProfile: async () => ({
-    name: 'Sample Bakery', slug: 'sample', primary_color: '#2C4433', accent_color: '#6B8C74',
-    logo_url: null, storefront_published: true,
+    baker: {
+      name: 'Sample Bakery', slug: 'sample',
+      primary_color: '#2C4433', accent_color: '#6B8C74',
+      logo_url: null, storefront_published: true,
+    },
+    user: { firstName: 'Asha', lastName: 'Otto' },
   }),
   fetchBakerSettings:  async () => ({ delivery: { home_delivery: true, radius_km: 10 }, lead_time_days: 2 }),
   fetchEntitlements:   async () => ({ ent: { premium_themes: false, edible_print_studio: true } }),

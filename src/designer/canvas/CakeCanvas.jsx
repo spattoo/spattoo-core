@@ -2093,6 +2093,11 @@ function CakeScene({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
+  // Drag a single-mode piping piece round its ring: (tierIndex, zone, layerId, index, angle) => void.
+  // Same capability contract as isStickerMovable below, read off the piping LAYER (layer.id is the
+  // element id) rather than the sticker.
+  onPipingInstanceMove = null,
+  isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   // Is THIS decoration allowed to be dragged? A function rather than a flag on the sticker, because
   // the answer comes from the ELEMENT (admin master data), and the sticker's own allowedActions
@@ -2141,6 +2146,10 @@ function CakeScene({
       // starts a rotate before the grip's `beginResize` (also bubble) can suspend it — capture beats
       // bubble, so the gate itself must recognise the grip. Dragging a grip resizes, never rotates.
       const overGrip = hits.some(h => h.object.userData.isResizeGrip);
+      // A single-mode piping piece: pressing it drags it round its ring, so orbit must stand down for
+      // the same reason a decoration does. Only tagged when the ring is actually draggable, so a
+      // normal ring still rotates the cake when you press it.
+      const overPiping = hits.some(h => h.object.userData.isPipingHandle);
       // Cream-pen catchers (present only in draw mode): pressing on the cake draws, so
       // suspend rotate; pressing empty space still rotates.
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
@@ -2153,7 +2162,7 @@ function CakeScene({
       // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
       gestureOnStickerRef.current = overSticker || overGrip;
       if (orbitRef.current) {
-        orbitRef.current.enabled = !overSticker && !overPen && !overDust && !overGrip;
+        orbitRef.current.enabled = !overSticker && !overPen && !overDust && !overGrip && !overPiping;
         orbitRef.current.enableRotate = !overCream;
       }
     }
@@ -2233,6 +2242,10 @@ function CakeScene({
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}
             highlightPipingId={highlightPipingId}
+            pipingMovable={isPipingMovable}
+            onPipingInstanceMove={onPipingInstanceMove
+              ? (zone, layerId, index, angle) => onPipingInstanceMove(i, zone, layerId, index, angle)
+              : null}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onTierClick(i); }}
@@ -2697,6 +2710,8 @@ export default function CakeCanvas({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
+  onPipingInstanceMove = null,
+  isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
   // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
@@ -2808,6 +2823,8 @@ export default function CakeCanvas({
         onPipingCancel={onPipingCancel}
         pipingStyles={pipingStyles}
         pipingToolbar={pipingToolbar}
+        onPipingInstanceMove={onPipingInstanceMove}
+        isPipingMovable={isPipingMovable}
         selectedTextId={selectedTextId}
         onTextSelect={onTextSelect}
         onTextMove={onTextMove}
