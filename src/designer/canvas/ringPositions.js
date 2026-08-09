@@ -181,8 +181,13 @@ export function ringPositions({
     const list = instances?.length ? instances : [{ angle: 0 }];
     return list.map(inst => {
       const angle = inst.angle ?? 0;
-      if (perim) return { ...perimeterSinglePos({ perim, off, baseY, angle }), key: inst.id };
-      return { pos: [Math.cos(angle) * r, baseY, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
+      // `dy` lifts THIS piece up the wall, on top of the layer's own yOffset (which is already baked
+      // into baseY). Per-piece because angle is: a layer-wide height cannot express one rosette
+      // higher than its neighbour, and dragging one piece must not carry the others with it.
+      // Absent → 0, so every existing single-mode ring renders exactly where it does today.
+      const y = baseY + (inst.dy ?? 0);
+      if (perim) return { ...perimeterSinglePos({ perim, off, baseY: y, angle }), key: inst.id };
+      return { pos: [Math.cos(angle) * r, y, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
     });
   }
   if (perim) {

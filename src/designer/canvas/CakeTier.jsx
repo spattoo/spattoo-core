@@ -2,7 +2,7 @@ import { useMemo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
-import { pointerRay, planeHit } from '../utils/raycasting.js';
+import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { buildGlazeDrip } from '../shared/glaze/glazeDrip.js';
@@ -14,7 +14,7 @@ import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
-import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
+import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { seatHalfDepth } from '../geometry/seating.js';
@@ -279,7 +279,7 @@ const DRAG_SLOP_SQ = 25;
 // `canMove` gates the WRITE, not the press, deliberately: a pinned piece must still select when you
 // tap it. Gating pointerdown instead would make an unmovable piece unselectable, which is the trap
 // the decoration gating already had to avoid.
-function useSinglePieceDrag({ active, canMove, onMoveInstance, radius, off, baseY, shape }) {
+function useSinglePieceDrag({ active, canMove, onMoveInstance, radius, off, baseY, shape, wall = null }) {
   const { camera, gl } = useThree();
   const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -baseY), [baseY]);
   return useMemo(() => {
@@ -294,9 +294,20 @@ function useSinglePieceDrag({ active, canMove, onMoveInstance, radius, off, base
         const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
         if (dx * dx + dy * dy > DRAG_SLOP_SQ) dragged = true;
         if (!dragged || !canMove) return;
-        const hit = planeHit(pointerRay(ev, canvas, camera), plane);
-        if (!hit) return;   // ray parallel to the ring's plane (camera at eye level) — ignore the frame
-        onMoveInstance(index, angleAtPoint({ x: hit.x, z: hit.z, radius, off, shape }));
+        const ray = pointerRay(ev, canvas, camera);
+        // A WALL-riding ring (board) hits the tier's own surface, which yields the angle AND the
+        // height from one raycast — the pointer stays on the cake, so the piece follows it up and
+        // round together. A rim ring has no height, so it keeps the flat plane at its own level.
+        const w = wall ? wallHit(ray, wall) : null;
+        const hit = w ?? planeHit(ray, plane);
+        if (!hit) return;   // missed the cake, or ray parallel to the plane — ignore this frame
+        onMoveInstance(
+          index,
+          angleAtPoint({ x: hit.x, z: hit.z, radius, off, shape }),
+          // Tier-LOCAL height (the anchor lives in the same frame as the layer's yOffset). Only sent
+          // when the pointer actually met the wall; a miss leaves the piece at the height it had.
+          w ? w.y - wall.baseY : null,
+        );
       }
       function onUp() {
         canvas.removeEventListener('pointermove', onMove);
@@ -305,7 +316,20 @@ function useSinglePieceDrag({ active, canMove, onMoveInstance, radius, off, base
       canvas.addEventListener('pointermove', onMove);
       canvas.addEventListener('pointerup', onUp);
     };
-  }, [active, canMove, onMoveInstance, radius, off, shape, camera, gl, plane]);
+  }, [active, canMove, onMoveInstance, radius, off, shape, camera, gl, plane, wall]);
+}
+
+// Where a ray meets the tier WALL, in world space. Round tiers are a cylinder; anything with a
+// footprint (sheet, heart, number) is approximated by its bounding box, which is what the existing
+// side-element hit test does too — close enough for a fingertip, and the angle is re-derived from
+// the hit point by angleAtPoint against the true outline anyway.
+// Clamped to the tier's own height band so a drag cannot walk a piece off the top or under the board.
+function wallHit(ray, { shape, radius, baseY, height }) {
+  const p = isRoundWall(shape)
+    ? cylinderHitPoint(ray, radius)
+    : boxHit(ray, shape.halfW, shape.halfD);
+  if (!p) return null;
+  return { x: p.x, z: p.z, y: Math.min(Math.max(p.y, baseY), baseY + height) };
 }
 
 // One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
@@ -593,7 +617,7 @@ export function BottomPipingRing(props) {
   return <BottomPipingRingImpl {...props} />;
 }
 function BottomPipingRingImpl({
-  yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1,
+  yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, tierHeight = 0,
   softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   bottomRotation    = [0, 0, 0],
   extraRadialOffset = 0,
@@ -664,10 +688,17 @@ function BottomPipingRingImpl({
     });
   }, [A, radius, yBase, yOffset, off, spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
 
+  // A board piece rides the WALL, so its drag gets the tier surface to hit — that is what carries
+  // the height as well as the angle. Memoised because the hook keys its handler on it.
+  const wall = useMemo(
+    () => (tierHeight > 0 ? { shape, radius, baseY: yBase, height: tierHeight } : null),
+    [shape, radius, yBase, tierHeight],
+  );
+
   // Only single mode is draggable — see the top ring.
   const dragHandler = useSinglePieceDrag({
     active: arrangement === 'single' && !wrap && !bend,
-    canMove, onMoveInstance, radius, off, baseY: yBase + yOffset, shape,
+    canMove, onMoveInstance, radius, off, baseY: yBase + yOffset, shape, wall,
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
@@ -1521,7 +1552,7 @@ export default function CakeTier({
   // does NOT react to layers added later, so an existing swag never jumps when something new is
   // placed; instead the new layer stacks around the swag's reported band.
   const renderBottoms = () => bottoms.map((p, idx) => (
-    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
+    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={shp.shellRadius ?? radius} tierHeight={height} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       bottomRotation={p.bottomRotation ?? [0,0,0]}
@@ -1542,7 +1573,7 @@ export default function CakeTier({
       wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
       canMove={pipingMovable(p)}
-      onMoveInstance={onPipingInstanceMove ? (index, angle) => onPipingInstanceMove('board', p.layerId, index, angle) : null}
+      onMoveInstance={onPipingInstanceMove ? (index, angle, wallY) => onPipingInstanceMove('board', p.layerId, index, angle, wallY) : null}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
 

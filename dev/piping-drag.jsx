@@ -99,6 +99,7 @@ export default function Harness() {
         {instances.map((x, i) => (
           <div key={x.id} style={{ fontVariantNumeric: 'tabular-nums', color: '#666' }}>
             piece {i + 1}: {Math.round((((x.angle - PIPING_FRONT_ANGLE) * 180 / Math.PI) % 360 + 360) % 360)}°
+            {'  '}up {(x.dy ?? 0).toFixed(2)}
           </div>
         ))}
         <button onClick={() => setInstances(seedInstances)}
@@ -126,8 +127,13 @@ export default function Harness() {
           onTopPipingSelect={() => say('piping SELECTED (rim)')}
           onBottomPipingSelect={() => say('piping SELECTED (board)')}
           isPipingMovable={() => movable}
-          onPipingInstanceMove={(tierIndex, z, layerId, index, angle) => {
-            setInstances(prev => prev.map((x, i) => i === index ? { ...x, angle } : x));
+          onPipingInstanceMove={(tierIndex, z, layerId, index, angle, wallY) => {
+            // The app clamps height through boardYoBounds (measured shell reach + neighbouring
+            // layers). There is one layer here, so the band is just the wall — enough to show that
+            // a piece rides it and stops at the rim.
+            const dy = wallY == null ? null : Math.min(Math.max(wallY, 0), 1.2);
+            setInstances(prev => prev.map((x, i) =>
+              i === index ? { ...x, angle, ...(dy != null ? { dy } : {}) } : x));
           }}
           selectedStickerIds={[]}
           onStickerSelect={() => {}}

@@ -120,3 +120,44 @@ describe('angleAtPoint — shaped tier', () => {
     expect(angleAtPoint({ ...at, shape })).not.toBeCloseTo(angleAtPoint(at), 3);
   });
 });
+
+// ── Per-piece height ────────────────────────────────────────────────────────────────────────────
+// A board piece rides the WALL, so a drag has two degrees of freedom, not one. Angle was already
+// per-instance; height was per-LAYER, which is why the first version of the drag could only travel
+// round the ring. `dy` is the per-piece delta that closes the gap.
+//
+// The property worth pinning is INDEPENDENCE: one piece's height must not disturb another's, and
+// must not disturb anything horizontal. That is the bug a layer-wide height would reintroduce, and
+// it is invisible until somebody hits "+ Duplicate".
+describe('single-mode dy — per-piece height', () => {
+  const radius = 1.2, off = -0.1, baseY = 1;
+  const at = (instances, shape) =>
+    ringPositions({ A, radius, off, baseY, arrangement: 'single', instances, shape });
+
+  it('lifts only the piece that carries it', () => {
+    const [p1, p2] = at([{ id: 'a', angle: 0, dy: 0.4 }, { id: 'b', angle: Math.PI / 2 }]);
+    expect(p1.pos[1]).toBeCloseTo(baseY + 0.4, 9);
+    expect(p2.pos[1]).toBeCloseTo(baseY, 9);
+  });
+
+  it('leaves x/z untouched — height is not a nudge sideways', () => {
+    const flat    = at([{ id: 'a', angle: 1.1 }])[0].pos;
+    const lifted  = at([{ id: 'a', angle: 1.1, dy: 0.37 }])[0].pos;
+    expect(lifted[0]).toBeCloseTo(flat[0], 9);
+    expect(lifted[2]).toBeCloseTo(flat[2], 9);
+  });
+
+  // The shaped branch builds its position through perimeterSinglePos, a different code path that
+  // takes baseY separately — easy to lift the round case and forget this one.
+  it('applies on a shaped tier too', () => {
+    const shape = { kind: 'rect', halfW: 1, halfD: 0.6, cornerR: 0.15 };
+    const [p] = at([{ id: 'a', angle: 0.8, dy: 0.25 }], shape);
+    expect(p.pos[1]).toBeCloseTo(baseY + 0.25, 9);
+  });
+
+  // Absent dy must render exactly where it does today, or shipping this moves every single-mode
+  // piece on every saved cake.
+  it('is a no-op when absent', () => {
+    expect(at([{ id: 'a', angle: 2 }])[0].pos[1]).toBeCloseTo(baseY, 9);
+  });
+});

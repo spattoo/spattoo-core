@@ -2812,8 +2812,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: +(clampedYo - anchorBase).toFixed(4) }));
       return;
     }
+    const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
+    const desiredYo = baseYOffset + v;
+    const clampedYo = Math.min(Math.max(yoMin, desiredYo), Math.max(yoMin, yoMax));
+    updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: Math.max(0, +(clampedYo - baseYOffset).toFixed(4)) }));
+  }
+
+  // The vertical band a board/side layer's ANCHOR may occupy: its bottom edge resting on the tier
+  // base (or on the layer below), its top edge stopping under the rim (or under the layer above),
+  // measured from each shell's real rendered reach rather than a guessed height.
+  //
+  // Extracted so the Height slider and the on-cake DRAG share one definition of "how far can this
+  // go" (INVARIANTS #3). A second copy would drift, and the drag would let a baker push a piece
+  // somewhere the slider refuses to — the two would disagree about the same cake.
+  function boardYoBounds(cur, tierIndex) {
+    const tierHeight = canvasConfig.tiers[tierIndex]?.height ?? 0;
     const [curLo, curHi] = sideBand(cur, tierIndex);
-    const curYo  = baseYOffset + (cur.userYOffset ?? 0);
+    const curYo  = (cur.yOffset ?? 0) + (cur.userYOffset ?? 0);
     const topExt = curHi - curYo;   // how far the shell reaches ABOVE its anchor (measured)
     const botExt = curLo - curYo;   // and BELOW (≤ 0 when it dips under the anchor)
     const EPS = 1e-4;
@@ -2825,9 +2840,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       if      (nhi <= curLo + EPS) yoMin = Math.max(yoMin, nhi - botExt);   // neighbour below → our bottom rests on it
       else if (nlo >= curHi - EPS) yoMax = Math.min(yoMax, nlo - topExt);   // neighbour above → our top stops under it
     });
-    const desiredYo = baseYOffset + v;
-    const clampedYo = Math.min(Math.max(yoMin, desiredYo), Math.max(yoMin, yoMax));
-    updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: Math.max(0, +(clampedYo - baseYOffset).toFixed(4)) }));
+    return { yoMin, yoMax };
   }
 
   function handlePipingBoardFlipChange(tierIndex) {
@@ -2878,10 +2891,27 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Addresses the layer by layerId rather than going through updateRing, which resolves the ring from
   // the currently EXPANDED card: you can drag a piece with no card open (or with a different card
   // open), and it must still be that piece that moves.
-  function handlePipingInstanceMove(tierIndex, zone, layerId, index, angle) {
+  function handlePipingInstanceMove(tierIndex, zone, layerId, index, angle, wallY = null) {
+    const cur = design.tiers[tierIndex]?.[zone === 'rim' ? 'topPipings' : 'bottomPipings']
+      ?.find(p => p.layerId === layerId);
+    if (!cur) return;
+    // Height is a BOARD affordance: those pieces ride the wall, and the zone already has a Height
+    // slider and a clamp. A rim piece sits ON the top edge — lifting it would leave it in mid-air —
+    // so the rim drag stays angle-only and the canvas sends no wallY for it.
+    let dy = null;
+    if (wallY != null && zone === 'board') {
+      const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
+      const layerYo = (cur.yOffset ?? 0) + (cur.userYOffset ?? 0);
+      // wallY is where the pointer met the wall, in tier-local units. Clamp the piece's own anchor
+      // into the SAME band the slider clamps to, then store it as a delta from the layer's anchor —
+      // so nudging the layer's Height afterwards still carries every piece with it.
+      const clamped = Math.min(Math.max(yoMin, wallY), Math.max(yoMin, yoMax));
+      dy = +(clamped - layerYo).toFixed(4);
+    }
     updatePipingLayer(tierIndex, zone, layerId, (p) => ({
       ...p,
-      instances: (p.instances ?? []).map((x, idx) => idx === index ? { ...x, angle } : x),
+      instances: (p.instances ?? []).map((x, idx) =>
+        idx === index ? { ...x, angle, ...(dy != null ? { dy } : {}) } : x),
     }));
   }
 

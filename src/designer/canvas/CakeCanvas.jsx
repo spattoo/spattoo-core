@@ -2244,7 +2244,7 @@ function CakeScene({
             highlightPipingId={highlightPipingId}
             pipingMovable={isPipingMovable}
             onPipingInstanceMove={onPipingInstanceMove
-              ? (zone, layerId, index, angle) => onPipingInstanceMove(i, zone, layerId, index, angle)
+              ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
               : null}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
