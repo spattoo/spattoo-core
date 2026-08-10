@@ -2102,6 +2102,43 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // place deliberately — unused today, and exactly what a new home would need.
   ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities, orderMode]);
 
+  // ── Chef's Desk + Settings, declared ONCE ───────────────────────────────────────────────────────
+  // These were written TWICE — desktop rail and phone header — each with a comment asking the next
+  // person to keep them in step. railItems' own note asked for exactly this "before a thirteenth
+  // entry is added to one of them and not the other".
+  //
+  // ⚠️ FLAT, not nested. The More sheet has no surface for a submenu (mobileNav.js says so, and
+  // `strandedMenus` exists to make a violation loud), so the sheet renders these ITEMS under a
+  // heading rather than a button that would open something the sheet cannot draw.
+  const toolMenus = useMemo(() => [
+    {
+      id: 'chefsdesk', label: "Chef's Desk", icon: <ToolsIcon size={20} />,
+      items: [
+        { id: 'colorGuide', label: 'Color Guide', open: () => setColorGuideOpen(true) },
+        ...(printStudioEnabled ? [{ id: 'printStudio', label: 'Edible Print Studio', open: () => setPrintStudioOpen(true) }] : []),
+      ],
+    },
+    {
+      id: 'settings', label: 'Settings', icon: <GearIcon size={20} />,
+      items: [
+        ...(hasCap('store:manage') ? [
+          { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true) },
+          // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
+          { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true),
+            badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
+          // NOT "Templates". The rail already has a Templates destination — browsing templates to
+          // start a design — and in the More sheet the two now sit a few rows apart, where one word
+          // for two different things is a coin toss. This one chooses which global templates the
+          // bakery OFFERS, which is what features/template-visibility.md calls it.
+          { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true) },
+        ] : []),
+        ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true) }] : []),
+        ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
+      ],
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities]);
+
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
   // list is the whole point, and the last time they did not, Uploads went missing from the phone.
@@ -6314,41 +6351,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {hasCap('billing:manage') && (
               <CreditsPill apiClient={apiClient} onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
             )}
-            {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
-              <button
-                style={{ ...s.sidebarBtn, color: chefsDeskOpen ? '#1a1a1a' : '#555', background: chefsDeskOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
-                onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
-                <ToolsIcon size={20} />
-              </button>
-              {chefsDeskOpen && (
-                <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
-                  <div style={s.dropdownSection}>Chef's Desk</div>
-                  <button style={s.dropdownItem} onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>Color Guide</button>
-                  {printStudioEnabled && (
-                    <button style={s.dropdownItem} onClick={() => { setPrintStudioOpen(true); setChefsDeskOpen(false); }}>Edible Print Studio</button>
-                  )}
-                </div>
-              )}
-            </div>}
-            {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
-              <button
-                style={{ ...s.sidebarBtn, color: settingsOpen ? '#1a1a1a' : '#555', background: settingsOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
-                onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
-                <GearIcon size={20} />
-              </button>
-              {settingsOpen && (
-                <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
-                  <div style={s.dropdownSection}>Settings</div>
-                  {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>Store Settings</button>}
-                  {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>
-                    Flavours{flavoursUncurated && <span style={s.needsLook} title="Every flavour is switched on by default">all on</span>}
-                  </button>}
-                  {hasCap('store:manage') && <button style={s.dropdownItem} onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>Templates</button>}
-                  {hasCap('billing:manage') && <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>}
-                  {STAFF_UI_ENABLED && hasCap('staff:manage') && <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add Staff</button>}
-                </div>
-              )}
-            </div>}
+            {/* ── Chef's Desk and Settings are NOT here ──────────────────────────────────────
+                They moved into the More sheet. Two 38px buttons plus their gaps were 92px of a
+                header that also has to hold the bakery's NAME — which is identity, and the same name
+                the baker's customers meet coming in from the storefront, so it is the one thing here
+                that must never be cut short. On a 393 phone the name went from 187px of room to 279.
+
+                What stays is what has to be glanceable rather than reachable: notifications, the
+                credits readout, and the avatar. Both menus are settings-shaped — visited
+                occasionally, on purpose — which is exactly what More is for. */}
             <div style={{ position: 'relative' }} ref={profileRef}>
               <button style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
                 onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
@@ -6492,73 +6503,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 regardless of what is on the canvas, while nav is DESTINATIONS. Chef's Desk is the
                 former, and it is now a peer of Settings in look as well as position — SidebarTooltip
                 + RailMenu, the same two shared components, rather than its own dropdown. */}
-            {canManageStore && <div style={{ position: 'relative' }} ref={chefsDeskRef}>
-              {/* Labelled like every item above it. These two sit below the divider because they are
-                  TOOLS rather than destinations, but that is a grouping distinction — it was never a
-                  reason to name them differently. Icon-only, they asked a baker to either recognise a
-                  crossed-whisk glyph or hover to find out, in a rail where nothing else does. The
-                  tooltip goes with the label arriving: repeating the visible word on hover is noise.
-                  The profile avatar below keeps ITS tooltip, because a name is not on screen. */}
-              <button style={s.navItem}
-                onClick={() => { setChefsDeskOpen(o => !o); setSettingsOpen(false); setProfileOpen(false); }}>
-                <span style={{ ...s.sidebarBtn, ...(chefsDeskOpen ? s.sidebarBtnActive : {}) }}>
-                  <ToolsIcon size={20} />
-                </span>
-                <span style={{ ...s.navLabel, ...(chefsDeskOpen ? { color: '#fff' } : {}) }}>Chef&rsquo;s Desk</span>
-              </button>
-              {chefsDeskOpen && (
-                <RailMenu style={{ top: 'auto', bottom: 0 }}>
-                  <div style={s.railDropdownSection}>Chef's Desk</div>
-                  <button style={s.railDropdownItem}
-                    onClick={() => { setColorGuideOpen(true); setChefsDeskOpen(false); }}>
-                    Color Guide
+            {/* Both menus, from the ONE list. Labelled like every item above them: icon-only they
+                asked a baker to recognise a crossed-whisk glyph or hover to find out, in a rail where
+                nothing else does. They sit below the divider because they are TOOLS rather than
+                destinations — a grouping distinction, never a reason to name them differently — and
+                outside the scroller, so a short viewport cannot put them below the fold. */}
+            {canManageStore && toolMenus.map(menu => {
+              const isChefs = menu.id === 'chefsdesk';
+              const open = isChefs ? chefsDeskOpen : settingsOpen;
+              return (
+                <div key={menu.id} style={{ position: 'relative' }} ref={isChefs ? chefsDeskRef : settingsRef}>
+                  <button style={s.navItem}
+                    onClick={() => {
+                      if (isChefs) { setChefsDeskOpen(o => !o); setSettingsOpen(false); }
+                      else { setSettingsOpen(o => !o); setChefsDeskOpen(false); }
+                      setProfileOpen(false);
+                    }}>
+                    <span style={{ ...s.sidebarBtn, ...(open ? s.sidebarBtnActive : {}) }}>{menu.icon}</span>
+                    <span style={{ ...s.navLabel, ...(open ? { color: '#fff' } : {}) }}>{menu.label}</span>
                   </button>
-                  {/* Kept in step with the mobile dropdown above — the menu renders in two places,
-                      and an entry added to only one is invisible on whichever surface was missed. */}
-                  {printStudioEnabled && (
-                    <button style={s.railDropdownItem}
-                      onClick={() => { setPrintStudioOpen(true); setChefsDeskOpen(false); }}>
-                      Edible Print Studio
-                    </button>
+                  {open && (
+                    <RailMenu style={{ top: 'auto', bottom: 0 }}>
+                      <div style={s.railDropdownSection}>{menu.label}</div>
+                      {menu.items.map(item => (
+                        <button key={item.id} style={s.railDropdownItem}
+                                onClick={() => { item.open(); setChefsDeskOpen(false); setSettingsOpen(false); }}>
+                          {item.label}
+                          {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
+                        </button>
+                      ))}
+                    </RailMenu>
                   )}
-                </RailMenu>
-              )}
-            </div>}
-
-            {canManageStore && <div style={{ position: 'relative' }} ref={settingsRef}>
-              <button style={s.navItem}
-                onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
-                <span style={{ ...s.sidebarBtn, ...(settingsOpen ? s.sidebarBtnActive : {}) }}>
-                  <GearIcon size={20} />
-                </span>
-                <span style={{ ...s.navLabel, ...(settingsOpen ? { color: '#fff' } : {}) }}>Settings</span>
-              </button>
-              {settingsOpen && (
-                <RailMenu style={{ top: 'auto', bottom: 0 }}>
-                  <div style={s.railDropdownSection}>Settings</div>
-                  {hasCap('store:manage') && <button style={s.railDropdownItem}
-                    onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>
-                    Store Settings
-                  </button>}
-                  {hasCap('store:manage') && <button style={s.railDropdownItem}
-                    onClick={() => { setFlavoursPanelOpen(true); setSettingsOpen(false); }}>
-                    Flavours{flavoursUncurated && <span style={s.needsLook} title="Every flavour is switched on by default">all on</span>}
-                  </button>}
-                  {hasCap('store:manage') && <button style={s.railDropdownItem}
-                    onClick={() => { setTemplatesPanelOpen(true); setSettingsOpen(false); }}>
-                    Templates
-                  </button>}
-                  {hasCap('billing:manage') && <button style={s.railDropdownItem}
-                    onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>
-                    Billing
-                  </button>}
-                  {STAFF_UI_ENABLED && hasCap('staff:manage') && <button style={s.railDropdownItem}
-                    onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
-                    Add Staff
-                  </button>}
-                </RailMenu>
-              )}
-            </div>}
+                </div>
+              );
+            })}
 
             <div style={{ position: 'relative' }} ref={profileRef}>
               <SidebarTooltip label={userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'Profile'}>
@@ -7911,6 +7889,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </button>
                 ))}
               </div>
+
+              {/* ── Chef's Desk and Settings, arrived from the header ────────────────────────────
+                  Rendered FLAT, as rows under a heading, because the sheet has no surface for a
+                  submenu — mobileNav.js states that invariant and `strandedMenus` shouts when a
+                  nav item breaks it. A button here that opened a dropdown would open nothing.
+
+                  Rows rather than grid tiles: these have no icons of their own, and inventing five
+                  glyphs to make them fit a three-across grid would be decoration standing in for
+                  meaning. The list is short and the words are the point. */}
+              {canManageStore && toolMenus.map(menu => (
+                <div key={menu.id} style={s.mobileSheetSection}>
+                  <div style={s.mobileSheetSectionTitle}>{menu.label}</div>
+                  {menu.items.map(item => (
+                    <button key={item.id} role="menuitem" style={s.mobileSheetRow}
+                            onClick={() => { setMobileMoreOpen(false); item.open(); }}>
+                      {item.label}
+                      {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
+                    </button>
+                  ))}
+                </div>
+              ))}
             </div>
           )}
 
@@ -9115,6 +9114,22 @@ const s = {
   },
   // Sits OVER the last few pixels of the body, not after it — a marker that took its own row would
   // add height to the thing whose height is the problem.
+  // The flattened Chef's Desk / Settings rows. Full-width taps at the 44px floor — the sheet is
+  // where there is finally room for that, which is half the reason these two moved here.
+  mobileSheetSection: { borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 8, marginTop: 4 },
+  mobileSheetSectionTitle: {
+    fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.42)', padding: '0 4px 4px',
+  },
+  mobileSheetRow: {
+    display: 'flex', alignItems: 'center', gap: 8, width: '100%', minHeight: 44,
+    padding: '0 4px', border: 'none', background: 'none', cursor: 'pointer',
+    // The sheet's ground is #141416 — mobileSheetItem's own rgba(255,255,255,0.72), not a dark ink.
+    // Typed as #2a2a2a first, which rendered near-black on near-black: legible in the style object
+    // and invisible on the phone.
+    fontSize: 14.5, fontWeight: 600, color: 'rgba(255,255,255,0.72)', fontFamily: "'Quicksand',sans-serif",
+    textAlign: 'left',
+  },
   sheetMore: {
     position: 'absolute', left: 0, right: 0, bottom: 0, height: 32, pointerEvents: 'none',
     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 1,
