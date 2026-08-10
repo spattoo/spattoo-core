@@ -88,6 +88,12 @@ export default function FinishHandles({
     return hit.uv ? { u: hit.uv.x, v: hit.uv.y, tier: ud.tierIndex, surface } : null;
   };
 
+  // A grab cursor over the target. The other half of "difficult for the user to know": a thing that
+  // can be dragged should say so before it is pressed, and in a 3D canvas the cursor is the only
+  // place to say it. Reset on leave AND on unmount, or the cursor sticks after the card closes.
+  const hover = (on) => { document.body.style.cursor = on ? 'grab' : ''; };
+  useEffect(() => () => { document.body.style.cursor = ''; }, []);
+
   const onDown = (e, tier, idx, surface) => {
     e.stopPropagation();
     try { gl.domElement.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
@@ -151,9 +157,18 @@ export default function FinishHandles({
               const isSel = selected && selected.tier === ti && selected.idx === si;
               return (
                 <group key={si} position={pos}>
-                  {/* Large INVISIBLE grab target — easy to click without covering the decoration. */}
-                  <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, ti, si, surface)}>
-                    <sphereGeometry args={[0.1, 12, 12]} />
+                  {/* The INVISIBLE grab target, and it is the thing itself where the thing has a
+                      size. A point with an `r` (a grass clump) is grabbed anywhere across its whole
+                      body: reported as "there is only one black dot which makes it move, difficult
+                      for the user to know". A dot is a poor affordance for something the size of a
+                      thumb — you drag the grass, not a marker floating over it.
+                      Dropped back by `lift` so it wraps what it marks rather than the dot above it.
+                      Dust and foil pass no r and no lift, so they keep the 0.1 sphere they had. */}
+                  <mesh position={[0, -lift, 0]} userData={{ [handleFlag]: true }}
+                    onPointerDown={e => onDown(e, ti, si, surface)}
+                    onPointerOver={e => { e.stopPropagation(); hover(true); }}
+                    onPointerOut={() => hover(false)}>
+                    <sphereGeometry args={[p.r ?? 0.1, 12, 12]} />
                     <meshBasicMaterial transparent opacity={0} depthWrite={false} />
                   </mesh>
                   {/* Visible marker — only when the finish has no visible particle of its own (dust). Foil
@@ -193,8 +208,12 @@ export default function FinishHandles({
             const isSel = selected && selected.tier === BOARD_TIER && selected.idx === si;
             return (
               <group key={si} position={[p.v * board.radius * Math.sin(ang), BOARD_Y + 0.04 + lift, p.v * board.radius * Math.cos(ang)]}>
-                <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, BOARD_TIER, si, 'board')}>
-                  <sphereGeometry args={[0.1, 12, 12]} />
+                {/* Grabbed across its whole body, like the tier clumps above — see the note there. */}
+                <mesh position={[0, -lift, 0]} userData={{ [handleFlag]: true }}
+                  onPointerDown={e => onDown(e, BOARD_TIER, si, 'board')}
+                  onPointerOver={e => { e.stopPropagation(); hover(true); }}
+                  onPointerOut={() => hover(false)}>
+                  <sphereGeometry args={[p.r ?? 0.1, 12, 12]} />
                   <meshBasicMaterial transparent opacity={0} depthWrite={false} />
                 </mesh>
                 {showMarker && (
