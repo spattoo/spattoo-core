@@ -68,6 +68,31 @@ function boardOf(bottomTier) {
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
 }
 
+// ── Where a board ring of grass reaches to ────────────────────────────────────
+// The ring lives in the gap between the cake wall and the board's edge, and that gap is a different
+// size on every cake — a 6" round on its board, a sheet on its board. So the control is a FRACTION
+// of that gap, and this turns it into the outer bound grassSeats wants: a scale of the board's own
+// outline, the same currency `inset` already speaks.
+//
+// A rect board is scaled uniformly, so on a strongly oblong sheet the ring is a little wider on the
+// short sides than the long ones. That is the same approximation topContains makes everywhere else,
+// and it is invisible next to the jitter already in the seats.
+const BOARD_RING_OUTER_MAX = 0.96;   // never quite the board's edge — grass would hang off it
+function boardRingInset(board, cakeShape, ringWidth = 1) {
+  const w = Math.min(Math.max(ringWidth ?? 1, 0.05), 1);
+  const inner = board.kind === 'rect'
+    ? Math.max((cakeShape.halfW ?? 0) / board.halfW, (cakeShape.halfD ?? 0) / board.halfD)
+    : boundingRadius(cakeShape) / board.radius;
+  return inner + w * (BOARD_RING_OUTER_MAX - inner);
+}
+
+// The cake itself, punched out of the ring. Exactly 1 — not a hair under, which would seat blades
+// inside the wall they are supposed to be growing against, and not a hair over, which would leave a
+// bare gold margin between the grass and the cake.
+function boardGrassHole(cakeShape) {
+  return { shape: cakeShape, scale: 1 };
+}
+
 // Image-based lighting (HDRI). We self-host the env map on R2 — the host supplies
 // the assets base (cfAssetsBase, an env var, dev/prod-specific); only this PATH is
 // a constant. We avoid drei's `preset` (a public CDN that 503s/400s and, on
@@ -2119,7 +2144,7 @@ function CakeScene({
   creamPaint = null, onCreamPaint,
   tierDataRef,
 }) {
-  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [] } = config;
+  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null } = config;
   const orbitBlockSet = useRef(new Set());
   // A decoration selects via native pointerup + pointer capture, which breaks its r3f `stopPropagation`
   // — so the r3f `click` still leaks to the tier/board underneath and toggles the cake's selection off,
@@ -2212,6 +2237,21 @@ function CakeScene({
           <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </mesh>
+      )}
+
+      {/* Grass STANDING ON THE BOARD, ringing the cake — the base of the football cake. Bounded
+          outward by the board and inward by the cake wall, which is why grassSeats needed a `hole`:
+          two different outlines, where a top-surface band only ever hollows out its own.
+          `ringWidth` is how far across the board-to-cake gap it reaches, so it means the same thing
+          on a 6" round and a sheet. Seated at board height (the tier stack starts at 0.1). */}
+      {boardGrass && (
+        <GrassPatch
+          {...boardGrass}
+          shape={board}
+          topY={0.1}
+          inset={boardRingInset(board, bottomShp, boardGrass.ringWidth)}
+          hole={boardGrassHole(bottomShp)}
+        />
       )}
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its

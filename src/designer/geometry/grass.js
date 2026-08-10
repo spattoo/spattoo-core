@@ -139,7 +139,11 @@ export function buildGrassTuft(opts = {}) {
 //
 // Returns [{ x, z, yaw, scale }] — yaw and scale vary per seat so a field of identical tufts does
 // not read as wallpaper.
-export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, bandInner = null }) {
+// `hole` = { shape, scale } excludes anything standing inside ANOTHER outline. That is what makes a
+// board ring possible: the grass is bounded OUTSIDE by the board and INSIDE by the cake, which are
+// two different shapes. `bandInner` cannot express it — it hollows out the same outline it fills.
+// Both are exclusions and they answer different questions, so both exist rather than one pretending.
+export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, bandInner = null, hole = null }) {
   const s    = spacing ?? GRASS_DEFAULTS.spacing;
   const j    = jitter  ?? GRASS_DEFAULTS.jitter;
   const rand = rng(seed);
@@ -158,6 +162,8 @@ export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, ban
       // Hollow the middle out for a rim band. The hole is the tier's own outline scaled down, so it
       // follows a heart or a sheet as faithfully as a circle.
       if (bandInner != null && topContains(shape, px, pz, bandInner)) continue;
+      // Standing where the cake is. A board ring must start at the wall, not under it.
+      if (hole && topContains(hole.shape, px, pz, hole.scale ?? 1)) continue;
       out.push({ x: px, z: pz, yaw: rand() * Math.PI * 2, scale: 0.8 + rand() * 0.4 });
     }
   }

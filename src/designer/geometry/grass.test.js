@@ -143,3 +143,45 @@ describe('grassTriangleCount', () => {
     expect(tris).toBeLessThan(400_000);         // one draw call, but a phone still rasterises them
   });
 });
+
+// ── A ring standing on the board ────────────────────────────────────────────────────────────────
+// Bounded OUTWARD by the board and INWARD by the cake — two different outlines, which is why this
+// needed `hole` and could not reuse `bandInner`. The failure worth guarding is a tuft seated where
+// the cake is: at board height that puts it inside the wall, growing through the sponge.
+describe('grassSeats — board ring via hole', () => {
+  const cake  = { kind: 'round', radius: 1.2 };
+  const board = { kind: 'round', radius: 1.8 };
+
+  it('puts nothing where the cake stands', () => {
+    const ring = grassSeats({ shape: board, spacing: 0.06, hole: { shape: cake, scale: 1 } });
+    expect(ring.length).toBeGreaterThan(0);
+    expect(ring.every(s => Math.hypot(s.x, s.z) >= cake.radius)).toBe(true);
+  });
+
+  it('stays on the board', () => {
+    const ring = grassSeats({ shape: board, spacing: 0.06, hole: { shape: cake, scale: 1 } });
+    expect(ring.every(s => Math.hypot(s.x, s.z) <= board.radius)).toBe(true);
+  });
+
+  // `inset` is how the ring's WIDTH is expressed — a narrow ring hugs the cake, a full one reaches
+  // most of the way to the board's edge.
+  it('a narrower ring keeps fewer tufts and stays closer in', () => {
+    const wide   = grassSeats({ shape: board, spacing: 0.06, inset: 0.96, hole: { shape: cake, scale: 1 } });
+    const narrow = grassSeats({ shape: board, spacing: 0.06, inset: 0.72, hole: { shape: cake, scale: 1 } });
+    expect(narrow.length).toBeLessThan(wide.length);
+    const furthest = Math.max(...narrow.map(s => Math.hypot(s.x, s.z)));
+    expect(furthest).toBeLessThan(board.radius * 0.96);
+  });
+
+  // A sheet on its board: the hole must be the SHEET, not a circle around it, or grass grows across
+  // the corners of the cake.
+  it('punches out a sheet, not a circle around it', () => {
+    const sheet = { kind: 'rect', halfW: 1.3, halfD: 0.9 };
+    const tray  = { kind: 'rect', halfW: 1.75, halfD: 1.35 };
+    const ring = grassSeats({ shape: tray, spacing: 0.05, hole: { shape: sheet, scale: 1 } });
+    expect(ring.length).toBeGreaterThan(0);
+    expect(ring.every(s => !(Math.abs(s.x) <= sheet.halfW && Math.abs(s.z) <= sheet.halfD))).toBe(true);
+    // Grass DOES reach the middle of a long side, which a circular hole would have blocked.
+    expect(ring.some(s => Math.abs(s.x) < 0.3 && Math.abs(s.z) > sheet.halfD)).toBe(true);
+  });
+});

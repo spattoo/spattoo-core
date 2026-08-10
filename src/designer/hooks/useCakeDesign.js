@@ -125,6 +125,7 @@ export function toCanvasConfig(design) {
     ages:     design.ages ?? [],
     stickers: design.stickers ?? [],
     writing:  design.writing ?? null,
+    boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
     piping:   design.piping ?? [],
   };
 }
@@ -485,6 +486,21 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, grass } : t),
     }));
+  }
+
+  // ── Grass on the BOARD ──────────────────────────────────────────────────────
+  // Design-level, not per-tier, because the board is. `tier.grass` sits on a tier's top and a stack
+  // has one per tier; the board ring stands on the one board, around the bottom tier — so it belongs
+  // beside `writing` and `piping`, which are also facts about the cake rather than a layer of it.
+  //
+  // Separate from `tier.grass` rather than a `zone` on it, because the football-cake look wants BOTH
+  // at once: a pitch on top and tufts ringing the base. A single zoned object would force a choice.
+  function setBoardGrass(grass) {
+    setDesign(prev => ({ ...prev, boardGrass: grass }));
+  }
+
+  function updateBoardGrass(changes) {
+    setDesign(prev => (prev.boardGrass ? { ...prev, boardGrass: { ...prev.boardGrass, ...changes } } : prev));
   }
 
   function updateGrass(index, changes) {
@@ -1142,7 +1158,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
-    setTierGrass, updateGrass,
+    setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

@@ -1517,7 +1517,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3166,11 +3166,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function removeGrass() {
     design.tiers.forEach((t, i) => { if (t.grass) setTierGrass(i, null); });
+    setBoardGrass(null);
     clearAllSelections();
   }
 
+  // The two placements are independent — the football cake wants a pitch on top AND tufts ringing
+  // the base. Toggling one never disturbs the other, and turning both off removes the card.
+  function toggleTopGrass() {
+    const i = grassTier >= 0 ? grassTier : grassTierIndex();
+    if (design.tiers[i]?.grass) setTierGrass(i, null);
+    else setTierGrass(i, { ...GRASS_DEFAULTS, color: grassColor });
+  }
+
+  function toggleBoardGrass() {
+    if (design.boardGrass) setBoardGrass(null);
+    // A board ring is shorter and denser than a lawn — it reads as a hedge at the cake's foot, not a
+    // field. `ringWidth` is a fraction of the gap between the cake and the board's edge.
+    else setBoardGrass({ ...GRASS_DEFAULTS, height: 0.16, spacing: 0.06, color: grassColor, ringWidth: 0.75 });
+  }
+
   // Which tier currently carries grass (the card edits that one).
+  // Declared ABOVE grassColor deliberately: grassColor reads it during RENDER, and a `const` read
+  // before its declaration is a TDZ crash — one that compiles, passes every test, and only appears
+  // as a blank screen. This file has been bitten by exactly that twice.
   const grassTier = design.tiers.findIndex(t => t.grass);
+
+  // One colour across both placements: it is one piping bag. Read from whichever exists.
+  const grassColor = design.tiers[grassTier]?.grass?.color ?? design.boardGrass?.color ?? '#4caf3d';
+  function setGrassColor(color) {
+    if (grassTier >= 0) updateGrass(grassTier, { color });
+    if (design.boardGrass) updateBoardGrass({ color });
+  }
 
   function moveGrassToTier(next) {
     const cur = grassTier;
@@ -4424,7 +4450,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Grass shows a card for as long as any tier HAS grass — unlike the tools above it, which also
   // appear while merely selected. Grass is applied the moment you pick it (there is nothing to
   // compose first), so "has grass" and "should show a card" are the same condition.
-  if (design.tiers.some(t => t.grass)) {
+  if (design.tiers.some(t => t.grass) || design.boardGrass) {
     decorationCards.unshift({ key: 'grass', type: 'grass', name: 'Grass', thumb: null });
   }
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
@@ -5592,13 +5618,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function renderGrassBody() {
     const i = grassTier;
     const g = design.tiers[i]?.grass;
-    if (!g) return null;
+    const bg = design.boardGrass;
+    if (!g && !bg) return null;
     const GRASS_COLORS = ['#7bc043', '#5bc236', '#4caf3d', '#3f8f2b', '#2e7d32', '#1b5e20'];
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
-          Piped over the top of the tier, like a grass nozzle.
+          Piped with a grass nozzle — over a tier, around the base, or both.
         </div>
+
+        {/* Two independent placements, not a choice between them: the reference football cake has a
+            pitch on top AND tufts ringing the base on the board. */}
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Where</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['On top', !!g, toggleTopGrass], ['On the board', !!bg, toggleBoardGrass]].map(([label, on, fn]) => (
+              <button key={label} onClick={fn}
+                style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                  border: '1.5px solid #999999', background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {bg && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>On the board</div>
+            {/* How far the ring reaches across the gap between the cake and the board's edge — a
+                fraction, so it means the same on a small round and a sheet. */}
+            <PenSlider label="Ring width" value={bg.ringWidth ?? 0.75} min={0.15} max={1} step={0.05}
+              onChange={v => updateBoardGrass({ ringWidth: v })} fmt={v => `${Math.round(v * 100)}%`} />
+            <PenSlider label="Height" value={bg.height ?? GRASS_DEFAULTS.height} min={0.06} max={0.4} step={0.005}
+              onChange={v => updateBoardGrass({ height: v })} fmt={v => v.toFixed(2)} />
+            <PenSlider label="Density" value={0.24 - (bg.spacing ?? GRASS_DEFAULTS.spacing)} min={0.04} max={0.2} step={0.002}
+              onChange={v => updateBoardGrass({ spacing: +(0.24 - v).toFixed(3) })}
+              fmt={() => `${Math.round((0.2 - (bg.spacing ?? 0.075)) / 0.16 * 100)}%`} />
+          </div>
+        )}
+
+        {g && (<>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>On top</div>
 
         {design.tiers.length > 1 && (
           <div style={{ marginTop: 8 }}>
@@ -5651,15 +5711,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <PenSlider label="Height" value={g.height ?? GRASS_DEFAULTS.height} min={0.06} max={0.4} step={0.005}
             onChange={v => updateGrass(i, { height: v })} fmt={v => v.toFixed(2)} />
         </div>
+        </>)}
 
+        {/* ONE colour for both placements — it is one piping bag, and a lawn that does not match the
+            hedge at its foot reads as a mistake rather than a choice. */}
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Grass colour</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="color" value={g.color ?? '#4caf3d'} onChange={e => updateGrass(i, { color: e.target.value })}
+          <input type="color" value={grassColor} onChange={e => setGrassColor(e.target.value)}
             style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
           {GRASS_COLORS.map(c => (
-            <button key={c} onClick={() => updateGrass(i, { color: c })} title={c}
+            <button key={c} onClick={() => setGrassColor(c)} title={c}
               style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
-                border: (g.color ?? '#4caf3d') === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
+                border: grassColor === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
           ))}
         </div>
 
