@@ -22,9 +22,11 @@ import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
+// The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
+const BOARD_TOP_Y = 0.1;
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
-import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
+import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
@@ -3202,17 +3204,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   // The surface a run is laid on. Board: the cake's foot, so the arc clears the wall. Top: the
   // highest tier, since a lower tier's top is mostly hidden under the one above it.
-  function blockSurface(zone) {
+  // How far a board run must stand OFF the wall to clear whatever is already piped there.
+  //
+  // Reuses the rule that already exists rather than inventing a second one (INVARIANTS #3):
+  // resolveSidePipingBands turns a tier's stacked piping into absolute bands, and
+  // sidePipingClearance answers "how far out must something spanning [yBottom, yTop] sit to clear
+  // every band it overlaps". A proud decoration on the wall has used this since it was written; a
+  // block on the board is the same question asked by a different object.
+  //
+  // The vertical span is the CUBE: from the board up by one edge. A tall block overlaps a border a
+  // short one passes under, and it should be pushed out further for it.
+  function blockWallClearance(zone, size) {
+    if (zone !== 'board') return 0;
+    const t = canvasConfig.tiers?.[0];
+    if (!t) return 0;
+    const bands = resolveSidePipingBands({
+      topPipings: t.topPipings ?? [], bottomPipings: t.bottomPipings ?? [],
+      topY: BOARD_TOP_Y + t.height, yBase: BOARD_TOP_Y, height: t.height, radius: t.radius,
+    });
+    return sidePipingClearance({ bands, yBottom: BOARD_TOP_Y, yTop: BOARD_TOP_Y + size });
+  }
+
+  function blockSurface(zone, sizeOverride) {
     const tiers = canvasConfig.tiers ?? [];
     const bottom = tiers[0], top = tiers[tiers.length - 1];
     const boardR = (bottom?.radius ?? 1.2) + 0.6;
-    return zone === 'top'
-      ? { surfaceRadius: top?.radius ?? 1.2, runRadius: (top?.radius ?? 1.2) * 0.55 }
-      : { surfaceRadius: boardR, runRadius: boardRunRadius(bottom?.radius ?? 1.2, nb?.size ?? NAME_BLOCK_DEFAULTS.size) };
+    const size = sizeOverride ?? nb?.size ?? NAME_BLOCK_DEFAULTS.size;
+    if (zone === 'top') {
+      return { surfaceRadius: top?.radius ?? 1.2, runRadius: (top?.radius ?? 1.2) * 0.55, minV: 0 };
+    }
+    // The wall, plus whatever is piped on it, plus half a block.
+    const runRadius = boardRunRadius((bottom?.radius ?? 1.2) + blockWallClearance('board', size), size);
+    return { surfaceRadius: boardR, runRadius, minV: Math.min(0.97, runRadius / boardR) };
   }
 
   function layoutBlocks(text, zone, style = {}) {
-    const { surfaceRadius, runRadius } = blockSurface(zone);
+    const { surfaceRadius, runRadius } = blockSurface(zone, style.size);
     return nameBlockRun({
       text, zone, surfaceRadius, runRadius,
       size: style.size ?? nb?.size ?? NAME_BLOCK_DEFAULTS.size,
@@ -3248,9 +3275,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Dragged on the cake. Yaw is recomputed rather than kept: on the board a block that holds its
   // old angle after being moved ends up showing its blank side to the room.
   function handleBlockMove(_tier, idx, u, v) {
-    updateNameBlocks(cur => ({
-      blocks: (cur.blocks ?? []).map((b, k) => k === idx ? { ...b, u, v, yaw: nameBlockYaw(cur.zone, u) } : b),
-    }));
+    updateNameBlocks(cur => {
+      // Dragging INWARD stops at the piping, not at the wall. Clamped here rather than at render so
+      // the stored position and the handle agree — clamping only the drawing would leave the grab
+      // dot sitting inside a border while its block stood outside.
+      const { minV } = blockSurface(cur.zone, cur.size);
+      const cv = Math.max(v, minV);
+      return { blocks: (cur.blocks ?? []).map((b, k) => k === idx ? { ...b, u, v: cv, yaw: nameBlockYaw(cur.zone, u) } : b) };
+    });
   }
 
   // ── Grass clumps ────────────────────────────────────────────────────────────
@@ -5737,8 +5769,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Letter-blocks editor body.
   function renderBlocksBody() {
     if (!nb) return null;
-    const BLOCK_COLORS  = ['#f7f5f2', '#f2c6d6', '#bcd9c4', '#bcd0e8', '#f2c230', '#2f5fbf'];
-    const LETTER_COLORS = ['#ffffff', '#e9a8c0', '#f2c230', '#2f5fbf', '#4a4a4a'];
+    // The colours already on this cake, minus the one currently chosen — the same list the cream
+    // pen and the writing wheel offer, from the same collector.
+    const blockCakeColors = (current) =>
+      [...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== String(current).toLowerCase());
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
@@ -5776,29 +5810,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             fmt={v => v.toFixed(2)} />
         </div>
 
+        {/* ColorWheel, like every other colour on the cake — INVARIANTS #3. The first version of
+            this card grew its own square swatches plus a native <input type="color">, which is a
+            second answer to a question the designer already answers, and it looked like one. The
+            wheel also brings what a hand-rolled row does not: colours already ON this cake
+            (cakeColors), so a name can be matched to a border without eyedropping it. */}
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Block colour</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="color" value={nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor}
-            onChange={e => updateNameBlocks({ blockColor: e.target.value })}
-            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
-          {BLOCK_COLORS.map(c => (
-            <button key={c} onClick={() => updateNameBlocks({ blockColor: c })} title={c}
-              style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
-                border: (nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor) === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
-          ))}
-        </div>
+        <ColorWheel color={nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor}
+          onChange={c => updateNameBlocks({ blockColor: c })}
+          cakeColors={blockCakeColors(nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor)} width={152} />
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Letter colour</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="color" value={nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor}
-            onChange={e => updateNameBlocks({ letterColor: e.target.value })}
-            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
-          {LETTER_COLORS.map(c => (
-            <button key={c} onClick={() => updateNameBlocks({ letterColor: c })} title={c}
-              style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
-                border: (nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor) === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
-          ))}
-        </div>
+        <ColorWheel color={nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor}
+          onChange={c => updateNameBlocks({ letterColor: c })}
+          cakeColors={blockCakeColors(nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor)} width={152} />
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           {/* The way back from an arrangement gone wrong — without retyping the name. */}
@@ -5828,7 +5853,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const g = design.tiers[i]?.grass;
     const bg = design.boardGrass;
     if (!g && !bg) return null;
-    const GRASS_COLORS = ['#7bc043', '#5bc236', '#4caf3d', '#3f8f2b', '#2e7d32', '#1b5e20'];
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
@@ -5999,16 +6023,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ONE colour for both placements — it is one piping bag, and a lawn that does not match the
             hedge at its foot reads as a mistake rather than a choice. */}
+        {/* ColorWheel — INVARIANTS #3. Same defect as the letter-blocks card had, introduced the
+            same day: a hand-rolled swatch row is a second colour control, and it reads as one. */}
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Grass colour</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="color" value={grassColor} onChange={e => setGrassColor(e.target.value)}
-            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
-          {GRASS_COLORS.map(c => (
-            <button key={c} onClick={() => setGrassColor(c)} title={c}
-              style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
-                border: grassColor === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
-          ))}
-        </div>
+        <ColorWheel color={grassColor} onChange={setGrassColor} width={152}
+          cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
 
         <button onClick={removeGrass}
           style={{ marginTop: 12, width: '100%', padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',

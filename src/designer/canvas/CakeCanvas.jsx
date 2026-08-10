@@ -102,8 +102,23 @@ function grassHandleLift(tierData, boardGrass) {
 // The cake itself, punched out of the ring. Exactly 1 — not a hair under, which would seat blades
 // inside the wall they are supposed to be growing against, and not a hair over, which would leave a
 // bare gold margin between the grass and the cake.
-function boardGrassHole(cakeShape) {
-  return { shape: cakeShape, scale: 1 };
+// `clearance` pushes the hole OUT past whatever is piped on the wall — INVARIANTS #3b. Without it a
+// board ring plants its inner tufts against bare wall and grows straight through a bottom border,
+// the same way letter blocks did. Expressed as a scale because that is what topContains takes.
+function boardGrassHole(cakeShape, reach, clearance = 0) {
+  return { shape: cakeShape, scale: reach > 0 ? (reach + clearance) / reach : 1 };
+}
+
+// The clearance a thing standing ON THE BOARD needs to miss this tier's piping. `height` is the
+// thing's own vertical span from the board up — a tall clump overlaps a border a short one passes
+// under. One question, one helper, whoever is asking (see INVARIANTS #3b).
+function boardClearanceFor(tier, height) {
+  if (!tier) return 0;
+  const bands = resolveSidePipingBands({
+    topPipings: tier.topPipings ?? [], bottomPipings: tier.bottomPipings ?? [],
+    topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
+  });
+  return sidePipingClearance({ bands, yBottom: tier.baseY, yTop: tier.baseY + height });
 }
 
 // Image-based lighting (HDRI). We self-host the env map on R2 — the host supplies
@@ -2267,7 +2282,8 @@ function CakeScene({
           topY={0.1}
           patchRadius={board.radius}
           inset={boardRingInset(board, bottomShp, boardGrass.ringWidth)}
-          hole={boardGrassHole(bottomShp)}
+          hole={boardGrassHole(bottomShp, boundingRadius(bottomShp),
+            boardClearanceFor(bottomTier, boardGrass.height ?? 0.16))}
         />
       )}
 

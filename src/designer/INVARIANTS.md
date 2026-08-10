@@ -68,11 +68,47 @@ parallel one.
 ## 3. Reuse the shared components — do not reimplement
 - `PreviewTile` — preview + corner checkbox + label. Used by the piping popup AND the placement chooser.
 - `SizeDial` — the ONE size control (piping, hero chooser, scatter card). No parallel sliders.
+- `ColorWheel` — the ONE colour control. **Every** colour a customer picks goes through it: tiers,
+  piping, cream pen, writing, decorations, grass, letter blocks. Round chips at 32px inside a 44px
+  tap area, a gradient picker, and `cakeColors` — the colours already on THIS cake, so a name can be
+  matched to a border without eyedropping it. Never a row of hand-rolled swatches and never a native
+  `<input type="color">`: both are a second answer to a question this already answers, and they look
+  like one. Cautionary tale: the letter-blocks card shipped with square swatches + a native picker
+  and was spotted in a screenshot within the hour.
 - `PlacementChooser` — per‑(tier×surface) slot tiles with add/remove + per‑slot Size/Tilt.
 - `cleanGlbScene`, `previewCake.jsx` (`buildPreviewTiers`, `PreviewCakeMeshes`).
 
 When asked to do something "like the piping popup," **open the piping code and reuse it** — never
 approximate from memory or build a parallel version.
+
+### 3b. Nothing a customer places may PENETRATE what is already there
+A cake is built in layers, and anything added later has to make room for what is already on it. There
+is ONE rule for this and it is not per-element:
+
+- `resolveSidePipingBands({ topPipings, bottomPipings, topY, yBase, height, radius })` — a tier's
+  stacked piping as absolute bands, each with its outward reach (`out`) off the wall.
+- `sidePipingClearance({ bands, yBottom, yTop })` — how far out something spanning that vertical
+  range must sit to clear every band it overlaps. Zero when it overlaps none.
+
+Pass the NEW object's own vertical span and add the answer to its seat — a tall thing overlaps a
+border a short one passes under. A proud side decoration has done this since the helper was written;
+letter blocks and board grass do it now. **A new placed element that can collide is not finished
+until it asks this question** — and the answer comes from here, never from a fresh copy of the maths.
+Cautionary tale: letter blocks shipped without it and drove straight through a bottom border on the
+first cake that had one; board grass had the identical hole and nobody had hit it yet.
+
+Clamp where the value is WRITTEN, not where it is drawn. Clamping only the render leaves a placed
+thing's stored position disagreeing with its picture — its drag handle sits inside the border while
+the thing itself stands outside.
+
+**Some elements will legitimately want to penetrate** (a sauce, a topper that sinks in). When that
+day comes it is a CONFIG flag on the element, read by the caller before it asks for clearance — never
+a branch on element type (#1), and never a second seating path. Until then the rule is universal.
+
+**Known gap: the TOP surface.** These helpers answer a RADIAL question — how far off the wall. A
+decoration on a tier's top colliding with its rim ring is a different question (an inward limit on
+the footprint, akin to `topClampInset`) and nothing asks it yet. Anything placed on a top surface can
+still meet a rim border.
 
 This applies to shared **logic**, not just React components. Before writing new placement / seating /
 geometry / de-overlap / hit-test logic, **grep for an existing helper that already does it**
