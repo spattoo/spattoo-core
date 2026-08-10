@@ -21,6 +21,7 @@ import { Panel } from '../shared/Panel.jsx';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
+import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
@@ -1518,7 +1519,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3192,6 +3193,66 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // as a blank screen. This file has been bitten by exactly that twice.
   const grassTier = design.tiers.findIndex(t => t.grass);
 
+  // ── Fondant letter blocks ───────────────────────────────────────────────────
+  // Type a name, get one cube per letter, then move any of them. The run is generated ONCE; after
+  // that each block is its own placement, so a drag moves that block and nothing else. "Line them
+  // up again" re-runs the generator, which is the escape hatch from an arrangement gone wrong.
+  const [blocksSelected, setBlocksSelected] = useState(null);
+  const nb = design.nameBlocks;
+
+  // The surface a run is laid on. Board: the cake's foot, so the arc clears the wall. Top: the
+  // highest tier, since a lower tier's top is mostly hidden under the one above it.
+  function blockSurface(zone) {
+    const tiers = canvasConfig.tiers ?? [];
+    const bottom = tiers[0], top = tiers[tiers.length - 1];
+    const boardR = (bottom?.radius ?? 1.2) + 0.6;
+    return zone === 'top'
+      ? { surfaceRadius: top?.radius ?? 1.2, runRadius: (top?.radius ?? 1.2) * 0.55 }
+      : { surfaceRadius: boardR, runRadius: boardRunRadius(bottom?.radius ?? 1.2, nb?.size ?? NAME_BLOCK_DEFAULTS.size) };
+  }
+
+  function layoutBlocks(text, zone, style = {}) {
+    const { surfaceRadius, runRadius } = blockSurface(zone);
+    return nameBlockRun({
+      text, zone, surfaceRadius, runRadius,
+      size: style.size ?? nb?.size ?? NAME_BLOCK_DEFAULTS.size,
+      gap:  style.gap  ?? nb?.gap  ?? NAME_BLOCK_DEFAULTS.gap,
+    });
+  }
+
+  function addNameBlocks() {
+    if (!design.nameBlocks) {
+      const zone = 'board';
+      setNameBlocks({ ...NAME_BLOCK_DEFAULTS, zone, text: 'NAME', blocks: layoutBlocks('NAME', zone) });
+    }
+    selectExclusive({ type: 'blocks' });
+  }
+
+  function removeNameBlocks() { setNameBlocks(null); setBlocksSelected(null); clearAllSelections(); }
+
+  // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
+  // letters change, so index-matched positions would put an old letter's spot under a new letter,
+  // which is worse than an honest fresh line-up.
+  function setBlocksText(text) {
+    updateNameBlocks(cur => ({ text, blocks: layoutBlocks(text, cur.zone, cur) }));
+  }
+
+  function setBlocksZone(zone) {
+    updateNameBlocks(cur => ({ zone, blocks: layoutBlocks(cur.text, zone, cur) }));
+  }
+
+  function realignBlocks() {
+    updateNameBlocks(cur => ({ blocks: layoutBlocks(cur.text, cur.zone, cur) }));
+  }
+
+  // Dragged on the cake. Yaw is recomputed rather than kept: on the board a block that holds its
+  // old angle after being moved ends up showing its blank side to the room.
+  function handleBlockMove(_tier, idx, u, v) {
+    updateNameBlocks(cur => ({
+      blocks: (cur.blocks ?? []).map((b, k) => k === idx ? { ...b, u, v, yaw: nameBlockYaw(cur.zone, u) } : b),
+    }));
+  }
+
   // ── Grass clumps ────────────────────────────────────────────────────────────
   // A third placement, and a different KIND from the other two: whole-top and rim band both answer
   // "cover this surface", a clump answers "put one here". Stored and dragged exactly like a luster
@@ -4512,6 +4573,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.tiers.some(t => t.grass) || design.boardGrass) {
     decorationCards.unshift({ key: 'grass', type: 'grass', name: 'Grass', thumb: null });
   }
+  if (design.nameBlocks?.blocks?.length) {
+    decorationCards.unshift({ key: 'blocks', type: 'blocks', name: 'Letter Blocks', thumb: null, glyph: 'A' });
+  }
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
     decorationCards.unshift({ key: 'cream-pen', type: 'tool', tool: 'pen', name: 'Cream Pen', thumb: null });
   }
@@ -4540,6 +4604,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : card.type === 'foil' ? true
          : card.type === 'grass' ? true
+         : card.type === 'blocks' ? true
          : card.type === 'cream' ? true
          : card.type === 'tool' ? selectedEl.tool === card.tool
          : selectedEl?.id === card.id);
@@ -4567,6 +4632,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'foil'          ? { type: 'foil', elementId: card.elementId }
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
       : card.type === 'grass'         ? { type: 'grass' }
+      : card.type === 'blocks'        ? { type: 'blocks' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
       : card.type === 'pattern'       ? { type: 'pattern', patternId: card.patternId, patternElementId: card.patternElementId }
       : card.type === 'group'         ? { type: 'group', groupId: card.groupId }
@@ -5668,6 +5734,89 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  // Letter-blocks editor body.
+  function renderBlocksBody() {
+    if (!nb) return null;
+    const BLOCK_COLORS  = ['#f7f5f2', '#f2c6d6', '#bcd9c4', '#bcd0e8', '#f2c230', '#2f5fbf'];
+    const LETTER_COLORS = ['#ffffff', '#e9a8c0', '#f2c230', '#2f5fbf', '#4a4a4a'];
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          One cube per letter. Drag any of them on the cake to move it.
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Name</div>
+          {/* Capped at 12: past that a run wraps most of the way round a small cake and the letters
+              start to collide. The cap is on the INPUT so nobody types a name that cannot be laid. */}
+          <input value={nb.text ?? ''} onChange={e => setBlocksText(e.target.value.slice(0, 12))}
+            placeholder="EMILY"
+            style={{ width: '100%', padding: '8px 10px', fontSize: 14, fontWeight: 700, textTransform: 'uppercase',
+              border: '1.5px solid #999999', borderRadius: 8, fontFamily: "'Quicksand',sans-serif", boxSizing: 'border-box' }} />
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Where</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['On the board', 'board'], ['On top', 'top']].map(([label, z]) => (
+              <button key={z} onClick={() => { if (nb.zone !== z) setBlocksZone(z); }}
+                style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                  border: '1.5px solid #999999', background: nb.zone === z ? '#1a1a1a' : '#fff', color: nb.zone === z ? '#fff' : '#1a1a1a' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          {/* Size re-lays the run: bigger cubes need more room, and leaving them at the old spacing
+              would overlap them. A baker who has arranged blocks by hand should set size first. */}
+          <PenSlider label="Block size" value={nb.size ?? NAME_BLOCK_DEFAULTS.size} min={0.16} max={0.5} step={0.01}
+            onChange={v => updateNameBlocks(cur => ({ size: v, blocks: layoutBlocks(cur.text, cur.zone, { ...cur, size: v }) }))}
+            fmt={v => v.toFixed(2)} />
+        </div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Block colour</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="color" value={nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor}
+            onChange={e => updateNameBlocks({ blockColor: e.target.value })}
+            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
+          {BLOCK_COLORS.map(c => (
+            <button key={c} onClick={() => updateNameBlocks({ blockColor: c })} title={c}
+              style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
+                border: (nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor) === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
+          ))}
+        </div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Letter colour</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="color" value={nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor}
+            onChange={e => updateNameBlocks({ letterColor: e.target.value })}
+            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
+          {LETTER_COLORS.map(c => (
+            <button key={c} onClick={() => updateNameBlocks({ letterColor: c })} title={c}
+              style={{ width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
+                border: (nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor) === c ? '2.5px solid #1a1a1a' : '1.5px solid #ddd' }} />
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          {/* The way back from an arrangement gone wrong — without retyping the name. */}
+          <button onClick={realignBlocks}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
+              background: '#fff', fontWeight: 700, fontSize: 12, color: '#1a1a1a', cursor: 'pointer' }}>
+            Line them up
+          </button>
+          <button onClick={removeNameBlocks}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
+              background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
+            Remove
+          </button>
+        </div>
+      </>
+    );
+  }
+
   // Grass editor body — inline expanded body of its stack card.
   //
   // A baker gets THREE controls, not the studio's ten. Splay, droop, strand count, thickness, length
@@ -6529,6 +6678,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addNameBlocks(); setElementsOpen(false); }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#f2ede6', border: '1.5px solid #ddd2c4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 800, fontSize: 15, color: '#b07d8f' }}>Aa</div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Letter Blocks</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Spell a name in fondant cubes</div>
+                  </div>
+                </button>
+                <button
                   onClick={() => { if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing' }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
@@ -6823,6 +6981,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               grassSelected={grassSelected}
               onGrassMove={handleGrassMove}
               onGrassSelect={(tier, idx) => setGrassSelected({ tier, idx })}
+              blocksMode={selectedEl?.type === 'blocks'}
+              blocksSelected={blocksSelected}
+              onBlockMove={handleBlockMove}
+              onBlockSelect={(tier, idx) => setBlocksSelected({ tier, idx })}
               selectedTextId={selectedTextId}
               onTextSelect={handleTextSelect}
               onTextMove={(id, pos) => updateText(id, pos)}
@@ -7203,6 +7365,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'foil' ? renderFoilBody(card)
                            : card.type === 'cream' ? renderCreamBody()
                            : card.type === 'grass' ? renderGrassBody()
+                           : card.type === 'blocks' ? renderBlocksBody()
                            : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
                            : buildToolbar(selectedEl, 'panel')}
                         </div>

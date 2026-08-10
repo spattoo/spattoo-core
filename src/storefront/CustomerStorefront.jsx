@@ -438,7 +438,7 @@ export default function CustomerStorefront({
     <div style={s.page} ref={rootRef}>
       <style>{interactionCss}</style>
       {phone && (
-        <div style={s.utilbar}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
+        <div style={s.utilbar}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
       )}
 
       <header style={{ ...s.header, ...(isCurveHero ? { position: 'relative' } : {}) }}>
@@ -608,7 +608,7 @@ export default function CustomerStorefront({
       <footer id="contact" style={s.footer}>
         {(phone || ig || websiteHref) && (
           <div style={s.footerLinks}>
-            {phone && <a href={`tel:${phone}`} style={s.footerLink}><PhoneIcon size={13} color={lighten(accent, 0.1)} style={{ verticalAlign: '-2px', marginRight: 5 }} />{phone}</a>}
+            {phone && <a href={`tel:${phone}`} style={s.footerLink}><PhoneIcon size={13} color={lighten(accent, 0.1)} style={{ marginRight: 5 }} />{phone}</a>}
             {ig && <a style={s.footerLink} href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer">@{ig}</a>}
             {websiteHref && <a style={s.footerLink} href={websiteHref} target="_blank" rel="noreferrer">Website</a>}
           </div>
@@ -712,9 +712,24 @@ function CameraIcon({ size = 16, color = '#fff', style }) {
     </svg>
   );
 }
+// ⚠️ `display: inline-block` is LOAD-BEARING, and the reason is not in this repo.
+//
+// This icon sits INSIDE a line of text — the utility bar's "Call / WhatsApp: <number>" and the
+// footer's phone link. A browser defaults <svg> to `display: inline`, so that works out of the box
+// here and in dev/storefront.html. It does not work where the storefront actually runs: spattoo-web
+// imports it under `@import "tailwindcss"`, and Tailwind's preflight blockifies replaced elements
+// (`img, svg, video, canvas, audio, iframe, embed, object { display: block }`).
+//
+// A block box is not centred by `text-align`. So in production the icon took a line of its own,
+// flush LEFT, with the phone number centred underneath it — the bar twice as tall as intended and
+// the icon 173px from the text it belongs to. It renders, so nothing complains.
+//
+// Declaring the display here rather than at the call sites means a third usage cannot reintroduce
+// it. `verticalAlign` moved here for the same reason; callers pass only their own spacing.
 function PhoneIcon({ size = 14, color = '#9b5f72', style }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+         style={{ display: 'inline-block', verticalAlign: '-2px', ...style }}>
       <path d="M6.5 3h3l1.5 5-2 1.5a12 12 0 0 0 5 5l1.5-2 5 1.5v3a2 2 0 0 1-2 2A16 16 0 0 1 4.5 5a2 2 0 0 1 2-2z" />
     </svg>
   );
@@ -1158,7 +1173,11 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     footer:      { marginTop: 40, padding: '16px 24px', background: ink, color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' },
     footerName:  { fontSize: 18, fontWeight: 700, color: '#fff' },
     footerLinks: { display: 'flex', gap: 18, marginTop: 2 },
-    footerLink:  { fontSize: 14, fontWeight: 700, color: lighten(accent, 0.1), textDecoration: 'none' },
+    // nowrap keeps the phone icon glued to the number: a line break is allowed between an inline
+    // icon and the text after it, and at 320px this one took it — the icon alone on its own line,
+    // the same look as the utility bar's bug from a different cause. A phone number is one thing
+    // and should break as one.
+    footerLink:  { fontSize: 14, fontWeight: 700, color: lighten(accent, 0.1), textDecoration: 'none', whiteSpace: 'nowrap' },
     madeWith:    { fontSize: 12, fontWeight: 700, color: alpha('#ffffff', 0.5), letterSpacing: 0.4, marginTop: 10 },
   };
 }

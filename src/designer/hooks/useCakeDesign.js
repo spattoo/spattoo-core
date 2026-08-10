@@ -126,6 +126,7 @@ export function toCanvasConfig(design) {
     stickers: design.stickers ?? [],
     writing:  design.writing ?? null,
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
+    nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
   };
 }
@@ -486,6 +487,20 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, grass } : t),
     }));
+  }
+
+  // ── Fondant letter blocks ───────────────────────────────────────────────────
+  // Design-level like `writing` and `boardGrass`: a name spelled at the cake's foot belongs to the
+  // CAKE, not to one tier of it. `blocks` is the arrangement — an explicit list once the name is
+  // set, so a dragged block simply is where it is, with no run to re-derive it from.
+  function setNameBlocks(nb) { setDesign(prev => ({ ...prev, nameBlocks: nb })); }
+
+  // `changes` may be a function of the current value — the same contract the grass setters use, and
+  // for the same reason: a drag or an edit computed from the last render can be stale.
+  function updateNameBlocks(changes) {
+    setDesign(prev => (prev.nameBlocks
+      ? { ...prev, nameBlocks: { ...prev.nameBlocks, ...(typeof changes === 'function' ? changes(prev.nameBlocks) : changes) } }
+      : prev));
   }
 
   // ── Grass on the BOARD ──────────────────────────────────────────────────────
@@ -1168,6 +1183,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setNameBlocks, updateNameBlocks,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

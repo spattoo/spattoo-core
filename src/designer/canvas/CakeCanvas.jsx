@@ -30,6 +30,7 @@ import {
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
@@ -2152,12 +2153,13 @@ function CakeScene({
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
   tierDataRef,
 }) {
-  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null } = config;
+  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null, nameBlocks = null } = config;
   const orbitBlockSet = useRef(new Set());
   // A decoration selects via native pointerup + pointer capture, which breaks its r3f `stopPropagation`
   // — so the r3f `click` still leaks to the tier/board underneath and toggles the cake's selection off,
@@ -2194,7 +2196,7 @@ function CakeScene({
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
       // Dragging a finish handle (luster-dust splash / gold-leaf flake) must not rotate the cake.
       const overDust = hits.some(h => h.object.userData.isDustHandle || h.object.userData.isFoilHandle
-        || h.object.userData.isGrassHandle);
+        || h.object.userData.isGrassHandle || h.object.userData.isBlockHandle);
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
@@ -2362,6 +2364,37 @@ function CakeScene({
           />
         );
       })()}
+
+      {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
+          highest tier. Each block is its own placement, so the arrangement IS the data — see
+          nameBlockRun. */}
+      {nameBlocks?.blocks?.length > 0 && (
+        <NameBlocks
+          {...nameBlocks}
+          blocks={nameBlocks.blocks}
+          surfaceRadius={nameBlocks.zone === 'top' ? tierData[tierData.length - 1].radius : board.radius}
+          y={nameBlocks.zone === 'top' ? stackY : 0.1}
+        />
+      )}
+
+      {/* …and are dragged by the very same handles as grass clumps: a point on a surface, grabbed
+          across its whole body. `r` is half a block, so you grab the cube itself rather than hunting
+          a dot; `lift` clears the block's height so the marker is never inside what it marks. */}
+      {blocksMode && nameBlocks?.blocks?.length > 0 && (
+        <FinishHandles
+          tierData={tierData}
+          getPoints={t => (nameBlocks.zone === 'top' && t === tierData[tierData.length - 1]
+            ? nameBlocks.blocks.map(b => ({ ...b, surface: 'top_surface', r: (nameBlocks.size ?? 0.3) * 0.6 }))
+            : null)}
+          board={board}
+          boardPoints={nameBlocks.zone === 'board'
+            ? nameBlocks.blocks.map(b => ({ ...b, r: (nameBlocks.size ?? 0.3) * 0.6 }))
+            : null}
+          selected={blocksSelected} onMove={onBlockMove} onSelect={onBlockSelect}
+          catcherFlag="isBlockCatcher" handleFlag="isBlockHandle"
+          lift={(nameBlocks.size ?? 0.3) + 0.06}
+          color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker />
+      )}
 
       {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
           surface, moved by its handle. showMarker is on because a clump the size of a thumbnail is
@@ -2807,6 +2840,7 @@ export default function CakeCanvas({
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2940,6 +2974,10 @@ export default function CakeCanvas({
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
         onGrassSelect={onGrassSelect}
+        blocksMode={blocksMode}
+        blocksSelected={blocksSelected}
+        onBlockMove={onBlockMove}
+        onBlockSelect={onBlockSelect}
         dustMode={dustMode}
         dustSelected={dustSelected}
         onDustMove={onDustMove}
