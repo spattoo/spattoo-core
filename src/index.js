@@ -82,7 +82,7 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
 export { SceneLights, SceneEnv } from './designer/canvas/CakeCanvas.jsx';
 // Fondant letter blocks. Layout is separate from the renderer for the same reason grass's is: one
 // word in, N placements out, and nothing downstream owns a single block.
-export { nameBlockLayout, boardRunRadius, NAME_BLOCK_DEFAULTS } from './designer/geometry/nameBlocks.js';
+export { nameBlockLayout, nameBlockRun, nameBlockYaw, boardRunRadius, NAME_BLOCK_DEFAULTS } from './designer/geometry/nameBlocks.js';
 export { default as NameBlocks } from './designer/canvas/NameBlocks.jsx';
 // Solid relief slab geometry — exported so the admin Relief Sticker Studio previews the SAME extruded
 // solid the designer renders for placement_config.relief.solid (one builder, no drift).
