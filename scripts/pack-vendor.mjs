@@ -9,13 +9,20 @@
 // was live in the source and absent from production, which is the worst kind of missing — every
 // check you would run against the repo passes.
 //
-// This packs only when the tree can honestly stamp a version, then verifies the result:
+// So the artifact is built and packed from a THROWAWAY WORKTREE AT HEAD, never from the repo you
+// are sitting in. A tarball can then only ever correspond to a commit — it is not a rule anyone has
+// to obey, it is the only thing the script is able to do.
 //
-//   1. no uncommitted changes  — a dirty tree matches no commit at all
+//   1. a dirty tree is REPORTED, not refused — those edits simply are not in the artifact. It used
+//      to be fatal, which meant a colleague's half-finished file could kill your release after the
+//      version was already bumped and pushed. Worse, the check could not win: a file created
+//      between the check and `npm pack` went into the tarball unnoticed. That happened.
 //   2. nothing missing from origin/<branch> — the 0.1.161 failure exactly
 //   3. this version has not already been vendored — silently replacing a shipped artifact is worse
 //      than the drift it hides
-//   4. after packing, the tarball's src/ is byte-identical to `git archive HEAD src`
+//   4. after packing, the tarball's src/ is byte-identical to `git archive HEAD src`. Now close to
+//      tautological, and kept: it costs a second and it is what would catch a broken worktree or a
+//      build that quietly emitted nothing.
 //
 // Usage: npm run pack:vendor -- /path/to/spattoo-web/vendor [--allow-behind]
 
