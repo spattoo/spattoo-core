@@ -19,17 +19,28 @@ export default function GrassPatch({
   droop   = GRASS_DEFAULTS.droop,
   thickness = GRASS_DEFAULTS.thickness,
   lengthVary = GRASS_DEFAULTS.lengthVary,
-  bandInner = null, hole = null, inset = 0.98, overhang = 0, seed = 7,
+  bandInner = null, hole = null, inset = 0.98, overhang = 0, patches = null, patchRadius = null, seed = 7,
   onStats,
 }) {
   const geo = useMemo(
     () => buildGrassTuft({ strands, height, thickness, splay, droop, lengthVary, seed }),
     [strands, height, thickness, splay, droop, lengthVary, seed],
   );
-  const seats = useMemo(
-    () => grassSeats({ shape, spacing, jitter, inset, seed: seed + 1, bandInner, hole, overhang }),
-    [shape, spacing, jitter, inset, seed, bandInner, hole, overhang],
-  );
+  // Patches arrive as the handles store them — polar (u, v) against the surface, the same convention
+  // FinishHandles drags dust and foil in — and the seat loop wants world x/z. Converting HERE, inside
+  // the memo, is deliberate: doing it at the call site would build a fresh array every render and
+  // rebuild every seat on every frame, which for a few thousand tufts is the whole frame budget.
+  const seats = useMemo(() => {
+    const R = patchRadius ?? shape.radius ?? 1;
+    const world = patches?.length
+      ? patches.map(p => ({
+          x: p.v * R * Math.sin(p.u * Math.PI * 2),
+          z: p.v * R * Math.cos(p.u * Math.PI * 2),
+          r: p.r ?? 0.35,
+        }))
+      : null;
+    return grassSeats({ shape, spacing, jitter, inset, seed: seed + 1, bandInner, hole, overhang, patches: world });
+  }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius]);
 
   const ref = useRef(null);
   useLayoutEffect(() => {

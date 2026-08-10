@@ -2139,6 +2139,7 @@ function CakeScene({
   stickerResize = null,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
+  grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2180,7 +2181,8 @@ function CakeScene({
       // suspend rotate; pressing empty space still rotates.
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
       // Dragging a finish handle (luster-dust splash / gold-leaf flake) must not rotate the cake.
-      const overDust = hits.some(h => h.object.userData.isDustHandle || h.object.userData.isFoilHandle);
+      const overDust = hits.some(h => h.object.userData.isDustHandle || h.object.userData.isFoilHandle
+        || h.object.userData.isGrassHandle);
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
@@ -2249,6 +2251,7 @@ function CakeScene({
           {...boardGrass}
           shape={board}
           topY={0.1}
+          patchRadius={board.radius}
           inset={boardRingInset(board, bottomShp, boardGrass.ringWidth)}
           hole={boardGrassHole(bottomShp)}
         />
@@ -2299,6 +2302,7 @@ function CakeScene({
             <GrassPatch
               shape={tierShape(tier)}
               topY={tier.baseY + tier.height}
+              patchRadius={tier.radius}
               {...tier.grass}
             />
           )}
@@ -2346,6 +2350,16 @@ function CakeScene({
           />
         );
       })()}
+
+      {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
+          surface, moved by its handle. showMarker is on because a clump the size of a thumbnail is
+          easy to lose against a field of grass, and the dot is only present while the card is open. */}
+      {grassMode && <FinishHandles tierData={tierData}
+        getPoints={t => (t.grass?.patches?.length ? t.grass.patches.map(p => ({ ...p, surface: 'top_surface' })) : null)}
+        board={board} boardPoints={boardGrass?.patches ?? null}
+        selected={grassSelected} onMove={onGrassMove} onSelect={onGrassSelect}
+        catcherFlag="isGrassCatcher" handleFlag="isGrassHandle"
+        color="#ffffff" selColor="#1b5e20" showMarker />}
 
       {dustMode && <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustSelected}
         onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher" handleFlag="isDustHandle" />}
@@ -2774,6 +2788,7 @@ export default function CakeCanvas({
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
+  grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2903,6 +2918,10 @@ export default function CakeCanvas({
         onAddStroke={onAddStroke}
         creamPaint={creamPaint}
         onCreamPaint={onCreamPaint}
+        grassMode={grassMode}
+        grassSelected={grassSelected}
+        onGrassMove={onGrassMove}
+        onGrassSelect={onGrassSelect}
         dustMode={dustMode}
         dustSelected={dustSelected}
         onDustMove={onDustMove}

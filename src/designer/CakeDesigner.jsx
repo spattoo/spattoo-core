@@ -21,6 +21,7 @@ import { Panel } from '../shared/Panel.jsx';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS } from './geometry/grass.js';
+import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
@@ -3191,6 +3192,56 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // as a blank screen. This file has been bitten by exactly that twice.
   const grassTier = design.tiers.findIndex(t => t.grass);
 
+  // ── Grass clumps ────────────────────────────────────────────────────────────
+  // A third placement, and a different KIND from the other two: whole-top and rim band both answer
+  // "cover this surface", a clump answers "put one here". Stored and dragged exactly like a luster
+  // dust splash — polar (u, v) against the surface, moved by a handle on the cake — so this reuses
+  // FinishHandles rather than inventing a third way to drag something.
+  const [grassSelected, setGrassSelected] = useState(null);   // { tier, idx } — BOARD_TIER for the board
+  const GRASS_PATCH_R = 0.42;
+
+  // A new clump lands at the front, a little in from the edge: visible from the default camera, and
+  // somewhere a baker will drag it FROM rather than have to hunt for it.
+  const newPatch = () => ({ u: 0, v: 0.62, r: GRASS_PATCH_R });
+
+  function addGrassPatch(onBoard) {
+    if (onBoard) {
+      const list = design.boardGrass?.patches ?? [];
+      updateBoardGrass({ patches: [...list, { ...newPatch(), v: 0.86 }] });   // outside the cake wall
+      setGrassSelected({ tier: BOARD_TIER, idx: list.length });
+    } else if (grassTier >= 0) {
+      const list = design.tiers[grassTier].grass.patches ?? [];
+      updateGrass(grassTier, { patches: [...list, newPatch()] });
+      setGrassSelected({ tier: grassTier, idx: list.length });
+    }
+  }
+
+  function removeGrassPatch(tier, idx) {
+    if (tier === BOARD_TIER) {
+      updateBoardGrass({ patches: (design.boardGrass?.patches ?? []).filter((_, k) => k !== idx) });
+    } else {
+      updateGrass(tier, { patches: (design.tiers[tier]?.grass?.patches ?? []).filter((_, k) => k !== idx) });
+    }
+    setGrassSelected(null);
+  }
+
+  // Dragged on the cake. The handle reports (u, v) on whichever surface it was grabbed from.
+  function handleGrassMove(tier, idx, u, v) {
+    if (tier === BOARD_TIER) {
+      updateBoardGrass({ patches: (design.boardGrass?.patches ?? []).map((p, k) => k === idx ? { ...p, u, v } : p) });
+    } else {
+      updateGrass(tier, { patches: (design.tiers[tier]?.grass?.patches ?? []).map((p, k) => k === idx ? { ...p, u, v } : p) });
+    }
+  }
+
+  function setGrassPatchSize(tier, idx, r) {
+    if (tier === BOARD_TIER) {
+      updateBoardGrass({ patches: (design.boardGrass?.patches ?? []).map((p, k) => k === idx ? { ...p, r } : p) });
+    } else {
+      updateGrass(tier, { patches: (design.tiers[tier]?.grass?.patches ?? []).map((p, k) => k === idx ? { ...p, r } : p) });
+    }
+  }
+
   // One colour across both placements: it is one piping bag. Read from whichever exists.
   const grassColor = design.tiers[grassTier]?.grass?.color ?? design.boardGrass?.color ?? '#4caf3d';
   function setGrassColor(color) {
@@ -5647,8 +5698,44 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>On the board</div>
             {/* How far the ring reaches across the gap between the cake and the board's edge — a
                 fraction, so it means the same on a small round and a sheet. */}
+            {/* A continuous ring, or separate clumps around the cake — the volleyball cake's board
+                has three, framing the composition rather than encircling it. */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              {[['Ring', false], ['Clumps', true]].map(([label, wantPatches]) => {
+                const on = !!bg.patches?.length === wantPatches;
+                return (
+                  <button key={label}
+                    onClick={() => { if (!on) updateBoardGrass({ patches: wantPatches ? [{ u: 0, v: 0.86, r: GRASS_PATCH_R }] : null }); }}
+                    style={{ flex: 1, padding: '6px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
+                      border: '1.5px solid #999999', background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a' }}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {bg.patches?.length > 0 ? (
+              <div style={{ marginBottom: 8 }}>
+                {bg.patches.map((p, k) => (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 10, color: '#aaa', width: 12 }}>{k + 1}</span>
+                    <input type="range" min={0.15} max={0.9} step={0.02} value={p.r ?? GRASS_PATCH_R}
+                      onChange={e => setGrassPatchSize(BOARD_TIER, k, +e.target.value)}
+                      onPointerDown={() => setGrassSelected({ tier: BOARD_TIER, idx: k })}
+                      style={{ flex: 1 }} />
+                    <button onClick={() => removeGrassPatch(BOARD_TIER, k)} title="Remove"
+                      style={{ border: 'none', background: 'none', color: '#b56', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                  </div>
+                ))}
+                <button onClick={() => addGrassPatch(true)}
+                  style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
+                    border: '1.5px solid #1a1a1a', background: '#1a1a1a', color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
+                  + Add clump
+                </button>
+              </div>
+            ) : (
             <PenSlider label="Ring width" value={bg.ringWidth ?? 0.75} min={0.15} max={1} step={0.05}
-              onChange={v => updateBoardGrass({ ringWidth: v })} fmt={v => `${Math.round(v * 100)}%`} />
+              onChange={v => updateBoardGrass({ ringWidth: v })} fmt={v => `${Math.round(v * 100)}%`} />)}
             <PenSlider label="Height" value={bg.height ?? GRASS_DEFAULTS.height} min={0.06} max={0.4} step={0.005}
               onChange={v => updateBoardGrass({ height: v })} fmt={v => v.toFixed(2)} />
             <PenSlider label="Density" value={0.24 - (bg.spacing ?? GRASS_DEFAULTS.spacing)} min={0.04} max={0.2} step={0.002}
@@ -5681,18 +5768,50 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             what a person is adjusting. */}
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Coverage</div>
+          {/* Three modes, one at a time — a band and a clump answer different questions and mixing
+              them on one surface reads as a mistake. Switching sets the other's field to null so the
+              geometry never sees two coverage rules at once. */}
           <div style={{ display: 'flex', gap: 6 }}>
-            {[['Whole top', null], ['Rim band', 0.55]].map(([label, inner]) => {
-              const on = (g.bandInner ?? null) === null ? inner === null : inner !== null;
+            {[
+              ['Whole top', { bandInner: null, patches: null }],
+              ['Rim band',  { bandInner: 0.55, patches: null }],
+              ['Clumps',    { bandInner: null, patches: [newPatch()] }],
+            ].map(([label, patch]) => {
+              const mode = g.patches?.length ? 'Clumps' : g.bandInner != null ? 'Rim band' : 'Whole top';
+              const on = mode === label;
               return (
-                <button key={label} onClick={() => updateGrass(i, { bandInner: inner })}
-                  style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                <button key={label} onClick={() => { if (!on) updateGrass(i, patch); }}
+                  style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
                     border: '1.5px solid #999999', background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a' }}>
                   {label}
                 </button>
               );
             })}
           </div>
+
+          {g.patches?.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: '#999', fontWeight: 600, marginBottom: 6 }}>
+                Drag a clump on the cake to move it.
+              </div>
+              {g.patches.map((p, k) => (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, color: '#aaa', width: 12 }}>{k + 1}</span>
+                  <input type="range" min={0.15} max={0.9} step={0.02} value={p.r ?? GRASS_PATCH_R}
+                    onChange={e => setGrassPatchSize(i, k, +e.target.value)}
+                    onPointerDown={() => setGrassSelected({ tier: i, idx: k })}
+                    style={{ flex: 1 }} />
+                  <button onClick={() => removeGrassPatch(i, k)} title="Remove"
+                    style={{ border: 'none', background: 'none', color: '#b56', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => addGrassPatch(false)}
+                style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
+                  border: '1.5px solid #1a1a1a', background: '#1a1a1a', color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
+                + Add clump
+              </button>
+            </div>
+          )}
         </div>
 
         {g.bandInner != null && (
@@ -6684,6 +6803,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
               onPipingInstanceMove={handlePipingInstanceMove}
               isPipingMovable={isPipingMovable}
+              grassMode={selectedEl?.type === 'grass'}
+              grassSelected={grassSelected}
+              onGrassMove={handleGrassMove}
+              onGrassSelect={(tier, idx) => setGrassSelected({ tier, idx })}
               selectedTextId={selectedTextId}
               onTextSelect={handleTextSelect}
               onTextMove={(id, pos) => updateText(id, pos)}

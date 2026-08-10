@@ -168,7 +168,12 @@ const OVERHANG_REACH = 0.09;   // how far past the edge a seat may sit, as a fra
 // board ring possible: the grass is bounded OUTSIDE by the board and INSIDE by the cake, which are
 // two different shapes. `bandInner` cannot express it — it hollows out the same outline it fills.
 // Both are exclusions and they answer different questions, so both exist rather than one pretending.
-export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, bandInner = null, hole = null, overhang = 0 }) {
+// `patches` = [{ x, z, r }] turns the fill into DISCRETE CLUMPS at chosen spots — the volleyball
+// cake, where grass anchors the ball on top and frames the composition on the board, rather than
+// covering anything. It is a different question from the other two: whole-top and band both answer
+// "cover this surface", a patch answers "put one here". Clipping still applies, so a clump dragged
+// to the rim is trimmed by the edge (and drapes over it, if overhang is on) instead of floating.
+export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, bandInner = null, hole = null, overhang = 0, patches = null }) {
   const s    = spacing ?? GRASS_DEFAULTS.spacing;
   const j    = jitter  ?? GRASS_DEFAULTS.jitter;
   const rand = rng(seed);
@@ -193,6 +198,8 @@ export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, ban
       if (bandInner != null && topContains(shape, px, pz, bandInner)) continue;
       // Standing where the cake is. A board ring must start at the wall, not under it.
       if (hole && topContains(hole.shape, px, pz, hole.scale ?? 1)) continue;
+      // Inside one of the placed clumps, or nowhere at all.
+      if (patches && !patches.some(p => Math.hypot(px - p.x, pz - p.z) <= (p.r ?? 0.35))) continue;
       // Tufts near the rim tip OUTWARD so their blades drape over the side. Only near the rim: in
       // the middle of a surface there is nothing to hang over, and tipping a clump there would lift
       // its blades off the cake on one side and bury them on the other.

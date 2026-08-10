@@ -232,3 +232,37 @@ describe('grassSeats — overhang', () => {
     expect(at(0.4)).toBeGreaterThan(0);
   });
 });
+
+// ── Clumps ──────────────────────────────────────────────────────────────────────────────────────
+// The volleyball cake: grass at three or four chosen SPOTS, not covering anything. A different
+// question from the other two modes, and the one that has to keep obeying the surface — a clump
+// dragged to the rim is trimmed by the edge, never left floating off it.
+describe('grassSeats — clumps', () => {
+  const round = { kind: 'round', radius: 1.2 };
+
+  it('seats grass only inside the clumps', () => {
+    const patches = [{ x: 0.5, z: 0, r: 0.3 }, { x: -0.4, z: 0.4, r: 0.25 }];
+    const seats = grassSeats({ shape: round, spacing: 0.05, patches });
+    expect(seats.length).toBeGreaterThan(0);
+    expect(seats.every(s => patches.some(p => Math.hypot(s.x - p.x, s.z - p.z) <= p.r))).toBe(true);
+  });
+
+  it('a bigger clump holds more tufts', () => {
+    const at = r => grassSeats({ shape: round, spacing: 0.05, patches: [{ x: 0, z: 0, r }] }).length;
+    expect(at(0.5)).toBeGreaterThan(at(0.25));
+  });
+
+  // The clip still wins: half a clump hanging off the rim is trimmed to the cake, not drawn in
+  // mid-air. This is the property that separates a placed clump from a free-floating decoration.
+  it('is still trimmed by the surface it sits on', () => {
+    const seats = grassSeats({ shape: round, spacing: 0.05, patches: [{ x: round.radius, z: 0, r: 0.5 }] });
+    expect(seats.length).toBeGreaterThan(0);
+    expect(seats.every(s => Math.hypot(s.x, s.z) <= round.radius)).toBe(true);
+  });
+
+  it('null patches still covers the whole surface', () => {
+    const full = grassSeats({ shape: round, spacing: 0.08 });
+    const clumped = grassSeats({ shape: round, spacing: 0.08, patches: [{ x: 0, z: 0, r: 0.3 }] });
+    expect(full.length).toBeGreaterThan(clumped.length);
+  });
+});

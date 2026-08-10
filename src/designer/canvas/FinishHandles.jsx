@@ -21,6 +21,10 @@ import { buildRay } from '../utils/raycasting.js';
 // suspend orbit on its own drag.
 
 const TAU = Math.PI * 2;
+// The board is not a tier, but the drag loop is keyed on a tier index. A sentinel keeps that loop
+// unchanged and can never collide with a real index.
+export const BOARD_TIER = -1;
+const BOARD_Y = 0.1;   // the board's top — the tier stack starts here (see CakeScene)
 
 export default function FinishHandles({
   tierData = [], getPoints, selected = null, onMove, onSelect,
@@ -33,6 +37,12 @@ export default function FinishHandles({
   // accept it won't appear in renders. Keeping the default false means new finishes
   // can't reintroduce the stray dot.
   color = '#ffffff', selColor = '#3D5A44', dotScale = 1, showMarker = false,
+  // ── The BOARD as a third surface ────────────────────────────────────────────────────────────
+  // Added for grass clumps standing on the board around the cake. The board is ONE thing under the
+  // whole stack, not a per-tier surface, so its points live outside the tierData loop and carry the
+  // sentinel tier index BOARD_TIER. That keeps the drag machinery untouched: `flush` only compares
+  // hit.tier to the tier the drag started on, and a sentinel compares equal to itself.
+  board = null, boardPoints = null,
 }) {
   const { gl, camera, scene } = useThree();
   const rc = useRef(new THREE.Raycaster());
@@ -50,6 +60,18 @@ export default function FinishHandles({
     if (!hit) return null;
     const ud = hit.object.userData;
     const surface = ud.surface ?? 'side';
+    // Board: polar against the BOARD's radius, and no inner clamp — a clump belongs anywhere from
+    // the cake wall out to the board's edge, and which of those is legal is the caller's rule, not
+    // this one's. (The grass seat loop already refuses to plant inside the cake.)
+    if (surface === 'board') {
+      const R = ud.radius || 1;
+      const lx = hit.point.x, lz = hit.point.z;
+      return {
+        u: (Math.atan2(lx, lz) / TAU + 1) % 1,
+        v: Math.min(0.99, Math.hypot(lx, lz) / R),
+        tier: BOARD_TIER, surface,
+      };
+    }
     if (surface === 'top_surface') {
       const R = ud.radius || 1;
       const lx = hit.point.x, lz = hit.point.z;
@@ -149,6 +171,38 @@ export default function FinishHandles({
           </group>
         );
       })}
+
+      {/* The board, once — not per tier. Same catcher-plus-handle shape as a tier's lid, at board
+          height and the board's radius. The catcher is a full disc rather than a ring: the seat loop
+          is what decides a clump may not stand where the cake does, and duplicating that rule here
+          would give two answers to one question. */}
+      {board && boardPoints?.length > 0 && (
+        <group>
+          <mesh position={[0, BOARD_Y + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}
+            userData={{ [catcherFlag]: true, surface: 'board', tierIndex: BOARD_TIER, radius: board.radius }}>
+            <circleGeometry args={[board.radius * 1.01, 64]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+          {boardPoints.map((p, si) => {
+            const ang = p.u * TAU;
+            const isSel = selected && selected.tier === BOARD_TIER && selected.idx === si;
+            return (
+              <group key={si} position={[p.v * board.radius * Math.sin(ang), BOARD_Y + 0.04, p.v * board.radius * Math.cos(ang)]}>
+                <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, BOARD_TIER, si, 'board')}>
+                  <sphereGeometry args={[0.1, 12, 12]} />
+                  <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+                </mesh>
+                {showMarker && (
+                  <mesh>
+                    <sphereGeometry args={[(isSel ? 0.03 : 0.022) * dotScale, 16, 16]} />
+                    <meshBasicMaterial color={isSel ? selColor : color} />
+                  </mesh>
+                )}
+              </group>
+            );
+          })}
+        </group>
+      )}
     </>
   );
 }
