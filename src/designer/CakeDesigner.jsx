@@ -5837,6 +5837,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             onChange={v => updateGrass(i, { spacing: +(0.24 - v).toFixed(3) })} fmt={() => `${Math.round((0.2 - (g.spacing ?? 0.075)) / 0.16 * 100)}%`} />
           <PenSlider label="Height" value={g.height ?? GRASS_DEFAULTS.height} min={0.06} max={0.4} step={0.005}
             onChange={v => updateGrass(i, { height: v })} fmt={v => v.toFixed(2)} />
+          {/* Grass at the rim spilling down the side. A TOP-surface control only: the board ring's
+              edge is the board's edge, and tipping tufts over THAT would hang grass off the cake
+              board into mid-air. Applies to all three top modes — a clump dragged to the rim drapes
+              for the same reason a full lawn does. Defaults to 0, so no existing cake changes and
+              the drape is something a baker turns on. */}
+          <PenSlider label="Over the edge" value={g.overhang ?? 0} min={0} max={1} step={0.05}
+            onChange={v => updateGrass(i, { overhang: v })}
+            fmt={v => (v === 0 ? 'none' : `${Math.round(v * 100)}%`)} />
         </div>
         </>)}
 
