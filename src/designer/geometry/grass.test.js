@@ -185,3 +185,50 @@ describe('grassSeats — board ring via hole', () => {
     expect(ring.some(s => Math.abs(s.x) < 0.3 && Math.abs(s.z) > sheet.halfD)).toBe(true);
   });
 });
+
+// ── Strands over the edge ───────────────────────────────────────────────────────────────────────
+// The last piece of the reference football cake: grass at the rim spilling down the side. Two
+// things have to be true and both are invisible in a still test — hence dev/grass and the studio
+// slider — but the SHAPE of the answer is checkable: only rim tufts lean, and they lean OUTWARD.
+describe('grassSeats — overhang', () => {
+  const round = { kind: 'round', radius: 1.2 };
+
+  it('leaves everything upright when off', () => {
+    const seats = grassSeats({ shape: round, spacing: 0.08 });
+    expect(seats.every(s => !s.lean)).toBe(true);
+  });
+
+  it('tips tufts at the rim and leaves the middle alone', () => {
+    const seats = grassSeats({ shape: round, spacing: 0.06, overhang: 1 });
+    const middle = seats.filter(s => Math.hypot(s.x, s.z) < round.radius * 0.5);
+    const rim    = seats.filter(s => Math.hypot(s.x, s.z) > round.radius * 0.97);
+    expect(middle.length).toBeGreaterThan(0);
+    expect(rim.length).toBeGreaterThan(0);
+    expect(middle.every(s => s.lean === 0)).toBe(true);
+    expect(rim.every(s => s.lean > 0)).toBe(true);
+  });
+
+  // Leaning the wrong way would push blades ACROSS the cake top instead of over the side — the
+  // difference between a drape and a comb-over, and easy to get backwards with a cross product.
+  it('leans away from the centre, not across the cake', () => {
+    const seats = grassSeats({ shape: round, spacing: 0.06, overhang: 1 }).filter(s => s.lean > 0);
+    expect(seats.length).toBeGreaterThan(0);
+    for (const s of seats) {
+      // `out` is the compass bearing of the seat from the centre — atan2(x, z), the same convention.
+      expect(Math.abs(s.out - Math.atan2(s.x, s.z))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('reaches past the outline so a tuft can straddle the edge', () => {
+    const flat = grassSeats({ shape: round, spacing: 0.06 });
+    const over = grassSeats({ shape: round, spacing: 0.06, overhang: 1 });
+    expect(Math.max(...over.map(s => Math.hypot(s.x, s.z))))
+      .toBeGreaterThan(Math.max(...flat.map(s => Math.hypot(s.x, s.z))));
+  });
+
+  it('leans further the more overhang is asked for', () => {
+    const at = o => Math.max(...grassSeats({ shape: round, spacing: 0.06, overhang: o }).map(s => s.lean));
+    expect(at(1)).toBeGreaterThan(at(0.4));
+    expect(at(0.4)).toBeGreaterThan(0);
+  });
+});

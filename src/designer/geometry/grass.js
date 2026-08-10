@@ -139,11 +139,36 @@ export function buildGrassTuft(opts = {}) {
 //
 // Returns [{ x, z, yaw, scale }] — yaw and scale vary per seat so a field of identical tufts does
 // not read as wallpaper.
+// How far out a seat is, as a fraction of the outline it sits in: 0 at the centre, 1 exactly on the
+// edge, >1 past it. Mirrors topContains' own branches so "on the edge" means the same thing to both.
+// The outline case has no closed form, so it bisects — that path is rare (heart, number) and being
+// right matters more there than being fast.
+function edgeFraction(shape, x, z) {
+  if (shape.outline) {
+    let lo = 0, hi = 4;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      if (topContains(shape, x, z, mid)) hi = mid; else lo = mid;
+    }
+    return hi;
+  }
+  return shape.kind === 'rect'
+    ? Math.max(Math.abs(x) / (shape.halfW || 1), Math.abs(z) / (shape.halfD || 1))
+    : Math.hypot(x, z) / (shape.radius || 1);
+}
+
+// Where the outermost tufts start to lean, and how far they go at full overhang. 80° leaves them
+// just short of pointing straight down the wall — past that they read as falling off rather than
+// draping over.
+const OVERHANG_START = 0.78;
+const OVERHANG_MAX_LEAN = (80 * Math.PI) / 180;
+const OVERHANG_REACH = 0.09;   // how far past the edge a seat may sit, as a fraction of the outline
+
 // `hole` = { shape, scale } excludes anything standing inside ANOTHER outline. That is what makes a
 // board ring possible: the grass is bounded OUTSIDE by the board and INSIDE by the cake, which are
 // two different shapes. `bandInner` cannot express it — it hollows out the same outline it fills.
 // Both are exclusions and they answer different questions, so both exist rather than one pretending.
-export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, bandInner = null, hole = null }) {
+export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, bandInner = null, hole = null, overhang = 0 }) {
   const s    = spacing ?? GRASS_DEFAULTS.spacing;
   const j    = jitter  ?? GRASS_DEFAULTS.jitter;
   const rand = rng(seed);
@@ -158,13 +183,33 @@ export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, ban
     for (let x = -ext - (row % 2 ? s / 2 : 0); x <= ext; x += s) {
       const px = x + (rand() - 0.5) * s * j;
       const pz = z + (rand() - 0.5) * rowH * j;
-      if (!topContains(shape, px, pz, inset)) continue;
+      // Overhang lets seats sit PAST the outline, so the outermost tufts straddle the edge instead
+      // of stopping short of it. Without it the drape has nothing to hang from — a tuft entirely on
+      // the top surface can only lean, never spill.
+      const reach = overhang > 0 ? Math.max(inset, 1 + overhang * OVERHANG_REACH) : inset;
+      if (!topContains(shape, px, pz, reach)) continue;
       // Hollow the middle out for a rim band. The hole is the tier's own outline scaled down, so it
       // follows a heart or a sheet as faithfully as a circle.
       if (bandInner != null && topContains(shape, px, pz, bandInner)) continue;
       // Standing where the cake is. A board ring must start at the wall, not under it.
       if (hole && topContains(hole.shape, px, pz, hole.scale ?? 1)) continue;
-      out.push({ x: px, z: pz, yaw: rand() * Math.PI * 2, scale: 0.8 + rand() * 0.4 });
+      // Tufts near the rim tip OUTWARD so their blades drape over the side. Only near the rim: in
+      // the middle of a surface there is nothing to hang over, and tipping a clump there would lift
+      // its blades off the cake on one side and bury them on the other.
+      //
+      // `lean` is the tilt in radians and `out` the compass direction to tilt toward, both resolved
+      // here so the renderer only has to build a matrix. Radially-from-centre is an approximation on
+      // a sheet — the same one the verge placement mode already makes for side decorations.
+      let lean = 0;
+      if (overhang > 0) {
+        const e = edgeFraction(shape, px, pz);
+        const t = Math.min(Math.max((e - OVERHANG_START) / (1 - OVERHANG_START), 0), 1.6);
+        lean = t * overhang * OVERHANG_MAX_LEAN;
+      }
+      out.push({
+        x: px, z: pz, yaw: rand() * Math.PI * 2, scale: 0.8 + rand() * 0.4,
+        lean, out: lean > 0 ? Math.atan2(px, pz) : 0,
+      });
     }
   }
   return out;

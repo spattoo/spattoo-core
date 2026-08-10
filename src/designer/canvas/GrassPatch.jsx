@@ -19,7 +19,7 @@ export default function GrassPatch({
   droop   = GRASS_DEFAULTS.droop,
   thickness = GRASS_DEFAULTS.thickness,
   lengthVary = GRASS_DEFAULTS.lengthVary,
-  bandInner = null, hole = null, inset = 0.98, seed = 7,
+  bandInner = null, hole = null, inset = 0.98, overhang = 0, seed = 7,
   onStats,
 }) {
   const geo = useMemo(
@@ -27,20 +27,30 @@ export default function GrassPatch({
     [strands, height, thickness, splay, droop, lengthVary, seed],
   );
   const seats = useMemo(
-    () => grassSeats({ shape, spacing, jitter, inset, seed: seed + 1, bandInner, hole }),
-    [shape, spacing, jitter, inset, seed, bandInner, hole],
+    () => grassSeats({ shape, spacing, jitter, inset, seed: seed + 1, bandInner, hole, overhang }),
+    [shape, spacing, jitter, inset, seed, bandInner, hole, overhang],
   );
 
   const ref = useRef(null);
   useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion();
-    const up = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), scl = new THREE.Vector3();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), tip = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0), axis = new THREE.Vector3();
+    const pos = new THREE.Vector3(), scl = new THREE.Vector3();
     seats.forEach((s, i) => {
-      // Yaw only. A tuft leans within its own geometry; tipping the whole clump would lift blades
-      // off the surface on one side and bury them on the other.
+      // Yaw, and — only for a tuft at the rim — a tip OUTWARD so its blades drape over the side.
+      // Tipping is wrong anywhere else: mid-surface it would lift a clump's blades off the cake on
+      // one side and bury them on the other. At the edge there is nothing underneath to bury into,
+      // which is exactly what makes the drape possible. grassSeats decides which seats qualify.
       q.setFromAxisAngle(up, s.yaw);
+      if (s.lean) {
+        // Rotating about (sin·out, 0, cos·out) × up tips +Y toward the outward direction: the axis
+        // is horizontal and perpendicular to it, so the clump falls away from the cake, not along it.
+        axis.set(Math.cos(s.out), 0, -Math.sin(s.out));
+        tip.setFromAxisAngle(axis, s.lean);
+        q.premultiply(tip);
+      }
       pos.set(s.x, topY, s.z);
       scl.setScalar(s.scale);
       mesh.setMatrixAt(i, m.compose(pos, q, scl));
