@@ -24,8 +24,10 @@ import { readFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// `?? ''` because a caller that inherits stdio (the build, so its errors reach the terminal) gets
+// no piped stdout back — execFileSync returns null there, and trimming null throws.
 const sh = (cmd, args, opts = {}) =>
-  execFileSync(cmd, args, { encoding: 'utf8', ...opts }).trim();
+  (execFileSync(cmd, args, { encoding: 'utf8', ...opts }) ?? '').trim();
 
 const die = (msg) => { console.error(`\n✗ pack:vendor — ${msg}\n`); process.exit(1); };
 const ok  = (msg) => console.log(`  ✓ ${msg}`);
@@ -38,12 +40,26 @@ if (!existsSync(dest)) die(`destination does not exist: ${dest}`);
 const { version, name } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
 console.log(`\npack:vendor — ${name}@${version} → ${dest}\n`);
 
-// ── 1. clean tree ──
-if (sh('git', ['status', '--porcelain'])) {
-  die('working tree is dirty. Commit first — a tarball packed from uncommitted work\n' +
-      '  corresponds to no commit, so nothing can ever verify it.');
+// ── 1. the working tree is not the thing being packed ──
+// It used to have to be clean, and that was the right rule for a script that packed the working
+// tree — but the wrong solution. Two people work in this repo at once, and a release would die
+// because somebody ELSE had a half-finished file open. Worse, it died having already bumped and
+// pushed the version, leaving core released and web behind.
+//
+// It also had a race it could not win: the check ran, then `npm pack` ran, and a file created in
+// between sailed straight into the tarball with the guard none the wiser. That happened.
+//
+// So nothing is packed from here now. Everything comes out of a throwaway worktree at HEAD (below),
+// which makes an unclean tree irrelevant BY CONSTRUCTION rather than by inspection. A dirty tree is
+// worth SAYING — those edits are not in the artifact — but it is no longer a reason to refuse.
+const dirty = sh('git', ['status', '--porcelain']);
+if (dirty) {
+  const files = dirty.split('\n').slice(0, 6).map((l) => `      ${l}`).join('\n');
+  console.warn(`\n  ! working tree is dirty — packing HEAD, so these are NOT in the tarball:\n${files}` +
+    (dirty.split('\n').length > 6 ? `\n      … and ${dirty.split('\n').length - 6} more` : '') + '\n');
+} else {
+  ok('working tree is clean');
 }
-ok('working tree is clean');
 
 // ── 2. not behind the branch this will ship from ──
 // Compare against the RELEASE branch, never against origin/<current branch>. The question is
@@ -88,10 +104,31 @@ if (existing.length) {
 }
 ok(`${version} is not vendored yet`);
 
-// ── pack ──
-const out = sh('npm', ['pack', `--pack-destination=${dest}`, '--silent']).split('\n').pop();
-const tarball = join(dest, out);
-ok(`packed ${out}`);
+// ── pack, from a throwaway worktree at HEAD ──
+// The artifact is built AND packed here, not in the repo you are sitting in. Both halves matter:
+// `npm pack` ships the working tree, and `vite build` compiles it — so packing HEAD's src while
+// bundling a dirty dist/ would have been a subtler version of the same lie.
+//
+// node_modules is SYMLINKED rather than installed. A fresh install per release would add minutes
+// and could resolve different versions than the tree that was tested; the lockfile is the same
+// either way, and the dependency set is not what HEAD-vs-working-tree is about.
+const wt = mkdtempSync(join(tmpdir(), 'packtree-'));
+let out, tarball;
+try {
+  sh('git', ['worktree', 'add', '--detach', '--quiet', wt, 'HEAD']);
+  sh('ln', ['-s', join(process.cwd(), 'node_modules'), join(wt, 'node_modules')]);
+  ok(`worktree at HEAD (${sh('git', ['rev-parse', '--short', 'HEAD'])})`);
+
+  sh('npm', ['run', 'build'], { cwd: wt, stdio: ['ignore', 'ignore', 'inherit'] });
+  ok('built from HEAD');
+
+  out = sh('npm', ['pack', `--pack-destination=${dest}`, '--silent'], { cwd: wt }).split('\n').pop();
+  tarball = join(dest, out);
+  ok(`packed ${out}`);
+} finally {
+  // --force because the build wrote dist/ into it; the worktree is disposable by design.
+  try { sh('git', ['worktree', 'remove', '--force', wt]); } catch { rmSync(wt, { recursive: true, force: true }); }
+}
 
 // ── 4. tarball src == git archive HEAD src ──
 const work = mkdtempSync(join(tmpdir(), 'packverify-'));
