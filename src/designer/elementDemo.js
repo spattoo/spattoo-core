@@ -1,3 +1,11 @@
+/* ⛔ PARKED 2026-08-10 — exploration, not a feature. Nothing imports this.
+ *
+ * Four approaches to per-element help were built and looked at side by side; none was convincing
+ * enough to ship. Kept rather than deleted because the DERIVATION is the reusable part: help
+ * generated from an element's own allowed_zones / placement_config / allowed_actions, needing no
+ * per-element authoring. The verdict, what each option failed at, and what a next attempt should do
+ * differently are in spattoo-docs/plans/element-help.md — read that before reviving any of this.
+ */
 // ── "Show me what this does" — an element's own capabilities, performed ──────────────────────────
 //
 // Every element already carries a complete description of how it behaves: `allowed_zones` says where
