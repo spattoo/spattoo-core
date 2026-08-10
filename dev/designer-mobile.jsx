@@ -24,7 +24,12 @@ const CAPS = [
 // Explicit branches, not a lookup with `??`: `{ none: null }['none']` IS null, and `null ?? default`
 // falls straight back to the default — so the one option that has to produce null was the one
 // option that could not.
-const LOGO_PARAM = new URLSearchParams(location.search).get('logo');
+const PARAMS = new URLSearchParams(location.search);
+// ?name=… overrides the bakery name, so the header can be looked at with the long names real bakers
+// actually have ("Sweet Sensations Cakes & Bakes"), not only with a short fixture that never
+// exercises the overflow.
+const BAKER_NAME = PARAMS.get('name') || 'Sample Bakery';
+const LOGO_PARAM = PARAMS.get('logo');
 const LOGO_SRC = LOGO_PARAM === 'none' ? null
                : LOGO_PARAM === 'wide' ? '/sample-logo-wordmark.png'
                : '/feelings-flavours-logo.png';
@@ -34,7 +39,7 @@ const STUBS = {
   // the busiest case, which is the one that used to overflow.
   fetchMe: async () => ({
     id: 'u1', role: 'owner', capabilities: CAPS,
-    baker: { id: 'b1', name: 'Sample Bakery', slug: 'sample' },
+    baker: { id: 'b1', name: BAKER_NAME, slug: 'sample' },
   }),
   // The real contract is { baker, user } — CakeDesigner reads `baker` off the result and ignores a
   // flat object entirely. Stubbed flat, this harness ran with NO baker profile at all: no name, no
@@ -42,7 +47,7 @@ const STUBS = {
   // was exercising — per-baker branding — was the one thing it never touched.
   fetchBakerProfile: async () => ({
     baker: {
-      name: 'Sample Bakery', slug: 'sample',
+      name: BAKER_NAME, slug: 'sample',
       primary_color: '#2C4433', accent_color: '#6B8C74',
       // A real mark by default, so the branded path is what the harness shows — null meant every
       // screenshot was the no-logo fallback, the same gap dev/storefront.jsx had to close.

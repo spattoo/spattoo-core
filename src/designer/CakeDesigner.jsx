@@ -6286,7 +6286,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
             }
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* flexShrink: 0 — these are fixed-size tap targets. Without it the cluster is what
+              collapses when the name is long, and the credits pill silently squeezes to nothing. */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             {/* Credits first in the cluster: it is a READOUT, not an action, and it belongs where
                 the eye lands before the controls rather than buried past them. */}
             {/* Beside the credits readout, and gated the same way the rest of the baker chrome is.
@@ -8456,9 +8458,18 @@ const s = {
   // width-auto: baker logos range from square marks to ~6:1 wordmarks, so the height is
   // the only cap that should bind. A fixed width here is what previously reduced wide
   // logos to a hairline.
+  // SHRINKABLE, deliberately. This was `flexShrink: 0`, which made the bakery name the one thing in
+  // the header that never yields — so "Sweet Sensations Cakes & Bakes" took its full 237px and pushed
+  // the controls off the right edge: 34px lost on a 393 phone, 107px on a 320, taking the credits
+  // pill and the avatar with them. The ellipsis never fired either, because it was governed by a
+  // fixed 260px cap rather than by the space actually left over.
+  //
+  // The controls are fixed-size targets and the name is elastic text, so the name is what gives.
+  // `minWidth: 0` is what lets it: a flex item will not shrink below its content width without it,
+  // and the ellipsis would never appear.
   topLogo: {
     display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
-    flexShrink: 0, minWidth: 0, maxWidth: '100%',
+    flexShrink: 1, minWidth: 0, maxWidth: '100%',
   },
   // 40 not 34: off-flow the desktop logo no longer competes with the rail for height, and
   // most uploads carry transparent padding, so a chunk of this box is margin, not mark.
@@ -8469,7 +8480,10 @@ const s = {
   topLogoText: {
     fontSize: 15, fontWeight: 700, color: '#333',
     lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-    maxWidth: 260, fontFamily: "'Quicksand',sans-serif",
+    // 100% of the slot, not a fixed 260: the cap has to be whatever room the controls leave, or a
+    // long name overflows on a narrow phone and truncates early on a wide one. The desktop header
+    // spreads desktopLogoText over this and sets its own 420 cap.
+    maxWidth: '100%', fontFamily: "'Quicksand',sans-serif",
   },
   // ── The same name, bigger, on the desktop header ──────────────────────────────────────────────
   // A baker WITHOUT a logo was reading their bakery's name at 15px next to a header row built to
