@@ -1403,6 +1403,21 @@ function OrderDesignViewer({ order, onClose }) {
 // the list is simply first.
 /** Bottom strip height, before the home-indicator inset. Icon (20) + label (12) + padding. The
  *  spatula band it replaces was 76, so the 3D canvas gets 20px back on every phone. */
+/**
+ * The bakery name's font size, stepped by how long the name is.
+ *
+ * A cheap stand-in for measuring: the alternative is a ResizeObserver and a measure/shrink loop for
+ * a string that changes about once in a bakery's lifetime. Thresholds come from measuring the real
+ * face (Quicksand 700) against the narrowest slot, and the point is only to keep the COMMON long
+ * name on one line — anything longer wraps, which is correct and costs nothing.
+ */
+export function nameFontSize(name = '') {
+  const n = name.trim().length;
+  if (n <= 18) return 15;   // "Feelings & Flavours" and shorter
+  if (n <= 28) return 14;
+  return 13;
+}
+
 /** The tallest a baker's logo renders in a header. mobileHeader is 52 tall and shares topLogoImg,
  *  so this cannot grow without that header growing with it. */
 const HEADER_LOGO_MAX_H = 40;
@@ -6283,7 +6298,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={s.topLogo}>
             {logoSrc
               ? <img src={logoSrc} alt="" style={s.topLogoImg} />
-              : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
+              : <div style={{ ...s.topLogoText, fontSize: nameFontSize(bakerData?.name ?? '') }}>
+                  {bakerData?.name ?? 'My Bakery'}
+                </div>
             }
           </div>
           {/* flexShrink: 0 — these are fixed-size tap targets. Without it the cluster is what
@@ -8477,13 +8494,21 @@ const s = {
   topLogoImg: { maxHeight: HEADER_LOGO_MAX_H, maxWidth: 240, objectFit: 'contain', display: 'block' },
   // Fallback when a baker has not uploaded a logo. Sized for a header line, not the
   // old 64px rail box — hence one line with an ellipsis rather than centred wrapping.
+  // ⚠️ NEVER TRUNCATED. This is the bakery's identity, and the same name their customers meet coming
+  // in from the storefront — half a name is worse than a cramped one. So it wraps rather than
+  // ellipsising, and mobileHeader uses minHeight rather than height so a name that needs two lines
+  // grows the bar instead of being clipped by it.
+  //
+  // The font steps down before it wraps (see nameFontSize): on a 320 phone the slot is ~114px and
+  // "Sweet Sensations Cakes & Bakes" is 239px at 15px and still 191px at 12px — no font size saves a
+  // narrow phone, so wrapping is the only thing that always works. Stepping down first just buys the
+  // common case one line instead of two.
   topLogoText: {
-    fontSize: 15, fontWeight: 700, color: '#333',
-    lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-    // 100% of the slot, not a fixed 260: the cap has to be whatever room the controls leave, or a
-    // long name overflows on a narrow phone and truncates early on a wide one. The desktop header
-    // spreads desktopLogoText over this and sets its own 420 cap.
-    maxWidth: '100%', fontFamily: "'Quicksand',sans-serif",
+    fontWeight: 700, color: '#333',
+    lineHeight: 1.2, maxWidth: '100%', fontFamily: "'Quicksand',sans-serif",
+    // Break inside a word only if a single word is itself wider than the slot — otherwise wrap at
+    // spaces like prose.
+    overflowWrap: 'break-word',
   },
   // ── The same name, bigger, on the desktop header ──────────────────────────────────────────────
   // A baker WITHOUT a logo was reading their bakery's name at 15px next to a header row built to
@@ -8516,6 +8541,13 @@ const s = {
     fontWeight: 400,
     fontSize: 26,
     maxWidth: 420,
+    // Desktop keeps the single line it always had. topLogoText dropped nowrap so the PHONE can wrap
+    // a long name instead of truncating it; here the slot is absolutely positioned and 64px tall, so
+    // a second line of 26px Pacifico would spill over the header rule and onto the canvas.
+    // ⚠️ Which means desktop still truncates a very long name at 420px — the same identity problem
+    // the phone just stopped having, in a place with four times the room. Left as-is deliberately
+    // rather than fixed blind; see the note in plans/, and it wants its own look.
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
 
   // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
@@ -8985,7 +9017,9 @@ const s = {
   // Mobile-specific
   mobileHeader: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '0 16px', height: 52, flexShrink: 0,
+    // minHeight, not height: a two-line bakery name has to make the bar taller rather than be cut
+    // off by it. Short names — nearly all of them — leave it at exactly 52 as before.
+    padding: '6px 16px', minHeight: 52, flexShrink: 0,
     background: '#fff', borderBottom: '1px solid #f0e8ea',
     position: 'relative', zIndex: 10,
   },
