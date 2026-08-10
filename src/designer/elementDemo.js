@@ -75,7 +75,13 @@ export function demoPoses(element) {
  * The size step is last and deliberate. "How big can it get" is the question people ask AFTER they
  * have decided where it goes, and showing it earlier reads as the element misbehaving.
  */
-export function demoTimeline(element, { poseMs = 1100, sizeMs = 1600 } = {}) {
+// Pacing. A pose has to be held long enough to be LOOKED at — the eye finds the element, then reads
+// the caption, and 1.1s was over before the second half of that. The size step gets longer still
+// because it is the only step where the thing to watch is the change rather than the state.
+export const DEMO_POSE_MS = 1900;
+export const DEMO_SIZE_MS = 2600;
+
+export function demoTimeline(element, { poseMs = DEMO_POSE_MS, sizeMs = DEMO_SIZE_MS } = {}) {
   if (!element) return [];
   const steps = demoPoses(element).map(p => ({ kind: 'pose', ...p, ms: poseMs }));
   if (!steps.length) return [];

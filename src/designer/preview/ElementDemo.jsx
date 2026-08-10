@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useCakeDesign } from '../hooks/useCakeDesign.js';
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
-import { demoTimeline, demoActions } from '../elementDemo.js';
+import { demoTimeline, demoActions, DEMO_POSE_MS, DEMO_SIZE_MS } from '../elementDemo.js';
 import { ZONES } from '../constants.js';
 
 /* ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -41,6 +41,9 @@ export default function ElementDemo({
   onCaption,          // optional: caption text lifted out, for hosts that draw their own chrome
   showCaption = true,
   showActions = true,
+  // Multiplier on the timeline's own pacing: 0.5 = half speed. Exposed because "is this too fast?"
+  // is a question you answer by watching it at two speeds, not by reasoning about milliseconds.
+  speed = 1,
   style,
 }) {
   const { design, addSticker, updateSticker, resetDesign, addTier } = useCakeDesign();
@@ -48,7 +51,10 @@ export default function ElementDemo({
   const stickerId = useRef(null);
   const raf = useRef(null);
 
-  const timeline = demoTimeline(element);
+  const timeline = demoTimeline(element, {
+    poseMs: DEMO_POSE_MS / speed,
+    sizeMs: DEMO_SIZE_MS / speed,
+  });
   const actions  = demoActions(element);
   const current  = timeline[step] ?? null;
 
@@ -121,7 +127,7 @@ export default function ElementDemo({
       if (raf.current) cancelAnimationFrame(raf.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, element?.id, timeline.length, loop]);
+  }, [step, element?.id, timeline.length, loop, speed]);
 
   // Restart from the top when the element changes, or a new element inherits the old one's position
   // in a timeline it may not even have.

@@ -12,6 +12,7 @@ import ELEMENTS from './sample-elements.json';
  */
 function Harness() {
   const [i, setI] = useState(0);
+  const [speed, setSpeed] = useState(1);
   const el = ELEMENTS[i];
   const timeline = demoTimeline(el);
 
@@ -38,7 +39,14 @@ function Harness() {
 
       <div style={s.split}>
         <div style={s.demoCol}>
-          <ElementDemo element={el} style={{ width: 380 }} />
+          <ElementDemo element={el} speed={speed} style={{ width: 380 }} />
+          <div style={s.speedRow}>
+            <span style={s.speedLabel}>Speed</span>
+            {[[0.5, 'Slow'], [0.75, 'Slower'], [1, 'Normal'], [1.5, 'Fast']].map(([v, label]) => (
+              <button key={v} onClick={() => setSpeed(v)}
+                      style={{ ...s.speedBtn, ...(speed === v ? s.speedBtnOn : {}) }}>{label}</button>
+            ))}
+          </div>
         </div>
 
         <div style={s.dataCol}>
@@ -92,6 +100,11 @@ const s = {
   tileZones: { fontSize: 10.5, color: '#8a8a8a' },
   split:  { display: 'flex', gap: 26, alignItems: 'flex-start', flexWrap: 'wrap' },
   demoCol: { background: '#fff', borderRadius: 16, padding: 14 },
+  speedRow:   { display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, justifyContent: 'center' },
+  speedLabel: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', color: '#8a8a8a', marginRight: 2 },
+  speedBtn:   { padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                borderWidth: 1.5, borderStyle: 'solid', borderColor: '#ddd8cf', background: '#fff', color: '#5a5a5a', fontFamily: 'inherit' },
+  speedBtnOn: { background: '#3a4f46', borderColor: '#3a4f46', color: '#fff' },
   dataCol: { flex: '1 1 320px', minWidth: 300 },
   cardTitle: { fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', color: '#8a8a8a', marginBottom: 6 },
   pre:    { background: '#fff', borderRadius: 10, padding: 10, fontSize: 11, lineHeight: 1.5, maxHeight: 240, overflow: 'auto' },
