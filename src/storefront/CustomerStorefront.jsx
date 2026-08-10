@@ -437,8 +437,16 @@ export default function CustomerStorefront({
   return (
     <div style={s.page} ref={rootRef}>
       <style>{interactionCss}</style>
+      {/* Icon + number, no label. The handset says "phone" faster than the words did, and the bar is
+          the first thing above the baker's name — the shortest version of it wins.
+          aria-label carries what the visible text used to: the icon is aria-hidden, so without it a
+          screen reader would announce a bare string of digits with no idea what it is for. */}
       {phone && (
-        <div style={s.utilbar}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
+        <div style={s.utilbar}>
+          <a href={`tel:${phone}`} style={s.utilLink} aria-label={`Call or WhatsApp ${phone}`}>
+            <PhoneIcon size={13} color={darken(primary, 0.1)} style={{ marginRight: 6 }} />{phone}
+          </a>
+        </div>
       )}
 
       <header style={{ ...s.header, ...(isCurveHero ? { position: 'relative' } : {}) }}>
@@ -1014,7 +1022,10 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     page:        { minHeight: '100vh', background: pageBg, fontFamily: FONT, color: text, display: 'flex', flexDirection: 'column' },
 
     utilbar:     { background: tk.utilbarBg ?? lighten(primary, 0.9), color: darken(primary, 0.1), fontSize: 13.5, fontWeight: 700, textAlign: 'center', padding: '9px 16px' },
-    utilLink:    { color: darken(primary, 0.1), textDecoration: 'none' },
+    // nowrap for the same reason the footer link has it: a line break is allowed between an inline
+    // icon and the text after it, and the icon alone on its own line is exactly the bug this bar
+    // just had. Now that the icon sits INSIDE the link, the whole thing is also one tap target.
+    utilLink:    { color: darken(primary, 0.1), textDecoration: 'none', whiteSpace: 'nowrap' },
     header:      { position: tk.headerBg === 'transparent' ? 'relative' : 'sticky', top: 0, zIndex: 30, background: tk.headerBg ?? 'rgba(252,250,247,0.92)', backdropFilter: tk.headerBg === 'transparent' ? 'none' : 'blur(8px)', borderBottom: `1px solid ${tk.headerBorderColor ?? cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px' },
     brand:       { display: 'flex', alignItems: 'center', gap: 10 },
     logoImg:     { height: wide ? 52 : 44, width: 'auto', maxWidth: wide ? 300 : 240, objectFit: 'contain', display: 'block' },
