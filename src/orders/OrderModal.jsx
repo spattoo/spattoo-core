@@ -13,7 +13,9 @@ import {
 import Chip from '../shared/Chip.jsx';
 // The SAME occasion list the storefront offers — they write the same column, and a baker
 // picking from a different set than their customer is how `other` quietly swallows half the data.
-import { OCCASIONS, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
+// occasionsByRelevance only RANKS that list against the recipient; it never shortens it, so both
+// surfaces still offer every occasion.
+import { RECIPIENTS, occasionsByRelevance, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
 const MAX_REFERENCE_PHOTOS = 3;
@@ -325,6 +327,8 @@ export default function OrderModal({
   // customer who prefers to ring up would be missing from it.
   const [occasion, setOccasion]     = useState(sd.occasion  || '');
   const [recipient, setRecipient]   = useState(sd.recipient || '');
+  // Occasions ranked by who the cake is for. Memoised on `recipient` alone — the split is pure.
+  const occasionChoices = useMemo(() => occasionsByRelevance(recipient), [recipient]);
   const [cakeNumber, setCakeNumber] = useState(sd.cakeNumber ?? '');
   // Dietary requirements the customer states — eggless / vegan / Jain / allergens.
   // ORDER-LEVEL, not per tier (unlike flavour): an eggless requirement is not
@@ -1008,21 +1012,35 @@ export default function OrderModal({
                     taking this down mid-call will fill what they were told and skip the rest.
                     An age BAND is not asked here — on a call the number is what gets said, and
                     asking a baker to bucket it is asking them to do our filing. */}
+                {/* Who FIRST, then the occasion — the order the storefront has always asked in
+                    (FlavourFacet's QUESTIONS), and this form was the one screen disagreeing. It also
+                    earns its keep: knowing the recipient is what lets the occasion list be ranked,
+                    so asking the other way round threw that away. */}
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <label style={{ ...field, flex: '1 1 130px' }}>
-                    <span style={lbl}>Occasion</span>
-                    <select style={inp} value={occasion} onChange={e => setOccasion(e.target.value)}>
-                      <option value="">—</option>
-                      {OCCASIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                    </select>
-                  </label>
                   <label style={{ ...field, flex: '1 1 130px' }}>
                     <span style={lbl}>Who&rsquo;s it for</span>
                     <select style={inp} value={recipient} onChange={e => setRecipient(e.target.value)}>
                       <option value="">—</option>
-                      {[['child','A child'],['adult','A grown-up'],['couple','A couple'],
-                        ['family','The family'],['friends','Friends'],['colleagues','The office']]
-                        .map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      {RECIPIENTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ ...field, flex: '1 1 130px' }}>
+                    <span style={lbl}>Occasion</span>
+                    {/* Grouped, never trimmed. A baker on the phone must be able to write down
+                        whatever they are told — see occasionsByRelevance. With no recipient chosen
+                        `likely` is empty and this renders as the flat list it was. */}
+                    <select style={inp} value={occasion} onChange={e => setOccasion(e.target.value)}>
+                      <option value="">—</option>
+                      {occasionChoices.likely.length > 0 ? (
+                        <>
+                          <optgroup label="Likely">
+                            {occasionChoices.likely.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                          </optgroup>
+                          <optgroup label="Other occasions">
+                            {occasionChoices.other.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                          </optgroup>
+                        </>
+                      ) : occasionChoices.other.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
                   </label>
                   {(occasion === 'birthday' || occasion === 'anniversary') && (

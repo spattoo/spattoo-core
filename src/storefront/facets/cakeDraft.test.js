@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   emptyDraft, isFilled, emptyFacets, canSubmit, toOrderPayload,
   saveDraft, loadDraft, clearDraft, today, FACETS, withTierCount, splitName, STORAGE_VERSION,
+  OCCASIONS, RECIPIENTS, occasionsByRelevance,
 } from './cakeDraft.js';
 
 // The draft is the contract every facet writes through and the shape the baker's order is built
@@ -402,5 +403,63 @@ describe('a draft from an older version of the app', () => {
     expect(d.details.occasion).toBe('birthday');   // what WAS saved still survives
     // The actual failure was here, not in the load.
     expect(() => toOrderPayload(d, 'bakery')).not.toThrow();
+  });
+});
+
+// ── Ranking occasions by who the cake is for ────────────────────────────────────────────────────
+// The prompt was a real screen offering "Bridal shower" for "A child" as an equal option. The fix
+// ranks rather than filters, and the property that matters is that it RANKS: every occasion must
+// still be reachable, because this list is also a baker's form and they have to be able to write
+// down whatever a customer says on the phone.
+describe('occasionsByRelevance', () => {
+  const keys = ([k]) => k;
+
+  it('never loses an occasion, whoever it is for', () => {
+    for (const [r] of RECIPIENTS) {
+      const { likely, other } = occasionsByRelevance(r);
+      const seen = [...likely, ...other].map(keys).sort();
+      expect(seen).toEqual(OCCASIONS.map(keys).sort());
+    }
+  });
+
+  it('never lists one twice', () => {
+    for (const [r] of RECIPIENTS) {
+      const { likely, other } = occasionsByRelevance(r);
+      const seen = [...likely, ...other].map(keys);
+      expect(new Set(seen).size).toBe(seen.length);
+    }
+  });
+
+  // The combination that started this.
+  it('demotes a bridal shower for a child, and keeps a birthday up top', () => {
+    const { likely, other } = occasionsByRelevance('child');
+    expect(likely.map(keys)).toContain('birthday');
+    expect(likely.map(keys)).not.toContain('bridal_shower');
+    expect(other.map(keys)).toContain('bridal_shower');
+  });
+
+  it('puts the office do first for colleagues and nowhere near a couple', () => {
+    expect(occasionsByRelevance('colleagues').likely.map(keys)).toContain('corporate');
+    expect(occasionsByRelevance('couple').likely.map(keys)).not.toContain('corporate');
+    expect(occasionsByRelevance('couple').likely.map(keys)).toContain('wedding');
+  });
+
+  // With nothing answered there is nothing to rank on, and the control must render exactly the flat
+  // list it always did — no empty "Likely" heading above the real options.
+  it('falls back to one flat list when the recipient is unknown', () => {
+    for (const r of ['', undefined, null, 'nonsense']) {
+      const { likely, other } = occasionsByRelevance(r);
+      expect(likely).toEqual([]);
+      expect(other).toBe(OCCASIONS);
+    }
+  });
+
+  it('keeps the canonical order within each group', () => {
+    const { likely, other } = occasionsByRelevance('adult');
+    const order = OCCASIONS.map(keys);
+    for (const group of [likely, other]) {
+      const idx = group.map(g => order.indexOf(g[0]));
+      expect(idx).toEqual([...idx].sort((a, b) => a - b));
+    }
   });
 });

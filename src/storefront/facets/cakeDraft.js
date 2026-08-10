@@ -343,6 +343,63 @@ export const OCCASIONS = [
   ['other',         'Just because'],
 ];
 
+// ── Who a cake is for ─────────────────────────────────────────────────────────────────────────────
+// The picker list, beside OCCASIONS because they are asked together and were written apart: this
+// existed three times — here as RECIPIENT_LABEL (lowercase, for prose), in the storefront's
+// QUESTIONS, and hardcoded inside the baker's OrderModal. RECIPIENT_LABEL stays: it renders into a
+// sentence ("For: a child") and needs the lowercase form. This is the one a control offers.
+export const RECIPIENTS = [
+  ['child',      'A child'],
+  ['adult',      'A grown-up'],
+  ['couple',     'A couple'],
+  ['family',     'The family'],
+  ['friends',    'Friends'],
+  ['colleagues', 'The office'],
+];
+
+// ── Which occasions fit whom ──────────────────────────────────────────────────────────────────────
+// Answering "who's it for" first makes most of the occasion list irrelevant, and leaving it flat
+// invites the combination that prompted this: a BRIDAL SHOWER for A CHILD, sitting there as an equal
+// option. So the list is grouped by relevance once a recipient is known.
+//
+// ── GROUPED, DELIBERATELY NOT FILTERED ────────────────────────────────────────────────────────────
+// Every occasion stays reachable. This is a BAKER's form as well as a customer's, and a baker is
+// often typing while somebody talks: "a farewell — my daughter is moving abroad" is a farewell for a
+// child, and a form that hides the word makes them either mis-file it or change the recipient to a
+// lie. Hiding an option asserts it cannot happen; ranking one only says it usually does not.
+//
+// It also keeps `check:occasions` honest — the vocabulary offered is still all 14, so the gate that
+// pairs this list against the database CHECK is comparing the same thing it always did.
+//
+// Unlisted recipient (nobody has answered yet) → one flat list, unchanged.
+const LIKELY_OCCASIONS = {
+  // A child's cake is a birthday until proven otherwise. Graduation covers finishing school.
+  child:      ['birthday', 'graduation', 'festival', 'other'],
+  adult:      ['birthday', 'anniversary', 'new_job', 'graduation', 'new_home', 'farewell', 'love', 'festival', 'other'],
+  // The pair-shaped milestones. A baby shower belongs here rather than under `child` — it is thrown
+  // for the parents, and there is no child yet.
+  couple:     ['anniversary', 'wedding', 'engagement', 'baby_shower', 'new_home', 'love', 'festival', 'other'],
+  family:     ['festival', 'new_home', 'anniversary', 'birthday', 'other'],
+  friends:    ['birthday', 'farewell', 'graduation', 'new_job', 'new_home', 'festival', 'other'],
+  // An office cake is one of four things, and a wedding is not among them.
+  colleagues: ['corporate', 'farewell', 'new_job', 'festival', 'other'],
+};
+
+/**
+ * OCCASIONS split into the ones that suit `recipient` and the rest, both in the canonical order.
+ * Returns `{ likely, other }`; `likely` is empty when no recipient is chosen, so a caller with
+ * nothing to go on renders `other` as the plain full list it has always been.
+ */
+export function occasionsByRelevance(recipient) {
+  const keys = LIKELY_OCCASIONS[recipient];
+  if (!keys) return { likely: [], other: OCCASIONS };
+  const set = new Set(keys);
+  return {
+    likely: OCCASIONS.filter(([k]) => set.has(k)),
+    other:  OCCASIONS.filter(([k]) => !set.has(k)),
+  };
+}
+
 export const OCCASION_LABEL = {
   birthday: 'Birthday', anniversary: 'Anniversary', wedding: 'Wedding',
   engagement: 'Engagement', baby_shower: 'Baby shower', festival: 'Festival',
