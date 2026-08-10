@@ -86,6 +86,18 @@ function boardRingInset(board, cakeShape, ringWidth = 1) {
   return inner + w * (BOARD_RING_OUTER_MAX - inner);
 }
 
+// How far a grass handle must float to stay visible. A clump is as tall as its blades, so a marker
+// at the surface sits INSIDE it — still clickable (the grass mesh has no pointer handlers, so the
+// ray passes straight through to the grab sphere) but invisible, with nothing to aim at. That reads
+// as "the clump will not move", which is exactly how it was reported.
+function grassHandleLift(tierData, boardGrass) {
+  const heights = [
+    ...tierData.map(t => (t.grass?.patches?.length ? (t.grass.height ?? 0) : 0)),
+    boardGrass?.patches?.length ? (boardGrass.height ?? 0) : 0,
+  ];
+  return Math.max(0, ...heights) + 0.06;   // clear of the tallest blade, by a visible margin
+}
+
 // The cake itself, punched out of the ring. Exactly 1 — not a hair under, which would seat blades
 // inside the wall they are supposed to be growing against, and not a hair over, which would leave a
 // bare gold margin between the grass and the cake.
@@ -2359,7 +2371,13 @@ function CakeScene({
         board={board} boardPoints={boardGrass?.patches ?? null}
         selected={grassSelected} onMove={onGrassMove} onSelect={onGrassSelect}
         catcherFlag="isGrassCatcher" handleFlag="isGrassHandle"
-        color="#ffffff" selColor="#1b5e20" showMarker />}
+        // Float the handles clear of the tallest grass on the cake, so a marker is never buried
+        // inside the clump it marks. One number for both surfaces — a handle floating slightly high
+        // over the shorter one is unnoticeable; a handle inside a mound is the whole bug.
+        lift={grassHandleLift(tierData, boardGrass)}
+        // White and near-black: both read against green. The usual selColor is a dark GREEN,
+        // which would be the one colour invisible against the thing it marks.
+        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker />}
 
       {dustMode && <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustSelected}
         onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher" handleFlag="isDustHandle" />}

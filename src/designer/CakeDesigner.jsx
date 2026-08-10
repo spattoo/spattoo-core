@@ -20,7 +20,7 @@ import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
 import { Panel } from '../shared/Panel.jsx';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
-import { GRASS_DEFAULTS } from './geometry/grass.js';
+import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
@@ -3200,19 +3200,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const [grassSelected, setGrassSelected] = useState(null);   // { tier, idx } — BOARD_TIER for the board
   const GRASS_PATCH_R = 0.42;
 
-  // A new clump lands at the front, a little in from the edge: visible from the default camera, and
-  // somewhere a baker will drag it FROM rather than have to hunt for it.
-  const newPatch = () => ({ u: 0, v: 0.62, r: GRASS_PATCH_R });
+  // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
+  // one at the same (u, v), so the second landed on top of the first and "+ Add clump" looked
+  // broken — the list grew and the cake did not change.
+  const newPatch = (existing = [], v = 0.62) => nextPatchSpot(existing, { v, r: GRASS_PATCH_R });
 
   function addGrassPatch(onBoard) {
+    // The next spot is computed from the LIVE list inside the updater, not from `design` as this
+    // component last rendered it — otherwise two quick presses both read the same list and the
+    // second clump lands on the first, which is the bug this whole change is fixing.
     if (onBoard) {
-      const list = design.boardGrass?.patches ?? [];
-      updateBoardGrass({ patches: [...list, { ...newPatch(), v: 0.86 }] });   // outside the cake wall
-      setGrassSelected({ tier: BOARD_TIER, idx: list.length });
+      updateBoardGrass(cur => {
+        const list = cur.patches ?? [];
+        return { patches: [...list, newPatch(list, 0.86)] };   // 0.86 — clear of the cake wall
+      });
+      setGrassSelected({ tier: BOARD_TIER, idx: (design.boardGrass?.patches?.length ?? 0) });
     } else if (grassTier >= 0) {
-      const list = design.tiers[grassTier].grass.patches ?? [];
-      updateGrass(grassTier, { patches: [...list, newPatch()] });
-      setGrassSelected({ tier: grassTier, idx: list.length });
+      updateGrass(grassTier, cur => {
+        const list = cur.patches ?? [];
+        return { patches: [...list, newPatch(list)] };
+      });
+      setGrassSelected({ tier: grassTier, idx: (design.tiers[grassTier].grass.patches?.length ?? 0) });
     }
   }
 
@@ -5775,7 +5783,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {[
               ['Whole top', { bandInner: null, patches: null }],
               ['Rim band',  { bandInner: 0.55, patches: null }],
-              ['Clumps',    { bandInner: null, patches: [newPatch()] }],
+              ['Clumps',    { bandInner: null, patches: [newPatch([])] }],
             ].map(([label, patch]) => {
               const mode = g.patches?.length ? 'Clumps' : g.bandInner != null ? 'Rim band' : 'Whole top';
               const on = mode === label;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGrassTuft, grassSeats, grassTriangleCount, GRASS_DEFAULTS } from './grass.js';
+import { buildGrassTuft, grassSeats, grassTriangleCount, nextPatchSpot, GRASS_DEFAULTS } from './grass.js';
 
 // ── What is worth asserting about grass ─────────────────────────────────────────────────────────
 // Not that it LOOKS right — no test can tell you that, which is exactly why dev/grass.html exists
@@ -264,5 +264,47 @@ describe('grassSeats — clumps', () => {
     const full = grassSeats({ shape: round, spacing: 0.08 });
     const clumped = grassSeats({ shape: round, spacing: 0.08, patches: [{ x: 0, z: 0, r: 0.3 }] });
     expect(full.length).toBeGreaterThan(clumped.length);
+  });
+});
+
+// ── Where the next clump lands ──────────────────────────────────────────────────────────────────
+// Reported: "clumps are adding one on another, so it's not clearly seen that a new clump is added."
+// Every new one used a fixed (u, v), so the second sat exactly on the first — the list grew and the
+// cake did not change. A fixed OFFSET would only move the collision to the third or fourth, so the
+// property to hold is SEPARATION, whatever is already there and wherever it has been dragged to.
+describe('nextPatchSpot', () => {
+  const dist = (a, b, R = 1) => {
+    const at = p => [ (p.v ?? 0.62) * R * Math.sin((p.u ?? 0) * Math.PI * 2),
+                      (p.v ?? 0.62) * R * Math.cos((p.u ?? 0) * Math.PI * 2) ];
+    const [ax, az] = at(a), [bx, bz] = at(b);
+    return Math.hypot(ax - bx, az - bz);
+  };
+
+  it('never repeats a spot, however many are added', () => {
+    const list = [];
+    for (let i = 0; i < 6; i++) list.push(nextPatchSpot(list));
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        expect(dist(list[i], list[j])).toBeGreaterThan(0.1);
+      }
+    }
+  });
+
+  it('puts the second one opposite the first', () => {
+    const first = nextPatchSpot([]);
+    const second = nextPatchSpot([first]);
+    expect(Math.abs(((second.u - first.u) % 1 + 1) % 1 - 0.5)).toBeLessThan(0.05);
+  });
+
+  // It has to keep working after a baker has dragged clumps into a corner — the emptiest spot is
+  // computed from where they ARE, not from how many there are.
+  it('avoids where the clumps actually sit, not where they started', () => {
+    const huddled = [{ u: 0.02, v: 0.6 }, { u: 0.05, v: 0.6 }, { u: 0.08, v: 0.6 }];
+    const next = nextPatchSpot(huddled);
+    expect(Math.min(...huddled.map(p => dist(next, p)))).toBeGreaterThan(0.5);
+  });
+
+  it('honours the radius it is given for the surface', () => {
+    expect(nextPatchSpot([], { v: 0.86, r: 0.5 })).toMatchObject({ v: 0.86, r: 0.5 });
   });
 });

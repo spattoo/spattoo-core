@@ -43,6 +43,11 @@ export default function FinishHandles({
   // sentinel tier index BOARD_TIER. That keeps the drag machinery untouched: `flush` only compares
   // hit.tier to the tier the drag started on, and a sentinel compares equal to itself.
   board = null, boardPoints = null,
+  // How far ABOVE the surface to float the handle. Dust and foil lie flat on the cake, so their
+  // handle sits at the surface and 0 is right. Grass does not: a clump is a 2cm mound of blades, and
+  // a handle at the surface is buried inside it — clickable, but with nothing to see and nothing to
+  // aim at, which reads as "the clump cannot be moved". Lift it clear of whatever it marks.
+  lift = 0,
 }) {
   const { gl, camera, scene } = useThree();
   const rc = useRef(new THREE.Raycaster());
@@ -141,7 +146,7 @@ export default function FinishHandles({
               const surface = p.surface ?? 'side';
               const ang = p.u * TAU;
               const pos = surface === 'top_surface'
-                ? [p.v * R * Math.sin(ang), topY + 0.04, p.v * R * Math.cos(ang)]
+                ? [p.v * R * Math.sin(ang), topY + 0.04 + lift, p.v * R * Math.cos(ang)]
                 : [R * 1.02 * Math.sin(ang), cy + p.v * t.height, R * 1.02 * Math.cos(ang)];
               const isSel = selected && selected.tier === ti && selected.idx === si;
               return (
@@ -187,7 +192,7 @@ export default function FinishHandles({
             const ang = p.u * TAU;
             const isSel = selected && selected.tier === BOARD_TIER && selected.idx === si;
             return (
-              <group key={si} position={[p.v * board.radius * Math.sin(ang), BOARD_Y + 0.04, p.v * board.radius * Math.cos(ang)]}>
+              <group key={si} position={[p.v * board.radius * Math.sin(ang), BOARD_Y + 0.04 + lift, p.v * board.radius * Math.cos(ang)]}>
                 <mesh userData={{ [handleFlag]: true }} onPointerDown={e => onDown(e, BOARD_TIER, si, 'board')}>
                   <sphereGeometry args={[0.1, 12, 12]} />
                   <meshBasicMaterial transparent opacity={0} depthWrite={false} />

@@ -499,14 +499,23 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, boardGrass: grass }));
   }
 
+  // `changes` may be a FUNCTION of the current grass, not just a patch object. That matters for the
+  // clump list: computing the next one from `design` as the component last rendered it means two
+  // quick presses of "+ Add clump" both read the same list and the second overwrites the first.
+  // Resolving inside the updater reads the live value instead.
   function updateBoardGrass(changes) {
-    setDesign(prev => (prev.boardGrass ? { ...prev, boardGrass: { ...prev.boardGrass, ...changes } } : prev));
+    setDesign(prev => (prev.boardGrass
+      ? { ...prev, boardGrass: { ...prev.boardGrass, ...(typeof changes === 'function' ? changes(prev.boardGrass) : changes) } }
+      : prev));
   }
 
+  // Same contract as updateBoardGrass — `changes` may be a function of this tier's current grass.
   function updateGrass(index, changes) {
     setDesign(prev => ({
       ...prev,
-      tiers: prev.tiers.map((t, i) => (i === index && t.grass) ? { ...t, grass: { ...t.grass, ...changes } } : t),
+      tiers: prev.tiers.map((t, i) => (i === index && t.grass)
+        ? { ...t, grass: { ...t.grass, ...(typeof changes === 'function' ? changes(t.grass) : changes) } }
+        : t),
     }));
   }
 

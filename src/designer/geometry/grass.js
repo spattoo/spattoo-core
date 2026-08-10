@@ -222,6 +222,36 @@ export function grassSeats({ shape, spacing, jitter, inset = 0.98, seed = 7, ban
   return out;
 }
 
+/**
+ * Where the NEXT clump should go: the spot furthest from every clump already placed.
+ *
+ * The first version dropped every new clump at a fixed (u, v), so the second one landed exactly on
+ * the first and "+ Add clump" looked broken — the count went up and the cake did not change. Adding
+ * a fixed OFFSET would only move the collision to the third or fourth.
+ *
+ * So it samples the ring and takes the emptiest spot: the second clump lands opposite the first, the
+ * third between them, and so on. Distances are measured in the surface's own (u, v) mapped to a unit
+ * disc — every clump is on the same surface, so relative distance is all that matters and the radius
+ * cancels. Deterministic, and it keeps working after the baker has dragged things around.
+ */
+export function nextPatchSpot(existing = [], { v = 0.62, r = 0.35 } = {}) {
+  if (!existing.length) return { u: 0, v, r };
+  const at = (u, vv) => [vv * Math.sin(u * Math.PI * 2), vv * Math.cos(u * Math.PI * 2)];
+  const SAMPLES = 48;
+  let bestU = 0, bestGap = -1;
+  for (let i = 0; i < SAMPLES; i++) {
+    const u = i / SAMPLES;
+    const [x, z] = at(u, v);
+    let gap = Infinity;
+    for (const p of existing) {
+      const [px, pz] = at(p.u ?? 0, p.v ?? v);
+      gap = Math.min(gap, Math.hypot(x - px, z - pz));
+    }
+    if (gap > bestGap) { bestGap = gap; bestU = u; }
+  }
+  return { u: bestU, v, r };
+}
+
 // Triangles a patch will cost, so a density control can be honest about it before it is dragged.
 export function grassTriangleCount(seatCount, strands = GRASS_DEFAULTS.strands) {
   return seatCount * strands * SIDES * SEGS * 2;
