@@ -107,8 +107,9 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
 
         {!compact && (
           <g>
-            <path d={lamp(150, 1)} {...line(1.8)} />
-            <path d={lamp(850, -1)} {...line(1.8)} />
+            {/* One lamp, right. The left wall carries the hanging sign — a lamp there too would be
+                three objects competing in one corner, which is the clutter this theme avoids. */}
+            <path d={lamp(852, -1)} {...line(1.8)} />
             {/* Topiary. The silhouette alone rendered as a green blob at this size — foliage is
                 read from the STROKES inside it, not the outline, so a handful of leaf ticks do more
                 than any amount of shaping. */}
@@ -157,6 +158,50 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
           <path d={scallops(632, 380, 92, 4, 7)} {...line(1.7)} />
           <path d="M 632 356 q 46 -13 92 0" {...line(2.1)} />
         </g>
+
+        {/* ── The hanging sign ─────────────────────────────────────────────────────────────────
+            A projecting bracket sign, which is what a patisserie actually has, carrying the
+            bakery's own INITIAL rather than a pastry glyph. A little drawn cupcake swinging on a
+            bracket is the single most recognisable object in the reference image, and a monogram is
+            both further from it and more personal: it is the baker's letter, in the baker's
+            wordmark face, and it changes per shop the way everything else here does.
+
+            SVG <text>, not an HTML overlay like the shop name: this one is small and fixed-width, so
+            letting it scale with the viewBox is simpler and cannot drift out of registration. */}
+        <g>
+          <path d="M 250 292 L 186 292 M 250 292 q -14 12 -30 12 M 200 294 L 200 308 M 234 294 L 234 308" {...line(1.8)} />
+          <path d="M 178 308 L 256 308 L 256 352 q -39 16 -78 0 Z" fill={paper} fillOpacity="0.94" />
+          <path d="M 178 308 L 256 308 L 256 352 q -39 16 -78 0 Z" {...line(2)} />
+          <text x="217" y="341" textAnchor="middle" fill={INK}
+                style={{ fontFamily: "'Parisienne', 'Cormorant Garamond', cursive", fontSize: 30 }}>
+            {(name || '').trim().charAt(0).toUpperCase()}
+          </text>
+        </g>
+
+        {/* ── Window box ───────────────────────────────────────────────────────────────────────
+            Under the sill, with a few blooms in the CTA and accent colours. It does two jobs: it
+            settles the window onto the wall (the sill was floating), and it is somewhere for the
+            cherry red to appear again below the sign band, so the hearts do not read as the only
+            red on the page. */}
+        <g>
+          {[318, 352, 386, 420, 454, 488, 522, 556].map((x, i) => (
+            <g key={x}>
+              {/* Stems start at the box lip and the blooms clear it by a few px. They were 20px
+                  higher, which floated them in the middle of the glass — flowers growing inside the
+                  shop rather than in a box on its wall. */}
+              <path d={`M ${x} 446 q 2 -9 0 -14`} {...line(1.3)} />
+              <circle cx={x} cy={432} r={i % 2 ? 6 : 7} fill={i % 3 === 0 ? cta : accent} fillOpacity={i % 3 === 0 ? 0.8 : 0.72} />
+              <circle cx={x} cy={432} r={i % 2 ? 6 : 7} {...line(1.1)} />
+            </g>
+          ))}
+          <path d="M 306 444 L 586 444 L 578 470 L 314 470 Z" fill={accent} fillOpacity="0.45" />
+          <path d="M 306 444 L 586 444 L 578 470 L 314 470 Z" {...line(2)} />
+          <path d={scallops(310, 452, 272, 9, 5)} {...line(1.2)} />
+        </g>
+
+        {/* A step, so the door meets the pavement instead of stopping at it. */}
+        <path d="M 628 470 L 728 470 L 734 478 L 622 478 Z" fill={paper} fillOpacity="0.8" />
+        <path d="M 628 470 L 728 470 L 734 478 L 622 478 Z" {...line(1.8)} />
 
         {/* Pavement. One line — anything more begins drawing a street. */}
         <path d="M 130 478 L 870 478" {...line(2.4)} />
@@ -221,14 +266,19 @@ function heart(cx, cy, r) {
           C ${cx + r * 0.6} ${cy - r * 1.35} ${cx + r * 1.5} ${cy - r * 0.2} ${cx} ${cy + r * 0.85} Z`;
 }
 
-/** A wrought-iron street lamp. */
+/**
+ * A wrought-iron street lamp: post, one curved arm, a lantern hanging from its end.
+ *
+ * The first version had a bracket that curled back on itself and a lantern drawn at a different x
+ * from the arm it was supposed to hang on — it read as a hook with a lamp floating beside it. The
+ * lantern's centre is now the arm's end by construction, so the two cannot separate.
+ */
 function lamp(x, dir = 1) {
-  const a = x + dir * 26, b = x + dir * 44;   // bracket end, lantern centre
-  return `M ${x} 478 L ${x} 300
-          M ${x - 9} 478 q 9 -8 18 0
-          M ${x} 300 q 0 -26 ${dir * 26} -26 q ${dir * 18} 0 ${dir * 18} 16
-          M ${x} 330 q ${dir * 14} -6 ${dir * 20} -18
-          M ${b - 13} 292 l 26 0 l -8 -26 l -10 0 z
-          M ${b} 266 l 0 -9
-          M ${a} 274 l ${dir * 36} 0`;
+  const cx = x + dir * 26;             // arm end = lantern centre, one value
+  return `M ${x} 478 L ${x} 306
+          M ${x - 9} 478 q 9 -7 18 0
+          M ${x} 306 q 0 -26 ${dir * 26} -26
+          M ${cx} 280 L ${cx} 290
+          M ${cx - 12} 290 L ${cx + 12} 290 L ${cx + 8} 316 L ${cx - 8} 316 Z
+          M ${cx - 6} 276 q 6 -8 12 0`;
 }
