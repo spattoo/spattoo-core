@@ -8,7 +8,7 @@ import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
 import { useOtp } from './useOtp.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
-import { WAVES } from '../shared/waves.js';
+import { WAVES, SCALLOPS } from '../shared/waves.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -505,10 +505,14 @@ export default function CustomerStorefront({
           correct. Gallery lives on the plain white main; story/reviews/highlight ride wavy bands. */}
       {(() => {
         let bandIdx = 0;
+        // Which EDGE this template's bands end in. A token, not a branch on theme name: the wave is
+        // the product's signature shape, and Patisserie's language is doilies and awnings, so it
+        // ends its bands in scallops instead. Same viewBox, so it is a straight swap.
+        const edges = tokens.edges === 'scallop' ? SCALLOPS : WAVES;
         const wavy = (key, children) => {
           const tint = bandTints[bandIdx % bandTints.length];
-          const topPath = WAVES[bandIdx % WAVES.length];
-          const bottomPath = WAVES[(bandIdx + 1) % WAVES.length];
+          const topPath = edges[bandIdx % edges.length];
+          const bottomPath = edges[(bandIdx + 1) % edges.length];
           bandIdx++;
           return (
             <WavyBand key={key} tint={tint} fill={pageBg} curveH={wide ? 64 : 46} topPath={topPath} bottomPath={bottomPath} innerStyle={s.main}>

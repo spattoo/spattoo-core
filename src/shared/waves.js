@@ -14,3 +14,25 @@ export const WAVES = [
 ];
 
 export const WAVE_VIEWBOX = '0 0 1440 70';
+
+// ── The scallop ─────────────────────────────────────────────────────────────────────────────────
+// The wave's sibling, for templates whose language is doilies and awnings rather than soft curves
+// (Patisserie). Same 1440x70 viewBox and the same stretch behaviour, so it is a DROP-IN for any
+// WAVES entry — a template picks its edge with a token instead of anyone branching on theme.
+//
+// Three variants for the same reason the waves have three: consecutive bands must not read as one
+// stamp repeated. Here that means varying the COUNT rather than the curve, because scallops are
+// regular by nature — an irregular scallop reads as a mistake, where an irregular wave reads as a
+// hand.
+const scallopEdge = (y, count, depth) => {
+  const step = 1440 / count;
+  let d = `M0,${y}`;
+  for (let i = 0; i < count; i++) d += ` A ${step / 2} ${depth} 0 0 1 ${step * (i + 1)},${y}`;
+  return `${d} L1440,70 L0,70 Z`;
+};
+
+export const SCALLOPS = [
+  scallopEdge(30, 16, 26),
+  scallopEdge(26, 12, 30),
+  scallopEdge(34, 20, 22),
+];

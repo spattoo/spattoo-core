@@ -65,8 +65,14 @@ function Preview() {
   };
   return (
     <>
+      {/* Wraps, and never wider than the viewport. It was one non-wrapping row pinned right, which
+          on a narrow device-toolbar width (335px) pushed the Template select off the left edge —
+          the control you most need in order to look at a template was the one you could not reach,
+          and it looked like the template simply was not there. */}
       <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 9999, background: '#fff', border: '1px solid #ccc',
-        borderRadius: 8, padding: '6px 10px', font: '13px system-ui, sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.15)', display: 'flex', gap: 14 }}>
+        borderRadius: 8, padding: '6px 10px', font: '13px system-ui, sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+        display: 'flex', gap: 10, flexWrap: 'wrap', maxWidth: 'calc(100vw - 20px)', maxHeight: '40vh', overflowY: 'auto',
+        alignItems: 'center' }}>
         <label>Template:&nbsp;
           <select value={tpl} onChange={e => setTpl(e.target.value)} style={{ font: 'inherit' }}>
             {Object.values(TEMPLATES).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}

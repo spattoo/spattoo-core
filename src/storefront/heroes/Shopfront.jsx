@@ -107,11 +107,17 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
 
         {!compact && (
           <g>
-            <path d={lamp(158)} {...line(1.9)} />
-            <path d={lamp(842)} {...line(1.9)} />
-            <g transform="translate(92 404)">
-              <path d="M 0 74 q 20 -52 58 -46 q 8 -34 48 -25 q 34 -25 58 12 q 34 8 24 59 z" fill="#8FBF6E" fillOpacity="0.45" />
-              <path d="M 0 74 q 20 -52 58 -46 q 8 -34 48 -25 q 34 -25 58 12 q 34 8 24 59" {...line(1.9)} />
+            <path d={lamp(150, 1)} {...line(1.8)} />
+            <path d={lamp(850, -1)} {...line(1.8)} />
+            {/* Topiary. The silhouette alone rendered as a green blob at this size — foliage is
+                read from the STROKES inside it, not the outline, so a handful of leaf ticks do more
+                than any amount of shaping. */}
+            <g transform="translate(84 402)">
+              <path d="M 0 76 q 20 -54 58 -48 q 8 -35 50 -26 q 35 -26 60 12 q 35 8 25 62 z" fill="#8FBF6E" fillOpacity="0.42" />
+              <path d="M 0 76 q 20 -54 58 -48 q 8 -35 50 -26 q 35 -26 60 12 q 35 8 25 62" {...line(1.8)} />
+              <g opacity="0.75">
+                <path d="M 34 52 q 10 -12 22 -6 M 66 30 q 12 -12 24 -4 M 104 24 q 12 -10 22 -2 M 52 68 q 12 -10 24 -4 M 96 56 q 12 -12 24 -4 M 132 46 q 10 -10 20 -2" {...line(1.3)} />
+              </g>
             </g>
           </g>
         )}
@@ -215,10 +221,14 @@ function heart(cx, cy, r) {
           C ${cx + r * 0.6} ${cy - r * 1.35} ${cx + r * 1.5} ${cy - r * 0.2} ${cx} ${cy + r * 0.85} Z`;
 }
 
-/** A wrought-iron street lamp: post, one curl, one lantern, small foot. */
-function lamp(x) {
-  return `M ${x} 478 L ${x} 286
-          M ${x} 286 q 0 -20 20 -20 q 16 0 16 14
-          M ${x + 22} 280 l 14 0 l -7 -22 z
-          M ${x - 13} 478 l 26 0`;
+/** A wrought-iron street lamp. */
+function lamp(x, dir = 1) {
+  const a = x + dir * 26, b = x + dir * 44;   // bracket end, lantern centre
+  return `M ${x} 478 L ${x} 300
+          M ${x - 9} 478 q 9 -8 18 0
+          M ${x} 300 q 0 -26 ${dir * 26} -26 q ${dir * 18} 0 ${dir * 18} 16
+          M ${x} 330 q ${dir * 14} -6 ${dir * 20} -18
+          M ${b - 13} 292 l 26 0 l -8 -26 l -10 0 z
+          M ${b} 266 l 0 -9
+          M ${a} 274 l ${dir * 36} 0`;
 }

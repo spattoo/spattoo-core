@@ -107,6 +107,9 @@ const PATISSERIE_TOKENS = {
   contentWidth: 600,
   inkMix:     { with: '#2E3A46', amount: 0.72 },
   hero:       { type: 'shopfront' },
+  // Bands end in scallops rather than the product's signature wave — the same edge as the awning
+  // and the doily, so the motif carries down the page instead of stopping at the hero.
+  edges:      'scallop',
   // The 3D cake takes the baker's own primary — it is their cake in their shop window, which is the
   // entire point of the hero.
   cake:       'brand',
