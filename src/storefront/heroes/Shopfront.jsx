@@ -1,5 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
-
 /* ── The Patisserie hero: a hand-drawn shop, with the baker's real cake in the window ────────────
  *
  * Drawn here, in SVG, from scratch. There is no image asset and nothing is traced from anything:
@@ -46,27 +44,6 @@ function scallops(x, y, width, count, r, up = false) {
  * @param {node}   p.children  the live cake, absolutely positioned into the window by the caller
  */
 export default function Shopfront({ primary, accent, cta, paper, name, tagline, compact = false, children }) {
-  // ── The cake has to be measured, not guessed ────────────────────────────────────────────────
-  // The drawing scales with WIDTH (it is an SVG with a viewBox); the cake is a WebGL canvas with a
-  // height in pixels. Give it a fixed height and the two are sized by different systems: a 210px
-  // cake looks right in a 1240px-wide shop and swallows the whole building at 370px, which is
-  // exactly what the phone showed — the cake covering the sign band it is supposed to stand below.
-  //
-  // So the window's height in real pixels is derived from the measured width, through the same
-  // viewBox ratio the SVG uses, and handed to the caller. One source of truth for the scale.
-  const wrapRef = useRef(null);
-  const [boxW, setBoxW] = useState(0);
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(([e]) => setBoxW(e.contentRect.width));
-    ro.observe(el);
-    setBoxW(el.getBoundingClientRect().width);
-    return () => ro.disconnect();
-  }, []);
-  // One viewBox for both breakpoints; the phone crops to the shopfront itself by hiding the wings
-  // (lamps, topiary) rather than by re-drawing anything. Two drawings would be two things to keep in
-  // step, and the wings are the first thing to go when there is no room for them.
   // ONE viewBox at both breakpoints. The phone drops the wings (lamps, topiary) rather than using a
   // second drawing — two drawings would be two things to keep in step, and the wings are the first
   // thing to go when there is no room for them anyway.
@@ -80,12 +57,8 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
   // under the headline instead (the caller decides), so nothing is ever lost or squeezed to 8px.
   const badge = tagline && tagline.length <= 30 ? tagline : null;
 
-  // CAKE_BOX_H below must stay equal to the cake container's `height` percentage.
-  const CAKE_BOX_H = 0.26;
-  const cakeH = Math.round(boxW * (H / W) * CAKE_BOX_H);
-
   return (
-    <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
+    <div style={{ position: 'relative', width: '100%' }}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }} aria-hidden="true">
         <defs>
           {/* The wash. A watercolour edge is DARKER than its middle — pigment migrates outward as it
@@ -148,6 +121,22 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
         <path d="M 296 440 L 296 352 A 150 78 0 0 1 596 352 L 596 440" {...line(2.8)} />
         <path d="M 282 440 L 610 440" {...line(2.8)} />
 
+        {/* ── What is in the window ────────────────────────────────────────────────────────────
+            Drawn, in the same ink and wash as the shop.
+
+            This was the baker's LIVE 3D cake, and losing that costs something real — it was the one
+            place their own design appeared in the hero. But a soft-shaded WebGL render with a gold
+            board, sitting inside flat linework, is two visual languages arguing in the middle of the
+            frame, and the eye reads the seam before it reads either. Their actual designs still
+            carry the page immediately below, in the gallery, where photographic weight belongs.
+
+            Three pieces, deliberately uneven in height so the sill has a rhythm rather than a row. */}
+        <g>
+          {cakeOnStand(352, 440, 62, 34, primary, accent, cta, 0)}
+          {cakeOnStand(446, 440, 86, 44, primary, accent, cta, 1)}
+          {cakeOnStand(540, 440, 58, 30, primary, accent, cta, 2)}
+        </g>
+
         {/* ── Door, with a scalloped awning ────────────────────────────────────────────────── */}
         <path d="M 640 478 L 640 382 A 38 26 0 0 1 716 382 L 716 478 Z" fill={paper} fillOpacity="0.85" />
         <path d="M 640 478 L 640 382 A 38 26 0 0 1 716 382 L 716 478" {...line(2.2)} />
@@ -207,21 +196,6 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
         <path d="M 130 478 L 870 478" {...line(2.4)} />
       </svg>
 
-      {/* The live cake, standing on the sill. Percentages of the SAME viewBox the drawing uses, so
-          the two stay registered at every width with no resize listener. */}
-      <div style={{
-        // Inset from the window opening (296→596 x, 274→440 y) rather than matching it: HeroCake3D
-        // frames itself with margins and its own gold board, so a box the size of the arch renders a
-        // cake that climbs out of the window and across the sign band — which is what the first pass
-        // did. Sized to sit ON the sill with glass visible around it, like a cake in a real window.
-        position: 'absolute', left: '34%', top: '52%', width: '22%', height: '26%',
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'center', pointerEvents: 'none',
-      }}>
-        {/* A render function, so the cake is built with the height this drawing just measured.
-            Falls back to a plain node so a caller that does not care still works. */}
-        {typeof children === 'function' ? (cakeH > 0 ? children({ height: cakeH }) : null) : children}
-      </div>
-
       {/* The name, on the sign band. */}
       <div style={{
         position: 'absolute', left: '26%', top: '30.5%', width: '48%', height: '12.2%',
@@ -256,6 +230,47 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A cake on a footed stand, drawn.
+ *
+ * `variant` only changes what sits ON it (a cherry, a row of piping, a second tier) — the stand and
+ * the body are one shape, so three calls give three cakes without three drawings to maintain.
+ */
+function cakeOnStand(cx, baseY, w, h, primary, accent, cta, variant) {
+  const half = w / 2;
+  const standTop = baseY - 14;              // the plate the cake sits on
+  const bodyTop = standTop - h;
+  const wash = { fill: primary, fillOpacity: 0.5 };
+  return (
+    <g key={cx}>
+      {/* stand: foot, stem, plate */}
+      <path d={`M ${cx - 16} ${baseY} q 16 -6 32 0`} {...line(1.6)} />
+      <path d={`M ${cx} ${baseY} L ${cx} ${standTop}`} {...line(1.6)} />
+      <path d={`M ${cx - half - 6} ${standTop} L ${cx + half + 6} ${standTop}`} {...line(1.8)} />
+      {/* body */}
+      <path d={`M ${cx - half} ${standTop} L ${cx - half} ${bodyTop} L ${cx + half} ${bodyTop} L ${cx + half} ${standTop} Z`} {...wash} />
+      <path d={`M ${cx - half} ${standTop} L ${cx - half} ${bodyTop} L ${cx + half} ${bodyTop} L ${cx + half} ${standTop}`} {...line(1.8)} />
+      {/* a scalloped border of piping around the base — the same edge as everything else here */}
+      <path d={scallops(cx - half, standTop - 7, w, Math.max(3, Math.round(w / 14)), 5)} {...line(1.2)} />
+      {/* the top */}
+      <path d={`M ${cx - half} ${bodyTop} L ${cx + half} ${bodyTop}`} {...line(1.8)} />
+      {variant === 1 && (
+        <>
+          {/* second tier */}
+          <path d={`M ${cx - half * 0.55} ${bodyTop} L ${cx - half * 0.55} ${bodyTop - 26} L ${cx + half * 0.55} ${bodyTop - 26} L ${cx + half * 0.55} ${bodyTop} Z`} fill={accent} fillOpacity="0.45" />
+          <path d={`M ${cx - half * 0.55} ${bodyTop} L ${cx - half * 0.55} ${bodyTop - 26} L ${cx + half * 0.55} ${bodyTop - 26} L ${cx + half * 0.55} ${bodyTop}`} {...line(1.6)} />
+          <path d={heart(cx, bodyTop - 34, 7)} fill={cta} />
+        </>
+      )}
+      {variant === 0 && <circle cx={cx} cy={bodyTop - 7} r={5} fill={cta} />}
+      {variant === 0 && <circle cx={cx} cy={bodyTop - 7} r={5} {...line(1.2)} />}
+      {variant === 2 && (
+        <path d={`M ${cx - 16} ${bodyTop - 4} q 8 -10 16 0 q 8 -10 16 0`} {...line(1.4)} />
+      )}
+    </g>
   );
 }
 

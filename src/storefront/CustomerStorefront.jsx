@@ -1016,16 +1016,7 @@ function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel
       <div style={s.shopInner}>
         <Shopfront
           primary={pal.cake} accent={accent} cta={pal.cta} paper={s.page.background}
-          name={baker.name} tagline={sub} compact={compact}>
-          {/* Height comes FROM the drawing (it measures itself), not from a breakpoint guess — the
-              shop scales with width and a fixed-px cake does not, so the two drift apart on a phone. */}
-          {({ height }) => (
-            <HeroCakeMedia
-              heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light"
-              height={height} spin={0.32}
-            />
-          )}
-        </Shopfront>
+          name={baker.name} tagline={sub} compact={compact} />
 
         <div style={s.shopCopy}>
           <h1 style={s.shopTitle}>{txt('hero_tagline')}</h1>
