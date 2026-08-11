@@ -89,7 +89,10 @@ const AURORA_TOKENS = {
 // composition that leaves a lot of paper showing. Restraint is what reads as premium; density does
 // not. The facade is SVG we author (heroes/Shopfront.jsx), so there is no image asset at all.
 const PATISSERIE_TOKENS = {
-  font:      SANS,                                          // body — quiet, so the drawing speaks
+  // Body. NOT the shared SANS: Montserrat is a geometric sans with even stroke weight, and beside
+  // ink linework and a copperplate wordmark it was the one element still reading as a web app. Lora
+  // has brush-drawn roots and real thick/thin, so the words match the drawing.
+  font:      "'Lora', Georgia, serif",
   serif:     "'Cormorant Garamond', Georgia, serif",        // headings — high-contrast, unhurried
   // The wordmark. Pacifico (thick, rounded, one stroke width) is the wrong instrument for an
   // ink-line theme; Parisienne is a fine copperplate with real thick/thin. Registered in
@@ -110,6 +113,11 @@ const PATISSERIE_TOKENS = {
   // Bands end in scallops rather than the product's signature wave — the same edge as the awning
   // and the doily, so the motif carries down the page instead of stopping at the hero.
   edges:      'scallop',
+  // The type is part of the drawing, not a preference: the copperplate wordmark and the brush-rooted
+  // body are half of why this reads as hand-made. The font picker would swap all three for
+  // Pacifico + a geometric sans and leave a premium theme looking like the standard one wearing a
+  // shopfront. See `ownsType` in CustomerStorefront.
+  ownsType:   true,
   // The 3D cake takes the baker's own primary — it is their cake in their shop window, which is the
   // entire point of the hero.
   cake:       'brand',
@@ -130,11 +138,17 @@ export const TEMPLATES = {
   },
   patisserie: {
     key: 'patisserie', label: 'Patisserie', tokens: PATISSERIE_TOKENS,
+    // Every control except `font` — the theme owns its typography (ownsType), so offering the picker
+    // would be offering a knob that is wired to nothing.
+    controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
     // Blush facade, duck-egg trim, cherry for the CTA — the three colours that carry the style, and
     // all three stay editable: the facade, the awning and the hearts are painted FROM these pickers,
     // so a baker who wants a mint-green shop gets one rather than a picture they cannot change.
-    defaults: { primary: '#E9B7C2', accent: '#A9CBD4', ctaColor: '#D8394B' },
-    controls: DEFAULT_CONTROLS,
+    // ⚠️ ctaColor is the LABEL colour, not the button fill (buildPalette: onCta = heroText =
+    // opts.ctaColor). Cherry red here meant red TEXT on the pink button, which is what shipped and
+    // read as a warning rather than an invitation. It is the drawing's ink now — near-black on
+    // blush, which is what the rest of the theme does.
+    defaults: { primary: '#E9B7C2', accent: '#A9CBD4', ctaColor: '#2E3A46' },
   },
 };
 

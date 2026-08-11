@@ -322,7 +322,15 @@ export default function CustomerStorefront({
   // new templates are data, not forked layouts.
   const template = resolveTemplate(baker.storefront_theme);
   // Baker font-theme lever (storefront_customizations.font_key) overlays the template's typography.
-  const tokens = applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
+  // A template can OWN its typography. The font picker swaps font/serif/brandFont wholesale, which
+  // is right for the themes built as neutral containers — and wrong for an art-directed one, where
+  // the type IS the design: Patisserie's copperplate wordmark and brush-rooted body would revert to
+  // Pacifico and a geometric sans, and the "premium" theme would look like the standard one wearing
+  // a shopfront. `ownsType` opts out, and its `controls` omit the font knob so nothing is offered
+  // that does nothing.
+  const tokens = template.tokens.ownsType
+    ? template.tokens
+    : applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
 
   // COLOUR SOURCE = the baker's brand (the pickers), for EVERY template — full baker control. Each
   // template's palette (gradient, cake, band, ink) is DERIVED from these in buildPalette, so moving a
@@ -1015,7 +1023,12 @@ function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel
     <section style={s.shopHero}>
       <div style={s.shopInner}>
         <Shopfront
-          primary={pal.cake} accent={accent} cta={pal.cta} paper={s.page.background}
+          primary={pal.cake} accent={accent} paper={s.page.background}
+          // The hearts and blooms: the baker's OWN primary, deepened. `pal.cta` is the button fill
+          // (the same blush as the facade), so passing it painted hearts that vanished into the
+          // wall. Deepening the primary keeps the accent colour picker-derived and guarantees it
+          // harmonises with the shop whatever they choose — a mint bakery gets deep mint hearts.
+          cta={darken(pal.cake, 0.34)}
           name={baker.name} tagline={sub} compact={compact} />
 
         <div style={s.shopCopy}>
@@ -1135,8 +1148,10 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     },
     shopCta:    {
       background: pal.cta, color: pal.onCta, border: 'none', borderRadius: 999,
-      padding: wide ? '15px 34px' : '13px 26px', fontSize: wide ? 16 : 15, fontWeight: 700,
-      fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2,
+      // The serif, letter-spaced, at the size a serif needs to hold its own. A geometric sans on
+      // this button was the last thing on the page that looked like software.
+      padding: wide ? '15px 36px' : '13px 28px', fontSize: wide ? 17 : 15.5, fontWeight: 600,
+      fontFamily: SERIF, cursor: 'pointer', letterSpacing: 0.6,
       boxShadow: '0 10px 24px rgba(70,60,66,0.14)',
     },
     curveHero:  { background: pageBg },
