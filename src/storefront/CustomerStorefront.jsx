@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import FacetShell from './facets/FacetShell.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
+import Shopfront from './heroes/Shopfront.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
@@ -991,10 +992,60 @@ function photoHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, ha
   );
 }
 // The registry — template `hero.type` (or a baker photo) selects one. 'none' → no hero (just sections).
+/* ── Patisserie: the cake in a hand-drawn shop window ─────────────────────────────────────────────
+ *
+ * The tagline and CTA sit UNDER the drawing rather than over it. Text on top of an illustration
+ * means one of the two has to lose — either the words fight the linework for attention, or they get
+ * a scrim, which puts a grey rectangle over the thing the theme exists to show. Below it, both read.
+ *
+ * The shop's own strapline goes in the doily instead, which is the one place ornament is the point.
+ */
+function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, heroDesign, heroCakeH }) {
+  const compact = bp === 'mobile';
+  // A rosette holds three or four words. A baker's strapline is often a sentence, so it goes under
+  // the headline instead — the same place every other theme puts it. Shown in exactly one of the two
+  // places, never both, and never shrunk to fit a circle.
+  const sub = txt('hero_subtitle');
+  const inBadge = !compact && sub && sub.length <= 30;
+  return (
+    <section style={s.shopHero}>
+      <div style={s.shopInner}>
+        <Shopfront
+          primary={pal.cake} accent={accent} cta={pal.cta} paper={s.page.background}
+          name={baker.name} tagline={sub} compact={compact}>
+          {/* Height comes FROM the drawing (it measures itself), not from a breakpoint guess — the
+              shop scales with width and a fixed-px cake does not, so the two drift apart on a phone. */}
+          {({ height }) => (
+            <HeroCakeMedia
+              heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light"
+              height={height} spin={0.32}
+            />
+          )}
+        </Shopfront>
+
+        <div style={s.shopCopy}>
+          <h1 style={s.shopTitle}>{txt('hero_tagline')}</h1>
+          {!inBadge && sub && <p style={s.shopSub}>{sub}</p>}
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.shopCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const HERO_RENDERERS = {
   'gradient-cake': gradientCakeHero,
   'centered-cake': centeredCakeHero,
   'photo':         photoHero,
+  'shopfront':     shopfrontHero,
   'none':          () => null,
 };
 
@@ -1072,6 +1123,27 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     // Curved-band hero (Honeybear-style): a brand-tinted top band with a wavy SVG bottom edge,
     // headline on the colour, featured cake pulled up over the curve. (Colours = brand tint for
     // now; baker colour controls come later.)
+    // ── Patisserie hero ───────────────────────────────────────────────────────────────────────
+    // No band, no tint: the drawing sits on the page's own paper, because a coloured hero block
+    // behind a watercolour wash reads as two backgrounds arguing.
+    shopHero:   { background: pageBg, paddingTop: wide ? 8 : 4 },
+    shopInner:  { maxWidth: 1040, margin: '0 auto', padding: wide ? '0 24px 8px' : '0 12px 4px' },
+    shopCopy:   { textAlign: 'center', padding: wide ? '4px 16px 34px' : '10px 12px 26px' },
+    shopSub:    {
+      fontFamily: FONT, color: muted, fontSize: wide ? 15.5 : 14.5, lineHeight: 1.6,
+      maxWidth: 560, margin: '0 auto 18px',
+    },
+    shopTitle:  {
+      fontFamily: SERIF, fontWeight: 600, color: heading,
+      fontSize: desktop ? 40 : wide ? 34 : 25, lineHeight: 1.15, margin: '0 0 16px',
+      letterSpacing: 0.2,
+    },
+    shopCta:    {
+      background: pal.cta, color: pal.onCta, border: 'none', borderRadius: 999,
+      padding: wide ? '15px 34px' : '13px 26px', fontSize: wide ? 16 : 15, fontWeight: 700,
+      fontFamily: FONT, cursor: 'pointer', letterSpacing: 0.2,
+      boxShadow: '0 10px 24px rgba(70,60,66,0.14)',
+    },
     curveHero:  { background: pageBg },
     curveBand:  { position: 'relative', background: bandStrong, padding: wide ? '54px 24px 80px' : '40px 22px 66px', textAlign: 'center' },
     curveTitle: { fontFamily: SERIF, fontSize: wide ? 34 : 26, fontWeight: 700, color: pal.heroText, margin: '0 auto', lineHeight: 1.2, letterSpacing: 0.2, maxWidth: 560, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
