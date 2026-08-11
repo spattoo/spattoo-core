@@ -3305,10 +3305,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     });
   }
 
-  function addNameBlocks() {
+  // `el` is the catalogue row when picked from the Decorations grid, absent from the Tools shortcut
+  // — same contract as addGrass. The row carries the parameters that make a cube read as FONDANT
+  // (chamfer, letter relief, gap); the card owns what changes per cake (the name, size, colours).
+  function addNameBlocks(el) {
     if (!design.nameBlocks) {
       const zone = 'board';
-      setNameBlocks({ ...NAME_BLOCK_DEFAULTS, zone, text: 'NAME', blocks: layoutBlocks('NAME', zone) });
+      const tuned = el?.placement_config?.letter_blocks ?? {};
+      const seed = { ...NAME_BLOCK_DEFAULTS, ...tuned,
+        ...(el?.default_color ? { blockColor: el.default_color } : {}) };
+      setNameBlocks({ ...seed, zone, text: 'NAME', blocks: layoutBlocks('NAME', zone, seed) });
     }
     selectExclusive({ type: 'blocks' });
   }
