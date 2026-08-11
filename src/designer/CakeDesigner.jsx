@@ -3212,11 +3212,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // lets it be moved to another tier afterwards; this is just where it lands.
   function grassTierIndex() { return Math.max(0, design.tiers.length - 1); }
 
-  function addGrass() {
+  // `el` is the catalogue row when grass is picked from the Decorations grid, and absent when it is
+  // picked from the Tools shortcut. The row carries the TUNED parameters an admin authored in the
+  // studio (placement_config.grass) — that is the whole point of it being a row: "Putting green" and
+  // "Wild meadow" are two rows over one generator, not two presets hardcoded in a studio.
+  function addGrass(el) {
     const i = grassTierIndex();
-    // Seeded from the SAME defaults the admin studio tunes against, so what was judged there is what
-    // appears here. No second copy of the numbers.
-    if (!design.tiers[i]?.grass) setTierGrass(i, { ...GRASS_DEFAULTS, color: '#4caf3d' });
+    const tuned = el?.placement_config?.grass ?? {};
+    // Defaults first, so a row that authors only a colour still gets a sensible field.
+    if (!design.tiers[i]?.grass) {
+      setTierGrass(i, { ...GRASS_DEFAULTS, color: el?.default_color ?? '#4caf3d', ...tuned });
+    }
     selectExclusive({ type: 'grass' });
   }
 
@@ -3308,6 +3314,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function removeNameBlocks() { setNameBlocks(null); setBlocksSelected(null); clearAllSelections(); }
+
+  // ── The procedural registry ─────────────────────────────────────────────────
+  // `placement_config.procedural` → the tool that adds it. Declared HERE, below both tools, purely
+  // for readability: these are function declarations, so they hoist, but a reader should meet the
+  // registry after the things it names.
+  //
+  // Adding a generator is one entry. Adding another GRASS is not a code change at all — it is a
+  // catalogue row with different parameters, which is the entire reason for doing this.
+  const PROCEDURAL_TOOLS = {
+    grass: addGrass,
+    letter_blocks: addNameBlocks,
+  };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
   // letters change, so index-matched positions would put an old letter's spot under a new letter,
@@ -3448,6 +3466,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // hug vs stand) and select it, which opens its card with the placement chooser. Fully
   // config-driven; works for any element whose allowed_zones has more than one surface.
   function tapPlaceElement(element) {
+    // ── Procedural elements ─────────────────────────────────────────────────────────────────────
+    // Grass and letter blocks are GENERATED, so the row carries no artwork — it carries identity
+    // (name, thumbnail, tags) and the parameters an admin tuned. `placement_config.procedural` names
+    // the generator; the registry maps that key to the tool that already exists.
+    //
+    // A registry rather than a branch per family, and keyed off CONFIG rather than the element type
+    // (INVARIANTS #1) — so a second grass ("Putting green") is a row, never a code change. The same
+    // functions the Tools shortcuts call, so there is one way to add grass and it cannot drift.
+    //
+    // Chocolate drip is deliberately NOT here: it is a piping element and rides the ring popup a few
+    // branches down, which is the right home for it. "Procedural" is not the thing they have in
+    // common — WHAT THEY WRITE is, and a drip writes a piping layer.
+    const proc = PROCEDURAL_TOOLS[element.placement_config?.procedural];
+    if (proc) {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      proc(element);
+      return;
+    }
     // Cluster elements: clicking in the decorations menu opens a placement popup (consistent "click to
     // open" behaviour) — the user drags the ball FROM the popup onto the cake (top or side), then grows
     // it into a cluster. Tapping never auto-drops one on top.
