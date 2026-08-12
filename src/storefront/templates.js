@@ -157,6 +157,12 @@ const ATELIER_TOKENS = {
   hero:       { type: 'atelier' },
   // Straight. The product's signature wave would be the one soft thing on a page selling severity.
   edges:      'rule',
+  // Square corners and hairlines instead of rounded cards with shadows: rounded + shadowed reads
+  // APP, square + hairline reads PRINT, and that distinction changes the page more than any colour.
+  radius:     0,
+  cardStyle:  'flat',
+  // The gallery breaks out of the content column — images edge to edge, captions as print credits.
+  gallery:    'bleed',
   // The type IS the design here, exactly as in Patisserie — a font picker would undo it.
   ownsType:   true,
   cake:       'brand',

@@ -537,7 +537,21 @@ export default function CustomerStorefront({
               return (
                 <main key="gallery" style={s.main}>
                   <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
-                    {hasPhotos ? (
+                    {hasPhotos && tokens.gallery === 'bleed' ? (
+                      /* Full-bleed grid: no card, no radius, no shadow, hairline gaps, captions in
+                         small caps underneath. The gallery is the largest block on the page, and
+                         while every theme renders it as the same white-card carousel, every theme
+                         looks the same below the hero however different the hero is. Breaking the
+                         images out of the content column is the single biggest change available. */
+                      <div style={s.gBleed}>
+                        {gallery.map((g, gi) => (
+                          <figure key={gi} style={s.gBleedItem}>
+                            <img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gBleedImg} />
+                            {g.caption && <figcaption style={s.gBleedCap}>{g.caption}</figcaption>}
+                          </figure>
+                        ))}
+                      </div>
+                    ) : hasPhotos ? (
                       // 3 visible at a time; horizontal-scroll with arrows once there are more than 3.
                       <div style={s.galleryWrap}>
                         {gallery.length > 3 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => galScroll(-1)}>‹</button>}
@@ -1117,6 +1131,23 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
   // A template's DRAWN face, if it has one. Falls back to the body font, so every existing theme
   // renders exactly as before and this stays a token rather than a branch.
   const handFont = tk.handFont || tk.font;
+
+  // ── SHAPE ───────────────────────────────────────────────────────────────────────────────────
+  // Until now a theme could change colour and type and nothing else: 35 corner radii and every card
+  // background were hardcoded in here, out of reach of any token. That is why a new theme read as
+  // the old one in a different typeface — the hero was themed and the whole page below it was not.
+  //
+  // `radius` reshapes every card, tile and image; `cardStyle: 'flat'` drops the white fill and the
+  // shadow for a hairline. Rounded and shadowed reads APP; square and hairline reads PRINT, and that
+  // one distinction changes a page more than any palette.
+  //
+  // Both default to the designed values, so a template that sets neither renders exactly as before.
+  // Pills (999) are left alone: a pill is a shape decision, not a radius, and squaring buttons by
+  // accident is not what "no rounded cards" means.
+  const rad  = (n) => (tk.radius == null || n >= 999 ? n : tk.radius);
+  const flat = tk.cardStyle === 'flat';
+  const cardBg     = flat ? 'transparent' : '#fff';
+  const cardShadow = flat ? 'none' : shadow;
   const desktop = bp === 'desktop', wide = bp !== 'mobile';
   // Responsive content width — a phone column on mobile, but USE the screen on bigger devices
   // (the storefront is customer-facing; it must not be a skinny strip on desktop).
@@ -1291,7 +1322,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     sectionTitle:{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: heading, margin: '0 0 22px', textAlign: 'center', lineHeight: 1.3 },
 
     steps:       { display: 'grid', gap: 12 },
-    stepCard:    { display: 'flex', gap: 16, alignItems: 'flex-start', background: '#fff', border: `1px solid ${cardBorder}`, boxShadow: shadow, borderRadius: 16, padding: '20px 20px' },
+    stepCard:    { display: 'flex', gap: 16, alignItems: 'flex-start', background: cardBg, border: `1px solid ${cardBorder}`, boxShadow: cardShadow, borderRadius: rad(16), padding: '20px 20px' },
     stepNum:     { fontSize: 26, fontWeight: 700, color: primary, lineHeight: 1, flexShrink: 0 },
     stepTitle:   { fontSize: 16.5, fontWeight: 700, color: heading, marginBottom: 5 },
     stepBody:    { fontSize: 14, fontWeight: 500, lineHeight: 1.55, color: muted, margin: 0 },
@@ -1300,7 +1331,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     highlightText:  { display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', textAlign: 'center', maxWidth: 560, margin: '0 auto' },
     highlightTitle: { fontFamily: SERIF, fontSize: wide ? 28 : 23, fontWeight: 700, color: heading, margin: 0, lineHeight: 1.2 },
     highlightMedia: { width: '100%', maxWidth: wide ? 460 : 360, margin: '20px auto 0' },
-    highlightImg:   { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 18, boxShadow: shadow, border: `1px solid ${cardBorder}`, display: 'block' },
+    highlightImg:   { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: rad(18), boxShadow: cardShadow, border: flat ? 'none' : `1px solid ${cardBorder}`, display: 'block' },
     highlightBlurb: { fontSize: 15.5, fontWeight: 500, lineHeight: 1.65, color: text, margin: 0 },
 
     // Our story
@@ -1323,21 +1354,31 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     howStep:     { display: 'flex', gap: 14, alignItems: 'flex-start' },
 
     // Gallery slideshow
-    gSlide:      { aspectRatio: '4 / 3', borderRadius: 18, overflow: 'hidden', boxShadow: shadow, background: '#fff', border: `1px solid ${cardBorder}` },
+    gSlide:      { aspectRatio: '4 / 3', borderRadius: rad(18), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
     gImg:        { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
     gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: 'center' },
+    // Breaks OUT of the content column: 100vw pulled back by half the difference. The section's own
+    // padding still holds the captions in, so only the images go edge to edge.
+    gBleed:      { width: '100vw', marginLeft: 'calc(50% - 50vw)', display: 'grid',
+                   gridTemplateColumns: wide ? '1fr 1fr' : '1fr', gap: 2 },
+    gBleedItem:  { margin: 0, position: 'relative' },
+    gBleedImg:   { width: '100%', aspectRatio: wide ? '4 / 5' : '4 / 3', objectFit: 'cover', display: 'block' },
+    // Caps, tracked, tucked under the image on the left. A centred sentence-case caption is the
+    // house style everywhere else on the page; this is the same information set as a print credit.
+    gBleedCap:   { fontFamily: FONT, fontSize: 10.5, fontWeight: 700, letterSpacing: 1.6,
+                   textTransform: 'uppercase', color: muted, padding: '10px 16px 0' },
     galleryWrap:   { position: 'relative', maxWidth: wide ? 760 : '100%', margin: '0 auto' },
     galleryScroll: { display: 'flex', gap: wide ? 14 : 8, overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none', width: '100%', paddingBottom: 2 },
     galleryItem:   { flex: `0 0 calc((100% - ${wide ? 28 : 16}px) / 3)`, minWidth: 0, scrollSnapAlign: 'start', margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
     gGridFig:    { margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
-    gGridCard:   { aspectRatio: '4 / 3', borderRadius: 16, overflow: 'hidden', boxShadow: shadow, background: '#fff', border: `1px solid ${cardBorder}` },
+    gGridCard:   { aspectRatio: '4 / 3', borderRadius: rad(16), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
     gGridCap:    { fontSize: 13, fontWeight: 600, color: muted, textAlign: 'center' },
-    gFallback:   { aspectRatio: '4 / 3', borderRadius: 18, boxShadow: shadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: '#fff', textAlign: 'center', padding: 20 },
+    gFallback:   { aspectRatio: '4 / 3', borderRadius: rad(18), boxShadow: cardShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: '#fff', textAlign: 'center', padding: 20 },
     gFallbackText:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: '#fff' },
     gFallbackCta:{ padding: '11px 24px', borderRadius: 12, border: `1.5px solid ${alpha('#ffffff', 0.7)}`, background: alpha('#ffffff', 0.12), color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, backdropFilter: 'blur(4px)' },
 
     carousel:    { position: 'relative' },
-    testiCard:   { background: '#fff', border: `1px solid ${cardBorder}`, boxShadow: shadow, borderRadius: 18, padding: '26px 46px', margin: 0, minHeight: 150, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
+    testiCard:   { background: cardBg, border: flat ? `1px solid ${cardBorder}` : `1px solid ${cardBorder}`, boxShadow: cardShadow, borderRadius: rad(18), padding: '26px 46px', margin: 0, minHeight: 150, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
     stars:       { color: accent, fontSize: 16, letterSpacing: 2, marginBottom: 12, textAlign: 'center' },
     quote:       { fontSize: 15.5, fontWeight: 500, lineHeight: 1.6, color: text, margin: '0 0 16px', textAlign: 'center' },
     author:      { fontSize: 14, fontWeight: 700, color: heading, textAlign: 'center' },
