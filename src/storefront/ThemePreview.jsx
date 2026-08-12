@@ -30,8 +30,10 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 //   logoUrl     string?   wordmark/logo to show
 //   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
+//   onUpgrade   () => void — open billing. Called instead of publishing when the baker is LOOKING
+//               at a premium theme their plan cannot publish.
 //   onClose     () => void
-export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onReviewFlavours, onClose }) {
+export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onReviewFlavours, onUpgrade, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
   // A baker with no colour on file falls back to the SELECTED template's designed defaults (not a
@@ -291,8 +293,48 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // the baker tweaks from). Only on an actual switch, so re-clicking the current theme never clobbers
   // the baker's own tweaks. Templates without defaults (e.g. spotlight) keep the baker's brand colours;
   // cta_color resets to the template's hero-text default (or '' = adaptive) so text stays readable.
+  // ── Previewing a theme the plan cannot publish ──────────────────────────────────────────────
+  //
+  // A premium theme used to be untappable, which made it invisible rather than desirable: a lock you
+  // cannot look through reads as "not for you", and nobody upgrades for a greyed-out word. So any
+  // theme can be SELECTED and previewed, and the plan is enforced where it was always really
+  // enforced — at the write. The server already 403s a premium theme without the entitlement
+  // (spattoo-api bakers.js), so this is a tease with a real gate behind it, not a client-side rule.
+  //
+  // ⚠️ PREVIEW MUST NOT PERSIST. The public storefront deliberately does NOT check entitlement when
+  // it RENDERS (migration 054 — a baker who downgrades keeps their live shop), so the moment a
+  // premium theme_id reached the database for an already-published baker they would have the premium
+  // theme in public, for free. Nothing here is saved until they are entitled.
+  const themeIsLocked = (id) => {
+    const t = themes.find(x => x.id === id);
+    return !!(t?.is_premium && !canPremium);
+  };
+  const lockedPreview = themeIsLocked(themeId);
+  // What to send in any save. Never the previewed theme — see publish().
+  const savedThemeId = value?.storefront_theme_id ?? themes[0]?.id ?? 1;
+
+  // Their own colours, held while a locked theme borrows the pickers.
+  //
+  // selectTheme SEEDS the colour pickers from the chosen template's defaults, which is right for a
+  // theme you are about to keep and destructive for one you are only looking at: preview Patisserie,
+  // go back, and a Flame baker's brand colours are gone with no undo. Snapshotted on the way in and
+  // put back on the way out.
+  const preLockColours = useRef(null);
+  const restoreColours = () => {
+    const snap = preLockColours.current;
+    if (!snap) return;
+    preLockColours.current = null;
+    setPrimary(snap.primary); setAccent(snap.accent); setText('cta_color', snap.cta);
+  };
+
   const selectTheme = (id) => {
     if (id === themeId) return;
+    // Entering a locked preview: keep their colours. Leaving one: give them back.
+    if (themeIsLocked(id) && !preLockColours.current) {
+      preLockColours.current = { primary, accent, cta: customizations.cta_color || '' };
+    } else if (!themeIsLocked(id)) {
+      restoreColours();
+    }
     setThemeId(id);
     const def = TEMPLATES[themes.find(t => t.id === id)?.key]?.defaults;
     if (def?.primary) { setPrimary(def.primary); setAccent(def.accent); }
@@ -365,7 +407,11 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       // 1. appearance — theme / colours / portrait (PATCH /baker/profile via host)
       // rights_attested rides along to the host, which hands it to POST /baker/storefront/publish.
       // The API REFUSES to go live without it, and records who vouched (content_attestations).
-      const payload = { storefront_theme_id: themeId, primary_color: primary, accent_color: accent, storefront_customizations: customizations, rights_attested: publishRights };
+      // The SAVED theme, never the previewed one. The button above already refuses, so reaching here
+      // with a locked preview should be impossible — but this payload also carries colours, sections
+      // and the gallery, and a 403 on the theme would reject the whole request and lose edits that
+      // had nothing to do with it. Cheap insurance against an expensive, confusing failure.
+      const payload = { storefront_theme_id: lockedPreview ? savedThemeId : themeId, primary_color: primary, accent_color: accent, storefront_customizations: customizations, rights_attested: publishRights };
       if (portraitKey !== undefined) payload.portrait_key = portraitKey;   // new portrait (or null to clear)
       await onPublish?.(payload);
       // 2. photo captions + order for persisted rows (metadata only; add/remove already saved)
@@ -594,9 +640,18 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               // Silent when there is nothing wrong. A review screen on every colour tweak becomes
               // wallpaper, and wallpaper is what the rights tick two screens later must not become.
               // Appearing only when it has something to say is what makes it worth reading.
+              // The tease has done its job by here — straight to billing rather than an explainer
+              // with another step in it.
+              // Close on the way out, like the flavour-review handoff does: the host owns billing,
+              // and a baker should land ON the plans rather than behind the customiser.
+              if (lockedPreview) { onClose?.(); onUpgrade?.(); return; }
               if (needsReview) setReview(true); else setPublishConfirm(true);
             }}>
-            {publishing ? 'Publishing…' : busy ? 'Uploading…' : published ? 'Update' : 'Publish'}
+            {publishing ? 'Publishing…' : busy ? 'Uploading…'
+              // The button says what it will DO. "Publish" that opens a paywall is a bait; this is
+              // the one place the upgrade is named, and it is named at the moment they want the thing.
+              : lockedPreview ? 'Upgrade to publish'
+              : published ? 'Update' : 'Publish'}
           </button>
         </div>
       </div>
@@ -625,7 +680,17 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           {/* Phase 3 — the panel is rendered from the template's control list (order matters). */}
           {templateControls.map(k => <React.Fragment key={k}>{CONTROLS[k]?.()}</React.Fragment>)}
 
-          <p style={s.hint}>Edits show in <b>Preview</b>. Hit <b>{published ? 'Update' : 'Publish'}</b> to make them go live on your storefront.</p>
+          {lockedPreview ? (
+            // Says what they are looking at and what it costs, in that order. No modal: a baker who
+            // is enjoying a preview should not have to dismiss something to keep enjoying it.
+            <p style={s.upsell}>
+              You’re previewing <b>{themes.find(t => t.id === themeId)?.name}</b>, a Blaze theme. Look
+              around as long as you like — publishing it needs an upgrade, and your live storefront is
+              untouched until then.
+            </p>
+          ) : (
+            <p style={s.hint}>Edits show in <b>Preview</b>. Hit <b>{published ? 'Update' : 'Publish'}</b> to make them go live on your storefront.</p>
+          )}
           {!isWide && published && <button type="button" style={s.unpublishLink} onClick={unpublish}>Unpublish storefront</button>}
         </div>
         )}
@@ -902,13 +967,17 @@ function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column', ca
         // Shown to every plan rather than filtered out. A premium theme a Flame baker can see and
         // not choose is an upgrade prompt; one they never knew existed is not — and a list quietly
         // shorter than the pricing page implies is its own confusion.
+        // Locked = a plan cannot PUBLISH it. It can still be looked at: the card is tappable and
+        // full-strength, and only the badge says Blaze. Disabling it was making the best thing we
+        // sell invisible — nobody upgrades for a word they cannot click.
+        //
+        // `off` (not yet built) is genuinely un-tappable: there is nothing to preview.
         const locked = t.is_premium && !canPremium;
-        const dim = off || locked;
         return (
-          <button key={t.id} type="button" disabled={dim} onClick={() => onSelect(t.id)}
-            title={locked ? 'Available on Blaze and above' : undefined}
+          <button key={t.id} type="button" disabled={off} onClick={() => onSelect(t.id)}
+            title={locked ? 'Preview it — publishing needs Blaze' : undefined}
             style={{ ...(row ? s.themeChip : s.themeBtn), borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1,
-              ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: dim ? 0.5 : 1, cursor: dim ? 'default' : 'pointer' }}>
+              ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
             <span style={{ fontWeight: 800, color: '#2C4433', fontSize: row ? 13 : 13.5 }}>{t.name}</span>
             {/* "Soon" wins when a theme is both: an inactive theme cannot be chosen on ANY plan, so
                 telling a Flame baker to upgrade for it would sell them something that does not
@@ -931,6 +1000,8 @@ const s = {
   title:    { fontSize: 15, fontWeight: 800, color: '#2C4433', whiteSpace: 'nowrap' },
   tab:      { flex: 1, padding: '9px', borderRadius: 9, border: 'none', background: '#F0F4F1', color: '#6B8C74', fontFamily: FONT, fontSize: 13.5, fontWeight: 800, cursor: 'pointer' },
   tabActive:{ background: '#2C4433', color: '#fff' },
+  upsell:   { fontSize: 12.5, lineHeight: 1.65, color: '#6B5B2E', background: '#FDF6E3',
+              border: '1px solid #EFE2BE', borderRadius: 10, padding: '10px 12px', margin: '14px 0 0' },
   statusPill:{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.5 },
   pillLive: { color: '#1B7A4B', background: '#E4F4EA' },
   pillDraft:{ color: '#9A6B16', background: '#FBF0DA' },

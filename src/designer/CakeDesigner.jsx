@@ -8232,6 +8232,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // The publish review's "Review my flavours". Closes Settings on the way so the baker lands
         // ON the flavour list rather than behind it — the customiser has already closed itself.
         onReviewFlavours={() => { setSettingsPanelOpen(false); setFlavoursPanelOpen(true); }}
+        // "Upgrade to publish" on a premium theme preview. Straight to billing — by the time a baker
+        // has previewed their own shop in a theme and reached for Publish, an explainer screen in
+        // between is a step that loses people.
+        onUpgrade={() => { setSettingsPanelOpen(false); setBillingPanelOpen(true); }}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}

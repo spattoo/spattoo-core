@@ -124,7 +124,7 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours }) {
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade }) {
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
@@ -615,6 +615,9 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         // Straight through to the host: the publish review's "Review my flavours" has to open a
         // SIBLING settings screen, which neither this panel nor the customiser owns.
         onReviewFlavours={onReviewFlavours}
+        // Same reason as above: a premium theme's "Upgrade to publish" opens BILLING, which is a
+        // sibling screen this panel does not own.
+        onUpgrade={onUpgrade}
         onClose={() => setPreviewOpen(false)}
       />
     </>
