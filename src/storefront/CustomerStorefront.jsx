@@ -462,6 +462,10 @@ export default function CustomerStorefront({
         <div style={{ ...s.brand, ...(wide ? { flex: 1 } : {}) }}>
           {logo
             ? <img src={logo} alt={baker.name} style={s.logoImg} />
+            /* `headerBrand: false` — a theme whose HERO carries the name (Atelier's masthead) hides
+               the small one in the bar. Two of the same word, 40px apart, is a stutter, not
+               branding. An uploaded logo always wins: that is the baker's mark, not our typography. */
+            : tokens.headerBrand === false ? null
             : <span style={{ ...s.brandName, color: headerText }}>{baker.name}</span>}
         </div>
         {bp === 'mobile' ? (
@@ -1064,28 +1068,47 @@ function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel
   );
 }
 
-/* ── Atelier: type first, cake second ─────────────────────────────────────────────────────────────
+/* ── Atelier: a masthead ──────────────────────────────────────────────────────────────────────────
  *
- * An editorial opening rather than a picture with words on it. The name is set as a HOUSE mark —
- * heavy sans, caps, wide tracking — over a hairline rule, then an oversized serif headline, then the
- * CTA as a text link with a rule under it rather than a pill. A rounded filled button would be the
- * one soft, "app" shape on a page whose entire proposition is severity.
+ * The first draft was a text column on the left and the cake on the right. That is Aurora's move
+ * with different fonts, and it is why the theme read as "the same page in a nicer typeface" — the
+ * hero is the first thing anyone sees and it was structurally identical to one we already ship.
  *
- * The cake is LARGE and bleeds off the right edge. Cropping the subject is the most reliable
- * editorial signal there is — a magazine crops because the page is a frame it does not respect,
- * whereas software centres things politely inside their boxes.
+ * So the hero is now a MASTHEAD: the bakery's name set enormous across the full width, a hairline
+ * under it, and the cake rising THROUGH that line so the type sits in front of the object. Type and
+ * image occupying the same space is the oldest editorial move there is, and it is the one thing no
+ * ordinary page-builder does, because it requires the two to be composed together rather than
+ * stacked in boxes.
  *
- * It keeps the live 3D cake, where Patisserie dropped it: a photographic object inside flat linework
- * was two languages arguing, but here dimension IS the language. It also means the picker offers one
- * theme that moves and one that does not, which is a real choice rather than two moods.
+ * ⚠️ The header's own wordmark is suppressed for this theme (`headerBrand: false`). With the name at
+ * 12vw immediately below it, the small one in the bar is not branding, it is a stutter.
+ *
+ * The masthead is the BAKER'S NAME, not the headline: at this size it has to be the one string that
+ * is always short enough to work, always theirs, and already the thing a customer arrived looking
+ * for. A tagline set at 12vw is a slogan shouted; a name set at 12vw is a shopfront.
  */
 function atelierHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, heroDesign, heroCakeH }) {
   return (
     <section style={s.atHero}>
-      <div style={s.atInner}>
-        <div style={s.atText}>
-          <div style={s.atRule} />
+      <div style={s.atMasthead}>
+        <span style={s.atName}>{baker.name}</span>
+      </div>
+      <div style={s.atStage}>
+        {/* The cake sits ON the rule, overlapping the name's baseline. */}
+        <div style={s.atCake}>
+          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent}
+            mood="light" height={heroCakeH(wide ? 400 : 240, 240)} spin={0.24} />
+        </div>
+        <div style={s.atRule} />
+      </div>
+      <div style={s.atBelow}>
+        <div style={s.atCol}>
+          {/* No kicker. There was one, set to the gallery's own heading — which then printed "OUR
+              CREATIONS" twice, a block apart, because that string is already the next section's
+              label. A running head that repeats the thing below it is not a running head. */}
           <h1 style={s.atTitle}>{txt('hero_tagline')}</h1>
+        </div>
+        <div style={s.atCol}>
           <p style={s.atSub}>{txt('hero_subtitle')}</p>
           {expired ? (
             <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
@@ -1097,10 +1120,6 @@ function atelierHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, 
               <span style={s.atArrow} aria-hidden="true">→</span>
             </button>
           )}
-        </div>
-        <div style={s.atMedia}>
-          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent}
-            mood="light" height={heroCakeH(wide ? 520 : 320, 320)} spin={0.26} />
         </div>
       </div>
     </section>
@@ -1148,6 +1167,17 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
   const flat = tk.cardStyle === 'flat';
   const cardBg     = flat ? 'transparent' : '#fff';
   const cardShadow = flat ? 'none' : shadow;
+
+  // ── ALIGNMENT ───────────────────────────────────────────────────────────────────────────────
+  // Every storefront centres everything — eyebrow, section title, captions, reviews — in every
+  // theme. Centred-everything is the single most "template" thing about these pages: it is what a
+  // page looks like when nobody decided, and no amount of new colour or type escapes it.
+  //
+  // `align: 'left'` moves the body copy to a hard left edge, which is what makes an editorial layout
+  // read as edited. Default is 'center', so every existing theme is untouched.
+  const alignLeft = tk.align === 'left';
+  const bodyAlign = alignLeft ? 'left' : 'center';
+  const bodyItems = alignLeft ? 'flex-start' : 'center';
   const desktop = bp === 'desktop', wide = bp !== 'mobile';
   // Responsive content width — a phone column on mobile, but USE the screen on bigger devices
   // (the storefront is customer-facing; it must not be a skinny strip on desktop).
@@ -1218,35 +1248,42 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     // Curved-band hero (Honeybear-style): a brand-tinted top band with a wavy SVG bottom edge,
     // headline on the colour, featured cake pulled up over the curve. (Colours = brand tint for
     // now; baker colour controls come later.)
-    // ── Atelier hero ──────────────────────────────────────────────────────────────────────────
-    atHero:  { background: pageBg, overflow: 'hidden' },
-    atInner: {
-      maxWidth: 1180, margin: '0 auto', padding: desktop ? '58px 0 64px 40px' : wide ? '44px 0 48px 28px' : '26px 18px 32px',
-      display: 'flex', alignItems: 'center', gap: wide ? 24 : 0,
-      flexDirection: wide ? 'row' : 'column-reverse',
+    // ── Atelier hero: the masthead ────────────────────────────────────────────────────────────
+    atHero:   { background: pageBg, overflow: 'hidden', paddingTop: wide ? 18 : 10 },
+    // Same measure as the body (`cw`), NOT the viewport. A masthead that bleeds edge to edge looks
+    // striking on its own and breaks the page: everything below it lives in the content column, so
+    // the hero's left edge and every heading under it would disagree by about 150px. One left edge
+    // running the length of the page is the editorial signal; full-bleed type is just big type.
+    atMasthead: { padding: wide ? '0 24px' : '0 16px', maxWidth: cw, margin: '0 auto' },
+    // Sized in vw so it always FILLS the measure, which is what a masthead does — a fixed px size
+    // would leave a short name floating and clip a long one.
+    atName:   {
+      display: 'block', fontFamily: FONT, fontWeight: 800, color: heading,
+      textTransform: 'uppercase', letterSpacing: wide ? '0.02em' : '0.01em',
+      fontSize: wide ? 'clamp(40px, 7.4vw, 116px)' : 'clamp(28px, 11vw, 56px)',
+      lineHeight: 0.92, wordBreak: 'break-word',
     },
-    atText:  { flex: wide ? '0 0 46%' : 'none', width: wide ? '46%' : '100%', maxWidth: wide ? 520 : 'none' },
-    // The hairline. One rule, above the headline, doing the job a whole band of colour does elsewhere.
-    atRule:  { height: 1, background: heading, opacity: 0.85, marginBottom: wide ? 26 : 18 },
-    atTitle: {
-      fontFamily: SERIF, fontWeight: 500, color: heading, letterSpacing: -0.4,
-      fontSize: desktop ? 62 : wide ? 48 : 34, lineHeight: 1.04, margin: '0 0 18px',
+    atStage:  { position: 'relative', maxWidth: cw, margin: '0 auto', padding: wide ? '0 24px' : '0 16px' },
+    // The cake overlaps the masthead's baseline: negative margin pulls it up INTO the name.
+    atCake:   { position: 'relative', zIndex: 1, marginTop: wide ? -34 : -16, display: 'flex', justifyContent: 'center' },
+    // The rule crosses BEHIND the cake, so the two share the same space rather than stacking.
+    atRule:   { position: 'absolute', left: wide ? 24 : 16, right: wide ? 24 : 16, bottom: wide ? 54 : 34, height: 1, background: heading, opacity: 0.9, zIndex: 0 },
+    atBelow:  {
+      maxWidth: cw, margin: '0 auto', padding: wide ? '26px 24px 44px' : '18px 16px 28px',
+      display: 'flex', gap: wide ? 48 : 18, alignItems: 'flex-start',
+      flexDirection: wide ? 'row' : 'column',
     },
-    atSub:   { fontFamily: FONT, color: muted, fontSize: wide ? 14.5 : 13.5, lineHeight: 1.75, maxWidth: 420, margin: '0 0 26px' },
-    // A text link with a rule under it, not a pill: the only round-cornered thing on this page would
-    // announce itself as software.
-    atCta:   {
+    atCol:    { flex: 1, minWidth: 0 },
+    atTitle:  { fontFamily: SERIF, fontWeight: 500, color: heading, letterSpacing: -0.3,
+                fontSize: desktop ? 44 : wide ? 36 : 27, lineHeight: 1.08, margin: 0 },
+    atSub:    { fontFamily: FONT, color: text, fontSize: wide ? 14.5 : 13.5, lineHeight: 1.8, margin: '0 0 22px', maxWidth: 460 },
+    atCta:    {
       display: 'inline-flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
       borderBottom: `1px solid ${heading}`, borderRadius: 0, padding: '0 0 7px', cursor: 'pointer',
       fontFamily: FONT, fontSize: wide ? 13 : 12.5, fontWeight: 700, letterSpacing: 1.6,
       textTransform: 'uppercase', color: heading,
     },
-    atArrow: { fontSize: 15, lineHeight: 1 },
-    // Bleeds off the right on wide screens — the crop IS the editorial signal.
-    atMedia: {
-      flex: wide ? '1 1 auto' : 'none', width: wide ? 'auto' : '100%',
-      marginRight: desktop ? -110 : wide ? -70 : 0, minWidth: 0,
-    },
+    atArrow:  { fontSize: 15, lineHeight: 1 },
 
     // ── Patisserie hero ───────────────────────────────────────────────────────────────────────
     // No band, no tint: the drawing sits on the page's own paper, because a coloured hero block
@@ -1318,8 +1355,8 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
 
     main:        { maxWidth: cw, width: '100%', margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' },
     section:     { padding: wide ? '66px 0 8px' : '46px 0 6px' },
-    eyebrow:     { fontFamily: handFont, fontSize: 11.5, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: primary, marginBottom: 12, textAlign: 'center' },
-    sectionTitle:{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: heading, margin: '0 0 22px', textAlign: 'center', lineHeight: 1.3 },
+    eyebrow:     { fontFamily: handFont, fontSize: 11.5, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: primary, marginBottom: 12, textAlign: bodyAlign },
+    sectionTitle:{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: heading, margin: '0 0 22px', textAlign: bodyAlign, lineHeight: 1.3 },
 
     steps:       { display: 'grid', gap: 12 },
     stepCard:    { display: 'flex', gap: 16, alignItems: 'flex-start', background: cardBg, border: `1px solid ${cardBorder}`, boxShadow: cardShadow, borderRadius: rad(16), padding: '20px 20px' },
@@ -1356,7 +1393,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     // Gallery slideshow
     gSlide:      { aspectRatio: '4 / 3', borderRadius: rad(18), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
     gImg:        { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: 'center' },
+    gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: bodyAlign },
     // Breaks OUT of the content column: 100vw pulled back by half the difference. The section's own
     // padding still holds the captions in, so only the images go edge to edge.
     gBleed:      { width: '100vw', marginLeft: 'calc(50% - 50vw)', display: 'grid',
@@ -1372,16 +1409,16 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     galleryItem:   { flex: `0 0 calc((100% - ${wide ? 28 : 16}px) / 3)`, minWidth: 0, scrollSnapAlign: 'start', margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
     gGridFig:    { margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
     gGridCard:   { aspectRatio: '4 / 3', borderRadius: rad(16), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
-    gGridCap:    { fontSize: 13, fontWeight: 600, color: muted, textAlign: 'center' },
+    gGridCap:    { fontSize: 13, fontWeight: 600, color: muted, textAlign: bodyAlign },
     gFallback:   { aspectRatio: '4 / 3', borderRadius: rad(18), boxShadow: cardShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: '#fff', textAlign: 'center', padding: 20 },
     gFallbackText:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: '#fff' },
     gFallbackCta:{ padding: '11px 24px', borderRadius: 12, border: `1.5px solid ${alpha('#ffffff', 0.7)}`, background: alpha('#ffffff', 0.12), color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, backdropFilter: 'blur(4px)' },
 
     carousel:    { position: 'relative' },
     testiCard:   { background: cardBg, border: flat ? `1px solid ${cardBorder}` : `1px solid ${cardBorder}`, boxShadow: cardShadow, borderRadius: rad(18), padding: '26px 46px', margin: 0, minHeight: 150, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
-    stars:       { color: accent, fontSize: 16, letterSpacing: 2, marginBottom: 12, textAlign: 'center' },
-    quote:       { fontSize: 15.5, fontWeight: 500, lineHeight: 1.6, color: text, margin: '0 0 16px', textAlign: 'center' },
-    author:      { fontSize: 14, fontWeight: 700, color: heading, textAlign: 'center' },
+    stars:       { color: accent, fontSize: 16, letterSpacing: 2, marginBottom: 12, textAlign: bodyAlign },
+    quote:       { fontSize: 15.5, fontWeight: 500, lineHeight: 1.6, color: text, margin: '0 0 16px', textAlign: bodyAlign },
+    author:      { fontSize: 14, fontWeight: 700, color: heading, textAlign: bodyAlign },
     authorOcc:   { fontWeight: 600, color: muted },
     arrow:       { width: 38, height: 38, borderRadius: '50%', border: `1px solid ${cardBorder}`, background: '#fff', color: primary, fontSize: 22, fontWeight: 700, lineHeight: 1, cursor: 'pointer', boxShadow: shadow, position: 'absolute', top: '50%', transform: 'translateY(-50%)', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 },
     arrowL:      { left: -8 },

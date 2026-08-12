@@ -163,6 +163,11 @@ const ATELIER_TOKENS = {
   cardStyle:  'flat',
   // The gallery breaks out of the content column — images edge to edge, captions as print credits.
   gallery:    'bleed',
+  // Left, not centred. Centred-everything is what a page looks like when nobody decided, and it is
+  // the most template-ish thing about the storefront — no palette escapes it.
+  align:      'left',
+  // The hero IS the wordmark here, so the header does not repeat it.
+  headerBrand: false,
   // The type IS the design here, exactly as in Patisserie — a font picker would undo it.
   ownsType:   true,
   cake:       'brand',
