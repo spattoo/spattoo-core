@@ -98,6 +98,13 @@ const PATISSERIE_TOKENS = {
   // ink-line theme; Parisienne is a fine copperplate with real thick/thin. Registered in
   // spattoo-web's next/font — see shared/fonts.js for why a LIBRARY only names its fonts.
   brandFont: "'Parisienne', 'Cormorant Garamond', cursive",
+  // The DRAWN face, for the primary button and the section eyebrows — the two places the page
+  // speaks in its own voice rather than the baker's. Cormorant on the button was refined and
+  // formal: it said "menu", not "hand-drawn", which is the one note this theme cannot afford to
+  // miss on the thing a customer actually clicks. Marker contours on a SANS skeleton, so it reads
+  // instantly at button size; a true handwriting face (Caveat) was tried and loses too much
+  // legibility at 15px on a phone.
+  handFont:  "'Shantell Sans', 'Trebuchet MS', cursive",
   // Warm paper, never #FFF: pure white makes a watercolour wash look like a sticker on a screen.
   pageBg:     '#FFFCF8',
   heading:    '#2E3A46',      // ink — a blue-black, the colour a dip pen actually leaves

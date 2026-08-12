@@ -1069,6 +1069,9 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
   const bandStrong = pal.bandStrong;   // hero + header band
   const cardBorder = pal.hairline;     // rose-tinted card / divider borders
   const brandFont = tk.brandFont || tk.font;
+  // A template's DRAWN face, if it has one. Falls back to the body font, so every existing theme
+  // renders exactly as before and this stays a token rather than a branch.
+  const handFont = tk.handFont || tk.font;
   const desktop = bp === 'desktop', wide = bp !== 'mobile';
   // Responsive content width — a phone column on mobile, but USE the screen on bigger devices
   // (the storefront is customer-facing; it must not be a skinny strip on desktop).
@@ -1150,8 +1153,8 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
       background: pal.cta, color: pal.onCta, border: 'none', borderRadius: 999,
       // The serif, letter-spaced, at the size a serif needs to hold its own. A geometric sans on
       // this button was the last thing on the page that looked like software.
-      padding: wide ? '15px 36px' : '13px 28px', fontSize: wide ? 17 : 15.5, fontWeight: 600,
-      fontFamily: SERIF, cursor: 'pointer', letterSpacing: 0.6,
+      padding: wide ? '15px 36px' : '13px 28px', fontSize: wide ? 17.5 : 16, fontWeight: 700,
+      fontFamily: handFont, cursor: 'pointer', letterSpacing: 0.2,
       boxShadow: '0 10px 24px rgba(70,60,66,0.14)',
     },
     curveHero:  { background: pageBg },
@@ -1201,7 +1204,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
 
     main:        { maxWidth: cw, width: '100%', margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' },
     section:     { padding: wide ? '66px 0 8px' : '46px 0 6px' },
-    eyebrow:     { fontSize: 11.5, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: primary, marginBottom: 12, textAlign: 'center' },
+    eyebrow:     { fontFamily: handFont, fontSize: 11.5, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: primary, marginBottom: 12, textAlign: 'center' },
     sectionTitle:{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: heading, margin: '0 0 22px', textAlign: 'center', lineHeight: 1.3 },
 
     steps:       { display: 'grid', gap: 12 },
@@ -1281,7 +1284,7 @@ function welcomeStyles(primary, accent, pal) {
   return {
     overlay:  { position: 'fixed', inset: 0, zIndex: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 22, background: 'rgba(28,20,24,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' },
     card:     { width: '100%', maxWidth: 384, boxSizing: 'border-box', background: '#FFFDFB', borderRadius: 24, padding: '34px 26px 22px', textAlign: 'center', boxShadow: '0 24px 70px rgba(0,0,0,0.34)', fontFamily: FONT },
-    eyebrow:  { fontSize: 11.5, fontWeight: 700, letterSpacing: 2.5, textTransform: 'uppercase', color: primary, marginBottom: 12 },
+    eyebrow:  { fontFamily: handFont, fontSize: 11.5, fontWeight: 700, letterSpacing: 2.5, textTransform: 'uppercase', color: primary, marginBottom: 12 },
     logo:     { maxHeight: 38, maxWidth: 210, objectFit: 'contain', display: 'block', margin: '0 auto 8px' },
     bakerName:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: heading, marginBottom: 6 },
     title:    { fontFamily: SERIF, fontSize: 27, fontWeight: 600, color: heading, lineHeight: 1.18, margin: '4px 0 12px' },
