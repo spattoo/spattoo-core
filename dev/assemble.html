@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scroll-assembled cake — prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Shantell+Sans:wght@600;700&family=Caveat:wght@700&family=Lora:wght@400;600&family=Parisienne&family=Montserrat:wght@400;500;600;700;800&family=Pacifico&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body, #root { height: 100%; }
+
+      /* ── The HOST app's reset, mirrored ──────────────────────────────────────────────────────
+         The storefront does not run on its own: spattoo-web imports it under `@import "tailwindcss"`,
+         whose preflight blockifies replaced elements (preflight.css:209 — img, svg, video, canvas,
+         audio, iframe, embed, object). Without this line the harness renders inline SVGs the way the
+         BROWSER defaults them and production renders them as blocks, so a layout bug that only
+         appears under the reset — an icon dropping onto its own line, left of centred text — is
+         invisible here. A harness that disagrees with production about the cascade is worse than no
+         harness: it reports a pass. */
+      img, svg, video, canvas, audio, iframe, embed, object { display: block; vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./assemble.jsx"></script>
+  </body>
+</html>
