@@ -16,7 +16,10 @@ const SAMPLE_BAKER = {
   website_url: '',
   // A real mark, so the harness previews the COMMON case. It was null, which meant every
   // screenshot showed the no-logo fallback and the branded path was never actually looked at.
-  logo_url: '/feelings-flavours-logo.png',
+  // ?logo=none renders the WORDMARK instead of an uploaded mark. Worth a switch: a theme's brand
+  // typography — Atelier's tracked caps, Patisserie's copperplate — is invisible while a logo image
+  // is sitting in the header, so the most distinctive thing about a theme cannot be judged.
+  logo_url: new URLSearchParams(location.search).get('logo') === 'none' ? null : '/feelings-flavours-logo.png',
   story: '',                       // empty → component's SAMPLE_STORY fallback
   portrait_url: null,
   storefront_customizations: {},

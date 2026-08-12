@@ -36,3 +36,14 @@ export const SCALLOPS = [
   scallopEdge(26, 12, 30),
   scallopEdge(34, 20, 22),
 ];
+
+// ── The rule ────────────────────────────────────────────────────────────────────────────────────
+// No curve at all: a band that ends in a straight line. For templates whose language is hairlines
+// and hard edges (Atelier), where the product's signature wave would be the one soft thing on an
+// otherwise severe page — and softness is exactly what that theme is selling the absence of.
+//
+// Still the same 1440x70 viewBox and the same fill-to-bottom shape, so it drops into any WAVES slot
+// and the band machinery neither knows nor cares which set it was handed.
+export const RULES = [
+  'M0,69 L1440,69 L1440,70 L0,70 Z',
+];

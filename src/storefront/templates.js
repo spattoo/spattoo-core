@@ -130,6 +130,38 @@ const PATISSERIE_TOKENS = {
   cake:       'brand',
 };
 
+// ── Atelier — the severe one ────────────────────────────────────────────────────────────────────
+// Bone, ink, one hairline. Built as the deliberate opposite of Patisserie, because a picker whose
+// themes differ only in COLOUR is a picker of recolours and nobody pays for a recolour. Where that
+// one is drawn, warm and curved, this is photographed, cold and straight: no illustration, no wave,
+// no script — the expense is in the restraint and the size of the type.
+//
+// The wordmark is a heavy SANS in caps, wide-tracked, the way a fashion house sets its name — not a
+// script. That single choice is most of the difference: script says handmade, caps say house.
+const ATELIER_TOKENS = {
+  font:      SANS,                                       // body — plain, small, quiet
+  serif:     "'Cormorant Garamond', Georgia, serif",     // the big editorial headline
+  brandFont: SANS,
+  brandMark: 'caps',                                     // house mark, not a script wordmark
+  // Bone rather than white. Pure #FFF under a black rule reads as an unstyled document; bone reads
+  // as paper stock, which is the whole trick of an editorial page.
+  pageBg:     '#F7F5F1',
+  heading:    '#111111',
+  text:       '#3A3A38',
+  muted:      '#8E8E88',
+  cardBorder: '#E2DFD8',
+  // Almost no shadow. Editorial pages sit FLAT — a card that floats belongs to a dashboard.
+  shadow:     '0 1px 0 rgba(17,17,17,0.06)',
+  contentWidth: 600,
+  inkMix:     { with: '#111111', amount: 0.86 },
+  hero:       { type: 'atelier' },
+  // Straight. The product's signature wave would be the one soft thing on a page selling severity.
+  edges:      'rule',
+  // The type IS the design here, exactly as in Patisserie — a font picker would undo it.
+  ownsType:   true,
+  cake:       'brand',
+};
+
 export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
 
 export const TEMPLATES = {
@@ -142,6 +174,14 @@ export const TEMPLATES = {
     key: 'aurora', label: 'Aurora', tokens: AURORA_TOKENS,
     defaults: { primary: '#5B3A29', accent: '#C8945B', ctaColor: '#3A281C' },   // chocolate/caramel + dark hero text
     controls: DEFAULT_CONTROLS,
+  },
+  atelier: {
+    key: 'atelier', label: 'Atelier', tokens: ATELIER_TOKENS,
+    // Ink, bone, and the baker's own accent as the ONE colour on the page. Deliberately not a
+    // palette: the restraint is the product, and a baker who wants three colours wants a different
+    // theme.
+    defaults: { primary: '#1A1A18', accent: '#A8654B', ctaColor: '#F7F5F1' },
+    controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
   },
   patisserie: {
     key: 'patisserie', label: 'Patisserie', tokens: PATISSERIE_TOKENS,

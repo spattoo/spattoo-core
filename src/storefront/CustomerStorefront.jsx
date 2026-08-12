@@ -8,7 +8,7 @@ import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
 import { useOtp } from './useOtp.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
-import { WAVES, SCALLOPS } from '../shared/waves.js';
+import { WAVES, SCALLOPS, RULES } from '../shared/waves.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -516,7 +516,9 @@ export default function CustomerStorefront({
         // Which EDGE this template's bands end in. A token, not a branch on theme name: the wave is
         // the product's signature shape, and Patisserie's language is doilies and awnings, so it
         // ends its bands in scallops instead. Same viewBox, so it is a straight swap.
-        const edges = tokens.edges === 'scallop' ? SCALLOPS : WAVES;
+        const edges = tokens.edges === 'scallop' ? SCALLOPS
+                    : tokens.edges === 'rule'    ? RULES
+                    : WAVES;
         const wavy = (key, children) => {
           const tint = bandTints[bandIdx % bandTints.length];
           const topPath = edges[bandIdx % edges.length];
@@ -1048,11 +1050,55 @@ function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel
   );
 }
 
+/* ── Atelier: type first, cake second ─────────────────────────────────────────────────────────────
+ *
+ * An editorial opening rather than a picture with words on it. The name is set as a HOUSE mark —
+ * heavy sans, caps, wide tracking — over a hairline rule, then an oversized serif headline, then the
+ * CTA as a text link with a rule under it rather than a pill. A rounded filled button would be the
+ * one soft, "app" shape on a page whose entire proposition is severity.
+ *
+ * The cake is LARGE and bleeds off the right edge. Cropping the subject is the most reliable
+ * editorial signal there is — a magazine crops because the page is a frame it does not respect,
+ * whereas software centres things politely inside their boxes.
+ *
+ * It keeps the live 3D cake, where Patisserie dropped it: a photographic object inside flat linework
+ * was two languages arguing, but here dimension IS the language. It also means the picker offers one
+ * theme that moves and one that does not, which is a real choice rather than two moods.
+ */
+function atelierHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, heroDesign, heroCakeH }) {
+  return (
+    <section style={s.atHero}>
+      <div style={s.atInner}>
+        <div style={s.atText}>
+          <div style={s.atRule} />
+          <h1 style={s.atTitle}>{txt('hero_tagline')}</h1>
+          <p style={s.atSub}>{txt('hero_subtitle')}</p>
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.atCta, ...(notAcceptingOrders ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+              <span style={s.atArrow} aria-hidden="true">→</span>
+            </button>
+          )}
+        </div>
+        <div style={s.atMedia}>
+          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent}
+            mood="light" height={heroCakeH(wide ? 520 : 320, 320)} spin={0.26} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const HERO_RENDERERS = {
   'gradient-cake': gradientCakeHero,
   'centered-cake': centeredCakeHero,
   'photo':         photoHero,
   'shopfront':     shopfrontHero,
+  'atelier':       atelierHero,
   'none':          () => null,
 };
 
@@ -1092,7 +1138,15 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     logoImg:     { height: wide ? 52 : 44, width: 'auto', maxWidth: wide ? 300 : 240, objectFit: 'contain', display: 'block' },
     logo:        { width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accent}`, background: '#fff' },
     logoFallback:{ width: 38, height: 38, borderRadius: '50%', background: pal.cta, color: pal.onCta, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 },
-    brandName:   { fontFamily: brandFont, fontSize: wide ? 30 : 26, fontWeight: 400, color: heading, lineHeight: 1 },
+    // `brandMark: 'caps'` sets the name as a HOUSE mark — heavy sans, uppercase, wide tracking, the
+    // way a fashion label sets its name — instead of a script wordmark. It is one token and it is
+    // most of the distance between Atelier and every other theme here: script reads handmade, caps
+    // read house. Absent → unchanged, so the existing themes keep their script exactly.
+    brandName:   { fontFamily: brandFont, fontSize: wide ? 30 : 26, fontWeight: 400, color: heading, lineHeight: 1,
+                   ...(tk.brandMark === 'caps'
+                     ? { textTransform: 'uppercase', fontWeight: 800, letterSpacing: wide ? 4.5 : 3,
+                         fontSize: wide ? 21 : 17 }
+                     : {}) },
     navRow:      { display: 'flex', alignItems: 'center', gap: 28 },
     navItem:     { fontSize: 14.5, fontWeight: 600, color: heading, textDecoration: 'none', cursor: 'pointer', fontFamily: FONT, letterSpacing: 0.2 },
     navItemBtn:  { background: 'none', border: 'none', padding: 0 },
@@ -1133,6 +1187,36 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     // Curved-band hero (Honeybear-style): a brand-tinted top band with a wavy SVG bottom edge,
     // headline on the colour, featured cake pulled up over the curve. (Colours = brand tint for
     // now; baker colour controls come later.)
+    // ── Atelier hero ──────────────────────────────────────────────────────────────────────────
+    atHero:  { background: pageBg, overflow: 'hidden' },
+    atInner: {
+      maxWidth: 1180, margin: '0 auto', padding: desktop ? '58px 0 64px 40px' : wide ? '44px 0 48px 28px' : '26px 18px 32px',
+      display: 'flex', alignItems: 'center', gap: wide ? 24 : 0,
+      flexDirection: wide ? 'row' : 'column-reverse',
+    },
+    atText:  { flex: wide ? '0 0 46%' : 'none', width: wide ? '46%' : '100%', maxWidth: wide ? 520 : 'none' },
+    // The hairline. One rule, above the headline, doing the job a whole band of colour does elsewhere.
+    atRule:  { height: 1, background: heading, opacity: 0.85, marginBottom: wide ? 26 : 18 },
+    atTitle: {
+      fontFamily: SERIF, fontWeight: 500, color: heading, letterSpacing: -0.4,
+      fontSize: desktop ? 62 : wide ? 48 : 34, lineHeight: 1.04, margin: '0 0 18px',
+    },
+    atSub:   { fontFamily: FONT, color: muted, fontSize: wide ? 14.5 : 13.5, lineHeight: 1.75, maxWidth: 420, margin: '0 0 26px' },
+    // A text link with a rule under it, not a pill: the only round-cornered thing on this page would
+    // announce itself as software.
+    atCta:   {
+      display: 'inline-flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
+      borderBottom: `1px solid ${heading}`, borderRadius: 0, padding: '0 0 7px', cursor: 'pointer',
+      fontFamily: FONT, fontSize: wide ? 13 : 12.5, fontWeight: 700, letterSpacing: 1.6,
+      textTransform: 'uppercase', color: heading,
+    },
+    atArrow: { fontSize: 15, lineHeight: 1 },
+    // Bleeds off the right on wide screens — the crop IS the editorial signal.
+    atMedia: {
+      flex: wide ? '1 1 auto' : 'none', width: wide ? 'auto' : '100%',
+      marginRight: desktop ? -110 : wide ? -70 : 0, minWidth: 0,
+    },
+
     // ── Patisserie hero ───────────────────────────────────────────────────────────────────────
     // No band, no tint: the drawing sits on the page's own paper, because a coloured hero block
     // behind a watercolour wash reads as two backgrounds arguing.
