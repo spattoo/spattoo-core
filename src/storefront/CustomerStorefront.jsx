@@ -1014,11 +1014,10 @@ function photoHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, ha
  */
 function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, heroDesign, heroCakeH }) {
   const compact = bp === 'mobile';
-  // A rosette holds three or four words. A baker's strapline is often a sentence, so it goes under
-  // the headline instead — the same place every other theme puts it. Shown in exactly one of the two
-  // places, never both, and never shrunk to fit a circle.
+  // Under the headline, always — the same place every other theme puts it. It used to go into a
+  // doily rosette when short enough; the rosette is gone (see heroes/Shopfront.jsx), and with it the
+  // rule that a baker's strapline rendered somewhere different depending on its length.
   const sub = txt('hero_subtitle');
-  const inBadge = !compact && sub && sub.length <= 30;
   return (
     <section style={s.shopHero}>
       <div style={s.shopInner}>
@@ -1029,11 +1028,11 @@ function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel
           // wall. Deepening the primary keeps the accent colour picker-derived and guarantees it
           // harmonises with the shop whatever they choose — a mint bakery gets deep mint hearts.
           cta={darken(pal.cake, 0.34)}
-          name={baker.name} tagline={sub} compact={compact} />
+          name={baker.name} compact={compact} />
 
         <div style={s.shopCopy}>
           <h1 style={s.shopTitle}>{txt('hero_tagline')}</h1>
-          {!inBadge && sub && <p style={s.shopSub}>{sub}</p>}
+          {sub && <p style={s.shopSub}>{sub}</p>}
           {expired ? (
             <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
           ) : (

@@ -13,6 +13,18 @@
  * who wants a mint-green storefront cannot have one, and the "premium" theme becomes the least
  * personal thing we sell. It also keeps the page weightless and sharp on any screen.
  *
+ * ── NO DOILY ROSETTE ────────────────────────────────────────────────────────────────────────────
+ * There was one, bottom right, holding a short strapline. Removed on purpose and not to be
+ * reinstated without thinking about it: the reference image this theme's brief arrived as carries a
+ * doily rosette with a tagline in exactly that position, and of everything shared between the two it
+ * was the most specific — an awning or an arched window is a patisserie trope that nobody owns, a
+ * scalloped rosette holding a slogan in the corner is a composition. Trade dress is judged on the
+ * OVERALL impression, so the cheapest real distance came from dropping the one element that was
+ * doing the least work and looked the most borrowed.
+ *
+ * The strapline now sits under the headline, which is where every other theme puts it, and where it
+ * can be a whole sentence instead of four words.
+ *
  * ── THE ONE IDEA ────────────────────────────────────────────────────────────────────────────────
  * The arched window is a HOLE, and the live 3D cake sits inside it. Not a drawing of a cake — the
  * customer's own design, spinning, framed by the shop. Everything else on this canvas exists to
@@ -43,7 +55,7 @@ function scallops(x, y, width, count, r, up = false) {
  * @param {string} p.paper     page background, so the window's "glass" matches the page
  * @param {node}   p.children  the live cake, absolutely positioned into the window by the caller
  */
-export default function Shopfront({ primary, accent, cta, paper, name, tagline, compact = false, children }) {
+export default function Shopfront({ primary, accent, cta, paper, name, compact = false, children }) {
   // ONE viewBox at both breakpoints. The phone drops the wings (lamps, topiary) rather than using a
   // second drawing — two drawings would be two things to keep in step, and the wings are the first
   // thing to go when there is no room for them anyway.
@@ -53,10 +65,6 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
   //   274, sill 440 · door 640→716. The window's top must clear the sign band, or the name ends up
   //   printed on the glass — which is exactly what the first draft did.
   const W = 1000, H = 560;
-  // The rosette is a rosette: it holds three or four words, not a sentence. A long strapline goes
-  // under the headline instead (the caller decides), so nothing is ever lost or squeezed to 8px.
-  const badge = tagline && tagline.length <= 30 ? tagline : null;
-
   return (
     <div style={{ position: 'relative', width: '100%' }}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }} aria-hidden="true">
@@ -209,26 +217,6 @@ export default function Shopfront({ primary, accent, cta, paper, name, tagline, 
         }}>{name}</span>
       </div>
 
-      {/* The doily — the one piece of pure ornament this drawing allows itself. */}
-      {badge && !compact && (
-        <div style={{ position: 'absolute', right: '2%', bottom: '9%', width: '17%' }}>
-          <svg viewBox="0 0 200 200" width="100%" style={{ display: 'block' }} aria-hidden="true">
-            <path d={scallops(16, 100, 168, 13, 9)} fill={accent} fillOpacity="0.4" />
-            <path d={scallops(16, 100, 168, 13, 9, true)} fill={accent} fillOpacity="0.4" />
-            <circle cx="100" cy="100" r="84" fill={accent} fillOpacity="0.4" />
-            <circle cx="100" cy="100" r="68" {...line(1.1)} strokeDasharray="2 7" />
-          </svg>
-          <div style={{
-            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '0 22%', textAlign: 'center',
-          }}>
-            <span style={{
-              fontFamily: "'Cormorant Garamond', Georgia, serif", color: INK, fontWeight: 600,
-              fontSize: 'clamp(11px, 1.1vw, 16px)', lineHeight: 1.25,
-            }}>{badge}</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
