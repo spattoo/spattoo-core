@@ -156,10 +156,16 @@ function Page() {
   const name = q.get('name') || 'ARIA';
   return (
     <>
+      {/* Full screen, and the content pushed to its EDGES. The first pass centred everything in a
+          78vh block, which left a band of dead space above and below and made the name look timid in
+          the middle of it. Space at the margins reads as composure; space around a centred cluster
+          reads as a page that has not loaded yet. */}
       <header style={s.intro}>
         <div style={s.kicker}>Custom cakes · made to order</div>
-        <h1 style={s.mast}>{name}</h1>
-        <div style={s.introRule} />
+        <div style={s.introMid}>
+          <h1 style={s.mast}>{name}</h1>
+          <div style={s.introRule} />
+        </div>
         <p style={s.scrollHint}>Scroll to watch one being made</p>
       </header>
       <Assembling primary={q.get('primary') || '#E7B4C0'} accent={q.get('accent') || '#EBD9C4'} name={name} />
@@ -173,13 +179,20 @@ const SANS = "'Montserrat', system-ui, sans-serif";
 const SERIF = "'Cormorant Garamond', Georgia, serif";
 
 const s = {
-  intro: { minHeight: '78vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-           gap: 18, padding: '0 24px', background: PAPER },
+  intro: { minHeight: '100svh', display: 'flex', flexDirection: 'column', alignItems: 'center',
+           justifyContent: 'space-between', padding: 'clamp(28px, 6vh, 64px) clamp(18px, 5vw, 56px)',
+           background: PAPER, boxSizing: 'border-box' },
+  introMid: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(14px, 2.5vh, 26px)', width: '100%' },
   kicker: { fontFamily: SANS, fontSize: 10.5, fontWeight: 700, letterSpacing: 2.6, textTransform: 'uppercase', color: MUTED },
-  mast:  { fontFamily: SANS, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
-           fontSize: 'clamp(34px, 8vw, 104px)', color: INK, margin: 0, lineHeight: 0.95, textAlign: 'center' },
-  introRule: { width: 'min(70vw, 620px)', height: 1, background: INK, opacity: 0.45 },
-  scrollHint: { fontFamily: SERIF, fontSize: 17, fontStyle: 'italic', color: MUTED, margin: 0 },
+  // Fills the measure rather than sitting politely inside it — 8vw left a short name adrift in the
+  // middle of an empty screen. Tracking TIGHTENS as the size grows (0.06em at 34px would be a gap at
+  // 190px), and it wraps rather than overflowing, because a bakery called "The Little Cake Company
+  // of Hyderabad" is not a special case, it is Tuesday.
+  mast:  { fontFamily: SANS, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em',
+           fontSize: 'clamp(44px, 15vw, 190px)', color: INK, margin: 0, lineHeight: 0.88,
+           textAlign: 'center', width: '100%', overflowWrap: 'break-word' },
+  introRule: { width: '100%', maxWidth: 1200, height: 1, background: INK, opacity: 0.4 },
+  scrollHint: { fontFamily: SERIF, fontSize: 'clamp(15px, 1.5vw, 19px)', fontStyle: 'italic', color: MUTED, margin: 0 },
 
   // 360vh, last beat at 0.72: the finished cake then HOLDS for the final quarter instead of sliding
   // out of the sticky frame the moment it is done. The payoff needs longer on screen than any of the
