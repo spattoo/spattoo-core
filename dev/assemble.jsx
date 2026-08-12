@@ -141,6 +141,16 @@ function Assembling({ primary, accent, name }) {
   );
 }
 
+// ── Start at the top, always ────────────────────────────────────────────────────────────────────
+// Browsers restore scroll position on reload, which for an ordinary page is a courtesy and for a
+// scroll-told one is fatal: come back at 70% depth and every beat has already fired, so the page
+// opens on a FINISHED cake and the whole premise — watching it be made — is silently gone. It looks
+// exactly like the assembly is broken, and nothing in the console says otherwise.
+//
+// Anchored at module scope so it applies before React mounts and the first progress read happens.
+if (typeof history !== 'undefined' && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
+if (typeof window !== 'undefined') window.scrollTo(0, 0);
+
 function Page() {
   const q = new URLSearchParams(location.search);
   const name = q.get('name') || 'ARIA';
