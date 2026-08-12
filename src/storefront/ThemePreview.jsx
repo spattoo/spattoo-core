@@ -301,10 +301,17 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   // enforced — at the write. The server already 403s a premium theme without the entitlement
   // (spattoo-api bakers.js), so this is a tease with a real gate behind it, not a client-side rule.
   //
-  // ⚠️ PREVIEW MUST NOT PERSIST. The public storefront deliberately does NOT check entitlement when
-  // it RENDERS (migration 054 — a baker who downgrades keeps their live shop), so the moment a
-  // premium theme_id reached the database for an already-published baker they would have the premium
-  // theme in public, for free. Nothing here is saved until they are entitled.
+  // ⚠️ PREVIEW MUST NOT PERSIST. Nothing here is saved until they are entitled.
+  //
+  // The original reason was that the public storefront did not check entitlement when it RENDERED,
+  // so a premium theme_id reaching the database for an already-published baker handed them the
+  // premium theme in public, for free. That hole is now closed at the other end too — the route
+  // resolves premium themes against the plan and falls back (spattoo-api lib/storefrontTheme.js),
+  // which was the fix for a baker DOWNGRADING off Blaze and keeping their theme.
+  //
+  // So this is now belt and braces rather than the only thing standing between a preview and a free
+  // premium storefront. Keep it: writing a theme the baker cannot use would leave the row lying
+  // about what they chose, and it would come true the moment they upgraded for an unrelated reason.
   const themeIsLocked = (id) => {
     const t = themes.find(x => x.id === id);
     return !!(t?.is_premium && !canPremium);
@@ -662,6 +669,8 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         <div style={s.themeTopWrap}>
           <span style={s.themeTopLabel}>Theme</span>
           <ThemePicker layout="row" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} canPremium={canPremium} />
+          <PausedThemeNotice theme={pausedTheme(themes, themeId, canPremium)}
+            fallbackName={fallbackThemeName(themes)} onUpgrade={onUpgrade} />
         </div>
       )}
 
@@ -674,6 +683,8 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               bottom bar (see below), so the Edit screen is pure per-theme config — no dead theme list. */}
           {isWide && (<>
             <div style={s.ctrlLabel}>Theme</div>
+            <PausedThemeNotice theme={pausedTheme(themes, themeId, canPremium)}
+              fallbackName={fallbackThemeName(themes)} onUpgrade={onUpgrade} />
             <ThemePicker layout="column" themes={themes} themeId={themeId} primary={primary} onSelect={selectTheme} canPremium={canPremium} />
           </>)}
 
@@ -955,6 +966,39 @@ function DeviceToggle({ device, onChange }) {
   );
 }
 
+// Is the baker's OWN theme currently withheld? The storefront route resolves a premium theme at
+// render, so a baker who chose one on Blaze and dropped to Flame keeps the row and loses the look.
+// Derived ONCE and passed to both notice and picker, so the sidebar and the mobile bar cannot
+// disagree about whether a shop is showing what its owner thinks it is.
+// What the storefront actually falls back to, by NAME. The key is the API's business
+// (lib/storefrontTheme.js FALLBACK_THEME_KEY); a baker needs the word they see in this very list,
+// so it is looked up rather than hardcoded — and degrades to the plain noun if the row is missing.
+function fallbackThemeName(themes) {
+  return (themes ?? []).find(t => t.key === 'spotlight')?.name || 'the standard theme';
+}
+
+function pausedTheme(themes, themeId, canPremium) {
+  const t = (themes ?? []).find(x => x.id === themeId);
+  return t && t.is_premium && !canPremium ? t : null;
+}
+
+// Says what a CUSTOMER is seeing right now — the question a baker actually has — then that the
+// choice is kept, then the upgrade. In that order: reassurance before the ask, because the theme
+// really is safe and leading with the sell would read as holding it hostage.
+function PausedThemeNotice({ theme, fallbackName, onUpgrade }) {
+  if (!theme) return null;
+  return (
+    <div style={s.pausedNote}>
+      <b style={{ color: '#2C4433' }}>{theme.name} is paused.</b>{' '}
+      Your storefront is showing <b>{fallbackName}</b> while you are off Blaze. We have kept your
+      choice — {theme.name} comes back the moment you upgrade, with nothing to set up again.
+      {onUpgrade && (
+        <button type="button" onClick={onUpgrade} style={s.pausedCta}>Upgrade to Blaze</button>
+      )}
+    </div>
+  );
+}
+
 // Theme selector — ONE component for both placements: a vertical card list in the desktop sidebar
 // (layout='column') and a horizontal scrolling chip bar on the mobile preview (layout='row'). Same
 // data + selection; only the arrangement differs, so there's no duplicate theme-list logic.
@@ -973,9 +1017,16 @@ function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column', ca
         //
         // `off` (not yet built) is genuinely un-tappable: there is nothing to preview.
         const locked = t.is_premium && !canPremium;
+        // PAUSED — a locked theme that is ALREADY THEIRS. A baker who chose this on Blaze and
+        // dropped to Flame still has it stored, so `sel` and `locked` are true at once. Same
+        // tappable, full-strength treatment as any other locked theme (above) — only the badge
+        // differs, because the two say different things: "Blaze" is an upsell for something they
+        // have never had, "Paused" is a status for something they had and will have again. The
+        // storefront resolves at render and never writes the row, so it does come back.
+        const paused = sel && locked;
         return (
           <button key={t.id} type="button" disabled={off} onClick={() => onSelect(t.id)}
-            title={locked ? 'Preview it — publishing needs Blaze' : undefined}
+            title={paused ? 'Yours — paused while you are off Blaze' : locked ? 'Preview it — publishing needs Blaze' : undefined}
             style={{ ...(row ? s.themeChip : s.themeBtn), borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1,
               ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
             <span style={{ fontWeight: 800, color: '#2C4433', fontSize: row ? 13 : 13.5 }}>{t.name}</span>
@@ -983,6 +1034,7 @@ function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column', ca
                 telling a Flame baker to upgrade for it would sell them something that does not
                 work yet. */}
             {off ? <span style={s.soon}>Soon</span>
+                 : paused ? <span style={s.paused}>Paused</span>
                  : locked ? <span style={s.locked}>Blaze</span>
                  : sel && !row ? <span style={{ color: primary, fontWeight: 800, fontSize: 12 }}>✓</span> : null}
           </button>
@@ -1041,6 +1093,10 @@ const s = {
   // Warm rather than grey: this is an invitation to upgrade, not a disabled control. Reads as a
   // plan badge next to "Soon", which is a statement about us and stays neutral.
   locked:   { fontSize: 9.5, fontWeight: 800, color: '#9A6B16', background: '#FBF0DA', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
+  // Paused reads as a STATE, not a restriction — same shape as `locked` so the row stays even, but
+  // the amber of "you cannot have this" would be the wrong note for a theme that is theirs and
+  // coming back.
+  paused:   { fontSize: 9.5, fontWeight: 800, color: '#5C6E8A', background: '#EDF1F7', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   portraitRow: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, padding: '10px 12px', borderRadius: 12, border: '1px solid #D9DED9', background: '#fff', cursor: 'pointer' },
   portraitThumb: { width: 46, height: 46, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   fontList: { display: 'flex', flexDirection: 'column', gap: 8 },
