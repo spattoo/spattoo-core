@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { useCakeDesign } from '../src/designer/hooks/useCakeDesign.js';
 import { GLAZE_DEFAULTS } from '../src/designer/shared/glaze/glazeMaterial.js';
 import { CakePreview } from '../src/designer/canvas/CakeCanvas.jsx';
+import { useNarrow } from '../src/shared/useNarrow.js';
 
 /* ── PROTOTYPE: the cake builds itself as you scroll ─────────────────────────────────────────────
  *
@@ -96,6 +97,10 @@ function Assembling({ primary, accent, name }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p]);
 
+  // Below this the three columns cannot all be real: 210px of copy + 128px of index + the gaps
+  // leave the cake nothing. It does not shrink gracefully — it overflows the grid and gets clipped
+  // by the stage, so the phone sees the caption for a cake that is off screen.
+  const narrow = useNarrow(860);
   const beat = BEATS.reduce((acc, b, i) => (p >= b.at ? i : acc), 0);
   const done = p > 0.80;
 
@@ -104,11 +109,14 @@ function Assembling({ primary, accent, name }) {
       <div style={s.sticky}>
         <div style={s.stage}>
           <div style={s.vignette} aria-hidden="true" />
-          <div style={s.horizon} aria-hidden="true" />
+          <div style={{ ...s.horizon, top: narrow ? '60%' : '73%' }} aria-hidden="true" />
 
-          <div style={s.grid}>
+          {/* One column on a phone, and the cake goes FIRST — it is the only reason to stay on the
+              page. The index is dropped rather than squeezed: it says the same thing as "Step 01 /
+              05" and the progress bar, and five tracked uppercase labels do not fit beside a cake. */}
+          <div style={narrow ? s.gridNarrow : s.grid}>
             {/* LEFT — the step being performed. */}
-            <div style={s.copy}>
+            <div style={narrow ? { ...s.copy, ...s.copyNarrow } : s.copy}>
               <div style={s.step}>Step {String(beat + 1).padStart(2, '0')} / {String(BEATS.length).padStart(2, '0')}</div>
               <h2 key={`t${beat}`} style={s.title}>{BEATS[beat].title}</h2>
               <p key={`n${beat}`} style={s.note}>{BEATS[beat].note}</p>
@@ -118,12 +126,12 @@ function Assembling({ primary, accent, name }) {
             </div>
 
             {/* CENTRE — the only thing on screen that moves. */}
-            <div style={s.cakeWrap}>
-              <div style={s.cake}><CakePreview design={design} autoRotate={false} /></div>
+            <div style={narrow ? { ...s.cakeWrap, ...s.cakeWrapNarrow } : s.cakeWrap}>
+              <div style={narrow ? s.cakeNarrow : s.cake}><CakePreview design={design} autoRotate={false} /></div>
             </div>
 
             {/* RIGHT — the recipe, doubling as the progress meter. */}
-            <ol style={s.index}>
+            {!narrow && <ol style={s.index}>
               {BEATS.map((b, i) => (
                 <li key={b.n} style={{ ...s.indexItem, ...(i === beat ? s.indexOn : i < beat ? s.indexDone : {}) }}>
                   <span style={s.indexNum}>{String(i + 1).padStart(2, '0')}</span>
@@ -131,7 +139,7 @@ function Assembling({ primary, accent, name }) {
                   <span style={{ ...s.indexRule, ...(i <= beat ? s.indexRuleOn : {}) }} />
                 </li>
               ))}
-            </ol>
+            </ol>}
           </div>
 
           <div style={s.bar}><div style={{ ...s.barFill, transform: `scaleX(${p})` }} /></div>
@@ -213,6 +221,12 @@ const s = {
             alignItems: 'center', gap: 'clamp(14px, 3vw, 56px)' },
 
   copy:   { maxWidth: 330 },
+  // Phone: a single column, cake first and given every pixel the words do not need.
+  gridNarrow: { position: 'relative', height: '100%', display: 'flex', flexDirection: 'column',
+                padding: '14px 22px 34px', boxSizing: 'border-box' },
+  copyNarrow: { order: 2, maxWidth: 'none', flex: '0 0 auto' },
+  cakeWrapNarrow: { order: 1, flex: '1 1 auto', height: 'auto', minHeight: 0 },
+  cakeNarrow: { width: '100%', height: '100%', maxWidth: 'none' },
   step:   { fontFamily: SANS, fontSize: 10.5, fontWeight: 700, letterSpacing: 2.4, textTransform: 'uppercase',
             color: MUTED, marginBottom: 14, fontVariantNumeric: 'tabular-nums' },
   title:  { fontFamily: SERIF, fontSize: 'clamp(30px, 3.4vw, 54px)', fontWeight: 500, color: INK,
