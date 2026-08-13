@@ -35,6 +35,8 @@ export function PrivacyDataSection({ apiClient }) {
   const [err, setErr]           = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saved, setSaved] = useState(false);   // the download said something — see download()
+  const [busyDoc, setBusyDoc] = useState(null); // `${docKey}@${version}` while its text is fetching
+  const [docErr, setDocErr]   = useState(null);
   const [reason, setReason]     = useState('');
 
   const load = useCallback(() => {
@@ -110,6 +112,42 @@ export function PrivacyDataSection({ apiClient }) {
     }
   }
 
+  // ── Downloading the DOCUMENT the baker agreed to ──────────────────────────────────────────────
+  // "Download my record" hands back the consent TRAIL — what was accepted, when, which version. It
+  // does not hand back the document, and nothing else did either: the text was readable only as a
+  // web page on the marketing site, which Settings did not even link to. So a baker could see that
+  // they accepted "TOS v1.0" and had no way to obtain v1.0.
+  //
+  // Fetched BY VERSION, not "current". The two are the same today and will not be after the first
+  // amendment — at which point /terms shows v1.1 while this record says v1.0, and handing over the
+  // current page would be handing over a document they never agreed to.
+  async function downloadDoc(docKey, version) {
+    setDocErr(null); setBusyDoc(`${docKey}@${version}`);
+    try {
+      const doc = await apiClient.fetchLegalDoc(docKey, version);
+      if (!doc?.content) throw new Error('That version is no longer available.');
+      // The hash rides along in a comment header rather than a separate file. It is what ties this
+      // text to the acceptance in the consent record, and a baker who keeps the two together can
+      // show what they agreed to without needing us.
+      const header =
+        `<!-- ${docKey} v${doc.version} · effective ${fmtDate(doc.effectiveAt)}\n` +
+        `     sha256 ${doc.contentHash}\n` +
+        `     downloaded ${new Date().toISOString()} -->\n\n`;
+      const blob = new Blob([header + doc.content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `spattoo-${docKey}-v${doc.version}.md`;
+      document.body.appendChild(a); a.click(); a.remove();
+      // Same reason as the record download: revoking before the browser has finished reading
+      // cancels it, silently.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setDocErr(e.message || 'Could not fetch that version.');
+    } finally {
+      setBusyDoc(null);
+    }
+  }
+
   const pending = deletion?.deletion_status === 'pending_erasure';
 
   if (loading) {
@@ -133,7 +171,19 @@ export function PrivacyDataSection({ apiClient }) {
             {history.map((e, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
                 <span style={{ fontWeight: 700, color: '#1a1a1a', textTransform: 'uppercase' }}>
-                  {e.docKey} <span style={{ color: '#9CA3AF', fontWeight: 600 }}>v{e.version}</span>
+                  {e.docKey}{' '}
+                  {/* The version IS the download. A baker looking at "v1.0" and wanting to read
+                      v1.0 should not have to find a separate control, and this keeps the row the
+                      same height whether or not the text is still fetchable. */}
+                  <button
+                    onClick={() => downloadDoc(e.docKey, e.version)}
+                    disabled={busyDoc === `${e.docKey}@${e.version}`}
+                    title={`Download the ${e.docKey} v${e.version} text you agreed to`}
+                    style={{ border: 'none', background: 'none', padding: 0, font: 'inherit',
+                             color: GREEN, fontWeight: 600, textTransform: 'none',
+                             textDecoration: 'underline', cursor: 'pointer' }}>
+                    v{e.version}{busyDoc === `${e.docKey}@${e.version}` ? '…' : ' ↓'}
+                  </button>
                 </span>
                 <span style={{ color: e.action === 'withdrawn' ? DANGER : GREEN, fontWeight: 700 }}>
                   {e.action === 'withdrawn' ? 'Withdrawn' : 'Accepted'}
@@ -151,6 +201,9 @@ export function PrivacyDataSection({ apiClient }) {
           <span style={{ fontSize: 12.5, color: GREEN, fontWeight: 700 }}>
             Saved as spattoo-consent-record.json — check your downloads.
           </span>
+        )}
+        {docErr && (
+          <span style={{ fontSize: 12.5, color: DANGER, fontWeight: 700 }}>{docErr}</span>
         )}
       </Section>
 
