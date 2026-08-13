@@ -1,0 +1,182 @@
+[
+ {
+  "id": "385e7324-5699-49d4-b99b-5cd7d16a7b38",
+  "name": "Three-Petal Drop",
+  "image_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/files/3D/06434288-b076-4757-92a6-93dbdbc03f7d.glb",
+  "thumbnail_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/thumbnails/1a3d66d7-4be2-4553-8936-5577485efa6b.png",
+  "allowed_zones": [
+   "top_surface",
+   "side",
+   "rim",
+   "middle_tier",
+   "board"
+  ],
+  "allowed_actions": {
+   "move": true,
+   "color": true,
+   "delete": true,
+   "resize": true,
+   "gradient": true,
+   "duplicate": true
+  },
+  "placement_config": {
+   "top_flip": false,
+   "bottom_flip": true,
+   "top_rotation": [
+    -88,
+    -102,
+    102
+   ],
+   "top_y_offset": 0.04,
+   "top_swag_tilt": 0.4,
+   "top_swag_count": 0,
+   "top_swag_depth": 0.4,
+   "bottom_rotation": [
+    176,
+    0,
+    0
+   ],
+   "bottom_y_offset": 0.28,
+   "bottom_swag_tilt": 0.4,
+   "bottom_swag_count": 0,
+   "bottom_swag_depth": 0.4,
+   "top_radial_offset": 0.06,
+   "bottom_y_adjustable": true,
+   "bottom_radial_offset": 0
+  },
+  "default_color": "#fffdd0"
+ },
+ {
+  "id": "df089429-a307-4297-89df-91a216318252",
+  "name": "Shell Border Stroke",
+  "image_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/files/3D/2161fb20-5cbe-4979-a140-a92ce7426849.glb",
+  "thumbnail_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/thumbnails/4d68ea2f-0f23-46f6-876f-3dcf7cce14f8.png",
+  "allowed_zones": [
+   "rim",
+   "top_surface",
+   "side",
+   "middle_tier",
+   "board"
+  ],
+  "allowed_actions": {
+   "move": true,
+   "color": true,
+   "delete": true,
+   "resize": true,
+   "gradient": true,
+   "duplicate": true
+  },
+  "placement_config": {
+   "r": 2.5
+  },
+  "default_color": "#fffdd0"
+ },
+ {
+  "id": "266e974f-2205-4c77-8ba9-96d485c719a8",
+  "name": "Rainbow",
+  "image_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/files/3D/507043a8-baed-4c17-bb3f-41a6cc41a81a.glb",
+  "thumbnail_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/thumbnails/84142d8d-a244-46a1-973c-aeee0d232617.png",
+  "allowed_zones": [
+   "top_surface",
+   "side"
+  ],
+  "allowed_actions": {
+   "move": true,
+   "color": false,
+   "delete": true,
+   "resize": true,
+   "duplicate": false
+  },
+  "placement_config": {
+   "r": 3,
+   "side": "hug",
+   "scale": {
+    "max": 5,
+    "min": 2.5,
+    "step": 0.5
+   },
+   "rotation": [
+    0,
+    270,
+    0
+   ],
+   "top_surface": "hug",
+   "rotation_unit": "deg",
+   "single_per_slot": true
+  },
+  "default_color": "#F0DEB8"
+ },
+ {
+  "id": "4933196e-02d1-4c08-ae70-493c51079105",
+  "name": "Monkey",
+  "image_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/files/2D/e8ca2536-67d9-4cbe-81ac-5fb4bc45c838.webp",
+  "thumbnail_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/thumbnails/651975f0-a374-44ca-b63a-b0a21cee49ca.webp",
+  "allowed_zones": [
+   "side"
+  ],
+  "allowed_actions": {
+   "move": true,
+   "tilt": true,
+   "color": false,
+   "delete": true,
+   "resize": true,
+   "gradient": false,
+   "duplicate": true
+  },
+  "placement_config": {
+   "r": 2.5,
+   "side": "hug",
+   "scale": {
+    "max": 5,
+    "min": 2,
+    "step": 0.5
+   }
+  },
+  "default_color": "#F0DEB8"
+ },
+ {
+  "id": "3ef967cd-dc07-4b85-8249-e758d11fd5c1",
+  "name": "Chocolate bar",
+  "image_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/files/3D/2839a19f-dee1-4f56-a1b3-09c66406af1b.glb",
+  "thumbnail_url": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/elements/thumbnails/d6dae23b-7423-4b11-90dd-d8ab94e0e882.webp",
+  "allowed_zones": [
+   "top_surface",
+   "side"
+  ],
+  "allowed_actions": {
+   "move": true,
+   "tilt": true,
+   "color": true,
+   "delete": true,
+   "resize": true,
+   "gradient": false,
+   "duplicate": true
+  },
+  "placement_config": {
+   "r": 3,
+   "side": "hug",
+   "scale": {
+    "max": 7,
+    "min": 2
+   },
+   "rotation": [
+    0,
+    270,
+    0
+   ],
+   "metalness": 0.06,
+   "roughness": 0.3804554503695816,
+   "top_surface": {
+    "mode": "stand",
+    "insert": {
+     "depth": 0.25,
+     "lean_deg": 10,
+     "jitter_deg": 4
+    }
+   },
+   "rotation_unit": "deg",
+   "single_per_slot": true
+  },
+  "default_color": "#9b7d7d"
+ }
+]

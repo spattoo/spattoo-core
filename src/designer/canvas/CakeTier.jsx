@@ -1,7 +1,11 @@
 import { useMemo, useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
+import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
+import { buildGlazeDrip } from '../shared/glaze/glazeDrip.js';
 import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textures/creamWaveTexture.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 import { getRusticNormalMap } from '../shared/textures/rusticTexture.js';
@@ -10,14 +14,17 @@ import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
-import { tierShape, pipingPerimeter, rectEdgeRing, perimeter, circlePerimeter } from '../geometry/surface.js';
+import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
+import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
+import { seatHalfDepth } from '../geometry/seating.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
-import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
-import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
+import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
+import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
+import { ringPositions, angleAtPoint } from './ringPositions.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 function extractGeo(scene) {
@@ -176,6 +183,12 @@ const PIPING_RADIAL_PLAY = 0.4;
 // size control scales both. Tuned so a size-1 band reads like a proper cream band on the wall.
 const PIPING_WRAP_HEIGHT_FRAC = 0.4;
 
+// GLYPH cakes: the ring's radial inset/outset is CLAMPED to this fraction of the glyph STROKE width, so
+// an absolute radial offset authored for a round cake (e.g. −0.17) can't push beads past the thin stroke
+// and collapse the border to the stroke centreline (which rings the counters). Radius-independent — the
+// bound tracks the live stroke width, per INVARIANTS #8.
+const GLYPH_PIPE_INSET_FRAC = 0.45;
+
 // Cap the user-scaled shell scale so its rendered radial depth (bbDepthZ × scale) never
 // exceeds PIPING_MAX_DEPTH_FRAC of the tier radius. The max() floor keeps a little growth
 // headroom even when the size-1.0 shell is already deep, so the slider is never fully dead.
@@ -184,57 +197,29 @@ function capShellScale(sc1, sizeFactor, bbDepthZ, radius) {
   return Math.min(sc1 * sizeFactor, maxSc);
 }
 
-// Bend a flat piping ring into `swagCount` scalloped drapes (garland/swag look).
-// Returns one entry per shell { pos, rotY, tq }:
-//   pos  — world position, with the scallop drop baked into y
-//   rotY — yaw so the shell faces outward (same as the flat ring)
-//   tq   — a quaternion [x,y,z,w] that pitches the shell about the WORLD radial
-//          axis to follow the drape's slope. Pitching about the radial axis (not a
-//          shell-local axis) is independent of the GLB's internal orientation, so it
-//          leans the upright shell along the drape instead of rolling it.
-// Shells are spaced by equal arc-length ALONG the draped curve (not the flat circle)
-// so they stay touching through the dips. swagDepth/swagTilt are in cake units / 0–1.
-// The calibrator (PipingCalibrator.jsx) keeps an identical copy for an exact preview.
-function buildSwagRing({ r, baseY, step, swagCount, swagDepth, swagTilt = 0.5 }) {
-  const dipAt = a => -swagDepth * (1 - Math.cos(a * swagCount)) / 2;
-  // Sample the wavy circle and accumulate arc length.
-  const N = 1440;
-  const cum = [0];
-  let px = r, py = baseY + dipAt(0), pz = 0;
-  for (let s = 1; s <= N; s++) {
-    const a = (s / N) * Math.PI * 2;
-    const cx = Math.cos(a) * r, cy = baseY + dipAt(a), cz = Math.sin(a) * r;
-    cum.push(cum[s - 1] + Math.hypot(cx - px, cy - py, cz - pz));
-    px = cx; py = cy; pz = cz;
-  }
-  const total = cum[N];
-  const count = Math.max(6, Math.round(total / step));
-  const out = [];
-  let seg = 0;
-  for (let j = 0; j < count; j++) {
-    const target = (j / count) * total;            // monotonically increasing
-    while (seg < N && cum[seg + 1] < target) seg++;
-    const a0 = (seg / N) * Math.PI * 2, a1 = ((seg + 1) / N) * Math.PI * 2;
-    const f  = (target - cum[seg]) / Math.max(1e-9, cum[seg + 1] - cum[seg]);
-    const a  = a0 + (a1 - a0) * f;
-    const slope = -(swagDepth * swagCount / 2) * Math.sin(a * swagCount); // d(dip)/d(angle)
-    const tilt  = -swagTilt * Math.atan2(slope, r);
-    const sh = Math.sin(tilt / 2), ch = Math.cos(tilt / 2);
-    // Rotation about world radial axis (cos a, 0, sin a).
-    const tq = [Math.cos(a) * sh, 0, Math.sin(a) * sh, ch];
-    out.push({ pos: [Math.cos(a) * r, baseY + dipAt(a), Math.sin(a) * r], rotY: a, tq });
-  }
-  return out;
+// Measure a DECORATION GLB for the "element" ring finish. Unlike buildShellGeo (which extracts a
+// single geometry and recolours it cream), a decoration keeps its FULL scene + real materials, so we
+// only MEASURE it — whole-scene bbox, authored upright (no piping X-rotation). Returns the same shape
+// buildShellGeo does (shellScale / bbWidth / bbDepth + world extents), so ringPositions and the editor
+// clamps treat it identically, plus `scene` / `minY` for the base-seated render. Height-normalised to
+// SHELL_HEIGHT_FRAC of the tier radius (× user size), sharing the same depth cap as cream shells.
+function buildDecorationShell(scene, radius, sizeFactor) {
+  if (!scene) return null;
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const sc1 = (radius * SHELL_HEIGHT_FRAC) / (size.y || 1);
+  const sc  = capShellScale(sc1, sizeFactor, size.z || 1e-3, radius);
+  return {
+    scene, minY: box.min.y, isElement: true,
+    shellScale: sc, bbWidth: size.x, bbDepth: size.z,
+    // Extents relative to the base-seat anchor (base at 0): for the Height/radial clamps + clearance.
+    worldTopY: size.y * sc, worldBotY: 0,
+    worldMaxZ: box.max.z * sc, worldMinZ: box.min.z * sc,
+  };
 }
 
-// Place ONE single-mode shell on a perimeter. The instance `angle` is read as a fraction
-// of the way round (relative to the cake front), so the existing front-relative angle
-// sliders keep working on rectangles.
-function perimeterSinglePos({ perim, off, baseY, angle }) {
-  const f = ((((angle - PIPING_FRONT_ANGLE) / (2 * Math.PI)) % 1) + 1) % 1;
-  const p = perim.at(f * perim.length);
-  return { pos: [p.x + off * p.nx, baseY, p.z + off * p.nz], rotY: Math.atan2(p.nz, p.nx), tq: [0, 0, 0, 1] };
-}
+// buildSwagRing / perimeterSinglePos / perimeterRing + the whole ring distribution moved to
+// ./ringPositions.js (shared by the cream rings AND the decoration ring; unit-tested there).
 
 // Local-space bbox of a geometry, in the frame the gradient shader reads (the `position`
 // attribute). Null when there's no gradient so non-gradient piping skips the work.
@@ -253,12 +238,13 @@ function geomBBox(geometry, gradient) {
 // the SHARED gradientMaterial helper (same one stickers use), so there is no piping-specific
 // gradient code. Gradient blends per-mesh in the geometry's local frame (each dollop is two-tone,
 // like a two-colour piping bag).
-function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selected, castShadow = true }) {
+function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selected, castShadow = true, userData = null }) {
   const matRef = useRef(null);
   const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
   useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox); }, [gradient, bbox]);
   return (
-    <mesh geometry={geometry} rotation={rotation} scale={scale} castShadow={castShadow}>
+    <mesh geometry={geometry} rotation={rotation} scale={scale} castShadow={castShadow}
+      {...(userData ? { userData } : {})}>
       <meshPhysicalMaterial ref={matRef}
         {...creamMaterialProps(softness, color)}
         emissive={selected ? color : '#000000'}
@@ -268,13 +254,92 @@ function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selec
   );
 }
 
+// Marks a shell the pointer can grab. Read in TWO places, which is why it is a module const rather
+// than an inline object: r3f sets it as `mesh.userData`, and CakeCanvas' CAPTURE-phase pointerdown
+// raycast reads it to suspend OrbitControls before the orbit listener sees the press. Without that
+// second read, pressing a piece would rotate the cake and the drag would never start — the same
+// mechanism decorations use via `isStickerHitPlane`.
+const PIPING_HANDLE_DATA = { isPipingHandle: true };
+
+// Drag has to travel a few pixels before it counts as a drag rather than a click, or selecting a
+// piece would nudge it. Matches the decoration draggables' threshold (5px, compared squared).
+const DRAG_SLOP_SQ = 25;
+
+// ── Dragging a single-mode piece around its ring ──────────────────────────────
+// A single-mode piece is POSITIONED PARAMETRICALLY — `instances[].angle` in, a world position out of
+// ringPositions. So a drag cannot write a position: the next rebuild would overwrite it. It has to
+// come back as an angle, which is what angleAtPoint() is for (the tested inverse of both single-mode
+// branches). That gives the gesture exactly one degree of freedom, which is also the RIGHT constraint
+// — a rim piece belongs on the rim, and dragging it inward onto the top surface would bury it.
+//
+// Returns a factory: `dragHandler(i)` is the pointerdown handler for the i-th piece. Null when the
+// ring isn't in single mode or the host wired no move callback, and Shell then attaches no handler
+// and no userData at all — a ring/festoon/wrap keeps its current behaviour untouched.
+//
+// `canMove` gates the WRITE, not the press, deliberately: a pinned piece must still select when you
+// tap it. Gating pointerdown instead would make an unmovable piece unselectable, which is the trap
+// the decoration gating already had to avoid.
+function useSinglePieceDrag({ active, canMove, onMoveInstance, radius, off, baseY, shape, wall = null }) {
+  const { camera, gl } = useThree();
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -baseY), [baseY]);
+  return useMemo(() => {
+    if (!active || !onMoveInstance) return null;
+    return (index) => (e) => {
+      // No stopPropagation: the ring group's onClick is what selects this piping layer, and that
+      // must keep working whether the press turns into a drag or stays a tap.
+      const canvas = gl.domElement;
+      const start = { x: e.clientX, y: e.clientY };
+      let dragged = false;
+      function onMove(ev) {
+        const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+        if (dx * dx + dy * dy > DRAG_SLOP_SQ) dragged = true;
+        if (!dragged || !canMove) return;
+        const ray = pointerRay(ev, canvas, camera);
+        // A WALL-riding ring (board) hits the tier's own surface, which yields the angle AND the
+        // height from one raycast — the pointer stays on the cake, so the piece follows it up and
+        // round together. A rim ring has no height, so it keeps the flat plane at its own level.
+        const w = wall ? wallHit(ray, wall) : null;
+        const hit = w ?? planeHit(ray, plane);
+        if (!hit) return;   // missed the cake, or ray parallel to the plane — ignore this frame
+        onMoveInstance(
+          index,
+          angleAtPoint({ x: hit.x, z: hit.z, radius, off, shape }),
+          // Tier-LOCAL height (the anchor lives in the same frame as the layer's yOffset). Only sent
+          // when the pointer actually met the wall; a miss leaves the piece at the height it had.
+          w ? w.y - wall.baseY : null,
+        );
+      }
+      function onUp() {
+        canvas.removeEventListener('pointermove', onMove);
+        canvas.removeEventListener('pointerup', onUp);
+      }
+      canvas.addEventListener('pointermove', onMove);
+      canvas.addEventListener('pointerup', onUp);
+    };
+  }, [active, canMove, onMoveInstance, radius, off, shape, camera, gl, plane, wall]);
+}
+
+// Where a ray meets the tier WALL, in world space. Round tiers are a cylinder; anything with a
+// footprint (sheet, heart, number) is approximated by its bounding box, which is what the existing
+// side-element hit test does too — close enough for a fingertip, and the angle is re-derived from
+// the hit point by angleAtPoint against the true outline anyway.
+// Clamped to the tier's own height band so a drag cannot walk a piece off the top or under the board.
+function wallHit(ray, { shape, radius, baseY, height }) {
+  const p = isRoundWall(shape)
+    ? cylinderHitPoint(ray, radius)
+    : boxHit(ray, shape.halfW, shape.halfD);
+  if (!p) return null;
+  return { x: p.x, z: p.z, y: Math.min(Math.max(p.y, baseY), baseY + height) };
+}
+
 // One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
-function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, gradient, selected }) {
+function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, gradient, selected, onPointerDown = null }) {
   return (
-    <group position={pos} quaternion={tq}>
+    <group position={pos} quaternion={tq} {...(onPointerDown ? { onPointerDown } : {})}>
       <group rotation={[0, -rotY + Math.PI / 2 + ryGroup, 0]}>
         <CreamMesh geometry={geometry} rotation={meshRot} scale={shellScale}
-          color={color} softness={softness} gradient={gradient} selected={selected} />
+          color={color} softness={softness} gradient={gradient} selected={selected}
+          userData={onPointerDown ? PIPING_HANDLE_DATA : null} />
       </group>
     </group>
   );
@@ -283,7 +348,7 @@ function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, s
 // Render every position, alternating between version A and the alternate B per `pattern`
 // (a repeating cycle like "AB" or "AAB"). B uses its own geometry, rotation, and a radial/
 // height shift relative to A. When B is absent / not active, every shell is A (unchanged).
-function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected }) {
+function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected, dragHandler = null }) {
   const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
@@ -299,7 +364,40 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
     return (
       <Shell key={u.key ?? i} pos={pos} rotY={u.rotY} tq={u.tq}
         ryGroup={isB ? ryB : ryA} meshRot={isB ? meshB : meshA}
-        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected} />
+        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected}
+        onPointerDown={dragHandler ? dragHandler(i) : null} />
+    );
+  });
+}
+
+// Render the DECORATION ring ("element" finish): the element's FULL GLB with its REAL materials,
+// cloned at each ring position, base-seated on the surface and yawed to face outward. The
+// material-preserving counterpart to renderShells (which merges the GLB into one cream geometry).
+// Clones are memoised so re-renders are cheap and geometry/materials stay shared across instances.
+// (Swag `tq` tilt and per-instance selection tint are intentionally omitted — decorations don't
+// swag, and INVARIANTS #5a bans material-tint selection; the ring's card carries selection.)
+function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0], dragHandler = null }) {
+  const clones = useMemo(() => {
+    if (!scene) return [];
+    return positions.map(() => { const c = scene.clone(true); c.scale.setScalar(shellScale); return c; });
+  }, [positions, scene, shellScale]);
+  const ry = (baseRotation?.[1] ?? 0) * DEG;
+  // A decoration keeps its own GLB scene, so there is no CreamMesh to hang PIPING_HANDLE_DATA on —
+  // tag the clone's meshes directly, so CakeCanvas' capture-phase raycast suspends orbit for these
+  // too. Cleared again when the ring stops being draggable (mode change / capability untick).
+  const draggable = !!dragHandler;
+  useEffect(() => {
+    clones.forEach(c => c.traverse(o => { if (o.isMesh) o.userData.isPipingHandle = draggable || undefined; }));
+  }, [clones, draggable]);
+  return clones.map((obj, i) => {
+    const u = positions[i];
+    return (
+      <group key={u.key ?? i}
+        position={[u.pos[0], u.pos[1] - minY * shellScale, u.pos[2]]}
+        rotation={[0, (u.rotY ?? 0) + ry, 0]}
+        {...(dragHandler ? { onPointerDown: dragHandler(i) } : {})}>
+        <primitive object={obj} />
+      </group>
     );
   });
 }
@@ -391,6 +489,7 @@ function TopPipingRingImpl({
   extraRadialOffset = 0,
   yOffset           = 0,
   flipTop = false,
+  finish = 'cream',
   spacing = 1,
   swagCount = 0, swagDepth = 0, swagTilt = 0.5,
   arrangement = 'ring', instances = null,
@@ -400,13 +499,16 @@ function TopPipingRingImpl({
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
+  canMove = true, onMoveInstance = null,
 }) {
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
   const tr0 = topRotation?.[0] ?? 0, tr2 = topRotation?.[2] ?? 0;
-  const A = useMemo(() => buildShellGeo(scene, flipTop, radius, sizeFactor, [tr0, 0, tr2]),
-    [scene, flipTop, radius, sizeFactor, tr0, tr2]);
+  const A = useMemo(() => finish === 'element'
+    ? buildDecorationShell(scene, radius, sizeFactor)
+    : buildShellGeo(scene, flipTop, radius, sizeFactor, [tr0, 0, tr2]),
+    [finish, scene, flipTop, radius, sizeFactor, tr0, tr2]);
   const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
     [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
 
@@ -416,49 +518,50 @@ function TopPipingRingImpl({
   useEffect(() => {
     if (A && glbPath && radius) {
       const halfRaw = (A.bbDepth * A.shellScale) / 2;   // the render's positioning `half`
+      // `outerFrac` = how far the shell's OUTER face stands proud of the wall (radius fraction),
+      // INCLUDING its radial positioning — the reach a side decoration must clear. A rim shell is
+      // pulled inward (outer face ≤ edge) so this is ~0; a side/board shell projects out by ~its
+      // full depth. (radialOutFrac is reach-beyond-centre, for ring de-overlap — a different frame.)
+      const off = Math.min(-seatHalfDepth(A.bbDepth * A.shellScale) + extraRadialOffset, -seatHalfDepth(A.bbDepth * A.shellScale));
       setShellExtents(glbPath, flipTop, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
+        outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
       });
     }
-  }, [A, glbPath, flipTop, sizeFactor, radius]);
+  }, [A, glbPath, flipTop, sizeFactor, radius, extraRadialOffset]);
 
   const altActive = altEnabled && arrangement !== 'single';
 
+  // Rim sits ON the top surface: pull shells inward so their outer face is flush with the edge.
+  // extraRadialOffset (incl. the user's radial control) may pull the cream inward, but never push it
+  // past the edge — clamp the outer face to the rim.
+  // Hoisted out of `positions` because the DRAG needs it too: angleAtPoint has to offset the sampled
+  // outline by exactly the same amount the forward pass did, or a dragged piece on a shaped tier
+  // lands on the angle of a slightly different outline than the one it is drawn on.
+  const off = useMemo(() => {
+    if (!A) return 0;
+    const half = seatHalfDepth(A.bbDepth * A.shellScale);   // half the shell's measured depth (shared seat rule)
+    let   o    = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
+    // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
+    if (shape?.strokeW) o = Math.max(o, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
+    return o;
+  }, [A, extraRadialOffset, shape]);
+
   const positions = useMemo(() => {
     if (!A) return [];
-    // Rim sits ON the top surface: pull shells inward so their outer face is flush
-    // with the edge. extraRadialOffset (incl. the user's radial control) may pull the
-    // cream inward, but never push it past the edge — clamp the outer face to the rim.
-    const half = (A.bbDepth / 2) * A.shellScale;
-    const off  = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
-    const r    = radius + off;
-    const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
-    // Rectangular (sheet) cakes walk a rounded-rect perimeter; round cakes keep the circle.
-    const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
-    if (arrangement === 'single') {
-      const list = instances?.length ? instances : [{ angle: 0 }];
-      return list.map(inst => {
-        const angle = inst.angle ?? 0;
-        if (perim) return { ...perimeterSinglePos({ perim, off, baseY: topY + yOffset, angle }), key: inst.id };
-        return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
-      });
-    }
-    if (perim) {
-      return rectEdgeRing(shape, off, step, topY + yOffset);
-    }
-    if (swagCount > 0 && swagDepth > 0) {
-      return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
-    }
-    let count = Math.max(6, Math.round((2 * Math.PI * r) / step));
-    // Round up to a whole number of pattern cycles so the alternation closes cleanly.
-    if (altActive) { const L = pattern.length || 1; count = Math.max(L, Math.ceil(count / L) * L); }
-    return Array.from({ length: count }, (_, i) => {
-      const angle = (i / count) * Math.PI * 2;
-      return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
+    return ringPositions({
+      A, radius, off, baseY: topY + yOffset,
+      spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
-  }, [A, radius, topY, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+  }, [A, radius, topY, yOffset, off, spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+
+  // Only single mode is draggable: a ring/swag/festoon/wrap has no per-piece angle to write to.
+  const dragHandler = useSinglePieceDrag({
+    active: arrangement === 'single' && !wrap && !bend,
+    canMove, onMoveInstance, radius, off, baseY: topY + yOffset, shape,
+  });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped from the rim edge,
   // instead of repeating a discrete shell. Round cakes only (rect falls through to shells).
@@ -490,14 +593,16 @@ function TopPipingRingImpl({
 
   return (
     <group onClick={onClick}>
-      {wrapGeo
+      {finish === 'element'
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={topRotation} dragHandler={dragHandler} />
+        : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
         : renderShells({
             positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-            color, softness, gradient, selected,
+            color, softness, gradient, selected, dragHandler,
           })}
     </group>
   );
@@ -512,12 +617,13 @@ export function BottomPipingRing(props) {
   return <BottomPipingRingImpl {...props} />;
 }
 function BottomPipingRingImpl({
-  yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1,
+  yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, tierHeight = 0,
   softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   bottomRotation    = [0, 0, 0],
   extraRadialOffset = 0,
   yOffset           = 0,
   flipBottom = true,
+  finish = 'cream',
   spacing = 1,
   swagCount = 0, swagDepth = 0, swagTilt = 0.5,
   arrangement = 'ring', instances = null,
@@ -527,13 +633,16 @@ function BottomPipingRingImpl({
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
+  canMove = true, onMoveInstance = null,
 }) {
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
   const br0 = bottomRotation?.[0] ?? 0, br2 = bottomRotation?.[2] ?? 0;
-  const A = useMemo(() => buildShellGeo(scene, flipBottom, radius, sizeFactor, [br0, 0, br2]),
-    [scene, flipBottom, radius, sizeFactor, br0, br2]);
+  const A = useMemo(() => finish === 'element'
+    ? buildDecorationShell(scene, radius, sizeFactor)
+    : buildShellGeo(scene, flipBottom, radius, sizeFactor, [br0, 0, br2]),
+    [finish, scene, flipBottom, radius, sizeFactor, br0, br2]);
   const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
     [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
 
@@ -543,49 +652,54 @@ function BottomPipingRingImpl({
   useEffect(() => {
     if (A && glbPath && radius) {
       const halfRaw = (A.bbDepth * A.shellScale) / 2;
+      // Outer-face reach INCLUDING positioning (see the top-ring note). A side/board shell's inner
+      // face sits on the wall (off = half + radial nudge), so it projects out by ~its full depth.
+      const off = halfRaw + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
       setShellExtents(glbPath, flipBottom, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
+        outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
       });
     }
-  }, [A, glbPath, flipBottom, sizeFactor, radius]);
+  }, [A, glbPath, flipBottom, sizeFactor, radius, extraRadialOffset]);
 
   const altActive = altEnabled && arrangement !== 'single';
 
+  // Board: inner face sits on the wall by default, so growing the size pushes the cream OUTWARD (and
+  // up), never into the cake. The radial control (extraRadialOffset) shifts it in/out; outward travel
+  // is capped at PIPING_RADIAL_PLAY of the radius so the border stays attached rather than drifting
+  // onto the board. Inward travel is unrestricted.
+  // Hoisted for the drag — see the matching note on the top ring.
+  const off = useMemo(() => {
+    if (!A) return 0;
+    const half = (A.bbDepth / 2) * A.shellScale;
+    let   o    = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
+    // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
+    if (shape?.strokeW) o = Math.min(o, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
+    return o;
+  }, [A, extraRadialOffset, radius, shape]);
+
   const positions = useMemo(() => {
     if (!A) return [];
-    // Board: inner face sits on the wall by default, so growing the size pushes the cream
-    // OUTWARD (and up), never into the cake. The radial control (extraRadialOffset) shifts it
-    // in/out; outward travel is capped at PIPING_RADIAL_PLAY of the radius so the border stays
-    // attached rather than drifting onto the board. Inward travel is unrestricted.
-    const half = (A.bbDepth / 2) * A.shellScale;
-    const off  = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
-    const r    = radius + off;
-    const step = A.shellScale * A.bbWidth * 0.9 * spacing;   // tracks rendered shell width (scale already capped)
-    const perim = shape?.kind === 'rect' ? pipingPerimeter(shape) : null;
-    if (arrangement === 'single') {
-      const list = instances?.length ? instances : [{ angle: 0 }];
-      return list.map(inst => {
-        const angle = inst.angle ?? 0;
-        if (perim) return { ...perimeterSinglePos({ perim, off, baseY: yBase + yOffset, angle }), key: inst.id };
-        return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1], key: inst.id };
-      });
-    }
-    if (perim) {
-      return rectEdgeRing(shape, off, step, yBase + yOffset);
-    }
-    if (swagCount > 0 && swagDepth > 0) {
-      return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });
-    }
-    let count = Math.max(6, Math.round((2 * Math.PI * r) / step));
-    // Round up to a whole number of pattern cycles so the alternation closes cleanly.
-    if (altActive) { const L = pattern.length || 1; count = Math.max(L, Math.ceil(count / L) * L); }
-    return Array.from({ length: count }, (_, i) => {
-      const angle = (i / count) * Math.PI * 2;
-      return { pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
+    return ringPositions({
+      A, radius, off, baseY: yBase + yOffset,
+      spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
-  }, [A, radius, yBase, yOffset, sizeFactor, spacing, extraRadialOffset, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+  }, [A, radius, yBase, yOffset, off, spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
+
+  // A board piece rides the WALL, so its drag gets the tier surface to hit — that is what carries
+  // the height as well as the angle. Memoised because the hook keys its handler on it.
+  const wall = useMemo(
+    () => (tierHeight > 0 ? { shape, radius, baseY: yBase, height: tierHeight } : null),
+    [shape, radius, yBase, tierHeight],
+  );
+
+  // Only single mode is draggable — see the top ring.
+  const dragHandler = useSinglePieceDrag({
+    active: arrangement === 'single' && !wrap && !bend,
+    canMove, onMoveInstance, radius, off, baseY: yBase + yOffset, shape, wall,
+  });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
   // base, instead of repeating a discrete shell. Round cakes only (rect falls through).
@@ -609,13 +723,20 @@ function BottomPipingRingImpl({
   useEffect(() => {
     if (!festoonGeos?.length || !radius) return;
     const anchorY = yBase + yOffset;
-    let minY = Infinity, maxY = -Infinity;
+    let minY = Infinity, maxY = -Infinity, maxR = 0;
     festoonGeos.forEach(g => {
       g.computeBoundingBox?.();
-      if (g.boundingBox) { minY = Math.min(minY, g.boundingBox.min.y); maxY = Math.max(maxY, g.boundingBox.max.y); }
+      if (g.boundingBox) {
+        const bb = g.boundingBox;
+        minY = Math.min(minY, bb.min.y); maxY = Math.max(maxY, bb.max.y);
+        // Outward reach: the ring wraps the tier axis, so its furthest point from the axis is the
+        // outer face. bbox is symmetric about the axis, so the max |x|/|z| corner gives that radius.
+        maxR = Math.max(maxR, Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
+      }
     });
     if (minY < maxY) setFestoonExtents(glbPath, festoonSig({ size: sizeFactor, bendDepth, festoons, bendRing, bendTilt }), {
       bellyFrac: (anchorY - minY) / radius, topFrac: (maxY - anchorY) / radius,
+      outerFrac: Math.max(0, (maxR - radius) / radius),
     });
   }, [festoonGeos, yBase, yOffset, radius, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
 
@@ -630,18 +751,35 @@ function BottomPipingRingImpl({
     });
   }, [wrap, scene, shape, radius, yBase, yOffset, sizeFactor, wrapSize, extraRadialOffset, wrapTilt]);
 
+  // Publish the wrap band's rendered extents (vertical reach relative to its anchor + outward reach),
+  // as radius fractions, so the side-clearance resolver treats it like any other band.
+  useEffect(() => {
+    if (!wrapGeo || !radius) return;   // buildWrapBand returns the BufferGeometry directly
+    wrapGeo.computeBoundingBox?.();
+    const bb = wrapGeo.boundingBox;
+    if (!bb) return;
+    const anchorY = yBase + yOffset;
+    const maxR = Math.max(Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
+    setWrapExtents(glbPath, sizeFactor, {
+      topFrac: (bb.max.y - anchorY) / radius, botFrac: (bb.min.y - anchorY) / radius,
+      outerFrac: Math.max(0, (maxR - radius) / radius),
+    });
+  }, [wrapGeo, radius, yBase, yOffset, glbPath, sizeFactor]);
+
   if (!A && !festoonGeos && !wrapGeo) return null;
 
   return (
     <group onClick={onClick}>
-      {wrapGeo
+      {finish === 'element'
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} dragHandler={dragHandler} />
+        : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
         : renderShells({
             positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-            color, softness, gradient, selected,
+            color, softness, gradient, selected, dragHandler,
           })}
     </group>
   );
@@ -703,7 +841,6 @@ function NakedLayers({ shp, yBase, height, flavour }) {
   const layers  = 3;
   const spongeH = (height * 0.62) / layers;
   const creamH  = (height * 0.38) / (layers - 1);
-  const isRect = shp.kind === 'rect';
 
   const stack = [];
   let y = yBase;
@@ -716,13 +853,25 @@ function NakedLayers({ shp, yBase, height, flavour }) {
     }
   }
 
+  // An outline tier's sponge is the OUTLINE extruded, one prism per layer — a bounding box would poke
+  // out through a heart's cleft and its lobes. Built once per (shape, layer heights) and disposed with
+  // them: these are real GPU buffers, not JSX.
+  const outlineGeos = useMemo(
+    () => (shp.kind === 'outline' ? stack.map(l => buildOutlinePrism(shp.outline, l.h)) : null),
+    [shp, spongeH, creamH],   // eslint-disable-line react-hooks/exhaustive-deps -- `stack` is derived from these
+  );
+  useEffect(() => () => outlineGeos?.forEach(g => g.dispose()), [outlineGeos]);
+
   return (
     <group>
       {stack.map((layer, i) => (
-        <mesh key={i} position={[0, layer.y + layer.h / 2, 0]} castShadow receiveShadow>
-          {isRect
-            ? <boxGeometry args={[shp.halfW * 2, layer.h, shp.halfD * 2]} />
-            : <cylinderGeometry args={[shp.radius, shp.radius, layer.h, 64]} />}
+        <mesh key={i} castShadow receiveShadow
+          position={[0, outlineGeos ? layer.y : layer.y + layer.h / 2, 0]}>
+          {outlineGeos
+            ? <primitive key={outlineGeos[i].uuid} object={outlineGeos[i]} attach="geometry" />
+            : shp.kind === 'rect'
+              ? <boxGeometry args={[shp.halfW * 2, layer.h, shp.halfD * 2]} />
+              : <cylinderGeometry args={[shp.radius, shp.radius, layer.h, 64]} />}
           <meshStandardMaterial color={layer.color} roughness={layer.rough} />
         </mesh>
       ))}
@@ -813,6 +962,147 @@ export function buildRoundedPrism(halfW, halfD, height, r) {
   return geo;
 }
 
+// Cake body for a GLYPH cake (number OR letter): the glyph(s) — THREE.Shape[] with their counters
+// attached — extruded straight up, exactly like the sheet's rounded rect. ExtrudeGeometry honours each
+// shape's `.holes`, so the counter in 0/4/6/8/9 and A/B/D/O/P/Q/R comes through, and it merges a
+// multi-glyph array ("21", "MOM") into one body. Charset-agnostic — one builder for both families.
+export function buildGlyphPrism(shapes, height) {
+  const geo = new THREE.ExtrudeGeometry(shapes, { depth: height, bevelEnabled: false, curveSegments: 8 });
+  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
+  return geo;
+}
+
+// Cake body for ANY authored footprint (heart, butterfly, hexagon…): the shape's own outline swept up,
+// with the top edge rolled over by `fillet` — the same rounded rim the round path gets from the
+// frosting's `edge: {kind:'round'}` (that is where the fillet comes from; it is not a per-shape knob).
+//
+// Built by hand rather than with THREE.ExtrudeGeometry, for two reasons that both showed up on a cake:
+//   • UVs. ExtrudeGeometry derives side-wall UVs from WORLD coordinates, not an unwrap, so the
+//     buttercream grain landed in overlapping patches — one of which read as a shiny rectangular strip
+//     down the wall. Here `u` is ARC LENGTH around the outline and `v` is height: the honest unwrap, and
+//     the same coordinate side-decor placement uses.
+//   • Normals. Each wall segment is its own quad with its own outward normal, so a hexagon keeps crisp
+//     corners while a 160-segment heart still reads smooth. Averaging normals around the ring (what
+//     computeVertexNormals would do) would round a hexagon's corners off.
+export function buildOutlinePrism(outline, height, fillet = 0) {
+  const n = outline.length;
+  const f = Math.max(0, Math.min(fillet, height * 0.45));
+  const STEPS = f > 1e-4 ? 6 : 0;               // quarter-arc segments in the rolled rim
+
+  // Each ring is the outline inset by `inset`, sitting at `y`, with its wall normal tilted by `slope`
+  // (0 = vertical wall, π/2 = facing straight up at the top of the roll).
+  const rings = [{ inset: 0, y: 0, slope: 0 }, { inset: 0, y: height - f, slope: 0 }];
+  for (let i = 1; i <= STEPS; i++) {
+    const a = (i / STEPS) * (Math.PI / 2);
+    rings.push({ inset: f * (1 - Math.cos(a)), y: height - f + f * Math.sin(a), slope: a });
+  }
+  const ringPts = rings.map(r => (r.inset > 1e-6 ? insetPolygon(outline, r.inset) : outline));
+
+  // Arc length around the base outline → the wall's u.
+  const uAt = [0];
+  for (let i = 0; i < n; i++) {
+    const a = outline[i], b = outline[(i + 1) % n];
+    uAt.push(uAt[i] + Math.hypot(b.x - a.x, b.z - a.z));
+  }
+  const perim = uAt[n] || 1;
+
+  const pos = [], nor = [], uv = [];
+  const push = (p, y, nx, ny, nz, u, v) => {
+    pos.push(p.x, y, p.z); nor.push(nx, ny, nz); uv.push(u, v);
+  };
+
+  // ── Wall + rolled rim: one quad per (segment × ring gap) ─────────────────────
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const a = outline[i], b = outline[j];
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const nx = dz / len, nz = -dx / len;                 // outward normal of THIS segment (CCW winding)
+    const u0 = uAt[i] / perim, u1 = uAt[i + 1] / perim;
+
+    for (let r = 0; r < rings.length - 1; r++) {
+      const lo = rings[r], hi = rings[r + 1];
+      const lp = ringPts[r], hp = ringPts[r + 1];
+      const cl = Math.cos(lo.slope), sl = Math.sin(lo.slope);
+      const ch = Math.cos(hi.slope), sh = Math.sin(hi.slope);
+      const vl = lo.y / height, vh = hi.y / height;
+
+      // Two triangles: (lo_i, hi_j, lo_j) and (lo_i, hi_i, hi_j).
+      //
+      // The vertex ORDER is what the GPU culls on — the `normal` attribute above only lights the face,
+      // it cannot make a back-facing triangle visible. The outline is wound CCW in the (x, z) plane, and
+      // sweeping that order upward produces triangles whose winding normal points INWARD: the body was
+      // built inside-out, so FrontSide culling removed every near face and you saw through the cake to
+      // the inner surface of the far wall. Walking the quad the other way round puts the winding where
+      // the normals always claimed it was.
+      push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
+      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
+      push(lp[j], lo.y, nx * cl, sl, nz * cl, u1, vl);
+
+      push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
+      push(hp[i], hi.y, nx * ch, sh, nz * ch, u0, vh);
+      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
+    }
+  }
+
+  // ── Caps ─────────────────────────────────────────────────────────────────────
+  // Own vertices, own flat normals — sharing them with the wall would average the two and bevel the
+  // silhouette. The top cap is the innermost ring (the rim has already rolled inward by `f`).
+  const cap = (pts, y, up) => {
+    const contour = pts.map(p => new THREE.Vector2(p.x, p.z));
+    const faces = THREE.ShapeUtils.triangulateShape(contour, []);
+    const ny = up ? 1 : -1;
+    for (const t of faces) {
+      // triangulateShape winds CCW in the flat (x, z) contour it was handed; laid back into a y-up world
+      // that faces DOWN, so it is the TOP cap that needs reversing and the base that takes it as-is. The
+      // reverse of this was the same inside-out error the wall had: the lid faced into the cake.
+      const tri = up ? [t[0], t[2], t[1]] : t;
+      for (const k of tri) {
+        const p = pts[k];
+        push(p, y, 0, ny, 0, 0.5 + p.x * 0.5, 0.5 + p.z * 0.5);
+      }
+    }
+  };
+  cap(ringPts[ringPts.length - 1], height, true);
+  cap(outline, 0, false);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+// The outline pulled INWARD by `d`, each vertex moving along the bisector of its two edge normals. Used
+// for the rolled rim. A true polygon offset would also dissolve edges that collapse — but `d` here is a
+// rim fillet (a few percent of the cake), so a bisector step is exact enough and cannot self-intersect
+// at that scale.
+function insetPolygon(pts, d) {
+  const n = pts.length;
+  const seg = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    seg.push({ nx: dz / len, nz: -dx / len });           // outward
+  }
+  return pts.map((p, i) => {
+    const prev = seg[(i - 1 + n) % n], next = seg[i];
+    const sx = prev.nx + next.nx, sz = prev.nz + next.nz;
+    const len = Math.hypot(sx, sz);
+    // A near-cusp: the two edge normals oppose, so there IS no inward direction. Leave the vertex where
+    // it is rather than sending it somewhere arbitrary — an arbitrary answer is what crossed the rim
+    // over itself and left an X on the cake. (Outlines round their own cusps; this is the backstop.)
+    if (len < 0.2) return { ...p };
+    const nx = sx / len, nz = sz / len;
+    // Step along the bisector far enough that both EDGES move in by d (1/cos of the half-angle), capped
+    // so a sharp corner can't shoot the vertex across the shape.
+    const cos = Math.max(0.5, nx * next.nx + nz * next.nz);
+    return { x: p.x - nx * (d / cos), z: p.z - nz * (d / cos) };
+  });
+}
+
 // Fondant-draped ROUND tier: a solid of revolution whose top edge is a rounded fillet (the fondant
 // sheet folds over the rim instead of a sharp 90° tin edge). Profile is revolved around Y, spanning
 // y ∈ [0, height]: flat bottom disk → straight wall → quarter-arc top edge → flat top disk. `fillet`
@@ -837,15 +1127,18 @@ function buildRoundedTopCylinder(radius, height, fillet, radial = 64) {
 // ── Selection outline ─────────────────────────────────────────────────────────
 function SelectionOutline({ shp, yBase, height }) {
   const geometry = useMemo(() => {
-    const base = shp.kind === 'rect'
-      ? new THREE.BoxGeometry(shp.halfW * 2 + 0.05, height + 0.05, shp.halfD * 2 + 0.05)
-      : new THREE.CylinderGeometry(shp.radius + 0.05, shp.radius + 0.05, height + 0.05, 20);
+    // Round → a cylinder cage; every other footprint → its bounding box. The cue traces the tier's
+    // EXTENT, not its silhouette (same rule as the decoration SelectionBox), so an outline shape needs
+    // no case of its own — but it must not fall into the round branch, where `radius` is undefined.
+    const base = shp.kind === 'round'
+      ? new THREE.CylinderGeometry(shp.radius + 0.05, shp.radius + 0.05, height + 0.05, 20)
+      : new THREE.BoxGeometry(shp.halfW * 2 + 0.05, height + 0.05, shp.halfD * 2 + 0.05);
     return new THREE.EdgesGeometry(base);
   }, [shp, height]);
 
   return (
     <lineSegments position={[0, yBase + height / 2, 0]} geometry={geometry}>
-      <lineBasicMaterial color="#6c47ff" linewidth={2} />
+      <lineBasicMaterial color={SELECTION_COLOR} linewidth={2} />
     </lineSegments>
   );
 }
@@ -861,7 +1154,7 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
+                    gradient, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
@@ -875,14 +1168,15 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
     if (!matRef.current) return;
     let bb = null;
     const geo = meshRef.current?.geometry;
-    if (gradient && geo) {
+    if ((gradient || glaze) && geo) {
       if (!geo.boundingBox) geo.computeBoundingBox();
       const size = new THREE.Vector3();   geo.boundingBox.getSize(size);
       const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
       bb = { min: geo.boundingBox.min.clone(), size, center };
     }
     applyGradient(matRef.current, gradient, bb);
-  }, [gradient, geoSig]);
+    applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
+  }, [gradient, glaze, geoSig]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
@@ -922,6 +1216,23 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
         envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 4.5) : (surf?.envMapIntensity ?? 0.5)}
         normalMap={normalMap ?? null}
         normalScale={[normalScale, normalScale]} />
+    </mesh>
+  );
+}
+
+// ── Glaze drip fringe ─────────────────────────────────────────────────────────────
+// The pendant drip tendrils hanging off a glaze tier's bottom edge (geometry from glazeDrip.js, riding
+// perimeter(shape)). It wears the SAME glaze material as the body and is handed the BODY's bbox, so the
+// object-space marble shader continues off the edge and every tendril carries the streak above it. Placed
+// at the tier base in the body's LOCAL frame, so its local Y (0 → −depth) lines up beneath the wall.
+function GlazeDrip({ geo, surf, glaze, bodyBbox, yBase }) {
+  const matRef = useRef();
+  useEffect(() => { if (matRef.current) applyGlaze(matRef.current, glaze, bodyBbox); }, [glaze, bodyBbox, geo]);
+  return (
+    <mesh position={[0, yBase, 0]} geometry={geo} castShadow>
+      <meshPhysicalMaterial ref={matRef} color={glaze?.colors?.[0] ?? '#ffffff'} metalness={0}
+        roughness={surf?.roughness ?? 0.2} clearcoat={surf?.clearcoat ?? 1} clearcoatRoughness={surf?.clearcoatRoughness ?? 0.2}
+        envMapIntensity={surf?.envMapIntensity ?? 1.2} side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -1025,7 +1336,8 @@ function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensi
 export default function CakeTier({
   radius, height, color, yBase,
   gradient = null,
-  shape = 'round', width, depth, cornerR,
+  glaze = null,
+  shape = 'round', shapeFamily = null, shapeConfig = null, width, depth, cornerR,
   frostingType = 'buttercream',
   frostingStyle = DEFAULT_STYLE,
   styleParams = null,
@@ -1048,6 +1360,12 @@ export default function CakeTier({
   bottomPipingSelected = false,
   onTopPipingClick,
   onBottomPipingClick,
+  // Drag a single-mode piece round its ring: (zone, layerId, index, angle) => void. Absent (previews,
+  // the thumbnail scene) = no drag wiring at all. `pipingMovable(layer)` is the capability read — the
+  // host owns it because only the host has the catalogue; default movable so a preview never invents
+  // a restriction (same contract as isStickerMovable).
+  onPipingInstanceMove = null,
+  pipingMovable = () => true,
   onClick,
 }) {
   const topY    = yBase + height;
@@ -1060,24 +1378,73 @@ export default function CakeTier({
   // Gradient is a cream technique only — ignore any (dormant) gradient on a finish that doesn't
   // support it (fondant/naked), so it always renders solid. The data is kept; just not rendered.
   const effGradient = frostingSupportsGradient(frostingType) ? gradient : null;
+  // Chocolate glaze: a render:'glaze' finish paints its body with the object-space marble shader. The
+  // palette lives on the instance (tier.glaze); absent → the default solid chocolate. Config-driven off
+  // the finish's `render` KEY, never the literal frosting name (INVARIANTS #1/#6). The glaze base colour
+  // is glaze.colors[0] (not tier.color, which is for cream finishes), so a solid glaze reads chocolate.
+  const effGlaze = fdef.render === 'glaze' ? (glaze ?? GLAZE_DEFAULTS) : null;
+  const bodyColor = effGlaze ? (effGlaze.colors?.[0] ?? color) : color;
   // Vertical gradient runs bottom→top, so the top lid takes the last (top-most) stop; solid colour
   // otherwise. Mirrors the shader, which maps gt=1 (the cake top) to the final stop.
   const gradColors = effGradient?.colors?.filter(Boolean) ?? [];
   const capColor   = gradColors.length >= 2 ? gradColors[gradColors.length - 1] : color;
-  const shp = useMemo(() => tierShape({ shape, width, depth, radius, cornerR }), [shape, width, depth, radius, cornerR]);
-  const isRect = shp.kind === 'rect';
+  const shp = useMemo(() => tierShape({ shape, shapeFamily, shapeConfig, width, depth, radius, cornerR }), [shape, shapeFamily, shapeConfig, width, depth, radius, cornerR]);
+  // "Not round" — an extruded footprint (the sheet's rounded rect, or any authored outline). Every
+  // feature below that was gated on `!isPrism` was really gated on "this is the lathe/cylinder path":
+  // the cream wall styles, drip, festoons, luster and foil are all cylinder-unwrap maths. An outline
+  // shape belongs on the prism side of that line, so it inherits the gate rather than needing a branch.
+  const isPrism = shp.kind !== 'round';
   const prismGeo = useMemo(
-    () => isRect ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null,
-    [isRect, shp, height],
+    () => {
+      if (shp.kind === 'glyph') return buildGlyphPrism(shp.shapes, shp.thickness ?? height);  // number/letter — per-count extrusion depth
+      if (shp.kind === 'rect') return buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR);
+      if (shp.kind !== 'outline') return null;
+      // The rolled top rim comes from the FROSTING's own edge config — the very same `roundEdge` the
+      // round tier uses for its fondant drape (frostings.js `edge: {kind:'round', frac}`). So a fondant
+      // heart rolls over at the rim and a sharp-edged finish stays sharp, with no per-shape knob and no
+      // second opinion about what a cake's edge looks like.
+      const f = roundEdge ? roundEdge.frac * Math.min(Math.min(shp.halfW, shp.halfD), height) : 0;
+      return buildOutlinePrism(shp.outline, height, f);
+    },
+    [shp, height, roundEdge?.frac],
+  );
+  // The wall's grain runs once around the tier, so its U extent is the PERIMETER. (Rect keeps its
+  // existing 2·(w+d) approximation so no sheet cake's texture shifts.)
+  const prismGrainU = useMemo(
+    () => (shp.kind === 'rect' ? 2 * (shp.halfW + shp.halfD)
+        :  shp.outline ? perimeter(shp).length   // heart, polygon, glyph (number/letter) — the real contour length
+        :  0),
+    [shp],
   );
   // Round fondant tiers get a draped, rounded-edge body (config-driven via the finish's
   // `edge: { kind:'round', frac }`). Other round tiers stay a plain cylinder + lid. null ⇒ cylinder.
   const roundedGeo = useMemo(
-    () => (!isRect && roundEdge)
+    () => (!isPrism && roundEdge)
       ? buildRoundedTopCylinder(radius, height, roundEdge.frac * Math.min(radius, height))
       : null,
-    [isRect, roundEdge?.frac, radius, height],
+    [isPrism, roundEdge?.frac, radius, height],
   );
+  // Glaze DRIP fringe — the pendant tendrils off the bottom edge, only for a glaze finish. The geometry
+  // rides perimeter(shp) so it fits ANY shape; it shares the BODY geometry's bbox so the object-space
+  // marble shader continues off the edge and colours each tendril. `drip` is the finish's AUTHORED
+  // fraction of tier height (glaze.drip), not a customer knob.
+  const glazeBodyGeo = isPrism ? prismGeo : roundedGeo;
+  // Drip length is an AUTHORED finish property: use the instance's if present, else the finish default
+  // (GLAZE_DEFAULTS.drip, DB-overlaid) — never a customer knob.
+  const dripFrac = effGlaze ? (effGlaze.drip ?? GLAZE_DEFAULTS.drip) : 0;
+  const glazeDrip = useMemo(
+    () => (effGlaze && dripFrac > 0.001 ? buildGlazeDrip(shp, dripFrac, height, 1) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [!!effGlaze, dripFrac, shp, height],
+  );
+  const glazeBodyBbox = useMemo(() => {
+    const g = glazeBodyGeo;
+    if (!g) return null;
+    if (!g.boundingBox) g.computeBoundingBox();
+    const size = new THREE.Vector3();   g.boundingBox.getSize(size);
+    const center = new THREE.Vector3(); g.boundingBox.getCenter(center);
+    return { min: g.boundingBox.min.clone(), size, center };
+  }, [glazeBodyGeo]);
   // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
   // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
   // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
@@ -1085,22 +1452,22 @@ export default function CakeTier({
   const styleVals = resolveStyleParams(frostingStyle, styleParams);
   const styleSig = JSON.stringify(styleVals);
   const styledGeo = useMemo(
-    () => (!isRect && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,
+    () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,
     // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
-    [isRect, roundEdge, wallKey, radius, height, styleSig],
+    [isPrism, roundEdge, wallKey, radius, height, styleSig],
   );
   // Normal-map STYLE (rustic): a surface texture on the plain wall instead of geometry. Built when the
   // style declares a surfaceMap; `depth` → normalScale, `scale` → tiling density.
   const surfaceMapKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).surfaceMap : null;
   const styleNormalMap = useMemo(
-    () => (surfaceMapKey && !isRect)
+    () => (surfaceMapKey && !isPrism)
       ? surfaceNormalMap(surfaceMapKey, {
           aroundLen: 2 * Math.PI * radius, upLen: height, density: (styleVals.scale ?? 9) / 9,
           radius, height, params: styleVals,
         })
       : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [surfaceMapKey, isRect, radius, height, styleSig],
+    [surfaceMapKey, isPrism, radius, height, styleSig],
   );
   const styleNormalScale = styleVals.depth ?? 1;
 
@@ -1117,26 +1484,26 @@ export default function CakeTier({
   const sideSig = `${dusting ? JSON.stringify(dusting) : ''}|${sideFoil ? JSON.stringify(sideFoil) : ''}`;
   const finishRef = useRef(null);   // reused canvases/textures across rebuilds (drag/add stay cheap)
   const finishMaps = useMemo(() => {
-    if (isRect || !(dusting?.splashes?.length || sideFoil?.flakes?.length)) { finishRef.current = null; return null; }
+    if (isPrism || !(dusting?.splashes?.length || sideFoil?.flakes?.length)) { finishRef.current = null; return null; }
     finishRef.current = makeParticleFinishMaps({
       surface: 'side', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
       dusting, foil: sideFoil, reuse: finishRef.current,
     });
     return finishRef.current;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRect, radius, height, color, mat.roughness, mat.metalness, sideSig]);
+  }, [isPrism, radius, height, color, mat.roughness, mat.metalness, sideSig]);
 
   const topSig = topFoil ? JSON.stringify(topFoil) : '';
   const topFinishRef = useRef(null);
   const topFinishMaps = useMemo(() => {
-    if (isRect || !topFoil?.flakes?.length) { topFinishRef.current = null; return null; }
+    if (isPrism || !topFoil?.flakes?.length) { topFinishRef.current = null; return null; }
     topFinishRef.current = makeParticleFinishMaps({
       surface: 'top_surface', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
       foil: topFoil, reuse: topFinishRef.current,
     });
     return topFinishRef.current;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRect, radius, height, color, mat.roughness, mat.metalness, topSig]);
+  }, [isPrism, radius, height, color, mat.roughness, mat.metalness, topSig]);
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
@@ -1155,7 +1522,7 @@ export default function CakeTier({
   // One <TopPipingRing>/<BottomPipingRing> per stacked layer. A layer is "selected"
   // by its layerId; legacy single-piping callers fall back to the boolean flags.
   const renderTops = () => tops.map((p, idx) => (
-    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={radius} glbPath={p.glbUrl} color={p.color}
+    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       topRotation={p.rotation ?? [0,0,0]}
@@ -1164,7 +1531,7 @@ export default function CakeTier({
       flipTop={p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false)}
       spacing={p.spacing ?? 1}
       swagCount={p.swagCount ?? 0} swagDepth={p.swagDepth ?? 0} swagTilt={p.swagTilt ?? 0.5}
-      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null}
+      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null} finish={p.finish ?? 'cream'}
       altEnabled={p.altEnabled ?? false} altGlbUrl={p.altGlbUrl ?? null}
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
@@ -1175,6 +1542,8 @@ export default function CakeTier({
       drip={p.drip ?? false} dripConfig={p.dripConfig ?? null}
       dripGloss={p.dripGloss ?? DRIP_GLOSS_DEFAULT} dripLength={p.dripLength ?? 1} dripFlood={p.dripFlood ?? false}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
+      canMove={pipingMovable(p)}
+      onMoveInstance={onPipingInstanceMove ? (index, angle) => onPipingInstanceMove('rim', p.layerId, index, angle) : null}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
 
@@ -1183,7 +1552,7 @@ export default function CakeTier({
   // does NOT react to layers added later, so an existing swag never jumps when something new is
   // placed; instead the new layer stacks around the swag's reported band.
   const renderBottoms = () => bottoms.map((p, idx) => (
-    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={radius} glbPath={p.glbUrl} color={p.color}
+    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={shp.shellRadius ?? radius} tierHeight={height} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       bottomRotation={p.bottomRotation ?? [0,0,0]}
@@ -1194,7 +1563,7 @@ export default function CakeTier({
       flipBottom={p.userFlipBottom !== undefined ? p.userFlipBottom : (p.flipBottom ?? true)}
       spacing={p.spacing ?? 1}
       swagCount={p.swagCount ?? 0} swagDepth={p.swagDepth ?? 0} swagTilt={p.swagTilt ?? 0.5}
-      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null}
+      arrangement={p.arrangement ?? 'ring'} instances={p.instances ?? null} finish={p.finish ?? 'cream'}
       altEnabled={p.altEnabled ?? false} altGlbUrl={p.altGlbUrl ?? null}
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
@@ -1203,6 +1572,8 @@ export default function CakeTier({
       festoons={p.festoons ?? 6} bendDepth={p.bendDepth ?? 0.4} bendTilt={p.bendTilt ?? 0}
       wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
+      canMove={pipingMovable(p)}
+      onMoveInstance={onPipingInstanceMove ? (index, angle, wallY) => onPipingInstanceMove('board', p.layerId, index, angle, wallY) : null}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
 
@@ -1211,7 +1582,7 @@ export default function CakeTier({
       <group onClick={handleClick}>
         {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
         <NakedLayers shp={shp} yBase={yBase} height={height} flavour={flavour} />
-        {!isRect && (
+        {!isPrism && (
           <mesh position={[0, topY + 0.01, 0]}>
             <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
             <meshStandardMaterial color="#fffdf5" roughness={0.5} />
@@ -1226,20 +1597,25 @@ export default function CakeTier({
   return (
     <group onClick={handleClick}>
       {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
-      {isRect ? (
-        // Rounded-rect prism: flat top, only the vertical corners rounded, full footprint.
-        // No separate top cap (a cap reads as a stray "board" on a rectangular cake).
-        <TierBody position={[0, yBase, 0]} color={color} surf={mat}
-          grainExtent={[2 * (shp.halfW + shp.halfD), height]}
-          gradient={effGradient} geoSig={prismGeo?.uuid} castShadow receiveShadow>
+      {/* Glaze drip tendrils off the bottom edge (glaze finish only) — same wet material as the body,
+          sharing its bbox so the object-space marble field flows unbroken off the edge onto each drip. */}
+      {glazeDrip && glazeBodyBbox && (
+        <GlazeDrip geo={glazeDrip.geo} surf={mat} glaze={effGlaze} bodyBbox={glazeBodyBbox} yBase={yBase} />
+      )}
+      {isPrism ? (
+        // An extruded footprint (sheet rect, or an authored outline): flat top, full footprint, no
+        // separate top cap (a cap reads as a stray "board" on a non-round cake).
+        <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
+          grainExtent={[prismGrainU, height]}
+          gradient={effGradient} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
           <primitive object={prismGeo} attach="geometry" />
         </TierBody>
       ) : roundedGeo ? (
         // Fondant-draped round tier: one rounded-edge solid (spans y ∈ [0,height]), positioned at
         // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.
-        <TierBody position={[0, yBase, 0]} color={color} surf={mat}
+        <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
           grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
-          gradient={effGradient} geoSig={roundedGeo.uuid} castShadow receiveShadow>
+          gradient={effGradient} glaze={effGlaze} geoSig={roundedGeo.uuid} castShadow receiveShadow>
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
       ) : styledGeo ? (
@@ -1268,11 +1644,11 @@ export default function CakeTier({
           </mesh>
         </>
       )}
-      {!isRect && (
+      {!isPrism && (
         <SecondCreamLayers layers={creamLayers ?? []} radius={radius} yBase={yBase} height={height}
           grainKey={mat.grain} grainDensity={mat.grainDensity} />
       )}
-      {!isRect && topFinishMaps && (
+      {!isPrism && topFinishMaps && (
         <TopFoilDecal maps={topFinishMaps} radius={radius - 0.02} y={topY + 0.02}
           foilColor={topFoil?.color} glow={topFoil?.finish?.glow ?? 0.35} env={topFoil?.finish?.env ?? 4.5} />
       )}

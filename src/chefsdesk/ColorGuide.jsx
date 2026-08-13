@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { Panel, Z } from '../shared/Panel.jsx';
 
 // ── RGB → CMYK recipe ─────────────────────────────────────────────────────────
 function computeRgbRecipe(r, g, b) {
@@ -389,21 +390,14 @@ export default function ColorGuide({ onClose, primaryColor = '#1a1a1a', accentCo
   const gelRecipe = gelMatch ? gelMatch[medium] : null;
 
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={s.modal} onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div style={s.header}>
-          <div>
-            <div style={s.title}>Color Guide</div>
-            <div style={s.subtitle}>Upload a photo · click to pick a color · get a mixing recipe</div>
-          </div>
-          <button style={s.closeBtn} onClick={onClose}>✕</button>
-        </div>
-
-        {/* Scrollable body */}
-        <div style={s.body}>
-
+    <>
+    <Panel
+      onClose={onClose}
+      title="Color Guide"
+      subtitle="Upload a photo · click to pick a color · get a mixing recipe"
+      width={460}
+      bodyPadding="14px 20px"
+    >
           {/* ── Row 1: image (left) + controls (right) ── */}
           <div style={s.topRow}>
 
@@ -560,10 +554,10 @@ export default function ColorGuide({ onClose, primaryColor = '#1a1a1a', accentCo
           })()}
 
           <div style={{ height: 8 }} />
-        </div>
-      </div>
+    </Panel>
 
-      {/* Floating hover swatch — follows cursor over image */}
+      {/* Floating hover swatch — follows cursor over image. Z.popover, not a number of its own: it is
+          opened FROM a panel and has to sit above it, which is the whole reason the scale is named. */}
       {hoverColor && (
         <div style={{
           position: 'fixed',
@@ -574,7 +568,7 @@ export default function ColorGuide({ onClose, primaryColor = '#1a1a1a', accentCo
           padding: '5px 9px',
           boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
           display: 'flex', alignItems: 'center', gap: 7,
-          pointerEvents: 'none', zIndex: 200,
+          pointerEvents: 'none', zIndex: Z.popover,
           fontFamily: "'Quicksand', sans-serif",
         }}>
           <div style={{
@@ -593,41 +587,12 @@ export default function ColorGuide({ onClose, primaryColor = '#1a1a1a', accentCo
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = {
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.22)',
-    backdropFilter: 'blur(4px)', zIndex: 100,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-  },
-  modal: {
-    background: '#fff', borderRadius: 20,
-    boxShadow: '0 8px 48px rgba(0,0,0,0.14)',
-    width: '100%', maxWidth: 460,
-    maxHeight: '92vh', display: 'flex', flexDirection: 'column',
-    overflow: 'hidden', fontFamily: "'Quicksand', sans-serif",
-  },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: '16px 20px 12px', borderBottom: '1px solid #e8e8e8', flexShrink: 0,
-  },
-  title:    { fontSize: 14, fontWeight: 800, color: '#1a1a1a' },
-  subtitle: { fontSize: 10, color: '#aaa', marginTop: 2, fontWeight: 500 },
-  closeBtn: {
-    background: '#f0f0f0', border: 'none', width: 28, height: 28, borderRadius: '50%',
-    fontSize: 12, color: '#333', cursor: 'pointer', flexShrink: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700,
-  },
-
-  body: {
-    overflowY: 'auto', flex: 1,
-    padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10,
-  },
-
   // Two-column top row
   topRow: {
     display: 'flex', gap: 12, alignItems: 'flex-start',

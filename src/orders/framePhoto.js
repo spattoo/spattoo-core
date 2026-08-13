@@ -5,14 +5,18 @@
 // The transform mirrors the designer's applyPhotoTransform (a THREE UV transform: center 0.5, rotation
 // = −rot, repeat = coverFit/zoom, offset = pan), reproduced here as the inverse affine so the same
 // crop is drawn. flipY of the texture is folded in as q_v = 1 − v.
+import { corsUrl } from '../designer/utils/assetUrl.js';
 
+// corsUrl is applied HERE, not left to callers: a crossOrigin loader that trusts its callers is a
+// loader that eventually gets a raw url (the A4 print sheet did, and its photos stopped loading).
+// It's idempotent, so an already-qualified url passes through untouched. See designer/utils/assetUrl.js.
 export function loadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';            // CORS-clean so the export canvas isn't tainted
     img.onload = () => resolve(img);
     img.onerror = reject;
-    img.src = url;
+    img.src = corsUrl(url);
   });
 }
 

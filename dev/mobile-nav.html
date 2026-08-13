@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mobile Nav — spatula vs strip</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body, #root { height: 100%; }
+      body { font-family: 'Quicksand', sans-serif; background: #edeae3; }
+      /* Option B scrolls horizontally. A desktop scrollbar under the icons is chrome the phone
+         would never draw, and it makes the strip look 8px shorter than the number in the readout. */
+      .no-sb { scrollbar-width: none; -ms-overflow-style: none; }
+      .no-sb::-webkit-scrollbar { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./mobile-nav.jsx"></script>
+  </body>
+</html>

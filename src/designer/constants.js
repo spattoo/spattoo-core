@@ -34,6 +34,13 @@ export const SHEET_PIPING_CORNER_RADIUS = 0;
 // ── Sticker ───────────────────────────────────────────────────────────────────
 export const STICKER_SIZE = 0.28;       // world-space side length of the hit plane
 
+// Default placement scale (`placement_config.r`) for an UPLOADED decoration that carries none of its
+// own. Without it a promoted/placed 2D image falls to the bare `1` scale in addSticker and lands as a
+// tiny sticker. The promote studio lets the baker tune this per decoration with a live cake preview;
+// this is the starting value there AND the default for a customer's direct-placed upload (which never
+// sees the studio). Tuned to read as a topper on the cake, not a postage stamp.
+export const DEFAULT_DECOR_R = 3.5;
+
 // ── Piping style picker layout ────────────────────────────────────────────────
 export const PICKER_ORIGIN_X = -0.5;
 export const PICKER_STEP_X   = -0.62;
@@ -66,8 +73,20 @@ export const CAMERA_FOV             = 42;
 export const CAKE_TOP_CAP_H = 0.02;
 
 // ── Sticker surface offsets ───────────────────────────────────────────────────
-export const SIDE_STICKER_SURFACE_OFFSET = 0.025;  // gap between cake wall and sticker face
-export const FLAT_STICKER_Y_OFFSET       = 0.025;  // lift above cake top surface
+// How far a side decal's base sheet sits off the wall, as a DIMENSIONLESS FRACTION of the live
+// tier radius — never an absolute world length (INVARIANTS.md #8). Apply via `sideSeatOffset()`.
+//
+// Derived, not invented: the Relief Sticker Studio seats its decal at `TIER_R + 0.004` on its
+// own 1.2-radius tier. Re-expressing that absolute value as a fraction of THAT tool's radius is
+// exactly what #8 prescribes, so the designer can multiply by ITS OWN live radius. Written as the
+// original quotient so the provenance survives — do not "simplify" it to a bare number.
+//
+// (Lesson: this was `0.025` world. On the 1.2 tier that's 2.1% of the radius — 6.25x the studio's
+// 0.33% — so every side decal floated a visible slot off the wall, and you saw the board through
+// the gap at the silhouette tangent. On a 0.45 tier the same constant is 5.6%: worse the smaller
+// the cake, which is the signature of a hardcoded world length.)
+export const SIDE_STICKER_SEAT_FRAC = 0.004 / 1.2;
+export const FLAT_STICKER_Y_OFFSET  = 0.025;  // lift above cake top surface — TODO: same #8 smell, still absolute
 
 // ── Domain enums ──────────────────────────────────────────────────────────────
 // Single source of truth for the string identifiers used across the designer and
@@ -91,6 +110,11 @@ export const PLACEMENT_MODES = Object.freeze({
   PERCH:            'perch',   // figure seated on the rim/top edge — straddles the edge, legs over
   VERGE:            'verge',   // rests its base on the rim lip and reclines radially OUTWARD, the rest
                               //   cantilevered over the edge into the air (butterflies, flowers)
+  INSERT:           'insert',  // LEGACY position string only. Insert is now a MODIFIER (a per-zone
+                              //   `insert:{…}` key riding the zone object like `seat`) that composes
+                              //   with an upright base pose — NOT a position. zoneCfg promotes the old
+                              //   `mode:"insert"` form to `{mode:<stand|hug>, insert:{…}}`; kept here
+                              //   so that back-compat promotion has the string to match on.
 });
 
 // Internal element kinds the designer branches on (NOT the admin element-type slug).
@@ -108,4 +132,17 @@ export const ELEMENT_SLUGS = Object.freeze({
   SCATTERED_DECOR: 'scattered_decor',
   PICKS:           'picks',
   IMAGE_TOPPER:    'image_topper',
+});
+
+// Human names for the cake surfaces. Shared: the element popup labels a zone with these, and so does
+// the upload studio's zone picker — one vocabulary, so a baker who reads "Side" in one place reads
+// "Side" in the other.
+export const ZONE_LABELS = Object.freeze({
+  top_edge:     'Top',
+  bottom_board: 'Base',
+  top_surface:  'Top surface',
+  side:         'Side',
+  side_edge:    'Side edge',
+  middle_tier:  'Middle tier',
+  board:        'Board',
 });

@@ -9,7 +9,7 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzdm1ueWNlaGZvcHhzZ3J1d21rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MjI0NjIsImV4cCI6MjA5MTM5ODQ2Mn0.ay0o6ugWvik_Mp607oYyYQIQzX4wphhhLNi-53HvwHY'
 );
 
-const API_URL = 'https://spattoo-backend.onrender.com';
+const API_URL = 'https://api.spattoo.dev';
 
 function createApiClient(supabaseClient) {
   async function authFetch(path, options = {}) {
@@ -42,6 +42,7 @@ function createApiClient(supabaseClient) {
     fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
     fetchTextures: () => authFetch('/api/textures'),     // designer overlays DB cream-style configs
     fetchMaterials: () => authFetch('/api/materials'),   // designer overlays DB material→style lists
+    fetchCakeShapes: () => authFetch('/api/cake-shapes'), // the footprints authored in the Cake Shape Studio
 
     fetchBakerProfile: () => authFetch('/api/baker/profile'),
     fetchStorefrontThemes: () => authFetch('/api/baker/storefront-themes'),
@@ -57,10 +58,36 @@ function createApiClient(supabaseClient) {
     fetchTestimonials:  () => authFetch('/api/baker/testimonials'),
     updateTestimonials: (testimonials) =>
       authFetch('/api/baker/testimonials', { method: 'PUT', body: JSON.stringify({ testimonials }) }),
-    getSignedUploadUrl: (folder, filename, contentType) =>
+    // contentLength is signed INTO the URL (the API's size ceiling) — R2 refuses a body of any other
+    // length, so every caller passes the .size of the very blob it is about to PUT.
+    // The upload ceiling, as the API currently has it (env-tuned there — never a copy here).
+    fetchUploadLimits: () => authFetch('/api/storage/limits'),
+
+    // ── Uploads (the Uploads panel + the promote studio) ──────────────────────────────────────────
+    // The harness speaks to the REAL routes. Without these the panel renders an empty state and the
+    // whole feature is unverifiable here — which is exactly how a shipped bug in it went unseen.
+    fetchUploads:    () => authFetch('/api/uploads').catch(() => []),
+    registerUpload:  (payload) => authFetch('/api/uploads', { method: 'POST', body: JSON.stringify(payload) }),
+    deleteUpload:    (id) => authFetch(`/api/uploads/${id}`, { method: 'DELETE' }),
+    renameUpload:    (id, name) => authFetch(`/api/uploads/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+    promoteUpload:   (id, payload) => authFetch(`/api/uploads/${id}/promote`, { method: 'POST', body: JSON.stringify(payload) }),
+    unlinkUpload:    (id) => authFetch(`/api/uploads/${id}/promote`, { method: 'DELETE' }),
+    removeUploadBg:  (id) => authFetch(`/api/uploads/${id}/remove-bg`, { method: 'POST' }),
+    fetchElementQuota: () => authFetch('/api/elements/quota').catch(() => null),
+    // The exact sentence the baker attests to, as published + hashed server-side.
+    fetchAttestationStatement: () => authFetch('/api/legal/content-rights').catch(() => null),
+    uploadElementImage: async (blob, filename) => {
+      const { url, key } = await authFetch('/api/storage/sign-upload', {
+        method: 'POST',
+        body: JSON.stringify({ folder: 'elements/files/2D', filename, contentType: blob.type || 'image/png', contentLength: blob.size }),
+      });
+      await fetch(url, { method: 'PUT', headers: { 'Content-Type': blob.type || 'image/png' }, body: blob });
+      return key;
+    },
+    getSignedUploadUrl: (folder, filename, contentType, contentLength) =>
       authFetch('/api/storage/sign-upload', {
         method: 'POST',
-        body: JSON.stringify({ folder, filename, contentType }),
+        body: JSON.stringify({ folder, filename, contentType, contentLength }),
       }),
     fetchDashboard: () => authFetch('/api/baker/dashboard'),
     fetchDashboardBreakdown: (period) => authFetch(`/api/baker/dashboard/breakdown?period=${period}`),
@@ -132,6 +159,12 @@ function createApiClient(supabaseClient) {
       authFetch('/api/billing/cancel', { method: 'POST' }),
     signOut: () => supabaseClient.auth.signOut(),
     changePassword: (newPassword) => supabaseClient.auth.updateUser({ password: newPassword }),
+    // Live co-design sessions (Phase 1)
+    createDesignSession: (body) => authFetch('/api/design-sessions', { method: 'POST', body: JSON.stringify(body) }),
+    getDesignSession: (id) => authFetch(`/api/design-sessions/${id}`),
+    putDesignSessionDesign: (id, design) => authFetch(`/api/design-sessions/${id}/design`, { method: 'PUT', body: JSON.stringify({ design }) }),
+    penDesignSession: (id, body) => authFetch(`/api/design-sessions/${id}/pen`, { method: 'POST', body: JSON.stringify(body) }),
+    endDesignSession: (id) => authFetch(`/api/design-sessions/${id}/end`, { method: 'POST' }),
   };
 }
 
@@ -156,7 +189,7 @@ const storefrontSlug = subdomainSlug
 function CustomerApp({ slug, inviteId }) {
   const [authed, setAuthed] = React.useState(false);
   if (authed) {
-    return <CakeDesigner apiClient={apiClient} supabase={supabase} onOrder={({ design }) => console.log('Order:', design)} />;
+    return <CakeDesigner apiClient={apiClient} supabase={supabase} onOrder={({ design }) => console.log('Order:', design)} liveSessionId={params.get('session') || null} />;
   }
   return (
     <CustomerStorefront
@@ -194,6 +227,7 @@ function Root() {
       apiClient={apiClient}
       supabase={supabase}
       onOrder={({ design }) => console.log('Order:', design)}
+      liveSessionId={params.get('session') || null}
     />
   );
 }
@@ -214,7 +248,7 @@ if (settingsPreview) {
     fetchStorefrontThemes: async () => ({ themes: [
       { id: 1, key: 'spotlight',  name: 'Spotlight',  description: 'A dramatic dark hero with a spotlit, rotating 3D cake. Bold and modern.', is_active: true },
       { id: 2, key: 'patisserie', name: 'Patisserie', description: 'A light, elegant editorial layout that lets your cakes lead.',           is_active: false },
-      { id: 3, key: 'aurora',     name: 'Aurora',     description: 'Soft, airy and colourful — a bright, welcoming storefront.',              is_active: false },
+      { id: 3, key: 'aurora',     name: 'Aurora',     description: 'Soft, airy and colourful — a bright, welcoming storefront.',              is_active: true },
     ] }),
     updateBakerSettings: async () => ({ ok: true }),
     updateBakerProfile:  async () => ({ ok: true }),
@@ -247,7 +281,7 @@ if (!storefrontSlug && !settingsPreview) {
   }
   container._reactRoot.render(
     <React.StrictMode>
-      <AuthGate supabase={supabase}>
+      <AuthGate supabase={supabase} captchaSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}>
         <Root />
       </AuthGate>
     </React.StrictMode>

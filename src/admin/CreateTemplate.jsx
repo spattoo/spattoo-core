@@ -406,7 +406,7 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
   function captureThumbnail() {
     const canvas = thumbContainerRef.current?.querySelector('canvas');
     if (!canvas) return;
-    setThumbnail(canvas.toDataURL('image/png'));
+    setThumbnail(canvas.toDataURL('image/webp', 0.85));
   }
 
   async function handleSave() {
@@ -437,10 +437,11 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
       } else {
         let thumbnail_url = null;
         if (thumbnailBlob) {
-          const fileName = `template-${Date.now()}.png`;
+          const ext = thumbnailBlob.type === 'image/webp' ? 'webp' : 'png';
+          const fileName = `template-${Date.now()}.${ext}`;
           const { error: upErr } = await supabase.storage
             .from(thumbnailBucket)
-            .upload(fileName, thumbnailBlob, { contentType: 'image/png', upsert: false });
+            .upload(fileName, thumbnailBlob, { contentType: thumbnailBlob.type, upsert: false });
           if (!upErr) {
             const { data: { publicUrl } } = supabase.storage.from(thumbnailBucket).getPublicUrl(fileName);
             thumbnail_url = publicUrl;
@@ -468,7 +469,6 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
 
   return (
     <>
-      <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
       <div style={s.page}>
 
         {/* ── Sidebar ── */}

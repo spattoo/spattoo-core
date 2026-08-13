@@ -1,12 +1,17 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { tierShape } from '../geometry/surface.js';
-import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
+import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
+import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
+import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields, zoneInsert } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
+import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
+import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
+import { pickTierFields } from '../utils/designSnapshot.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 // Frosting types now live in the frostings registry; re-export so existing importers
@@ -17,9 +22,13 @@ export { FROSTING_TYPES };
 // of the balloon look. The Age popup lets the customer switch faces.
 const DEFAULT_AGE_FONT = 'ems_readability';
 
+// `shape` is written out explicitly even though 'round' is also what an ABSENT shape resolves to
+// (cakeShapeDef falls back to round). The absent case has to keep working — every design saved before
+// shapes existed omits it — but a design this code AUTHORS should say what it is rather than lean on a
+// fallback, so a reader of the JSON sees the shape and setTierShape has a field to overwrite.
 const DEFAULT_DESIGN = {
   tiers: [
-    { color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] },
+    { shape: 'round', color: '#f5b8c8', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] },
   ],
   texts: [],
   ages: [],        // gold 3D balloon-number toppers standing on the cake top (see AgeNumber)
@@ -28,6 +37,38 @@ const DEFAULT_DESIGN = {
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
 };
 
+// The cake a shape STARTS you with — the ONE definition of "new cake, shape X". `New` resets the design
+// to this, and the shape picker previews a tile with it, so the cake in the grid is the cake you get.
+//
+// A shape is a form, not just an outline: if its catalog row authors a STACK, the starter cake is that
+// stack. That is the entire difference between "Cylinder" and "2T Cylinder" — the same footprint, a
+// different cake — and it did not exist while a row could only carry a curve. An empty stack means one
+// tier at the designer's default, which is what every shape meant before, so old rows are untouched.
+//
+// Sizes come from the row; colour/frosting/style stay the designer's defaults, because a shape authors
+// the cake's FORM, not its decoration.
+export function starterDesign(shape = 'round') {
+  const def = cakeShapeDef(shape);
+  const base = DEFAULT_DESIGN.tiers[0];
+  // A round tier is sized by RADIUS; every other footprint by width/depth (toCanvasConfig reads only the
+  // one its family uses and silently ignores the other). The authored stack speaks width/depth for all of
+  // them — the studio shows the same two sliders whatever the shape — so a circle's width is its diameter
+  // and must be translated here. Miss this and a 12-inch round seeds as the default 6-inch one, with
+  // nothing on screen to say why.
+  const isRound = def.family === 'circle';
+  const sized = t => (isRound
+    ? { radius: t.width / 2, height: t.height }
+    : { width: t.width, depth: t.depth, height: t.height });
+  // The shape's geometry is written ONTO each tier (not left to a catalog lookup), so the cake this
+  // starts is self-describing from the first frame — the same reason a saved snapshot carries it.
+  const geom = { shapeFamily: def.family, shapeConfig: def.config ?? {} };
+  const stack = def.tiers ?? [];
+  const tiers = stack.length
+    ? stack.map(t => ({ ...base, shape, ...geom, ...sized(t) }))
+    : [{ ...base, shape, ...geom }];
+  return { ...DEFAULT_DESIGN, tiers };
+}
+
 // Pure resolver: a design (authored shape, fields optional) → the canvas/scene config the
 // renderer consumes (radius/height/frosting defaults filled in). This is the SINGLE place tier
 // geometry defaults live — the live editor's `canvasConfig` useMemo and the read-only `CakePreview`
@@ -35,31 +76,57 @@ const DEFAULT_DESIGN = {
 export function toCanvasConfig(design) {
   return {
     tiers: (design.tiers ?? []).map((t, i) => {
-      const isRect = t.shape === 'rect';
-      const width  = t.width ?? 2.16;   // default half-sheet footprint
-      const depth  = t.depth ?? 1.56;
+      // The tier's geometry is resolved from the tier itself (its shapeFamily/shapeConfig), falling back
+      // to the catalog by KEY for legacy designs. Passing only `shape === 'rect'` through was the bug that
+      // made every authored shape (heart, hexagon…) arrive at the renderer as a plain cylinder — the key
+      // was silently dropped right here. shapeFamily/shapeConfig are forwarded onto the canvas tier below
+      // so every downstream tierShape() call reads the same self-contained geometry.
+      const geom = tierGeometry(t);
+      const family = geom.family;
+      const isRound = family === 'circle';
+      const isRect  = family === 'rounded_rect';
+      const isGlyph = isGlyphFamily(family);
+      const r = t.radius ?? TIER_RADII[i] ?? 0.35;
+      // A glyph cake's (number/letter) footprint AND vertical thickness are DERIVED (from its typed
+      // characters + its size config), not authored on the tier — so resolve them once here and every
+      // downstream reader (stacking, board, camera, cream) speaks the true box. The mesh extrudes by the
+      // same thickness (tierShape → CakeTier).
+      const glyphDims = isGlyph ? glyphTierDims(family, geom.config) : null;
+      // A sheet defaults to the half-sheet footprint; any other non-round shape defaults to the round
+      // tier's own diameter, so switching a cake's shape doesn't also resize it.
+      const width  = glyphDims ? glyphDims.width  : (t.width ?? (isRect ? 2.16 : r * 2));
+      const depth  = glyphDims ? glyphDims.depth  : (t.depth ?? (isRect ? 1.56 : r * 2));
       return {
-        // For rect, radius is the bounding half-extent so radius-based incidental
+        // Self-contained geometry forwarded onto the canvas tier, so tierShape() resolves the same
+        // family/config everywhere it's called downstream (CakeTier, CakeCanvas, placement) without a
+        // second catalog lookup.
+        shapeFamily:  geom.family,
+        shapeConfig:  geom.config,
+        // For any non-round footprint, radius is the bounding half-extent so radius-based incidental
         // placement (board, toolbar offsets, topper scale) keeps working.
-        radius:       isRect ? Math.max(width, depth) / 2 : (t.radius ?? TIER_RADII[i] ?? 0.35),
-        height:       t.height  ?? (BOTTOM_H - i * TIER_HEIGHT_STEP),
+        radius:       isRound ? r : Math.max(width, depth) / 2,
+        height:       glyphDims ? glyphDims.height : (t.height ?? (BOTTOM_H - i * TIER_HEIGHT_STEP)),
         color:        t.color,
         gradient:     t.gradient ?? null,
+        glaze:        t.glaze ?? null,          // chocolate-glaze marble palette + pattern (frostingType 'glaze')
         frostingType: t.frostingType ?? DEFAULT_FROSTING,
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
+        grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
-        ...(isRect && { shape: 'rect', width, depth, cornerR: t.cornerR ?? 0 }),
+        ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
     texts:    design.texts ?? [],
     ages:     design.ages ?? [],
     stickers: design.stickers ?? [],
     writing:  design.writing ?? null,
+    boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
+    nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
   };
 }
@@ -90,7 +157,9 @@ function migrateTopperToSticker(templateDesign) {
     baseRotation: [0, -Math.PI / 2, 0],   // legacy CakeTopper faced toppers with this offset
     yOffset: 0, rotation: 0, radialOffset: 0, tiltAngle: 0, groupId: null,
     color: tp.color ?? null,
-    allowedActions: { resize: true, duplicate: true, color: false, delete: true, move: true, tilt: true },
+    // Resize is opt-in (see the main placement path). A legacy topper carries no allowed_actions, so
+    // it lands non-resizable like any unconfigured element; it can still be MOVED and edited.
+    allowedActions: { resize: false, duplicate: true, color: false, delete: true, move: true, tilt: true },
   }];
 }
 
@@ -139,6 +208,27 @@ const SECOND_CREAM_LAYER_DEFAULT = {
 // that stored decoration type 'swirl_ring'/'base_border' instead of piping objects.
 const LEGACY_PIPING_SLUG = 'elements/3D-images/piping-cream4.glb';
 
+// The colour a newly-placed instance starts at. Pure + exported so the rule is pinned by tests — it is
+// subtle and getting it wrong repaints artwork nobody asked to repaint.
+//
+// A `recolor` descriptor means "the customer MAY change these pixels", NOT "repaint this now". So a
+// recolourable 2D sticker starts from its OWN artwork (colour null → the renderer's `needsRecolor` is
+// false → the image is drawn as-is), and only `recolor.default` opts it into an at-load repaint — e.g.
+// `Cream layer`, whose artwork is pink but which ships cream.
+//
+// Everything WITHOUT a recolor descriptor still seeds from the element's `default_color`, which has
+// other jobs: GLB material tint, and the procedural border colour on a photo frame.
+//
+// (Before this, the two unrelated fields were coupled: any element with `recolor` AND a `default_color`
+// was repainted the instant it was placed. A palm tree with a green default_color rendered uniformly
+// green — trunk, leaves and flower — because `opaque` repaints every pixel and keeps only brightness.)
+export function initialStickerColor(element, extra = {}) {
+  if (extra.color != null) return extra.color;                 // an explicit choice always wins (re-pack, clone)
+  const recolor = element?.placement_config?.recolor;
+  if (recolor) return recolor.default ?? null;                 // absent → artwork's own colours
+  return element?.default_color ?? null;
+}
+
 // Normalise a saved/template design into the editor's design shape: array-format
 // pipings tagged with layerIds, legacy piping + topper→sticker migrations, and
 // per-tier defaults. Exported so READ-ONLY consumers (the order 3D viewer) feed
@@ -162,19 +252,12 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
       }
       return {
         color:        t.color ?? '#ffffff',
-        ...(t.gradient && { gradient: t.gradient }),
         topPipings:    topPipings.map(withLayerId),
         bottomPipings: bottomPipings.map(withLayerId),
-        ...(t.radius != null  && { radius: t.radius }),
-        ...(t.height != null  && { height: t.height }),
-        ...(t.shape   != null  && { shape: t.shape }),
-        ...(t.width   != null  && { width: t.width }),
-        ...(t.depth   != null  && { depth: t.depth }),
-        ...(t.cornerR != null  && { cornerR: t.cornerR }),
-        // Restore per-tier wall treatments saved in the snapshot (luster dust,
-        // gold-leaf foil) so edit-in-3D / template load / view brings them back.
-        ...(t.dusting != null && { dusting: t.dusting }),
-        ...(t.foil    != null && { foil: t.foil }),
+        // Dimensions + wall treatments (gradient/dust/foil) restored from the snapshot so
+        // edit-in-3D / template load / view brings them back. Same round-trip field list as
+        // buildDesignSnapshot — see OPTIONAL_TIER_FIELDS.
+        ...pickTierFields(t),
       };
     }),
     texts:    templateDesign.texts ?? [],
@@ -251,10 +334,47 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // Chocolate-glaze marble config per tier — the poured-glaze palette + pattern (colors / flow / warp /
+  // contrast / streak / drip). Sibling to tier.gradient: it lives on the INSTANCE and is rendered by the
+  // object-space glaze shader (shared/glaze/glazeMaterial.js). ≥2 colours = a marble; 1 = a solid glaze.
+  // Seeds from GLAZE_DEFAULTS (one chocolate) on first edit so a partial patch never drops sibling fields.
+  function setTierGlaze(index, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, glaze: { ...GLAZE_DEFAULTS, ...(t.glaze ?? {}), ...patch } }
+        : t),
+    }));
+  }
+
   function setTierCornerR(index, cornerR) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, cornerR } : t),
+    }));
+  }
+
+  // The tier's footprint, by KEY. Shape is per-TIER, not per-cake: the geometry already resolves each
+  // tier's shape independently (surface.js/tierShape), so a heart on a round base costs no extra path —
+  // forbidding it would be a constraint invented in the state layer, not one the renderer has.
+  //
+  // Only the key is written. Size (radius/width/depth) is deliberately NOT reset: re-shaping a tier the
+  // customer already sized should change its outline, not silently shrink her cake — toCanvasConfig
+  // derives whatever the new family needs from the size that is already there.
+  function setTierShape(index, shape) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, shape } : t),
+    }));
+  }
+
+  // Patch a tier's self-contained shape geometry params (e.g. a number cake's typed digits). The customer
+  // authors these on their own cake, so it writes to the TIER's shapeConfig — tierGeometry prefers that
+  // over the catalog default, which is exactly what makes "type your number" a per-cake edit.
+  function setTierShapeConfig(index, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, shapeConfig: { ...(t.shapeConfig || {}), ...patch } } : t),
     }));
   }
 
@@ -354,6 +474,66 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // ── Piped grass on a tier's top ─────────────────────────────────────────────
+  // A per-tier SURFACE TREATMENT, stored like dusting and foil rather than as stickers. Grass is a
+  // few thousand tufts; as stickers that would be a few thousand rows in the snapshot, every one of
+  // them individually selectable and draggable, for something nobody wants to move a blade of.
+  // Here it is one small object and the canvas instances it.
+  //
+  // Absent/null = no grass, so every existing design is unchanged and the field costs nothing until
+  // a baker asks for it. `setTierGrass(i, null)` removes it.
+  function setTierGrass(index, grass) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, grass } : t),
+    }));
+  }
+
+  // ── Fondant letter blocks ───────────────────────────────────────────────────
+  // Design-level like `writing` and `boardGrass`: a name spelled at the cake's foot belongs to the
+  // CAKE, not to one tier of it. `blocks` is the arrangement — an explicit list once the name is
+  // set, so a dragged block simply is where it is, with no run to re-derive it from.
+  function setNameBlocks(nb) { setDesign(prev => ({ ...prev, nameBlocks: nb })); }
+
+  // `changes` may be a function of the current value — the same contract the grass setters use, and
+  // for the same reason: a drag or an edit computed from the last render can be stale.
+  function updateNameBlocks(changes) {
+    setDesign(prev => (prev.nameBlocks
+      ? { ...prev, nameBlocks: { ...prev.nameBlocks, ...(typeof changes === 'function' ? changes(prev.nameBlocks) : changes) } }
+      : prev));
+  }
+
+  // ── Grass on the BOARD ──────────────────────────────────────────────────────
+  // Design-level, not per-tier, because the board is. `tier.grass` sits on a tier's top and a stack
+  // has one per tier; the board ring stands on the one board, around the bottom tier — so it belongs
+  // beside `writing` and `piping`, which are also facts about the cake rather than a layer of it.
+  //
+  // Separate from `tier.grass` rather than a `zone` on it, because the football-cake look wants BOTH
+  // at once: a pitch on top and tufts ringing the base. A single zoned object would force a choice.
+  function setBoardGrass(grass) {
+    setDesign(prev => ({ ...prev, boardGrass: grass }));
+  }
+
+  // `changes` may be a FUNCTION of the current grass, not just a patch object. That matters for the
+  // clump list: computing the next one from `design` as the component last rendered it means two
+  // quick presses of "+ Add clump" both read the same list and the second overwrites the first.
+  // Resolving inside the updater reads the live value instead.
+  function updateBoardGrass(changes) {
+    setDesign(prev => (prev.boardGrass
+      ? { ...prev, boardGrass: { ...prev.boardGrass, ...(typeof changes === 'function' ? changes(prev.boardGrass) : changes) } }
+      : prev));
+  }
+
+  // Same contract as updateBoardGrass — `changes` may be a function of this tier's current grass.
+  function updateGrass(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.grass)
+        ? { ...t, grass: { ...t.grass, ...(typeof changes === 'function' ? changes(t.grass) : changes) } }
+        : t),
+    }));
+  }
+
   function updateDustSplash(index, splashIndex, patch) {
     setDesign(prev => ({
       ...prev,
@@ -440,10 +620,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // A new tier INHERITS the shape of the one below it — stacking a round tier on a heart base is a
+  // deliberate act, not something that should happen because the customer pressed "add tier". She can
+  // still change it afterwards (setTierShape); the inheritance is the default, not a lock.
   function addTier() {
     setDesign(prev => {
       if (prev.tiers.length >= 4) return prev;
-      return { ...prev, tiers: [...prev.tiers, { color: '#ffffff', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] }] };
+      const below = prev.tiers[prev.tiers.length - 1];
+      return { ...prev, tiers: [...prev.tiers, { shape: below?.shape ?? 'round', color: '#ffffff', frostingType: DEFAULT_FROSTING, frostingStyle: DEFAULT_STYLE, topPipings: [], bottomPipings: [], creamLayers: [] }] };
     });
   }
 
@@ -492,7 +676,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, texts: prev.texts.filter(t => t.id !== id) }));
   }
 
-  // ── Age numbers — gold balloon-number toppers standing on the cake top ──────────
+  // ── Number toppers — gold balloon-number toppers standing on the cake top ──────
+  // Called "Number topper" everywhere a baker can see it. The KEY stays `ages`, and the adder
+  // `addAge`, because both are written into every saved design snapshot — renaming them is a data
+  // migration in exchange for a word nobody reads. See the label in CakeDesigner for why it is not
+  // called an age: a 5 on a cake is usually somebody's age, and the product should not sound like
+  // it is collecting one when it plainly is not.
   // Reuses the cream tube-sweep geometry (buildCreamWriting) + gold material; a fat tube on a
   // single-stroke digit reads as a metallic number candle. `value` is a digit string ('5','25');
   // size = standing height (world units), thickness = tube radius (balloon chunkiness), font picks
@@ -552,6 +741,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       let px = position.x ?? 0;
       let seatTilt = 0, seatYOffset = 0;   // overridden by edgeSeatSeed for perch/verge below
+      let seatFanYaw = 0, seatInsertDepth = null;   // insert: per-instance fan spin + burial depth
       let pz = position.z ?? 0;
       // Seat angle/height for round side placements (hug/default). Resolved below so a re-added
       // instance never lands exactly on a coincident sibling.
@@ -581,6 +771,19 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         // perimeter via deOverlapSeat's rim branch).
         const siblings = prev.stickers.filter(s => s.placementMode === placementMode && s.tierIndex === (tierIndex ?? 0));
         ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.RIM, { x: px, z: pz }, siblings));
+      }
+      // Insert is a per-zone MODIFIER (not a mode) — it composes with whatever upright pose
+      // `placementMode` carries (stand on top, hug on a wall). When the dropped-into zone has an
+      // `insert` modifier, bake the per-instance lean (±jitter), a small fan spin and the burial depth
+      // onto the instance. Placed at the drop/scatter position (NOT forced to the front edge like
+      // perch/verge); scatter flows through addSticker unchanged, so each scattered piece gets its own
+      // jittered angle. Shared insertSeat helper (both add + chooser-move paths call it).
+      const insertCfg = exact ? null : zoneInsert(element.placement_config, zone);
+      if (insertCfg) {
+        const seed = insertSeat(insertCfg);
+        seatTilt        = seed.tiltAngle;
+        seatFanYaw      = seed.fanYaw;
+        seatInsertDepth = seed.depthFrac;
       }
       // De-overlap every OTHER scatter placement (hug / default mode): a re-added instance must
       // not stack exactly on a coincident sibling (they'd look like one). Geometry-driven by zone,
@@ -624,11 +827,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Cluster-capable ball (placement_config.cluster): a single such ball pocket-snaps tangent to
           // its neighbours when dragged, so the customer can hand-build a cluster (manual mode).
           clusterBall:   !!element.placement_config?.cluster,
-          // Side seating: default flush (true hug, centred on the wall); proud = back-on-wall so a
-          // deep model stands off the wall (toppers). Config-driven; applied in the side bend path.
-          // A cluster ball is a sphere: on the side it must rest PROUD on the wall (back-on-wall), never
-          // centred/half-buried — so cluster elements are always side-proud regardless of side_proud.
-          sideProud:     element.placement_config?.side_proud === true || !!element.placement_config?.cluster,
+          // Side seating depth, per zone (placement.js zoneSeatFields → zoneSeat): 'proud' = back-on-wall
+          // so a solid body stands off the wall (bow, toppers, cluster balls); 'flush' = centred (thin
+          // decals, and scattered decor which nestles better tucked in). Default is config-driven off the
+          // `scatter` flag (scatter→flush, else proud) with an explicit per-zone `seat` override; no
+          // element-type branch. The SAME helper re-derives this on the chooser's zone-switch move, so an
+          // added and a moved instance seat identically. Only the side bend path reads it (verge/stand
+          // seat by their own logic).
+          sideProud:     zoneSeatFields(element.placement_config, zone).sideProud,
           hugFill:       element.placement_config?.hug_fill ?? null,
           // Folded sticker: a flat decal that splits at the body spine into two hinged wings
           // (e.g. a card butterfly). Capability is config-gated like parts_deletable — the
@@ -645,6 +851,17 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.
           recolor:       element.placement_config?.recolor ?? null,
+          // Raised-fondant relief for a 2D image sticker (placement_config.relief) — present → the renderer
+          // bakes displacement + normal maps from the image and lifts it into a 3D cut-out (rounded bevel,
+          // real shadow) on a subdivided mesh. Absent → the sticker renders flat.
+          relief:        element.placement_config?.relief ?? null,
+          // Per-element print finish for a 2D image sticker (placement_config.print_finish): { saturation,
+          // emissive, gain } — an albedo chroma pre-boost + decal self-illumination so the print survives the
+          // lit render wash, plus a print EXPOSURE scale for the opposite case (an upright topper faces the key
+          // light head-on and OVER-exposes, where neither of the other two can dim it). Applies to BOTH flat
+          // and relief 2D stickers (not nested under relief). Absent → the renderer's module defaults
+          // (DECAL_SAT / DECAL_EMISSIVE / DECAL_GAIN).
+          printFinish:   element.placement_config?.print_finish ?? null,
           // Photo-cake frame (config-gated on placement_config.photo.mask, no element-type branch): the
           // MASK is the shape (heart/circle/square…) and drives both the photo clip and the procedural
           // border. The customer's photo (photoUrl) is clipped to it; the border is a colour ring of
@@ -657,6 +874,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1, rot: 0 },   // pan (UV fraction) + zoom + 2D rotation (deg); cover-fit baseline at zoom 1
+          // Editable text placeholders (config-gated on placement_config.text_slots, no element-type
+          // branch): the artwork carries named slots ({number}, {name}, …) whose VALUES the customer
+          // types. The value is composited into the texture at design time, so it is never an asset —
+          // the same element serves "2", "47" and "Amara". Absent → renders as a plain decal.
+          textSlots:      element.placement_config?.text_slots ?? null,
+          // Seeded from each slot's authored default, then owned by the customer (like photoUrl).
+          textValues:     Object.fromEntries(
+                            (element.placement_config?.text_slots ?? []).map(sl => [sl.key, sl.default ?? '']),
+                          ),
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         seatTheta,            // round side: seat angle around the wall
           y:             seatY,                // side: seat height on the wall
@@ -668,9 +894,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
           yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
-          rotation:      0,
+          rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
-          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline (calibrated)
+          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
+          // Insert modifier: fraction of the element's LENGTH sunk into the surface (render scales by
+          // measured length), and the RENDER'S "is inserted" signal — non-null iff the zone carried an
+          // insert modifier (0 is valid: buried-but-flush). null otherwise. See placement.js zoneInsert
+          // / insertSeat / PLACEMENT_CONFIG.md.
+          insertDepth:   seatInsertDepth,
           groupId:       null,
           // Ball-cluster membership: every ball in one packed clump shares a clusterId, so the UI
           // presents the set as ONE card (members abstracted) and they move/remove together — a
@@ -686,16 +917,27 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Mirror this instance across its own vertical axis (a pattern's symmetric second
           // part — e.g. the right unicorn eye from the same GLB). Applied as a -X scale in render.
           flipX:            extra.flipX ?? false,
-          color:         extra.color ?? element.default_color ?? null,
+          // See initialStickerColor: `recolor` = the customer MAY change these colours, not "repaint now".
+          color:         initialStickerColor(element, extra),
           // GLB Recompose: customer-recolourable part groups. `placement_config._model.groups` (the
           // editable controls) is the source of truth; copy the editable ones onto the instance and
           // seed each group's current colour from its default. Render recolours meshes by
           // userData.group; absent/empty → the single-colour `color` path is used (unchanged).
           groups:        (element.placement_config?._model?.groups ?? []).filter(g => g.editable),
-          groupColors:   Object.fromEntries(
-                           (element.placement_config?._model?.groups ?? [])
-                             .filter(g => g.editable)
-                             .map(g => [g.key, g.default ?? '#ffffff'])),
+          // Seed each group's colour from its default. TWO sources, ONE path:
+          //   • a GLB part-group carries its default on the group itself (_model.groups[].default)
+          //   • a hue_regions sticker carries them on the recolour descriptor
+          //     (recolor.group_defaults, index-keyed) — this is how an uploaded decoration renders in
+          //     the colours its uploader chose, WITHOUT baking them into the pixels. The artwork stays
+          //     original; the colours stay data; and the customer can still change them (unless the
+          //     uploader locked them). Absent/empty → the artwork's own colours, unchanged.
+          groupColors:   {
+                           ...Object.fromEntries(
+                             (element.placement_config?._model?.groups ?? [])
+                               .filter(g => g.editable)
+                               .map(g => [g.key, g.default ?? '#ffffff'])),
+                           ...(element.placement_config?.recolor?.group_defaults ?? {}),
+                         },
           // Shared fondant surface: opt-in per element (absent → use the GLB's own texture/material).
           useSharedFondantTexture: element.placement_config?.useSharedFondantTexture === true,
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
@@ -705,14 +947,41 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // like the palette), the same precedence every field above uses.
           roughness:     extra.roughness ?? element.placement_config?.roughness ?? null,
           metalness:     extra.metalness ?? element.placement_config?.metalness ?? null,
+          // Surface FINISH for a 3D GLB decoration. Resolved from a MATERIAL TAG
+          // (placement_config.material: "satin") against the decoration-materials registry — the full
+          // MeshPhysical finish (roughness/sheen/clearcoat/anisotropy/…) lives ONCE in that registry, so
+          // many elements share it by name (DRY). `materialSurface` returns null for an unknown or body-only
+          // material (never lets a cake-body material land on a decoration). Falls back to an inline
+          // placement_config.surface object for a one-off. Applied on the GLB finish path (StickerModel);
+          // recolour still tints the base colour. Config-driven, no element-type branch.
+          surface:       extra.surface ?? materialSurface(element.placement_config?.material) ?? element.placement_config?.surface ?? null,
           allowedActions: {
-            resize:    element.allowed_actions?.resize    ?? true,
+            // Resize is OPT-IN: an element is resizable (canvas corner grips AND the popup/toolbar
+            // SizeDial — one capability, all inputs gated together, INVARIANTS 5b) only when its config
+            // explicitly sets allowed_actions.resize. Default OFF, so a placed element without the flag
+            // can be MOVED but not resized, and 3D/2D behave identically — no element-type branch. The
+            // admin turns resize on per element.
+            resize:    element.allowed_actions?.resize    ?? false,
             duplicate: element.allowed_actions?.duplicate ?? true,
             color:     element.allowed_actions?.color     ?? false,
             gradient:  element.allowed_actions?.gradient  ?? false,
-            delete:    true,
-            move:      element.allowed_actions?.move      ?? false,
-            tilt:      element.allowed_actions?.tilt      ?? true,
+            // Was hardcoded `true`, which made admin's "deletable" checkbox DEAD CONFIG — the one
+            // capability that ignored the element. Defaults to true, so an element that never set the
+            // flag is deletable exactly as before; only an explicit `false` pins it to the cake.
+            delete:    element.allowed_actions?.delete    ?? true,
+            // Defaults TRUE, for the same reason `delete` two lines up does: every decoration on
+            // every cake moves today, and a capability that arrives defaulting to false silently
+            // freezes all of them. Only an explicit `false` pins one down.
+            //
+            // It defaulted to false while NOTHING read it, so the value is meaningless in every
+            // sticker and every design_snapshot written before now — which is exactly why the canvas
+            // reads the ELEMENT rather than this copy. See isStickerMovable in CakeDesigner.
+            move:      element.allowed_actions?.move      ?? true,
+            // Opt-IN, matching how admin authors capabilities everywhere (ManageElements /
+            // PhotoFrameStudio default `tilt: false`). The old `?? true` contradicted that convention,
+            // so every element — including a promoted decoration whose type never asked for it — got a
+            // Tilt control in the popup. Tilt now appears only when a type explicitly enables it.
+            tilt:      element.allowed_actions?.tilt      ?? false,
           },
         }],
       };
@@ -870,8 +1139,31 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, piping: [] }));
   }
 
-  function resetDesign() {
-    setDesign(DEFAULT_DESIGN);
+  // Start over as the shape the customer picked (CakeDesigner's New flow). Defaulting to round keeps
+  // every existing caller — resetDesign() with no argument — behaving exactly as it did.
+  //
+  // A shape is the cake you START with, not only the outline it is cut from: if its catalog row authors a
+  // STACK, the new cake is that stack. That is the whole difference between "Cylinder" and "2T Cylinder",
+  // which are the same footprint and were previously the same cake. An empty stack means one tier at the
+  // designer's default size — what every shape meant before this existed.
+  //
+  // Sizes come from the row; everything else (colour, frosting, style) is the designer's default, because
+  // a shape authors the CAKE'S FORM, not its decoration.
+  function resetDesign(shape = 'round', { shapeConfig } = {}) {
+    // An authored row carries its own full, self-contained design (snapshot shape) — load it exactly as
+    // a template would, so a starter saved with a stack/frosting/decoration comes back intact and
+    // normalised. Seed round/rect (and any legacy row without a stored design) are built on the fly.
+    const def = cakeShapeDef(shape);
+    let design = def.design ?? starterDesign(shape);
+    // A glyph cake's characters (number `digits` / letter `letters`) are chosen at pick time (the New-cake
+    // prompt) and arrive as a `shapeConfig` patch. Merge it onto the bottom tier HERE, as part of the same
+    // design that loads, so the cake renders the customer's string on the first frame — not a second
+    // setState that would race the reset. Generic: any family's config key merges the same way.
+    if (shapeConfig && Object.keys(shapeConfig).length) {
+      design = { ...design, tiers: design.tiers.map((t, i) => i === 0 ? { ...t, shapeConfig: { ...(t.shapeConfig ?? {}), ...shapeConfig } } : t) };
+    }
+    if (def.design) loadDesign(design);
+    else setDesign(design);
   }
 
   function addStickerBatch(stickers) {
@@ -886,10 +1178,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
+    setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setNameBlocks, updateNameBlocks,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,

@@ -339,7 +339,6 @@ export default function PatternBuilder({ onSave, onApply, onCancel, tierCount: t
 
   return (
     <div style={{ ...s.page, cursor: draggingNewBall ? 'crosshair' : 'auto' }}>
-      <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
       {/* ── Sidebar ── */}
       <div style={s.sidebar}>

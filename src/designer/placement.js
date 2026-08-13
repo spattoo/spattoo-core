@@ -1,7 +1,7 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
-import { ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants.js';
-import { topClamp, snapToRim } from './geometry/surface.js';
+import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC } from './constants.js';
+import { topClamp, snapToRim, tierShape } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
 // element via placement_config.hug_fill.
@@ -19,6 +19,14 @@ export const DEFAULT_SPINE    = 0.5;
 // used when the mode is on but `angle_deg` isn't authored — tunable per element via
 // placement_config.verge.angle_deg.
 export const DEFAULT_VERGE_ANGLE_DEG = 35;
+
+// Insert (placement_config.insert): an element's base is sunk INTO the surface and it stands at an
+// angle. `depth` = fraction of the element's LENGTH buried (the renderer multiplies by the measured
+// length, never a world constant — INVARIANTS #8); `lean_deg` = base tilt from the surface normal;
+// `jitter_deg` = random ± spread PER INSTANCE so a scattered batch fans out. Fallbacks when the mode is
+// on but a field isn't authored.
+export const DEFAULT_INSERT_DEPTH    = 0.3;
+export const DEFAULT_INSERT_LEAN_DEG = 12;
 
 // Nudge a seat so it doesn't land exactly on a coincident sibling — in the SURFACE's own coordinate
 // system. ONE rule, shared by placement (addSticker) and duplication (duplicateSticker), so the
@@ -83,6 +91,25 @@ export function edgeSeatSeed(placementConfig, shp, mode) {
   return { x: 0, z: edge - (cfg.edge_inset ?? 0), tiltAngle, yOffset: cfg.y_offset ?? 0 };
 }
 
+// Per-instance seat for an `insert` element (base sunk into the surface at an angle). Returns the
+// values BAKED onto the instance at add time: `tiltAngle` (base lean ± random jitter, radians),
+// `fanYaw` (a small random Y-spin so a scattered batch points different ways — the exploded look), and
+// `depthFrac` (fraction of the element's length to bury — the renderer scales by the measured length).
+// `rng` is a 0..1 source (default Math.random); the jitter is baked per instance so it persists and a
+// deterministic caller (test) can pin it. The ONE place the insert seat is computed — both addSticker
+// and the chooser-move path call this, so the two can't drift (see edgeSeatSeed / INVARIANTS.md).
+export function insertSeat(insertCfg, rng = Math.random) {
+  const cfg = insertCfg ?? {};
+  const lean   = (cfg.lean_deg   ?? DEFAULT_INSERT_LEAN_DEG) * Math.PI / 180;
+  const jitter = (cfg.jitter_deg ?? 0) * Math.PI / 180;
+  const rand = () => jitter ? (rng() * 2 - 1) * jitter : 0;   // ±jitter; a clean 0 when jitter is 0
+  return {
+    tiltAngle: lean + rand(),
+    fanYaw:    rand(),
+    depthFrac: cfg.depth ?? DEFAULT_INSERT_DEPTH,
+  };
+}
+
 // Render-time size for a side-hug hero decoration: it fills `fill` of the tier WALL HEIGHT,
 // independent of placement_config.r (which stays the absolute size for `stand`). Pure so the
 // contract test pins the formula; `stickerSize` is the renderer's normalized base (a model is
@@ -91,12 +118,29 @@ export function hugScale(wallHeight, stickerSize, fill = DEFAULT_HUG_FILL) {
   return (wallHeight * fill) / stickerSize;
 }
 
+// How far a side decal's base sheet sits off the tier wall, in WORLD units, for a tier of the
+// given live radius. The seat is a fraction of that radius, so `off / radius` is the SAME on every
+// cake size — a decal hugs a 0.45 tier exactly as it hugs a 1.2 one (INVARIANTS.md #8). Pure, and
+// the ONE place the seat is computed: the side sticker, the snapshot pass and the topper preview
+// all call this rather than re-deriving it (the old absolute constant was pasted at 4 sites).
+export function sideSeatOffset(radius) {
+  return (Number.isFinite(radius) && radius > 0 ? radius : 0) * SIDE_STICKER_SEAT_FRAC;
+}
+
 // Keep a side decal's CENTRE y so its (scaled) bottom edge never crosses the tier base into the
 // board. If the decal is taller than the wall (enlarged a lot), let it overflow UPWARD only —
 // never down into the board. halfH = half the rendered sticker height.
-export function wallClampY(y, baseY, wallHeight, halfH) {
-  const lo = baseY + halfH;
-  const hi = baseY + wallHeight - halfH;
+// Keep a side-wall element's CENTRE where its VISIBLE content stays on the wall band [baseY, baseY+
+// wallHeight]. `down`/`up` are the content's extent below/above the centre (scaled) — its lowest and
+// highest opaque pixel, NOT the transparent square. Passing the same value for both (the square's
+// half-height) reproduces the old symmetric clamp, so a margin-free asset is unchanged; a banner with
+// empty margin above and below its flags can now climb until the flags touch the rim instead of being
+// stopped short by the empty square. When the content is taller than the wall, pin its top to the rim.
+export function wallClampY(y, baseY, wallHeight, down, up = down) {
+  const lo = baseY + down;
+  const hi = baseY + wallHeight - up;
+  // Content taller than the wall: pin its BASE to the tier base (bottom seated, top overflows) —
+  // the same fallback as the symmetric clamp.
   return hi >= lo ? Math.min(Math.max(y, lo), hi) : lo;
 }
 
@@ -150,6 +194,81 @@ export function frameTopMaxScale(shp, frameShape, fill = 1, stickerSize = STICKE
 export function frameSideMaxScale(wallHeight, fill = 1, stickerSize = STICKER_SIZE) {
   const ext = stickerSize * (fill > 0 ? fill : 1);   // shape full height at scale 1
   return Math.max(0.3, wallHeight / ext);
+}
+
+// ── The element's clickable/drawn box, in its own local frame ────────────────
+// A placed element's hit plane is a `size` square centred on its origin. But a BASE-SEATED element
+// (stand / base-verge / a folded card on a perch) is lifted by `seatHalf` — the distance from its
+// origin down to its lowest OPAQUE pixel — so its visible base rests on the surface rather than the
+// empty bottom of its transparent margin. When the artwork has empty space below it,
+// `seatHalf < size/2`, and the square's bottom edge ends up BELOW the contact point — buried in the
+// cake. That strip is not merely ugly: the hit plane billboards toward the camera, so it sits NEARER
+// than the cake behind it and wins the raycast — clicking the bare cake in front of a palm tree
+// selects the palm tree.
+//
+// So a base-seated element's box stops at its seat. Only the strip BELOW the seat is trimmed: the
+// side and top margins stay, because they genuinely do intercept clicks over a neighbour and the
+// border exists to show that (INVARIANTS #5a). The sub-seat strip is inside the cake, where it can
+// reveal nothing and only steals clicks from the tier.
+//
+// Flag-driven off the placement mode, never an element type. A perch/verge that deliberately
+// overhangs the rim is NOT base-seated — its underside hangs in air, not in cake — so it keeps the
+// full square. GLBs self-correct: their `seatHalf` is half the model's height.
+// A GLB passes its measured DENSE footprint (`halfW`/`halfH`, in STICKER_SIZE units) so the hit
+// plane hugs the model's real extent — a tall-narrow bow gets a tall-narrow box, not a square. 2D
+// stickers omit them and keep the full STICKER_SIZE square (their transparent margin genuinely does
+// steal clicks and must be shown — INVARIANTS #5a). The box still traces the hit plane; only the
+// plane's SIZE narrows to the art it actually intercepts.
+export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKER_SIZE, halfW = null, halfH = null } = {}) {
+  const hw  = halfW == null ? size / 2 : halfW;   // footprint half-width (GLB) or square half
+  const top = halfH == null ? size / 2 : halfH;   // footprint half-height (GLB) or square half
+  // Unmeasured (asset still loading) → the full square, exactly as before.
+  const seat = seatHalf == null ? top : Math.min(Math.max(seatHalf, 0), top);
+  const bottom = standSeat ? -seat : -top;
+  return { width: hw * 2, height: top - bottom, centerY: (top + bottom) / 2 };
+}
+
+// ── The ONE answer to "how big is this sticker, and how big may it get?" ──────
+// Every size control — the SizeDial in the edit popup AND the corner resize handles on the canvas —
+// reads its field, value and bounds from here, so a drag and a dial can never disagree (INVARIANTS
+// #3: a rule used in two places lives in one pure function). It resolves three things the callers
+// used to each re-derive inline, and one of them got wrong (a hard-coded 0.25–3 range that ignored
+// placement_config.scale entirely):
+//   1. WHICH field carries size. A hero hug sizes by `hugMul` (a nudge on a wall-derived scale),
+//      everything else by absolute `scale`. Flag-driven via isDynamicHug — never an element type.
+//   2. The config bounds — placement_config.scale { min, max, step } (INVARIANTS #1).
+//   3. The cake-geometry cap — a photo frame may only grow until it (and its border ring) reaches
+//      the rim / wall edges. Config-gated on photoMask, no element-type branch.
+export const STICKER_SCALE_RANGE = Object.freeze({ min: 0.25, max: 8, step: 0.05 });
+export const HUG_MUL_RANGE       = Object.freeze({ min: 0.3,  max: 3, step: 0.05 });
+
+export function stickerSizeControl(element, sticker, tier = null) {
+  if (isDynamicHug(sticker)) {
+    return { key: 'hugMul', value: sticker?.hugMul ?? 1, ...HUG_MUL_RANGE };
+  }
+  const { min, max, step } = scaleRangeOf(
+    element, STICKER_SCALE_RANGE.min, STICKER_SCALE_RANGE.max, STICKER_SCALE_RANGE.step);
+
+  let capped = max;
+  if (sticker?.photoMask && tier) {
+    const fill = (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0));
+    // Never cap below one step above the floor, or the control would have no travel.
+    const floor = min + step;
+    if (sticker.zone === ZONES.TOP_SURFACE) {
+      capped = Math.max(floor, frameTopMaxScale(tierShape(tier), sticker.photoShape, fill));
+    } else if (sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER) {
+      capped = Math.max(floor, frameSideMaxScale(tier?.height ?? 0, fill));
+    }
+  }
+  return { key: 'scale', value: sticker?.scale ?? 1, min, max: capped, step };
+}
+
+// Snap a continuous size (a handle drag) onto the control's increment and clamp it to the control's
+// bounds, so dragging can't reach a size the dial refuses to show.
+export function clampSizeValue(value, { min, max, step }) {
+  if (!(step > 0)) return Math.min(max, Math.max(min, value));
+  const snapped = Math.round(value / step) * step;
+  return +Math.min(max, Math.max(min, snapped)).toFixed(4);
 }
 
 // ── Facing-offset unit normalization ─────────────────────────────────────────
@@ -234,4 +353,77 @@ export function occludedTopFrac(tiers, i) {
   const r = tiers?.[i]?.radius ?? 0;
   const up = tierAbove(tiers, i)?.radius ?? 0;
   return (r > 0 && up && up < r) ? up / r : 0;
+}
+
+// Wall zones (side + middle tier) seat elements AGAINST a vertical face; every other zone
+// (top_surface, rim, board) is a flat-ish surface an element stands ON. The ONE predicate for that
+// split (deOverlapSeat has its own inline copy for its coord-system branch); used here to pick the
+// upright base pose an `insert` modifier composes with when back-compat has to infer it.
+function isWallZone(zone) {
+  return zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
+}
+
+// ── Per-zone placement config ─────────────────────────────────────────────────────────────────
+// A zone's entry in `placement_config` is EITHER a mode string ("hug") or an object carrying
+// per-zone config ({ mode, seat, insert, ... }). `zoneCfg` normalises both so callers never branch
+// on the shape; per-zone modifiers (`seat`, and now `insert`) ride on the object alongside `mode`
+// and flow through this one seam.
+//
+// Back-compat: `insert` was once a POSITION (`mode:"insert"`) with its params in a SHARED top-level
+// `placement_config.insert`. It is now a MODIFIER on a standing base pose (INSERT is upright, only
+// its base is buried). `zoneCfg` promotes the legacy form so every caller sees the canonical
+// `{ mode:<upright pose>, insert:{…} }` — no data migration. The pose insert composes with is the
+// zone's natural upright base: `stand` on a flat surface, `hug` against a wall (geometry-driven, no
+// element-type branch). New data authors `insert` as a per-zone key directly and never trips this.
+export function zoneCfg(placementConfig, zone) {
+  const v = placementConfig?.[zone];
+  const obj = (v && typeof v === 'object') ? { ...v } : { mode: v };
+  if (obj.mode === PLACEMENT_MODES.INSERT) {
+    obj.mode = isWallZone(zone) ? PLACEMENT_MODES.HUG : PLACEMENT_MODES.STAND;
+    if (obj.insert == null) obj.insert = placementConfig?.insert ?? {};
+  }
+  return obj;
+}
+
+// The placement MODE (the POSITION) for a zone ("hug" | "stand" | "perch" | "verge"), from string or
+// object form. Never returns "insert" — that is a modifier now (see zoneInsert), promoted away by
+// zoneCfg.
+export function zoneMode(placementConfig, zone, fallback) {
+  return zoneCfg(placementConfig, zone).mode ?? fallback;
+}
+
+// The per-zone INSERT modifier ({ depth, lean_deg, jitter_deg }) or null. Insert sinks an element's
+// base INTO the zone surface and leans it — a MODIFIER on the zone's upright base pose, NOT a pose
+// itself, so it composes with `stand`/`hug` (whatever `zoneMode` returns). Rides the per-zone object
+// like `seat`; zoneCfg promotes the legacy `mode:"insert"` + shared `placement_config.insert` form
+// into it, so callers read one shape. Null (absent) → the element seats flush, not buried.
+export function zoneInsert(placementConfig, zone) {
+  const ins = zoneCfg(placementConfig, zone).insert;
+  return (ins && typeof ins === 'object') ? ins : null;
+}
+
+// How DEEP an element seats in a zone: 'proud' (a solid body sits ON the surface, back flush against
+// it) or 'flush' (a thin decal centred on the surface). Only meaningful for wall-hug; verge/stand/
+// perch seat by their own logic and ignore it. An explicit zone-level `seat` wins; otherwise the
+// default is config-driven off the existing `scatter` flag — scattered decor nestles FLUSH (small
+// pieces read better tucked in), everything else solid seats PROUD (so a 3D piece isn't half-buried).
+// No element-type branch.
+export function zoneSeat(placementConfig, zone) {
+  const explicit = zoneCfg(placementConfig, zone).seat;
+  if (explicit === 'proud' || explicit === 'flush') return explicit;
+  return placementConfig?.scatter === true ? 'flush' : 'proud';
+}
+
+// The config-driven, ZONE-DEPENDENT instance fields — the ONE place both the add path
+// (`addSticker`) and the chooser's zone-switch path derive them, so a placed instance and a
+// re-seated (moved) instance seat identically (INVARIANTS #1/#3). `placementMode` and the side
+// seat DEPTH (`sideProud`) both change when an element moves between zones; reading them here —
+// never from the raw `placement_config[zone]` value — keeps the string and `{ mode, seat }` object
+// forms interchangeable. (The move path previously set neither, so moving a proud element off the
+// wall and back left it flush/buried and could leak the raw object into `placementMode`.)
+export function zoneSeatFields(placementConfig, zone) {
+  return {
+    placementMode: zoneMode(placementConfig, zone, 'hug'),
+    sideProud:     zoneSeat(placementConfig, zone) === 'proud',
+  };
 }

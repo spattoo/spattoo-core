@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Popup ideas — side by side</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  /* Static page, no React, no build: open it, or /popup-ideas.html via `npm run dev`.
+     The same New Order popup drawn four ways so the look can be judged side by side. */
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #6f6f6a; font-family: 'Quicksand', sans-serif; color: #2C4433;
+         padding: 26px 22px 50px; }
+  h1 { font-size: 17px; margin: 0 0 3px; color: #fff; }
+  .sub { font-size: 12.5px; color: rgba(255,255,255,.72); margin: 0 0 26px; max-width: 820px; line-height: 1.55; }
+
+  .row { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; }
+  .col { width: 320px; }
+  .cap { color: #fff; font-size: 12px; font-weight: 700; margin-bottom: 3px; }
+  .why { color: rgba(255,255,255,.62); font-size: 11px; line-height: 1.5; margin-bottom: 12px; min-height: 46px; }
+
+  /* the popup */
+  .pop { background: #fff; border-radius: 18px; overflow: hidden;
+         box-shadow: 0 18px 48px rgba(20,24,21,.34); display: flex; flex-direction: column; }
+  .head { display: flex; align-items: center; justify-content: space-between; position: relative; }
+  .head h2 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+  .x { width: 28px; height: 28px; border-radius: 50%; border: none; display: flex; align-items: center;
+       justify-content: center; font-size: 12px; font-weight: 700; cursor: pointer; z-index: 1; }
+  .wave { position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 14px; display: block; }
+
+  .steps { display: flex; padding: 13px 20px; border-bottom: 1px solid #E8EFE9; }
+  .step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .dot { width: 24px; height: 24px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 11px;
+         display: flex; align-items: center; justify-content: center; }
+  .step small { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+
+  .body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .block { background: #F7FAF8; border: 1px solid #E8EFE9; border-radius: 11px; padding: 11px 13px;
+           display: flex; justify-content: space-between; align-items: center; }
+  .block b { font-size: 12.5px; font-weight: 800; color: #2C4433; display: block; }
+  .block span { font-size: 11px; color: #9BB5A2; font-weight: 600; }
+  .block em { font-size: 12px; font-weight: 700; color: #4A5D51; font-style: normal; }
+  label { display: flex; flex-direction: column; gap: 6px; }
+  label span { font-size: 12px; font-weight: 700; color: #4A5D51; }
+  input { padding: 10px 12px; border-radius: 12px; border: 1.5px solid #d1d5db; font: inherit;
+          font-size: 13px; color: #2C4433; }
+  input::placeholder { color: #9BB5A2; }
+
+  .foot { padding: 14px 20px 18px; border-top: 1px solid #E8EFE9; display: flex; gap: 10px; }
+  .btn { padding: 12px 18px; border-radius: 14px; font: inherit; font-size: 13px; font-weight: 700;
+         cursor: pointer; border: none; }
+  .btn.ghost { background: #fff; border: 1.5px solid #E8EFE9; color: #4A5D51; }
+  .btn.go { flex: 1; background: linear-gradient(135deg,#1a1a1a,#333); color: #fff; }
+</style>
+</head>
+<body>
+
+<h1>The same popup, four ways</h1>
+<p class="sub">
+  Shown on a mid-grey so the shadow and the header read honestly. A is what shipped today; B–D are
+  the idea. The curve is the same one every tinted section on a customer storefront already ends in
+  — the most distinctive shape you own, and until now it lived in one file.
+</p>
+
+<div class="row">
+
+  <!-- ── A · today ── -->
+  <div class="col">
+    <div class="cap">A · Today</div>
+    <div class="why">Plain white header, hairline rule. Tidy, and indistinguishable from any other app's modal.</div>
+    <div class="pop">
+      <div class="head" style="padding:16px 20px 14px;border-bottom:1px solid #E8EFE9">
+        <h2>New Order</h2>
+        <button class="x" style="background:rgba(44,68,51,.07);color:#4A5D51">✕</button>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="dot" style="background:#2C4433">1</div><small style="color:#2C4433">Customer</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">2</div><small style="color:#9BB5A2">Details</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">3</div><small style="color:#9BB5A2">Delivery</small></div>
+      </div>
+      <div class="body">
+        <div class="block"><div><b>Reference photo</b><span>the picture the customer sent</span></div><em>Add</em></div>
+        <label><span>Flavour</span><input placeholder="— Select flavour —"></label>
+      </div>
+      <div class="foot"><button class="btn ghost">Back</button><button class="btn go">Next</button></div>
+    </div>
+  </div>
+
+  <!-- ── B · soft wave ── -->
+  <div class="col">
+    <div class="cap">B · Wave, near-black</div>
+    <div class="why">The spatula's OWN gradient — #121214 → #08080a → #020203, lifted straight from SpatulaFrame. Same surface as the rail behind it and the rail's flyout menus.</div>
+    <div class="pop">
+      <div class="head" style="padding:17px 20px 26px;background:linear-gradient(180deg,#121214,#08080a 50%,#020203)">
+        <h2 style="color:#fff">New Order</h2>
+        <button class="x" style="background:rgba(255,255,255,.16);color:#fff">✕</button>
+        <svg class="wave" viewBox="0 0 1440 70" preserveAspectRatio="none">
+          <path d="M0,40 C300,90 720,4 1140,52 C1320,72 1400,40 1440,50 L1440,70 L0,70 Z" fill="#fff"/>
+        </svg>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="dot" style="background:#2C4433">1</div><small style="color:#2C4433">Customer</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">2</div><small style="color:#9BB5A2">Details</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">3</div><small style="color:#9BB5A2">Delivery</small></div>
+      </div>
+      <div class="body">
+        <div class="block"><div><b>Reference photo</b><span>the picture the customer sent</span></div><em>Add</em></div>
+        <label><span>Flavour</span><input placeholder="— Select flavour —"></label>
+      </div>
+      <div class="foot"><button class="btn ghost">Back</button><button class="btn go">Next</button></div>
+    </div>
+  </div>
+
+  <!-- ── C · brand wave ── -->
+  <div class="col">
+    <div class="cap">C · Wave, green (for comparison)</div>
+    <div class="why">Kept so the clash is visible: the black Next button and the near-black rail behind it belong to a different palette, and the step dots take the BAKER's colour, which green would fight.</div>
+    <div class="pop">
+      <div class="head" style="padding:17px 20px 26px;background:#2C4433">
+        <h2 style="color:#fff">New Order</h2>
+        <button class="x" style="background:rgba(255,255,255,.18);color:#fff">✕</button>
+        <svg class="wave" viewBox="0 0 1440 70" preserveAspectRatio="none">
+          <path d="M0,40 C300,90 720,4 1140,52 C1320,72 1400,40 1440,50 L1440,70 L0,70 Z" fill="#fff"/>
+        </svg>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="dot" style="background:#2C4433">1</div><small style="color:#2C4433">Customer</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">2</div><small style="color:#9BB5A2">Details</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">3</div><small style="color:#9BB5A2">Delivery</small></div>
+      </div>
+      <div class="body">
+        <div class="block"><div><b>Reference photo</b><span>the picture the customer sent</span></div><em>Add</em></div>
+        <label><span>Flavour</span><input placeholder="— Select flavour —"></label>
+      </div>
+      <div class="foot"><button class="btn ghost">Back</button><button class="btn go">Next</button></div>
+    </div>
+  </div>
+
+  <!-- ── D · brand wave + gold board ── -->
+  <div class="col">
+    <div class="cap">D · Near-black + gold edge</div>
+    <div class="why">B, plus the cake board's gold along the curve. Every cake in the product sits on that gold, and it reads against the spatula black far better than against green.</div>
+    <div class="pop">
+      <div class="head" style="padding:17px 20px 26px;background:linear-gradient(180deg,#121214,#08080a 50%,#020203)">
+        <h2 style="color:#fff">New Order</h2>
+        <button class="x" style="background:rgba(255,255,255,.18);color:#fff">✕</button>
+        <svg class="wave" viewBox="0 0 1440 70" preserveAspectRatio="none" style="height:16px">
+          <path d="M0,40 C300,90 720,4 1140,52 C1320,72 1400,40 1440,50 L1440,70 L0,70 Z" fill="#fff"/>
+          <path d="M0,40 C300,90 720,4 1140,52 C1320,72 1400,40 1440,50" fill="none" stroke="#C9A227" stroke-width="4"/>
+        </svg>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="dot" style="background:#2C4433">1</div><small style="color:#2C4433">Customer</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">2</div><small style="color:#9BB5A2">Details</small></div>
+        <div class="step"><div class="dot" style="background:#D8DCD8">3</div><small style="color:#9BB5A2">Delivery</small></div>
+      </div>
+      <div class="body">
+        <div class="block"><div><b>Reference photo</b><span>the picture the customer sent</span></div><em>Add</em></div>
+        <label><span>Flavour</span><input placeholder="— Select flavour —"></label>
+      </div>
+      <div class="foot"><button class="btn ghost">Back</button><button class="btn go">Next</button></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

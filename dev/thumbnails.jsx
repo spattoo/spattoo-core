@@ -12,7 +12,7 @@ const supabase = createClient(
   'https://lsvmnycehfopxsgruwmk.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzdm1ueWNlaGZvcHhzZ3J1d21rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MjI0NjIsImV4cCI6MjA5MTM5ODQ2Mn0.ay0o6ugWvik_Mp607oYyYQIQzX4wphhhLNi-53HvwHY'
 );
-const API_URL = 'https://spattoo-backend.onrender.com';
+const API_URL = 'https://api.spattoo.dev';
 
 async function authFetch(path, options = {}) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -108,6 +108,6 @@ function Backfill() {
 const container = document.getElementById('root');
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
-    <AuthGate supabase={supabase}><Backfill /></AuthGate>
+    <AuthGate supabase={supabase} captchaSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}><Backfill /></AuthGate>
   </React.StrictMode>
 );

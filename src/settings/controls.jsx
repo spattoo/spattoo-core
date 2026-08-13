@@ -1,18 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
 
 // Shared presentational controls for the settings-area slide-in panels
 // (SettingsPanel, FlavoursPanel, …). Keep these dumb and reusable — one Toggle, one
 // Section, one Field across every panel so they stay visually consistent.
 
-export function useIsMobile() {
-  const [m, setM] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setM(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return m;
-}
+// Kept as a named re-export because five panels import it under this name. The body moved to
+// shared/useNarrow.js — and with it the `typeof window` guard this version never had: reading
+// window.innerWidth in a useState initialiser throws the moment anything server-renders or
+// renderToStaticMarkup touches a panel, which is how every component here is tested. INVARIANTS #9
+// cites exactly this function as the trap.
+export const useIsMobile = () => useNarrow(768);
 
 export function Toggle({ checked, onChange }) {
   return (

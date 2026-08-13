@@ -1,6 +1,22 @@
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
+import { dietTone, hasAllergen } from './dietary.js';
+import {
+  buildStatusIndex, DEFAULT_STATUS_INDEX,
+  statusLabel, isClosed, isTerminal, isDesignLocked, statusTone,
+} from './statuses.js';
+import OrdersCalendar from './OrdersCalendar.jsx';
 import XrayReport from './xray/XrayReport.jsx';
+import { hasXraySpec, resolveXraySpec } from './xray/resolveXraySpec.js';
+import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
+import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
+import { useUploadLimits } from '../shared/useUploadLimits.js';
+import { Panel } from '../shared/Panel.jsx';
+import { dockedLeft } from '../shared/rail.js';
+
+// Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
+const MAX_FINISHED_PHOTOS = 3;
 
 const PhotoGlyph = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" strokeLinecap="round">
@@ -13,7 +29,7 @@ function photoFrameCount(order) {
   return (order?.design_snapshot?.stickers ?? []).filter(s => s?.photoMask && s?.photoUrl).length;
 }
 
-// Order-detail section: surfaces the customer's uploaded photos and opens the A4 page simulator.
+// Order-detail section: surfaces the customer's uploaded photos and opens the Edible Print Studio.
 function CustomPhotosSection({ order }) {
   const [open, setOpen] = useState(false);
   const n = photoFrameCount(order);
@@ -26,12 +42,12 @@ function CustomPhotosSection({ order }) {
       </div>
       <div style={{ fontSize: 13, color: '#3D5A44', lineHeight: 1.6, marginBottom: 12 }}>
         The customer uploaded <b>{n}</b> custom photo{n > 1 ? 's' : ''} for this cake. Open the
-        A4 page simulator to size and arrange {n > 1 ? 'them' : 'it'} on a sheet, then download a
-        print-ready PDF for your edible printer.
+        Edible Print Studio to size and arrange {n > 1 ? 'them' : 'it'} on an A4 sheet, then download
+        a print-ready PDF for your edible printer.
       </div>
       <button onClick={() => setOpen(true)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: 'none', background: '#3D5A44', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-        <PhotoGlyph /> Open A4 simulator
+        <PhotoGlyph /> Open Edible Print Studio
       </button>
       {open && <PhotoSheet order={order} onClose={() => setOpen(false)} />}
     </div>
@@ -94,9 +110,22 @@ function IconAction({ glyph, label, short, onClick, disabled, variant = 'row' })
 }
 
 // X-Ray launcher — an icon+label action that opens the report.
-function XrayLauncher({ order, apiClient, variant }) {
+//
+// "Is there a design to report on" is resolveXraySpec.js's question, not this component's: a manual
+// order can have no design_snapshot and still have a reading of its reference photo. Asking it
+// here in a second way is how the launcher and the report end up disagreeing about whether the
+// button should exist.
+function XrayLauncher({ order, apiClient, variant, enabled }) {
   const [open, setOpen] = useState(false);
-  if (!order?.design_snapshot) return null;
+  const { design, fromPhoto } = resolveXraySpec(order);
+  if (!design) return null;
+  // Two different things are being gated, and only one is a plan feature.
+  //
+  // A DESIGNED order's X-Ray costs us nothing to produce, so it stays what it has always been:
+  // a Blaze+ hook (xray_reports). A PHOTO order's was PAID FOR with credits, on any plan — gating
+  // it again would take a baker's credits and then withhold what they bought, which is the worst
+  // thing this feature could do.
+  if (!fromPhoto && !enabled) return null;
   return (
     <>
       <IconAction glyph={<XrayGlyph />} label="X-Ray report" short="X-Ray" onClick={() => setOpen(true)} variant={variant} />
@@ -105,49 +134,98 @@ function XrayLauncher({ order, apiClient, variant }) {
   );
 }
 
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return mobile;
+// Build-guide-from-a-photo launcher — the entry point for orders that never touched the designer.
+//
+// Only ever appears where X-Ray CANNOT: a manual order with reference photos, no design_snapshot,
+// and no estimate yet. Once an estimate exists the order has a design as far as resolveXraySpec.js
+// is concerned, XrayLauncher takes over, and this disappears — so the two are never both offered
+// and the baker is never asked to choose between them.
+//
+// The result is opened directly rather than refetching the order. The route returns the estimate
+// it just wrote, so a round trip would re-read what we are already holding, and the panel picks it
+// up from the server on its next load anyway.
+function PhotoXrayLauncher({ order, apiClient, variant }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+  const [spec, setSpec] = useState(null);
+
+  // NOT gated on xray_reports. Reading a photo costs real money and is metered by CREDITS, which
+  // every plan has — so every plan can buy one. Gating it on the Blaze entitlement as well was
+  // what left a Flame baker holding an allowance they could not spend on anything.
+  const { stale } = resolveXraySpec(order);
+  if (!apiClient?.createXraySpec) return null;    // host hasn't wired it → no dead button
+  if (order?.design_snapshot) return null;        // designed: X-Ray reads it directly
+  // Normally this disappears once a guide exists and XrayLauncher takes over. The exception is a
+  // STALE one: the baker has replaced the reference photo, so the cached X-Ray describes a picture
+  // that is no longer on the order. It comes back as a re-read, priced and worded as one.
+  if (hasXraySpec(order) && !stale) return null;
+
+  async function generate() {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      // A stale re-read must REGENERATE — without this the route would hand back the very
+      // cached X-Ray we are trying to replace, free and unchanged.
+      const res = await apiClient.createXraySpec(order.id, { regenerate: stale });
+      if (!res?.estimate) throw new Error('No X-Ray came back.');
+      setSpec({ spec: res.estimate, meta: res.meta ?? null });
+      // Tell the header pill the balance moved. Fired on `reused` too: that call spends nothing,
+      // but re-reading is cheap and a pill that is occasionally over-eager is far better than one
+      // that is occasionally wrong.
+    } catch (e) {
+      // Out of credits is an ordinary outcome with its own message, not a failure to apologise
+      // for — the baker needs to know the difference between "we could not read your photo" and
+      // "you have used this month's allowance".
+      // The 402 body carries canTopUp and resetsOn, so the server decides which sentence a baker
+      // gets rather than the client guessing from a plan name it does not have. A Flame baker is
+      // told when the credits come back and what Blaze changes; a Blaze baker is pointed at a
+      // top-up. Saying "or you can top up" to someone who cannot is the worse of the two errors.
+      const out = e?.code === 'INSUFFICIENT_CREDITS' || /credit/i.test(e?.message ?? '');
+      const on  = e?.resetsOn ? new Date(e.resetsOn).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }) : null;
+      setErr(!out ? (e?.message || 'Could not read that photo.')
+        : e?.canTopUp === false
+          ? `You've used this month's credits. They refresh${on ? ` on ${on}` : ' next month'}. Blaze adds top-ups, so you never have to wait.`
+          : `You've used this month's credits. They refresh${on ? ` on ${on}` : ' next month'} — or top up in Billing.`);
+    } finally {
+      setBusy(false);
+      creditsChanged();   // success, discard or refusal — the header should reflect reality either way
+    }
+  }
+
+  return (
+    <>
+      <IconAction
+        glyph={<XrayGlyph />}
+        // It is X-RAY, and calling it anything else here was a leftover from when this button
+        // produced something different. The feature has ONE name across the product, the credit
+        // price list and the terms; a second name on the one button that starts it teaches a baker
+        // that Spattoo has two things, and then that the other one is missing from the menu.
+        // What follows the name is what THIS order needs to get there — a photo has to be read
+        // first — but the destination is the same report either way.
+        label={busy ? 'Reading photo…' : stale ? 'Photo changed — X-Ray again' : 'X-Ray from photo'}
+        short={busy ? 'Reading…' : stale ? 'Re-read' : 'X-Ray'}
+        onClick={generate}
+        disabled={busy}
+        variant={variant}
+      />
+      {err && <span style={{ fontSize: 12, fontWeight: 700, color: '#B00020', maxWidth: 220 }}>{err}</span>}
+      {spec && (
+        <XrayReport
+          // The order as it now is on the server. Merged rather than refetched — same data, one
+          // fewer round trip — and resolveXraySpec picks the estimate up from exactly these two
+          // fields, so the report cannot tell the difference.
+          order={{ ...order, xray_spec: spec.spec, xray_spec_meta: spec.meta }}
+          apiClient={apiClient}
+          onClose={() => setSpec(null)}
+        />
+      )}
+    </>
+  );
 }
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
 // ── Order status lifecycle ────────────────────────────────────────────────────
-// The lifecycle is owned by the DB (order_statuses table) and served via
-// GET /api/order-statuses. Core keeps ONE fallback copy (used until the host wires
-// apiClient.fetchOrderStatuses) and derives EVERY status-dependent bit — labels,
-// filter chips, the stepper — from it, instead of the four scattered hardcoded maps
-// this file used to carry. Visual tone stays a core concern (a deliberate monochrome
-// design), derived from lifecycle position rather than per-status colours.
-const DEFAULT_STATUSES = [
-  { key: 'initiated',     label: 'Initiated',    phase: 'quote',       sort_order: 10,  is_terminal: false },
-  { key: 'requested',     label: 'Requested',    phase: 'quote',       sort_order: 20,  is_terminal: false },
-  { key: 'quoted',         label: 'Quoted',         phase: 'quote',       sort_order: 30,  is_terminal: false },
-  { key: 'quote_approved', label: 'Quote approved', phase: 'fulfillment', sort_order: 35,  is_terminal: false },
-  { key: 'confirmed',     label: 'Confirmed',    phase: 'fulfillment', sort_order: 40,  is_terminal: false },
-  { key: 'in_production', label: 'In production', phase: 'fulfillment', sort_order: 50,  is_terminal: false },
-  { key: 'ready',         label: 'Ready',        phase: 'fulfillment', sort_order: 60,  is_terminal: false },
-  { key: 'completed',     label: 'Completed',    phase: 'fulfillment', sort_order: 70,  is_terminal: true  },
-  { key: 'declined',      label: 'Declined',     phase: 'closed',      sort_order: 80,  is_terminal: true  },
-  { key: 'cancelled',     label: 'Cancelled',    phase: 'closed',      sort_order: 90,  is_terminal: true  },
-  { key: 'expired',       label: 'Expired',      phase: 'closed',      sort_order: 100, is_terminal: true  },
-];
-
-// Build a lookup index + derived lists from a status list (API or fallback).
-function buildStatusIndex(list) {
-  const ordered   = [...list].sort((a, b) => a.sort_order - b.sort_order);
-  const byKey     = Object.fromEntries(ordered.map(s => [s.key, s]));
-  // The happy-path stepper is everything that isn't a closed off-ramp, in order.
-  const flowSteps = ordered.filter(s => s.phase !== 'closed');
-  return { ordered, byKey, flowSteps };
-}
-const DEFAULT_STATUS_INDEX = buildStatusIndex(DEFAULT_STATUSES);
-
 // Readable labels for audit-log event types (else falls back to 'Order edited').
 const AUDIT_EVENT_LABELS = {
   status_changed:  'Status changed',
@@ -158,27 +236,6 @@ const AUDIT_EVENT_LABELS = {
   customer_message: 'Customer message',
   edited:          'Order edited',
 };
-
-const statusLabel = (idx, key) => idx.byKey[key]?.label ?? key;
-const isClosed    = (idx, key) => idx.byKey[key]?.phase === 'closed';
-const isTerminal  = (idx, key) => !!idx.byKey[key]?.is_terminal;
-// The design is pinned from 'confirmed' onward (the agreed cake) and in any closed
-// state — editable only during the quote phase. Locked orders open VIEW-only in 3D.
-const isDesignLocked = (idx, key) => {
-  const s = idx.byKey[key];
-  if (!s) return false;
-  if (s.phase === 'closed') return true;
-  const confirmedOrder = idx.byKey['confirmed']?.sort_order ?? Infinity;
-  return s.sort_order >= confirmedOrder;
-};
-
-// Monochrome badge tone derived from lifecycle position — no per-status hues.
-// Completed = solid ink; closed off-ramps = muted outline; in-flight = soft grey.
-function statusTone(idx, key) {
-  if (key === 'completed') return { bg: '#1a1a1a', color: '#fff',     border: 'transparent' };
-  if (isClosed(idx, key))  return { bg: '#fff',    color: '#999',     border: '#E0DDD8' };
-  return                          { bg: '#ECEBE6', color: '#5e5e5e',  border: 'transparent' };
-}
 
 function StatusBadge({ status, statusIndex = DEFAULT_STATUS_INDEX }) {
   const t = statusTone(statusIndex, status);
@@ -194,6 +251,16 @@ function StatusBadge({ status, statusIndex = DEFAULT_STATUS_INDEX }) {
 function fmt(iso) {
   if (!iso) return null;
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// Same rendering as fmt() but for a DATE-only string ('2026-07-04'). Built from the
+// parts rather than parsed: `new Date('2026-07-04')` is UTC midnight, which formats as
+// the PREVIOUS day for anyone west of Greenwich — a calendar must never be off by one.
+function fmtDateOnly(date) {
+  if (!date) return null;
+  const [y, m, d] = String(date).split('-').map(Number);
+  if (!y || !m || !d) return date;
+  return new Date(y, m - 1, d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function InfoRow({ label, value }) {
@@ -328,6 +395,173 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
       })}
     </div>
   );
+}
+
+// ── Mark-ready: finished-cake photos ──────────────────────────────────────────
+// When the baker marks an order 'ready' we let them OPTIONALLY attach up to 3 photos
+// of the finished cake. They ride along in the order-ready email, so they must be
+// uploaded + persisted BEFORE the status flips (the email fires synchronously on the
+// transition). This sheet uploads each pick to R2 (orders/photos) as it's added and
+// hands the resulting keys back on confirm; the caller persists them then advances.
+// Photos are never required — "Mark as ready" works with zero.
+function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
+  const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
+  const [pickError, setPickError] = useState(null);   // why a chosen file was refused
+  const { maxImageBytes } = useUploadLimits(apiClient);   // the server's ceiling, not a copy of it
+  const uploading = photos.some(p => p.uploading);
+  const atMax = photos.length >= MAX_FINISHED_PHOTOS;
+
+  // Revoke any still-live object URLs on unmount (a ref tracks the latest set, since the
+  // cleanup runs once and would otherwise close over the initial empty array).
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  useEffect(() => () => photosRef.current.forEach(p => p.previewUrl && URL.revokeObjectURL(p.previewUrl)), []);
+
+  async function addFiles(e) {
+    const files = [...(e.target.files || [])].slice(0, MAX_FINISHED_PHOTOS - photos.length);
+    e.target.value = '';
+    setPickError(null);
+    for (const file of files) {
+      // Refuse what we cannot use, WITH a reason. A HEIC (a Mac drag-drop, an untranscoded iPhone
+      // share) satisfies `image/*`, so it used to get this far, fail to decode, fall through as the
+      // original file and then be refused by the API's content-type allowlist — surfacing to the
+      // baker as a photo that just says "failed" with nothing to act on.
+      const bad = validateImageFile(file, { maxBytes: maxImageBytes });
+      if (bad) { setPickError(bad); continue; }
+      const id = `p${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const previewUrl = URL.createObjectURL(file);
+      setPhotos(ps => [...ps, { id, previewUrl, key: null, uploading: true, failed: false }]);
+      try {
+        const blob = await compressImage(file);
+        const ct = blob.type || file.type || 'image/jpeg';
+        const filename = `${order.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${imageExt(blob)}`;
+        const { url, key } = await apiClient.getSignedUploadUrl('orders/photos', filename, ct, blob.size);
+        await fetch(url, { method: 'PUT', headers: { 'Content-Type': ct }, body: blob });
+        setPhotos(ps => ps.map(p => (p.id === id ? { ...p, key, uploading: false } : p)));
+      } catch (err) {
+        console.error('Finished-photo upload failed', err);
+        setPhotos(ps => ps.map(p => (p.id === id ? { ...p, uploading: false, failed: true } : p)));
+      }
+    }
+  }
+
+  function remove(id) {
+    setPhotos(ps => {
+      const it = ps.find(p => p.id === id);
+      if (it?.previewUrl) URL.revokeObjectURL(it.previewUrl);
+      return ps.filter(p => p.id !== id);
+    });
+  }
+
+  const slots = [...photos];
+  if (!atMax) slots.push(null);   // trailing "add" tile
+
+  return (
+    <Panel
+      onClose={busy ? undefined : onCancel}
+      title="Mark as ready"
+      width={440}
+      flow="block"
+      footer={
+        <>
+          <button onClick={onCancel} disabled={busy} style={{
+            flex: '0 0 auto', padding: '12px 18px', borderRadius: 11, border: '1.5px solid #E0DDD8',
+            background: '#fff', color: '#555', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>Cancel</button>
+          <button
+            onClick={() => onConfirm(photos.filter(p => p.key).map(p => p.key))}
+            disabled={busy || uploading}
+            style={{
+              flex: 1, padding: '12px', borderRadius: 11, border: 'none',
+              background: (busy || uploading) ? '#9BB5A2' : primaryColor, color: '#fff',
+              fontSize: 14, fontWeight: 800, cursor: (busy || uploading) ? 'default' : 'pointer', fontFamily: 'inherit',
+            }}>
+            {busy ? 'Marking ready…' : uploading ? 'Uploading…' : 'Mark as ready'}
+          </button>
+        </>
+      }
+    >
+        <p style={{ margin: '0 0 16px', fontSize: 13.5, color: '#777', lineHeight: 1.5 }}>
+          Add a few photos of the finished cake — your customer will see them in their "order ready" email.
+          <b> Optional</b>; you can mark ready without any.
+        </p>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
+          {slots.map((p, i) => p ? (
+            <div key={p.id} style={{ position: 'relative', width: 96, height: 96 }}>
+              <img src={p.previewUrl} alt="Finished cake" style={{
+                width: 96, height: 96, objectFit: 'cover', borderRadius: 12,
+                border: '1.5px solid #E8E4DC', opacity: p.uploading ? 0.55 : 1,
+                filter: p.failed ? 'grayscale(1)' : 'none',
+              }} />
+              {p.uploading && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#444' }}>Uploading…</div>}
+              {p.failed && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#c0392b' }}>Failed</div>}
+              {!busy && (
+                <button onClick={() => remove(p.id)} aria-label="Remove photo" style={{
+                  position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%',
+                  border: 'none', background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', lineHeight: '22px', textAlign: 'center', padding: 0,
+                }}>×</button>
+              )}
+            </div>
+          ) : (
+            <label key="add" style={{
+              width: 96, height: 96, borderRadius: 12, border: '1.5px dashed #C9C4BC',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 4, cursor: busy ? 'default' : 'pointer', color: '#999', background: '#FAF9F6',
+            }}>
+              <PhotoGlyph />
+              <span style={{ fontSize: 11, fontWeight: 700 }}>Add photo</span>
+              {/* No `capture` attr: on phones this lets the baker choose Camera OR gallery; on
+                  desktop (browser fallback) it's a plain file picker. */}
+              <input type="file" accept={ACCEPT_IMAGE} multiple disabled={busy}
+                onChange={addFiles} style={{ display: 'none' }} />
+            </label>
+          ))}
+        </div>
+
+        {pickError && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{pickError}</p>}
+        {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+    </Panel>
+  );
+}
+
+// Read-only strip of the finished-cake photos on a ready/completed order.
+// One gallery renders any order photo SET (finished-cake or reference) — same fetch +
+// grid, only the title and the loader differ. Hidden when the set is empty.
+function OrderPhotoGallery({ title, orderId, load, refresh }) {
+  const [photos, setPhotos] = useState([]);
+  useEffect(() => {
+    if (!load) return;
+    let live = true;
+    load(orderId)
+      .then(d => { if (live && Array.isArray(d)) setPhotos(d); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [orderId, refresh, load]);
+  if (!photos.length) return null;
+  return (
+    <Section title={title}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {photos.map(p => (
+          <img key={p.id} src={p.url} alt={title} style={{
+            width: 96, height: 96, objectFit: 'cover', borderRadius: 10, border: '1.5px solid #E8E4DC',
+          }} />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function FinishedPhotosSection({ order, apiClient, refresh }) {
+  return <OrderPhotoGallery title="Finished cake photos" orderId={order.id} load={apiClient?.fetchOrderPhotos} refresh={refresh} />;
+}
+
+// Reference photos the baker took from the customer for a manual (no-design) order.
+// Only design-less orders have them — a designed order shows its 3D preview instead.
+function ReferencePhotosSection({ order, apiClient }) {
+  if (order.design_snapshot) return null;
+  return <OrderPhotoGallery title="Reference photos" orderId={order.id} load={apiClient?.fetchOrderReferencePhotos} />;
 }
 
 // ── Edit form ─────────────────────────────────────────────────────────────────
@@ -628,6 +862,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
   const [saving, setSaving]                 = useState(false);
   const [auditRefresh, setAuditRefresh]     = useState(0);
   const [availableFlavours, setAvailableFlavours] = useState([]);
+  const [xrayEnabled, setXrayEnabled] = useState(false);   // X-Ray report is a Blaze+ entitlement
 
   useEffect(() => {
     if (!bakerSlug || !apiClient?.fetchFlavours) return;
@@ -635,6 +870,13 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
       .then(data => { if (Array.isArray(data)) setAvailableFlavours(data); })
       .catch(() => {});
   }, [bakerSlug]);
+
+  useEffect(() => {
+    if (!apiClient?.fetchEntitlements) return;
+    apiClient.fetchEntitlements()
+      .then(res => setXrayEnabled(res?.ent?.xray_reports === true))
+      .catch(() => {});
+  }, []);
 
   const customer  = order.customers;
   const name      = customer ? `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim() : 'Unknown';
@@ -647,6 +889,38 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
     await onStatusChange(order.id, s);
     setAuditRefresh(r => r + 1);
     setChangingStatus(false);
+  }
+
+  // Marking 'ready' opens the finished-photos sheet first (when the host supports
+  // uploads) so the optional photos are persisted BEFORE the email-firing transition.
+  // Every other transition advances directly.
+  const [markingReady, setMarkingReady] = useState(false);
+  const [readyErr, setReadyErr]         = useState(null);
+  const canAttachPhotos = !!(apiClient?.getSignedUploadUrl && apiClient?.saveOrderPhotos);
+
+  function advance(s) {
+    if (s === 'ready' && canAttachPhotos && order.status !== 'ready') {
+      setReadyErr(null);
+      setMarkingReady(true);
+      return;
+    }
+    handleStatus(s);
+  }
+
+  async function confirmMarkReady(keys) {
+    if (changingStatus) return;
+    setChangingStatus(true);
+    setReadyErr(null);
+    try {
+      if (keys.length) await apiClient.saveOrderPhotos(order.id, keys);   // persist BEFORE the email fires
+      await onStatusChange(order.id, 'ready');
+      setAuditRefresh(r => r + 1);
+      setMarkingReady(false);
+    } catch (err) {
+      setReadyErr(err.message || 'Could not mark ready');
+    } finally {
+      setChangingStatus(false);
+    }
   }
 
   const [quoting, setQuoting]   = useState(false);
@@ -706,7 +980,8 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         justifyContent: 'center', alignItems: 'center',
         flexWrap: stack ? 'nowrap' : 'wrap',
       }}>
-        <XrayLauncher order={order} apiClient={apiClient} variant={v} />
+        <XrayLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
+        <PhotoXrayLauncher order={order} apiClient={apiClient} variant={v} />
         <IconAction
           glyph={<Cube3D />}
           label={designLocked ? 'View in 3D' : 'Edit in 3D'}
@@ -745,20 +1020,27 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               {/* Action buttons (send quote / confirm / cancel) sit directly below the
                   image; the status flow goes underneath them. */}
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
-              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={handleStatus} busy={changingStatus} primaryColor={primaryColor} />
+              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={advance} busy={changingStatus} primaryColor={primaryColor} />
               {!isClosed(statusIndex, order.status) && !isTerminal(statusIndex, order.status) && (
                 <div style={{ marginBottom: 20 }}>
                   <CancelOrderLink onClick={() => handleStatus('cancelled')} disabled={changingStatus} />
                 </div>
               )}
-              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} hideCancel />
+              <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} hideCancel />
               <CustomPhotosSection order={order} />
+              <ReferencePhotosSection order={order} apiClient={apiClient} />
+              <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
             </>
         }
+        {markingReady && (
+          <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+            busy={changingStatus} error={readyErr}
+            onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
+        )}
       </div>
     );
   }
@@ -793,9 +1075,11 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
               <CustomPhotosSection order={order} />
-              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
+              <ReferencePhotosSection order={order} apiClient={apiClient} />
+              <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
+              <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} />
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
-              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={handleStatus} busy={changingStatus} primaryColor={primaryColor} />
+              <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={advance} busy={changingStatus} primaryColor={primaryColor} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
@@ -803,7 +1087,35 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
             </>
         }
       </div>
+      {markingReady && (
+        <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+          busy={changingStatus} error={readyErr}
+          onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
+      )}
     </div>
+  );
+}
+
+// The requirement as a chip. Text-first — the label always reads, colour only speeds
+// up scanning — so this survives a greyscale print and a colour-blind reader. See
+// dietary.js for why there is no veg green dot.
+function DietChip({ req, small = false }) {
+  const t = dietTone(req.kind);
+  return (
+    <span style={{
+      display: 'inline-block', padding: small ? '1px 6px' : '3px 9px',
+      borderRadius: 6, fontSize: small ? 10 : 11, fontWeight: 800, letterSpacing: 0.2,
+      background: t.bg, color: t.fg, border: `1px solid ${t.border}`, whiteSpace: 'nowrap',
+    }}>{req.label}</span>
+  );
+}
+
+function DietChips({ reqs, small = false }) {
+  if (!reqs?.length) return null;
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+      {reqs.map(r => <DietChip key={r.key} req={r} small={small} />)}
+    </span>
   );
 }
 
@@ -820,6 +1132,9 @@ function DetailSections({ order, name, flavours, delivDate }) {
       <Section title="Order">
         {order.weight_kg && <InfoRow label="Weight" value={`${order.weight_kg} kg`} />}
         {flavours.length > 0 && <InfoRow label="Flavours" value={flavours.join(', ')} />}
+        {order.dietary_requirements?.length > 0 && (
+          <InfoRow label="Dietary" value={<DietChips reqs={order.dietary_requirements} />} />
+        )}
         {order.special_instructions && <InfoRow label="Notes" value={order.special_instructions} />}
       </Section>
 
@@ -926,6 +1241,14 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
                 <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[fmt(order.delivery_date), flavours[0]].filter(Boolean).join(' · ') || fmt(order.created_at)}
                 </div>
+                {/* Its own line rather than appended to the subtitle above: that line
+                    ellipsises, and a long flavour name would push the requirement off
+                    the end of exactly the row where a baker is scanning for it. */}
+                {order.dietary_requirements?.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <DietChips reqs={order.dietary_requirements} small />
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -937,14 +1260,36 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null }) {
-  const isMobile = useIsMobile();
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
+  const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
   const [filter, setFilter]     = useState('all');
   const [selected, setSelected] = useState(null);
   const [statusIndex, setStatusIndex] = useState(DEFAULT_STATUS_INDEX);
+
+  // The calendar is a VIEW of orders, not a separate destination: same panel, same
+  // data, same filter path. It only exists when the host wired the counts endpoint.
+  const hasCalendar = typeof apiClient?.fetchOrdersCalendar === 'function';
+  const [view, setView] = useState(initialView === 'calendar' && hasCalendar ? 'calendar' : 'list');
+
+  // A day picked in the calendar filters the list exactly the way the Dashboard's
+  // "due today" card does. Held here so `externalFilter` (the host's) stays a pure
+  // prop — `activeFilter` is the ONE filter authority the fetch and banner read.
+  const [dateFilter, setDateFilter] = useState(null);
+  const activeFilter = dateFilter ?? externalFilter;
+
+  // Re-entering the panel from the rail's Calendar item must land on the calendar
+  // even if the panel was last closed on the list (and vice versa).
+  // The panel isn't unmounted when closed, so `selected` survives — clear it here or a
+  // stale order detail would still own the mobile top bar when the calendar opens.
+  useEffect(() => {
+    if (!open) return;
+    setView(initialView === 'calendar' && hasCalendar ? 'calendar' : 'list');
+    setDateFilter(null);
+    setSelected(null);
+  }, [open, initialView]);
 
   // Pull the lifecycle from the DB when the host exposes it; otherwise the built-in
   // fallback (DEFAULT_STATUSES) keeps the panel working. The table is authoritative
@@ -957,11 +1302,11 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || view !== 'list') return;
     setLoading(true);
     setError(null);
     setSelected(null);
-    const params = externalFilter?.params ?? {};
+    const params = activeFilter?.params ?? {};
     apiClient.fetchOrders(params)
       .then(data => {
         const list = Array.isArray(data) ? data : [];
@@ -974,7 +1319,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
       })
       .catch(err => setError(err.message ?? 'Failed to load orders'))
       .finally(() => setLoading(false));
-  }, [open, externalFilter]);
+  }, [open, view, activeFilter]);
 
   async function handleStatusChange(orderId, newStatus) {
     await apiClient.updateOrderStatus(orderId, newStatus);
@@ -993,13 +1338,12 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
         @keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }
       `}</style>
 
       <div style={{
         position: 'fixed', top: 0, right: 0, bottom: 0,
-        left: isMobile ? 0 : 76,
+        left: dockedLeft(isMobile),
         zIndex: 300,
         display: 'flex', flexDirection: 'column',
         animation: 'slideInRight 0.28s cubic-bezier(0.32,0.72,0,1)',
@@ -1016,8 +1360,44 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
           <button onClick={isMobile && selected ? () => setSelected(null) : (onBack ?? onClose)} style={closeBtn}>
             <ArrowLeftIcon />
           </button>
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{topBarTitle}</span>
-          {(!isMobile || !selected) && (
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{topBarTitle}</span>
+
+          {/* List | Calendar — the calendar is a view of the same orders, so it lives
+              here rather than being a separate destination. */}
+          {hasCalendar && !selected ? (
+            <div style={{
+              display: 'flex', gap: 2, padding: 2, borderRadius: 10,
+              background: '#F2F0EB', border: '1.5px solid #E8E4DC', flexShrink: 0,
+            }}>
+              {[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }].map(v => (
+                <button key={v.id}
+                  onClick={() => { setView(v.id); if (v.id === 'calendar') { setDateFilter(null); setSelected(null); } }}
+                  style={{
+                    border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                    padding: isMobile ? '5px 10px' : '5px 14px', fontSize: 12, fontWeight: 800,
+                    background: view === v.id ? '#fff' : 'transparent',
+                    color:      view === v.id ? '#1a1a1a' : '#8a8a8a',
+                    boxShadow:  view === v.id ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
+                  }}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <span style={{ flex: 1 }} />
+
+          {onNewOrder && (!isMobile || !selected) && (
+            <button onClick={onNewOrder} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: primaryColor, color: '#fff', border: 'none',
+              borderRadius: 10, padding: '8px 14px', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+            }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New Order
+            </button>
+          )}
+          {view === 'list' && (!isMobile || !selected) && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{orders.length} total</span>
           )}
           {onBack && (
@@ -1027,26 +1407,45 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
           )}
         </div>
 
-        {/* Filter banner */}
-        {externalFilter && !selected && (
+        {/* Filter banner — one banner for both the host's filter and a day picked in
+            the calendar. Clearing a calendar day returns to the calendar it came from;
+            clearing the host's filter closes the panel, as it always did. */}
+        {activeFilter && view === 'list' && !selected && (
           <div style={{
             padding: '8px 20px', background: '#FEF9C3', borderBottom: '1px solid #FCD34D',
             display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
           }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#92400E', flex: 1 }}>
-              {externalFilter.label}
+              {activeFilter.label}
             </span>
-            <button onClick={onClose} style={{
-              fontSize: 11, fontWeight: 700, color: '#92400E', background: 'none',
-              border: '1px solid #FCD34D', borderRadius: 6, padding: '2px 8px',
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}>✕ Clear</button>
+            <button
+              onClick={dateFilter ? () => { setDateFilter(null); setView('calendar'); } : onClose}
+              style={{
+                fontSize: 11, fontWeight: 700, color: '#92400E', background: 'none',
+                border: '1px solid #FCD34D', borderRadius: 6, padding: '2px 8px',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>{dateFilter ? '← Back to calendar' : '✕ Clear'}</button>
           </div>
         )}
 
         {/* Body */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {showList && (
+          {view === 'calendar' && (
+            <OrdersCalendar
+              apiClient={apiClient}
+              statusIndex={statusIndex}
+              isMobile={isMobile}
+              primaryColor={primaryColor}
+              timezone={bakerTimezone}
+              onPickDate={date => {
+                setDateFilter({ params: { delivery_date: date }, label: `Orders due ${fmtDateOnly(date)}` });
+                setView('list');
+              }}
+              onCreateForDate={onNewOrderForDate ?? null}
+            />
+          )}
+
+          {view === 'list' && showList && (
             <OrderList
               orders={orders}
               loading={loading}
@@ -1062,7 +1461,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
           )}
 
           {/* Detail pane */}
-          {showDetail && (
+          {view === 'list' && showDetail && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               {selected
                 ? <OrderDetail
@@ -1117,7 +1516,7 @@ function CancelOrderLink({ onClick, disabled }) {
 // `hideCancel` lets a caller (mobile OrderDetail) lift the Cancel action into its
 // own button row above the stepper, so the stepper renders the timeline only.
 function StatusProgress({ status, onChange, disabled, readOnly = false, hideCancel = false, statusIndex = DEFAULT_STATUS_INDEX }) {
-  const isMobile       = useIsMobile();
+  const isMobile       = useNarrow(768);
   const flowSteps      = statusIndex.flowSteps;
   const isClosedStatus = isClosed(statusIndex, status);   // cancelled / declined / expired
   const currentIdx     = flowSteps.findIndex(s => s.key === status);

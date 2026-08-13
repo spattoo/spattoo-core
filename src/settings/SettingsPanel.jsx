@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import ThemePreview from '../storefront/ThemePreview.jsx';
+// SEC-CORE-4 — same pure helper the storefront renders through, so the input and
+// the sink can never disagree about what a valid handle is.
+import { normalizeIgHandle } from '../storefront/storefrontKit.js';
+import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
+import { dockedLeft } from '../shared/rail.js';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -118,12 +124,15 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved }) {
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade }) {
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
   const [logoFile,    setLogoFile]   = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  // Preview the logo the way every surface actually renders it — trimmed of its transparent
+  // margin. Must stay above the `if (!open) return null` below, or the hook order changes.
+  const logoSrc = useTrimmedLogo(logoPreview ?? profile?.logo_url);
   const [loading,  setLoading]  = useState(false);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState(null);
@@ -191,7 +200,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   }
 
   // Publish from the theme preview/customiser — persists theme + brand colours immediately.
-  async function publishStorefront({ storefront_theme_id, primary_color, accent_color, portrait_key, storefront_customizations }) {
+  // rights_attested comes from the publish confirmation in ThemePreview — the baker's affirmation
+  // that they may publish this content (content_attestations). Passed straight through: the API
+  // refuses to take a storefront live without it, and it must never be defaulted here.
+  async function publishStorefront({ storefront_theme_id, primary_color, accent_color, portrait_key, storefront_customizations, rights_attested }) {
     const payload = {
       storefront_theme_id, primary_color, accent_color,
       instagram_handle: profile.instagram_handle, website_url: profile.website_url, tagline: profile.tagline,
@@ -199,7 +211,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
     if (portrait_key !== undefined) payload.portrait_url = portrait_key;  // new portrait (R2 key) or null to clear
     if (storefront_customizations) payload.storefront_customizations = storefront_customizations;
     await apiClient.updateBakerProfile(payload);
-    if (apiClient.publishStorefront) await apiClient.publishStorefront();   // take it live
+    if (apiClient.publishStorefront) await apiClient.publishStorefront(rights_attested);   // take it live
     // Pull back the canonical portrait_url (the public URL the server builds from the key) so it
     // shows when the customiser is reopened — the frontend only had the R2 key.
     let fresh = null;
@@ -236,7 +248,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
       if (logoFile && apiClient.getSignedUploadUrl) {
         const ext = logoFile.name.split('.').pop();
         const filename = `${crypto.randomUUID()}.${ext}`;
-        const { url, key } = await apiClient.getSignedUploadUrl('logos', filename, logoFile.type);
+        const { url, key } = await apiClient.getSignedUploadUrl('logos', filename, logoFile.type, logoFile.size);
         await fetch(url, { method: 'PUT', headers: { 'Content-Type': logoFile.type }, body: logoFile });
         profilePayload.logo_url = key;
       }
@@ -266,13 +278,12 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
         @keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
       `}</style>
 
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 300, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',
@@ -319,10 +330,14 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
               {/* ── Branding ── */}
               <Section title="Branding">
                 {/* Logo — clicking the image opens the file picker */}
-                <Field label="Logo" hint="Square or circular image works best. Click to change.">
-                  <label style={{ display: 'inline-block', marginTop: 4, cursor: 'pointer' }}>
+                <Field label="Logo" hint="Wide or square both work — this is the size and shape it appears at in your storefront. Click to change.">
+                  <label style={{ display: 'block', marginTop: 4, cursor: 'pointer' }}>
+                    {/* Was an 80×80 square, which previewed a shape no surface actually uses: a
+                        wide wordmark showed at ~12px tall here and told bakers to re-crop a logo
+                        that was fine. Sized to the storefront header instead — height 52, width
+                        capped at 6× that, the widest real logos run. */}
                     <div style={{
-                      width: 80, height: 80, borderRadius: 16, overflow: 'hidden',
+                      width: '100%', maxWidth: 312, height: 52, borderRadius: 12, overflow: 'hidden',
                       border: '2px dashed #C5D4C8', background: '#F4F8F5',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       position: 'relative', transition: 'border-color 0.15s',
@@ -330,10 +345,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                       onMouseEnter={e => e.currentTarget.style.borderColor = '#2C4433'}
                       onMouseLeave={e => e.currentTarget.style.borderColor = '#C5D4C8'}
                     >
-                      {(logoPreview || profile.logo_url)
-                        ? <img src={logoPreview ?? profile.logo_url} alt="Logo"
-                            style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                        : <span style={{ fontSize: 32 }}>🏪</span>
+                      {logoSrc
+                        ? <img src={logoSrc} alt="Logo"
+                            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        : <span style={{ fontSize: 26 }}>🏪</span>
                       }
                       {/* Hover overlay */}
                       <div style={{
@@ -403,7 +418,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                       style={{ ...inp, borderRadius: '0 10px 10px 0' }}
                       placeholder="yourbakery"
                       value={profile.instagram_handle ?? ''}
-                      onChange={e => setProfileField('instagram_handle', e.target.value.replace(/^@/, ''))}
+                      onChange={e => setProfileField('instagram_handle', normalizeIgHandle(e.target.value) ?? '')}
                     />
                   </div>
                 </Field>
@@ -483,8 +498,46 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 </Field>
               </Section>
 
-              {/* ── Delivery ── */}
-              <Section title="Delivery">
+              {/* ── Orders & Delivery ── */}
+              {/* One panel, because a baker setting up their shop is answering one question — how
+                  orders reach them and how cakes reach the customer. Two headings for four fields
+                  read as more configuration than there is. */}
+              <Section title="Orders & Delivery">
+                {/* The worst outcome in the whole enquiry funnel is a customer picking a date,
+                    waiting a day, and being told it was never possible. It undoes every round-trip
+                    the storefront saves — and the baker knew the answer before the customer asked.
+                    Set here, the storefront's date picker refuses those dates while they are still
+                    on the page. Stored as a column, not in the settings blob (migration 042). */}
+                {/* Says WHO does WHAT. "Notice you need" is the baker's side of it and left them
+                    working out what the number actually controls; this names the customer and the
+                    action, which is what the field governs. */}
+                <Field label="How many days ahead customers must order"
+                       hint="They won't be able to pick a date sooner than this. Set 0 if same-day orders are fine.">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    <input
+                      type="number" min={0} max={90} inputMode="numeric"
+                      value={settings.lead_time_days ?? 0}
+                      onChange={e => {
+                        const v = e.target.value;
+                        // Clamped here as well as in the API: 042 caps at 90 because a typo'd 300
+                        // would make a baker unbookable for most of a year, and nobody would think
+                        // to look at this field to find out why.
+                        setSetting('lead_time_days', v === '' ? 0 : Math.max(0, Math.min(90, Number(v) || 0)));
+                      }}
+                      style={{ width: 90, padding: '9px 11px', borderRadius: 9, border: '1px solid #E5E7EB',
+                               font: 'inherit', fontSize: 13, fontWeight: 600, color: '#2C4433' }}
+                    />
+                    <span style={{ fontSize: 13, color: '#6B7280', fontWeight: 600 }}>
+                      {Number(settings.lead_time_days ?? 0) === 1 ? 'day' : 'days'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#9CA3AF', fontWeight: 600, marginTop: 8, lineHeight: 1.5 }}>
+                    {Number(settings.lead_time_days ?? 0) === 0
+                      ? 'Customers can order for today.'
+                      : `The earliest a customer can pick is ${settings.lead_time_days} ${Number(settings.lead_time_days) === 1 ? 'day' : 'days'} from now.`}
+                  </div>
+                </Field>
+
                 <Field label="Home Delivery" hint="Offer delivery to customers' addresses in addition to pickup.">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
                     <Toggle
@@ -512,6 +565,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   </Field>
                 )}
               </Section>
+
+              {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
+                  Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
+              <PrivacyDataSection apiClient={apiClient} />
 
               {/* Save */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
@@ -541,6 +598,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         open={previewOpen}
         apiClient={apiClient}
         themes={themes}
+        appPrimary={primaryColor}
+        appAccent={accentColor}
         value={{
           storefront_theme_id: profile?.storefront_theme_id,
           primary_color: profile?.primary_color,
@@ -550,9 +609,15 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
           storefront_customizations: profile?.storefront_customizations,
         }}
         baker={{ name: profile?.name, slug: profile?.slug, story: profile?.story, instagram_handle: profile?.instagram_handle, website_url: profile?.website_url }}
-        logoUrl={profile?.logo_url || null}
+        logoUrl={profile?.logo_transparent_url || profile?.logo_url || null}
         onPublish={publishStorefront}
         onUnpublish={unpublishStorefront}
+        // Straight through to the host: the publish review's "Review my flavours" has to open a
+        // SIBLING settings screen, which neither this panel nor the customiser owns.
+        onReviewFlavours={onReviewFlavours}
+        // Same reason as above: a premium theme's "Upgrade to publish" opens BILLING, which is a
+        // sibling screen this panel does not own.
+        onUpgrade={onUpgrade}
         onClose={() => setPreviewOpen(false)}
       />
     </>

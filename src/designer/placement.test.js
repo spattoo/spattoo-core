@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneInsert, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
+import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
 // for the real types; if a type ever diverges, a shared assertion here breaks. Guards the exact
@@ -33,6 +34,35 @@ describe('placementSlots — one slot per (tier × surface)', () => {
   });
   it('top-only element offers only a Top slot', () => {
     expect(placementSlots(heroTopOnly, 3).map(s => s.key)).toEqual(['top']);
+  });
+});
+
+// INVARIANTS.md #8. The question that has to be asked of any world dimension: "does this still
+// hold on a cake of a different radius?" For the seat gap the answer must be YES — the decal has to
+// hug a 0.45 tier exactly as it hugs a 1.2 one. An ABSOLUTE gap fails this: 0.025 world is 2.1% of
+// a 1.2 radius but 5.6% of a 0.45 radius, so the decal floated further off the smaller the cake and
+// you saw the board through the slot at the silhouette tangent. Pin the ratio, not the length.
+describe('sideSeatOffset — the seat is a FRACTION of the live radius, never an absolute length', () => {
+  it('holds the same gap-to-radius ratio on every tier size', () => {
+    const ratios = TIER_RADII.map(r => sideSeatOffset(r) / r);
+    for (const ratio of ratios) expect(ratio).toBeCloseTo(ratios[0], 12);
+  });
+
+  it('scales linearly with radius (a 2x cake gets a 2x gap)', () => {
+    expect(sideSeatOffset(2.4)).toBeCloseTo(2 * sideSeatOffset(1.2), 12);
+    expect(sideSeatOffset(0.45)).toBeCloseTo(0.375 * sideSeatOffset(1.2), 12);
+  });
+
+  it('matches the Relief Studio frame it was authored in (TIER_R 1.2 -> 0.004)', () => {
+    expect(sideSeatOffset(1.2)).toBeCloseTo(0.004, 12);
+  });
+
+  it('is NOT the old absolute constant', () => {
+    expect(sideSeatOffset(1.2)).not.toBeCloseTo(0.025, 3);
+  });
+
+  it('degrades safely on a missing/invalid radius rather than inventing a world length', () => {
+    for (const bad of [0, -1, NaN, Infinity, undefined]) expect(sideSeatOffset(bad)).toBe(0);
   });
 });
 
@@ -185,5 +215,288 @@ describe('wallClampY — a side decal never dips below the tier base into the bo
     const y = wallClampY(5, baseY, wall, halfH);
     expect(y).toBe(baseY + halfH);                       // bottom pinned to base
     expect(y - halfH).toBeGreaterThanOrEqual(baseY);     // bottom never below the board line
+  });
+
+  describe('asymmetric extent — a banner clamps by its flags, not its transparent square', () => {
+    // A bunting image: flags in the vertical middle, empty margin above AND below. Content reaches
+    // 0.1 above the centre and 0.1 below, though the square half is 0.35.
+    const up = 0.1, down = 0.1, squareHalf = 0.35;
+
+    it('lets the visible content climb until its TOP touches the rim', () => {
+      // Old symmetric clamp (squareHalf) stopped the centre at baseY+wall-0.35 = 1.45.
+      const yOld = wallClampY(5, baseY, wall, squareHalf);
+      const yNew = wallClampY(5, baseY, wall, down, up);
+      expect(yNew).toBeGreaterThan(yOld);                 // it can go higher now…
+      expect(yNew + up).toBeCloseTo(baseY + wall, 6);     // …until the flags' top is at the rim
+    });
+
+    it('lets the visible content drop until its BOTTOM touches the base', () => {
+      const yNew = wallClampY(0, baseY, wall, down, up);
+      expect(yNew - down).toBeCloseTo(baseY, 6);          // flags' bottom at the base
+    });
+
+    it('is unchanged for a margin-free asset (content fills the square)', () => {
+      expect(wallClampY(5, baseY, wall, squareHalf, squareHalf))
+        .toBe(wallClampY(5, baseY, wall, squareHalf));    // same as the single-arg (symmetric) form
+    });
+
+    it('the reported banner: empty top margin no longer blocks upward travel', () => {
+      // The transparent square would stop the centre 0.25 short of where the flags allow.
+      const gained = wallClampY(5, baseY, wall, down, up) - wallClampY(5, baseY, wall, squareHalf);
+      expect(gained).toBeCloseTo(squareHalf - up, 6);     // exactly the empty top margin, recovered
+    });
+  });
+});
+
+describe('stickerSizeControl — the ONE size field + bounds for a sticker', () => {
+  const plain = { placement_config: {} };
+  const tier  = { radius: 1, height: 0.8 };
+
+  it('an ordinary sticker sizes by absolute `scale`, on the default range', () => {
+    const c = stickerSizeControl(plain, { scale: 1.4, zone: 'top_surface' }, tier);
+    expect(c).toEqual({ key: 'scale', value: 1.4, ...STICKER_SCALE_RANGE });
+  });
+
+  it('reads placement_config.scale bounds rather than hard-coding them', () => {
+    const el = { placement_config: { scale: { min: 0.5, max: 1.2, step: 0.1 } } };
+    const c = stickerSizeControl(el, { scale: 1, zone: 'side' }, tier);
+    expect(c).toMatchObject({ key: 'scale', min: 0.5, max: 1.2, step: 0.1 });
+  });
+
+  it('a hero hug sizes by `hugMul`, NOT scale — and ignores placement_config.scale', () => {
+    const el = { placement_config: { scale: { min: 0.5, max: 1.2 } } };
+    const hug = { singlePerSlot: true, placementMode: 'hug', hugMul: 1.5, scale: 99 };
+    expect(isDynamicHug(hug)).toBe(true);
+    expect(stickerSizeControl(el, hug, tier)).toEqual({ key: 'hugMul', value: 1.5, ...HUG_MUL_RANGE });
+  });
+
+  it('defaults each missing value rather than throwing', () => {
+    expect(stickerSizeControl(undefined, undefined, null))
+      .toEqual({ key: 'scale', value: 1, ...STICKER_SCALE_RANGE });
+  });
+
+  it('caps a photo frame on the SIDE so it cannot outgrow the wall', () => {
+    const frame = { scale: 1, zone: 'side', photoMask: 'm.png', photoFill: 1 };
+    const c = stickerSizeControl(plain, frame, { radius: 1, height: 0.8 });
+    expect(c.max).toBeLessThan(STICKER_SCALE_RANGE.max);   // capped by geometry, not the raw range
+    expect(c.max).toBeGreaterThan(c.min);
+  });
+
+  it("a frame's border ring counts against its cap (thicker border → smaller max)", () => {
+    const base = { scale: 1, zone: 'side', photoMask: 'm.png', photoFill: 1 };
+    const thin = stickerSizeControl(plain, base, tier).max;
+    const thick = stickerSizeControl(plain, { ...base, borderWidth: 0.3 }, tier).max;
+    expect(thick).toBeLessThan(thin);
+  });
+
+  it('a non-frame sticker is never capped by cake geometry', () => {
+    const c = stickerSizeControl(plain, { scale: 1, zone: 'side' }, tier);
+    expect(c.max).toBe(STICKER_SCALE_RANGE.max);
+  });
+
+  it('a cap never squeezes the control below one step of travel', () => {
+    const frame = { scale: 1, zone: 'side', photoMask: 'm.png', photoFill: 1 };
+    const c = stickerSizeControl(plain, frame, { radius: 1, height: 0 });   // zero-height wall
+    expect(c.max).toBeGreaterThan(c.min);
+  });
+});
+
+describe('clampSizeValue — a handle drag can never reach a size the dial refuses', () => {
+  const range = { min: 0.25, max: 2, step: 0.05 };
+
+  it('clamps below the floor and above the ceiling', () => {
+    expect(clampSizeValue(-5, range)).toBe(0.25);
+    expect(clampSizeValue(99, range)).toBe(2);
+  });
+
+  it('snaps onto the control increment', () => {
+    expect(clampSizeValue(1.023, range)).toBe(1);
+    expect(clampSizeValue(1.04, range)).toBe(1.05);
+  });
+
+  it('honours a coarse step', () => {
+    expect(clampSizeValue(1.4, { min: 0.5, max: 3, step: 0.5 })).toBe(1.5);
+  });
+
+  it('degrades to a plain clamp when step is absent or invalid', () => {
+    expect(clampSizeValue(1.234, { min: 0, max: 2, step: 0 })).toBe(1.234);
+  });
+
+  it('never returns a float-noise value like 1.0500000000000003', () => {
+    const v = clampSizeValue(1.0499999, range);
+    expect(Number.isInteger(v * 10000)).toBe(true);
+  });
+});
+
+describe('seatedHitBox — a base-seated element\'s box stops at its seat, never inside the cake', () => {
+  const S = 0.28, half = S / 2;
+  const bottomOf = b => b.centerY - b.height / 2;
+  const topOf    = b => b.centerY + b.height / 2;
+
+  it('a NON base-seated element keeps the full square, centred on its origin', () => {
+    expect(seatedHitBox({ standSeat: false, seatHalf: 0.05, size: S }))
+      .toEqual({ width: S, height: S, centerY: 0 });
+  });
+
+  it('trims exactly the strip below a base-seated element\'s contact point', () => {
+    const b = seatedHitBox({ standSeat: true, seatHalf: 0.105, size: S });   // 0.75 × half
+    expect(bottomOf(b)).toBeCloseTo(-0.105, 6);   // bottom sits ON the seat…
+    expect(topOf(b)).toBeCloseTo(half, 6);        // …and the top margin is untouched
+    expect(b.width).toBe(S);                      // …and so are the side margins
+  });
+
+  it('is a no-op when the artwork already fills the plane (seatHalf === half)', () => {
+    expect(seatedHitBox({ standSeat: true, seatHalf: half, size: S }))
+      .toEqual({ width: S, height: S, centerY: 0 });
+  });
+
+  it('falls back to the full square while the asset is still being measured', () => {
+    expect(seatedHitBox({ standSeat: true, seatHalf: null, size: S }))
+      .toEqual({ width: S, height: S, centerY: 0 });
+    expect(seatedHitBox({ standSeat: true, size: S })).toEqual({ width: S, height: S, centerY: 0 });
+  });
+
+  it('never inverts or overshoots on a nonsense seat', () => {
+    for (const seatHalf of [-1, 0, 99]) {
+      const b = seatedHitBox({ standSeat: true, seatHalf, size: S });
+      expect(b.height).toBeGreaterThan(0);
+      expect(bottomOf(b)).toBeGreaterThanOrEqual(-half - 1e-9);
+      expect(topOf(b)).toBeCloseTo(half, 6);
+    }
+  });
+
+  it('reproduces the palm-tree screenshot: 12.5% of the square was buried', () => {
+    // Measured: border 224px wide, seatHalf 84px against a 112px half-square.
+    const b = seatedHitBox({ standSeat: true, seatHalf: half * (84 / 112), size: S });
+    const buried = half - (-bottomOf(b));      // how much the old square hung below the seat
+    expect(buried / S).toBeCloseTo(0.125, 3);
+    expect(bottomOf(b)).toBeCloseTo(-half * 0.75, 6);
+  });
+
+  it('defaults to STICKER_SIZE when no size is given', () => {
+    expect(seatedHitBox({}).width).toBeCloseTo(0.28, 6);
+  });
+});
+
+// Per-zone placement config: a zone entry is a mode string OR an object { mode, seat, ... }.
+// zoneCfg normalises both; zoneMode/zoneSeat read through it. Backward compatibility (string form
+// keeps working) and the seat default rule (scatter→flush, else proud) are the contracts here.
+describe('zoneCfg / zoneMode', () => {
+  it('normalises a legacy string to { mode }', () => {
+    expect(zoneCfg({ side: 'hug' }, 'side')).toEqual({ mode: 'hug' });
+  });
+  it('passes an object entry through', () => {
+    expect(zoneCfg({ side: { mode: 'hug', seat: 'flush' } }, 'side')).toEqual({ mode: 'hug', seat: 'flush' });
+  });
+  it('absent zone → { mode: undefined }', () => {
+    expect(zoneCfg({}, 'side')).toEqual({ mode: undefined });
+    expect(zoneCfg(undefined, 'side')).toEqual({ mode: undefined });
+  });
+  it('zoneMode reads the mode from either form, with a fallback', () => {
+    expect(zoneMode({ side: 'hug' }, 'side', 'stand')).toBe('hug');
+    expect(zoneMode({ side: { mode: 'perch' } }, 'side', 'stand')).toBe('perch');
+    expect(zoneMode({}, 'side', 'stand')).toBe('stand');
+    expect(zoneMode({ side: 'verge' }, 'side')).toBe('verge');
+  });
+});
+
+// Insert is a MODIFIER, not a position. `zoneInsert` reads the per-zone `insert` object; zoneCfg
+// promotes the legacy `mode:"insert"` + shared `placement_config.insert` form into an upright pose
+// (stand on flat surfaces, hug against a wall) so no data migration is needed. These are the
+// back-compat + composition contracts for the decomposition.
+describe('zoneInsert / insert-as-modifier', () => {
+  it('reads a per-zone insert modifier riding the zone object (new form)', () => {
+    const pc = { top_surface: { mode: 'stand', insert: { depth: 0.4, lean_deg: 10 } } };
+    expect(zoneMode(pc, 'top_surface')).toBe('stand');
+    expect(zoneInsert(pc, 'top_surface')).toEqual({ depth: 0.4, lean_deg: 10 });
+  });
+  it('no insert key → null (element seats flush, not buried)', () => {
+    expect(zoneInsert({ top_surface: 'stand' }, 'top_surface')).toBeNull();
+    expect(zoneInsert({ top_surface: { mode: 'stand' } }, 'top_surface')).toBeNull();
+    expect(zoneInsert({}, 'top_surface')).toBeNull();
+  });
+  it('legacy mode:"insert" on a flat surface promotes to stand + the shared global insert params', () => {
+    const pc = { top_surface: 'insert', insert: { depth: 0.3, lean_deg: 15, jitter_deg: 20 } };
+    expect(zoneMode(pc, 'top_surface')).toBe('stand');           // position, never "insert"
+    expect(zoneInsert(pc, 'top_surface')).toEqual({ depth: 0.3, lean_deg: 15, jitter_deg: 20 });
+  });
+  it('legacy mode:"insert" on a WALL promotes to hug (the wall base pose), same params', () => {
+    const pc = { side: 'insert', insert: { depth: 0.25 } };
+    expect(zoneMode(pc, 'side')).toBe('hug');
+    expect(zoneInsert(pc, 'side')).toEqual({ depth: 0.25 });
+  });
+  it('legacy mode:"insert" with no global params still promotes (empty modifier, defaults apply)', () => {
+    const pc = { top_surface: 'insert' };
+    expect(zoneMode(pc, 'top_surface')).toBe('stand');
+    expect(zoneInsert(pc, 'top_surface')).toEqual({});
+  });
+});
+
+describe('zoneSeat', () => {
+  it('defaults solid decor to proud', () => {
+    expect(zoneSeat({ side: 'hug' }, 'side')).toBe('proud');
+    expect(zoneSeat({}, 'side')).toBe('proud');
+  });
+  it('defaults scatter decor to flush', () => {
+    expect(zoneSeat({ scatter: true, side: 'hug' }, 'side')).toBe('flush');
+  });
+  it('an explicit per-zone seat overrides the default (both ways)', () => {
+    expect(zoneSeat({ side: { mode: 'hug', seat: 'flush' } }, 'side')).toBe('flush');
+    expect(zoneSeat({ scatter: true, side: { mode: 'hug', seat: 'proud' } }, 'side')).toBe('proud');
+  });
+  it('ignores an unknown seat value and falls back to the default', () => {
+    expect(zoneSeat({ side: { mode: 'hug', seat: 'sideways' } }, 'side')).toBe('proud');
+  });
+});
+
+// The single source the add path AND the chooser's zone-switch move both use, so a placed and a
+// moved instance seat identically (regression: moving a proud element off the wall and back left it
+// flush/buried because the move never re-derived these — and could leak the raw { mode, seat } object
+// into placementMode).
+describe('zoneSeatFields — placementMode + sideProud, config-driven, from either config form', () => {
+  it('derives mode via zoneMode (never the raw object) and proud from the default', () => {
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+  });
+  it('reads the OBJECT form without leaking the object into placementMode', () => {
+    const f = zoneSeatFields({ side: { mode: 'hug', seat: 'proud' } }, 'side');
+    expect(f.placementMode).toBe('hug');           // NOT the { mode, seat } object
+    expect(f.sideProud).toBe(true);
+  });
+  it('honours an explicit flush seat and the scatter default', () => {
+    expect(zoneSeatFields({ side: { mode: 'hug', seat: 'flush' } }, 'side').sideProud).toBe(false);
+    expect(zoneSeatFields({ scatter: true, side: 'hug' }, 'side').sideProud).toBe(false);
+  });
+  it('falls back to hug when the zone is unconfigured', () => {
+    expect(zoneSeatFields({}, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+  });
+});
+
+describe('insertSeat — buried-and-angled seat: lean±jitter, fan spin, depth (config-driven, #8)', () => {
+  const D2R = Math.PI / 180;
+
+  it('no jitter → deterministic: tilt = lean, no fan, depth passes through', () => {
+    const s = insertSeat({ depth: 0.4, lean_deg: 20, jitter_deg: 0 });
+    expect(s.tiltAngle).toBeCloseTo(20 * D2R, 6);
+    expect(s.fanYaw).toBe(0);
+    expect(s.depthFrac).toBe(0.4);
+  });
+
+  it('falls back to defaults when fields are unauthored', () => {
+    const s = insertSeat({});
+    expect(s.tiltAngle).toBeCloseTo(DEFAULT_INSERT_LEAN_DEG * D2R, 6);
+    expect(s.depthFrac).toBe(DEFAULT_INSERT_DEPTH);
+    expect(s.fanYaw).toBe(0);
+    // null config (mode on, object absent) is safe too.
+    expect(insertSeat(undefined).depthFrac).toBe(DEFAULT_INSERT_DEPTH);
+  });
+
+  it('jitter spreads BOTH the lean and the fan yaw within ±jitter, seeded by the rng', () => {
+    // rng=1 → +jitter on both; rng=0 → −jitter.
+    const hi = insertSeat({ lean_deg: 10, jitter_deg: 30 }, () => 1);
+    expect(hi.tiltAngle).toBeCloseTo((10 + 30) * D2R, 6);
+    expect(hi.fanYaw).toBeCloseTo(30 * D2R, 6);
+    const lo = insertSeat({ lean_deg: 10, jitter_deg: 30 }, () => 0);
+    expect(lo.tiltAngle).toBeCloseTo((10 - 30) * D2R, 6);
+    expect(lo.fanYaw).toBeCloseTo(-30 * D2R, 6);
   });
 });

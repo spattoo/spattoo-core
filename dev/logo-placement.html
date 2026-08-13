@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Baker logo placement — Spattoo designer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Static harness for deciding where the baker's logo lives in the desktop designer.
+     The spatula path and the shipped 56x36 logo caps are copied from CakeDesigner.jsx
+     so what you see here matches the real sidebar. No React, no build step. */
+  * { box-sizing: border-box; }
+  body { margin:0; background:#e9e9ec; font-family:'Quicksand',system-ui,sans-serif; color:#1a1a1a; }
+
+  header { background:#fff; padding:14px 22px 16px; border-bottom:1px solid #e2dfe4; }
+  h1 { font-size:16px; margin:0 0 2px; }
+  .sub { font-size:11.5px; color:#8a7a80; margin:0 0 13px; }
+  .controls { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; }
+  .group { display:flex; flex-direction:column; gap:5px; }
+  .glabel { font-size:9.5px; text-transform:uppercase; letter-spacing:.09em; color:#8a7a80; font-weight:700; }
+  .segs { display:flex; border:1px solid #ddd8dd; border-radius:8px; overflow:hidden; }
+  .segs button { border:none; background:#fff; padding:7px 12px; font:inherit; font-size:11.5px;
+                 font-weight:600; color:#555; cursor:pointer; border-right:1px solid #eee; white-space:nowrap; }
+  .segs button:last-child { border-right:none; }
+  .segs button[aria-pressed="true"] { background:#1a1a1a; color:#fff; }
+
+  .readout { display:flex; gap:14px; margin:12px 22px 0; font-size:11px; flex-wrap:wrap; }
+  .chip { background:#fff; border:1px solid #e6e1e6; border-radius:7px; padding:6px 11px; }
+  .chip b { font-size:13px; display:block; margin-top:1px; }
+  .chip.warn { border-color:#e8b4b4; background:#fdf6f6; } .chip.warn b { color:#b4453f; }
+  .chip.good { border-color:#b9d8c4; background:#f4faf6; } .chip.good b { color:#2e7d52; }
+
+  .note { font-size:11.5px; color:#5a5a60; margin:11px 22px 0; line-height:1.55; max-width:920px; min-height:46px; }
+  .note b { color:#1a1a1a; }
+
+  /* ── mock of the designer shell ── */
+  .app { margin:12px 22px 26px; border-radius:14px; overflow:hidden; box-shadow:0 6px 26px rgba(0,0,0,.13);
+         background:#f4f4f5; display:flex; flex-direction:column; height:640px; position:relative; }
+
+  .topbar { height:52px; background:#fff; border-bottom:1px solid #f0e8ea; display:flex; align-items:center;
+            justify-content:space-between; padding:0 18px; flex-shrink:0; z-index:10; }
+  .topbar img { max-height:38px; max-width:210px; object-fit:contain; display:block; }
+  .topbar .right { display:flex; gap:8px; }
+  .topbar .right i { width:32px; height:32px; border-radius:8px; background:#f2f0f3; display:block; }
+  .app.no-topbar .topbar { display:none; }
+
+  .main { flex:1; display:flex; min-height:0; position:relative; }
+
+  /* leftCol / topLogo / topLogoImg — values copied from CakeDesigner.jsx styles */
+  .leftcol { display:flex; flex-direction:column; align-items:center; padding:12px 0 12px 40px;
+             gap:10px; flex-shrink:0; position:relative; z-index:5; }
+  .logoslot { width:64px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .logoslot img { max-height:36px; max-width:56px; object-fit:contain; }   /* the shipped caps */
+  .app.hide-slot .logoslot { display:none; }
+  .app.wide-slot .logoslot { overflow:visible; }
+  .app.wide-slot .logoslot img { max-height:48px; max-width:130px; flex-shrink:0; }
+
+  .rail { width:64px; min-width:64px; position:relative; overflow:visible; display:flex; flex:1; }
+  .railinner { position:relative; z-index:1; flex:1; width:100%; display:flex; flex-direction:column;
+               align-items:center; padding:96px 0 30px; }
+  .app.cap-logo .railinner { padding-top:116px; }
+  .nav { flex:1; width:100%; display:flex; flex-direction:column; align-items:center;
+         justify-content:space-evenly; padding:4px 0; }
+  .nav b { display:flex; flex-direction:column; align-items:center; gap:3px; width:60px; font-weight:500; }
+  .nav i { width:34px; height:34px; border-radius:9px; background:rgba(255,255,255,.09); display:block; }
+  .nav span { font-size:8.5px; color:#9a9a9e; }
+
+  .capbadge { position:absolute; top:16px; left:50%; transform:translateX(-50%); width:46px; height:46px;
+              border-radius:50%; background:#fff; display:none; align-items:center; justify-content:center;
+              z-index:3; box-shadow:0 1px 5px rgba(0,0,0,.4); overflow:hidden; }
+  .capbadge img { max-width:36px; max-height:26px; object-fit:contain; }
+  .app.cap-logo .capbadge { display:flex; }
+
+  /* Mirrors the shipped desktopLogo/topLogoImg — out of flow, no plate, so the rail
+     keeps its full height. Keep these numbers in sync with CakeDesigner.jsx. */
+  .floating { position:absolute; top:14px; left:120px; z-index:6; display:none;
+              align-items:center; pointer-events:none; }
+  .floating img { max-height:40px; max-width:240px; object-fit:contain; display:block; }
+  .app.float-logo .floating { display:flex; }
+
+  .canvas { flex:1; margin:12px 12px 12px -18px; border-radius:16px; position:relative; overflow:hidden;
+            background:radial-gradient(120% 90% at 50% 8%, #fdfdfd 0%, #f0eeee 55%, #e6e2e2 100%); }
+  .canvas > img { position:absolute; left:50%; top:53%; transform:translate(-50%,-50%); max-height:76%; }
+  .rightpanel { position:absolute; right:14px; top:14px; width:190px; background:#fff; border-radius:12px;
+                box-shadow:0 2px 12px rgba(0,0,0,.08); padding:12px; }
+  .rightpanel h4 { margin:0 0 9px; font-size:11px; }
+  .rightpanel div { height:9px; border-radius:5px; background:#f0eef0; margin-bottom:7px; }
+  .rightpanel div:nth-child(3) { width:72%; } .rightpanel div:nth-child(5) { width:55%; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Baker logo placement — desktop designer</h1>
+  <p class="sub">Spatula path and the shipped 56×36 caps are copied from <code>CakeDesigner.jsx</code>. The numbers below are measured live from the DOM.</p>
+  <div class="controls">
+    <div class="group"><span class="glabel">Placement</span>
+      <div class="segs" id="placement">
+        <button data-k="current" aria-pressed="true">Current</button>
+        <button data-k="topbar">A — Top bar</button>
+        <button data-k="floating">A2 — Floating</button>
+        <button data-k="cap">B — In the cap</button>
+        <button data-k="wide">C — Wider slot</button>
+      </div>
+    </div>
+    <div class="group"><span class="glabel">Baker logo</span>
+      <div class="segs" id="logo">
+        <button data-k="word" aria-pressed="true">Spattoo (sample)</button>
+        <button data-k="baker">Real baker logo</button>
+        <button data-k="square">Square mark</button>
+      </div>
+    </div>
+    <div class="group"><span class="glabel">Transparent padding</span>
+      <div class="segs" id="trim">
+        <button data-k="raw" aria-pressed="true">As uploaded</button>
+        <button data-k="trim">Auto-trimmed</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="readout" id="readout"></div>
+<p class="note" id="note"></p>
+
+<div class="app" id="app">
+  <div class="topbar"><img class="lg" alt="" /><div class="right"><i></i><i></i><i></i></div></div>
+  <div class="main">
+    <div class="floating"><img class="lg" alt="" /></div>
+    <div class="leftcol">
+      <div class="logoslot"><img class="lg" alt="" /></div>
+      <div class="rail">
+        <div id="spat"></div>
+        <div class="capbadge"><img class="lg" alt="" /></div>
+        <div class="railinner"><div class="nav">
+          <b><i></i><span>New Cake</span></b><b><i></i><span>Dashboard</span></b>
+          <b><i></i><span>Templates</span></b><b><i></i><span>Decorations</span></b>
+          <b><i></i><span>Uploads</span></b><b><i></i><span>Orders</span></b>
+        </div></div>
+      </div>
+    </div>
+    <div class="canvas">
+      <img src="./sample-cake-2.png" alt="" />
+      <div class="rightpanel"><h4>Tier 1</h4><div></div><div></div><div></div><div></div></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── Sources. Wordmark and baker logo are dev fixtures; the square mark is the app favicon.
+const SOURCES = {
+  word:   './sample-logo-wordmark.png',
+  baker:  './feelings-flavours-logo.png',
+  square: '/icon-512.png',
+};
+
+// Measure each logo's opaque bounding box, and build a version with the transparent
+// margin cropped off. Bakers upload logos with wildly different padding, and that
+// padding eats the height budget before the mark does.
+async function analyse(src) {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let mnX = Infinity, mnY = Infinity, mxX = -1, mxY = -1;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      if (d[(y * c.width + x) * 4 + 3] < 16) continue;
+      if (x < mnX) mnX = x; if (x > mxX) mxX = x;
+      if (y < mnY) mnY = y; if (y > mxY) mxY = y;
+    }
+  }
+  const iw = mxX - mnX + 1, ih = mxY - mnY + 1;
+  const t = document.createElement('canvas');
+  t.width = iw; t.height = ih;
+  t.getContext('2d').drawImage(c, mnX, mnY, iw, ih, 0, 0, iw, ih);
+  return { raw: src, trimmed: t.toDataURL('image/png'),
+           bw: c.width, bh: c.height, iw, ih };
+}
+
+// ── spatulaFramePath — ported verbatim from CakeDesigner.jsx ──
+function spatulaFramePath({ W, handleHalf, bladeHalf, capTopY, lShoulderY, rShoulderY,
+  bladeFullY, bladeBotY, lCornerH, lCornerW, rCornerH, rCornerW }) {
+  const cx = W / 2, capR = handleHalf, capCY = capTopY + capR;
+  const Lh = cx - handleHalf, Rh = cx + handleHalf, Lb = cx - bladeHalf, Rb = cx + bladeHalf;
+  const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
+  const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
+  const rSh = bladeFullY - rShoulderY, lSh = bladeFullY - lShoulderY;
+  return [
+    `M ${cx} ${capTopY}`, `A ${capR} ${capR} 0 0 1 ${Rh} ${capCY}`, `L ${Rh} ${rShoulderY}`,
+    `C ${Rh} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
+    `L ${Rb} ${rEdgeBotY}`,
+    `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
+    `L ${flatL} ${bladeBotY}`,
+    `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
+    `L ${Lb} ${bladeFullY}`,
+    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Lh} ${lShoulderY + lSh * 0.5} ${Lh} ${lShoulderY}`,
+    `L ${Lh} ${capCY}`, `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`, 'Z',
+  ].join(' ');
+}
+
+function drawSpatula() {
+  const host = document.getElementById('spat');
+  const h = host.parentElement.clientHeight || 540;
+  const W = 158, cx = W / 2, handleHalf = 30, hr = 9, capTopY = 8;
+  const holeY = capTopY + handleHalf + 24;
+  const bladeBotY = h - 12, bladeFullY = bladeBotY - 194, shoulderY = bladeFullY - 65;
+  const path = spatulaFramePath({ W, handleHalf, bladeHalf: 61, capTopY,
+    lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
+    lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77 });
+  const hole = `M ${cx} ${holeY - hr} a ${hr} ${hr} 0 1 0 0 ${2 * hr} a ${hr} ${hr} 0 1 0 0 ${-2 * hr} Z`;
+  // variant B puts a logo badge where the hang-hole is, so drop the hole then
+  const capBadge = document.getElementById('app').classList.contains('cap-logo');
+  const d = capBadge ? path : `${path} ${hole}`;
+  host.innerHTML = `
+    <svg width="${W}" height="${h}" viewBox="0 0 ${W} ${h}"
+         style="position:absolute;top:0;left:50%;transform:translateX(-50%);overflow:visible;pointer-events:none">
+      <defs>
+        <linearGradient id="bd" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#121214"/><stop offset=".5" stop-color="#08080a"/><stop offset="1" stop-color="#020203"/>
+        </linearGradient>
+        <radialGradient id="sh" cx=".36" cy=".06" r=".5">
+          <stop offset="0" stop-color="rgba(255,255,255,.03)"/><stop offset="1" stop-color="rgba(255,255,255,0)"/>
+        </radialGradient>
+        <filter id="sf" x="-60%" y="-6%" width="220%" height="112%">
+          <feDropShadow dx="0" dy="7" stdDeviation="16" flood-color="#000" flood-opacity=".26"/>
+        </filter>
+        <filter id="sp" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b"/>
+          <feSpecularLighting in="b" surfaceScale="2.5" specularConstant=".62" specularExponent="22"
+                              lighting-color="#d7dbe2" result="s">
+            <feDistantLight azimuth="235" elevation="30"/>
+          </feSpecularLighting>
+          <feComposite in="s" in2="SourceAlpha" operator="in"/>
+        </filter>
+      </defs>
+      <path d="${d}" fill="url(#bd)" fill-rule="evenodd" filter="url(#sf)"/>
+      <path d="${path}" fill="#000" filter="url(#sp)"/>
+      <path d="${d}" fill="url(#sh)" fill-rule="evenodd"/>
+      <path d="${path}" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="1.5"/>
+      ${capBadge ? '' : `<circle cx="${cx}" cy="${holeY}" r="${hr}" fill="none" stroke="rgba(0,0,0,.4)" stroke-width="1.5"/>`}
+    </svg>`;
+}
+
+const NOTES = {
+  current:  "<b>Current.</b> The rail caps the logo at 56×36 (<code>CakeDesigner.jsx:6853</code>). Switch to <b>Real baker logo</b> — a 1536×320 wordmark — and the 56px width cap crushes it to roughly 12px tall. That is the case that actually breaks, and any baker with a horizontal logo hits it.",
+  topbar:   "<b>A — Top bar.</b> A 52px header, the pattern mobile already uses (<code>mobileHeader</code>). Width stops being the binding constraint, so a wide logo renders at full height instead of being crushed. Costs 52px of canvas height. Note the Spattoo sample barely changes — it is height-bound, not width-bound.",
+  floating: "<b>A2 — Floating.</b> Same width freedom as the top bar with no height cost, overlaid on the canvas. Needs the translucent plate to stay readable over a dark cake.",
+  cap:      "<b>B — In the cap.</b> Reads as deliberate rather than perched. But try the real baker logo: a 46px circle cannot hold a 6.6:1 wordmark. Only safe if every baker uploads a square mark, which you cannot enforce.",
+  wide:     "<b>C — Wider slot.</b> Raise the caps to 130×48 and let the logo overhang the way the blade does. Cheap, helps every aspect ratio, but the logo still sits above the spatula's head.",
+};
+
+const app = document.getElementById('app');
+const VARIANT_CLASSES = ['no-topbar', 'hide-slot', 'cap-logo', 'wide-slot', 'float-logo'];
+const state = { placement: 'current', logo: 'word', trim: 'raw' };
+let LOGOS = {};
+
+function apply() {
+  VARIANT_CLASSES.forEach((c) => app.classList.remove(c));
+  const p = state.placement;
+  if (p === 'current')  app.classList.add('no-topbar');
+  if (p === 'topbar')   app.classList.add('hide-slot');
+  if (p === 'floating') app.classList.add('no-topbar', 'hide-slot', 'float-logo');
+  if (p === 'cap')      app.classList.add('no-topbar', 'hide-slot', 'cap-logo');
+  if (p === 'wide')     app.classList.add('no-topbar', 'wide-slot');
+
+  const L = LOGOS[state.logo];
+  const src = state.trim === 'trim' ? L.trimmed : L.raw;
+  document.querySelectorAll('img.lg').forEach((i) => { i.src = src; });
+  document.getElementById('note').innerHTML = NOTES[p];
+  requestAnimationFrame(() => { drawSpatula(); measure(); });
+}
+
+function measure() {
+  const shown = [...document.querySelectorAll('img.lg')].find((i) => i.offsetParent !== null);
+  const L = LOGOS[state.logo];
+  const r = shown ? shown.getBoundingClientRect() : { width: 0, height: 0 };
+  // only part of the drawn box is ink when the file carries transparent margin
+  const inkFraction = state.trim === 'trim' ? 1 : L.ih / L.bh;
+  const inkH = r.height * inkFraction;
+  const padPct = Math.round(100 - (100 * L.iw * L.ih) / (L.bw * L.bh));
+  const cls = inkH < 18 ? 'warn' : inkH >= 30 ? 'good' : '';
+  document.getElementById('readout').innerHTML = `
+    <span class="chip">Rendered box<b>${Math.round(r.width)} × ${Math.round(r.height)} px</b></span>
+    <span class="chip ${cls}">Visible ink height<b>${Math.round(inkH)} px</b></span>
+    <span class="chip">Source<b>${L.bw} × ${L.bh} (ink ${L.iw} × ${L.ih})</b></span>
+    <span class="chip">Padding in file<b>${state.trim === 'trim' ? '0% (trimmed)' : padPct + '%'}</b></span>`;
+}
+
+function wire(id, key) {
+  document.querySelectorAll(`#${id} button`).forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+      state[key] = b.dataset.k;
+      apply();
+    });
+  });
+}
+
+const entries = await Promise.all(
+  Object.entries(SOURCES).map(async ([k, src]) => [k, await analyse(src)]));
+LOGOS = Object.fromEntries(entries);
+
+wire('placement', 'placement');
+wire('logo', 'logo');
+wire('trim', 'trim');
+apply();
+addEventListener('resize', () => { drawSpatula(); measure(); });
+</script>
+</body>
+</html>

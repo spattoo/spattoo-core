@@ -1,14 +1,6 @@
 import { useState, useEffect } from 'react';
-
-function useIsMobile() {
-  const [m, setM] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setM(window.innerWidth < 768);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return m;
-}
+import { useNarrow } from '../shared/useNarrow.js';
+import { dockedLeft } from '../shared/rail.js';
 
 const STATUS_META = {
   pending:     { label: 'Pending',   color: '#92400E', bg: '#FEF9C3' },
@@ -235,7 +227,7 @@ function DeliveryRow({ order }) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrders, onNavigateCustomers, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
-  const isMobile = useIsMobile();
+  const isMobile = useNarrow(768);
   const [data,            setData]            = useState(null);
   const [loading,         setLoading]         = useState(false);
   const [error,           setError]           = useState(null);
@@ -268,7 +260,6 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
         @keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }
         @keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
@@ -276,7 +267,7 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
       `}</style>
 
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 300, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#f3f0fb',

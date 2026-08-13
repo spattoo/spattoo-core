@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import FacetShell from './facets/FacetShell.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
-import { FONT, SERIF, buildContent, storefrontText, lighten, darken, mix, alpha, onColor } from './storefrontKit.js';
+import Shopfront from './heroes/Shopfront.jsx';
+import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
+import { resolveTemplate } from './templates.js';
+import { Captcha } from '../auth/Captcha.jsx';
+import { useOtp } from './useOtp.js';
+import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { WAVES, SCALLOPS, RULES } from '../shared/waves.js';
 
 // Placeholder bio shown until the baker writes their own (baker.story). Sample copy only.
 const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. From the first sketch to the final swirl of cream, each creation is made fresh to order — designed by you, baked by us. Here to sweeten life's little moments, one slice at a time.";
@@ -11,6 +18,63 @@ const SAMPLE_STORY = "We're a small-batch bakery pouring heart into every cake. 
 // whole thing is designed for the phone frame first. A contact bar + header/hamburger, a
 // full-bleed rotating-cake hero with the CTA overlaid, branded sections, a testimonials carousel
 // and the invite-gated OTP login. Branding + colours come from the baker record.
+const bpOf = w => (w >= 1024 ? 'desktop' : w >= 720 ? 'tablet' : 'mobile');
+
+// Coarse responsive breakpoint for the customer-facing storefront. Measured off the storefront's
+// OWN CONTAINER width (via ResizeObserver on the root ref), NOT window.innerWidth — so it's correct
+// both full-page AND inside a narrow preview frame (the customiser's phone mock, where the window is
+// desktop-wide but the storefront box is ~mobile). Mobile-first, SSR-safe default 'mobile'.
+function useContainerBreakpoint() {
+  const [bp, setBp] = useState(null);   // null = not measured yet → render a loader, not a guessed layout
+  // Viewport HEIGHT as well, because the hero's job is to get the CTA on screen and that is a
+  // question about height, not width. A fixed 300px cake fits a 844pt iPhone and pushes the button
+  // 45px off the bottom of a 640pt Android — same layout, same breakpoint, different outcome.
+  const [vh, setVh] = useState(null);
+  const roRef = useRef(null);
+  // Callback ref → (re)attaches the observer whenever the root node mounts, even if the first render
+  // was a loading state without the node yet. ResizeObserver also covers window/container resizes.
+  const setRef = useCallback(el => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const read = () => {
+        setBp(bpOf(el.clientWidth));
+        if (typeof window !== 'undefined') setVh(window.innerHeight);
+      };
+      read();
+      const ro = new ResizeObserver(read);
+      ro.observe(el);
+      roRef.current = ro;
+    } else if (typeof window !== 'undefined') {
+      setBp(bpOf(window.innerWidth));
+      setVh(window.innerHeight);
+    }
+  }, []);
+  return [bp, setRef, vh];
+}
+
+// Varied, asymmetric wave paths so the bands don't all read as the same flat horizontal stripe.
+// Moved to shared/waves.js — the app's panels use the same edge, and a second copy would drift.
+
+// Full-width tinted band with a wavy (curved) top + bottom edge — the recurring soft-curve motif
+// down the page. top/bottom can use DIFFERENT paths (asymmetry). innerStyle re-applies the content
+// max-width container.
+function WavyBand({ tint, fill, curveH, innerStyle, topPath = WAVES[0], bottomPath = WAVES[1], children }) {
+  const wave = (flip, d) => (
+    <svg
+      style={{ position: 'absolute', [flip ? 'top' : 'bottom']: -1, left: 0, width: '100%', height: curveH, display: 'block', transform: flip ? 'scaleY(-1)' : 'none' }}
+      viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+      <path d={d} fill={fill} />
+    </svg>
+  );
+  return (
+    <div style={{ position: 'relative', background: tint, padding: `${curveH + 28}px 0` }}>
+      {wave(true, topPath)}
+      <div style={innerStyle}>{children}</div>
+      {wave(false, bottomPath)}
+    </div>
+  );
+}
+
 export default function CustomerStorefront({
   slug,
   baker: bakerProp = null,
@@ -19,11 +83,47 @@ export default function CustomerStorefront({
   gallery: galleryProp = null,
   apiBaseUrl = '',
   supabase = null,
+  captchaSiteKey = null,   // host-injected Turnstile site key (core reads no env); null → no-op
   onAuthenticated,
   onStartDesign,
   onEditPortrait = null,   // customiser only: makes the portrait an upload affordance
-  designLabel = 'Start designing',
+  // The baker is looking at their OWN storefront inside the customiser. Everything renders and
+  // fetches for real — that is the point of a preview — but the enquiry must not SEND, because the
+  // preview carries the baker's real slug and would drop a junk order into the list they are about
+  // to go and work from.
+  preview = false,
+  // The hero CTA on every layout. It used to open the 3D designer, so "Start designing" described
+  // it; it now opens the CHOOSER, whose first question is whether you would rather begin from a
+  // design or a flavour — so the old label promised one of the two doors before you had picked.
+  //
+  // Deliberately NOT first person: outside the chooser the baker's storefront is inviting you, and
+  // inside it the customer speaks ("I'll start with the design"). "Let's" makes it joint, which is
+  // what actually happens. And not "your PERFECT cake" — that is a promise the baker has to keep,
+  // not one we may make on their behalf. See plans/storefront-facets.md, "The labels".
+  designLabel = 'Let’s make your cake',
 }) {
+  // ONE authority for "which baker is this". The prop is how the host addresses us; baker.slug is
+  // what the record says. They agree in production — but FacetShell used to derive its own from
+  // baker.slug while this component used the prop, and when a caller passed only one of them the
+  // photo store was written under one slug and read under the other. Nothing errored: the photos
+  // simply were not on the order. Resolved once here and passed down, so there is nothing to diverge.
+  const bakerSlug = slug ?? bakerProp?.slug ?? 'unknown';
+
+  const [showFacets, setShowFacets] = useState(false);
+  // Minimum notice, so the date facet can refuse dates inside it while the customer is still on
+  // the page. 0 until the settings call answers — which is also the default, so a slow response
+  // never blocks a date that would have been fine.
+  const [leadTimeDays, setLeadTimeDays] = useState(0);
+  // Whether an enquiry must prove its phone by OTP. The SERVER owns this (STOREFRONT_OTP_REQUIRED)
+  // and we read it back, so the two halves cannot disagree — a client that skipped the step while
+  // the API still demanded a token would fail at the last moment, after all the work was done.
+  // Defaults to the strict answer, so a failed settings call never silently drops verification.
+  const [otpRequired, setOtpRequired] = useState(true);
+  // Which channels the API will accept a code on, in its order of preference. Server-owned for the
+  // same reason otp_required is: offering SMS where the provider is not live (or DLT has not
+  // cleared) means a customer waits for a code that was scrubbed upstream.
+  const [otpChannels, setOtpChannels] = useState(['sms']);
+
   const [baker, setBaker]     = useState(bakerProp);
   const [invite, setInvite]   = useState(null);
   const [loading, setLoading] = useState(!bakerProp);
@@ -33,7 +133,8 @@ export default function CustomerStorefront({
   const [menuOpen, setMenuOpen]   = useState(false);
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
-  const [gIdx, setGIdx]           = useState(0);
+  const [bp, rootRef, viewportH] = useContainerBreakpoint();
+  const galRef = useRef(null);   // "Our creations" scroll row (hook must precede any early return)
 
   useEffect(() => {
     let alive = true;
@@ -65,35 +166,232 @@ export default function CustomerStorefront({
   // (design → confirm identity → bake). Only for a valid invite; browse visits skip it.
   useEffect(() => { if (inviteId && invite?.valid) setWelcomeOpen(true); }, [inviteId, invite]);
 
-  if (loading) return <Centered><CakeSpinner label="Loading…" /></Centered>;
+  // Prefer the bg-removed logo (floats cleanly on any surface), then trim its transparent margin —
+  // the header caps by height, so padding inside the file is spent out of the mark's height budget.
+  // BOTH of these must sit above the early returns below, for the reason the next comment gives.
+  // They did not, at first: a hook skipped on the loading render and called on the loaded one is
+  // "Rendered more hooks than during the previous render", and the storefront renders nothing at
+  // all. The warning below is there because somebody already made this mistake once.
+  // What the facets read. Memoised on the slug, because the facets useEffect on it — a fresh
+  // object every render would refetch the catalogue on every keystroke elsewhere on the page.
+  const facetApi = useMemo(() => ({
+    fetchStorefrontTemplates: () =>
+      getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(bakerSlug)}/templates`)
+        .then(r => r.templates ?? []),
+    fetchStorefrontFlavours: () =>
+      getJSON(`${apiBaseUrl}/api/flavours?bakerSlug=${encodeURIComponent(bakerSlug)}`),
+  }), [apiBaseUrl, bakerSlug]);
+
+  useEffect(() => {
+    // The RESOLVED slug, not the prop. A host that passes `baker` without `slug` — the storefront
+    // preview and the dev harness both do — fetched no settings at all, so lead time, otp_required
+    // and otp_channels silently kept their defaults. Nothing errored; the values were simply never
+    // asked for.
+    if (bakerSlug === 'unknown') return;
+    // A failure here is not worth a broken storefront — 0 is the default and means "no notice
+    // required", which is what every baker has until somebody sets one.
+    getJSON(`${apiBaseUrl}/api/storefront/${encodeURIComponent(bakerSlug)}/settings`)
+      .then(r => {
+        setLeadTimeDays(r?.lead_time_days ?? 0);
+        // Only an explicit false switches it off. An older API that does not send the field at all
+        // keeps verification on, which is the safe way round.
+        setOtpRequired(r?.otp_required !== false);
+        // An older API sends nothing here; keep the previous single-channel behaviour rather than
+        // rendering an empty toggle.
+        if (Array.isArray(r?.otp_channels) && r.otp_channels.length) setOtpChannels(r.otp_channels);
+      })
+      .catch(() => {});
+  }, [bakerSlug, apiBaseUrl]);
+
+  // MUST sit above the early returns below: a hook skipped on the loading render and called on the
+  // next one changes the hook order, which React treats as a fatal error.
+  const logo = useTrimmedLogo(logoUrl || baker?.logo_transparent_url || baker?.logo_url);
+
+  // ── How tall the hero cake may be ──────────────────────────────────────────────────────────────
+  // The hero's job is to get the CTA on screen, and that is a question about HEIGHT. Everything
+  // above the button is fixed — contact bar, nav, headline, subtitle — so the cake is the only part
+  // that can give, and at a flat 300px it pushed the button 45px off the bottom of a 640pt phone
+  // while sitting comfortably on an 844pt one. Same breakpoint, same layout, different outcome.
+  //
+  // A share of the viewport rather than a number, capped so a tall screen does not get a comically
+  // large cake. Falls back to the old constant before the first measurement, so the first paint is
+  // never wrong in the direction that hides the button.
+  const heroCakeH = (full, mobile) => (
+    bp === 'desktop' ? full
+      : Math.round(Math.min(mobile, Math.max(180, (viewportH ?? 900) * 0.34)))
+  );
+
+  // Reference photos → R2, one at a time, on the verified session.
+  //
+  // Sequential rather than parallel: three 1MB PUTs racing on a phone connection is how the slowest
+  // of them times out, and a failure here happens at the worst possible moment. One at a time is
+  // slower in the best case and far more likely to finish in the common one.
+  //
+  // A missing blob is SKIPPED, not fatal. It means the browser evicted it or the draft came from
+  // another device; sending the rest of a real enquiry beats refusing the whole thing over a picture
+  // the customer can send later.
+  const uploadPhotos = useCallback(async (draft, session) => {
+    const photos = draft?.design?.photos ?? [];
+    if (!photos.length || !session?.access_token) return [];
+    const { getPhoto } = await import('./facets/photoStore.js');
+    const keys = [];
+    for (const p of photos) {
+      const blob = await getPhoto(bakerSlug, p.id);
+      if (!blob) continue;
+      const signed = await fetch(`${apiBaseUrl}/api/storefront/${encodeURIComponent(bakerSlug)}/sign-reference-upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ filename: p.name || 'photo.webp', contentType: blob.type, contentLength: blob.size }),
+      });
+      if (!signed.ok) {
+        const body = await signed.json().catch(() => ({}));
+        throw new Error(body.error || 'Could not upload your photo.');
+      }
+      const { url, key } = await signed.json();
+      // Straight to R2. The Content-Type must match what was signed or the PUT is rejected there.
+      const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob });
+      if (!put.ok) throw new Error('Could not upload your photo.');
+      keys.push(key);
+    }
+    return keys;
+  }, [apiBaseUrl, bakerSlug]);
+
+  // ── Sending it ────────────────────────────────────────────────────────────
+  // ⚠️ ALSO ABOVE THE EARLY RETURNS, for the reason stated three lines up. This one is a useCallback
+  // and it lived below them until it crashed the storefront with React #310 — the first render
+  // returns the loader before reaching it, the second calls it, and the hook count changes. The
+  // dev harness never caught it because it mounts FacetShell directly; only the real storefront
+  // renders this component. Anything with a use* prefix belongs above line 173, without exception.
+  //
+  // POST /api/orders takes a bakerSlug and a customer, which is exactly the shape an anonymous
+  // storefront visitor can produce — no new endpoint was needed. It upserts the customer by
+  // phone/email, so a returning customer is matched rather than duplicated, and the order lands in
+  // the baker's existing Orders list with the statuses, calendar and quote flow already working.
+  // That is the whole reason an enquiry is an ORDER and not a new entity.
+  //
+  // `session` comes from the OTP step the shell runs immediately before this. The route takes the
+  // customer's contact FROM that token, never from the body — so the header is not an extra, it is
+  // the only thing that makes the enquiry addressable. It is absent only when the API has OTP
+  // suppressed, in which case the route accepts the body instead.
+  const submitEnquiry = useCallback(async (draft, session) => {
+    // Refused at the boundary rather than by hiding the button: the baker should still be able to
+    // walk the whole flow and read the copy, which is what they opened the customiser to judge.
+    if (preview) throw new Error('This is a preview — enquiries are not sent from here.');
+    const { toOrderPayload, clearDraft } = await import('./facets/cakeDraft.js');
+
+    // ── The photos go up FIRST, on the verified session ──────────────────────────────────────────
+    // Not before now, and not from an anonymous endpoint: the bucket is served publicly, so an
+    // upload without a proved contact is free file hosting on a Spattoo domain. Doing it here means
+    // every byte that reaches R2 has a phone number attached to it.
+    //
+    // Before the order, so a failed upload does not leave a half-described order the baker acts on
+    // — better no enquiry than one whose photos silently never arrived.
+    const referenceKeys = await uploadPhotos(draft, session);
+    const res = await fetch(`${apiBaseUrl}/api/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify(toOrderPayload(draft, bakerSlug, { referenceKeys })),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Could not send that just now.');
+    }
+    // Only once the server has it. Clearing on optimism would lose everything they typed on the
+    // one occasion it mattered.
+    clearDraft(bakerSlug);
+    // The blobs are the baker's problem now — they live on the order. Keeping them would leave
+    // somebody's photographs in a browser store nothing will ever read again.
+    const { clearPhotos } = await import('./facets/photoStore.js');
+    await clearPhotos(bakerSlug);
+    return res.json();
+  }, [apiBaseUrl, bakerSlug, preview, uploadPhotos]);
+
+  // Loader stays until the baker is fetched AND the container breakpoint is measured — so the FIRST
+  // storefront paint is already at the correct layout (no mobile→desktop / default→config flash).
+  // rootRef is attached to the loader too, so the breakpoint can measure before content renders.
+  if (loading || !bp) return <Centered rootRef={rootRef}><CakeSpinner label="Loading…" /></Centered>;
   if (error)   return <Centered>{error}</Centered>;
   if (!baker)  return <Centered>Storefront unavailable</Centered>;
 
-  const primary = baker.primary_color || '#2C4433';
-  const accent  = baker.accent_color  || '#6B8C74';
-  const ig      = baker.instagram_handle?.replace(/^@/, '');
+  // Storefront template — resolve the baker's chosen key (Settings → Storefront Theme, returned
+  // by the public API as `storefront_theme`) to a built template; unknown/missing → the Standard
+  // baseline. The template supplies the DESIGN TOKENS. ONE renderer below, driven by tokens —
+  // new templates are data, not forked layouts.
+  const template = resolveTemplate(baker.storefront_theme);
+  // Baker font-theme lever (storefront_customizations.font_key) overlays the template's typography.
+  // A template can OWN its typography. The font picker swaps font/serif/brandFont wholesale, which
+  // is right for the themes built as neutral containers — and wrong for an art-directed one, where
+  // the type IS the design: Patisserie's copperplate wordmark and brush-rooted body would revert to
+  // Pacifico and a geometric sans, and the "premium" theme would look like the standard one wearing
+  // a shopfront. `ownsType` opts out, and its `controls` omit the font knob so nothing is offered
+  // that does nothing.
+  const tokens = template.tokens.ownsType
+    ? template.tokens
+    : applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
+
+  // COLOUR SOURCE = the baker's brand (the pickers), for EVERY template — full baker control. Each
+  // template's palette (gradient, cake, band, ink) is DERIVED from these in buildPalette, so moving a
+  // picker moves the whole design. A template only supplies DEFAULT colours (tokens.default*), which
+  // the customiser seeds into the pickers when the template is selected — the starting point to tweak.
+  // A baker with no saved colour falls back to the SELECTED template's designed defaults (e.g. a new
+  // Spotlight baker gets its sage band), not a hardcoded literal — the template's `defaults` is the
+  // single source of the starting palette. The literal is only a last resort if a template omits defaults.
+  const primary = baker.primary_color || template.defaults?.primary || '#2C4433';
+  const accent  = baker.accent_color  || template.defaults?.accent  || '#6B8C74';
+  const ig      = normalizeIgHandle(baker.instagram_handle);   // SEC-CORE-4 — cleans rows stored before the input guard existed
   const phone   = baker.whatsapp || baker.whatsapp_number || baker.phone || null;
-  const logo    = logoUrl || baker.logo_url;   // a full logo / wordmark; replaces the name lockup
+  // `logo` is resolved above the early returns — see the note there on hook ordering.
   const txt     = k => storefrontText(baker.storefront_customizations, k);   // baker-editable text + fallback
 
-  // Storefront template routing — the baker picks their theme in Settings → Storefront Theme,
-  // and the public API returns its key as `storefront_theme`. Only 'spotlight' is implemented
-  // today, so any other (or missing) theme falls back to it until that template is built.
-  const BUILT_TEMPLATES = ['spotlight'];
-  const theme = BUILT_TEMPLATES.includes(baker.storefront_theme) ? baker.storefront_theme : 'spotlight';
-  // (theme === 'spotlight' renders the layout below; future templates branch here.)
-  const s = styles(primary, accent);
+  // Hero/button text: the baker's cta_color, else the TEMPLATE's default (e.g. Spotlight ships light
+  // #EAEBE5 for its sage band → white text). Only if a template omits it does buildPalette fall back to
+  // its own adaptive onColor(band).
+  const pal = buildPalette(primary, accent, tokens, { ctaColor: baker.storefront_customizations?.cta_color || template.defaults?.ctaColor });   // one place to tune every colour
+  const s = styles(primary, accent, tokens, bp, pal);
+  // Ordered, toggleable body sections (storefront_customizations.sections); absence → defaults.
+  const sections = resolveSections(baker.storefront_customizations);
+  // Interactive states (hover/active/focus) — inline styles can't express :hover, so one small
+  // palette-driven stylesheet handles them. Colours come from `pal`, so this stays centralised too.
+  const interactionCss = `
+    .sf-cta { transition: background .18s ease, transform .18s ease, box-shadow .18s ease; }
+    .sf-cta:hover:not(:disabled) { background: ${pal.ctaHover}; transform: translateY(-1px); box-shadow: 0 14px 34px ${alpha(primary, 0.3)}; }
+    .sf-cta:active:not(:disabled) { transform: translateY(0); }
+    .sf-cta:focus-visible { outline: 3px solid ${alpha(primary, 0.45)}; outline-offset: 3px; }
+    .sf-navlink { transition: opacity .15s ease; }
+    .sf-navlink:hover { opacity: .68; }
+    .sf-arrow { transition: transform .15s ease, background .15s ease; }
+    .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
+    .sf-gallery::-webkit-scrollbar { display: none; }
+  `;
+  const pageBg = tokens.pageBgMode === 'heroTop' ? pal.heroTop : tokens.pageBg;   // aurora: derived cream top; else the fixed token. (exposed for inline SVG fills)
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
   const firstName = invite?.customer?.first_name || invite?.first_name || null;
   const occasion  = invite?.occasion || invite?.note || null;
   const expired = inviteId && invite && !invite.valid;
+  // The baker's storefront is paused for new orders (trial lapsed / order cap). Show
+  // a banner + disable the design CTAs so customers aren't blocked only at submit.
+  // `accepting_orders` comes from the public storefront API.
+  const notAcceptingOrders = baker.accepting_orders === false;
 
+  // ── The front door ────────────────────────────────────────────────────────
+  // One button, in every hero variant, so changing what it DOES changes all of them.
+  //
+  // It used to go straight to the 3D designer. That is the highest-effort way in and it was the
+  // only one — a customer holding a photo, or who just wants chocolate, had nowhere to start. The
+  // chooser puts three ways in front of them and lets them begin wherever they already are.
+  //
+  // With only ONE way in it goes straight through: a chooser offering a single option is a
+  // pointless extra tap. That happens to a baker with no templates and no flavour list.
   function handleCta() {
+    if (notAcceptingOrders) return;
     if (inviteId && invite?.valid) { setShowLogin(true); return; }
     if (expired) return;
-    onStartDesign?.(baker);
+    setShowFacets(true);
   }
 
   // Nav items — only those with somewhere to go.
@@ -101,6 +399,7 @@ export default function CustomerStorefront({
   // end-to-end (Feelings & Flavours has no story/portrait on its record yet).
   const story    = baker.story || SAMPLE_STORY;
   const portrait = baker.portrait_url || null;   // a real baker photo; placeholder glyph otherwise
+  const websiteHref = safeHref(baker.website_url);   // SEC-16 — https/http only; null → no link rendered
 
   const nav = [
     { label: 'Gallery', href: '#gallery' },
@@ -115,28 +414,85 @@ export default function CustomerStorefront({
   // Gallery photos uploaded by the baker (baker.gallery); empty → graceful fallback below.
   const gallery = (galleryProp?.length ? galleryProp : baker.gallery) || [];
   const hasPhotos = gallery.length > 0;
-  const gPhoto = hasPhotos ? gallery[gIdx % gallery.length] : null;
-  const gMove = d => setGIdx(i => (i + d + gallery.length) % gallery.length);
+  // "Our creations": 3 visible, horizontal-scroll with arrows once there are more than 3.
+  const galScroll = dir => {
+    const el = galRef.current;
+    if (!el) return;
+    const first = el.firstElementChild;
+    const step = first ? first.getBoundingClientRect().width + (bp === 'mobile' ? 8 : 14) : el.clientWidth / 3;
+    el.scrollBy({ left: dir * step, behavior: 'smooth' });
+  };
+
+  // Hero: the branded curve/split hero (with the live 3D cake) is ALWAYS the default — it needs no
+  // photos, so it holds up for a brand-new storefront too. FULL-BLEED only when the baker sets an
+  // explicit wide/lifestyle hero image. (The old dark "designer" hero fallback was removed — it was
+  // the thing that reappeared when a baker had no gallery photos.)
+  const heroImage = baker.storefront_customizations?.hero_image || null;   // baker-set wide/lifestyle hero photo
+  // Baker-picked cake DESIGN shown AS the hero cake (a 2D thumbnail) — replaces the generic 3D cake in
+  // the branded hero, keeping band/tagline/CTA. Distinct from hero_image (the full-bleed photo hero).
+  const heroDesign = baker.storefront_customizations?.hero_design_image || null;
+  // HERO TYPE (Phase 1 — pluggable heroes): a baker's wide hero photo overrides to the 'photo' hero;
+  // otherwise the TEMPLATE declares its hero (tokens.hero.type; default 'centered-cake'). The renderer
+  // dispatches through HERO_RENDERERS below — adding a hero is a new renderer + a template `hero.type`,
+  // never a branch here. 'none' → no hero (just header + sections).
+  const heroType = heroImage ? 'photo' : (tokens.hero?.type ?? 'centered-cake');
+  // The brand tint flows up THROUGH the header only for the centred-cake (curve) hero — the logo sits
+  // on the pink. Gradient / photo / none keep their own light header.
+  const isCurveHero = heroType === 'centered-cake';
+  const wide = bp !== 'mobile';
+  const headerText = darken(primary, 0.12);   // header/nav sit on a LIGHT bar (band starts below the logo)
+  const bandTints = [pal.bandSoftA, pal.bandSoftB];   // the two tone-on-tone section bands
 
   return (
-    <div style={s.page}>
+    <div style={s.page} ref={rootRef}>
+      <style>{interactionCss}</style>
+      {/* Icon + number, no label. The handset says "phone" faster than the words did, and the bar is
+          the first thing above the baker's name — the shortest version of it wins.
+          aria-label carries what the visible text used to: the icon is aria-hidden, so without it a
+          screen reader would announce a bare string of digits with no idea what it is for. */}
       {phone && (
-        <div style={s.utilbar}><PhoneIcon size={13} color={darken(primary, 0.1)} style={{ verticalAlign: '-2px', marginRight: 6 }} />Call / WhatsApp: <a href={`tel:${phone}`} style={s.utilLink}>{phone}</a></div>
+        <div style={s.utilbar}>
+          <a href={`tel:${phone}`} style={s.utilLink} aria-label={`Call or WhatsApp ${phone}`}>
+            <PhoneIcon size={13} color={darken(primary, 0.1)} style={{ marginRight: 6 }} />{phone}
+          </a>
+        </div>
       )}
 
-      <header style={s.header}>
-        <div style={s.brand}>
+      <header style={{ ...s.header, ...(isCurveHero ? { position: 'relative' } : {}) }}>
+        <div style={{ ...s.brand, ...(wide ? { flex: 1 } : {}) }}>
           {logo
             ? <img src={logo} alt={baker.name} style={s.logoImg} />
-            : (<>
-                <div style={s.logoFallback}>{(baker.name ?? '?').slice(0, 1).toUpperCase()}</div>
-                <span style={s.brandName}>{baker.name}</span>
-              </>)}
+            /* `headerBrand: false` — a theme whose HERO carries the name (Atelier's masthead) hides
+               the small one in the bar. Two of the same word, 40px apart, is a stutter, not
+               branding. An uploaded logo always wins: that is the baker's mark, not our typography. */
+            : tokens.headerBrand === false ? null
+            : <span style={{ ...s.brandName, color: headerText }}>{baker.name}</span>}
         </div>
-        <button type="button" aria-label="Menu" style={s.burger} onClick={() => setMenuOpen(true)}>
-          <span style={s.burgerLine} /><span style={s.burgerLine} /><span style={s.burgerLine} />
-        </button>
+        {bp === 'mobile' ? (
+          <button type="button" aria-label="Menu" style={s.burger} onClick={() => setMenuOpen(true)}>
+            <span style={{ ...s.burgerLine, background: headerText }} /><span style={{ ...s.burgerLine, background: headerText }} /><span style={{ ...s.burgerLine, background: headerText }} />
+          </button>
+        ) : (
+          <>
+            {/* Nav centered: brand (flex:1) + trailing spacer (flex:1) push the menu to the middle. */}
+            <nav style={s.navRow}>
+              {nav.map(n => n.href
+                ? <a key={n.label} className="sf-navlink" href={n.href} style={{ ...s.navItem, color: headerText }}>{n.label}</a>
+                : <button key={n.label} type="button" className="sf-navlink" style={{ ...s.navItem, ...s.navItemBtn, color: headerText }} onClick={n.action}>{n.label}</button>)}
+            </nav>
+            <div style={{ flex: 1 }} aria-hidden="true" />
+          </>
+        )}
       </header>
+
+      {notAcceptingOrders && (
+        <div style={{
+          background: lighten(accent, 0.34), color: darken(primary, 0.12),
+          textAlign: 'center', padding: '11px 16px', fontSize: 13.5, fontWeight: 600, lineHeight: 1.4,
+        }}>
+          This bakery isn't accepting new orders right now — please check back soon.
+        </div>
+      )}
 
       {menuOpen && (
         <div style={s.drawerOverlay} onClick={() => setMenuOpen(false)}>
@@ -150,96 +506,152 @@ export default function CustomerStorefront({
         </div>
       )}
 
-      {/* ── HERO: full-bleed rotating cake, CTA overlaid ──────────────────────────── */}
-      <section style={s.hero}>
-        <div style={s.heroCake}><HeroCake3D primary={primary} accent={accent} mood="dark" height="100%" /></div>
-        <div style={s.heroScrim} />
-        <div style={s.heroFade} />
-        <div style={s.heroContent}>
-          <div>
-            <h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1>
-          </div>
-          <div style={s.heroBottom}>
-            {expired ? (
-              <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
-            ) : (
-              <button type="button" style={s.heroCta} onClick={handleCta}>{designLabel}</button>
-            )}
-          </div>
-        </div>
-      </section>
+      {/* ── HERO ── the template picks the type (tokens.hero.type); a baker hero photo overrides to
+          the photo hero. ONE dispatch through the registry — no per-type branch here. */}
+      {(HERO_RENDERERS[heroType] ?? HERO_RENDERERS['centered-cake'])({
+        s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroImage, heroDesign, heroCakeH,
+      })}
 
-      <main style={s.main}>
-        <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
-          {hasPhotos ? (
-            <>
-              <div style={s.carousel}>
-                {gallery.length > 1 && <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => gMove(-1)}>‹</button>}
-                <div style={s.gSlide}><img src={gPhoto.url || gPhoto} alt={gPhoto.caption || `${baker.name} cake`} style={s.gImg} /></div>
-                {gallery.length > 1 && <button type="button" aria-label="Next" style={{ ...s.arrow, ...s.arrowR }} onClick={() => gMove(1)}>›</button>}
-              </div>
-              {gPhoto.caption && <p style={s.gCaption}>{gPhoto.caption}</p>}
-              {gallery.length > 1 && (
-                <div style={s.dotsRow}>
-                  {gallery.map((_, i) => <span key={i} style={{ ...s.dot, ...(i === gIdx ? s.dotOn : {}) }} onClick={() => setGIdx(i)} />)}
-                </div>
-              )}
-            </>
-          ) : (
-            // Fallback when the baker hasn't uploaded photos yet — branded, not broken.
-            <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
-              <CakeIcon size={52} color={alpha('#ffffff', 0.8)} />
-              <div style={s.gFallbackText}>Fresh photos coming soon</div>
-              <button type="button" style={s.gFallbackCta} onClick={handleCta}>Design your own</button>
-            </div>
-          )}
-        </Section>
-
-        <section id="story" style={s.section}>
-          <div style={s.eyebrow}>{txt('story_heading')}</div>
-          <div style={s.storyWrap}>
-            <div
-              style={{ ...s.portraitWrap, ...(onEditPortrait ? { cursor: 'pointer' } : {}) }}
-              onClick={onEditPortrait || undefined}
-              title={onEditPortrait ? 'Upload your photo' : undefined}
-            >
-              <div style={s.portrait}>
-                {portrait ? <img src={portrait} alt={baker.name} style={s.portraitImg} /> : <BakerIcon size={66} color={primary} />}
-              </div>
-              {onEditPortrait && <div style={s.portraitBadge}><CameraIcon size={16} color="#fff" /></div>}
-            </div>
-            {onEditPortrait && <div style={s.portraitHint}>{portrait ? 'Click to change your photo' : 'Click to add your photo'}</div>}
-            <p style={s.bio}>{story}</p>
-            <div style={s.signature}>— {baker.name}</div>
-          </div>
-        </section>
-
-        {testimonials.length > 0 && (
-          <Section eyebrow={txt('reviews_heading')} s={s}>
-            <div style={s.carousel}>
-              {testimonials.length > 1 && <button type="button" aria-label="Previous" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>}
-              <figure style={s.testiCard}>
-                <div style={s.stars}>★★★★★</div>
-                <blockquote style={s.quote}>“{t.quote}”</blockquote>
-                <figcaption style={s.author}>{t.author}{t.occasion && <span style={s.authorOcc}> · {t.occasion}</span>}</figcaption>
-              </figure>
-              {testimonials.length > 1 && <button type="button" aria-label="Next" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>}
-            </div>
-            {testimonials.length > 1 && (
-              <div style={s.dotsRow}>
-                {testimonials.map((_, i) => <span key={i} style={{ ...s.dot, ...(i === tIdx ? s.dotOn : {}) }} onClick={() => setTIdx(i)} />)}
-              </div>
-            )}
-          </Section>
-        )}
-      </main>
+      {/* Body = ordered, toggleable sections (storefront_customizations.sections). Wavy bands
+          alternate tint/wave by their position among the wavy sections, so reorder/toggle stays
+          correct. Gallery lives on the plain white main; story/reviews/highlight ride wavy bands. */}
+      {(() => {
+        let bandIdx = 0;
+        // Which EDGE this template's bands end in. A token, not a branch on theme name: the wave is
+        // the product's signature shape, and Patisserie's language is doilies and awnings, so it
+        // ends its bands in scallops instead. Same viewBox, so it is a straight swap.
+        const edges = tokens.edges === 'scallop' ? SCALLOPS
+                    : tokens.edges === 'rule'    ? RULES
+                    : WAVES;
+        const wavy = (key, children) => {
+          const tint = bandTints[bandIdx % bandTints.length];
+          const topPath = edges[bandIdx % edges.length];
+          const bottomPath = edges[(bandIdx + 1) % edges.length];
+          bandIdx++;
+          return (
+            <WavyBand key={key} tint={tint} fill={pageBg} curveH={wide ? 64 : 46} topPath={topPath} bottomPath={bottomPath} innerStyle={s.main}>
+              {children}
+            </WavyBand>
+          );
+        };
+        return sections.map((sec, i) => {
+          if (!sec.enabled) return null;
+          switch (sec.type) {
+            case 'gallery':
+              return (
+                <main key="gallery" style={s.main}>
+                  <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
+                    {hasPhotos && tokens.gallery === 'bleed' ? (
+                      /* Full-bleed grid: no card, no radius, no shadow, hairline gaps, captions in
+                         small caps underneath. The gallery is the largest block on the page, and
+                         while every theme renders it as the same white-card carousel, every theme
+                         looks the same below the hero however different the hero is. Breaking the
+                         images out of the content column is the single biggest change available. */
+                      <div style={s.gBleed}>
+                        {gallery.map((g, gi) => (
+                          <figure key={gi} style={s.gBleedItem}>
+                            <img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gBleedImg} />
+                            {g.caption && <figcaption style={s.gBleedCap}>{g.caption}</figcaption>}
+                          </figure>
+                        ))}
+                      </div>
+                    ) : hasPhotos ? (
+                      // 3 visible at a time; horizontal-scroll with arrows once there are more than 3.
+                      <div style={s.galleryWrap}>
+                        {gallery.length > 3 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => galScroll(-1)}>‹</button>}
+                        <div ref={galRef} className="sf-gallery" style={s.galleryScroll}>
+                          {gallery.map((g, gi) => (
+                            <figure key={gi} style={s.galleryItem}>
+                              <div style={s.gGridCard}><img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gImg} /></div>
+                              {g.caption && <figcaption style={s.gGridCap}>{g.caption}</figcaption>}
+                            </figure>
+                          ))}
+                        </div>
+                        {gallery.length > 3 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => galScroll(1)}>›</button>}
+                      </div>
+                    ) : (
+                      <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
+                        <CakeIcon size={52} color={alpha('#ffffff', 0.8)} />
+                        <div style={s.gFallbackText}>Fresh photos coming soon</div>
+                        <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                          style={{ ...s.gFallbackCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                          onClick={handleCta}>
+                          {notAcceptingOrders ? 'Not taking new orders' : 'Design your own'}
+                        </button>
+                      </div>
+                    )}
+                  </Section>
+                </main>
+              );
+            case 'highlight': {
+              // Baker-set featured item ("this week's special"). Rendered only when it has content.
+              if (!(sec.title || sec.blurb || sec.image)) return null;
+              return wavy(`highlight-${i}`, (
+                <section id={`highlight-${i}`} style={{ padding: '4px 0' }}>
+                  {/* The baker's TITLE is the heading (no hardcoded eyebrow); image sits BELOW the text. */}
+                  <div style={s.highlightText}>
+                    {sec.title && <h3 style={s.highlightTitle}>{sec.title}</h3>}
+                    {sec.blurb && <p style={s.highlightBlurb}>{sec.blurb}</p>}
+                  </div>
+                  {sec.image && <div style={s.highlightMedia}><img src={sec.image} alt={sec.title || ''} style={s.highlightImg} /></div>}
+                </section>
+              ));
+            }
+            case 'story':
+              return wavy('story', (
+                <section id="story" style={{ padding: '4px 0' }}>
+                  <div style={s.eyebrow}>{txt('story_heading')}</div>
+                  <div style={s.storyWrap}>
+                    <div
+                      style={{ ...s.portraitWrap, ...(onEditPortrait ? { cursor: 'pointer' } : {}) }}
+                      onClick={onEditPortrait || undefined}
+                      title={onEditPortrait ? 'Upload your photo' : undefined}
+                    >
+                      <div style={s.portrait}>
+                        {portrait ? <img src={portrait} alt={baker.name} style={s.portraitImg} /> : <BakerIcon size={66} color={primary} />}
+                      </div>
+                      {onEditPortrait && <div style={s.portraitBadge}><CameraIcon size={16} color="#fff" /></div>}
+                    </div>
+                    {onEditPortrait && <div style={s.portraitHint}>{portrait ? 'Click to change your photo' : 'Click to add your photo'}</div>}
+                    <div style={s.storyText}>
+                      <p style={s.bio}>{story}</p>
+                      <div style={s.signature}>— {baker.name}</div>
+                    </div>
+                  </div>
+                </section>
+              ));
+            case 'reviews':
+              if (!testimonials.length) return null;
+              return wavy('reviews', (
+                <Section eyebrow={txt('reviews_heading')} s={s}>
+                  <div style={s.carousel}>
+                    {testimonials.length > 1 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => move(-1)}>‹</button>}
+                    <figure style={s.testiCard}>
+                      <div style={s.stars}>★★★★★</div>
+                      <blockquote style={s.quote}>“{t.quote}”</blockquote>
+                      <figcaption style={s.author}>{t.author}{t.occasion && <span style={s.authorOcc}> · {t.occasion}</span>}</figcaption>
+                    </figure>
+                    {testimonials.length > 1 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => move(1)}>›</button>}
+                  </div>
+                  {testimonials.length > 1 && (
+                    <div style={s.dotsRow}>
+                      {testimonials.map((_, ti) => <span key={ti} style={{ ...s.dot, ...(ti === tIdx ? s.dotOn : {}) }} onClick={() => setTIdx(ti)} />)}
+                    </div>
+                  )}
+                </Section>
+              ));
+            default:
+              return null;
+          }
+        });
+      })()}
 
       <footer id="contact" style={s.footer}>
-        {(phone || ig || baker.website_url) && (
+        {(phone || ig || websiteHref) && (
           <div style={s.footerLinks}>
-            {phone && <a href={`tel:${phone}`} style={s.footerLink}><PhoneIcon size={13} color={lighten(accent, 0.1)} style={{ verticalAlign: '-2px', marginRight: 5 }} />{phone}</a>}
+            {phone && <a href={`tel:${phone}`} style={s.footerLink}><PhoneIcon size={13} color={lighten(accent, 0.1)} style={{ marginRight: 5 }} />{phone}</a>}
             {ig && <a style={s.footerLink} href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer">@{ig}</a>}
-            {baker.website_url && <a style={s.footerLink} href={baker.website_url} target="_blank" rel="noreferrer">Website</a>}
+            {websiteHref && <a style={s.footerLink} href={websiteHref} target="_blank" rel="noreferrer">Website</a>}
           </div>
         )}
         <div style={s.madeWith}>Made with Spattoo</div>
@@ -253,7 +665,27 @@ export default function CustomerStorefront({
           logo={logo}
           primary={primary}
           accent={accent}
+          pal={pal}
           onClose={() => setWelcomeOpen(false)}
+        />
+      )}
+
+      {showFacets && (
+        <FacetShell
+          baker={baker}
+          api={facetApi}
+          leadTimeDays={leadTimeDays}
+          isMobile={bp !== 'desktop'}
+          palette={{ primary, accent }}
+          slug={bakerSlug}
+          logo={logo}
+          apiBaseUrl={apiBaseUrl}
+          captchaSiteKey={captchaSiteKey}
+          otpRequired={otpRequired}
+          otpChannels={otpChannels}
+          onStartDesign={onStartDesign}
+          onClose={() => setShowFacets(false)}
+          onSubmit={submitEnquiry}
         />
       )}
 
@@ -263,6 +695,7 @@ export default function CustomerStorefront({
           inviteId={inviteId}
           apiBaseUrl={apiBaseUrl}
           supabase={supabase}
+          captchaSiteKey={captchaSiteKey}
           primary={primary}
           onClose={() => setShowLogin(false)}
           onAuthenticated={onAuthenticated}
@@ -274,7 +707,7 @@ export default function CustomerStorefront({
           <div style={s.howCard} onClick={e => e.stopPropagation()}>
             <button type="button" aria-label="Close" style={s.howClose} onClick={() => setHowOpen(false)}>×</button>
             <div style={s.eyebrow}>How it works</div>
-            <h2 style={s.howTitle}>From idea to cake in 3 steps</h2>
+            <h2 style={s.howTitle}>From idea to cake</h2>
             {steps.map(st => (
               <div key={st.n} style={s.howStep}>
                 <div style={s.stepNum}>{st.n}</div>
@@ -320,9 +753,24 @@ function CameraIcon({ size = 16, color = '#fff', style }) {
     </svg>
   );
 }
+// ⚠️ `display: inline-block` is LOAD-BEARING, and the reason is not in this repo.
+//
+// This icon sits INSIDE a line of text — the utility bar's "Call / WhatsApp: <number>" and the
+// footer's phone link. A browser defaults <svg> to `display: inline`, so that works out of the box
+// here and in dev/storefront.html. It does not work where the storefront actually runs: spattoo-web
+// imports it under `@import "tailwindcss"`, and Tailwind's preflight blockifies replaced elements
+// (`img, svg, video, canvas, audio, iframe, embed, object { display: block }`).
+//
+// A block box is not centred by `text-align`. So in production the icon took a line of its own,
+// flush LEFT, with the phone number centred underneath it — the bar twice as tall as intended and
+// the icon 173px from the text it belongs to. It renders, so nothing complains.
+//
+// Declaring the display here rather than at the call sites means a third usage cannot reintroduce
+// it. `verticalAlign` moved here for the same reason; callers pass only their own spacing.
 function PhoneIcon({ size = 14, color = '#9b5f72', style }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+         style={{ display: 'inline-block', verticalAlign: '-2px', ...style }}>
       <path d="M6.5 3h3l1.5 5-2 1.5a12 12 0 0 0 5 5l1.5-2 5 1.5v3a2 2 0 0 1-2 2A16 16 0 0 1 4.5 5a2 2 0 0 1 2-2z" />
     </svg>
   );
@@ -342,8 +790,8 @@ function Section({ id, eyebrow, title, s, children }) {
 // The first thing an invited customer sees. Blurs the storefront and orients them,
 // then OK closes it so they can browse the baker's story + gallery before designing
 // (the sticky "Start designing" CTA is always there when they're ready).
-function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, onClose }) {
-  const m = welcomeStyles(primary, accent);
+function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, pal, onClose }) {
+  const m = welcomeStyles(primary, accent, pal);
   const cakePhrase = occasion ? `your ${occasion} cake` : 'your dream cake';
   return (
     <div style={m.overlay} role="dialog" aria-modal="true" aria-label={`Invitation from ${bakerName}`}>
@@ -361,36 +809,40 @@ function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, o
 }
 
 // ── OTP login ──────────────────────────────────────────────────────────────────
-function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, onAuthenticated }) {
+function LoginModal({ invite, inviteId, apiBaseUrl, supabase, captchaSiteKey, primary, onClose, onAuthenticated }) {
   const channels = invite?.customer?.channels?.length ? invite.customer.channels : ['email'];
   const [channel, setChannel] = useState(channels[0]);
-  const [step, setStep]   = useState('start');
-  const [code, setCode]   = useState('');
-  const [busy, setBusy]   = useState(false);
-  const [err, setErr]     = useState(null);
+  // OTP send hits the anon-key signInWithOtp, which Supabase captcha gates. The customer solves
+  // Turnstile here and we forward the token to /send-otp. Null key → no-op (send not gated).
+  const captchaConfigured = !!captchaSiteKey;
 
   const masked = channel === 'email' ? invite?.customer?.masked_email : invite?.customer?.masked_phone;
 
-  async function send() {
-    setBusy(true); setErr(null);
-    try {
-      await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/send-otp`, { channel });
-      setStep('code');
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }
-
-  async function verify() {
-    setBusy(true); setErr(null);
-    try {
-      const { session } = await postJSON(`${apiBaseUrl}/api/invite/${inviteId}/verify-otp`, { channel, code });
+  // The send/verify dance is shared with the storefront's VerifyStep — see useOtp. Only the
+  // transport differs: this one names an invite and lets the SERVER look up the contact, because the
+  // whole point of an invite is that the baker already knows how to reach them.
+  const otp = useOtp({
+    send: (captchaToken) => postJSON(`${apiBaseUrl}/api/invite/${inviteId}/send-otp`, { channel, captchaToken }),
+    verify: (code) => postJSON(`${apiBaseUrl}/api/invite/${inviteId}/verify-otp`, { channel, code }),
+    onVerified: async ({ session, design_snapshot }) => {
       if (supabase && session) {
         await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
       }
-      onAuthenticated?.(session);
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }
+      // Hand the baker's attached starting design (if any) to the host so it can seed the
+      // designer on resume. Null for a plain invite — the host just opens a blank designer.
+      onAuthenticated?.(session, design_snapshot ?? null);
+    },
+  });
+  const { step, code, setCode, busy, err, send, verify } = otp;
 
   const m = modalStyles(primary);
+  // ONE Turnstile widget for the modal (both the initial send and the resend). Rendered outside the
+  // step ternary so it doesn't remount when we move to the code step.
+  const captchaEl = (
+    <Captcha ref={otp.captchaRef} siteKey={captchaSiteKey}
+      onVerify={otp.setCaptchaToken} onExpire={() => otp.setCaptchaToken(null)} style={{ margin: '4px 0' }} />
+  );
+  const sendBlocked = otp.sendBlocked(captchaConfigured);
   return (
     <div style={m.overlay} onClick={onClose}>
       <div style={m.card} onClick={e => e.stopPropagation()}>
@@ -407,10 +859,12 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, 
           </div>
         )}
 
+        {captchaEl}
+
         {step === 'start' ? (
           <>
             <p style={m.sub}>We'll send a code to <b>{masked}</b></p>
-            <button style={m.primaryBtn} disabled={busy} onClick={send}>{busy ? 'Sending…' : 'Send code'}</button>
+            <button style={m.primaryBtn} disabled={sendBlocked} onClick={send}>{busy ? 'Sending…' : 'Send code'}</button>
           </>
         ) : (
           <>
@@ -418,7 +872,7 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, primary, onClose, 
             <input style={m.input} value={code} onChange={e => setCode(e.target.value)}
               inputMode="numeric" placeholder="6-digit code" autoFocus />
             <button style={m.primaryBtn} disabled={busy || !code.trim()} onClick={verify}>{busy ? 'Verifying…' : 'Verify & enter'}</button>
-            <button style={m.linkBtn} disabled={busy} onClick={send}>Resend code</button>
+            <button style={m.linkBtn} disabled={sendBlocked} onClick={send}>Resend code</button>
           </>
         )}
 
@@ -440,32 +894,324 @@ async function postJSON(url, body) {
   return res.json();
 }
 
-function Centered({ children }) {
+function Centered({ children, rootRef }) {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    <div ref={rootRef} style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontFamily: FONT, color: '#6B8C74', fontWeight: 600, background: '#EDEAE2' }}>
       {children}
     </div>
   );
 }
 
-function styles(primary, accent) {
-  const ink = mix(primary, '#3a363a', 0.74);  // soft warm-grey hero/footer (lighter than near-black)
-  const heading = '#241A1E', text = '#3A2E32', muted = '#8B7B80';
-  const cardBorder = '#ECE5DE', shadow = '0 12px 30px rgba(60,40,45,0.08)';
-  const cw = 600;                             // mobile-first content width
-  return {
-    page:        { minHeight: '100vh', background: '#FCFAF7', fontFamily: FONT, color: text, display: 'flex', flexDirection: 'column' },
+// ── Hero renderers (Phase 1 — pluggable heroes) ─────────────────────────────────────────────────
+// Each renders the hero <section> for ONE hero type, from a shared ctx (the storefront's locals). The
+// template picks the type via tokens.hero.type; a baker hero photo overrides to 'photo'. Adding a hero
+// = a new function here + a HERO_RENDERERS entry + a template's `hero.type`. No branch in the renderer.
+// The message + CTA in a LEFT column, a big rotating cake bleeding off the right on a soft gradient.
+// The hero's cake: the baker's picked DESIGN as a 2D image if set, else the live 3D cake. One helper
+// for all hero renderers so the design/3D swap lives in ONE place (no per-hero branch). The design
+// thumbnail is a transparent render, so it drops into the same slot as the 3D canvas.
+function HeroCakeMedia({ heroDesign, baker, height, ...cakeProps }) {
+  if (heroDesign) return <img src={heroDesign} alt={baker?.name || 'Cake design'} style={{ width: '100%', height, objectFit: 'contain', display: 'block' }} />;
+  return <HeroCake3D height={height} {...cakeProps} />;
+}
+function gradientCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, heroDesign, heroCakeH }) {
+  return (
+    <section style={s.gradHero}>
+      <div style={s.gradInner}>
+        <div style={s.gradText}>
+          <h1 style={s.gradTitle}>{txt('hero_tagline')}</h1>
+          <p style={s.gradSub}>{txt('hero_subtitle')}</p>
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.gradCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+            </button>
+          )}
+        </div>
+      </div>
+      {/* Big cake, anchored right and pushed off-edge so only ~half shows (section clips it).
+          Draggable to rotate; NO studio grid so it floats cleanly on the gradient. */}
+      <div style={s.gradMedia}>
+        <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={bp === 'desktop' ? 560 : wide ? 480 : heroCakeH(560, 400)} spin={0.4} drip dripColor={pal.drip} />
+      </div>
+    </section>
+  );
+}
+// The signature centred cake on a brand-tinted band with a wavy bottom (split on wide, stacked curve
+// on mobile). The 3D cake floats on the band (transparent canvas) inside the studio grid.
+function centeredCakeHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, pageBg, heroDesign, heroCakeH }) {
+  return wide ? (
+    <section style={s.curveHero}>
+      <div style={s.splitBand}>
+        <div style={s.splitInner}>
+          <div style={s.splitText}>
+            <h1 style={s.splitTitle}>{txt('hero_tagline')}</h1>
+            <p style={s.splitSub}>{txt('hero_subtitle')}</p>
+            {expired ? (
+              <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+            ) : (
+              <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+                style={{ ...s.splitCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                onClick={handleCta}>
+                {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+              </button>
+            )}
+          </div>
+          <div style={s.splitMedia}>
+            <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={heroCakeH(460, 380)} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+          </div>
+        </div>
+        <svg style={s.splitWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
+        </svg>
+      </div>
+    </section>
+  ) : (
+    <section style={s.curveHero}>
+      <div style={s.curveBand}>
+        <h1 style={s.curveTitle}>{txt('hero_tagline')}</h1>
+        {txt('hero_subtitle') && <p style={s.curveSub}>{txt('hero_subtitle')}</p>}
+        <div style={s.curveCake}>
+          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent} mood="light" height={heroCakeH(300, 300)} spin={0.4} grid gridColor={pal.grid} gridOpacity={pal.gridOpacity} drip dripColor={pal.drip} />
+        </div>
+        <svg style={s.curveWave} viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,30 C380,78 1060,-6 1440,46 L1440,70 L0,70 Z" fill={pageBg} />
+        </svg>
+      </div>
+      <div style={s.curveBody}>
+        {expired ? (
+          <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+        ) : (
+          <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+            style={{ ...s.curveCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+            onClick={handleCta}>
+            {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+// Full-bleed baker lifestyle photo with the tagline + CTA overlaid.
+// The CTA here carries `sf-cta` like the other three renderers do. That class is not only the hover
+// polish — it is where :focus-visible lives, so without it this hero's button had no visible
+// keyboard focus at all.
+function photoHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, heroImage }) {
+  return (
+    <section style={s.hero}>
+      <div style={{ ...s.heroCake, backgroundImage: `url(${heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }} aria-label={baker.name} />
+      <div style={s.heroScrim} />
+      <div style={s.heroFade} />
+      <div style={s.heroContent}>
+        <div><h1 style={s.heroEyebrow}>{txt('hero_tagline')}</h1></div>
+        <div style={s.heroBottom}>
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.heroCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+// The registry — template `hero.type` (or a baker photo) selects one. 'none' → no hero (just sections).
+/* ── Patisserie: the cake in a hand-drawn shop window ─────────────────────────────────────────────
+ *
+ * The tagline and CTA sit UNDER the drawing rather than over it. Text on top of an illustration
+ * means one of the two has to lose — either the words fight the linework for attention, or they get
+ * a scrim, which puts a grey rectangle over the thing the theme exists to show. Below it, both read.
+ *
+ * The shop's own strapline goes in the doily instead, which is the one place ornament is the point.
+ */
+function shopfrontHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, heroDesign, heroCakeH }) {
+  const compact = bp === 'mobile';
+  // Under the headline, always — the same place every other theme puts it. It used to go into a
+  // doily rosette when short enough; the rosette is gone (see heroes/Shopfront.jsx), and with it the
+  // rule that a baker's strapline rendered somewhere different depending on its length.
+  const sub = txt('hero_subtitle');
+  return (
+    <section style={s.shopHero}>
+      <div style={s.shopInner}>
+        <Shopfront
+          primary={pal.cake} accent={accent} paper={s.page.background}
+          // The hearts and blooms: the baker's OWN primary, deepened. `pal.cta` is the button fill
+          // (the same blush as the facade), so passing it painted hearts that vanished into the
+          // wall. Deepening the primary keeps the accent colour picker-derived and guarantees it
+          // harmonises with the shop whatever they choose — a mint bakery gets deep mint hearts.
+          cta={darken(pal.cake, 0.34)}
+          name={baker.name} compact={compact} />
 
-    utilbar:     { background: lighten(primary, 0.9), color: darken(primary, 0.1), fontSize: 13.5, fontWeight: 700, textAlign: 'center', padding: '9px 16px' },
-    utilLink:    { color: darken(primary, 0.1), textDecoration: 'none' },
-    header:      { position: 'sticky', top: 0, zIndex: 30, background: 'rgba(252,250,247,0.92)', backdropFilter: 'blur(8px)', borderBottom: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px' },
+        <div style={s.shopCopy}>
+          <h1 style={s.shopTitle}>{txt('hero_tagline')}</h1>
+          {sub && <p style={s.shopSub}>{sub}</p>}
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.shopCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Atelier: a masthead ──────────────────────────────────────────────────────────────────────────
+ *
+ * The first draft was a text column on the left and the cake on the right. That is Aurora's move
+ * with different fonts, and it is why the theme read as "the same page in a nicer typeface" — the
+ * hero is the first thing anyone sees and it was structurally identical to one we already ship.
+ *
+ * So the hero is now a MASTHEAD: the bakery's name set enormous across the full width, a hairline
+ * under it, and the cake rising THROUGH that line so the type sits in front of the object. Type and
+ * image occupying the same space is the oldest editorial move there is, and it is the one thing no
+ * ordinary page-builder does, because it requires the two to be composed together rather than
+ * stacked in boxes.
+ *
+ * ⚠️ The header's own wordmark is suppressed for this theme (`headerBrand: false`). With the name at
+ * 12vw immediately below it, the small one in the bar is not branding, it is a stutter.
+ *
+ * The masthead is the BAKER'S NAME, not the headline: at this size it has to be the one string that
+ * is always short enough to work, always theirs, and already the thing a customer arrived looking
+ * for. A tagline set at 12vw is a slogan shouted; a name set at 12vw is a shopfront.
+ */
+function atelierHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, bp, wide, heroDesign, heroCakeH }) {
+  return (
+    <section style={s.atHero}>
+      <div style={s.atMasthead}>
+        <span style={s.atName}>{baker.name}</span>
+      </div>
+      <div style={s.atStage}>
+        {/* The cake sits ON the rule, overlapping the name's baseline. */}
+        <div style={s.atCake}>
+          <HeroCakeMedia heroDesign={heroDesign} baker={baker} primary={pal.cake} accent={accent}
+            mood="light" height={heroCakeH(wide ? 400 : 240, 240)} spin={0.24} />
+        </div>
+        <div style={s.atRule} />
+      </div>
+      <div style={s.atBelow}>
+        <div style={s.atCol}>
+          {/* No kicker. There was one, set to the gallery's own heading — which then printed "OUR
+              CREATIONS" twice, a block apart, because that string is already the next section's
+              label. A running head that repeats the thing below it is not a running head. */}
+          <h1 style={s.atTitle}>{txt('hero_tagline')}</h1>
+        </div>
+        <div style={s.atCol}>
+          <p style={s.atSub}>{txt('hero_subtitle')}</p>
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.atCta, ...(notAcceptingOrders ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+              <span style={s.atArrow} aria-hidden="true">→</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const HERO_RENDERERS = {
+  'gradient-cake': gradientCakeHero,
+  'centered-cake': centeredCakeHero,
+  'photo':         photoHero,
+  'shopfront':     shopfrontHero,
+  'atelier':       atelierHero,
+  'none':          () => null,
+};
+
+function styles(primary, accent, tk, bp = 'mobile', pal) {
+  // Template design tokens (tk) supply the look; the baker's primary/accent overlay. FONT/SERIF
+  // shadow the module imports so the rest of styles() picks up the template's typography.
+  const FONT = tk.font, SERIF = tk.serif;
+  const ink = mix(primary, tk.inkMix.with, tk.inkMix.amount);  // soft warm-grey hero/footer
+  const { heading, text, muted, shadow } = tk;
+  const pageBg = tk.pageBgMode === 'heroTop' ? pal.heroTop : tk.pageBg;   // aurora: derived cream top surface
+  // Brand-derived colours all come from the shared palette (storefrontKit → buildPalette) — the
+  // single place to tune the tone-on-tone look. Aliased here so the style rules stay readable.
+  const bandStrong = pal.bandStrong;   // hero + header band
+  const cardBorder = pal.hairline;     // rose-tinted card / divider borders
+  const brandFont = tk.brandFont || tk.font;
+  // A template's DRAWN face, if it has one. Falls back to the body font, so every existing theme
+  // renders exactly as before and this stays a token rather than a branch.
+  const handFont = tk.handFont || tk.font;
+
+  // ── SHAPE ───────────────────────────────────────────────────────────────────────────────────
+  // Until now a theme could change colour and type and nothing else: 35 corner radii and every card
+  // background were hardcoded in here, out of reach of any token. That is why a new theme read as
+  // the old one in a different typeface — the hero was themed and the whole page below it was not.
+  //
+  // `radius` reshapes every card, tile and image; `cardStyle: 'flat'` drops the white fill and the
+  // shadow for a hairline. Rounded and shadowed reads APP; square and hairline reads PRINT, and that
+  // one distinction changes a page more than any palette.
+  //
+  // Both default to the designed values, so a template that sets neither renders exactly as before.
+  // Pills (999) are left alone: a pill is a shape decision, not a radius, and squaring buttons by
+  // accident is not what "no rounded cards" means.
+  const rad  = (n) => (tk.radius == null || n >= 999 ? n : tk.radius);
+  const flat = tk.cardStyle === 'flat';
+  const cardBg     = flat ? 'transparent' : '#fff';
+  const cardShadow = flat ? 'none' : shadow;
+
+  // ── ALIGNMENT ───────────────────────────────────────────────────────────────────────────────
+  // Every storefront centres everything — eyebrow, section title, captions, reviews — in every
+  // theme. Centred-everything is the single most "template" thing about these pages: it is what a
+  // page looks like when nobody decided, and no amount of new colour or type escapes it.
+  //
+  // `align: 'left'` moves the body copy to a hard left edge, which is what makes an editorial layout
+  // read as edited. Default is 'center', so every existing theme is untouched.
+  const alignLeft = tk.align === 'left';
+  const bodyAlign = alignLeft ? 'left' : 'center';
+  const bodyItems = alignLeft ? 'flex-start' : 'center';
+  const desktop = bp === 'desktop', wide = bp !== 'mobile';
+  // Responsive content width — a phone column on mobile, but USE the screen on bigger devices
+  // (the storefront is customer-facing; it must not be a skinny strip on desktop).
+  const cw = desktop ? 1040 : wide ? 760 : tk.contentWidth;
+  // Aurora gradient-hero layout knobs (config-driven, per breakpoint: [mobile, tablet, desktop]).
+  const hero = tk.hero || {};
+  const hIdx = desktop ? 2 : wide ? 1 : 0;
+  const hPick = (a, d) => (Array.isArray(a) ? a[hIdx] : a) ?? d;
+  return {
+    page:        { minHeight: '100vh', background: pageBg, fontFamily: FONT, color: text, display: 'flex', flexDirection: 'column' },
+
+    utilbar:     { background: tk.utilbarBg ?? lighten(primary, 0.9), color: darken(primary, 0.1), fontSize: 13.5, fontWeight: 700, textAlign: 'center', padding: '9px 16px' },
+    // nowrap for the same reason the footer link has it: a line break is allowed between an inline
+    // icon and the text after it, and the icon alone on its own line is exactly the bug this bar
+    // just had. Now that the icon sits INSIDE the link, the whole thing is also one tap target.
+    utilLink:    { color: darken(primary, 0.1), textDecoration: 'none', whiteSpace: 'nowrap' },
+    header:      { position: tk.headerBg === 'transparent' ? 'relative' : 'sticky', top: 0, zIndex: 30, background: tk.headerBg ?? 'rgba(252,250,247,0.92)', backdropFilter: tk.headerBg === 'transparent' ? 'none' : 'blur(8px)', borderBottom: `1px solid ${tk.headerBorderColor ?? cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px' },
     brand:       { display: 'flex', alignItems: 'center', gap: 10 },
-    logoImg:     { height: 30, width: 'auto', maxWidth: 210, objectFit: 'contain', display: 'block' },
+    logoImg:     { height: wide ? 52 : 44, width: 'auto', maxWidth: wide ? 300 : 240, objectFit: 'contain', display: 'block' },
     logo:        { width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accent}`, background: '#fff' },
-    logoFallback:{ width: 38, height: 38, borderRadius: '50%', background: primary, color: onColor(primary), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 },
-    brandName:   { fontSize: 18, fontWeight: 700, color: heading },
-    burger:      { width: 42, height: 42, borderRadius: 10, border: `1px solid ${cardBorder}`, background: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 4 },
+    logoFallback:{ width: 38, height: 38, borderRadius: '50%', background: pal.cta, color: pal.onCta, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 },
+    // `brandMark: 'caps'` sets the name as a HOUSE mark — heavy sans, uppercase, wide tracking, the
+    // way a fashion label sets its name — instead of a script wordmark. It is one token and it is
+    // most of the distance between Atelier and every other theme here: script reads handmade, caps
+    // read house. Absent → unchanged, so the existing themes keep their script exactly.
+    brandName:   { fontFamily: brandFont, fontSize: wide ? 30 : 26, fontWeight: 400, color: heading, lineHeight: 1,
+                   ...(tk.brandMark === 'caps'
+                     ? { textTransform: 'uppercase', fontWeight: 800, letterSpacing: wide ? 4.5 : 3,
+                         fontSize: wide ? 21 : 17 }
+                     : {}) },
+    navRow:      { display: 'flex', alignItems: 'center', gap: 28 },
+    navItem:     { fontSize: 14.5, fontWeight: 600, color: heading, textDecoration: 'none', cursor: 'pointer', fontFamily: FONT, letterSpacing: 0.2 },
+    navItemBtn:  { background: 'none', border: 'none', padding: 0 },
+    burger:      { width: 42, height: 42, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 4, padding: 0 },
     burgerLine:  { width: 18, height: 2, borderRadius: 2, background: heading },
 
     drawerOverlay:{ position: 'fixed', inset: 0, background: 'rgba(20,14,16,0.4)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' },
@@ -473,13 +1219,13 @@ function styles(primary, accent) {
     drawerClose: { position: 'absolute', top: 14, right: 18, fontSize: 30, lineHeight: 1, background: 'none', border: 'none', color: muted, cursor: 'pointer' },
     drawerLink:  { padding: '14px 4px', fontSize: 17, fontWeight: 700, color: heading, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` },
     drawerLinkBtn:{ background: 'none', border: 'none', borderBottom: `1px solid ${cardBorder}`, textAlign: 'left', cursor: 'pointer', fontFamily: FONT, width: '100%' },
-    drawerCta:   { marginTop: 20, padding: '14px', borderRadius: 12, border: 'none', background: primary, color: onColor(primary), fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: FONT },
+    drawerCta:   { marginTop: 20, padding: '14px', borderRadius: 12, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: FONT },
 
     hero:        { position: 'relative', width: '100%', height: '50vh', minHeight: 380, maxHeight: 480, background: `linear-gradient(180deg, ${lighten(ink, 0.06)}, ${ink})`, overflow: 'hidden' },
     heroCake:    { position: 'absolute', inset: 0 },
     heroScrim:   { position: 'absolute', inset: 0, background: `linear-gradient(180deg, ${alpha(ink, 0.82)} 0%, ${alpha(ink, 0.32)} 24%, transparent 44%, ${alpha(ink, 0.4)} 64%, transparent 84%)`, pointerEvents: 'none' },
     // Dissolve the dark hero into the page colour at the seam — no hard edge.
-    heroFade:    { position: 'absolute', left: 0, right: 0, bottom: 0, height: '46%', background: `linear-gradient(180deg, transparent 0%, ${alpha('#FCFAF7', 0.0)} 8%, #FCFAF7 100%)`, zIndex: 1, pointerEvents: 'none' },
+    heroFade:    { position: 'absolute', left: 0, right: 0, bottom: 0, height: '46%', background: `linear-gradient(180deg, transparent 0%, ${alpha(pageBg, 0.0)} 8%, ${pageBg} 100%)`, zIndex: 1, pointerEvents: 'none' },
     // pointerEvents none so drags pass through to the 3D canvas; the CTA re-enables itself.
     heroContent: { position: 'relative', zIndex: 2, height: '100%', maxWidth: cw, margin: '0 auto', padding: '54px 24px 30px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'center', alignItems: 'center', color: '#fff', pointerEvents: 'none' },
     heroEyebrow: { fontSize: 12.5, fontWeight: 600, letterSpacing: 2.4, textTransform: 'uppercase', color: lighten(accent, 0.1), margin: 0, lineHeight: 1.5, textShadow: '0 2px 14px rgba(0,0,0,0.3)' },
@@ -489,20 +1235,146 @@ function styles(primary, accent) {
     expired:     { fontSize: 14, fontWeight: 700, color: '#fff', background: 'rgba(192,57,43,0.9)', padding: '12px 18px', borderRadius: 12 },
     heroHint:    { fontSize: 12.5, fontWeight: 600, color: alpha('#ffffff', 0.82), marginTop: 14, maxWidth: 320 },
 
+    // Photo hero — the baker's featured creation FRAMED beside the tagline/CTA (not a full-bleed
+    // crop). Light, contained, responsive: side-by-side on desktop, photo-over-text on mobile.
+    photoHero:      { background: pageBg, padding: wide ? '40px 24px 6px' : '24px 20px 6px' },
+    photoHeroInner: { maxWidth: cw, margin: '0 auto', display: 'flex', flexDirection: desktop ? 'row' : 'column-reverse', alignItems: 'center', gap: desktop ? 48 : 26 },
+    photoHeroText:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 22, alignItems: desktop ? 'flex-start' : 'center', textAlign: desktop ? 'left' : 'center' },
+    photoHeroTitle: { fontFamily: SERIF, fontSize: wide ? 30 : 23, fontWeight: 600, color: heading, margin: 0, lineHeight: 1.25, letterSpacing: 0.2 },
+    photoHeroCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    photoHeroMedia: { width: '100%', maxWidth: 480 },
+    photoHeroImg:   { width: '100%', aspectRatio: desktop ? '4 / 5' : '4 / 3', objectFit: 'cover', borderRadius: 22, boxShadow: shadow, display: 'block', border: `1px solid ${cardBorder}` },
+
+    // Curved-band hero (Honeybear-style): a brand-tinted top band with a wavy SVG bottom edge,
+    // headline on the colour, featured cake pulled up over the curve. (Colours = brand tint for
+    // now; baker colour controls come later.)
+    // ── Atelier hero: the masthead ────────────────────────────────────────────────────────────
+    atHero:   { background: pageBg, overflow: 'hidden', paddingTop: wide ? 18 : 10 },
+    // Same measure as the body (`cw`), NOT the viewport. A masthead that bleeds edge to edge looks
+    // striking on its own and breaks the page: everything below it lives in the content column, so
+    // the hero's left edge and every heading under it would disagree by about 150px. One left edge
+    // running the length of the page is the editorial signal; full-bleed type is just big type.
+    atMasthead: { padding: wide ? '0 24px' : '0 16px', maxWidth: cw, margin: '0 auto' },
+    // Sized in vw so it always FILLS the measure, which is what a masthead does — a fixed px size
+    // would leave a short name floating and clip a long one.
+    atName:   {
+      display: 'block', fontFamily: FONT, fontWeight: 800, color: heading,
+      textTransform: 'uppercase', letterSpacing: wide ? '0.02em' : '0.01em',
+      fontSize: wide ? 'clamp(40px, 7.4vw, 116px)' : 'clamp(28px, 11vw, 56px)',
+      lineHeight: 0.92, wordBreak: 'break-word',
+    },
+    atStage:  { position: 'relative', maxWidth: cw, margin: '0 auto', padding: wide ? '0 24px' : '0 16px' },
+    // The cake overlaps the masthead's baseline: negative margin pulls it up INTO the name.
+    atCake:   { position: 'relative', zIndex: 1, marginTop: wide ? -34 : -16, display: 'flex', justifyContent: 'center' },
+    // The rule crosses BEHIND the cake, so the two share the same space rather than stacking.
+    atRule:   { position: 'absolute', left: wide ? 24 : 16, right: wide ? 24 : 16, bottom: wide ? 54 : 34, height: 1, background: heading, opacity: 0.9, zIndex: 0 },
+    atBelow:  {
+      maxWidth: cw, margin: '0 auto', padding: wide ? '26px 24px 44px' : '18px 16px 28px',
+      display: 'flex', gap: wide ? 48 : 18, alignItems: 'flex-start',
+      flexDirection: wide ? 'row' : 'column',
+    },
+    atCol:    { flex: 1, minWidth: 0 },
+    atTitle:  { fontFamily: SERIF, fontWeight: 500, color: heading, letterSpacing: -0.3,
+                fontSize: desktop ? 44 : wide ? 36 : 27, lineHeight: 1.08, margin: 0 },
+    atSub:    { fontFamily: FONT, color: text, fontSize: wide ? 14.5 : 13.5, lineHeight: 1.8, margin: '0 0 22px', maxWidth: 460 },
+    atCta:    {
+      display: 'inline-flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
+      borderBottom: `1px solid ${heading}`, borderRadius: 0, padding: '0 0 7px', cursor: 'pointer',
+      fontFamily: FONT, fontSize: wide ? 13 : 12.5, fontWeight: 700, letterSpacing: 1.6,
+      textTransform: 'uppercase', color: heading,
+    },
+    atArrow:  { fontSize: 15, lineHeight: 1 },
+
+    // ── Patisserie hero ───────────────────────────────────────────────────────────────────────
+    // No band, no tint: the drawing sits on the page's own paper, because a coloured hero block
+    // behind a watercolour wash reads as two backgrounds arguing.
+    shopHero:   { background: pageBg, paddingTop: wide ? 8 : 4 },
+    shopInner:  { maxWidth: 1040, margin: '0 auto', padding: wide ? '0 24px 8px' : '0 12px 4px' },
+    shopCopy:   { textAlign: 'center', padding: wide ? '4px 16px 34px' : '10px 12px 26px' },
+    shopSub:    {
+      fontFamily: FONT, color: muted, fontSize: wide ? 15.5 : 14.5, lineHeight: 1.6,
+      maxWidth: 560, margin: '0 auto 18px',
+    },
+    shopTitle:  {
+      fontFamily: SERIF, fontWeight: 600, color: heading,
+      fontSize: desktop ? 40 : wide ? 34 : 25, lineHeight: 1.15, margin: '0 0 16px',
+      letterSpacing: 0.2,
+    },
+    shopCta:    {
+      background: pal.cta, color: pal.onCta, border: 'none', borderRadius: 999,
+      // The serif, letter-spaced, at the size a serif needs to hold its own. A geometric sans on
+      // this button was the last thing on the page that looked like software.
+      padding: wide ? '15px 36px' : '13px 28px', fontSize: wide ? 17.5 : 16, fontWeight: 700,
+      fontFamily: handFont, cursor: 'pointer', letterSpacing: 0.2,
+      boxShadow: '0 10px 24px rgba(70,60,66,0.14)',
+    },
+    curveHero:  { background: pageBg },
+    curveBand:  { position: 'relative', background: bandStrong, padding: wide ? '54px 24px 80px' : '40px 22px 66px', textAlign: 'center' },
+    curveTitle: { fontFamily: SERIF, fontSize: wide ? 34 : 26, fontWeight: 700, color: pal.heroText, margin: '0 auto', lineHeight: 1.2, letterSpacing: 0.2, maxWidth: 560, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
+    curveSub:   { fontSize: 15, fontWeight: 600, color: alpha(pal.heroText, 0.96), margin: '10px auto 0', lineHeight: 1.55, maxWidth: 440, textAlign: 'center' },
+    curveWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: wide ? 70 : 48, display: 'block' },
+    curveBody:  { maxWidth: cw, margin: '0 auto', padding: '18px 22px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 },
+    curveCake:  { width: '100%', maxWidth: 340, margin: '4px auto -6px' },
+    curveImg:   { width: '100%', maxWidth: wide ? 460 : 360, aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 20, boxShadow: shadow, border: `1px solid ${cardBorder}`, marginTop: wide ? -50 : -38, background: '#fff' },
+    curveCta:   { padding: '15px 34px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+
+    // Split hero (tablet/desktop variant of the curved-band hero): message + CTA on the left, one
+    // large featured cake on the right, all sitting on the brand-tinted band with the signature wavy
+    // bottom. Fills the width and gives a single strong focal cake. Mobile keeps the stacked curve.
+    splitBand:  { position: 'relative', background: bandStrong },
+    splitInner: { position: 'relative', zIndex: 2, maxWidth: cw, margin: '0 auto', padding: desktop ? '68px 24px 104px' : '54px 24px 92px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: desktop ? 56 : 40 },
+    splitText:  { flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 22 },
+    splitTitle: { fontFamily: SERIF, fontSize: desktop ? 46 : 36, fontWeight: 700, color: pal.heroText, margin: 0, lineHeight: 1.08, letterSpacing: 0.2, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },
+    splitSub:   { fontSize: desktop ? 18 : 16, fontWeight: 600, color: alpha(pal.heroText, 0.96), margin: 0, lineHeight: 1.6, maxWidth: 460 },
+    splitCta:   { padding: '16px 38px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 16.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    splitMedia: { flex: '0 0 auto', width: desktop ? 440 : 340 },
+    splitImg:   { width: '100%', aspectRatio: '4 / 5', objectFit: 'cover', borderRadius: 26, boxShadow: shadow, border: `1px solid ${cardBorder}`, background: '#fff', display: 'block' },
+    splitWave:  { position: 'absolute', left: 0, bottom: -1, width: '100%', height: desktop ? 72 : 56, display: 'block', zIndex: 1 },
+
+    // Aurora GRADIENT hero: a soft warm cream wash (tk.heroGradient). The message + CTA sit in a
+    // contained LEFT column; one BIG rotating chocolate cake is anchored to the section's right and
+    // pushed off-edge so only ~half shows (the section clips it). Bold + distinct vs the Standard
+    // band/wave. The section is the positioning context; the cake bleeds past the screen edge.
+    // Content flows from near the TOP (not vertically centred) so the headline sits high, clear of
+    // the cake. gradInner is click-through (pointerEvents:none) so the cake behind stays draggable;
+    // gradText re-enables events for the CTA. The headline is sized to keep the default tagline on
+    // one line at each breakpoint.
+    gradHero:  { position: 'relative', overflow: 'hidden', background: pal.heroGradient || pageBg, minHeight: hPick(hero.minHeight, desktop ? 540 : wide ? 460 : 400), padding: wide ? '0 24px' : '0 20px', boxSizing: 'border-box' },
+    gradInner: { position: 'relative', zIndex: 2, width: '100%', maxWidth: cw, margin: '0 auto', paddingTop: wide ? 72 : 42, paddingBottom: wide ? 56 : 32, pointerEvents: 'none' },
+    // width = the message column (config); the headline fills it (one line), the subtitle is capped
+    // narrower (config) so it stays LEFT of the cake, never overlapping it.
+    gradText:  { pointerEvents: 'auto', width: hPick(hero.textWidth, wide ? '58%' : '90%'), maxWidth: 560, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 20 },
+    // Headline/subtitle colour = pal.heroInk (the Hero-text picker, else dark on the light gradient).
+    gradTitle: { fontFamily: SERIF, fontSize: desktop ? 46 : wide ? 36 : 26, fontWeight: 800, color: pal.heroInk, margin: 0, lineHeight: 1.08, letterSpacing: -0.5 },
+    gradSub:   { fontSize: desktop ? 17 : 15, fontWeight: 600, color: alpha(pal.heroInk, 0.82), margin: 0, lineHeight: 1.5, maxWidth: hPick(hero.subMaxWidth, 300) },
+    // Button bg = the brand (pal.cta); label ADAPTS to it (readable on any picked colour).
+    gradCta:   { padding: wide ? '16px 40px' : '13px 26px', borderRadius: 40, border: 'none', background: pal.cta, color: onColor(pal.cta), fontSize: wide ? 16.5 : 15, fontWeight: 800, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
+    // Anchored to the section's right and pushed off-screen (config negative right) → ~half shows.
+    // Interactive (draggable to rotate) — the click-through gradInner keeps it reachable.
+    gradMedia: { position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: hPick(hero.cakeRight, desktop ? -150 : wide ? -130 : -120), width: hPick(hero.cakeWidth, desktop ? 640 : wide ? 540 : 430), zIndex: 1 },
+
     main:        { maxWidth: cw, width: '100%', margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' },
-    section:     { padding: '46px 0 6px' },
-    eyebrow:     { fontSize: 11.5, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: primary, marginBottom: 12, textAlign: 'center' },
-    sectionTitle:{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: heading, margin: '0 0 22px', textAlign: 'center', lineHeight: 1.3 },
+    section:     { padding: wide ? '66px 0 8px' : '46px 0 6px' },
+    eyebrow:     { fontFamily: handFont, fontSize: 11.5, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: primary, marginBottom: 12, textAlign: bodyAlign },
+    sectionTitle:{ fontFamily: SERIF, fontSize: 20, fontWeight: 600, color: heading, margin: '0 0 22px', textAlign: bodyAlign, lineHeight: 1.3 },
 
     steps:       { display: 'grid', gap: 12 },
-    stepCard:    { display: 'flex', gap: 16, alignItems: 'flex-start', background: '#fff', border: `1px solid ${cardBorder}`, boxShadow: shadow, borderRadius: 16, padding: '20px 20px' },
+    stepCard:    { display: 'flex', gap: 16, alignItems: 'flex-start', background: cardBg, border: `1px solid ${cardBorder}`, boxShadow: cardShadow, borderRadius: rad(16), padding: '20px 20px' },
     stepNum:     { fontSize: 26, fontWeight: 700, color: primary, lineHeight: 1, flexShrink: 0 },
     stepTitle:   { fontSize: 16.5, fontWeight: 700, color: heading, marginBottom: 5 },
     stepBody:    { fontSize: 14, fontWeight: 500, lineHeight: 1.55, color: muted, margin: 0 },
 
+    // Highlight — baker-set featured band: TITLE (heading) → blurb → image below, centred.
+    highlightText:  { display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', textAlign: 'center', maxWidth: 560, margin: '0 auto' },
+    highlightTitle: { fontFamily: SERIF, fontSize: wide ? 28 : 23, fontWeight: 700, color: heading, margin: 0, lineHeight: 1.2 },
+    highlightMedia: { width: '100%', maxWidth: wide ? 460 : 360, margin: '20px auto 0' },
+    highlightImg:   { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: rad(18), boxShadow: cardShadow, border: flat ? 'none' : `1px solid ${cardBorder}`, display: 'block' },
+    highlightBlurb: { fontSize: 15.5, fontWeight: 500, lineHeight: 1.65, color: text, margin: 0 },
+
     // Our story
-    storyWrap:   { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', maxWidth: 460, margin: '0 auto' },
-    portraitWrap:{ position: 'relative', width: 116, height: 116, marginBottom: 20 },
+    storyWrap:   { display: 'flex', flexDirection: desktop ? 'row' : 'column', alignItems: 'center', textAlign: desktop ? 'left' : 'center', gap: desktop ? 40 : 0, maxWidth: desktop ? 820 : 460, margin: '0 auto' },
+    storyText:   { flex: 1 },
+    portraitWrap:{ position: 'relative', width: 116, height: 116, marginBottom: desktop ? 0 : 20, flexShrink: 0 },
     portrait:    { width: 116, height: 116, borderRadius: '50%', background: `linear-gradient(135deg, ${lighten(primary, 0.35)}, ${lighten(accent, 0.1)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: shadow, border: '4px solid #fff', boxSizing: 'border-box' },
     portraitBadge:{ position: 'absolute', bottom: 0, right: 0, width: 34, height: 34, borderRadius: '50%', background: primary, border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.2)' },
     portraitHint:{ fontSize: 12.5, fontWeight: 700, color: primary, margin: '-8px 0 16px' },
@@ -519,18 +1391,34 @@ function styles(primary, accent) {
     howStep:     { display: 'flex', gap: 14, alignItems: 'flex-start' },
 
     // Gallery slideshow
-    gSlide:      { aspectRatio: '4 / 3', borderRadius: 18, overflow: 'hidden', boxShadow: shadow, background: '#fff', border: `1px solid ${cardBorder}` },
+    gSlide:      { aspectRatio: '4 / 3', borderRadius: rad(18), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
     gImg:        { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: 'center' },
-    gFallback:   { aspectRatio: '4 / 3', borderRadius: 18, boxShadow: shadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: '#fff', textAlign: 'center', padding: 20 },
+    gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: bodyAlign },
+    // Breaks OUT of the content column: 100vw pulled back by half the difference. The section's own
+    // padding still holds the captions in, so only the images go edge to edge.
+    gBleed:      { width: '100vw', marginLeft: 'calc(50% - 50vw)', display: 'grid',
+                   gridTemplateColumns: wide ? '1fr 1fr' : '1fr', gap: 2 },
+    gBleedItem:  { margin: 0, position: 'relative' },
+    gBleedImg:   { width: '100%', aspectRatio: wide ? '4 / 5' : '4 / 3', objectFit: 'cover', display: 'block' },
+    // Caps, tracked, tucked under the image on the left. A centred sentence-case caption is the
+    // house style everywhere else on the page; this is the same information set as a print credit.
+    gBleedCap:   { fontFamily: FONT, fontSize: 10.5, fontWeight: 700, letterSpacing: 1.6,
+                   textTransform: 'uppercase', color: muted, padding: '10px 16px 0' },
+    galleryWrap:   { position: 'relative', maxWidth: wide ? 760 : '100%', margin: '0 auto' },
+    galleryScroll: { display: 'flex', gap: wide ? 14 : 8, overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none', width: '100%', paddingBottom: 2 },
+    galleryItem:   { flex: `0 0 calc((100% - ${wide ? 28 : 16}px) / 3)`, minWidth: 0, scrollSnapAlign: 'start', margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+    gGridFig:    { margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+    gGridCard:   { aspectRatio: '4 / 3', borderRadius: rad(16), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
+    gGridCap:    { fontSize: 13, fontWeight: 600, color: muted, textAlign: bodyAlign },
+    gFallback:   { aspectRatio: '4 / 3', borderRadius: rad(18), boxShadow: cardShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: '#fff', textAlign: 'center', padding: 20 },
     gFallbackText:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: '#fff' },
     gFallbackCta:{ padding: '11px 24px', borderRadius: 12, border: `1.5px solid ${alpha('#ffffff', 0.7)}`, background: alpha('#ffffff', 0.12), color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, backdropFilter: 'blur(4px)' },
 
     carousel:    { position: 'relative' },
-    testiCard:   { background: '#fff', border: `1px solid ${cardBorder}`, boxShadow: shadow, borderRadius: 18, padding: '26px 46px', margin: 0, minHeight: 150, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
-    stars:       { color: accent, fontSize: 16, letterSpacing: 2, marginBottom: 12, textAlign: 'center' },
-    quote:       { fontSize: 15.5, fontWeight: 500, lineHeight: 1.6, color: text, margin: '0 0 16px', textAlign: 'center' },
-    author:      { fontSize: 14, fontWeight: 700, color: heading, textAlign: 'center' },
+    testiCard:   { background: cardBg, border: flat ? `1px solid ${cardBorder}` : `1px solid ${cardBorder}`, boxShadow: cardShadow, borderRadius: rad(18), padding: '26px 46px', margin: 0, minHeight: 150, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
+    stars:       { color: accent, fontSize: 16, letterSpacing: 2, marginBottom: 12, textAlign: bodyAlign },
+    quote:       { fontSize: 15.5, fontWeight: 500, lineHeight: 1.6, color: text, margin: '0 0 16px', textAlign: bodyAlign },
+    author:      { fontSize: 14, fontWeight: 700, color: heading, textAlign: bodyAlign },
     authorOcc:   { fontWeight: 600, color: muted },
     arrow:       { width: 38, height: 38, borderRadius: '50%', border: `1px solid ${cardBorder}`, background: '#fff', color: primary, fontSize: 22, fontWeight: 700, lineHeight: 1, cursor: 'pointer', boxShadow: shadow, position: 'absolute', top: '50%', transform: 'translateY(-50%)', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 },
     arrowL:      { left: -8 },
@@ -542,23 +1430,27 @@ function styles(primary, accent) {
     footer:      { marginTop: 40, padding: '16px 24px', background: ink, color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' },
     footerName:  { fontSize: 18, fontWeight: 700, color: '#fff' },
     footerLinks: { display: 'flex', gap: 18, marginTop: 2 },
-    footerLink:  { fontSize: 14, fontWeight: 700, color: lighten(accent, 0.1), textDecoration: 'none' },
+    // nowrap keeps the phone icon glued to the number: a line break is allowed between an inline
+    // icon and the text after it, and at 320px this one took it — the icon alone on its own line,
+    // the same look as the utility bar's bug from a different cause. A phone number is one thing
+    // and should break as one.
+    footerLink:  { fontSize: 14, fontWeight: 700, color: lighten(accent, 0.1), textDecoration: 'none', whiteSpace: 'nowrap' },
     madeWith:    { fontSize: 12, fontWeight: 700, color: alpha('#ffffff', 0.5), letterSpacing: 0.4, marginTop: 10 },
   };
 }
 
-function welcomeStyles(primary, accent) {
+function welcomeStyles(primary, accent, pal) {
   const heading = mix(primary, '#2b2228', 0.42);
   const muted   = mix(primary, '#8d878a', 0.5);
   return {
     overlay:  { position: 'fixed', inset: 0, zIndex: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 22, background: 'rgba(28,20,24,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' },
     card:     { width: '100%', maxWidth: 384, boxSizing: 'border-box', background: '#FFFDFB', borderRadius: 24, padding: '34px 26px 22px', textAlign: 'center', boxShadow: '0 24px 70px rgba(0,0,0,0.34)', fontFamily: FONT },
-    eyebrow:  { fontSize: 11.5, fontWeight: 700, letterSpacing: 2.5, textTransform: 'uppercase', color: primary, marginBottom: 12 },
+    eyebrow:  { fontFamily: handFont, fontSize: 11.5, fontWeight: 700, letterSpacing: 2.5, textTransform: 'uppercase', color: primary, marginBottom: 12 },
     logo:     { maxHeight: 38, maxWidth: 210, objectFit: 'contain', display: 'block', margin: '0 auto 8px' },
     bakerName:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: heading, marginBottom: 6 },
     title:    { fontFamily: SERIF, fontSize: 27, fontWeight: 600, color: heading, lineHeight: 1.18, margin: '4px 0 12px' },
     sub:      { fontSize: 14.5, lineHeight: 1.55, color: muted, margin: '0 2px 24px' },
-    start:    { width: '100%', boxSizing: 'border-box', padding: '15px', borderRadius: 14, border: 'none', background: primary, color: onColor(primary), fontFamily: FONT, fontSize: 16, fontWeight: 800, cursor: 'pointer', boxShadow: `0 8px 22px ${alpha(primary, 0.38)}` },
+    start:    { width: '100%', boxSizing: 'border-box', padding: '15px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontFamily: FONT, fontSize: 16, fontWeight: 800, cursor: 'pointer', boxShadow: `0 8px 22px ${alpha(primary, 0.38)}` },
   };
 }
 

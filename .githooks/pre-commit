@@ -1,0 +1,16 @@
+#!/bin/sh
+# Tracked hook - activated by `git config core.hooksPath .githooks` (npm run prepare),
+# so it follows a clone to any machine. Bypass everything: git commit --no-verify
+#
+#   1. Secret scan on STAGED changes - the earliest catch, before a secret enters
+#      history. Config: .gitleaks.toml.
+#   2. Designer quality gate (src/designer/INVARIANTS.md): check:paths (no per-type
+#      render branches), fonts, duplication, and the placement contract tests.
+. "$(git rev-parse --show-toplevel)/.githooks/_lib.sh"
+
+secret_scan_staged || exit 1
+
+npm run verify || {
+  printf '\nx Commit blocked: quality gate failed (see above). Bypass: git commit --no-verify\n'
+  exit 1
+}

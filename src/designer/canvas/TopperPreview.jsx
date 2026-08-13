@@ -3,10 +3,12 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, useGLTF, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { rectSidePlacement } from '../geometry/surface.js';
-import { SIDE_STICKER_SURFACE_OFFSET, STICKER_SIZE } from '../constants.js';
+import { STICKER_SIZE } from '../constants.js';
+import { sideSeatOffset } from '../placement.js';
 import { buildPreviewTiers, PreviewCakeMeshes } from './previewCake.jsx';
 import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { SceneLoader } from './CakeSpinner.jsx';
+import { corsUrl } from '../utils/assetUrl.js';
 
 const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
 
@@ -19,7 +21,7 @@ const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
 // flips it across X (matches placePattern + StickerFace), and `r` sizes it to the real part size
 // instead of the cake-filling hero scale.
 function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, offset }) {
-  const { scene } = useGLTF(glbUrl);
+  const { scene } = useGLTF(corsUrl(glbUrl));
   const { clonedScene, box } = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);
@@ -44,7 +46,7 @@ function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, 
     );
 
     if (placement === 'side') {
-      const off = SIDE_STICKER_SURFACE_OFFSET;
+      const off = sideSeatOffset(bottom.radius);
       const yMid = bottom.baseY + bottom.height / 2;
       let x = 0, z = bottom.radius + off, yaw = 0;
       if (bottom.shp.kind === 'rect') {
@@ -75,14 +77,29 @@ function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, 
 
 // 2D-image decor preview — a textured plane standing on the top surface or mounted flat on
 // the side wall (for elements whose asset is a PNG rather than a GLB, e.g. some top&side decor).
-function PreviewImage({ url, placement, target, bottom }) {
-  const tex = useTexture(url);
+function PreviewImage({ url, placement, mode, target, bottom, r = null }) {
+  // corsUrl, or this silently renders NOTHING. R2 answers an Origin-less request with no
+  // Access-Control-Allow-Origin and no Vary — and the very panel that mounts this preview has just
+  // shown the same picture as a plain <img>, poisoning the cache with exactly that response. WebGL then
+  // asks for it CORS-clean, gets the cached copy, and is blocked. The cake renders, the artwork does
+  // not, and the baker is asked to choose between two tiles that show him nothing. (assetUrl.js.)
+  const tex = useTexture(corsUrl(url));
   const aspect = tex.image ? tex.image.width / tex.image.height : 1;
-  const w = bottom.radius * 1.15;
-  const h = w / (aspect || 1);
+  // With an `r` (the placement scale the baker is choosing), size the plane so its LONGEST side is
+  // STICKER_SIZE × r — the exact world size the real sticker renderer gives it — so the tile shows how
+  // big it actually lands on the cake. Without `r` (other callers), keep the cake-filling hero preview.
+  let w, h;
+  if (r != null) {
+    const longest = STICKER_SIZE * r;
+    if ((aspect || 1) >= 1) { w = longest; h = longest / (aspect || 1); }
+    else                    { h = longest; w = longest * (aspect || 1); }
+  } else {
+    w = bottom.radius * 1.15;
+    h = w / (aspect || 1);
+  }
 
   if (placement === 'side') {
-    const off = SIDE_STICKER_SURFACE_OFFSET;
+    const off = sideSeatOffset(bottom.radius);
     const yMid = bottom.baseY + bottom.height / 2;
     let x = 0, z = bottom.radius + off, yaw = 0;
     if (bottom.shp.kind === 'rect') {
@@ -96,9 +113,19 @@ function PreviewImage({ url, placement, target, bottom }) {
       </mesh>
     );
   }
-  // 'top' — standing upright, centred on the top surface.
+  // 'top' — mode-driven, exactly as the GLB path and the real renderer do it: 'stand' = upright on the
+  // surface; anything else (hug) = laid FLAT on it. A preview that always stands the image up would lie
+  // about a hugging decoration, and the tile exists precisely so the baker does not have to guess.
+  if (mode === 'stand') {
+    return (
+      <mesh position={[0, target.topY + h / 2, 0]}>
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial map={tex} transparent alphaTest={0.05} side={THREE.DoubleSide} />
+      </mesh>
+    );
+  }
   return (
-    <mesh position={[0, target.topY + h / 2, 0]}>
+    <mesh position={[0, target.topY + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[w, h]} />
       <meshBasicMaterial map={tex} transparent alphaTest={0.05} side={THREE.DoubleSide} />
     </mesh>
@@ -109,7 +136,7 @@ function PreviewDecor(props) {
   return isGlbUrl(props.glbUrl) ? <PreviewTopper {...props} /> : <PreviewImage url={props.glbUrl} {...props} />;
 }
 
-export default function TopperPreview({ glbUrl, parts = null, placement = 'top', mode = null, tiers = null, tierIndex = 0, baseRotation = null }) {
+export default function TopperPreview({ glbUrl, parts = null, placement = 'top', mode = null, tiers = null, tierIndex = 0, baseRotation = null, r = null }) {
   const { placed, totalH } = useMemo(() => buildPreviewTiers(tiers), [tiers]);
 
   const target = placed[Math.min(tierIndex, placed.length - 1)] ?? placed[0];
@@ -147,7 +174,7 @@ export default function TopperPreview({ glbUrl, parts = null, placement = 'top',
             ? parts.map((pt, i) => (
                 <PreviewDecor key={i} glbUrl={pt.glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={pt.baseRotation} offset={pt} />
               ))
-            : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={baseRotation} />)}
+            : (glbUrl && <PreviewDecor glbUrl={glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={baseRotation} r={r} />)}
         </TextureErrorBoundary>
       </Suspense>
       <OrbitControls

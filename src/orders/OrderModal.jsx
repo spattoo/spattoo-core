@@ -1,4 +1,24 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNarrow } from '../shared/useNarrow.js';
+import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
+import { ACCEPT_IMAGE, validateImageFile, compressImage } from '../shared/image.js';
+import { useUploadLimits } from '../shared/useUploadLimits.js';
+import { isValidEmail } from '../shared/validators.js';
+import { Panel, PANEL } from '../shared/Panel.jsx';
+import { uploadThumbnail } from '../designer/utils/thumbnail.js';
+import {
+  findFlavourConflicts, conflictSentence, conflictCallToAction, dietTone,
+  visibleRequirements, unguaranteedRequirements, unguaranteedSentence,
+} from './dietary.js';
+import Chip from '../shared/Chip.jsx';
+// The SAME occasion list the storefront offers — they write the same column, and a baker
+// picking from a different set than their customer is how `other` quietly swallows half the data.
+// occasionsByRelevance only RANKS that list against the recipient; it never shortens it, so both
+// surfaces still offer every occasion.
+import { RECIPIENTS, occasionsByRelevance, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
+
+// Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
+const MAX_REFERENCE_PHOTOS = 3;
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
@@ -109,16 +129,6 @@ function CheckIcon({ size = 13 }) {
   );
 }
 
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 600);
-  useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 600);
-    window.addEventListener('resize', fn);
-    return () => window.removeEventListener('resize', fn);
-  }, []);
-  return mobile;
-}
-
 function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onSubmit, brandBtn }) {
   const [comment, setComment] = useState('');
   const canSubmit = comment.trim().length > 0 && !submitting;
@@ -169,6 +179,70 @@ function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onS
   );
 }
 
+// Reference-photo picker for a manual order — the customer's reference image(s) that
+// stand in for a 3D design (up to 3). Reuses the shared ingest pipeline (validate +
+// compress) and the shared signed-PUT helper (uploadThumbnail), same as every other
+// upload surface; only the small gallery shell is local. Each accepted file is
+// compressed, uploaded to orders/reference/, and its returned R2 key kept in `keys`.
+function ReferenceUploader({ apiClient, keys, setKeys, maxImageBytes, isMobile, primaryColor, lbl }) {
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState(null);
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) return;
+    setError(null);
+    const room = MAX_REFERENCE_PHOTOS - keys.length;
+    if (room <= 0) { setError(`At most ${MAX_REFERENCE_PHOTOS} photos`); return; }
+    setBusy(true);
+    try {
+      for (const file of files.slice(0, room)) {
+        const bad = validateImageFile(file, { maxBytes: maxImageBytes });
+        if (bad) { setError(bad); continue; }
+        const blob = await compressImage(file);
+        const key = await uploadThumbnail(blob, apiClient, 'orders/reference');
+        if (key) setKeys(prev => [...prev, { key, preview: URL.createObjectURL(blob) }]);
+        else setError('Upload failed. Please try again.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function removeAt(i) {
+    setKeys(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  const canAdd = keys.length < MAX_REFERENCE_PHOTOS && !busy;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <span style={lbl}>Reference photo{keys.length !== 1 ? 's' : ''} (optional)</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {keys.map((k, i) => (
+          <div key={k.key} style={{ position: 'relative', width: 72, height: 72, borderRadius: 12, overflow: 'hidden', border: '1.5px solid #e5e7eb', background: '#FAFAF8' }}>
+            <img src={k.preview} alt="reference" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <button type="button" onClick={() => removeAt(i)}
+              style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        ))}
+        {canAdd && (
+          <label style={{ width: 72, height: 72, borderRadius: 12, border: `1.5px dashed ${primaryColor}`, background: hexToRgba(primaryColor, 0.05), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer', color: primaryColor, fontSize: 11, fontWeight: 700 }}>
+            <span style={{ fontSize: 22, lineHeight: 1 }}>+</span>
+            {busy ? 'Adding…' : 'Add'}
+            <input type="file" accept={ACCEPT_IMAGE} multiple style={{ display: 'none' }}
+              onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+          </label>
+        )}
+      </div>
+      {error && <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>{error}</span>}
+      <span style={{ fontSize: isMobile ? 12 : 10, color: '#9CA3AF' }}>
+        The first photo becomes the order's thumbnail. Leave empty for an order with no image.
+      </span>
+    </div>
+  );
+}
+
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 function getSlotsForDate(dateStr, storeHours) {
@@ -182,14 +256,22 @@ function getSlotsForDate(dateStr, storeHours) {
 export default function OrderModal({
   tierCount, onClose, onSubmit,
   apiClient, supabase, bakerId, bakerSlug,
+  bakerName = null,   // named in the flavour-conflict warning ("check with Sweet Crumb")
   homeDeliveryEnabled = false,
   storeHours = null,
   brandBtn, primaryColor = '#1a1a1a',
   editingOrder = null,
   onViewOrder = null,
   mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
+  manual = false,   // baker's "New Order" — no 3D design; collect reference photo(s) instead
+  initialDeliveryDate = null,   // 'YYYY-MM-DD' when started from a day in the Orders calendar
+  legalBase = DEFAULT_LEGAL_BASE,   // host's marketing origin — where /terms + /privacy are served
 }) {
-  const isMobile = useIsMobile();
+  const isMobile = useNarrow(600);
+  const { maxImageBytes } = useUploadLimits(apiClient);
+
+  // Reference photos (manual orders only) — [{ key, preview }]; only `key` is sent.
+  const [referenceKeys, setReferenceKeys] = useState([]);
 
   // Step: 0=customer, 1=details, 2=delivery
   const [step, setStep] = useState(0);
@@ -208,18 +290,92 @@ export default function OrderModal({
   // Available flavours list
   const [availableFlavours, setAvailableFlavours] = useState([]);
 
-  // Cake details
-  const [weightKg, setWeightKg] = useState('');
-  const [flavours, setFlavours] = useState(
-    Array.from({ length: tierCount }, (_, i) => ({ tier: i, name: '', flavourId: null, source: null }))
-  );
-  const [specialInstructions, setSpecialInstructions] = useState('');
+  // ── What the storefront already asked ─────────────────────────────────────────────────────────
+  // A customer who came through the storefront answered flavour, size, date and occasion BEFORE
+  // opening the designer. Asking again is the flow's rudest moment — it reads as though nothing was
+  // listening — so the draft seeds this form and they CONFIRM rather than re-enter.
+  //
+  // Same origin, so this costs nothing: StorefrontClient keeps the whole journey on the baker's
+  // subdomain ("/{slug}" and "/{slug}/design"), which is why localStorage carries across with no URL
+  // params and no round trip.
+  //
+  // Read ONCE at mount, into initialisers. A later read would fight the customer's edits — they are
+  // allowed to change their mind in here, and the draft must not keep pulling them back.
+  //
+  // Customer mode only: a baker taking an order by hand is not the person whose draft this is.
+  const seed = useRef(mode === 'customer' && bakerSlug ? loadDraft(bakerSlug, tierCount) : null).current;
+  const sd = seed?.details ?? {};
 
-  // Delivery
-  const [deliveryDate,    setDeliveryDate]    = useState('');
-  const [deliveryTime,    setDeliveryTime]    = useState('');
-  const [deliveryMode,    setDeliveryMode]    = useState('pickup');
-  const [deliveryAddress, setDeliveryAddress] = useState('');
+  // Cake details
+  const [weightKg, setWeightKg] = useState(seed?.size?.weightKg != null ? String(seed.size.weightKg) : '');
+  // Length comes from tierCount — the DESIGN just built — not from the draft. Somebody who said "one
+  // tier" on the storefront and then designed three has changed their mind by doing it, and the cake
+  // in front of them is the truthful one. Names seed per tier where the draft has them.
+  const [flavours, setFlavours] = useState(
+    Array.from({ length: tierCount }, (_, i) => {
+      const d = seed?.flavours?.[i];
+      return d?.name?.trim()
+        ? { tier: i, name: d.name, flavourId: d.flavourId ?? null, source: d.source ?? null }
+        : { tier: i, name: '', flavourId: null, source: null };
+    })
+  );
+  const [specialInstructions, setSpecialInstructions] = useState(sd.specialInstructions || '');
+  // ── What the cake is FOR (migration 043) ──────────────────────────────────────────────────────
+  // Captured here as well as on the storefront, and that is the point rather than a nicety: bakers
+  // create a lot of orders by hand from a phone call or a WhatsApp thread. Recording these only on
+  // the enquiry path would leave the dataset with a BIASED hole, not merely a smaller one — every
+  // customer who prefers to ring up would be missing from it.
+  const [occasion, setOccasion]     = useState(sd.occasion  || '');
+  const [recipient, setRecipient]   = useState(sd.recipient || '');
+  // Occasions ranked by who the cake is for. Memoised on `recipient` alone — the split is pure.
+  const occasionChoices = useMemo(() => occasionsByRelevance(recipient), [recipient]);
+  const [cakeNumber, setCakeNumber] = useState(sd.cakeNumber ?? '');
+  // Dietary requirements the customer states — eggless / vegan / Jain / allergens.
+  // ORDER-LEVEL, not per tier (unlike flavour): an eggless requirement is not
+  // satisfied by an eggless top tier sitting on an egg-based base.
+  const [dietaryOptions, setDietaryOptions] = useState([]);
+  const [dietaryKeys,    setDietaryKeys]    = useState(sd.dietaryKeys ?? []);
+
+  // What this bakery actually deals in. A diet option they don't offer is dropped; an
+  // allergen NEVER is — see visibleRequirements() for why hiding one would be the worst
+  // outcome available here.
+  const visibleDietaryOptions = useMemo(
+    () => visibleRequirements(dietaryOptions),
+    [dietaryOptions],
+  );
+
+  // Allergens the customer ticked that this bakery has said it can't guarantee. Recorded
+  // on the order regardless — the point is that the baker sees it and can answer, not
+  // that the customer is turned away.
+  const unguaranteed = useMemo(
+    () => unguaranteedRequirements(dietaryOptions, dietaryKeys),
+    [dietaryOptions, dietaryKeys],
+  );
+
+  // ── Flavour ↔ requirement conflicts ─────────────────────────────────────────
+  // Derived, never stored, and it NEVER blocks: the picker keeps every flavour
+  // selectable and submit stays enabled. Disabling an option would assert that we know
+  // what is compatible — the opposite of what the ToS says we do — and the declarations
+  // are hand-authored, so a stale one would silently cost the baker a real order.
+  // The customer is told, named the person who can actually answer, and left in charge.
+  const flavourConflicts = useMemo(() => findFlavourConflicts({
+    flavours,
+    requirements: dietaryOptions.filter(o => dietaryKeys.includes(o.key)),
+    // conflicts_with rides along on the flavour list the picker already loaded — no
+    // second fetch, and no chance of the two disagreeing.
+    declarations: Object.fromEntries(
+      availableFlavours.filter(f => f.conflicts_with?.length).map(f => [f.id, f.conflicts_with]),
+    ),
+  }), [flavours, dietaryOptions, dietaryKeys, availableFlavours]);
+
+  // Delivery. Pre-filled when the order was started from a day in the Orders calendar —
+  // it is the same order creation either way, the date is simply already chosen.
+  // initialDeliveryDate wins over the draft: it means a baker started this from a specific day in
+  // the calendar, which is a choice made just now, where the draft is something typed earlier.
+  const [deliveryDate,    setDeliveryDate]    = useState(initialDeliveryDate || sd.deliveryDate || '');
+  const [deliveryTime,    setDeliveryTime]    = useState(sd.deliveryTime || '');
+  const [deliveryMode,    setDeliveryMode]    = useState(sd.deliveryMode || 'pickup');
+  const [deliveryAddress, setDeliveryAddress] = useState(sd.deliveryAddress || '');
 
   // Submit state
   const [submitting,   setSubmitting]   = useState(false);
@@ -259,6 +415,21 @@ export default function OrderModal({
     if (!apiClient?.fetchFlavours || !bakerSlug) return;
     apiClient.fetchFlavours(bakerSlug)
       .then(data => Array.isArray(data) ? setAvailableFlavours(data) : null)
+      .catch(() => {});
+  }, []);
+
+  // Load the dietary vocabulary from the API for the same reason the flavours come
+  // from there: it is managed data (a DB table), so core must not carry its own copy
+  // that drifts the moment someone adds or retires a requirement. If the host's
+  // apiClient doesn't provide it the control simply doesn't render — an older shell
+  // degrades to today's behaviour rather than showing an empty picker.
+  // Passed the slug so each row comes back with `offered` — whether this bakery deals in
+  // it at all. Hosts on an older apiClient signature simply ignore the argument and get
+  // the unscoped vocabulary, which is the pre-existing behaviour.
+  useEffect(() => {
+    if (!apiClient?.fetchDietaryRequirements) return;
+    apiClient.fetchDietaryRequirements(bakerSlug)
+      .then(data => Array.isArray(data) ? setDietaryOptions(data) : null)
       .catch(() => {});
   }, []);
 
@@ -314,6 +485,19 @@ export default function OrderModal({
     setFoundCustomer(null);
   }
 
+  // Jump straight to the new-customer form without searching — for when the baker
+  // already knows it's a new customer. Prefills from whatever they typed (a phone if it
+  // looks like digits, otherwise a name) so the field isn't wasted.
+  function startNewCustomer() {
+    const query = searchPhone.trim();
+    const digits = query.replace(/\D/g, '');
+    setCustomer(digits.length >= 6
+      ? { firstName: '', lastName: '', email: '', phone: query }
+      : { firstName: query, lastName: '', email: '', phone: '' });
+    setFoundCustomer(null);
+    setSearchPhase('not_found');
+  }
+
   function setFlavour(tierIdx, flavourId) {
     const picked = availableFlavours.find(f => f.id === flavourId) ?? null;
     setFlavours(fs => fs.map(f =>
@@ -325,7 +509,12 @@ export default function OrderModal({
 
   // Validation
   const canSearch   = searchPhone.trim().length >= 2 && !customersLoading;
-  const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim());
+  // If an email was entered, it must look like one (it's optional — blank is fine).
+  const emailOk     = !customer.email.trim() || isValidEmail(customer.email);
+  // A NEW customer needs a name AND a phone (the order's contact) — otherwise the
+  // create would fail server-side (phone/email required) after three steps. An EXISTING
+  // (found) customer already has their details, so no re-check.
+  const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim() && customer.phone.trim() && emailOk);
   const canSubmit   = deliveryMode === 'pickup' || deliveryAddress.trim();
 
   // Steps depend on mode: the customer is already known from their session, so the
@@ -345,15 +534,30 @@ export default function OrderModal({
       const result = await onSubmit({
         // Customer mode: identity comes from the session server-side — never send it.
         ...(mode === 'baker' ? { customer } : {}),
+        // Manual order: the reference photo keys stand in for a design snapshot.
+        ...(manual ? { referenceKeys: referenceKeys.map(k => k.key) } : {}),
         weightKg:            weightKg ? parseFloat(weightKg) : undefined,
         flavours:            flavours.filter(f => f.name.trim()),
         specialInstructions: specialInstructions.trim() || undefined,
+        occasion:   occasion  || undefined,
+        recipient:  recipient || undefined,
+        // A whole number or nothing — never NaN, which the API would reject with a message about a
+        // field the baker cannot see.
+        cakeNumber: Number.isInteger(parseInt(cakeNumber, 10)) ? parseInt(cakeNumber, 10) : undefined,
+        // Omitted entirely when nothing is selected: "none stated" is not the same as
+        // the customer confirming the cake may contain anything.
+        dietaryRequirementKeys: dietaryKeys.length ? dietaryKeys : undefined,
         deliveryDate:        deliveryDate  || undefined,
         deliveryTime:        deliveryTime  || undefined,
         deliveryMode,
         deliveryAddress:     deliveryMode === 'home_delivery' ? deliveryAddress : undefined,
       });
       setOrderId(result?.orderId ?? 'ok');
+      // It is theirs now — the same rule the storefront's own submit follows. On SUCCESS only, so a
+      // failed request keeps everything and nobody rebuilds a cake because a POST timed out.
+      // Customer mode only, and NOT on the Update Design path below: that edits an order which
+      // already exists and is not the placing of anything.
+      if (mode === 'customer' && bakerSlug) clearDraft(bakerSlug);
     } catch (err) {
       setSubmitError(err.message || 'Failed to place order. Please try again.');
     } finally {
@@ -376,10 +580,33 @@ export default function OrderModal({
   // ── Success ─────────────────────────────────────────────────────────────────
   if (orderId) {
     return (
-      <div style={overlay(isMobile)} onClick={onClose}>
-        <div style={sheetStyle(isMobile)} onClick={e => e.stopPropagation()}>
-          {isMobile && <div style={handle} />}
-          <div style={{ textAlign: 'center', padding: isMobile ? '24px 20px 16px' : '16px 0 12px' }}>
+      // A confirmation carries its own Done button, so no header and no ✕ — but Esc and the
+      // backdrop still dismiss it, which onClose gives us.
+      <Panel
+        onClose={onClose}
+        showClose={false}
+        isMobile={isMobile}
+        width={360}
+        footer={
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            {!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer' && (
+              <button
+                style={{ ...btn(isMobile), ...brandBtn, width: '100%' }}
+                onClick={() => { onViewOrder(orderId); onClose(); }}
+              >
+                View Order
+              </button>
+            )}
+            <button
+              style={{ ...btn(isMobile), width: '100%', background: 'transparent', color: PANEL.body, border: `1.5px solid ${PANEL.line}`, boxShadow: 'none' }}
+              onClick={onClose}
+            >
+              {(!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer') ? 'Close' : 'Done'}
+            </button>
+          </div>
+        }
+      >
+          <div style={{ textAlign: 'center', padding: isMobile ? '8px 0 4px' : '4px 0' }}>
             <div style={{
               width: 64, height: 64, borderRadius: '50%', margin: '0 auto 16px',
               background: hexToRgba(primaryColor, 0.12),
@@ -405,76 +632,34 @@ export default function OrderModal({
               </div>
             )}
           </div>
-          <div style={{ padding: isMobile ? '0 20px' : '0', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer' && (
-              <button
-                style={{ ...btn(isMobile), ...brandBtn, width: '100%' }}
-                onClick={() => { onViewOrder(orderId); onClose(); }}
-              >
-                View Order
-              </button>
-            )}
-            <button
-              style={{ ...btn(isMobile), width: '100%', background: 'transparent', color: '#666', border: '1.5px solid #e0e0e0', boxShadow: 'none' }}
-              onClick={onClose}
-            >
-              {(!editingOrder && onViewOrder && orderId !== 'ok' && mode !== 'customer') ? 'Close' : 'Done'}
-            </button>
-          </div>
-          {isMobile && <div style={{ height: 'env(safe-area-inset-bottom, 16px)', flexShrink: 0 }} />}
-        </div>
-      </div>
+      </Panel>
     );
   }
 
   // ── Edit-mode: single-step "Update Design" modal ─────────────────────────────
   if (editingOrder) {
     return (
-      <>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
-          .spattoo-modal input::placeholder,
-          .spattoo-modal textarea::placeholder {
-            font-family: 'Quicksand', sans-serif;
-            font-weight: 500;
-            color: #bbb;
-          }
-        `}</style>
-        <div style={overlay(isMobile)} onClick={onClose}>
-          <div className="spattoo-modal" style={sheetStyle(isMobile)} onClick={e => e.stopPropagation()}>
-            {isMobile && <div style={handle} />}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink: 0 }}>
-              <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>Update Design</span>
-              <button style={{ background: '#f3f4f6', border: 'none', cursor: 'pointer', borderRadius: '50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize: 13, color: '#333', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>✕</button>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', padding: isMobile ? '20px 20px' : '16px 0', display: 'flex', flexDirection: 'column', gap: isMobile ? 16 : 12 }}>
-              <UpdateDesignForm
-                isMobile={isMobile}
-                primaryColor={primaryColor}
-                submitting={submitting}
-                submitError={submitError}
-                onSubmit={async (comment) => {
-                  setSubmitting(true);
-                  setSubmitError(null);
-                  try {
-                    const result = await onSubmit({ comment });
-                    setOrderId(result?.orderId ?? 'ok');
-                  } catch (err) {
-                    setSubmitError(err.message || 'Failed to save. Please try again.');
-                  } finally {
-                    setSubmitting(false);
-                  }
-                }}
-                brandBtn={brandBtn}
-              />
-            </div>
-
-            {isMobile && <div style={{ height: 'env(safe-area-inset-bottom, 16px)', flexShrink: 0 }} />}
-          </div>
-        </div>
-      </>
+      <Panel onClose={onClose} isMobile={isMobile} width={360} title="Update Design">
+        <UpdateDesignForm
+          isMobile={isMobile}
+          primaryColor={primaryColor}
+          submitting={submitting}
+          submitError={submitError}
+          onSubmit={async (comment) => {
+            setSubmitting(true);
+            setSubmitError(null);
+            try {
+              const result = await onSubmit({ comment });
+              setOrderId(result?.orderId ?? 'ok');
+            } catch (err) {
+              setSubmitError(err.message || 'Failed to save. Please try again.');
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+          brandBtn={brandBtn}
+        />
+      </Panel>
     );
   }
 
@@ -507,30 +692,13 @@ export default function OrderModal({
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
-        @keyframes slideUp { from { transform:translateY(100%) } to { transform:translateY(0) } }
-        .spattoo-modal input::placeholder,
-        .spattoo-modal textarea::placeholder {
-          font-family: 'Quicksand', sans-serif;
-          font-weight: 500;
-          color: #bbb;
-        }
-      `}</style>
-      <div style={overlay(isMobile)} onClick={onClose}>
-        <div className="spattoo-modal" style={sheetStyle(isMobile)} onClick={e => e.stopPropagation()}>
-
-          {/* Drag handle */}
-          {isMobile && <div style={handle} />}
-
-          {/* Header */}
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding: isMobile ? '0 20px 14px' : '0 0 14px', flexShrink:0 }}>
-            <span style={{ fontSize: isMobile ? 18 : 14, fontWeight: 700, color: '#1a1a1a' }}>{mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}</span>
-            <button style={{ background:'#f3f4f6', border:'none', cursor:'pointer', borderRadius:'50%', width: isMobile ? 36 : 28, height: isMobile ? 36 : 28, fontSize:13, color:'#333', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>✕</button>
-          </div>
-
-          {/* Step dots */}
-          <div style={{ display:'flex', padding: isMobile ? '0 20px 14px' : '0 0 14px', borderBottom:'1px solid #999999', flexShrink:0 }}>
+      <Panel
+        onClose={onClose}
+        isMobile={isMobile}
+        width={360}
+        title={manual ? 'New Order' : mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}
+        subhead={
+          <div style={{ display:'flex' }}>
             {STEP_DEFS.map((s, i) => {
               const done = i < step, active = i === step;
               return (
@@ -543,9 +711,44 @@ export default function OrderModal({
               );
             })}
           </div>
-
-          {/* Scrollable content */}
-          <div style={{ flex:1, overflowY:'auto', overscrollBehavior:'contain', padding: isMobile ? '20px 20px' : '16px 0', display:'flex', flexDirection:'column', gap: isMobile?16:12 }}>
+        }
+        bodyPadding={isMobile ? '20px 20px' : '16px 20px'}
+        footer={
+          <div style={{ display:'flex', flexDirection:'column', gap:10, width:'100%' }}>
+            {/* Customer consent, captured at the moment of the affirmative act (DPDP "Layer 2").
+                Submitting the quote IS the acceptance — so this is a passive notice, not a checkbox:
+                a customer sending their own photo to their baker should not be made to tick a box,
+                and asking once here is what lets us NOT ask on every upload. The consent EVENT is
+                written server-side by POST /api/customer/orders (source 'quote'), so it cannot be
+                skipped by the client. Customer mode only — a baker placing an order already accepted
+                at signup/gate. Sits directly above the submit button so it is unmissable. */}
+            {mode === 'customer' && isLastStep && (
+              <div style={{ fontSize: 11, lineHeight: 1.45, color: '#888', textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
+                By requesting a quote you agree to the{' '}
+                <a href={`${legalBase}/terms`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Terms of Service</a>
+                {' '}and{' '}
+                <a href={`${legalBase}/privacy`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Privacy Policy</a>.
+                {' '}Cartoon characters and brand themes are usually protected — your baker may not be able to use them.
+              </div>
+            )}
+            <div style={{ display:'flex', gap:10 }}>
+              {showBackInFooter && (
+                <button style={{ padding: isMobile?'15px 20px':'12px 18px', borderRadius:14, border:`1.5px solid ${PANEL.line}`, fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer', background:'#fff', color:PANEL.body, fontFamily:"'Quicksand',sans-serif", flexShrink:0 }}
+                  onClick={handleBack}>
+                  Back
+                </button>
+              )}
+              <button
+                style={{ ...btn(isMobile), ...brandBtn, flex:1, opacity: footerPrimaryDisabled ? 0.45 : 1 }}
+                disabled={footerPrimaryDisabled}
+                onClick={handleFooterPrimary}>
+                {footerPrimaryLabel}
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <>
 
             {/* ── Step: Customer (baker mode only) ── */}
             {currentStepKey === 'customer' && (
@@ -589,6 +792,20 @@ export default function OrderModal({
                         ))}
                       </div>
                     )}
+
+                    {/* Skip the search — go straight to a new customer (baker already knows). */}
+                    <button
+                      type="button"
+                      onClick={startNewCustomer}
+                      style={{
+                        marginTop: 4, alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
+                        color: primaryColor, fontFamily: "'Quicksand', sans-serif",
+                        fontSize: isMobile ? 14 : 12, fontWeight: 700,
+                      }}
+                    >
+                      <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New customer
+                    </button>
                   </div>
                 )}
 
@@ -632,16 +849,22 @@ export default function OrderModal({
                     </div>
 
                     <label style={field}>
-                      <span style={lbl}>Phone</span>
-                      <input style={{ ...inp, background:'#f9f9f9', color:'#555' }}
-                        type="tel" value={customer.phone} readOnly />
+                      <span style={lbl}>Phone *</span>
+                      <input style={inp} type="tel" value={customer.phone}
+                        placeholder="e.g. 98765 43210"
+                        onChange={e => setCustomer(c => ({ ...c, phone: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && canGoNext0 && setStep(1)} />
                     </label>
 
                     <label style={field}>
                       <span style={lbl}>Email (optional)</span>
                       <input style={inp} type="email" value={customer.email}
+                        placeholder="name@example.com"
                         onChange={e => setCustomer(c => ({ ...c, email: e.target.value }))}
                         onKeyDown={e => e.key === 'Enter' && canGoNext0 && setStep(1)} />
+                      {customer.email.trim() && !emailOk && (
+                        <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>Enter a valid email address.</span>
+                      )}
                     </label>
                   </>
                 )}
@@ -651,12 +874,82 @@ export default function OrderModal({
             {/* ── Step: Cake details ── */}
             {currentStepKey === 'details' && (
               <>
+                {manual && (
+                  <ReferenceUploader
+                    apiClient={apiClient}
+                    keys={referenceKeys}
+                    setKeys={setReferenceKeys}
+                    maxImageBytes={maxImageBytes}
+                    isMobile={isMobile}
+                    primaryColor={primaryColor}
+                    lbl={lbl}
+                  />
+                )}
+
                 <label style={field}>
                   <span style={lbl}>Cake weight (kg)</span>
                   <input style={inp} type="number" min="0.5" max="100" step="0.5"
                     placeholder="e.g. 2" value={weightKg} autoFocus
                     onChange={e => setWeightKg(e.target.value)} />
                 </label>
+
+                {/* ABOVE flavour on purpose: the requirement constrains which flavours
+                    can be made, so it is asked before the thing it constrains. And it is
+                    ORDER-level, not per tier like flavour — an eggless requirement is not
+                    satisfied by an eggless top tier on an egg-based base. */}
+                {visibleDietaryOptions.length > 0 && (
+                  <div style={{ ...field, gap: isMobile?10:8 }}>
+                    <span style={lbl}>Dietary requirements</span>
+                    {['diet', 'allergen'].map(kind => {
+                      const group = visibleDietaryOptions.filter(o => o.kind === kind);
+                      if (!group.length) return null;
+                      return (
+                        <div key={kind} style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                          {/* Split by kind rather than run together in one row: eggless is a
+                              product attribute and an allergy is a safety matter, and a picker
+                              that presents them identically invites treating them identically. */}
+                          <span style={{ fontSize: isMobile?12:10, fontWeight:700, color:'#888' }}>
+                            {kind === 'diet' ? 'Diet' : 'Allergies'}
+                          </span>
+                          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                            {group.map(o => {
+                              const active = dietaryKeys.includes(o.key);
+                              return (
+                                <Chip key={o.key} label={o.label} active={active} isMobile={isMobile}
+                                  tone={{ fg: primaryColor, bg: hexToRgba(primaryColor, 0.1), border: primaryColor }}
+                                  onClick={() => setDietaryKeys(ks => active ? ks.filter(k => k !== o.key) : [...ks, o.key])} />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* An allergen this bakery has said it can't guarantee. It stays
+                        tickable and IS recorded on the order — the point is that the
+                        baker sees it and can answer, not that the customer is turned
+                        away with nowhere to put an allergy. */}
+                    {unguaranteed.length > 0 && (() => {
+                      const t = dietTone('allergen');
+                      return (
+                        <div style={{
+                          border: `1.5px solid ${t.border}`, background: t.bg, borderRadius: 12,
+                          padding: isMobile ? '12px 14px' : '10px 12px',
+                          display: 'flex', flexDirection: 'column', gap: 6,
+                        }}>
+                          {unguaranteed.map(o => (
+                            <span key={o.key} style={{ fontSize: isMobile ? 13 : 12, fontWeight: 700, color: t.fg }}>
+                              {unguaranteedSentence(o, { bakerName })}
+                            </span>
+                          ))}
+                          <span style={{ fontSize: isMobile ? 12 : 11, fontWeight: 600, color: t.fg, opacity: 0.85 }}>
+                            {conflictCallToAction({ audience: mode === 'customer' ? 'customer' : 'baker', bakerName })}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 <div style={{ ...field, gap: isMobile?10:8 }}>
                   <span style={lbl}>{tierCount === 1 ? 'Flavour' : 'Flavour per tier'}</span>
@@ -682,6 +975,81 @@ export default function OrderModal({
                       )}
                     </div>
                   ))}
+
+                  {/* Directly under the picker, because it is about the choice just
+                      made — not floated to the top of the form where it would read as a
+                      general disclaimer and be scrolled past. Nothing above is disabled
+                      and the submit button is untouched: this informs, it does not gate. */}
+                  {flavourConflicts.length > 0 && (() => {
+                    const t = dietTone(
+                      flavourConflicts.some(c => c.requirement?.kind === 'allergen') ? 'allergen' : 'diet',
+                    );
+                    return (
+                      <div style={{
+                        border: `1.5px solid ${t.border}`, background: t.bg, borderRadius: 12,
+                        padding: isMobile ? '12px 14px' : '10px 12px',
+                        display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4,
+                      }}>
+                        {flavourConflicts.map((c, i) => (
+                          <span key={`${c.flavourId}-${c.requirement.key}-${i}`}
+                            style={{ fontSize: isMobile ? 13 : 12, fontWeight: 700, color: t.fg }}>
+                            {tierCount > 1 && Number.isInteger(c.tier)
+                              ? `${TIER_LABELS[c.tier] ?? `Tier ${c.tier + 1}`}: ` : ''}
+                            {conflictSentence(c, { bakerName })}
+                          </span>
+                        ))}
+                        {/* Once, under the list — the reassurance that they are not
+                            being stopped matters more than repeating it per line. */}
+                        <span style={{ fontSize: isMobile ? 12 : 11, fontWeight: 600, color: t.fg, opacity: 0.85 }}>
+                          {conflictCallToAction({ audience: mode === 'customer' ? 'customer' : 'baker', bakerName })}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Optional, and deliberately three small controls rather than a form: a baker
+                    taking this down mid-call will fill what they were told and skip the rest.
+                    An age BAND is not asked here — on a call the number is what gets said, and
+                    asking a baker to bucket it is asking them to do our filing. */}
+                {/* Who FIRST, then the occasion — the order the storefront has always asked in
+                    (FlavourFacet's QUESTIONS), and this form was the one screen disagreeing. It also
+                    earns its keep: knowing the recipient is what lets the occasion list be ranked,
+                    so asking the other way round threw that away. */}
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <label style={{ ...field, flex: '1 1 130px' }}>
+                    <span style={lbl}>Who&rsquo;s it for</span>
+                    <select style={inp} value={recipient} onChange={e => setRecipient(e.target.value)}>
+                      <option value="">—</option>
+                      {RECIPIENTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ ...field, flex: '1 1 130px' }}>
+                    <span style={lbl}>Occasion</span>
+                    {/* Grouped, never trimmed. A baker on the phone must be able to write down
+                        whatever they are told — see occasionsByRelevance. With no recipient chosen
+                        `likely` is empty and this renders as the flat list it was. */}
+                    <select style={inp} value={occasion} onChange={e => setOccasion(e.target.value)}>
+                      <option value="">—</option>
+                      {occasionChoices.likely.length > 0 ? (
+                        <>
+                          <optgroup label="Likely">
+                            {occasionChoices.likely.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                          </optgroup>
+                          <optgroup label="Other occasions">
+                            {occasionChoices.other.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                          </optgroup>
+                        </>
+                      ) : occasionChoices.other.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                  {(occasion === 'birthday' || occasion === 'anniversary') && (
+                    <label style={{ ...field, flex: '0 1 110px' }}>
+                      <span style={lbl}>{occasion === 'birthday' ? 'Age on cake' : 'Which year'}</span>
+                      <input style={inp} inputMode="numeric" value={cakeNumber} placeholder="e.g. 1"
+                             onChange={e => setCakeNumber(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+                    </label>
+                  )}
                 </div>
 
                 <label style={field}>
@@ -774,69 +1142,17 @@ export default function OrderModal({
                 )}
               </>
             )}
-          </div>
-
-          {/* Sticky footer */}
-          <div style={{ display:'flex', gap:10, flexShrink:0, padding: isMobile ? '12px 20px 0' : '12px 0 0', borderTop:'1px solid #999999' }}>
-            {showBackInFooter && (
-              <button style={{ padding: isMobile?'15px 20px':'12px 18px', borderRadius:14, border:'1.5px solid #999999', fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer', background:'#fff', color:'#333', fontFamily:"'Quicksand',sans-serif", flexShrink:0 }}
-                onClick={handleBack}>
-                Back
-              </button>
-            )}
-            <button
-              style={{ ...btn(isMobile), ...brandBtn, flex:1, opacity: footerPrimaryDisabled ? 0.45 : 1 }}
-              disabled={footerPrimaryDisabled}
-              onClick={handleFooterPrimary}>
-              {footerPrimaryLabel}
-            </button>
-          </div>
-
-          {isMobile && <div style={{ height:'env(safe-area-inset-bottom, 16px)', flexShrink:0 }} />}
-
-        </div>
-      </div>
+        </>
+      </Panel>
     </>
   );
 }
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
-
-function overlay(isMobile) {
-  return {
-    position:'fixed', inset:0, background:'rgba(107,45,66,0.22)',
-    backdropFilter:'blur(4px)', WebkitBackdropFilter:'blur(4px)',
-    zIndex:100, display:'flex',
-    alignItems: isMobile ? 'flex-end' : 'center',
-    justifyContent:'center',
-    fontFamily:"'Quicksand',sans-serif",
-  };
-}
-
-function sheetStyle(isMobile) {
-  const base = { fontFamily: "'Quicksand', sans-serif" };
-  return isMobile ? {
-    ...base,
-    width:'100%', maxHeight:'92vh', background:'#fff',
-    borderRadius:'20px 20px 0 0',
-    display:'flex', flexDirection:'column',
-    boxShadow:'0 -4px 40px rgba(107,45,66,0.18)',
-    animation:'slideUp 0.28s cubic-bezier(0.32,0.72,0,1)',
-    paddingTop:10,
-  } : {
-    ...base,
-    width:360, maxWidth:'calc(100vw - 32px)', maxHeight:'90vh',
-    background:'#fff', borderRadius:20,
-    display:'flex', flexDirection:'column',
-    boxShadow:'0 8px 40px rgba(107,45,66,0.18)',
-    padding:'20px 24px 22px',
-  };
-}
-
-const handle = {
-  width:36, height:4, borderRadius:2, background:'#d8d4cf',
-  margin:'0 auto 12px', flexShrink:0,
-};
+// The overlay, sheet and drag handle that used to live here are now shared/Panel.jsx — this file
+// had three copies of the same shell, and every other panel in the app had its own. Its mobile
+// bottom-sheet behaviour is what the shared one adopted; its maroon scrim and 20px radius were the
+// outliers and are gone.
 
 function btn(isMobile) {
   return {

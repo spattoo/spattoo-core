@@ -10,6 +10,8 @@
 // surface) is safe to hold at module scope — unlike the server, which must scope
 // per request.
 
+import { scrubString, scrubValue } from './scrub.js';
+
 let transport = consoleTransport();
 let ctx = { surface: 'unknown' };
 
@@ -29,11 +31,28 @@ export function setContext(partial = {}) {
 
 // The one call everything funnels through.
 // extra: { screen, action, severity, extra:{...} }
+// SEC-CORE-5 — the payload is scrubbed HERE, at the single funnel, rather than in
+// each host app's transport: that way any transport injected via
+// configureTelemetry (Sentry today, anything later) inherits the guarantee
+// instead of having to re-implement it. Tenant ids in `ctx` are left intact —
+// they aren't secret and they're what makes a report triageable.
 export function reportError(error, extra = {}) {
+  const err = error instanceof Error ? error : new Error(String(error));
   safe(() => transport.capture(
-    error instanceof Error ? error : new Error(String(error)),
-    { ...ctx, severity: 'error', ...extra },
+    scrubError(err),
+    { ...ctx, severity: 'error', ...scrubValue(extra) },
   ), error);
+}
+
+// Rebuild the Error with scrubbed message/stack. Errors carry their text in two
+// places and a leaked token is just as exposed in a stack frame as in a message.
+function scrubError(err) {
+  const message = scrubString(err.message || '');
+  if (message === err.message && !err.stack) return err;
+  const copy = new Error(message);
+  copy.name = err.name;
+  if (err.stack) copy.stack = scrubString(err.stack);
+  return copy;
 }
 
 export function reportMessage(message, extra = {}) {

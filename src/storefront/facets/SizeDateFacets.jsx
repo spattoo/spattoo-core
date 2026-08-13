@@ -1,0 +1,436 @@
+import { useEffect, useState } from 'react';
+import { today, OCCASIONS } from './cakeDraft.js';
+
+// ── Size and date ───────────────────────────────────────────────────────────────────────────────
+// Both work the same way, and it is worth naming: a constraint learned somewhere ELSE narrows the
+// options without answering for the customer.
+//
+//   a template's minimum weight  → sizes below it are not offered
+//   the baker's lead time        → dates inside it are not offered
+//
+// Neither pre-fills an answer. Learning that a 3-tier cake starts at 3kg is not the same as the
+// customer having said "3kg", and silently filling it in would be a wrong answer nobody re-checks —
+// the same reason "a crowd at work" is not allowed to answer the size question on the customer's
+// behalf. A floor prevents an impossible order; a guess invents a real one.
+
+// Servings per kg. A CONVENTION, not a fact — it depends on how a cake is cut and who is eating —
+// so it is stated once here and always spoken as "about".
+// Servings per kg — a RANGE, not a number, because it genuinely is one: it depends on how a cake is
+// cut and who is eating. 8 to 12 is the honest span for the portions this market cuts.
+//
+// Shown as a range for the same reason the code always said "about": a single figure invites a
+// customer to trust a precision nobody has. It also TILES — each band starts where the last ended,
+// so somebody feeding 15 has exactly one option to pick rather than a gap to guess in.
+const SERVINGS_PER_KG_LOW  = 8;
+const SERVINGS_PER_KG_HIGH = 12;
+const WEIGHTS = [0.5, 1, 1.5, 2, 3, 4, 5];
+
+/**
+ * The guest band each weight covers: [from, to].
+ *
+ * `to` is the weight at the generous end of the range. `from` is one more than the PREVIOUS band's
+ * top, so the ladder is continuous — 4-6, 7-12, 13-18 — rather than a set of overlapping estimates.
+ * The smallest band starts at its own lower bound, since nothing precedes it.
+ */
+function servingBands(weights) {
+  let prevTop = 0;
+  return weights.map(w => {
+    const to = Math.round(w * SERVINGS_PER_KG_HIGH);
+    const from = prevTop ? prevTop + 1 : Math.round(w * SERVINGS_PER_KG_LOW);
+    prevTop = to;
+    return { w, from, to };
+  });
+}
+
+/**
+ * The tier ladder, drawn.
+ *
+ * A stack of outlines rather than the word "two tiers", because the customer is choosing a SHAPE
+ * and a shape is something you look at. Each tier narrows as it rises, which is what makes the
+ * silhouette read as a cake rather than a bar chart.
+ */
+function TierGlyph({ tiers, on }) {
+  const W = 52, H = 12, GAP = 2, BOARD = 3;
+  const height = tiers * (H + GAP) + BOARD + 4;
+  const stroke = on ? '#2C4433' : '#B3A79A';
+  return (
+    <svg width={W} height={height} viewBox={`0 0 ${W} ${height}`} aria-hidden="true"
+         style={{ display: 'block' }}>
+      {Array.from({ length: tiers }, (_, i) => {
+        // Widest at the BOTTOM. Each tier above steps in by a fixed amount, so a 3-tier silhouette
+        // tapers visibly rather than reading as a stack of identical bars.
+        const stepIn = (tiers - 1 - i) * 7;
+        const w = W - 8 - stepIn;
+        return (
+          <rect key={i} x={(W - w) / 2} y={i * (H + GAP) + 2} width={w} height={H} rx={2.5}
+                fill={on ? '#2C4433' : '#FFFDF9'} fillOpacity={on ? 0.14 : 1}
+                stroke={stroke} strokeWidth="1.5" />
+        );
+      })}
+      {/* The board. Without it a single tier is just a rectangle; with it, even one reads as a cake. */}
+      <rect x={2} y={height - BOARD - 1} width={W - 4} height={BOARD} rx={1.5}
+            fill={stroke} opacity={0.55} />
+    </svg>
+  );
+}
+
+/**
+ * Size, in two steps: how many people, then what shape.
+ *
+ * ── WHY SHAPE IS A SECOND QUESTION AND NOT A GUESS ──────────────────────────────────────────────
+ * Weight is not purely a function of guest count. A two-tier cake has a STRUCTURAL minimum whatever
+ * the headcount — so "about 8 people, 1kg" plus "two tiers" is an order nobody can bake, and until
+ * now nothing caught it. Asking the shape is what makes the floor knowable.
+ *
+ * People first, deliberately: it is the thing the customer already knows. Shape is a question they
+ * may never have considered, and asking it first would stall them on the harder one.
+ *
+ * ── THE FLOOR COMES FROM THE BAKER'S OWN TEMPLATES ──────────────────────────────────────────────
+ * Not a hardcoded "2 tiers = 2kg". Every template carries `tier_count` and `min_weight_kg`, so the
+ * minimum for a shape is read from cakes this baker actually offers. A baker whose two-tiers start
+ * at 1.5kg gets 1.5. With no templates to learn from we show no floor at all rather than invent one
+ * — the same rule the suggester follows.
+ */
+export function SizeFacet({ draft, patch, close, api, facetBack }) {
+  // A template already answered both questions, so this facet only has to respect them.
+  const fromDesign = draft.design.minWeightKg ?? 0;
+  const [templates, setTemplates] = useState(null);
+  const [step, setStep] = useState('people');
+  // The weight the GUEST COUNT alone asked for, kept so the last step can say whether the shape
+  // changed it. draft.size.weightKg is the answer; this is where the answer started.
+  const [fromPeople, setFromPeople] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    api?.fetchStorefrontTemplates?.()
+      .then(t => alive && setTemplates(Array.isArray(t) ? t : []))
+      .catch(() => alive && setTemplates([]));
+    return () => { alive = false; };
+  }, [api]);
+
+  // Smallest weight this baker actually makes at each tier count. Read, never assumed.
+  /**
+   * The smallest weight this baker actually makes at a given tier count.
+   *
+   * A template with NO min_weight_kg is unconstrained — the baker has not said it needs a minimum,
+   * so it can be made at any size on the ladder. That makes it a 0, not a row to skip.
+   *
+   * ⚠️ It skipped them, which inverted the answer. Super&bake has several one-tier templates and
+   * exactly one — "kpop" — carrying a minimum of 1kg. Dropping the others left `[1]`, so the floor
+   * came out at 1kg and the 0.5kg option vanished: one design's constraint applied to every
+   * one-tier cake the baker makes. A floor has to be the SMALLEST thing they can do, not the
+   * smallest thing anybody bothered to write down.
+   */
+  const floorFor = (tiers) => {
+    const at = (templates ?? []).filter(t => (t.tier_count ?? 1) === tiers);
+    if (!at.length) return 0;
+    const mins = at.map(t => (typeof t.attrs?.min_weight_kg === 'number' ? t.attrs.min_weight_kg : 0));
+    return Math.min(...mins);
+  };
+
+  // The shapes this baker actually makes, from the tier counts their templates use — NOT from
+  // which of them happen to have a min_weight_kg.
+  //
+  // ⚠️ This was `[1,2,3].filter(n => n === 1 || floorFor(n) > 0)`, which conflated two questions:
+  // "does this baker make two-tier cakes?" and "do we know the minimum weight for one?". A baker
+  // with two-tier templates but no min_weight_kg set — which is most of them, since nothing forces
+  // that field — offered only "one tier", so the shape step was skipped and the question could not
+  // be reached at all. Offer the shape; show the floor only when it is known.
+  const tierOptions = (() => {
+    const counts = [...new Set((templates ?? []).map(t => Number(t.tier_count) || 1))]
+      .filter(n => n >= 1 && n <= 6).sort((a, b) => a - b);
+    return counts.length ? counts : [1];
+  })();
+  const chosenTiers = draft.size.tierCount ?? null;
+  const floor = Math.max(fromDesign, chosenTiers ? floorFor(chosenTiers) : 0);
+  const offered = WEIGHTS.filter(w => w >= floor);
+
+  // Registered during render so the shell's one Back arrow walks these three steps before closing
+  // the facet. Returning false on the first step is what hands the arrow back to the shell.
+  if (facetBack) facetBack.current = () => {
+    if (step === 'result') { setStep(tierOptions.length > 1 && !fromDesign ? 'shape' : 'people'); return true; }
+    if (step === 'shape')  { setStep('people'); return true; }
+    return false;
+  };
+
+  // ── Step 3: the weight, once nothing is left that could move it ─────────────────────────────────
+  // The whole reason this step exists. Weight is a CONCLUSION drawn from two answers — how many
+  // people, and what shape — and showing it beside the first one presented it as a fact about guest
+  // count alone. Here it arrives after both, and says which of them decided it.
+  //
+  // It is also the only place the customer meets the number in kilograms, which is the baker's unit
+  // and not theirs. Meeting it once, explained, beats meeting it on a button they were not thinking
+  // about kilograms on.
+  if (step === 'result') {
+    const kg = draft.size.weightKg;
+    // The band for the weight they are ACTUALLY getting, not the one they asked for. Keyed on
+    // `fromPeople` it read "about 3kg — enough for 4–6 people", which is false of a 3kg cake: the
+    // headline described the guest count while the number beside it described the cake. When a
+    // floor raises the weight the serving count rises with it, and the note below says why.
+    const band = servingBands(WEIGHTS).find(b => b.w === kg);
+    // Did the shape raise it? Only ever upward, and only to a minimum this baker actually makes.
+    const raised = fromPeople != null && kg > fromPeople;
+    return (
+      <>
+        <div style={s.hint}>So we are looking at</div>
+        <div style={s.answer}>
+          <span style={s.answerKg}>about {kg}kg</span>
+          {band && <span style={s.answerWho}>enough for {band.from}&ndash;{band.to} people</span>}
+        </div>
+
+        {/* Said plainly when it happened, because a number the customer did not choose needs a
+            reason. Silence here is what made the shape step look decorative. */}
+        {raised && (
+          <div style={s.note}>
+            A {chosenTiers}-tier cake starts at {kg}kg here, so we have taken it up from {fromPeople}kg.
+            It will feed more people than you asked for, which is the safer way to be wrong.
+          </div>
+        )}
+        {/* Equally plainly when it did NOT. "Nothing changed" is information: it tells a customer
+            their shape is not forcing a bigger cake, rather than leaving them wondering whether the
+            question they just answered counted for anything. */}
+        {!raised && chosenTiers > 1 && (
+          <div style={s.note}>
+            {chosenTiers} tiers fit at this size, so the guest count is what settles it.
+          </div>
+        )}
+
+        <button type="button" style={s.done} onClick={close}>That&rsquo;s right</button>
+      </>
+    );
+  }
+
+  // ── Step 2: the shape ───────────────────────────────────────────────────────────────────────────
+  if (step === 'shape') {
+    return (
+      <>
+        <div style={s.hint}>How should it be built?</div>
+        <div style={s.tierRow}>
+          {tierOptions.map(n => {
+            const on = chosenTiers === n;
+            const min = floorFor(n);
+            return (
+              <button key={n} type="button" aria-pressed={on}
+                      style={{ ...s.tierOpt, ...(on ? s.optOn : null) }}
+                      onClick={() => {
+                        // Bumping the weight to the floor is the whole point of asking: a shape the
+                        // chosen size cannot carry is the order this facet exists to prevent.
+                        const w = draft.size.weightKg;
+                        const next = { tierCount: n };
+                        if (min > 0 && (w == null || w < min)) {
+                          next.weightKg = min;
+                          next.servings = Math.round(min * SERVINGS_PER_KG_HIGH);
+                        }
+                        patch({ size: next });
+                        // The tiers are also how many flavours the cake can have.
+                        patch({ __tierCount: n });
+                        setStep('result');
+                      }}>
+                <TierGlyph tiers={n} on={on} />
+                <span style={s.tierLabel}>{n === 1 ? 'One tier' : `${n} tiers`}</span>
+                {min > 0 && <span style={s.optSmall}>from {min}kg</span>}
+              </button>
+            );
+          })}
+        </div>
+
+      </>
+    );
+  }
+
+  // ── Step 1: the people ──────────────────────────────────────────────────────────────────────────
+  return (
+    <>
+      {/* Customers think in people and bakers think in kilograms. If the storefront does not do
+          this translation the customer asks on WhatsApp, and the facet has saved nothing. */}
+      <div style={s.hint}>Roughly how many people is it feeding?</div>
+
+      <div style={s.grid}>
+        {servingBands(offered).map(({ w, from, to }) => {
+          const on = draft.size.weightKg === w;
+          return (
+            <button key={w} type="button" aria-pressed={on}
+                    style={{ ...s.opt, ...(on ? s.optOn : null) }}
+                    onClick={() => {
+                      // Both are kept. Servings is what they said; weight is what the baker works
+                      // in. Throwing away either makes the other unrecoverable. The band's TOP is
+                      // stored: it is the number that guarantees enough cake, and the one a baker
+                      // reading "feeds up to 12" can act on.
+                      patch({ size: { weightKg: w, servings: to } });
+                      setFromPeople(w);
+                      // On to the shape — unless a template already settled it, in which case
+                      // asking would be the "never ask twice" rule broken. Either way the weight
+                      // is shown at the END, once there is nothing left that could move it.
+                      setStep(fromDesign > 0 || tierOptions.length < 2 ? 'result' : 'shape');
+                    }}>
+              {/* ── No kilograms on this button ────────────────────────────────────────────────
+                  It read "4–6 people · 0.5kg", which put the ANSWER on the first of two questions.
+                  A customer picked a guest count, saw a weight, then chose a shape and watched the
+                  weight sit still — so the shape step looked decorative. Reported as "it shows the
+                  weight before even asking the number of tiers… asking tier information does not
+                  change anything here."
+                  The weight is now shown once, on its own step, after everything that can move it
+                  has been asked. */}
+              <span style={s.optBig}>{from}&ndash;{to}</span>
+              <span style={s.optSmall}>people</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {floor > 0 && (
+        <div style={s.note}>
+          {fromDesign > 0
+            ? `The design you picked starts at ${floor}kg, so smaller sizes are not shown.`
+            : `A ${chosenTiers}-tier cake starts at ${floor}kg here, so smaller sizes are not shown.`}
+        </div>
+      )}
+    </>
+  );
+}
+
+export function DateFacet({ draft, patch, close, leadTimeDays = 0, bakerName, accent = '#6B8C74' }) {
+  // The earliest date this baker will accept. A customer learns it HERE rather than a day later,
+  // which is the single worst failure this whole flow can produce.
+  const earliest = addDays(today(), leadTimeDays);
+  const value = draft.details.deliveryDate;
+  const tooSoon = value && value < earliest;
+
+  return (
+    <>
+      {/* ── The earliest date, ABOVE the field and stated as an ANSWER ──────────────────────────
+          This said "{baker} needs at least 2 days notice", in faint grey, BELOW the input. Three
+          things wrong with that, and the wording was the smallest:
+
+            * "notice" is the BAKER's word for it. The customer's question is "when can I have it",
+              and the answer is a date — not an interval they have to add to today themselves.
+            * it sat below the field, so it was read AFTER tapping. Someone opening the picker met
+              greyed-out dates with no explanation on screen above them.
+            * it was styled as a footnote, in the lightest colour on the panel, next to nothing.
+
+          Now it is the first thing in the facet, in the baker's own accent, and it names the day.
+          A date is checkable against the calendar in somebody's head; "at least 2 days" is arithmetic
+          they have to do while a picker is open. */}
+      {leadTimeDays > 0 && (
+        <div style={s.earliest(accent)}>
+          <span style={s.earliestLabel}>Earliest {bakerName} can bake for you</span>
+          <span style={s.earliestDate}>{longDate(earliest)}</span>
+        </div>
+      )}
+
+      <input
+        id="sf-date" type="date" value={value} min={earliest}
+        aria-label="Delivery date"
+        onChange={e => patch({ details: { deliveryDate: e.target.value } })}
+        style={{ ...s.input, ...(tooSoon ? s.inputBad : null) }}
+      />
+      {tooSoon && (
+        <div style={s.bad}>That is sooner than {bakerName} can manage — pick a later date.</div>
+      )}
+
+      <label style={s.label} htmlFor="sf-occasion">What&rsquo;s the occasion?</label>
+      <div style={s.chips}>
+        {OCCASIONS.map(([k, label]) => (
+          <button key={k} type="button" aria-pressed={draft.details.occasion === k}
+                  style={{ ...s.chip, ...(draft.details.occasion === k ? s.chipOn : null) }}
+                  onClick={() => patch({ details: { occasion: k } })}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── What this facet deliberately does NOT ask ───────────────────────────────────────────
+          The message on the cake, the number, and the age band. All three were here; all three are
+          gone.
+
+          At this moment the customer is asking "can you make it, and what will it cost". Those three
+          are PRODUCTION details the baker settles once the design is agreed, and asking for them
+          before a price has even been discussed is how a short enquiry turns into a form — the exact
+          thing this whole design exists to avoid.
+
+          The baker collects them instead: the number has its own field in the order form, and the
+          wording goes in Special instructions. The draft still carries all three, so a future door
+          can fill them without re-plumbing the payload. */}
+
+      {/* No name and no phone here. Both are asked on the verification screen, together, because
+          that is one question — "who are you and how does {bakerName} reach you" — and splitting it
+          across two screens is what made the Send button look dead for a reason nobody could see. */}
+      <button type="button" style={{ ...s.done, ...(tooSoon ? s.doneOff : null) }}
+              disabled={!!tooSoon} onClick={close}>
+        Done
+      </button>
+    </>
+  );
+}
+
+/** "Friday 7 August" — a day somebody can check against the calendar in their head, which an
+ *  interval ("at least 2 days") is not. Built from the parts for the same timezone reason as
+ *  addDays: `new Date('2026-08-07')` parses as UTC midnight and renders as the 6th in IST. */
+function longDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/** yyyy-mm-dd, n days on. Built from the parts rather than Date arithmetic so it cannot drift a
+ *  day across a timezone the way toISOString does in IST. */
+function addDays(iso, n) {
+  if (!n) return iso;
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+}
+
+const s = {
+  hint:  { fontSize: 13, fontWeight: 600, color: '#7A6C60' },
+  grid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))', gap: 9 },
+  opt:   { display: 'flex', flexDirection: 'column', gap: 2, padding: '13px 10px', cursor: 'pointer',
+           borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff', font: 'inherit' },
+  optOn: { borderColor: '#2C4433', boxShadow: '0 0 0 2px rgba(44,68,51,0.12)' },
+  optBig:   { fontSize: 15, fontWeight: 800, color: '#2A241F' },
+
+  // The conclusion, sized like one. It is the only number in this facet the customer did not pick
+  // themselves, so it carries the weight on the page that it carries in the order.
+  answer:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+              padding: '18px 12px', borderRadius: 14, background: '#F7F4EE',
+              border: '1px solid #EDE5DB' },
+  answerKg: { fontSize: 26, fontWeight: 800, color: '#2A241F', letterSpacing: '-0.01em' },
+  answerWho:{ fontSize: 12.5, fontWeight: 600, color: '#7A6C60' },
+  optSmall: { fontSize: 11, fontWeight: 600, color: '#A2968A' },
+
+  label: { fontSize: 12, fontWeight: 700, color: '#7A6C60', marginTop: 4 },
+  input: { padding: '12px 14px', borderRadius: 12, border: '1.5px solid #E7DFD5', font: 'inherit',
+           fontSize: 14, color: '#2A241F', boxSizing: 'border-box', width: '100%' },
+  inputBad: { borderColor: '#C0392B' },
+
+  chips: { display: 'flex', flexWrap: 'wrap', gap: 6 },
+  chip:  { padding: '8px 13px', borderRadius: 20, border: '1.5px solid #E7DFD5', background: '#fff',
+           font: 'inherit', fontSize: 12.5, fontWeight: 700, color: '#7A6C60', cursor: 'pointer' },
+  chipOn: { borderColor: '#2C4433', color: '#2C4433', background: '#F4F7F4' },
+
+  tierRow: { display: 'flex', gap: 10, flexWrap: 'wrap' },
+  tierOpt: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'pointer',
+             padding: '14px 18px', borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff',
+             font: 'inherit', minWidth: 92 },
+  tierLabel: { fontSize: 13, fontWeight: 700, color: '#2A241F' },
+  back:  { alignSelf: 'flex-start', background: 'none', border: 'none', font: 'inherit', fontSize: 12.5,
+           fontWeight: 700, color: '#7A6C60', cursor: 'pointer', padding: '4px 0', textDecoration: 'underline' },
+
+  // Not a footnote. It answers the question the facet asks, so it gets the baker's accent, a
+  // border, and the largest text in the block after the date itself.
+  earliest: (accent) => ({
+    display: 'flex', flexDirection: 'column', gap: 1,
+    padding: '10px 13px', borderRadius: 11,
+    border: `1.5px solid ${accent}44`, background: `${accent}0F`,
+  }),
+  earliestLabel: { fontSize: 11, fontWeight: 700, color: '#7A6C60', letterSpacing: 0.2 },
+  earliestDate:  { fontSize: 15, fontWeight: 800, color: '#2A241F' },
+
+  note: { fontSize: 11.5, fontWeight: 600, color: '#A2968A', lineHeight: 1.5 },
+  bad:  { fontSize: 12, fontWeight: 700, color: '#C0392B' },
+
+  done:    { marginTop: 8, padding: '13px 0', borderRadius: 12, border: 'none', background: '#2C4433',
+             color: '#fff', font: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+  doneOff: { background: '#E3DBD1', color: '#A2968A', cursor: 'default' },
+};

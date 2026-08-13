@@ -8,7 +8,13 @@ export default defineConfig({
   plugins: [react()],
   server: { port: 5173, strictPort: true, allowedHosts: ['.localhost'] },  // pin 5173; accept <slug>.localhost subdomains
   root: isDev ? 'dev' : undefined,
+  // Load .env files from the project root, not from `root` (dev/). Without this, Vite's envDir
+  // defaults to `root` = dev/, so the project-root .env.local (VITE_TURNSTILE_SITE_KEY) never
+  // reaches the harness and the captcha widget renders with no site key.
+  envDir: __dirname,
+  publicDir: resolve(__dirname, 'public'),  // brand assets (favicons, manifest) live at the repo root, not under dev/
   build: isDev ? undefined : {
+    copyPublicDir: false,                   // dist is the library bundle; consuming apps copy public/ themselves
     lib: {
       entry: resolve(__dirname, 'src/index.js'),
       name: 'SpattooDesigner',

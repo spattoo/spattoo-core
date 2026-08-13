@@ -74,6 +74,14 @@ export function harvestPiping(design) {
           tierIndex: i,
           tierCount: n,
           zone: zone === 'top' ? 'Rim' : 'Base',
+          // Photo orders only: where the model saw this border on the reference image. Carried
+          // rather than derived, because the leader-line anchor for a photo cannot be computed —
+          // there is no camera to project through, only the box the model reported.
+          bbox: p.bbox ?? null,
+          // Photo orders only: the model's own read of the technique. A FALLBACK for when no
+          // curated nozzle exists — never a substitute for one, and rendered so the difference is
+          // visible.
+          seenTechnique: p.technique ?? null,
         });
       });
     });
@@ -92,4 +100,111 @@ export function harvestPiping(design) {
   });
 
   return { elements, freehand, elementIds: [...ids] };
+}
+
+// ── Everything that has to be PLACED on the cake ──────────────────────────────
+// harvestPiping answers "which nozzle for which piping". This answers a different
+// question: what does the baker still have to put on, and have they put it all on?
+//
+// ── WHY THIS EXISTS SEPARATELY ────────────────────────────────────────────────
+// Until now the X-Ray sheet was piping-centric. Stickers, toppers, texts and the age
+// numbers appeared nowhere on it — a lion topper is the most visible thing on the cake
+// and the easiest to forget, and the sheet said nothing about it. harvestColors touches
+// stickers, but only to pull a colour out of them.
+//
+// ── THE COMPLETENESS TRAP ─────────────────────────────────────────────────────
+// A checklist makes a claim the rest of the report does not: that this is EVERYTHING.
+// If it enumerates six collections and the design grows a seventh, the sheet quietly
+// gets shorter, the baker trusts it, and a decoration ships missing. A checklist that
+// silently omits is worse than no checklist, because it is believed.
+//
+// So the source list is written out ONCE, explicitly, right here — every placeable
+// collection in DEFAULT_DESIGN (useCakeDesign.js), including the two easiest to miss:
+// `writing`, which is a SINGLE OBJECT rather than an array, and `ages`, which is the
+// kind of thing added later and forgotten. If you add a placeable collection to the
+// design, add it here in the same change.
+//
+//   tiers[].topPipings / .bottomPipings   piped rim + base borders
+//   design.stickers                       decorations, toppers, decals  ← the lion
+//   design.decorations                    legacy stickers (pre-migration designs)
+//   design.texts                          text on the cake
+//   design.ages                           gold 3D balloon numbers
+//   design.writing                        cream-pen message (ONE object, nullable)
+//   design.piping                         freehand cream-pen strokes
+//
+// ── ORDER ─────────────────────────────────────────────────────────────────────
+// Grouped by tier, BOTTOM UP, because that is the order a cake is assembled in — the
+// list should read in the order the hand works, not alphabetically or by type. Items
+// that belong to the whole cake rather than one tier (texts, ages, writing, freehand)
+// come last, under "Finishing", which is also when they actually go on.
+//
+// Deduped by (what · where) with a count, reusing the rule report.js already applies to
+// piping: six scattered sprinkles of one element are ONE line reading "× 6". Nobody
+// ticks the same box six times.
+export function harvestPlaceables(design) {
+  const tiers = design?.tiers ?? [];
+  const n = tiers.length;
+  const groups = [];
+
+  const push = (bucket, what, where, key) => {
+    const found = bucket.items.find(i => i.key === key);
+    if (found) { found.count++; return; }
+    bucket.items.push({ key, what, where, count: 1 });
+  };
+
+  // Per tier, bottom up.
+  tiers.forEach((t, i) => {
+    const bucket = { title: tierLabel(i, n), items: [] };
+
+    topList(t).forEach(p => push(bucket, p?.name || 'Piping', 'Rim', `pipe-top-${p?.id ?? p?.name}`));
+    bottomList(t).forEach(p => push(bucket, p?.name || 'Piping', 'Base', `pipe-bot-${p?.id ?? p?.name}`));
+
+    // Stickers and legacy decorations carry their own tierIndex, so they are filtered
+    // per tier rather than collected globally — the checklist has to say WHICH tier the
+    // lion goes on, or it does not save anyone a decision.
+    [...(design?.stickers ?? []), ...(design?.decorations ?? [])]
+      .filter(s => (s?.tierIndex ?? 0) === i)
+      .forEach(s => push(
+        bucket,
+        s?.name || 'Decoration',
+        s?.zone ? String(s.zone).replace(/_/g, ' ') : null,
+        `deco-${s?.elementId ?? s?.name}-${s?.zone ?? ''}`,
+      ));
+
+    if (bucket.items.length) groups.push(bucket);
+  });
+
+  // Whole-cake items. Last, because that is when they go on.
+  const finishing = { title: 'Finishing', items: [] };
+
+  (design?.texts ?? []).forEach((t, idx) => push(
+    finishing,
+    t?.content ? `Text — "${t.content}"` : 'Text',
+    null,
+    `text-${t?.id ?? idx}`,
+  ));
+
+  (design?.ages ?? []).forEach((a, idx) => push(
+    finishing,
+    `Number "${a?.value ?? ''}"`.replace(' ""', ''),
+    a?.finish ? `${a.finish} topper` : 'topper',
+    `age-${a?.id ?? idx}`,
+  ));
+
+  // Nullable SINGLE object, not an array — the shape most likely to be dropped by an
+  // enumerator written in a hurry.
+  if (design?.writing?.text) {
+    push(finishing, `Message — "${design.writing.text}"`, 'cream pen', 'writing');
+  }
+
+  (design?.piping ?? []).forEach((p, idx) => push(
+    finishing,
+    'Freehand piping',
+    typeof p?.tierIndex === 'number' ? tierLabel(p.tierIndex, n) : 'cream pen',
+    `fh-${p?.id ?? idx}`,
+  ));
+
+  if (finishing.items.length) groups.push(finishing);
+
+  return groups;
 }

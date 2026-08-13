@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { heightfieldToNormalMap } from './heightfieldNormal.js';
 import { mulberry32 } from '../../utils/random.js';
+import { corsUrl } from '../../utils/assetUrl.js';
 
 // Turn a photo of a real texture (e.g. a palette-knife stroke on white) into cake-surface relief.
 // A flat colour photo can't be used as a height map directly: the white BACKGROUND is bright but must
@@ -126,13 +127,16 @@ export function normalTextureFromField({ height, w, h }, strength = 1) {
   return heightfieldToNormalMap(height, w, h, strength * 4);
 }
 
+// corsUrl is applied HERE, not left to callers — loadStrokeMaps/loadNormalMapFromUrl are exported from
+// the package (src/index.js), so the url comes from a HOST APP and we cannot rely on it being qualified.
+// Idempotent, so an already-qualified url passes through untouched. See designer/utils/assetUrl.js.
 function loadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = reject;
-    img.src = url;
+    img.src = corsUrl(url);
   });
 }
 

@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
+import Chip from '../shared/Chip.jsx';
+import { dietTone } from '../orders/dietary.js';
+import DietaryOptionsSection from './DietaryOptionsSection.jsx';
+import { dockedLeft } from '../shared/rail.js';
 
 // Flavours — a top-level settings destination (peer of Store Settings), not a section
 // inside it, so the catalogue can grow without bloating the store-config screen.
@@ -12,10 +16,35 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
   const isMobile = useIsMobile();
   const [flavours, setFlavours]                 = useState(null);
   const [excluded, setExcluded]                 = useState(() => new Set());
+  // ── Signatures ────────────────────────────────────────────────────────────────────────────────
+  // The one piece of per-baker taste knowledge worth collecting: the storefront's suggester scores
+  // global rules ("children go chocolate"), and this is the only place a baker's own judgement
+  // enters. A TIEBREAK there, never an argument — a signature tea still loses to chocolate on a
+  // child's birthday. Capped, because "what we're known for" means nothing if it is everything.
+  const MAX_SIGNATURES = 3;
+  const [signatures, setSignatures]             = useState(() => new Set());
+  // Dietary vocabulary + this baker's declarations. `conflicts` is keyed
+  // `${flavourId}|${requirementKey}` — a flat Set beats a nested map here because every
+  // read and write is a single pair, and nesting would only add spread-merge noise.
+  const [diet,      setDiet]      = useState([]);
+  const [conflicts, setConflicts] = useState(() => new Set());
+  const [baseline,  setBaseline]  = useState(() => new Set());
+  // Requirements this bakery doesn't deal in at all (by key).
+  const [dietOff,   setDietOff]   = useState(() => new Set());
   const [loading,  setLoading]  = useState(false);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
   const [error,    setError]    = useState(null);
+  // Per-kg rates, keyed by flavour id and held as the STRING the baker typed — not a
+  // number. A half-typed "1" must not become 1, an emptied box must stay empty rather
+  // than collapsing to 0, and re-rendering must never reformat what someone is mid-way
+  // through. Parsing happens once, on save.
+  const [prices, setPrices] = useState({});
+  // Only prices are settled here. Whether the storefront DISPLAYS the flavour list is
+  // the menu section's own on/off in the storefront customiser — one control, where the
+  // section is. A `show_flavours` flag briefly lived here too and had to go: it also
+  // emptied the API response, which broke the order form's flavour picker.
+  const [priceVisibility, setPriceVisibility] = useState('private');
 
   useEffect(() => {
     if (!open) return;
@@ -23,13 +52,35 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
     if (!apiClient.fetchBakerFlavours) { setFlavours([]); return; }
     setLoading(true);
     apiClient.fetchBakerFlavours()
-      .then(list => {
-        const arr = Array.isArray(list) ? list : [];
+      .then(res => {
+        // The route grew a wrapper when it gained the visibility settings; an array is
+        // still accepted so a core running against an older API keeps working.
+        const arr = Array.isArray(res) ? res : (res?.flavours ?? []);
         setFlavours(arr);
         setExcluded(new Set(arr.filter(f => f.excluded).map(f => f.id)));
+        setSignatures(new Set(arr.filter(f => f.is_signature).map(f => f.id)));
+        setPrices(Object.fromEntries(
+          arr.filter(f => f.price_per_kg != null).map(f => [f.id, String(f.price_per_kg)]),
+        ));
+        if (res?.visibility) setPriceVisibility(res.visibility.price_visibility ?? 'private');
+        // Effective state seeds the controls; the baseline is kept alongside so a chip
+        // can show WHERE it came from. A baker cannot sensibly overrule a default they
+        // cannot see is a default.
+        setConflicts(new Set(arr.flatMap(f => (f.conflicts_with ?? []).map(c => `${f.id}|${c.key}`))));
+        setBaseline(new Set(arr.flatMap(f => (f.baseline_conflicts ?? []).map(k => `${f.id}|${k}`))));
       })
       .catch(e => { setError(e.message); setFlavours([]); })
       .finally(() => setLoading(false));
+
+    // The vocabulary itself, so retiring or adding a requirement never needs a release.
+    // The baker-scoped route so each row carries this bakery's on/off state.
+    (apiClient.fetchBakerDietaryRequirements ?? apiClient.fetchDietaryRequirements)?.()
+      .then(rows => {
+        if (!Array.isArray(rows)) return;
+        setDiet(rows);
+        setDietOff(new Set(rows.filter(r => r.offered === false).map(r => r.key)));
+      })
+      .catch(() => {});
   }, [open]);
 
   function toggleFlavour(id) {
@@ -40,11 +91,74 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
     });
   }
 
+  function toggleDietOption(key) {
+    setDietOff(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  // What this bakery deals in — drives both the per-flavour chips below and,
+  // via the API, what a customer is offered.
+  const offeredDiet = (diet ?? []).filter(d => !dietOff.has(d.key));
+
+  function toggleConflict(flavourId, key) {
+    setConflicts(prev => {
+      const next = new Set(prev);
+      const id = `${flavourId}|${key}`;
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  // A rate the baker can't have meant. Blank is fine — it means "not priced", which the
+  // storefront renders as "ask" — but a typo shouldn't reach the server to be rejected
+  // there, and it certainly shouldn't reach a customer.
+  const badPrice = (id) => {
+    const raw = (prices[id] ?? '').trim();
+    if (!raw) return false;
+    const n = Number(raw);
+    return !Number.isFinite(n) || n < 0;
+  };
+  const priceErrors = (flavours ?? []).filter(f => badPrice(f.id));
+
   async function handleSave() {
-    if (!apiClient.updateBakerFlavourExclusions) return;
+    if (!apiClient.updateBakerFlavours) return;
+    if (priceErrors.length) { setError('Check the prices marked in red.'); return; }
     setSaving(true); setError(null); setSaved(false);
     try {
-      await apiClient.updateBakerFlavourExclusions([...excluded]);
+      // One call carries the flags, the rates and the visibility — they are saved by one
+      // button, so splitting them would let a baker end up half-saved with no way to tell.
+      await apiClient.updateBakerFlavours({
+        flavours: (flavours ?? []).map(f => ({
+          flavour_id: f.id,
+          excluded: excluded.has(f.id),
+          is_signature: signatures.has(f.id),
+          // '' means "unprice this" and must reach the server as null, not 0 — 0 is a
+          // baker advertising a free cake.
+          price_per_kg: (prices[f.id] ?? '').trim() === '' ? null : Number(prices[f.id]),
+        })),
+        visibility: { price_visibility: priceVisibility },
+      });
+
+      if (apiClient.updateBakerDietaryExclusions) {
+        await apiClient.updateBakerDietaryExclusions([...dietOff]);
+      }
+      // Sent as the EFFECTIVE truth per flavour — "these are the ones we can't make" —
+      // and the API works out what differs from Spattoo's default. The panel never has
+      // to reason about baselines or diffs, which is why it can stay this small.
+      if (apiClient.updateBakerFlavourDietaryConflicts) {
+        await apiClient.updateBakerFlavourDietaryConflicts(
+          (flavours ?? []).map(f => ({
+            flavourId: f.id,
+            source: 'global',
+            requirementKeys: (diet ?? [])
+              .map(d => d.key)
+              .filter(k => conflicts.has(`${f.id}|${k}`)),
+          })),
+        );
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
@@ -59,13 +173,12 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
         @keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
       `}</style>
 
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: isMobile ? 0 : 76,
+        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
         zIndex: 300, display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',
@@ -87,7 +200,7 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
           }}>← Back</button>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Flavours</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Choose which flavours you offer</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>What you can make — flavours and dietary options</div>
           </div>
         </div>
 
@@ -109,8 +222,76 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
 
           {flavours && !loading && (
             <>
+              <DietaryOptionsSection
+                options={diet}
+                excluded={dietOff}
+                onToggle={toggleDietOption}
+                isMobile={isMobile}
+              />
+
               <Section title="Flavours">
-                <Field label="Offered flavours" hint="Turn off any flavour you don't offer. Hidden flavours won't appear to customers placing an order.">
+                <Field
+                  label="Offered flavours"
+                  hint="Turn off any flavour you don't offer. Hidden flavours won't appear to customers placing an order. Under each one, mark anything you can't make it as — a customer who asks for that gets a note to check with you, and can still place the order."
+                >
+                  {/* What a customer can see, stated as a sentence rather than left to be
+                      inferred from a control. A baker must never have to work out whether
+                      the number they just typed is public — this line changing as they
+                      choose is the whole explanation of the feature. */}
+                  <div style={{ background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11,
+                                padding: '11px 13px', marginTop: 8, display: 'flex',
+                                flexDirection: 'column', gap: 9 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#2C4433' }}>
+                      {priceVisibility === 'public'
+                        ? 'Customers see your prices.'
+                        : priceVisibility === 'verified'
+                          ? 'Prices show once a customer verifies a phone or email.'
+                          : 'Customers don’t see your prices.'}
+                    </div>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {[
+                        { key: 'private',  label: 'Prices private' },
+                        { key: 'verified', label: 'After verifying' },
+                        { key: 'public',   label: 'Prices public' },
+                      ].map(o => (
+                        <button
+                          key={o.key} type="button"
+                          onClick={() => setPriceVisibility(o.key)}
+                          aria-pressed={priceVisibility === o.key}
+                          style={{
+                            padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                            border: `1.5px solid ${priceVisibility === o.key ? '#2C4433' : '#E5E7EB'}`,
+                            background: priceVisibility === o.key ? '#2C4433' : '#fff',
+                            color: priceVisibility === o.key ? '#fff' : '#6B7280',
+                            fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700,
+                          }}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* The reason a baker who never publishes should still fill the rates
+                        in. Without this the price boxes look like a request to go public. */}
+                    <div style={{ fontSize: 10.5, color: '#9CA3AF', fontWeight: 600, lineHeight: 1.5 }}>
+                      Your prices are always used to work out a suggested quote for you, even when
+                      customers can&rsquo;t see them.
+                    </div>
+                  </div>
+
+                  {/* A bare ☆ tells a baker nothing. Says what it DOES — a customer-facing effect,
+                      not a filing category — and names the cap, so the greyed-out stars read as a
+                      limit rather than a bug. */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 12,
+                                fontSize: 10.5, color: '#9CA3AF', fontWeight: 600, lineHeight: 1.5 }}>
+                    <span style={{ color: '#D4A017', fontSize: 13 }}>★</span>
+                    <span>
+                      Star up to {MAX_SIGNATURES} you&rsquo;re known for. When a customer asks the
+                      storefront to help them choose, these get a nudge{signatures.size > 0 ? '' : ' — none picked yet'}.
+                    </span>
+                  </div>
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
                     {flavours.length === 0 && (
                       <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>No flavours available yet.</span>
@@ -119,16 +300,124 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
                       const offered = !excluded.has(f.id);
                       return (
                         <div key={f.id} style={{
-                          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0',
-                          borderTop: i === 0 ? 'none' : '1px solid #F3F4F6',
+                          padding: '10px 0', borderTop: i === 0 ? 'none' : '1px solid #F3F4F6',
                         }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: offered ? '#2C4433' : '#9CA3AF' }}>{f.name}</div>
-                            {f.description && (
-                              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{f.description}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: offered ? '#2C4433' : '#9CA3AF' }}>{f.name}</div>
+                              {f.description && (
+                                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{f.description}</div>
+                              )}
+                            </div>
+                            {/* Only for something they actually sell — starring a flavour you do
+                                not offer is dead work, the same reason the price field hides. */}
+                            {offered && (
+                              <button type="button"
+                                      onClick={() => setSignatures(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(f.id)) next.delete(f.id);
+                                        else if (next.size < MAX_SIGNATURES) next.add(f.id);
+                                        return next;
+                                      })}
+                                      disabled={!signatures.has(f.id) && signatures.size >= MAX_SIGNATURES}
+                                      title={signatures.has(f.id)
+                                        ? 'One of your signatures'
+                                        : signatures.size >= MAX_SIGNATURES
+                                          ? `You've picked ${MAX_SIGNATURES} already — unstar one first`
+                                          : 'Mark as a signature'}
+                                      aria-pressed={signatures.has(f.id)}
+                                      aria-label={`Signature flavour: ${f.name}`}
+                                      style={{
+                                        border: 'none', background: 'none', cursor: 'pointer', padding: 4,
+                                        fontSize: 15, lineHeight: 1,
+                                        color: signatures.has(f.id) ? '#D4A017' : '#D1D5DB',
+                                        opacity: !signatures.has(f.id) && signatures.size >= MAX_SIGNATURES ? 0.35 : 1,
+                                      }}>
+                                {signatures.has(f.id) ? '★' : '☆'}
+                              </button>
                             )}
+                            <Toggle checked={offered} onChange={() => toggleFlavour(f.id)} />
                           </div>
-                          <Toggle checked={offered} onChange={() => toggleFlavour(f.id)} />
+
+                          {/* Only for flavours on offer, for the same reason as the
+                              dietary chips below: pricing something you don't sell is
+                              dead work. The rate is NOT cleared when a flavour is
+                              switched off — it is kept, so a baker who turns mango off
+                              for the winter still has their number in April. */}
+                          {offered && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, paddingLeft: 2 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: 0.3 }}>
+                                PER KG
+                              </span>
+                              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                                <span style={{ position: 'absolute', left: 9, fontSize: 12.5, fontWeight: 700,
+                                               color: badPrice(f.id) ? '#DC2626' : '#9CA3AF', pointerEvents: 'none' }}>₹</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={prices[f.id] ?? ''}
+                                  onChange={e => setPrices(p => ({ ...p, [f.id]: e.target.value }))}
+                                  placeholder="—"
+                                  aria-label={`Price per kg for ${f.name}`}
+                                  aria-invalid={badPrice(f.id) || undefined}
+                                  style={{
+                                    width: 104, padding: '7px 10px 7px 22px', borderRadius: 9,
+                                    border: `1.5px solid ${badPrice(f.id) ? '#DC2626' : '#E5E7EB'}`,
+                                    fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
+                                    color: '#2C4433', boxSizing: 'border-box',
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                />
+                              </div>
+                              {/* Optional, and it has to LOOK optional. A baker who prices
+                                  nothing should feel finished, not nagged — this exists to
+                                  make pricing available, never compulsory. */}
+                              <span style={{ fontSize: 10.5, color: '#C3CBC6', fontWeight: 600 }}>
+                                {badPrice(f.id) ? 'Not a valid price' : 'optional'}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Only for flavours actually on offer — declaring what you
+                              can't do with a flavour you don't sell is dead work.
+                              Phrased as "can't be made", matching what is stored: we
+                              record the NEGATIVE, so nothing here ever reads as us
+                              certifying that a flavour IS suitable. */}
+                          {/* Only requirements this bakery actually deals in. Declaring
+                              that one flavour can't be made nut-free is dead work if you
+                              never guarantee nut-free at all — and it would make the row
+                              longer for every baker who offers less. */}
+                          {offered && offeredDiet.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, paddingLeft: 2 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: 0.3 }}>
+                                CAN'T BE MADE
+                              </span>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {offeredDiet.map(d => {
+                                  const id       = `${f.id}|${d.key}`;
+                                  const active   = conflicts.has(id);
+                                  const fromUs   = baseline.has(id);
+                                  return (
+                                    <Chip
+                                      key={d.key}
+                                      label={d.label}
+                                      active={active}
+                                      isMobile={isMobile}
+                                      tone={dietTone(d.kind)}
+                                      // Dashed while it is still OUR default rather than
+                                      // the baker's own call — and it stays tappable, so
+                                      // "we DO make a nut-free hazelnut sponge" is always
+                                      // sayable. A default nobody can overrule would be
+                                      // us making a claim about their kitchen.
+                                      variant={active && fromUs ? 'dashed' : 'solid'}
+                                      title={active && fromUs ? "Spattoo's default — tap if you do make it" : undefined}
+                                      onClick={() => toggleConflict(f.id, d.key)}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

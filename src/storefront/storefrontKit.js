@@ -1,4 +1,5 @@
 // Shared storefront kit — colour utilities, fonts and default copy used by the storefront.
+import { UI_FONT } from '../shared/fonts.js';
 
 // Accept both '#hex' and 'rgb(r, g, b)' so the utilities chain safely
 // (e.g. lighten(darken(primary, .8), .05) — darken returns an rgb() string).
@@ -22,16 +23,159 @@ export function alpha(hex, a) { const [r, g, b] = parse(hex); return `rgba(${r},
 export function lum(hex) { const [r, g, b] = parse(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
 export const onColor = hex => (lum(hex) > 0.6 ? '#241a1d' : '#ffffff');
 
-export const FONT  = "'Quicksand', sans-serif";              // soft sans for body / UI
+// SEC-16 — allow only http(s) at an href sink for a stored, baker-controlled URL (e.g. website_url).
+// React escapes the string but does NOT block dangerous schemes, so `javascript:`/`data:`/`vbscript:`
+// on an href would still execute on click. Returns the URL if it's an absolute http(s) URL, else null
+// (caller then omits the link). Relative/garbage URLs → null (website_url should be absolute anyway).
+// Mirror of the server-side guard in spattoo-api (src/lib/safeUrl.js) — the two runtimes can't share
+// one module, so keep them in sync. (Hardcoded-scheme links — tel:, https://instagram.com/… — are
+// safe by construction and don't go through this.)
+export function safeHref(url) {
+  if (typeof url !== 'string') return null;
+  const v = url.trim();
+  try {
+    const u = new URL(v);
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// SEC-CORE-4 — normalize a baker-authored Instagram handle to the charset Instagram
+// itself allows (letters, digits, dot, underscore). The scheme and host at the sink
+// are hardcoded (`https://instagram.com/${ig}`), so an odd handle is NOT a scheme
+// escape or an open redirect — but `/`, `?`, `#` or whitespace in it would silently
+// retarget the path (`.../foo?x=` → a different URL than intended) or produce a
+// broken link. Returns null when nothing usable remains, so the caller omits the
+// link entirely — same contract as safeHref above.
+//
+// Applied at BOTH ends deliberately: at the settings input (so bad input is never
+// stored) and at render (so rows already in the database are cleaned too). One
+// pure function, two call sites — never a second copy of the rule.
+export function normalizeIgHandle(handle) {
+  if (typeof handle !== 'string') return null;
+  // Tolerate what people actually paste: a full profile URL, a leading @, spaces.
+  // Order matters — DISCARD any query/fragment before picking the path segment,
+  // so `sweetbakes?next=evil` yields `sweetbakes`, not `evil`. (Splitting on
+  // `[/?#]` and taking the last piece would promote the query string instead.)
+  const noScheme = handle.trim().replace(/^[a-zA-Z][\w+.-]*:\/\//, '');
+  const path = noScheme.split(/[?#]/)[0];
+  const last = path.split('/').filter(Boolean).pop() || '';
+  const cleaned = last.replace(/^@+/, '').replace(/[^A-Za-z0-9._]/g, '');
+  return cleaned ? cleaned.slice(0, 30) : null;   // Instagram caps handles at 30
+}
+
+// ── Storefront palette ──────────────────────────────────────────────────────────
+// SINGLE SOURCE OF TRUTH for every brand-derived colour on the storefront. Colour work is highly
+// iterative, so ALL the tunable numbers live here — change one and the whole page follows; no
+// scattered lighten()/darken() magic numbers in styles(). Every value derives from the baker's
+// `primary` (deep maroon) + `accent` (rose), so the palette holds for ANY baker's brand colours.
+//
+// Model = TONE-ON-TONE: band backgrounds are tints of `accent`; text/actions use `primary`.
+// To retune the look, edit the amounts below. To switch models later (e.g. accent-band), this is
+// the only function to change.
+export function buildPalette(primary, accent, tk = {}, opts = {}) {
+  // Bands derive from PRIMARY (the dominant brand colour) — the hero/header band is the primary,
+  // NOT the accent. Accent is the secondary POP (the drip). bandStrong darkened slightly so on-band
+  // text has contrast; onBand is ADAPTIVE (onColor) so it reads on a dark OR light primary.
+  const bandStrong = darken(primary, 0.04);   // hero + header — the primary band
+  // Baker lever (storefront_customizations.cta_color): ONE "text" colour for the hero HEADLINE +
+  // SUBTITLE + BUTTON LABELS. Unset → adaptive (white on dark band, dark on light). The BUTTON
+  // BACKGROUND is always the BAND colour, so the band and the buttons match.
+  const heroText = opts.ctaColor || onColor(bandStrong);
+  // Gradient-hero (aurora) surfaces — DERIVED from the pickers so moving a picker moves the whole
+  // hero. heroTop = the light top tone (also the flush page/header surface); heroGradient = a soft
+  // top→deeper warm wash; heroInk = the headline/subtitle colour (cta_color picker, else dark on the
+  // light gradient). Only meaningful when the template opts into the gradient treatment.
+  const heroTop = lighten(accent, 0.82);
+  return {
+    // Backgrounds (light → strong)
+    bandStrong,
+    bandSoftA:  lighten(primary, 0.66),  // section band A (Our story)
+    bandSoftB:  lighten(primary, 0.54),  // section band B (Reviews)
+    // Lines
+    hairline:   lighten(primary, 0.72),  // card / divider borders (tinted, replaces neutral)
+    // Hero 3D cake (HeroCake3D) — the featured cake colour + its studio grid + drip. tk.cake='brand'
+    // → the cake takes the PRIMARY colour (follows the picker); a hex → that fixed colour; default ivory.
+    cake:        tk.cake === 'brand' ? primary : (tk.cake ?? '#E6D3AC'),
+    drip:        darken(accent, 0.06),   // buttercream drip over the rim — the ACCENT pop
+    grid:        '#ffffff',
+    gridOpacity: 0.5,
+    // Gradient-hero derived surfaces (see above) — all move with the pickers.
+    heroTop,
+    heroGradient: tk.hero?.type === 'gradient-cake' ? `linear-gradient(120deg, ${heroTop} 0%, ${lighten(accent, 0.55)} 100%)` : null,
+    heroInk:      opts.ctaColor || onColor(heroTop),
+    // Text / actions
+    onBand:   onColor(bandStrong),       // header/nav ON the band — white on dark, dark on light
+    heroText,                            // hero headline + subtitle + button labels (via cta_color)
+    cta:      bandStrong,                // buttons use the BAND colour (band & button match)
+    ctaHover: darken(bandStrong, 0.08),  // button hover
+    onCta:    heroText,                  // button label = the chosen text colour
+    eyebrow:  primary,                   // section eyebrows
+  };
+}
+
+export const FONT  = UI_FONT;                                // soft sans for body / UI — ONE declaration (shared/fonts.js)
 export const SERIF = "'Cormorant Garamond', Georgia, serif"; // elegant serif for headings
 
 // Baker-editable storefront text (bakers.storefront_customizations); empty/missing → these.
 export const STOREFRONT_TEXT = {
   hero_tagline:      'You design, we bake it',
+  hero_subtitle:     'Custom cakes for birthdays, weddings and every sweet occasion — designed by you, baked fresh to order.',
   creations_heading: 'Our creations',
   story_heading:     'Our story',
   reviews_heading:   'Loved by our customers',
+  highlight_heading: 'This week',
 };
+
+// ── Font themes ─────────────────────────────────────────────────────────────────
+// A "font theme" swaps the storefront's typography as a set (baker lever, saved as
+// storefront_customizations.font_key). Every family named below MUST be loaded by the
+// host app — see spattoo-web apps/app/app/layout.tsx (next/font, all four families) and
+// the same requirement for admin's theme preview. That was NOT true for a long time —
+// only Quicksand was loaded, so the DEFAULT theme (montserrat → Montserrat + Pacifico)
+// and the cormorant theme silently rendered in a system font (SEC-WEB-7 follow-up, fixed
+// 2026-07-25). Before ADDING a theme with a new family, load that family in the host apps
+// first (and the check-fonts gate forbids re-adding a font CDN to do it).
+export const FONT_THEMES = {
+  montserrat: { key: 'montserrat', label: 'Modern',       brandFont: "'Pacifico', cursive", serif: "'Montserrat', system-ui, sans-serif",      font: "'Montserrat', system-ui, sans-serif" },
+  cormorant:  { key: 'cormorant',  label: 'Classic serif', brandFont: "'Pacifico', cursive", serif: "'Cormorant Garamond', Georgia, serif",     font: "'Montserrat', system-ui, sans-serif" },
+  quicksand:  { key: 'quicksand',  label: 'Soft & round',  brandFont: "'Pacifico', cursive", serif: "'Quicksand', system-ui, sans-serif",       font: "'Quicksand', system-ui, sans-serif" },
+};
+// Overlay a chosen font theme onto template tokens (returns tokens unchanged if none/unknown).
+export function applyFontTheme(tokens, fontKey) {
+  const ft = fontKey && FONT_THEMES[fontKey];
+  return ft ? { ...tokens, font: ft.font, serif: ft.serif, brandFont: ft.brandFont } : tokens;
+}
+
+// ── Sections ────────────────────────────────────────────────────────────────────
+// The storefront body is an ORDERED, TOGGLEABLE list of sections (baker lever, saved as
+// storefront_customizations.sections). Hero + footer are always present and not in this list.
+// Absence → DEFAULT_SECTIONS, so already-published bakers render exactly as before (back-compat).
+// A section object is { type, enabled, ...content } — content lives inline so a type can repeat.
+export const SECTION_TYPES = ['gallery', 'highlight', 'story', 'reviews'];
+// Singleton sections present by default. `highlight` is REPEATABLE and add-only (bakers add one or
+// more via the customiser), so it's not in the defaults — a fresh storefront has no highlight.
+export const DEFAULT_SECTIONS = [
+  { type: 'gallery', enabled: true },
+  { type: 'story',   enabled: true },
+  { type: 'reviews', enabled: true },
+];
+// A new (blank, enabled) section of the given type — used by the customiser's "Add section".
+export function newSection(type = 'highlight') {
+  return { type, enabled: true, title: '', blurb: '', image: '' };
+}
+// Resolve the baker's saved sections into a clean ordered list. Keeps only known types, and
+// appends any DEFAULT type the baker's list is missing (so new section types light up for
+// existing bakers rather than silently never appearing).
+export function resolveSections(customizations) {
+  const saved = Array.isArray(customizations?.sections) ? customizations.sections : null;
+  if (!saved) return DEFAULT_SECTIONS.map(s => ({ ...s }));
+  const known = saved.filter(s => s && SECTION_TYPES.includes(s.type));
+  const seen = new Set(known.map(s => s.type));
+  for (const d of DEFAULT_SECTIONS) if (!seen.has(d.type)) known.push({ ...d });
+  return known.map(s => ({ ...s }));
+}
 // Pick an override only when it's a non-empty string, else the default.
 export const storefrontText = (custom, key) => (custom?.[key]?.trim?.() || STOREFRONT_TEXT[key]);
 
@@ -39,8 +183,10 @@ export function buildContent(baker) {
   return {
     steps: [
       { n: '01', title: 'Design it in 3D', body: 'Start from a template or a blank cake — add tiers, colours, toppers and a message, live in 3D.' },
-      { n: '02', title: 'Send your order', body: `Happy with it? Share your design with ${baker.name}, with your date and any details.` },
-      { n: '03', title: 'Pickup or delivery', body: `${baker.name} bakes it to match your design, ready exactly when you need it.` },
+      { n: '02', title: 'Request a quote', body: `Happy with it? Send your design to ${baker.name} with your date and any details.` },
+      { n: '03', title: 'Get your quote', body: `${baker.name} reviews the design and sends you a price.` },
+      { n: '04', title: 'Approve & order', body: 'Approve the price and place your order.' },
+      { n: '05', title: 'Bake & collect', body: `${baker.name} bakes it and lets you know when it's ready.` },
     ],
     testimonials: [
       { quote: "The 3D designer let me get exactly the cake I pictured for my daughter's birthday — and it looked even better in person!", author: 'Priya S.', occasion: 'Birthday' },

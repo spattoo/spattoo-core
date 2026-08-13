@@ -3,6 +3,14 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
+// SEC-WEB-7 — every drei <Text> MUST pass this as `font`. Without an explicit font,
+// troika-three-text resolves one at runtime and fetches it (plus its index data)
+// from cdn.jsdelivr.net, putting a third-party CDN on the designer's critical path
+// and an extra origin in the CSP. `?inline` makes Vite emit it as a data: URI, so
+// it costs no origin and no request. It is byte-identical to the file troika was
+// already downloading (Noto Sans Regular) — see fonts/README.md — so nothing about
+// the rendered text changes.
+import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
 import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { LoadingPing } from './loadingRegistry.js';
@@ -10,25 +18,108 @@ import CreamWriting from './CreamWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import FinishHandles from './FinishHandles.jsx';
+import { printExposure } from '../shared/printExposure.js';
+import SelectionBox from './SelectionBox.jsx';
+import ResizeHandles from './ResizeHandles.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
-  STICKER_SIZE, SELECTION_COLOR,
+  STICKER_SIZE,
   PICKER_ORIGIN_X, PICKER_STEP_X, PICKER_ORIGIN_Z, PICKER_STEP_Z,
   CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
-  SIDE_STICKER_SURFACE_OFFSET, FLAT_STICKER_Y_OFFSET,
+  FLAT_STICKER_Y_OFFSET,
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
+import GrassPatch from './GrassPatch.jsx';
+import NameBlocks from './NameBlocks.jsx';
+import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
+import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
+import { textStyleOf } from '../textStyles.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
-import { recolorImageData } from '../shared/color/imageRecolor.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
+import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
+import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
+import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
+import { makeRefCountedCache } from '../shared/refCountedCache.js';
+import { seatHalfDepth } from '../geometry/seating.js';
+import { resolveSidePipingBands, sidePipingClearance } from './pipingMetrics.js';
+import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
 import { frostingAllowsStyles } from '../frostings.js';
 import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { toCanvasConfig } from '../hooks/useCakeDesign.js';
+
+// ── Board footprint ─────────────────────────────────────────────────────────────────────────────
+// The board under a cake, sized to CONTAIN the bottom tier. A number cake sits on a RECTANGULAR board (a
+// round drum leaves too much empty gold around a thin digit, and reference number cakes are rectangular),
+// sized to the digit's bounding box; a sheet keeps its rounded box; every other shape gets a round drum
+// sized to boundingRadius so an outline never overhangs. ONE definition so the visible mesh, cream writing
+// and cream pen all agree where the board edge is — they each used to recompute it and could drift.
+function boardOf(bottomTier) {
+  const shp = tierShape(bottomTier);
+  const isGlyph = shp.kind === 'glyph';   // number/letter — a rect board sized to the glyph bbox
+  const isRect = bottomTier.shape === 'rect' || isGlyph;
+  const width = (isGlyph ? shp.halfW * 2 : (bottomTier.width ?? 0)) + 0.9;
+  const depth = (isGlyph ? shp.halfD * 2 : (bottomTier.depth ?? 0)) + 0.9;
+  return isRect
+    ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
+    : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
+// ── Where a board ring of grass reaches to ────────────────────────────────────
+// The ring lives in the gap between the cake wall and the board's edge, and that gap is a different
+// size on every cake — a 6" round on its board, a sheet on its board. So the control is a FRACTION
+// of that gap, and this turns it into the outer bound grassSeats wants: a scale of the board's own
+// outline, the same currency `inset` already speaks.
+//
+// A rect board is scaled uniformly, so on a strongly oblong sheet the ring is a little wider on the
+// short sides than the long ones. That is the same approximation topContains makes everywhere else,
+// and it is invisible next to the jitter already in the seats.
+const BOARD_RING_OUTER_MAX = 0.96;   // never quite the board's edge — grass would hang off it
+function boardRingInset(board, cakeShape, ringWidth = 1) {
+  const w = Math.min(Math.max(ringWidth ?? 1, 0.05), 1);
+  const inner = board.kind === 'rect'
+    ? Math.max((cakeShape.halfW ?? 0) / board.halfW, (cakeShape.halfD ?? 0) / board.halfD)
+    : boundingRadius(cakeShape) / board.radius;
+  return inner + w * (BOARD_RING_OUTER_MAX - inner);
+}
+
+// How far a grass handle must float to stay visible. A clump is as tall as its blades, so a marker
+// at the surface sits INSIDE it — still clickable (the grass mesh has no pointer handlers, so the
+// ray passes straight through to the grab sphere) but invisible, with nothing to aim at. That reads
+// as "the clump will not move", which is exactly how it was reported.
+function grassHandleLift(tierData, boardGrass) {
+  const heights = [
+    ...tierData.map(t => (t.grass?.patches?.length ? (t.grass.height ?? 0) : 0)),
+    boardGrass?.patches?.length ? (boardGrass.height ?? 0) : 0,
+  ];
+  return Math.max(0, ...heights) + 0.06;   // clear of the tallest blade, by a visible margin
+}
+
+// The cake itself, punched out of the ring. Exactly 1 — not a hair under, which would seat blades
+// inside the wall they are supposed to be growing against, and not a hair over, which would leave a
+// bare gold margin between the grass and the cake.
+// `clearance` pushes the hole OUT past whatever is piped on the wall — INVARIANTS #3b. Without it a
+// board ring plants its inner tufts against bare wall and grows straight through a bottom border,
+// the same way letter blocks did. Expressed as a scale because that is what topContains takes.
+function boardGrassHole(cakeShape, reach, clearance = 0) {
+  return { shape: cakeShape, scale: reach > 0 ? (reach + clearance) / reach : 1 };
+}
+
+// The clearance a thing standing ON THE BOARD needs to miss this tier's piping. `height` is the
+// thing's own vertical span from the board up — a tall clump overlaps a border a short one passes
+// under. One question, one helper, whoever is asking (see INVARIANTS #3b).
+function boardClearanceFor(tier, height) {
+  if (!tier) return 0;
+  const bands = resolveSidePipingBands({
+    topPipings: tier.topPipings ?? [], bottomPipings: tier.bottomPipings ?? [],
+    topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
+  });
+  return sidePipingClearance({ bands, yBottom: tier.baseY, yTop: tier.baseY + height });
+}
 
 // Image-based lighting (HDRI). We self-host the env map on R2 — the host supplies
 // the assets base (cfAssetsBase, an env var, dev/prod-specific); only this PATH is
@@ -42,6 +133,47 @@ export function configureEnvMap(cfAssetsBase) {
   _envMapUrl = cfAssetsBase ? `${String(cfAssetsBase).replace(/\/$/, '')}/${ENV_HDR_PATH}` : null;
 }
 function envMapUrl() { return _envMapUrl; }
+
+// Scene ENVIRONMENT config — data, with a default, so the look is tunable without a code change (the
+// host may override via configureSceneEnv). `intensity` is the global IBL/reflection brightness: a WET
+// finish (glaze) mirrors it back as its sheen, while a matte finish (buttercream) barely uses it — so
+// this is the knob that makes a poured glaze read wet. `presetFallback` is the dev env when no self-hosted
+// HDRI URL is configured. Per-finish reflection strength still layers on top via each material's own
+// envMapIntensity (frostings.js).
+export const SCENE_ENV = {
+  intensity: 1.25,                // environmentIntensity — brighter than three's default 1.0 so glossy
+                                  // finishes read wet; matte finishes are unaffected (they ignore IBL).
+  presetFallback: 'apartment',    // dev fallback when cfAssetsBase (the self-hosted HDRI) is absent
+};
+export function configureSceneEnv(partial) { if (partial) Object.assign(SCENE_ENV, partial); }
+
+// Shared three-point rig for every cake scene (live designer, snapshot capture, preview) so the look
+// — and the captured snapshot — stay identical. Softened from the original ambient 0.8 / key 1.5,
+// which overexposed the cake top + camera-facing wall and washed the diffuse colour toward white
+// head-on (true colour only appeared once orbited). `shadows` enables the key's shadow (live scene
+// only). The ONE light rig — edit here, every scene follows.
+export function SceneLights({ shadows = false }) {
+  return (
+    <>
+      <ambientLight intensity={0.45} />
+      <directionalLight position={[6, 14, 8]} intensity={1.1} castShadow={shadows} />
+      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+    </>
+  );
+}
+
+// The ONE environment rule for every cake scene (live designer, snapshot capture, preview). The cake
+// wall is a `meshPhysicalMaterial` and is image-based-lighting dependent — with NO env map it loses
+// all IBL fill and reads its raw warm base under directional-only light (a taupe/brown wall). So when
+// no HDRI URL is configured (local dev, no `cfAssetsBase`), fall back to the neutral `apartment`
+// preset. IBL only — no `background` prop — so the rendered frame carries no sky behind the cake and
+// the capture is free to choose its own (utils/thumbnail.js flattens onto white). Shared so the
+// live scene and CakeThumbnailScene can never drift (they browned differently on dev before this).
+export function SceneEnv() {
+  return envMapUrl()
+    ? <SafeEnvironment files={envMapUrl()} environmentIntensity={SCENE_ENV.intensity} />
+    : <SafeEnvironment preset={SCENE_ENV.presetFallback} environmentIntensity={SCENE_ENV.intensity} />;
+}
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
 // decor seats on the live wavy/swirled wall and hugs it, instead of a fixed offset (which buries decor
@@ -123,14 +255,15 @@ function glyphAdvance(char) {
 
 // One 3D letter (face + extruded side materials). Shared by the round (arc) and
 // rect (flat) text layouts so both render identical glyphs.
-function Glyph({ char, fs, faceColor, sideColor, selected }) {
+// Selection is drawn by SelectionBox around the whole word, never tinted into the glyph material —
+// the violet emissive was additive and shifted the customer's chosen text colour.
+function Glyph({ char, fs, faceColor, sideColor }) {
   return (
     <Center disableY disableZ>
       <Text3D font={helvetikerBold} size={fs} height={fs * 0.22} curveSegments={10}
         bevelEnabled bevelThickness={fs * 0.05} bevelSize={fs * 0.04} bevelSegments={5}>
         {char}
-        <meshStandardMaterial attach="material-0" color={faceColor} roughness={0.78} metalness={0.0}
-          emissive={selected ? SELECTION_COLOR : '#000000'} emissiveIntensity={selected ? 0.10 : 0} />
+        <meshStandardMaterial attach="material-0" color={faceColor} roughness={0.78} metalness={0.0} />
         <meshStandardMaterial attach="material-1" color={sideColor} roughness={0.88} metalness={0.0} />
       </Text3D>
     </Center>
@@ -153,12 +286,12 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
     }
   }, [selected]);
 
-  const isRect = shp.kind === 'rect';
+  // A round wall wraps the cylinder (yaw = theta); EVERY faceted wall (rect + outline: heart, …)
+  // sits flat on the perimeter at fraction u (yaw = the face's outward direction).
+  const facetWall = !isRoundWall(shp);
   const surfaceR = radius + 0.015;
-  // Anchor + facing: round wraps the cylinder (yaw = theta); rect sits flat on the wall
-  // at perimeter fraction u (yaw = the face's outward direction).
   let cx, cz, yaw;
-  if (isRect) {
+  if (facetWall) {
     const pl = rectSidePlacement(shp, textEl.u ?? 0, 0.015);
     cx = pl.x; cz = pl.z; yaw = pl.yaw;
   } else {
@@ -174,10 +307,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
   const totalWidth = charWidths.reduce((s, w) => s + w, 0);
   const hitW = Math.max(0.5, totalWidth + fs * 0.4);
 
-  const boxGeom = useMemo(
-    () => new THREE.EdgesGeometry(new THREE.PlaneGeometry(hitW + 0.12, fs * 1.6)),
-    [hitW, fs]
-  );
+
 
   // Cumulative centre offset of each glyph along the baseline.
   const charOffset = i => {
@@ -189,27 +319,24 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
   return (
     <group>
       {/* Round cake: letters laid along the cylinder arc (each in world space). */}
-      {!isRect && chars.map((char, i) => {
+      {!facetWall && chars.map((char, i) => {
         const angle = textEl.theta + charOffset(i) / surfaceR;
         return (
           <group key={i} position={[surfaceR * Math.sin(angle), textEl.y, surfaceR * Math.cos(angle)]} rotation={[0, angle, 0]}>
-            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} selected={selected} />
+            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} />
           </group>
         );
       })}
 
       <group position={[cx, textEl.y, cz]} rotation={[0, yaw, 0]}>
-        {/* Sheet cake: letters laid flat along the wall, in the anchor's local frame. */}
-        {isRect && chars.map((char, i) => (
+        {/* Faceted wall (sheet/heart/…): letters laid flat along the wall, in the anchor's local frame. */}
+        {facetWall && chars.map((char, i) => (
           <group key={i} position={[charOffset(i), 0, 0]}>
-            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} selected={selected} />
+            <Glyph char={char} fs={fs} faceColor={faceColor} sideColor={sideColor} />
           </group>
         ))}
-        {selected && (
-          <lineSegments position={[0, 0, 0.02]} geometry={boxGeom}>
-            <lineBasicMaterial color={SELECTION_COLOR} />
-          </lineSegments>
-        )}
+        {/* Traces the text's hit plane (below), exactly as a decoration's border does. */}
+        {selected && <SelectionBox width={hitW} height={fs * 1.4} z={fs * 0.22} />}
         {selected && toolbar && (
           <Html position={[0, fs * 1.4 + 0.15, 0.05]} center zIndexRange={[200, 0]}>
             {toolbar}
@@ -238,7 +365,7 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
           didDrag.current      = false;
           startPos.current     = { x: e.clientX, y: e.clientY };
           dragR.current        = surfaceR;
-          startHit.current     = isRect
+          startHit.current     = facetWall
             ? boxHit(pointerRay(e, gl.domElement, camera), shp.halfW, shp.halfD)
             : cylinderHit(pointerRay(e, gl.domElement, camera), surfaceR);
           startTextPos.current = { theta: textEl.theta, y: textEl.y };
@@ -251,7 +378,8 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (!didDrag.current || !startHit.current) return;
-            if (isRect) {
+            if (!canMove) return;                     // pinned — allowed_actions.move === false
+            if (facetWall) {
               const bh = boxHit(pointerRay(ev, gl.domElement, camera), shp.halfW, shp.halfD);
               if (bh) onMove_prop(textEl.id, { u: nearestU(shp, bh.x, bh.z), y: bh.y });
               return;
@@ -289,24 +417,33 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
 const glbXRadiusCache = {};
 
 
+// Grid resolution of a RELIEF decal's mesh (per axis). Displacement is per-VERTEX, so this bounds how
+// finely the baked height field can be sculpted. Tried at 192 (matching the admin studio's ~210 verts per
+// world unit, vs 96's ~114) to see whether an under-resolved `edgeRound` shoulder was flattening the bevel:
+// it made NO visible difference, so it isn't the constraint — the normal map carries the shoulder's shading,
+// not the geometry. Kept at 96: 193² = 37,249 verts per relief sticker vs 97² = 9,409, for nothing.
+const RELIEF_SEGMENTS = 96;
+
 // Builds a flat-strip geometry that curves around a cylinder of the given radius.
 // In the sticker's local space the cylinder axis is at z = -curveRadius, so the
 // strip follows the cake surface naturally.
-function createCurvedPlane(width, height, curveRadius, radialSegments = 16) {
+function createCurvedPlane(width, height, curveRadius, radialSegments = 16, verticalSegments = 1) {
   const halfAngle = width / (2 * curveRadius);
   const positions = [], normals = [], uvs = [], indices = [];
-  for (let j = 0; j <= 1; j++) {
-    const y = (j - 0.5) * height;
+  for (let j = 0; j <= verticalSegments; j++) {
+    const v = j / verticalSegments;
+    const y = (v - 0.5) * height;
     for (let i = 0; i <= radialSegments; i++) {
       const u = i / radialSegments;
       const a = (u - 0.5) * 2 * halfAngle;
       positions.push(curveRadius * Math.sin(a), y, curveRadius * (Math.cos(a) - 1));
       normals.push(Math.sin(a), 0, Math.cos(a));
-      uvs.push(u, j);
+      uvs.push(u, v);
     }
   }
-  for (let i = 0; i < radialSegments; i++) {
-    const a = i, b = i + radialSegments + 1;
+  const stride = radialSegments + 1;                       // verticalSegments rows → a full grid (for displacement)
+  for (let j = 0; j < verticalSegments; j++) for (let i = 0; i < radialSegments; i++) {
+    const a = j * stride + i, b = a + stride;
     indices.push(a, b, a + 1, b, b + 1, a + 1);
   }
   const geo = new THREE.BufferGeometry();
@@ -349,45 +486,56 @@ function createFoldedPlane(size, foldRad, spine, riseRad = 0) {
   return geo;
 }
 
-// Measure a 2D sticker's opaque content bottom so a STANDING sticker seats its VISIBLE base on the
-// surface — not the empty bottom of a square plane with transparent margin (which makes it float).
-// Returns the unscaled half-height from the plane centre down to the content bottom (= STICKER_SIZE/2
-// when the content fills the plane, so margin-free assets are unaffected). Cached per URL; a
-// CORS-tainted canvas falls back to the old half-plane seat. Asset-derived — never type-aware.
-// The seat = distance from the plane centre down to the geometry's LOWEST opaque point, over EVERY
-// opaque pixel (not just the bottom row). `rise` (= sin(fold) when standing) lifts a pixel by
-// |x − spine|·rise, so a low wing pixel that hangs below the body in the flat image rises ABOVE the
-// spine in 3D — making the body the true support and the wings clear. rise 0 = plain content-bottom.
-function computeSeatHalf(img, spine, rise) {
+// Measure a 2D sticker's OPAQUE content vertically, in one alpha scan, so both consumers read the
+// same pixels (a second scan would silently drift — see the deOverlapSeat lesson). Returns, in
+// unscaled plane units from the plane centre:
+//   • seatHalf — distance DOWN to the lowest opaque point in the SEATED frame, i.e. after the fold
+//     `rise` lifts a low wing above the spine. A STANDING sticker seats its visible base on this, so
+//     it doesn't float on its transparent margin.
+//   • down / up — distance to the lowest / highest opaque point in the FLAT image (no rise). These
+//     are the visible content's true vertical extent, used to clamp a WALL element by its flags
+//     rather than by its transparent square (which would stop it short of the rim). = STICKER_SIZE/2
+//     when the content fills the plane, so margin-free assets are unaffected.
+// Cached per URL; a CORS-tainted canvas falls back to the full half-plane. Asset-derived, never
+// type-aware. `rise` (= sin(fold) when standing) lifts a pixel by |x − spine|·rise, so a low wing
+// pixel that hangs below the body in the flat image rises ABOVE the spine in 3D — making the body the
+// true support and the wings clear. rise 0 → seatHalf === down.
+function scanContentV(img, spine, rise) {
+  const half = STICKER_SIZE / 2;
   const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-  if (!w || !h) return STICKER_SIZE / 2;
+  if (!w || !h) return { seatHalf: half, down: half, up: half };
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0);
   const d = ctx.getImageData(0, 0, w, h).data;          // throws if the canvas is CORS-tainted
   const xh = STICKER_SIZE * (spine - 0.5);
-  let minY = Infinity;
+  let minSeatY = Infinity, minY = Infinity, maxY = -Infinity;
   for (let py = 0; py < h; py++) {
     const planeY = STICKER_SIZE * (0.5 - py / h);        // flipY: image top → plane top (+S/2)
     const row = py * w * 4;
     for (let px = 0; px < w; px++) {
       if (d[row + px * 4 + 3] > 8) {
         const planeX = STICKER_SIZE * (px / w - 0.5);
-        const y3 = planeY + Math.abs(planeX - xh) * rise;
-        if (y3 < minY) minY = y3;
+        const y3 = planeY + Math.abs(planeX - xh) * rise;   // seated (folded) height
+        if (y3 < minSeatY) minSeatY = y3;
+        if (planeY < minY) minY = planeY;                   // flat content extent
+        if (planeY > maxY) maxY = planeY;
       }
     }
   }
-  return minY < Infinity ? -minY : STICKER_SIZE / 2;
+  if (minY === Infinity) return { seatHalf: half, down: half, up: half };   // fully transparent
+  return { seatHalf: -minSeatY, down: -minY, up: maxY };
 }
 
-// Load the asset for MEASURING in its own CORS image with a cache-bust, so the pixel read can't hit
-// a cache entry poisoned by a non-CORS <img> (e.g. a picker thumbnail) — which would taint the canvas
-// and silently fall the seat back to half-plane (→ float). One fetch per URL, then cached.
-const seatImgCache = {};   // bustUrl → { img, loaded, cbs }
+// Load the asset for MEASURING in its own CORS image, so the pixel read can't hit a cache entry
+// poisoned by a non-CORS <img> (e.g. a picker thumbnail) — which would taint the canvas and silently
+// fall the seat back to half-plane (→ float). One fetch per URL, then cached. Uses the SAME `corsUrl`
+// qualifier as every other loader (it used to hand-roll `?cors=seat`, which was a second copy of the
+// rule AND a second cache entry — the identical bytes fetched twice).
+const seatImgCache = {};   // corsUrl → { img, loaded, cbs }
 function loadSeatImage(imageUrl, cb) {
-  const url = imageUrl + (imageUrl.includes('?') ? '&' : '?') + 'cors=seat';
+  const url = corsUrl(imageUrl);
   const e = seatImgCache[url];
   if (e) { e.loaded ? cb(e.img) : e.cbs.push(cb); return; }
   const entry = { img: null, loaded: false, cbs: [cb] };
@@ -399,16 +547,18 @@ function loadSeatImage(imageUrl, cb) {
   img.src = url;
 }
 
-const stickerSeatHalfCache = {};
-function requestStickerSeatHalf(imageUrl, { spine = 0.5, rise = 0 } = {}, cb) {
+const MIN_SEAT = 0.02 * STICKER_SIZE;   // never seat on a hairline of stray pixels
+const stickerContentVCache = {};
+function requestStickerContentV(imageUrl, { spine = 0.5, rise = 0 } = {}, cb) {
   const key = `${imageUrl}|r${rise.toFixed(2)}|s${spine.toFixed(2)}`;
-  if (key in stickerSeatHalfCache) { cb(stickerSeatHalfCache[key]); return; }
+  if (key in stickerContentVCache) { cb(stickerContentVCache[key]); return; }
   loadSeatImage(imageUrl, img => {
-    let half = STICKER_SIZE / 2;
-    if (img) { try { half = computeSeatHalf(img, spine, rise); } catch (_) { /* tainted → fallback */ } }
-    half = Math.max(half, 0.02 * STICKER_SIZE);
-    stickerSeatHalfCache[key] = half;
-    cb(half);
+    const half = STICKER_SIZE / 2;
+    let v = { seatHalf: half, down: half, up: half };
+    if (img) { try { v = scanContentV(img, spine, rise); } catch (_) { /* tainted → fallback */ } }
+    v = { seatHalf: Math.max(v.seatHalf, MIN_SEAT), down: v.down, up: v.up };
+    stickerContentVCache[key] = v;
+    cb(v);
   });
 }
 
@@ -416,11 +566,65 @@ function requestStickerSeatHalf(imageUrl, { spine = 0.5, rise = 0 } = {}, cb) {
 // `recolor` region descriptor (placement_config.recolor). useTexture still owns loading/suspense/
 // caching; we derive a recoloured CanvasTexture from the loaded image only when asked. A tainted
 // canvas (CORS) falls back to the original — recolour silently off, sticker still renders.
-function useStickerImageTexture(imageUrl, recolor, color) {
-  const base = useTexture(imageUrl);
+// How bright a print renders is decided by ONE rule, in ONE pure module: shared/printExposure.js.
+// A print reads as its ARTWORK by construction (see that file for why the old "dull" and "over-bright"
+// bugs were the same defect — a decal with no defined exposure — and why knobs could never close it).
+// Push chroma away from per-pixel luma by `mul` (>1 = more saturated), clamped, alpha untouched. In place.
+function saturateRGB(d, mul) {
+  if (mul === 1) return;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    d[i]     = Math.max(0, Math.min(255, y + (r - y) * mul));
+    d[i + 1] = Math.max(0, Math.min(255, y + (g - y) * mul));
+    d[i + 2] = Math.max(0, Math.min(255, y + (b - y) * mul));
+  }
+}
+
+// The exposure model's two material terms, as THREE colours. Both are MULTIPLIERS ON THE ALBEDO (never an
+// additive white — additive white is what desaturates a print), so:
+//     screen = diffuse × albedo × sceneLight  +  selfLit × albedo
+// which at the reference light sums to exactly the artwork. Greys are built with `new THREE.Color(v,v,v)`,
+// which writes the LINEAR working space directly (no sRGB transfer) — the space the shader multiplies in.
+function printMaterialTerms(printFinish) {
+  const { diffuse, selfLit } = printExposure(printFinish);
+  return {
+    color:    new THREE.Color(diffuse, diffuse, diffuse),
+    emissive: new THREE.Color(selfLit, selfLit, selfLit),
+  };
+}
+
+// A style's typeface is an uploaded webfont, and `ctx.fillText` with an unloaded FontFace SILENTLY
+// falls back to sans-serif — which would then be BAKED into the texture. So the composite must wait for
+// the fonts to resolve and re-derive once they do. Returns a tick that flips when they're ready.
+function useSlotFontsReady(textSlots) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!textSlots?.length) return;
+    let alive = true;
+    loadSlotFonts(textSlots, textStyleOf).then(() => { if (alive) setTick(t => t + 1); });
+    return () => { alive = false; };
+  }, [textSlots]);
+  return tick;
+}
+
+function useStickerImageTexture(imageUrl, recolor, color, groupColors, saturation, textSlots, textValues) {
+  const sat = printExposure({ saturation }).saturation;   // print_finish.saturation; neutral (1) by default
+  const base = useTexture(corsUrl(imageUrl));
+  const fontsTick = useSlotFontsReady(textSlots);
   base.colorSpace = THREE.SRGBColorSpace;
+  // A decal is viewed at a grazing angle all round the wall, where isotropic mip filtering smears it.
+  // 8 matches the Relief Studio's albedo (and goldLeafTexture); the GPU clamps to its own max. The
+  // recoloured CanvasTexture below copies this off `base`, so both paths stay in step.
+  base.anisotropy = 8;
+  const isMulti = recolor?.method === 'hue_regions';   // per-region colours via groupColors (keyed by region index)
+  const gcKey = isMulti ? JSON.stringify(groupColors ?? null) : null;
+  const tvKey = textSlots?.length ? JSON.stringify(textValues ?? null) : null;
   const recoloured = useMemo(() => {
-    if (!recolor || !color) return base;
+    const needsRecolor = !!(recolor && (isMulti || color));
+    const needsBoost = sat !== 1;
+    const needsText = !!textSlots?.length;   // placement_config.text_slots → the customer's {name}/{number}
+    if (!needsRecolor && !needsBoost && !needsText) return base;           // nothing to do → cached original
     const img = base.image;
     const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
     if (!w || !h) return base;
@@ -429,18 +633,37 @@ function useStickerImageTexture(imageUrl, recolor, color) {
       c.width = w; c.height = h;
       const ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0, w, h);
-      const id = ctx.getImageData(0, 0, w, h);
-      recolorImageData(id.data, w, h, color, recolor);
-      ctx.putImageData(id, 0, 0);
+      if (needsRecolor) {
+        const id = ctx.getImageData(0, 0, w, h);
+        if (isMulti) {
+          // Auto colour regions: cluster the image's hues, recolour each to its groupColors[index] (an
+          // untouched region → null → left as-is). Regions derive deterministically so index keys are stable.
+          const regions = extractRegions(id.data, w, h, { minSat: recolor.sat, maxRegions: recolor.maxRegions });
+          const targets = regions.map((_, i) => groupColors?.[i] ?? null);
+          if (targets.some(Boolean)) recolorRegions(id.data, w, h, regions.map(r => r.hue), targets, { minSat: recolor.sat });
+        } else {
+          recolorImageData(id.data, w, h, color, recolor);
+        }
+        ctx.putImageData(id, 0, 0);
+      }
+      // The customer's value, inked onto the artwork. AFTER recolour (a recolour targets the ARTWORK's
+      // regions — it must not repaint the typed glyph) and BEFORE the chroma boost, so the number takes
+      // the same print finish as the art it sits on rather than reading duller than its own plaque.
+      if (needsText) drawTextSlots(ctx, w, h, textSlots, textValues, textStyleOf);
+      if (needsBoost) {
+        const id2 = ctx.getImageData(0, 0, w, h);
+        saturateRGB(id2.data, sat);   // pre-boost chroma to survive the lit-render wash (see DECAL_SAT note)
+        ctx.putImageData(id2, 0, 0);
+      }
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = base.anisotropy;
       tex.flipY = base.flipY;
       return tex;
     } catch (_) {
-      return base;   // tainted canvas → original texture (no recolour)
+      return base;   // tainted canvas → original texture (no recolour/boost/text)
     }
-  }, [base, recolor, color]);
+  }, [base, recolor, color, isMulti, gcKey, sat, textSlots, tvKey, fontsTick]);
   // Free the derived GPU texture when colour changes / unmounts (the cached `base` is left alone).
   useEffect(() => () => { if (recoloured !== base) recoloured.dispose(); }, [recoloured, base]);
   return recoloured;
@@ -456,7 +679,7 @@ function useStickerImageTexture(imageUrl, recolor, color) {
 // nothing → a square photo/border. Here we copy alpha → RGB (opaque), so green encodes the shape and
 // alphaMap clips correctly to any outline. Canvas-derived (CORS-clean now); cached per mask texture.
 function useMaskAlpha(maskUrl) {
-  const mask = useTexture(maskUrl);
+  const mask = useTexture(corsUrl(maskUrl));
   return useMemo(() => {
     const img = mask.image;
     const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
@@ -533,7 +756,7 @@ function PlaceholderBacking({ geo, maskUrl }) {
 }
 
 function PhotoBacking({ geo, photoUrl, maskUrl, transform }) {
-  const photo = useTexture(photoUrl);
+  const photo = useTexture(corsUrl(photoUrl));
   const mask  = useMaskAlpha(maskUrl);        // clips by the mask's shape (alpha→green), any outline
   photo.colorSpace = THREE.SRGBColorSpace;
   const imgAspect = useMemo(() => {
@@ -581,8 +804,10 @@ function BorderBacking({ geo, maskUrl, color, width }) {
 
 // Optional decorative border art (glitter, piped cream, watercolour) — a baked PNG drawn on top of
 // the photo. When present it IS the border (the procedural ring is suppressed); fixed thickness.
-function OverlayMesh({ geo, url, selected }) {
-  const tex = useTexture(url);
+// Selection is drawn by SelectionBox, never mixed into this material — an additive emissive tint
+// corrupts the overlay's own colours (see the decal note below).
+function OverlayMesh({ geo, url }) {
+  const tex = useTexture(corsUrl(url));
   tex.colorSpace = THREE.SRGBColorSpace;
   return (
     <mesh geometry={geo} renderOrder={1} frustumCulled={false}>
@@ -591,8 +816,6 @@ function OverlayMesh({ geo, url, selected }) {
         transparent
         alphaTest={0.05}
         roughness={0.75}
-        emissive={selected ? SELECTION_COLOR : '#000000'}
-        emissiveIntensity={selected ? 0.2 : 0}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
@@ -600,41 +823,225 @@ function OverlayMesh({ geo, url, selected }) {
   );
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
-  const texture = useStickerImageTexture(imageUrl, recolor, color);
+// Relief maps + solid-relief geometry are IDENTICAL across every instance of the same element at the
+// same size — only the per-instance position differs. Bake once per signature and SHARE the result
+// across all instances (24 scattered bows used to bake 24×). Ref-counted + idle-TTL so the shared
+// GPU resources are pinned while any instance is mounted and reclaimed once unused (see refCountedCache).
+const reliefMapsCache = makeRefCountedCache({
+  dispose: v => { v?.normalMap?.dispose?.(); v?.displacementMap?.dispose?.(); },
+});
+const solidGeoCache = makeRefCountedCache({ dispose: v => v?.dispose?.() });
+
+// Bake the relief displacement + normal maps from the loaded sticker image (placement_config.relief).
+// Reuses the drei-cached image; null when the element has no relief. The bake is SHARED across
+// instances via reliefMapsCache (keyed by image + bake params + mask), so disposal is the cache's job.
+function useReliefMaps(imageUrl, relief) {
+  // Same qualified URL as the albedo above, so drei's cache serves ONE fetch for both.
+  const base = useTexture(corsUrl(imageUrl));
+  // Authored flat-mask (placement_config.relief.flatMask): an inline data-URI PNG (black = flush). Decode it
+  // ASYNC — a data URI needs no crossOrigin — then rebuild the maps with it. Absent → the sync path is
+  // untouched. Keeping the decoded image in state (keyed on the data-URI) makes the maps re-derive on load.
+  const flatMaskUri = relief?.flatMask ?? null;
+  const [flatMaskImg, setFlatMaskImg] = useState(null);
+  useEffect(() => {
+    if (!flatMaskUri) { setFlatMaskImg(null); return; }
+    let alive = true;
+    const img = new Image();
+    img.onload = () => { if (alive) setFlatMaskImg(img); };
+    img.onerror = () => { if (alive) setFlatMaskImg(null); };
+    img.src = flatMaskUri;
+    return () => { alive = false; };
+  }, [flatMaskUri]);
+  // Signature: same image + same bake config + same mask state ⇒ one shared bake. The mask-ready flag
+  // is in the key so the pre-mask (fully-raised) build and the post-mask build are DISTINCT entries —
+  // the mask still re-derives on load, it just doesn't overwrite the shared entry.
+  const img = base.image;
+  const ready = relief && img && (img.naturalWidth || img.width);
+  const key = ready
+    ? `${imageUrl}|${JSON.stringify(relief.bake ?? {})}|${flatMaskUri ?? ''}|${flatMaskImg ? '1' : '0'}`
+    : null;
+  const maps = useMemo(() => (
+    key ? reliefMapsCache.get(key, () => {
+      try { return buildReliefMaps(img, relief.bake ?? {}, flatMaskImg); } catch (_) { return null; }
+    }) : null
+  ), [key]);
+  useEffect(() => {
+    if (!key) return;
+    reliefMapsCache.retain(key);
+    return () => reliefMapsCache.release(key);
+  }, [key]);
+  return maps;
+}
+
+// Front-most local Z of a rendered geometry — how far the selection border must stand off so it
+// clears the element it outlines (a curved decal dips away from the viewer, a solid slab pushes
+// toward them). `extraLift` covers lift the geometry does not carry: relief displacement is applied
+// in the vertex shader, so it is absent from the bounding box.
+function frontZOf(geometry, extraLift = 0) {
+  if (!geometry) return extraLift;
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  return (geometry.boundingBox?.max?.z ?? 0) + extraLift;
+}
+
+function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+  const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors, printFinish?.saturation, textSlots, textValues);
+  const reliefMaps = useReliefMaps(imageUrl, relief);
+  const reliefOn = !!(relief && reliefMaps);
+  // The live tier radius the relief is bent around. `reliefRadius` is Infinity for a flat top
+  // surface / sheet wall, so guard with isFinite — a raw `> 0` would sail straight through.
+  const liveReliefRadius = Number.isFinite(reliefRadius) && reliefRadius > 0 ? reliefRadius : 0;
+  // ONE lift→world formula, shared by the displaced shell (its displacementScale), the solid slab
+  // (its extrude thickness) and the selection border (its clearance). Three copies of this rule
+  // drifted apart once already; it lives here now.
+  const reliefLift = useMemo(
+    () => (relief ? (relief.lift ?? 0.07) * liveReliefRadius / (stickerScale || 1) : 0),
+    [relief, liveReliefRadius, stickerScale],
+  );
+  // Solid relief SLAB (placement_config.relief.solid): render the sticker as a REAL extruded solid
+  // (flat printed front + side walls + flat back, bent around the wall) instead of a displaced shell,
+  // so it reads solid from a grazing angle. Config-gated ONLY on relief.solid — no element-type branch.
+  // The silhouette comes from the sticker's own loaded image alpha; `base` is the SAME drei-cached
+  // texture useStickerImageTexture/useReliefMaps already fetched (one download), and Suspense guarantees
+  // its image is decoded here — so the geometry builds synchronously.
+  const base = useTexture(corsUrl(imageUrl));
+  const solidOn = !!(relief?.solid && reliefOn);
+  // Same silhouette (image) + same thickness/curve/scale/edge ⇒ one shared solid geometry across all
+  // instances (a flat-top variant and a side-curved variant per element). Cached + ref-counted like
+  // the relief maps, so disposal is the cache's job.
+  const solidImg = base?.image;
+  const solidReady = solidOn && solidImg && (solidImg.naturalWidth || solidImg.width);
+  const solidKey = solidReady
+    ? `${imageUrl}|${reliefLift}|${(curved && curveRadius) ? curveRadius : 'flat'}|${stickerScale}|${relief.solidEdge ?? 0}`
+    : null;
+  const solidGeo = useMemo(() => (
+    solidKey ? solidGeoCache.get(solidKey, () => {
+      try {
+        return buildSolidReliefGeometry(solidImg, {
+          size: STICKER_SIZE,
+          // The solid's raised height is the SAME lift→world value the displaced path feeds
+          // displacementScale, so it matches the old shell on any cake size / sticker scale (#8).
+          thickness: reliefLift,
+          curveRadius: (curved && curveRadius) ? curveRadius : null,   // null → flat slab (top surface / sheet wall)
+          scale: stickerScale,
+          edgeRadius: relief.solidEdge ?? 0,   // 0..1 of depth → rounded fondant rim (0 = sharp edge)
+        });
+      } catch (_) { return null; }
+    }) : null
+  ), [solidKey]);
+  useEffect(() => {
+    if (!solidKey) return;
+    solidGeoCache.retain(solidKey);
+    return () => solidGeoCache.release(solidKey);
+  }, [solidKey]);
   // Seat a standing sticker on its visible base (measured from the texture's opaque content) so a
   // wide butterfly on a square canvas doesn't float. When standing (standUp) the wings rise in a V,
   // so the seat must account for that rise — the spine/body becomes the true lowest point.
   const seatRise  = (foldable && standUp) ? Math.sin((fold ?? DEFAULT_FOLD_DEG) * Math.PI / 180) : 0;
   const seatSpine = spine ?? DEFAULT_SPINE;
   useEffect(() => {
-    if (!onSeat || !imageUrl) return;
+    if ((!onSeat && !onVExtent) || !imageUrl) return;
     let live = true;
-    // Prefer the already-loaded texture image — no extra fetch (r2.dev rate-limits, so a second
-    // download for measuring can fail and fall the seat back to half-plane → constant lift). Only if
-    // THIS image is CORS-tainted (e.g. a non-CORS thumbnail poisoned the cache) do we reload clean.
+    // ONE scan yields the seat (standing base) AND the visible vertical extent (wall clamp). Prefer
+    // the already-loaded texture image — no extra fetch (r2.dev rate-limits, so a second download for
+    // measuring can fail and fall the seat back to half-plane → constant lift). Only if THIS image is
+    // CORS-tainted (e.g. a non-CORS thumbnail poisoned the cache) do we reload clean.
+    const emit = v => { if (!live) return; onSeat?.(Math.max(v.seatHalf, MIN_SEAT)); onVExtent?.({ down: v.down, up: v.up }); };
     const img = texture?.image;
     if (img && (img.naturalWidth || img.width)) {
-      try { onSeat(Math.max(computeSeatHalf(img, seatSpine, seatRise), 0.02 * STICKER_SIZE)); return () => { live = false; }; }
+      try { emit(scanContentV(img, seatSpine, seatRise)); return () => { live = false; }; }
       catch (_) { /* tainted → CORS fallback below */ }
     }
-    requestStickerSeatHalf(imageUrl, { spine: seatSpine, rise: seatRise }, half => { if (live) onSeat(half); });
+    requestStickerContentV(imageUrl, { spine: seatSpine, rise: seatRise }, emit);
     return () => { live = false; };
-  }, [texture, imageUrl, onSeat, seatRise, seatSpine]);
+  }, [texture, imageUrl, onSeat, onVExtent, seatRise, seatSpine]);
   // Geometry is config-driven: a foldable element hinges into a folded plane (the fold wins over
   // wall-curving). Standing → wings rise UP in a V from the spine (riseRad = fold), so the body is
-  // the support; laid flat / on a wall → hinge into Z-depth (foldRad). curveRadius is capped at 0.3
-  // world units so the bend is visible (the physical tier radius ~1.2 → only ~0.008-unit depth).
+  // the support; laid flat / on a wall → hinge into Z-depth (foldRad).
   const geo = useMemo(() => {
     if (foldable) {
       const f = (fold ?? DEFAULT_FOLD_DEG) * Math.PI / 180, sp = spine ?? DEFAULT_SPINE;
       return standUp ? createFoldedPlane(STICKER_SIZE, f, sp, f)
                      : createFoldedPlane(STICKER_SIZE, f, sp, 0);
     }
+    // The decal must curve at the WALL radius in WORLD space, but the parent group scales the mesh by
+    // `stickerScale` — so build at local radius `curveRadius / stickerScale`, exactly as the GLB path
+    // does (`bendRadius`). The old `Math.min(curveRadius, 0.3)` cap predates element scaling: it
+    // exaggerated the bend so a decal on a wide tier didn't look flat, but the group's scale then
+    // multiplied the world curve radius (0.3 × 3 = 0.9 against a ~0.45 wall), so the decal was a much
+    // flatter arc than the wall and its edges bowed off it at the silhouette tangent — worse the bigger
+    // the element. That is a BASE-geometry bug, not a relief one; relief only made it easy to see.
+    // Relief needs a DENSE grid so the displacement map can sculpt real lift; flat stickers stay low-poly.
     return (curved && curveRadius)
-      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, Math.min(curveRadius, 0.3))
-      : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
-  }, [foldable, fold, spine, standUp, curved, curveRadius]);
+      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, curveRadius / (stickerScale || 1), reliefOn ? RELIEF_SEGMENTS : 16, reliefOn ? RELIEF_SEGMENTS : 1)
+      : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE, reliefOn ? RELIEF_SEGMENTS : 1, reliefOn ? RELIEF_SEGMENTS : 1);
+  }, [foldable, fold, spine, standUp, curved, curveRadius, stickerScale, reliefOn]);
+  // How far this element stands proud of its hit plane, so the selection border clears it. A flat
+  // decal is flush (0); a solid slab carries its thickness in the geometry; a displaced relief adds
+  // its lift in the vertex shader, after the bounding box was computed.
+  useEffect(() => {
+    const drawn = (solidOn && solidGeo) ? solidGeo : geo;
+    onDepth?.(frontZOf(drawn, (reliefOn && !solidOn) ? reliefLift : 0));
+  }, [onDepth, geo, solidGeo, solidOn, reliefOn, reliefLift]);
+  // Relief normal strength → Vector2; a negative Y is the "flip green" toggle (bake.flipY) at the material.
+  const reliefNScale = useMemo(() => {
+    const ns = relief?.normalScale ?? 0.8;
+    return new THREE.Vector2(ns, relief?.bake?.flipY ? -ns : ns);
+  }, [relief]);
+  // Print exposure (shared/printExposure.js) — the SAME two terms drive every printed surface below (flat
+  // decal, displaced relief, solid front cap), so a print reads as its artwork whichever one it lands on.
+  const print = useMemo(() => printMaterialTerms(printFinish), [printFinish]);
+  // Solid-slab materials as an EXPLICIT array (not two `attach="material-N"` children): on a plain
+  // <mesh> whose default `material` is a single Material, `attach="material-0"` writes index 0/1 onto
+  // that object instead of building an array — so the mesh silently keeps its default white material
+  // and the albedo never lands on the front cap. Passing `material={[front, side]}` sets the array
+  // directly. [0] = printed albedo on the caps (the relief physical material minus displacement — the
+  // geometry IS the lift now), [1] = matte fondant on the side walls. Disposed on change/unmount.
+  const solidMats = useMemo(() => {
+    if (!solidOn) return null;
+    const front = new THREE.MeshPhysicalMaterial({
+      map: texture,
+      color: print.color.clone(),
+      normalMap: reliefMaps.normalMap, normalScale: reliefNScale,
+      roughness: relief.roughness ?? 0.95, metalness: 0,
+      sheen: relief.sheen ?? 0, sheenColor: new THREE.Color('#ffffff'), sheenRoughness: 0.85,
+      envMapIntensity: relief.envIntensity ?? 0.4,
+      toneMapped: relief.toneMapped ?? false,
+      emissive: print.emissive.clone(), emissiveMap: texture,
+      emissiveIntensity: 1,   // the strength lives in `emissive` (the exposure model's selfLit term)
+      side: THREE.DoubleSide,
+    });
+    // Side/back walls read as ONE solid fondant colour matching the front — not plain white. Two sources,
+    // chosen by config (never by element type):
+    //   • RECOLOURABLE element (`recolor` present) → always auto-sample the FINAL albedo, which already
+    //     carries the customer's recolour + saturation boost. The customer recolours the print and the slab
+    //     follows; an authored `solidColor` must NOT freeze the walls against the hue they just picked.
+    //   • Otherwise → the author's `relief.solidColor` wins (explicit intent), else the auto-sample.
+    // A tainted/greyscale image makes the sample null → the instance colour, else a neutral fondant tone.
+    const autoHex = dominantColorOfImage(texture.image, { mul: 1.0 });
+    const wallHex = (recolor ? null : relief.solidColor) || autoHex || color || '#efe6da';
+    // `relief.solidWallColor: 'print'` samples the print at each point of the silhouette instead of painting
+    // the walls one flat hue — the tree's trunk edge brown, its leaf edges green. Absent/'dominant' keeps the
+    // flat wall, so every already-authored element renders exactly as before. An authored `solidColor` is an
+    // explicit flat override and still wins (on a recolourable element it's ignored, as ever — see above).
+    const flatOverride = !recolor && !!relief.solidColor;
+    const printWalls = relief.solidWallColor === 'print' && !flatOverride;
+    // Side/back walls: the dominant colour + the author-chosen FINISH (fondant/chocolate/…) built by the
+    // ONE shared factory the studio also uses (surface feel only; colour stays the print's). Its cloned
+    // grain normal, if any, is disposed in the cleanup below. Walls keep ExtrudeGeometry's world-space UVs
+    // (see solidRelief) so a grain tiles along them.
+    const wall = buildSolidWallMaterial(relief.solidFinish, wallHex, printExposure(printFinish).selfLit,
+      { printMap: printWalls ? texture : null });
+    return [front, wall];
+  }, [solidOn, texture, reliefMaps, reliefNScale, relief, printFinish, print, color, recolor]);
+  // Dispose the wall's CLONES (index 1) — its fondant normal and, in `local` wall mode, its print-map clone
+  // (a distinct GPU upload keyed to uv1). NEVER the front's shared reliefMaps.normalMap / `texture`, which
+  // are owned by the drei cache and other meshes. `map === emissiveMap` on the wall, so dispose once.
+  useEffect(() => () => {
+    if (!solidMats) return;
+    solidMats[1]?.normalMap?.dispose?.();
+    solidMats[1]?.map?.dispose?.();
+    solidMats.forEach(m => m.dispose());
+  }, [solidMats]);
   // Photo-cake frame (config-gated on photoMask, no element-type branch): the shape is the mask, the
   // border is procedural (or a decorative overlay), and the customer photo is clipped to the mask.
   // The plain image_url mesh is NOT drawn for a frame — the mask is the shape, not a visible image.
@@ -642,7 +1049,7 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
     return (
       <>
         {photoOverlay
-          ? <OverlayMesh geo={geo} url={photoOverlay} selected={selected} />
+          ? <OverlayMesh geo={geo} url={photoOverlay} />
           : ((borderWidth ?? 0) > 0 &&
               <BorderBacking geo={geo} maskUrl={photoMask} color={color} width={borderWidth} />)}
         {photoUrl
@@ -651,15 +1058,114 @@ function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fol
       </>
     );
   }
+  // Solid relief SLAB (placement_config.relief.solid): the extruded silhouette — flat printed front,
+  // side walls, flat back, bent around the wall — with a two-material array: [0] the printed albedo on
+  // the caps (reusing the relief physical material minus displacement — the geometry IS the lift now),
+  // [1] a matte fondant on the side walls. Reads solid from every angle. Falls back to the displaced
+  // shell below if the geometry couldn't build (e.g. a CORS-tainted image → alpha unreadable).
+  if (solidOn && solidGeo && solidMats) {
+    // Two-material array (see solidMats): caps (group 0) = printed albedo — opaque, since the extrude
+    // silhouette already IS the alpha shape (no transparent margin maps onto the cap, so no alphaTest is
+    // needed → a clean solid edge). Side walls (group 1) = matte fondant, the depth the slab shows edge-on.
+    return <mesh geometry={solidGeo} material={solidMats} />;
+  }
+  // Raised fondant cut-out (placement_config.relief): real GPU displacement + normal detail + a fondant
+  // finish on the dense mesh. Config-gated; a flat sticker falls through to the standard decal material.
+  if (reliefOn) {
+    // `relief.lift` is a FRACTION of the LIVE wall/tier radius (`reliefRadius`), NOT an absolute world
+    // length and NOT tied to the sticker's size. THREE applies displacement along the object-space normal
+    // *before* the model matrix, so the group's `scale` would multiply it — divide it back out here and the
+    // world lift is exactly `lift * reliefRadius`: independent of the element's scale (a 3× sticker can't
+    // balloon the lift) and of the cake size (INVARIANTS.md #8/#8a; never hardcode a radius — the studio
+    // authored `lift` on its 1.2-radius tier, but the cake is any size). Both predecessors were wrong: the
+    // absolute value ignored cake size, the fraction-of-sticker-size cancelled against `scale`.
+    // `reliefRadius` is a LIVE cake dimension — every call site passes its tier's radius. There is no valid
+    // world-space constant to substitute if it's missing (that is precisely the bug #8 forbids), so a
+    // non-finite value means a wiring bug: shout in dev and render flat rather than fake a plausible-but-
+    // wrong thickness that nobody notices.
+    if (!liveReliefRadius && import.meta.env?.DEV) {
+      console.error('[relief] reliefRadius must be the live tier radius; got', reliefRadius, '— rendering flat.');
+    }
+    return (
+      <mesh geometry={geo}>
+        <meshPhysicalMaterial
+          map={texture}
+          // Print exposure — shared/printExposure.js. `color` is the light-driven share of the albedo.
+          color={print.color}
+          transparent alphaTest={0.5} alphaToCoverage
+          normalMap={reliefMaps.normalMap} normalScale={reliefNScale}
+          displacementMap={reliefMaps.displacementMap} displacementScale={reliefLift}
+          // MATTE and SHEENLESS by default, exactly like the flat decal below — a raised fondant cut-out IS
+          // fondant, and the two paths must not disagree about what fondant looks like.
+          //
+          // Both terms add WHITE on top of the albedo, and additive white is what desaturates a print (it
+          // lifts the darkest channel off zero; it does not clip — measured 0% pinned). Measured on the real
+          // decal, texture saturation 0.907:
+          //     baseline (roughness 0.7, sheen 0.12) → 0.345   (62% lost)
+          //     sheen 0                              → 0.397
+          //     roughness 0.95                       → 0.479
+          //     both, no specular                    → 0.607   ← matches a flat decal (0.629)
+          // Note it is NOT the HDRI: envMapIntensity 0 changes the result by literally nothing. The white is
+          // the DIRECT specular from the two directional lights, which envMapIntensity does not scale.
+          // ~33% loss (0.907 → 0.61) is irreducible — light times albedo, plus thin edges blending into the
+          // cake. The other ~44% was this material, and only this material.
+          //
+          // The flat path learned the same lesson once already (0.75 → 0.95, see its note). The relief path
+          // was cloned from it and took `roughness`/`sheen` from the Relief Studio's sliders (0.7 / 0.12).
+          // Fixing the defaults is only half the job: every element authored there carries EXPLICIT values
+          // that override these, so placement_config.relief.{roughness,sheen} must be dropped/re-authored.
+          roughness={relief.roughness ?? 0.95} metalness={0}
+          sheen={relief.sheen ?? 0} sheenColor={'#ffffff'} sheenRoughness={0.85}
+          envMapIntensity={relief.envIntensity ?? 0.4}
+          // Selection never changes the material. The additive violet SELECTION_COLOR emissive corrupted a
+          // saturated albedo by construction (orange → magenta — B pushed hard, G barely), and tone-mapping-
+          // while-selected didn't compress it enough. The cue is SelectionBox, a border drawn beside the
+          // element — non-destructive, so the print keeps its true colour while selected.
+          toneMapped={relief.toneMapped ?? false}
+          // `emissiveMap` = the albedo, so this is the ARTWORK itself as self-illumination (hue and chroma
+          // survive — it is a MULTIPLIER on the albedo, not an additive white). It carries the orientation-
+          // INDEPENDENT share of the exposure, which is what stops a raised sticker blowing out where it
+          // faces the light, or reading dull where it doesn't. Strength lives in the colour; intensity is 1.
+          emissive={print.emissive}
+          emissiveMap={texture}
+          emissiveIntensity={1}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    );
+  }
   return (
     <mesh geometry={geo}>
-      <meshStandardMaterial
+      <meshPhysicalMaterial
         map={texture}
+        // Print exposure — shared/printExposure.js. `color` is the light-driven share of the albedo.
+        color={print.color}
+        // A print is INK, and ink has no specular highlight of its own. The dielectric specular is an
+        // ADDITIVE WHITE that is not multiplied by the albedo, so it cannot be scaled by the exposure model
+        // — and being additive it wrecks exactly the DARK pixels (measured: it lifted the artwork's browns
+        // 1.19× while leaving pale areas at 1.03×, i.e. it flattens contrast and desaturates). Sheen belongs
+        // to the CAKE's surface, not to the picture printed on it. 0 = the print renders as its artwork.
+        specularIntensity={0}
         transparent
         alphaTest={0.05}
-        roughness={0.75}
-        emissive={selected ? SELECTION_COLOR : '#000000'}
-        emissiveIntensity={selected ? 0.2 : 0}
+        // Matte by default (fondant-like) so the bright environment doesn't reflect a whitish sheen
+        // that washes out the printed colour — the old 0.75 read glossy and desaturated head-on.
+        // Honors the element's placement_config.roughness/metalness override (parity with StickerModel).
+        // envMapIntensity damps how much the HDRI lifts/desaturates the albedo.
+        roughness={roughness ?? 0.95}
+        metalness={metalness ?? 0}
+        // Same reason as specularIntensity: the HDRI's reflection is additive white on top of the print.
+        envMapIntensity={0}
+        // The print bypasses the scene's ACES tone mapping (which desaturates) so the decal shows its
+        // true colours — the cake stays filmic, the artwork stays vivid. A little emissive still lifts
+        // it in shadow. Selection does not tint the material (the additive violet SELECTION_COLOR corrupted
+        // saturated albedos — see the relief path note); SelectionBox draws the cue beside the element.
+        toneMapped={false}
+        // The orientation-INDEPENDENT share of the exposure: the artwork as self-illumination (emissiveMap
+        // = the albedo), so it cannot be blown out by where the decal sits. Strength is in the colour.
+        emissive={print.emissive}
+        emissiveMap={texture}
+        emissiveIntensity={1}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
@@ -740,7 +1246,7 @@ function cleanGlbScene(clone) {
   return clone;
 }
 
-function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, onSeat }) {
+function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, surface = null, onSeat, onDepth, onVExtent }) {
   const { scene } = useGLTF(imageUrl);
   const clipPlane = useRef(null);
 
@@ -789,17 +1295,39 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
         obj.material = Array.isArray(obj.material) ? next : next[0];
       });
     }
-    // Config-driven material finish (placement_config.roughness/metalness): override the GLB's baked
-    // values so one asset can read as metallic or matte from config. Clone the material per instance
-    // (never mutate the cached GLB); colour is still set by the recolour effect.
-    if (roughness != null || metalness != null) {
+    // Config-driven material finish. A decoration carries either a full `surface` finish (resolved from
+    // placement_config.material via the materials registry — roughness/sheen/clearcoat/anisotropy/…), OR the
+    // legacy simple placement_config.roughness/metalness overrides. Either overrides the GLB's baked material.
+    // Clone per instance (never mutate the cached GLB); colour is still set by the recolour effect. A finish
+    // with a sheen/clearcoat/anisotropy needs MeshPhysicalMaterial — a GLB usually loads as
+    // MeshStandardMaterial (no such lobes), so we upgrade it (copying the standard visual fields, NOT .copy()
+    // which mishandles the undefined physical fields on a Standard source). Anisotropy (the silk streak) needs
+    // the GLB to carry a TANGENT attribute (baked in the asset pipeline) or it falls back to screen-space and
+    // mottles.
+    const finish = surface ?? ((roughness != null || metalness != null) ? { roughness, metalness } : null);
+    const needsPhysical = !!finish && (finish.sheen != null || finish.clearcoat != null || finish.anisotropy != null);
+    if (finish) {
       clone.traverse(obj => {
         if (!obj.isMesh) return;
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         const next = mats.map(m => {
-          const nm = m.clone();
-          if (roughness != null) nm.roughness = roughness;
-          if (metalness != null) nm.metalness = metalness;
+          let nm;
+          if (needsPhysical && !m.isMeshPhysicalMaterial) {
+            nm = new THREE.MeshPhysicalMaterial();
+            THREE.MeshStandardMaterial.prototype.copy.call(nm, m);   // standard visual fields only
+          } else {
+            nm = m.clone();
+          }
+          if (finish.roughness != null)          nm.roughness = finish.roughness;
+          if (finish.metalness != null)          nm.metalness = finish.metalness;
+          if (finish.sheen != null)              nm.sheen = finish.sheen;
+          if (finish.sheenRoughness != null)     nm.sheenRoughness = finish.sheenRoughness;
+          if (finish.sheenColor != null)         nm.sheenColor = new THREE.Color(finish.sheenColor);
+          if (finish.clearcoat != null)          nm.clearcoat = finish.clearcoat;
+          if (finish.clearcoatRoughness != null) nm.clearcoatRoughness = finish.clearcoatRoughness;
+          if (finish.envMapIntensity != null)    nm.envMapIntensity = finish.envMapIntensity;
+          if (finish.anisotropy != null)         nm.anisotropy = finish.anisotropy;
+          if (finish.anisotropyRotation != null) nm.anisotropyRotation = finish.anisotropyRotation;
           nm.needsUpdate = true;
           return nm;
         });
@@ -807,7 +1335,7 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
       });
     }
     return clone;
-  }, [scene, baseRotation, fondant, roughness, metalness]);
+  }, [scene, baseRotation, fondant, roughness, metalness, surface]);
 
   // Sync clip plane: set, update constant, or clear when clipY becomes undefined.
   useEffect(() => {
@@ -832,7 +1360,7 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position, center, depthScaled, seatHalf, gradBBox } = useMemo(() => {
+  const { scale, position, center, depthScaled, seatHalf, halfW, gradBBox } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -841,8 +1369,11 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
     glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
     // The gradient blends in the model's local frame (same baked geometry the vertex shader reads),
-    // so it stays put regardless of placement/instance scale.
-    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc, seatHalf: (size.y * sc) / 2,
+    // so it stays put regardless of placement/instance scale. `halfW`/`seatHalf` are the model's
+    // PER-AXIS half-extents (width/height), so the selection hit-plane is a tight rectangle around a
+    // non-square model — a tall-narrow bow gets a tall-narrow box, not a STICKER_SIZE square.
+    return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc,
+      seatHalf: (size.y * sc) / 2, halfW: (size.x * sc) / 2,
       gradBBox: { min: box.min.clone(), size: size.clone(), center: ctr.clone() } };
   }, [clonedScene, imageUrl]);
 
@@ -850,6 +1381,8 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
   // seat its BOTTOM on the surface instead of lifting by a fixed STICKER_SIZE/2. Default = no float;
   // any lift is explicit (yOffset / config). For an upright model size.y is the max dim, so seatHalf
   // ≈ STICKER_SIZE/2 and nothing changes; a flat model reports a small value and stops floating.
+  // A GLB fills its own box (no transparent margin), so its visible vertical extent IS its half-
+  // height, symmetric about the origin — the wall clamp then behaves exactly as the old full-square did.
   useEffect(() => { onSeat?.(seatHalf); }, [seatHalf]);
 
   // On the side wall, bend the model around the tier so it hugs the curve. Seat its BACK on
@@ -859,30 +1392,31 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
   // depth, for deep toppers); flush hug (default) → centred on the wall (back half tucks into the
   // opaque wall, front half against it) so it doesn't stand off the silhouette. Config, not type.
   const bentScene = useMemo(
-    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, seatProud ? depthScaled / 2 : 0) : null),
+    () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, seatProud ? seatHalfDepth(depthScaled) : 0) : null),
     [clonedScene, scale, center, bendRadius, depthScaled, seatProud],
   );
 
-  // Selection = a white outline (inverted hull), NOT a colour tint — a tint reads as "recoloured".
-  // A clone of the rendered scene with white BACK-side material, scaled slightly larger, peeks out
-  // around the silhouette. Built lazily; only mounted while selected.
-  const outlineScene = useMemo(() => {
-    const src = bentScene ?? clonedScene;
-    const o = src.clone(true);
-    o.traverse(obj => {
-      if (!obj.isMesh) return;
-      obj.material = new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide, toneMapped: false });
-      obj.raycast = () => {};
-    });
-    return o;
-  }, [clonedScene, bentScene]);
-  const bentCenter = useMemo(() => {
-    if (!bentScene) return null;
-    const c = new THREE.Vector3();
-    new THREE.Box3().setFromObject(bentScene).getCenter(c);
-    return c;
-  }, [bentScene]);
-  const OUTLINE_K = 1.025;   // hull enlargement → outline thickness (thin: detailed figurines look haloed at 1.07)
+  // The rendered model's 3D bounds, measured in the LOCAL frame it renders in — a sibling of the
+  // element, so the box inherits its position/facing/tilt/scale for free. A BENT model is measured in
+  // its bent frame (wraps the wall); a FLAT one is the scaled/centred bbox. Feeds the 3D selection box
+  // (so the cue wraps the model from every camera angle, not a flat plane that slides off a curve) and
+  // the grip depth. Replaces the old inverted-hull outline (a white BackSide clone) that haloed
+  // figurines. `frontZ` = the front-most point, so the resize grips clear a proud model.
+  const box3 = useMemo(() => {
+    if (bentScene) {
+      // Union the meshes' OWN geometry bounds (local frame) — NOT setFromObject, whose world matrices
+      // read effScale-scaled coords once the scene is mounted, flip-flopping the box's size per render.
+      const b = new THREE.Box3();
+      bentScene.traverse(o => { if (o.isMesh && o.geometry) { o.geometry.computeBoundingBox?.(); if (o.geometry.boundingBox) b.union(o.geometry.boundingBox); } });
+      if (!b.isEmpty()) {
+        const s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+        return { w: s.x, h: s.y, d: s.z, cy: c.y, cz: c.z, frontZ: b.max.z };
+      }
+    }
+    return { w: 2 * halfW, h: 2 * seatHalf, d: depthScaled, cy: 0, cz: 0, frontZ: depthScaled / 2 };
+  }, [bentScene, halfW, seatHalf, depthScaled]);
+  useEffect(() => { onDepth?.(box3.frontZ); }, [onDepth, box3]);
+  useEffect(() => { onVExtent?.({ down: seatHalf, up: seatHalf, halfW, box: box3 }); }, [seatHalf, halfW, box3]);
 
   // GLB Recompose: when the instance carries per-group colours, recolour each mesh by its authored
   // userData.group (set in admin), leaving untagged meshes at their baked colour. The single `color`
@@ -910,34 +1444,11 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
     });
   }, [clonedScene, color, gradient, gradBBox, groupColors, hasGroups]);
 
-  if (bentScene) {
-    return (
-      <group>
-        <primitive object={bentScene} />
-        {selected && bentCenter && (
-          <group position={[bentCenter.x, bentCenter.y, bentCenter.z]}>
-            <group scale={OUTLINE_K}>
-              <group position={[-bentCenter.x, -bentCenter.y, -bentCenter.z]}>
-                <primitive object={outlineScene} />
-              </group>
-            </group>
-          </group>
-        )}
-      </group>
-    );
-  }
-  return (
-    <group>
-      <primitive object={clonedScene} scale={scale} position={position} />
-      {selected && (
-        <primitive object={outlineScene} scale={scale * OUTLINE_K}
-          position={[-center.x * scale * OUTLINE_K, -center.y * scale * OUTLINE_K, -center.z * scale * OUTLINE_K]} />
-      )}
-    </group>
-  );
+  if (bentScene) return <primitive object={bentScene} />;
+  return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, onSeat }) {
+function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -948,8 +1459,8 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
     <TextureErrorBoundary screen="CakeCanvas">
       <Suspense fallback={<LoadingPing />}>
         {isGlb
-          ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} color={color} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} onSeat={onSeat} />
+          ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
+          : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -961,7 +1472,15 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
 }
 
 
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
+// `canMove` defaults TRUE. Every decoration on every cake moves today, so a capability that arrived
+// defaulting to false would freeze the lot — and the caller derives it from the ELEMENT, never from
+// the sticker's own allowedActions, which carries a stale `move: false` on everything placed before
+// the flag was wired. See isStickerMovable in CakeDesigner.
+//
+// Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
+// toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
+// picked up, looked at and edited — it just does not go anywhere.
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -970,9 +1489,25 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const groupStart        = useRef(null);
   const pointerDownTime   = useRef(0);
   const pressedRef        = useRef(false);
+  // How far the element stands proud of its hit plane, reported up by StickerFace — the selection
+  // border clears this so a deep GLB or a raised relief doesn't swallow it.
+  const [depth, setDepth] = useState(0);
+  // The element's VISIBLE vertical extent (below/above centre), reported up by StickerFace. The wall
+  // clamp uses this so a banner is stopped by its flags, not by its transparent square. Null until
+  // measured → the clamp falls back to the full square.
+  const [vext, setVext] = useState(null);
 
-  const isRect = shp.kind === 'rect';
+  // A round wall wraps a cylinder (theta); every faceted wall — rect AND any outline (heart,
+  // butterfly, number, …) — seats on the perimeter at fraction u. Branch on this, never on
+  // `=== 'rect'`, or an outline decal lands on an imaginary bounding-radius circle off the wall.
+  const facetWall = !isRoundWall(shp);
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
+  // Insert on the side is a MODIFIER on the wall pose (not its own mode): the base is pushed INTO the
+  // wall (a negative radial seat) so the piece pokes out at an angle (the tilt is already applied by
+  // the sticker.tiltAngle group below). Signalled by insertDepth != null (0 is valid = flush). Best
+  // for a GLB bar oriented to extend along its outward face.
+  const isInsert = sticker.insertDepth != null;
+  const insertDepthFrac = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
   // A hero hug (single_per_slot, hugging a side) sizes to THIS tier's wall height, so it shrinks
   // on smaller tiers automatically — r is the stand size only and is ignored here. Scattered decor
   // (not single_per_slot) keeps its absolute r. `hugMul` is the per-instance +/- nudge (default 1);
@@ -985,13 +1520,31 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     ? frameSideMaxScale(height, (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)))
     : Infinity;
   const effScale = Math.min(rawScale, sideFrameMax);
-  // Base seat = fixed gap off the BASE wall. The drag hit-test (below) projects onto this base cylinder;
-  // the visible position adds the live surface relief so the decor rests on the displaced wall.
-  const off    = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
-  // Round: angle theta around the cylinder, decal curved to the wall. Rect: perimeter
-  // fraction u along the rounded-rect wall, decal flat (the wall is flat).
+  // Base seat = a gap off the BASE wall PROPORTIONAL to this tier's live radius, so the decal hugs
+  // identically on every cake size (INVARIANTS.md #8 — an absolute gap is a bigger slot the smaller
+  // the tier). The drag hit-test (below) projects onto this base cylinder; the visible position adds
+  // the live surface relief so the decor rests on the displaced wall.
+  // The decal's VISIBLE content band on the wall: sticker.y is its CENTRE, content reaches `down`
+  // below / `up` above (scaled). Until measured, fall back to the full square (old behaviour).
+  const down = (vext ? vext.down : STICKER_SIZE / 2) * effScale;
+  const up   = (vext ? vext.up   : STICKER_SIZE / 2) * effScale;
+  const clampWallY = y => wallClampY(y, baseY, height, down, up);
+  const posY = clampWallY(sticker.y);
+  // Auto cream-clearance: a PROUD solid (bow, topper) whose band overlaps an existing side piping
+  // band would interpenetrate it — the band projects off the wall too. Re-seat the decoration's back
+  // onto the deepest overlapping band's OUTER face (measured, config-driven off sideProud; the manual
+  // Depth nudge still stacks on top). Flat/flush decals and bare walls get 0 → unchanged.
+  const pipingClear = (sticker.sideProud === true)
+    ? sidePipingClearance({ bands: pipingBands ?? [], yBottom: posY - down, yTop: posY + up })
+    : 0;
+  // `radialOffset` is the customer's "Depth" nudge — still an absolute world value on top (see #8 TODO).
+  // Insert sinks the base into the wall by `depth` of its size (fraction of the live sticker size — #8).
+  const insertSink = isInsert ? insertDepthFrac * STICKER_SIZE * effScale : 0;
+  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0) - insertSink;
+  // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
+  // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
   let cx, cz, yaw, curveRadius;
-  if (isRect) {
+  if (facetWall) {
     const pl = rectSidePlacement(shp, sticker.u ?? 0, off);
     cx = pl.x; cz = pl.z; yaw = pl.yaw; curveRadius = 0;
   } else {
@@ -1011,15 +1564,20 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
   // the true wall radius (bigger stickers span more arc → curve more).
-  const bendRadius = (isGlb && !isRect && curveRadius)
+  const bendRadius = (isGlb && !facetWall && curveRadius)
     ? curveRadius / (effScale || 1)
     : undefined;
 
-  // Keep the decal on the cake wall: sticker.y is its CENTRE, so its bottom edge sits half a
-  // (scaled) sticker below it. Clamp so the bottom never crosses the tier base into the board.
-  const halfH = (STICKER_SIZE / 2) * effScale;
-  const clampWallY = y => wallClampY(y, baseY, height, halfH);
-  const posY = clampWallY(sticker.y);
+
+  // Same box rule as the top sticker, from the one helper. A wall element is never base-seated
+  // (wallClampY already keeps its whole square on the wall). A GLB narrows the box to its measured
+  // dense footprint (tight, non-square); a 2D decal keeps the full square (INVARIANTS #5a).
+  const glbFoot = isGlb && vext?.halfW != null;
+  const hitBox = seatedHitBox({ size: STICKER_SIZE, ...(glbFoot ? { halfW: vext.halfW, halfH: vext.up } : {}) });
+  // The border sits at the model's MID-depth, not its proud front face: a deep GLB (a bent/proud bow)
+  // otherwise floats the flat border ~a full depth off the wall, so orbiting the cake slides it off
+  // the decoration. Half-depth keeps the border on the body while still clearing most of it.
+  const boxZ = isGlb ? depth * 0.5 : depth;
 
   return (
     <group
@@ -1029,8 +1587,22 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
-      {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
+      {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
+          that actually intercepts pointer events, transparent margin included. That is what tells a
+          customer why the decoration underneath won't respond. Corner grips resize it, through the
+          same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
+      {selected && (glbFoot && vext?.box
+        ? <SelectionBox width={vext.box.w} height={vext.box.h} centerY={vext.box.cy} depth={vext.box.d} centerZ={vext.box.cz} />
+        : <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={boxZ} />)}
+      {selected && resize && sticker.allowedActions?.resize !== false && (() => {
+        const c = resize.controlFor(sticker);
+        return c ? (
+          <ResizeHandles width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={boxZ}
+            value={c.value} bounds={c} onOrbitEnable={onOrbitEnable}
+            onResize={v => resize.onResize(sticker, v)} />
+        ) : null;
+      })()}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
@@ -1038,7 +1610,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       )}
       <mesh
         userData={{ isStickerHitPlane: true }}
-        position={[0, 0, 0.001]}
+        position={[0, hitBox.centerY, 0.001]}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
@@ -1049,16 +1621,16 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           didDrag.current      = false;
           pointerDownTime.current = Date.now();
           startPos.current     = { x: e.clientX, y: e.clientY };
-          startHit.current     = isRect
+          startHit.current     = facetWall
             ? boxHit(pointerRay(e, gl.domElement, camera), shp.halfW, shp.halfD)
             : cylinderHit(pointerRay(e, gl.domElement, camera), radius + off);
           startSticker.current = { theta: sticker.theta, y: sticker.y };
 
-          if (!isRect && moveSet && moveSet.length > 1) {
+          if (!facetWall && moveSet && moveSet.length > 1) {
             const setIds = new Set(moveSet);
             groupStart.current = {};
             allStickers.forEach(s => { if (setIds.has(s.id)) groupStart.current[s.id] = { theta: s.theta, y: s.y }; });
-          } else if (!isRect && sticker.groupId) {
+          } else if (!facetWall && sticker.groupId) {
             groupStart.current = {};
             allStickers.forEach(s => {
               if (s.groupId === sticker.groupId)
@@ -1075,8 +1647,8 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
             if (!didDrag.current || !startHit.current) return;
-            if (isRect) {
-              // Rect wall: the sticker centre follows the cursor's perimeter point directly.
+            if (facetWall) {
+              // Faceted wall (rect/heart/…): the sticker centre follows the cursor's perimeter point.
               const bh = boxHit(pointerRay(ev, gl.domElement, camera), shp.halfW, shp.halfD);
               if (!bh) return;
               onMove(sticker.id, { u: nearestU(shp, bh.x, bh.z), y: clampY(bh.y) });
@@ -1116,7 +1688,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
         }}
         onClick={e => e.stopPropagation()}
       >
-        <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+        <planeGeometry args={[hitBox.width, hitBox.height]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       </group>
@@ -1124,7 +1696,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   );
 }
 
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -1145,11 +1717,24 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // the edge into the air (butterflies, flowers). Seats on its base like `stand` (no straddle); the
   // outward lean + edge contact is what makes part of it overhang. World-oriented, never billboarded.
   const isVerge = sticker.placementMode === 'verge';
+  // Insert is a MODIFIER on an upright pose (usually `stand`), not its own mode: the base is sunk
+  // BELOW the top surface by its burial depth (see py) while the model stays upright + world-oriented
+  // like a stand/verge. Signalled by insertDepth != null (0 is valid = flush). Because the pose is
+  // `stand`, isStand is true and the upright render branch below already fires — insert just adds the
+  // burial/lean inside it (this is what unbroke "chocolate bar sleeps on top": insert was a sibling
+  // mode the upright branch didn't cover, so it fell to Flat mode; now it composes WITH stand).
+  const isInsert = sticker.insertDepth != null;
+  const insertDepthFrac = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
   const isGlb2d = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
   // Seat the model's actual BOTTOM on the surface: lift by its measured half-height (reported by
   // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
   // float is opt-in via yOffset (the Height control) / config. Fallback to the constant pre-measure.
   const [seatHalf, setSeatHalf] = useState(null);
+  // A GLB also reports its dense footprint half-WIDTH so the box narrows to a non-square model.
+  const [glbHalfW, setGlbHalfW] = useState(null);
+  const [glbBox, setGlbBox] = useState(null);   // rendered 3D bounds → 3D selection box
+  // How far the element stands proud of its hit plane (see DraggableSideSticker).
+  const [depth, setDepth] = useState(0);
   // Verge seat anchor is config-driven (placement_config.verge.seat → instance.vergeSeat): 'center'
   // (default) rests the MID-SPINE on the rim edge so the body drapes over the lip; 'base' seats the
   // BODY base on the surface and leans from there. Other modes are unaffected.
@@ -1163,25 +1748,49 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     : Infinity;
   const effScale = Math.min(sticker.scale ?? 1, topFrameMax);
   const py = topY + (sticker.yOffset ?? 0) + (
-    standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
+    // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
+    // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
+    isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
+    : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
+
+  // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
+  // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
+  // being billboarded toward the camera, win the raycast against the tier behind it.
+  const glbFoot = isGlb2d && glbHalfW != null;
+  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE, ...(glbFoot ? { halfW: glbHalfW, halfH: seatHalf } : {}) });
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} onSeat={setSeatHalf} />
-      {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
+
+      {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
+          that actually intercepts pointer events, transparent margin included. That is what tells a
+          customer why the decoration underneath won't respond. Corner grips resize it, through the
+          same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
+      {selected && (glbFoot && glbBox
+        ? <SelectionBox width={glbBox.w} height={glbBox.h} centerY={glbBox.cy} depth={glbBox.d} centerZ={glbBox.cz} />
+        : <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />)}
+      {selected && resize && sticker.allowedActions?.resize !== false && (() => {
+        const c = resize.controlFor(sticker);
+        return c ? (
+          <ResizeHandles width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth}
+            value={c.value} bounds={c} onOrbitEnable={onOrbitEnable}
+            onResize={v => resize.onResize(sticker, v)} />
+        ) : null;
+      })()}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
           {toolbar}
         </Html>
       )}
-      <mesh userData={{ isStickerHitPlane: true }} position={[0, 0, 0.001]}
+      <mesh userData={{ isStickerHitPlane: true }} position={[0, hitBox.centerY, 0.001]}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e_onDown} onClick={e => e.stopPropagation()}>
-        <planeGeometry args={[STICKER_SIZE, STICKER_SIZE]} />
+        <planeGeometry args={[hitBox.width, hitBox.height]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
     </>
@@ -1222,6 +1831,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       const dx = ev.clientX - startPos.current.x;
       const dy = ev.clientY - startPos.current.y;
       if (dx * dx + dy * dy > 25) didDrag.current = true;
+      if (!canMove) return;                           // pinned — allowed_actions.move === false
       if (didDrag.current && startHit.current) {
         const hit = planeHit(pointerRay(ev, gl.domElement, camera), plane);
         if (!hit) return;
@@ -1307,21 +1917,26 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // (lean). Same orientation pipeline; they differ in py (perch straddles the edge, no seat-lift),
   // clip (perch/verge aren't clipped), facing, and lean direction (see below). Stand/perch 2D images
   // billboard to face the camera; a verge is fixed in world space so it reclines over the actual edge.
-  if (isStand || isPerch || isVerge) {
+  // `isInsert` is a MODIFIER — normally it rides `stand` (so isStand already selects this branch), but
+  // it's OR'd in so any inserted element renders upright (buried base) and never falls to Flat mode.
+  if (isStand || isPerch || isVerge || isInsert) {
     // Billboard must be INSIDE the world-positioned group, not wrapping it.
     // If Billboard wraps the position group, it sits at origin and rotates its
     // local frame — so any x/z offset becomes wrong world-space position.
     // Lean/tilt must pivot about the BASE (the contact point), not the geometry centre — otherwise
     // leaning swings the base up off the cake. Translate down to the base, rotate, translate back
     // (cancels when untilted; no-op for perch where seatLift = 0).
-    const seatLift = standSeat ? (seatHalf ?? STICKER_SIZE / 2) : 0;
+    // Base-pivot the tilt for stand-seated modes AND insert (an inserted bar leans about its buried
+    // base, so the exposed part swings and the base stays put).
+    const seatLift = (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
     // Verge auto-orients radially OUTWARD: yaw so the element's local +Z points away from the cake
     // centre (re-derived from its x/z, so it reorients as it's dragged round the rim — round cakes
     // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that
     // outward +Z (+angle = lean over the edge). Stand/perch keep the caller's Y-spin and lean on −X.
+    // Insert keeps just its own Y-spin (the baked per-instance fan) — no radial auto-face.
     const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
     const yaw   = radialYaw + (sticker.rotation ?? 0);
-    const tiltX = isVerge ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+    const tiltX = (isVerge || isInsert) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
     const inner = (
       <group rotation={[0, yaw, 0]}>
         <group position={[0, -seatLift, 0]}>
@@ -1335,7 +1950,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     );
     return (
       <group position={[sticker.x, py, sticker.z]} scale={effScale}>
-        {(isGlb2d || isVerge) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
+        {(isGlb2d || isVerge || isInsert) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
   }
@@ -1461,10 +2076,12 @@ function CameraSnapper({ snapCameraRef, orbitRef }) {
 
 
 // `frontZ` is the cake's front-edge distance along +Z (the front is +Z for every shape):
-// round → radius, rect → depth/2. The label sits a fixed gap beyond that edge.
+// round → radius; every other shape (rect, number, outline) → halfD (outlines fill [-1,1]², so
+// the front-most point — a heart's tip — sits at halfD). The label sits a fixed gap beyond that edge.
 function FrontMarker({ frontZ }) {
   return (
     <Text
+      font={textFont}          // SEC-WEB-7 — bundled; omitting it re-introduces the jsdelivr fetch
       position={[0, 0.002, frontZ + 0.82]}
       rotation={[-Math.PI / 2, 0, 0]}
       fontSize={0.11}
@@ -1530,16 +2147,41 @@ function CakeScene({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
+  // Drag a single-mode piping piece round its ring: (tierIndex, zone, layerId, index, angle) => void.
+  // Same capability contract as isStickerMovable below, read off the piping LAYER (layer.id is the
+  // element id) rather than the sticker.
+  onPipingInstanceMove = null,
+  isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
+  // Is THIS decoration allowed to be dragged? A function rather than a flag on the sticker, because
+  // the answer comes from the ELEMENT (admin master data), and the sticker's own allowedActions
+  // carries a stale `move: false` on everything placed before the capability was wired. Reading the
+  // catalogue also means an admin unticking Movable takes effect on decorations already on cakes,
+  // not only on the next one placed — which is what a capability flag ought to mean.
+  //
+  // Defaults to movable when the host does not supply it: this component is used by previews and
+  // the thumbnail scene, and none of them should invent a restriction.
+  isStickerMovable = () => true,
+  // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
+  // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
+  stickerResize = null,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
+  grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
   tierDataRef,
 }) {
-  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [] } = config;
+  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null, nameBlocks = null } = config;
   const orbitBlockSet = useRef(new Set());
+  // A decoration selects via native pointerup + pointer capture, which breaks its r3f `stopPropagation`
+  // — so the r3f `click` still leaks to the tier/board underneath and toggles the cake's selection off,
+  // wiping the decoration you just picked (needs a second click). We already know at pointer-down (the
+  // capture raycast below) whether the gesture is on a decoration/grip; record it so the tier and
+  // background click handlers ignore a click that a decoration owns. No per-type logic.
+  const gestureOnStickerRef = useRef(false);
   const { gl, camera, scene } = useThree();
 
   // Capture-phase pointerdown fires before OrbitControls' bubble-phase listener.
@@ -1555,16 +2197,29 @@ function CakeScene({
       rc.setFromCamera({ x: ndx, y: ndy }, camera);
       const hits = rc.intersectObjects(scene.children, true);
       const overSticker = hits.some(h => h.object.userData.isStickerHitPlane);
+      // A resize grip sits proud of (and often beyond) the flat hit plane, so pressing one may NOT
+      // hit `isStickerHitPlane`. Without this, orbit stays enabled and OrbitControls' bubble listener
+      // starts a rotate before the grip's `beginResize` (also bubble) can suspend it — capture beats
+      // bubble, so the gate itself must recognise the grip. Dragging a grip resizes, never rotates.
+      const overGrip = hits.some(h => h.object.userData.isResizeGrip);
+      // A single-mode piping piece: pressing it drags it round its ring, so orbit must stand down for
+      // the same reason a decoration does. Only tagged when the ring is actually draggable, so a
+      // normal ring still rotates the cake when you press it.
+      const overPiping = hits.some(h => h.object.userData.isPipingHandle);
       // Cream-pen catchers (present only in draw mode): pressing on the cake draws, so
       // suspend rotate; pressing empty space still rotates.
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
       // Dragging a finish handle (luster-dust splash / gold-leaf flake) must not rotate the cake.
-      const overDust = hits.some(h => h.object.userData.isDustHandle || h.object.userData.isFoilHandle);
+      const overDust = hits.some(h => h.object.userData.isDustHandle || h.object.userData.isFoilHandle
+        || h.object.userData.isGrassHandle || h.object.userData.isBlockHandle);
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
+      // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
+      // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
+      gestureOnStickerRef.current = overSticker || overGrip;
       if (orbitRef.current) {
-        orbitRef.current.enabled = !overSticker && !overPen && !overDust;
+        orbitRef.current.enabled = !overSticker && !overPen && !overDust && !overGrip && !overPiping;
         orbitRef.current.enableRotate = !overCream;
       }
     }
@@ -1585,39 +2240,56 @@ function CakeScene({
   tierDataRef.current = tierData;
 
   const bottomTier = tierData[0];
+  const bottomShp = tierShape(bottomTier);
+  const board = boardOf(bottomTier);   // one board descriptor — visible mesh + writing + pen all use it
   const minTextY = 0.1 + 0.18;
   const maxTextY = stackY - 0.18;
 
   return (
     <>
-      <ambientLight intensity={0.8} />
-      <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
-      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      <SceneLights shadows />
       <color attach="background" args={['#f4f4f5']} />
-      {envMapUrl()
-        ? <SafeEnvironment files={envMapUrl()} />
-        : <SafeEnvironment preset="apartment" backgroundBlurriness={1} />}
+      <SceneEnv />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
-        onClick={e => { e.stopPropagation(); onDeselect(); }}>
+        onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
         <planeGeometry args={[30, 30]} />
         <meshStandardMaterial color="#fce8d5" roughness={0.85} />
       </mesh>
 
-      {bottomTier.shape === 'rect' ? (
-        <RoundedBox position={[0, 0.05, 0]} args={[bottomTier.width + 0.9, 0.1, bottomTier.depth + 0.9]} radius={0.06} smoothness={4} castShadow receiveShadow
-          onClick={e => { e.stopPropagation(); onDeselect(); }}>
+      {board.kind === 'rect' ? (
+        <RoundedBox position={[0, 0.05, 0]} args={[board.width, 0.1, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
+          onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </RoundedBox>
       ) : (
         <mesh position={[0, 0.05, 0]} castShadow receiveShadow
-          onClick={e => { e.stopPropagation(); onDeselect(); }}>
-          <cylinderGeometry args={[bottomTier.radius + 0.6, bottomTier.radius + 0.6, 0.1, 64]} />
+          onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
+          <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </mesh>
       )}
 
-      <FrontMarker frontZ={bottomTier.shape === 'rect' ? bottomTier.depth / 2 : bottomTier.radius} />
+      {/* Grass STANDING ON THE BOARD, ringing the cake — the base of the football cake. Bounded
+          outward by the board and inward by the cake wall, which is why grassSeats needed a `hole`:
+          two different outlines, where a top-surface band only ever hollows out its own.
+          `ringWidth` is how far across the board-to-cake gap it reaches, so it means the same thing
+          on a 6" round and a sheet. Seated at board height (the tier stack starts at 0.1). */}
+      {boardGrass && (
+        <GrassPatch
+          {...boardGrass}
+          shape={board}
+          topY={0.1}
+          patchRadius={board.radius}
+          inset={boardRingInset(board, bottomShp, boardGrass.ringWidth)}
+          hole={boardGrassHole(bottomShp, boundingRadius(bottomShp),
+            boardClearanceFor(bottomTier, boardGrass.height ?? 0.16))}
+        />
+      )}
+
+      {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
+          own half-depth, round → its radius. */}
+      <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />
 
       {tierData.map((tier, i) => (
         <group key={i}>
@@ -1626,8 +2298,11 @@ function CakeScene({
             height={tier.height}
             color={tier.color}
             gradient={tier.gradient ?? null}
+            glaze={tier.glaze ?? null}
             yBase={tier.baseY}
             shape={tier.shape ?? 'round'}
+            shapeFamily={tier.shapeFamily ?? null}
+            shapeConfig={tier.shapeConfig ?? null}
             width={tier.width}
             depth={tier.depth}
             cornerR={tier.cornerR}
@@ -1641,10 +2316,26 @@ function CakeScene({
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}
             highlightPipingId={highlightPipingId}
+            pipingMovable={isPipingMovable}
+            onPipingInstanceMove={onPipingInstanceMove
+              ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
+              : null}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
-            onClick={e => { e.stopPropagation(); onTierClick(i); }}
+            onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onTierClick(i); }}
           />
+          {/* Piped grass on this tier's top. Outside CakeTier because it is not part of the cake's
+              body or its borders — it is a treatment laid ON the finished top, the way the football
+              cake has smooth buttercream underneath and grass over it. Rendered from the resolved
+              tierData so it fits the tier's real footprint, round or sheet. */}
+          {tier.grass && (
+            <GrassPatch
+              shape={tierShape(tier)}
+              topY={tier.baseY + tier.height}
+              patchRadius={tier.radius}
+              {...tier.grass}
+            />
+          )}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
               position={[tier.radius + 0.35, tier.baseY + (selectedPiping.zone === 'top' ? tier.height + 0.1 : 0.1), 0]}
@@ -1669,12 +2360,6 @@ function CakeScene({
           if (enabled) orbitBlockSet.current.delete('__writing__'); else orbitBlockSet.current.add('__writing__');
           if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
         };
-        // Board geometry mirrors the board mesh drawn above (round: +0.6 r · rect: +0.9 each side).
-        const isRectBoard = bottomTier.shape === 'rect';
-        const boardRadius = isRectBoard ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2 : bottomTier.radius + 0.6;
-        const boardShp = isRectBoard
-          ? { kind: 'rect', halfW: (bottomTier.width + 0.9) / 2, halfD: (bottomTier.depth + 0.9) / 2 }
-          : { kind: 'round', radius: bottomTier.radius + 0.6 };
         return (
           <CreamWriting
             writing={writing}
@@ -1685,9 +2370,9 @@ function CakeScene({
             depth={topTier.depth}
             shp={tierShape(topTier)}
             tiers={tierData}
-            boardRadius={boardRadius}
+            boardRadius={board.radius}
             boardY={0.1}
-            boardShp={boardShp}
+            boardShp={board}
             onClick={onWritingClick}
             onMove={onWritingMove}
             onOrbitEnable={writingOrbitEnable}
@@ -1695,6 +2380,53 @@ function CakeScene({
           />
         );
       })()}
+
+      {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
+          highest tier. Each block is its own placement, so the arrangement IS the data — see
+          nameBlockRun. */}
+      {nameBlocks?.blocks?.length > 0 && (
+        <NameBlocks
+          {...nameBlocks}
+          blocks={nameBlocks.blocks}
+          surfaceRadius={nameBlocks.zone === 'top' ? tierData[tierData.length - 1].radius : board.radius}
+          y={nameBlocks.zone === 'top' ? stackY : 0.1}
+        />
+      )}
+
+      {/* …and are dragged by the very same handles as grass clumps: a point on a surface, grabbed
+          across its whole body. `r` is half a block, so you grab the cube itself rather than hunting
+          a dot; `lift` clears the block's height so the marker is never inside what it marks. */}
+      {blocksMode && nameBlocks?.blocks?.length > 0 && (
+        <FinishHandles
+          tierData={tierData}
+          getPoints={t => (nameBlocks.zone === 'top' && t === tierData[tierData.length - 1]
+            ? nameBlocks.blocks.map(b => ({ ...b, surface: 'top_surface', r: (nameBlocks.size ?? 0.3) * 0.6 }))
+            : null)}
+          board={board}
+          boardPoints={nameBlocks.zone === 'board'
+            ? nameBlocks.blocks.map(b => ({ ...b, r: (nameBlocks.size ?? 0.3) * 0.6 }))
+            : null}
+          selected={blocksSelected} onMove={onBlockMove} onSelect={onBlockSelect}
+          catcherFlag="isBlockCatcher" handleFlag="isBlockHandle"
+          lift={(nameBlocks.size ?? 0.3) + 0.06}
+          color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker />
+      )}
+
+      {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
+          surface, moved by its handle. showMarker is on because a clump the size of a thumbnail is
+          easy to lose against a field of grass, and the dot is only present while the card is open. */}
+      {grassMode && <FinishHandles tierData={tierData}
+        getPoints={t => (t.grass?.patches?.length ? t.grass.patches.map(p => ({ ...p, surface: 'top_surface' })) : null)}
+        board={board} boardPoints={boardGrass?.patches ?? null}
+        selected={grassSelected} onMove={onGrassMove} onSelect={onGrassSelect}
+        catcherFlag="isGrassCatcher" handleFlag="isGrassHandle"
+        // Float the handles clear of the tallest grass on the cake, so a marker is never buried
+        // inside the clump it marks. One number for both surfaces — a handle floating slightly high
+        // over the shorter one is unnoticeable; a handle inside a mound is the whole bug.
+        lift={grassHandleLift(tierData, boardGrass)}
+        // White and near-black: both read against green. The usual selColor is a dark GREEN,
+        // which would be the one colour invisible against the thing it marks.
+        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker />}
 
       {dustMode && <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustSelected}
         onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher" handleFlag="isDustHandle" />}
@@ -1707,15 +2439,7 @@ function CakeScene({
         drawMode={penDrawMode}
         penStyle={penStyle}
         tierData={tierData}
-        board={{
-          shape: bottomTier.shape === 'rect' ? 'rect' : 'round',
-          radius: bottomTier.shape === 'rect'
-            ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2
-            : bottomTier.radius + 0.6,
-          width: (bottomTier.width ?? 0) + 0.9,
-          depth: (bottomTier.depth ?? 0) + 0.9,
-          y: 0.1,
-        }}
+        board={{ shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 }}
         onAddStroke={onAddStroke}
       />
 
@@ -1797,6 +2521,11 @@ function CakeScene({
               height={tier.height}
               shp={tierShape(tier)}
               reliefSampler={tierReliefSampler(tier)}
+              pipingBands={resolveSidePipingBands({
+                topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
+                bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
+                topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
+              })}
               selected={isSelected}
               onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
               onLongPress={onStickerLongPress}
@@ -1807,6 +2536,8 @@ function CakeScene({
               allStickers={stickers}
               onOrbitEnable={orbitEnable}
               toolbar={isSelected ? stickerToolbar : null}
+              resize={stickerResize}
+              canMove={isStickerMovable(sticker)}
             />
           );
         }
@@ -1829,6 +2560,8 @@ function CakeScene({
             allStickers={stickers}
             onOrbitEnable={orbitEnable}
             toolbar={isSelected ? stickerToolbar : null}
+            resize={stickerResize}
+            canMove={isStickerMovable(sticker)}
           />
         );
       })}
@@ -1848,13 +2581,11 @@ function CakeThumbnailScene({ config }) {
 
   return (
     <>
-      <ambientLight intensity={0.8} />
-      <directionalLight position={[6, 14, 8]} intensity={1.5} />
-      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
-      {/* Same R2 HDRI the studio uses, so the captured snapshot's metallics render
-          gold instead of black (ambient lowered 1.2→0.8 to match now the env adds
-          light). No `background` prop → the capture stays transparent. */}
-      {envMapUrl() && <SafeEnvironment files={envMapUrl()} />}
+      <SceneLights />
+      {/* Same env rule as the live scene (SceneEnv): the configured HDRI, else the neutral
+          `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
+          no `background` prop — so the capture stays transparent. */}
+      <SceneEnv />
       {tierData.map((tier, i) => (
         <CakeTier
           key={i}
@@ -1862,8 +2593,11 @@ function CakeThumbnailScene({ config }) {
           height={tier.height}
           color={tier.color}
           gradient={tier.gradient ?? null}
+          glaze={tier.glaze ?? null}
           yBase={tier.baseY}
           shape={tier.shape ?? 'round'}
+          shapeFamily={tier.shapeFamily ?? null}
+          shapeConfig={tier.shapeConfig ?? null}
           width={tier.width}
           depth={tier.depth}
           cornerR={tier.cornerR}
@@ -1883,13 +2617,20 @@ function CakeThumbnailScene({ config }) {
       {stickers.map(sticker => {
         const tier = tierData[sticker.tierIndex] ?? tierData[0];
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+        // Insert modifier (base sunk into the surface at an angle) — mirror the interactive render (no
+        // measured seatHalf here, so use STICKER_SIZE/2 as the half-length). Signalled by insertDepth
+        // != null (0 valid); composes with the pose (stand base-seats, so both flags are true — the py
+        // below checks isInsertPv first so burial wins).
+        const isInsertPv = sticker.insertDepth != null;
+        const insertDepthPv = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
         if (isSide) {
           const tshp = tierShape(tier);
-          const off = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+          const off = sideSeatOffset(tier.radius) + (sticker.radialOffset ?? 0)
+            - (isInsertPv ? insertDepthPv * STICKER_SIZE * (sticker.scale ?? 1) : 0);
           const sampler = tierReliefSampler(tier);
           const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
           let px, pz, yaw, r = 0;
-          if (tshp.kind === 'rect') {
+          if (!isRoundWall(tshp)) {
             const pl = rectSidePlacement(tshp, sticker.u ?? 0, off);
             px = pl.x; pz = pl.z; yaw = pl.yaw;
           } else {
@@ -1907,7 +2648,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+                <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} curved={!thumbIsGlb && isRoundWall(tshp)} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
               </group>
             </group>
           );
@@ -1918,18 +2659,21 @@ function CakeThumbnailScene({ config }) {
         // Stand base-seats; perch & a centre-seat verge centre-seat (mid-spine on the rim edge, then
         // recline outward). A base-seat verge (verge.seat='base') base-seats like stand.
         const baseSeatedPv = sticker.placementMode === 'stand' || (isVergePv && sticker.vergeSeat === 'base');
-        const py   = topY + (sticker.yOffset ?? 0) + (baseSeatedPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : (isPerchPv || isVergePv) ? 0 : FLAT_STICKER_Y_OFFSET);
-        if (baseSeatedPv || isPerchPv || isVergePv) {
-          const seatLiftPv = baseSeatedPv ? STICKER_SIZE / 2 : 0;
+        const py   = topY + (sticker.yOffset ?? 0) + (
+          isInsertPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1) * (1 - 2 * insertDepthPv)
+          : baseSeatedPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1)
+          : (isPerchPv || isVergePv) ? 0 : FLAT_STICKER_Y_OFFSET);
+        if (baseSeatedPv || isPerchPv || isVergePv || isInsertPv) {
+          const seatLiftPv = (baseSeatedPv || isInsertPv) ? STICKER_SIZE / 2 : 0;
           const yawPv   = (isVergePv ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0) + (sticker.rotation ?? 0);
-          const tiltXPv = isVergePv ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+          const tiltXPv = (isVergePv || isInsertPv) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
           return (
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
               <group rotation={[0, yawPv, 0]}>
                 <group position={[0, -seatLiftPv, 0]}>
                   <group rotation={[tiltXPv, 0, 0]}>
                     <group position={[0, seatLiftPv, 0]}>
-                      <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+                      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
                     </group>
                   </group>
                 </group>
@@ -1939,7 +2683,7 @@ function CakeThumbnailScene({ config }) {
         }
         return (
           <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} />
+            <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
           </group>
         );
       })}
@@ -1951,11 +2695,7 @@ function CakeThumbnailScene({ config }) {
       {writing?.text?.trim() && (() => {
         const topTier = tierData[tierData.length - 1];
         const bottomTier = tierData[0];
-        const isRectBoard = bottomTier.shape === 'rect';
-        const boardRadius = isRectBoard ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2 : bottomTier.radius + 0.6;
-        const boardShp = isRectBoard
-          ? { kind: 'rect', halfW: (bottomTier.width + 0.9) / 2, halfD: (bottomTier.depth + 0.9) / 2 }
-          : { kind: 'round', radius: bottomTier.radius + 0.6 };
+        const board = boardOf(bottomTier);
         return (
           <CreamWriting
             writing={writing}
@@ -1966,9 +2706,9 @@ function CakeThumbnailScene({ config }) {
             depth={topTier.depth}
             shp={tierShape(topTier)}
             tiers={tierData}
-            boardRadius={boardRadius}
+            boardRadius={board.radius}
             boardY={0.1}
-            boardShp={boardShp}
+            boardShp={board}
             selected={false}
           />
         );
@@ -2047,20 +2787,49 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
 // SAME `toCanvasConfig` the live editor uses (one defaulting rule, INVARIANTS #3) and renders the
 // SAME `CakeThumbnailScene` as the thumbnail capture (one renderer, #2). Unlike CakeThumbnailCanvas
 // (fixed 400×400, parked off-screen for PNG capture) this fills its parent and is meant to be seen.
-export function CakePreview({ design, autoRotate = true, style }) {
+// `enableZoom` is opt-in and defaults OFF: every existing caller is a small inline preview tile where a
+// stray scroll must not resize the cake. A full-size stage (the Cake Shape Studio) turns it on.
+//
+// The LENS is overridable for the same reason. The default (42°, close) is a portrait lens for a
+// thumbnail — flattering, but it splays a cake's near bottom edge outward, which reads as the cake
+// bulging at the base. Judging a SHAPE needs a long lens (small fov, camera pulled back) so the
+// silhouette on screen is the silhouette, not the perspective.
+// Keeps the live camera in step with the `fov`/`cameraPosition` props.
+//
+// R3F reads <Canvas camera={…}> ONCE, when it creates the default camera; later prop changes are
+// ignored. That is invisible while a preview shows one fixed cake, and a real bug the moment the cake
+// can change under a mounted Canvas: the Cake Shape Studio's capture stage stays mounted while the
+// operator switches shapes, so it kept the camera it was born with — framed for a one-tier round cake —
+// and photographed a two-tier stack with its top cut off. The saved thumbnail was wrong even though the
+// camera it asked for was right.
+function CameraRig({ fov, position }) {
+  const camera = useThree(s => s.camera);
+  useEffect(() => {
+    camera.position.set(...position);
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }, [camera, fov, position[0], position[1], position[2]]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+export function CakePreview({
+  design, autoRotate = true, style, enableZoom = false,
+  fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = [0, 2, 0],
+}) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
       <Canvas
         gl={{ preserveDrawingBuffer: true, alpha: true }}
         onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
-        camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
+        camera={{ position: cameraPosition, fov }}
         style={{ width: '100%', height: '100%' }}
       >
+        <CameraRig fov={fov} position={cameraPosition} />
         <Suspense fallback={null}>
           <CakeThumbnailScene config={config} />
         </Suspense>
-        <OrbitControls enableZoom={false} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={[0, 2, 0]} />
+        <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={target} />
       </Canvas>
     </div>
   );
@@ -2074,12 +2843,20 @@ export default function CakeCanvas({
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
+  onPipingInstanceMove = null,
+  isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
+  // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
+  // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
+  stickerResize = null,
+  isStickerMovable,
   hitTestRef,
   snapCameraRef,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, writingSelected = false,
   penDrawMode = false, penStyle, onAddStroke,
+  grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2118,7 +2895,9 @@ export default function CakeCanvas({
         }
 
         const shp = tierShape(tier);
-        if (shp.kind === 'rect') {
+        if (!isRoundWall(shp)) {
+          // Faceted wall (rect + any outline: heart, …): seed a perimeter fraction u, so the drop
+          // sits on the ACTUAL wall — a heart seeded with theta would land on a bounding circle.
           const bh = boxHit(ray, shp.halfW, shp.halfD);
           if (bh && bh.y >= tier.baseY && bh.y <= topY) {
             const dist = ray.origin.distanceTo(new THREE.Vector3(bh.x, bh.y, bh.z));
@@ -2179,6 +2958,8 @@ export default function CakeCanvas({
         onPipingCancel={onPipingCancel}
         pipingStyles={pipingStyles}
         pipingToolbar={pipingToolbar}
+        onPipingInstanceMove={onPipingInstanceMove}
+        isPipingMovable={isPipingMovable}
         selectedTextId={selectedTextId}
         onTextSelect={onTextSelect}
         onTextMove={onTextMove}
@@ -2195,6 +2976,8 @@ export default function CakeCanvas({
         onGroupMove={onGroupMove}
         onMoveMany={onMoveMany}
         stickerToolbar={stickerToolbar}
+        stickerResize={stickerResize}
+        isStickerMovable={isStickerMovable}
         onWritingClick={onWritingClick}
         onWritingMove={onWritingMove}
         writingSelected={writingSelected}
@@ -2203,6 +2986,14 @@ export default function CakeCanvas({
         onAddStroke={onAddStroke}
         creamPaint={creamPaint}
         onCreamPaint={onCreamPaint}
+        grassMode={grassMode}
+        grassSelected={grassSelected}
+        onGrassMove={onGrassMove}
+        onGrassSelect={onGrassSelect}
+        blocksMode={blocksMode}
+        blocksSelected={blocksSelected}
+        onBlockMove={onBlockMove}
+        onBlockSelect={onBlockSelect}
         dustMode={dustMode}
         dustSelected={dustSelected}
         onDustMove={onDustMove}
