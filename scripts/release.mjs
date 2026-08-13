@@ -42,12 +42,36 @@ const DRY      = flag('--dry-run');
 const NO_PUSH  = flag('--no-push');
 const BUMP     = flag('--minor') ? 'minor' : flag('--major') ? 'major' : 'patch';
 const WEB      = resolve(opt('--web', join(CORE, '..', 'spattoo-web-ai-credits')));
+const ADMIN    = resolve(opt('--admin', join(CORE, '..', 'spattoo-admin')));
+
+// ── Every consumer of the tarball, released together ──────────────────────────────────────────
+// Two repos vendor core, and a release that updates one leaves the other serving the previous
+// version — building fine, deploying fine, silently old. Which is exactly the failure this script
+// already guards against for web ("the step most often forgotten by hand, and the one whose
+// omission is invisible"); admin has the same shape and was simply not in the list.
+//
+// Admin is worse in one respect: its vite config aliases @spattoo/designer to core's SOURCE when
+// core is checked out beside it, so a developer never runs the vendored tarball and cannot notice
+// a stale one by using the app. Only a deploy would show it.
+//
+//   pkg    — the package.json holding the tarball reference, relative to the repo root
+//   scope  — the commit-message scope, so history reads chore(app): / chore(admin):
+const TARGETS = [
+  { label: 'web',   dir: WEB,   pkg: ['apps', 'app', 'package.json'], scope: 'app'   },
+  { label: 'admin', dir: ADMIN, pkg: ['package.json'],                scope: 'admin' },
+];
 const REF      = process.env.SPATTOO_RELEASE_REF || 'origin/dev';
 const BRANCH   = REF.replace(/^origin\//, '');
 
 const sh  = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8' }).trim();
 const run = (cmd, args, cwd) => {
-  if (DRY) { console.log(`  · would run: ${cmd} ${args.join(' ')}   (${cwd === CORE ? 'core' : 'web'})`); return ''; }
+  if (DRY) {
+    // Names the ACTUAL repo. It said 'web' for everything, which during a dry run of a two-consumer
+    // release is the one thing you are checking.
+    const where = cwd === CORE ? 'core' : (TARGETS.find(t => t.dir === cwd)?.label ?? cwd);
+    console.log(`  · would run: ${cmd} ${args.join(' ')}   (${where})`);
+    return '';
+  }
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 };
 const die  = (m) => { console.error(`\n✗ release — ${m}\n`); process.exit(1); };
@@ -55,15 +79,18 @@ const ok   = (m) => console.log(`  ✓ ${m}`);
 const step = (m) => console.log(`\n${m}`);
 
 // ── 0. both repos exist and are clean ──────────────────────────────────────────────────────────
-// Checked for WEB too, and up front. Discovering a dirty web checkout after core is already
-// tagged and pushed leaves a released version nothing consumes — recoverable, but only by hand.
-if (!existsSync(WEB)) die(`no web checkout at ${WEB}\n  pass one with --web <path>`);
-for (const [label, dir] of [['core', CORE], ['web', WEB]]) {
+// Checked for every CONSUMER too, and up front. Discovering a dirty checkout after core is already
+// tagged and pushed leaves a released version something does not consume — recoverable, but only by
+// hand, and only if you notice.
+for (const t of TARGETS) {
+  if (!existsSync(t.dir)) die(`no ${t.label} checkout at ${t.dir}\n  pass one with --${t.label} <path>`);
+}
+for (const [label, dir] of [['core', CORE], ...TARGETS.map(t => [t.label, t.dir])]) {
   if (sh('git', ['status', '--porcelain'], dir)) {
     die(`${label} has uncommitted changes. Commit them first — a release must correspond to a commit.`);
   }
 }
-ok('both checkouts are clean');
+ok(`all ${TARGETS.length + 1} checkouts are clean`);
 
 // ── 0b. web is caught up too, BEFORE anything is bumped ────────────────────────────────────────
 // This used to live down in "Updating web", after core was tagged and pushed and after packing —
@@ -74,19 +101,21 @@ ok('both checkouts are clean');
 //
 // Doing it now costs nothing and fails cheaply: no bump, no tag, no push, nothing to unwind. It
 // also means the version below is computed against a web checkout that is already current.
-step(`Syncing web with origin/${BRANCH}`);
-run('git', ['fetch', 'origin', BRANCH], WEB);
-if (!DRY) {
-  try {
-    execFileSync('git', ['rebase', `origin/${BRANCH}`], { cwd: WEB, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch {
-    try { execFileSync('git', ['rebase', '--abort'], { cwd: WEB, stdio: 'ignore' }); } catch { /* none in progress */ }
-    die(`web does not rebase cleanly onto origin/${BRANCH}.\n` +
-        `  Nothing has been released — resolve it and run again:\n` +
-        `    git -C ${WEB} rebase origin/${BRANCH}`);
+step(`Syncing consumers with origin/${BRANCH}`);
+for (const t of TARGETS) {
+  run('git', ['fetch', 'origin', BRANCH], t.dir);
+  if (!DRY) {
+    try {
+      execFileSync('git', ['rebase', `origin/${BRANCH}`], { cwd: t.dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch {
+      try { execFileSync('git', ['rebase', '--abort'], { cwd: t.dir, stdio: 'ignore' }); } catch { /* none in progress */ }
+      die(`${t.label} does not rebase cleanly onto origin/${BRANCH}.\n` +
+          `  Nothing has been released — resolve it and run again:\n` +
+          `    git -C ${t.dir} rebase origin/${BRANCH}`);
+    }
   }
+  ok(`${t.label} is up to date`);
 }
-ok('web is up to date');
 
 // ── 1. take everything already on the release branch ───────────────────────────────────────────
 // Rebase rather than merge, and rebase FIRST: the version is computed from the remote below, and
@@ -160,36 +189,40 @@ if (!NO_PUSH) {
 
 // ── 5. pack — with its own guards, which are not repeated here ─────────────────────────────────
 step('Packing');
-if (DRY) console.log(`  · would run: npm run pack:vendor -- ${join(WEB, 'vendor')}`);
-else execFileSync('npm', ['run', 'pack:vendor', '--', join(WEB, 'vendor')], { cwd: CORE, stdio: ['ignore', 'ignore', 'inherit'] });
-ok(`vendored spattoo-designer-${VERSION}.tgz`);
+for (const t of TARGETS) {
+  if (DRY) console.log(`  · would run: npm run pack:vendor -- ${join(t.dir, 'vendor')}`);
+  else execFileSync('npm', ['run', 'pack:vendor', '--', join(t.dir, 'vendor')], { cwd: CORE, stdio: ['ignore', 'ignore', 'inherit'] });
+  ok(`vendored spattoo-designer-${VERSION}.tgz → ${t.label}`);
+}
 
 // ── 6. point web at it ─────────────────────────────────────────────────────────────────────────
 // The step most often forgotten by hand, and the one whose omission is invisible: web keeps
 // building, keeps deploying, and keeps serving the previous core. (Web was rebased back at 0b, on a
 // clean tree — packing has dirtied it by now.)
-step('Updating web');
-const webPkgPath = join(WEB, 'apps', 'app', 'package.json');
-const webPkgRaw  = readFileSync(webPkgPath, 'utf8');
-const bumped     = webPkgRaw.replace(/spattoo-designer-\d+\.\d+\.\d+\.tgz/g, `spattoo-designer-${VERSION}.tgz`);
-if (bumped === webPkgRaw) {
-  die(`apps/app/package.json does not reference a vendored spattoo-designer tarball.\n` +
-      '  Expected "@spattoo/designer": "file:../../vendor/spattoo-designer-<version>.tgz".');
-}
-if (!DRY) writeFileSync(webPkgPath, bumped);
-ok(`apps/app/package.json → spattoo-designer-${VERSION}.tgz`);
+for (const t of TARGETS) {
+  step(`Updating ${t.label}`);
+  const pkgPath = join(t.dir, ...t.pkg);
+  const raw     = readFileSync(pkgPath, 'utf8');
+  const bumped  = raw.replace(/spattoo-designer-\d+\.\d+\.\d+\.tgz/g, `spattoo-designer-${VERSION}.tgz`);
+  if (bumped === raw) {
+    die(`${t.label}: ${t.pkg.join('/')} does not reference a vendored spattoo-designer tarball.\n` +
+        '  Expected "@spattoo/designer": "file:…/vendor/spattoo-designer-<version>.tgz".');
+  }
+  if (!DRY) writeFileSync(pkgPath, bumped);
+  ok(`${t.pkg.join('/')} → spattoo-designer-${VERSION}.tgz`);
 
-// npm install is what rewrites package-lock's integrity hash for the new tarball. Skipping it is
-// the classic "works locally, dies on Vercel with a cold cache" — see LINKING.md.
-if (DRY) console.log('  · would run: npm install   (web)');
-else execFileSync('npm', ['install'], { cwd: WEB, stdio: ['ignore', 'ignore', 'inherit'] });
-ok('npm install — package-lock integrity rewritten');
+  // npm install is what rewrites package-lock's integrity hash for the new tarball. Skipping it is
+  // the classic "works locally, dies on Vercel with a cold cache" — see LINKING.md.
+  if (DRY) console.log(`  · would run: npm install   (${t.label})`);
+  else execFileSync('npm', ['install'], { cwd: t.dir, stdio: ['ignore', 'ignore', 'inherit'] });
+  ok('npm install — package-lock integrity rewritten');
 
-run('git', ['add', '-A'], WEB);
-run('git', ['commit', '-m', `chore(app): vendor ${VERSION}`], WEB);
-if (!NO_PUSH) {
-  run('git', ['push', 'origin', `HEAD:${BRANCH}`], WEB);
-  ok(`pushed web`);
+  run('git', ['add', '-A'], t.dir);
+  run('git', ['commit', '-m', `chore(${t.scope}): vendor ${VERSION}`], t.dir);
+  if (!NO_PUSH) {
+    run('git', ['push', 'origin', `HEAD:${BRANCH}`], t.dir);
+    ok(`pushed ${t.label}`);
+  }
 }
 
 // ── done ───────────────────────────────────────────────────────────────────────────────────────
@@ -197,5 +230,5 @@ console.log(`\n${DRY ? '· DRY RUN — nothing changed' : `✓ released ${VERSIO
 if (!DRY && NO_PUSH) {
   console.log(`\n  Not pushed. To finish:\n` +
               `    git -C ${CORE} push --atomic origin HEAD:${BRANCH} v${VERSION}\n` +
-              `    git -C ${WEB} push origin HEAD:${BRANCH}`);
+              TARGETS.map(t => `    git -C ${t.dir} push origin HEAD:${BRANCH}`).join('\n'));
 }
