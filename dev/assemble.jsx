@@ -4,6 +4,7 @@ import { useCakeDesign } from '../src/designer/hooks/useCakeDesign.js';
 import { GLAZE_DEFAULTS } from '../src/designer/shared/glaze/glazeMaterial.js';
 import { CakePreview } from '../src/designer/canvas/CakeCanvas.jsx';
 import { useNarrow } from '../src/shared/useNarrow.js';
+import BakerDoodle from './BakerDoodle.jsx';
 
 /* ── PROTOTYPE: the cake builds itself, on one screen ────────────────────────────────────────────
  *
@@ -72,9 +73,17 @@ const beatsFor = name => [
 // The demo ends by asking for the sale, not with a caption. The cake lands, holds for a beat, and
 // then the copy turns to the visitor — because "And a name" is where the old version stopped, and
 // stopping on a caption wastes the one moment the visitor is most persuaded.
+// What the character says before the demo starts. This is the whole pitch, delivered by someone
+// rather than printed above a rail: it names what the visitor can do, and who bakes it.
+const greetingFor = name => ({
+  title: 'You can design your own cake',
+  note: `Every part of it — colours, tiers, the name on top. ${name} bakes it.`,
+});
+
+const GREET_MS = 2900;   // long enough to read, short enough that the demo still feels prompt
+
 const PAYOFF = { title: 'Now make yours', note: 'The same five steps, in your hands. About two minutes.' };
 
-const BEAT_COUNT = 5;
 const DWELL = 1900;   // how long a finished beat holds before the next one starts
 const REBUILD = 260;
 const PAYOFF_IN = 1500;  // how long the finished cake holds before the page asks for the sale  // and how fast it replays when someone jumps several steps at once
@@ -86,8 +95,10 @@ function Assembling({ primary, accent, name }) {
   apiRef.current = api;                     // the setters are read at fire time, never closed over
 
   const BEATS = useMemo(() => beatsFor(name), [name]);
+  const GREETING = useMemo(() => greetingFor(name), [name]);
   const [beat, setBeat] = useState(0);
   const [auto, setAuto] = useState(true);
+  const [greeted, setGreeted] = useState(false);
   const built = useRef(-1);                 // which beat the CAKE is at, which trails `beat` while it catches up
   const narrow = useNarrow(860);
 
@@ -149,16 +160,29 @@ function Assembling({ primary, accent, name }) {
     return () => clearTimeout(t);
   }, [arrived, beat, BEATS.length]);
 
+  // The character speaks first and the cake waits for it. A demo that starts assembling while the
+  // narrator is still saying hello has two things talking at once, which is how you get a visitor
+  // who reads neither.
+  useEffect(() => {
+    const t = setTimeout(() => setGreeted(true), GREET_MS);
+    return () => clearTimeout(t);
+  }, []);
+
   // It plays itself. Nobody arrives at a storefront intending to operate it.
   useEffect(() => {
-    if (!auto || beat >= BEATS.length - 1) return;
-    const t = setTimeout(() => setBeat(b => b + 1), beat === 0 ? 1200 : DWELL);
+    if (!auto || !greeted || beat >= BEATS.length - 1) return;
+    const t = setTimeout(() => setBeat(b => b + 1), DWELL);
     return () => clearTimeout(t);
-  }, [auto, beat]);
+  }, [auto, greeted, beat]);
 
   // Taking the wheel stops the autopilot. A page that keeps advancing after you have chosen a step
   // is arguing with you.
-  const pick = i => { setAuto(false); setBeat(i); };
+  const pick = i => { setAuto(false); setGreeted(true); setBeat(i); };
+
+  // One line, one pose. Everything the character says and does is derived here rather than being
+  // threaded through the markup, so "what is he doing on the ganache step" has exactly one answer.
+  const line = !greeted ? GREETING : payoff ? PAYOFF : BEATS[beat];
+  const pose = !greeted ? 'wave' : payoff ? 'wave' : beat === BEATS.length - 1 ? 'pipe' : 'point';
 
   
 
@@ -170,14 +194,10 @@ function Assembling({ primary, accent, name }) {
         {/* HEADER — identity, then the five steps. The rail is the recipe, the progress meter and
             the navigation all at once; three jobs, one row, no extra furniture. */}
         <header style={s.head}>
-          <div style={s.brand}>
-            <div style={s.wordmark}>{name}</div>
-            {/* The one sentence the page cannot do without. When the full-screen masthead was cut,
-                "Custom cakes · made to order" went with it and nothing replaced it — leaving a
-                stranger to work out from a step counter and a rotating cake that this is a shop
-                where THEY do the designing. Second person, and it names who does what. */}
-            <p style={s.promise}>You design it. {name} bakes it.</p>
-          </div>
+          {/* The promise that used to sit here in small italics is gone: correct, unmissable in a
+              code review, and invisible on a page where a 3D cake is turning six inches away. The
+              character says it out loud instead. */}
+          <div style={s.brand}><div style={s.wordmark}>{name}</div></div>
           <div style={s.railWrap}>
             {/* Five numbers with no heading are a puzzle. Two words turn them into a table of
                 contents for something the visitor is about to be asked to do. */}
@@ -214,10 +234,14 @@ function Assembling({ primary, accent, name }) {
         </div>
 
         <footer style={narrow ? { ...s.foot, ...s.footNarrow } : s.foot}>
-          <div style={s.copy}>
-            <div style={s.step}>{payoff ? 'Your turn' : `Step ${pad(beat + 1)} / ${pad(BEATS.length)}`}</div>
-            <h2 key={`t${beat}${payoff}`} style={s.title}>{(payoff ? PAYOFF : BEATS[beat]).title}</h2>
-            <p key={`n${beat}${payoff}`} style={s.note}>{(payoff ? PAYOFF : BEATS[beat]).note}</p>
+          <div style={s.narrator}>
+            <BakerDoodle pose={pose} apron={primary}
+                         style={narrow ? { ...s.doodle, ...s.doodleNarrow } : s.doodle} />
+            <div style={s.bubble}>
+              <span style={s.tailInk} aria-hidden="true" /><span style={s.tailFill} aria-hidden="true" />
+              <h2 key={`t${line.title}`} style={s.title}>{line.title}</h2>
+              <p key={`n${line.note}`} style={s.note}>{line.note}</p>
+            </div>
           </div>
           {/* Live from the first frame. The scroll version earned the CTA at the end, which is
               defensible in a story and indefensible on a storefront: someone who already knows what
@@ -262,8 +286,7 @@ const s = {
   head:   { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between',
             gap: 'clamp(10px, 2vw, 28px)', flex: '0 0 auto' },
   brand:  { minWidth: 0 },
-  promise:{ fontFamily: SERIF, fontSize: 'clamp(15px, 1.5vw, 21px)', fontStyle: 'italic', color: '#5D584F',
-            margin: '6px 0 0' },
+
   railWrap: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 9, flex: '1 1 260px' },
   railLabel: { fontFamily: SANS, fontSize: 9.5, fontWeight: 700, letterSpacing: 2.2, textTransform: 'uppercase',
                color: MUTED },
@@ -297,15 +320,33 @@ const s = {
   cake:   { width: '100%', height: '100%', maxWidth: 760 },
   horizon: { position: 'absolute', left: '-50vw', right: '-50vw', top: '95%', height: 1, background: INK, opacity: 0.10 },
 
-  foot:   { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+  foot:   { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', minWidth: 0,
             gap: 'clamp(14px, 3vw, 40px)', flex: '0 0 auto' },
   footNarrow: { flexDirection: 'column', alignItems: 'stretch' },
-  copy:   { maxWidth: 420 },
+  // The character walks on from the left; the bubble opens a beat later, once he has arrived. Both
+  // are one-shot — nothing here loops, because a looping mascot beside a rotating cake is a
+  // screensaver.
+  narrator: { display: 'flex', alignItems: 'flex-end', gap: 'clamp(10px, 1.6vw, 20px)', minWidth: 0,
+              flex: '1 1 auto', animation: 'walkOn 720ms cubic-bezier(.2,.8,.3,1) both' },
+  doodle:  { height: 'clamp(122px, 21vh, 208px)', width: 'auto', flex: '0 0 auto', overflow: 'visible' },
+  doodleNarrow: { height: 'clamp(92px, 15vh, 128px)' },
+  bubble:  { position: 'relative', background: '#fff', border: `2.4px solid ${INK}`, borderRadius: 20,
+             padding: 'clamp(12px, 1.6vw, 20px) clamp(14px, 2vw, 24px)', maxWidth: 460, minWidth: 0,
+             marginBottom: 'clamp(14px, 3vh, 34px)',
+             animation: 'popOn 420ms 420ms cubic-bezier(.34,1.5,.5,1) both' },
+  // Two triangles, ink then fill, the fill inset by the border width — a single triangle would have
+  // no outline and a bordered pseudo-element cannot make a diagonal.
+  tailInk:  { position: 'absolute', left: -15, bottom: 16, width: 0, height: 0,
+              borderTop: '9px solid transparent', borderBottom: '11px solid transparent',
+              borderRight: `15px solid ${INK}` },
+  tailFill: { position: 'absolute', left: -11, bottom: 18, width: 0, height: 0,
+              borderTop: '7px solid transparent', borderBottom: '8px solid transparent',
+              borderRight: '12px solid #fff' },
   step:   { fontFamily: SANS, fontSize: 10.5, fontWeight: 700, letterSpacing: 2.4, textTransform: 'uppercase',
             color: MUTED, marginBottom: 10, fontVariantNumeric: 'tabular-nums' },
-  title:  { fontFamily: SERIF, fontSize: 'clamp(28px, 3.4vw, 52px)', fontWeight: 500, color: INK,
-            margin: '0 0 8px', lineHeight: 1.04, animation: 'beatIn 460ms cubic-bezier(.2,.7,.2,1)' },
-  note:   { fontFamily: SANS, fontSize: 13.5, lineHeight: 1.7, color: '#5D584F', margin: 0, maxWidth: 380,
+  title:  { fontFamily: SERIF, fontSize: 'clamp(22px, 2.4vw, 36px)', fontWeight: 500, color: INK,
+            margin: '0 0 5px', lineHeight: 1.08, animation: 'beatIn 460ms cubic-bezier(.2,.7,.2,1)' },
+  note:   { fontFamily: SANS, fontSize: 13, lineHeight: 1.65, color: '#5D584F', margin: 0,
             animation: 'beatIn 460ms 60ms backwards cubic-bezier(.2,.7,.2,1)' },
   cta:    { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 12, background: INK,
             color: PAPER, border: 'none', padding: '15px 26px', fontFamily: SANS, fontSize: 12.5,
@@ -322,6 +363,8 @@ const css = document.createElement('style');
 css.textContent = `
   body { margin: 0; background: ${PAPER}; }
   @keyframes beatIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes walkOn { from { opacity: 0; transform: translateX(-34px); } to { opacity: 1; transform: none; } }
+  @keyframes popOn  { from { opacity: 0; transform: scale(.86) translateY(6px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
 `;
 document.head.appendChild(css);
