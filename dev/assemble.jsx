@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { useCakeDesign } from '../src/designer/hooks/useCakeDesign.js';
 import { GLAZE_DEFAULTS } from '../src/designer/shared/glaze/glazeMaterial.js';
@@ -45,16 +45,39 @@ import { useNarrow } from '../src/shared/useNarrow.js';
  * Prototype: standalone dev page. Not a hero renderer, not registered, no template uses it.
  */
 
-const BEATS = [
-  { n: 'Tier',    title: 'A bare tier',     note: 'Sponge, levelled and crumb-coated. Everything starts here.' },
-  { n: 'Stack',   title: 'Stacked',         note: 'As many tiers as the day asks for.' },
-  { n: 'Colour',  title: 'Their colour',    note: 'The bakery’s own palette — not a template’s.' },
-  { n: 'Ganache', title: 'Ganache, poured', note: 'Warmed, then left to find its own edge.' },
-  { n: 'Name',    title: 'And a name',      note: 'Piped by hand, last of all.' },
+// ── WHAT THE STEPS SAY ──────────────────────────────────────────────────────────────────────────
+// These were the KITCHEN'S process — "sponge, levelled and crumb-coated", "warmed, then left to
+// find its own edge". Lovely writing about work the visitor will never do, narrated at someone who
+// has just landed on a stranger's page and does not yet know what they are looking at.
+//
+// They are the visitor's CHOICES now, in second person, in the order the designer asks for them. It
+// is the same five beats and the same cake; what changed is who the sentence is about. A customer
+// who reads "Add your tiers — one, two, three, as many as the day asks for" knows two things the
+// old copy never told them: that this is something they do, and that they can have three.
+//
+// The baker's name goes INTO the colour step. "Every shade FEELINGS bakes in" says the palette
+// belongs to this shop and not to a template, which is the one claim this hero can make that a
+// stock photo cannot.
+const beatsFor = name => [
+  // Beat one is the OPENING state, so nothing can visibly change on it — which rules out a caption
+  // like "start with a size", promising a choice the cake is not seen making. It names the choices
+  // instead. (If this becomes a real hero, setTierShape can morph round → heart here and earn it.)
+  { n: 'Start',  title: 'Start with a cake',  note: 'Round, heart or square, from six inches up. Your call.' },
+  { n: 'Tiers',  title: 'Add your tiers',     note: 'One, two, three — as many as the day asks for.' },
+  { n: 'Colour', title: 'Pick your colours',  note: `Every shade ${name} bakes in, on any part of the cake.` },
+  { n: 'Finish', title: 'Choose a finish',    note: 'Buttercream, ganache, or a poured glaze left to find its own edge.' },
+  { n: 'Name',   title: 'Add their name',     note: 'Piped by hand, exactly as you type it.' },
 ];
 
+// The demo ends by asking for the sale, not with a caption. The cake lands, holds for a beat, and
+// then the copy turns to the visitor — because "And a name" is where the old version stopped, and
+// stopping on a caption wastes the one moment the visitor is most persuaded.
+const PAYOFF = { title: 'Now make yours', note: 'The same five steps, in your hands. About two minutes.' };
+
+const BEAT_COUNT = 5;
 const DWELL = 1900;   // how long a finished beat holds before the next one starts
-const REBUILD = 260;  // and how fast it replays when someone jumps several steps at once
+const REBUILD = 260;
+const PAYOFF_IN = 1500;  // how long the finished cake holds before the page asks for the sale  // and how fast it replays when someone jumps several steps at once
 const pad = i => String(i).padStart(2, '0');
 
 function Assembling({ primary, accent, name }) {
@@ -62,6 +85,7 @@ function Assembling({ primary, accent, name }) {
   const apiRef = useRef(api);
   apiRef.current = api;                     // the setters are read at fire time, never closed over
 
+  const BEATS = useMemo(() => beatsFor(name), [name]);
   const [beat, setBeat] = useState(0);
   const [auto, setAuto] = useState(true);
   const built = useRef(-1);                 // which beat the CAKE is at, which trails `beat` while it catches up
@@ -98,19 +122,32 @@ function Assembling({ primary, accent, name }) {
   //
   // Going backwards has to rebuild from nothing: the beats are additive (a tier, a colour, a glaze)
   // and none of them has an inverse. Cheap, because the whole recipe is five calls.
+  const [arrived, setArrived] = useState(false);
   useEffect(() => {
     let timer = 0, dead = false;
+    setArrived(false);
     const step = () => {
       if (dead) return;
       if (built.current > beat) { apply(0); built.current = 0; }
       else if (built.current < beat) { built.current += 1; apply(built.current); }
-      else return;
-      if (built.current !== beat) timer = setTimeout(step, REBUILD);
+      if (built.current !== beat) { timer = setTimeout(step, REBUILD); return; }
+      setArrived(true);                       // the CAKE is here, not just the selection
     };
     step();
     return () => { dead = true; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [beat]);
+
+  // Keyed off arrival, not off a timer started when the last step was SELECTED — on a slow device
+  // those are different moments, and asking for the sale over a half-built cake is worse than
+  // asking a second late.
+  const [payoff, setPayoff] = useState(false);
+  useEffect(() => {
+    setPayoff(false);
+    if (!arrived || beat !== BEATS.length - 1) return;
+    const t = setTimeout(() => setPayoff(true), PAYOFF_IN);
+    return () => clearTimeout(t);
+  }, [arrived, beat, BEATS.length]);
 
   // It plays itself. Nobody arrives at a storefront intending to operate it.
   useEffect(() => {
@@ -123,7 +160,7 @@ function Assembling({ primary, accent, name }) {
   // is arguing with you.
   const pick = i => { setAuto(false); setBeat(i); };
 
-  const done = beat === BEATS.length - 1;
+  
 
   return (
     <div style={s.stage}>
@@ -133,10 +170,21 @@ function Assembling({ primary, accent, name }) {
         {/* HEADER — identity, then the five steps. The rail is the recipe, the progress meter and
             the navigation all at once; three jobs, one row, no extra furniture. */}
         <header style={s.head}>
-          <div style={s.wordmark}>{name}</div>
-          <nav style={narrow ? { ...s.rail, ...s.railNarrow } : s.rail} aria-label="Steps">
-            {BEATS.map((b, i) => (
-              <button key={b.n} onClick={() => pick(i)} aria-current={i === beat}
+          <div style={s.brand}>
+            <div style={s.wordmark}>{name}</div>
+            {/* The one sentence the page cannot do without. When the full-screen masthead was cut,
+                "Custom cakes · made to order" went with it and nothing replaced it — leaving a
+                stranger to work out from a step counter and a rotating cake that this is a shop
+                where THEY do the designing. Second person, and it names who does what. */}
+            <p style={s.promise}>You design it. {name} bakes it.</p>
+          </div>
+          <div style={s.railWrap}>
+            {/* Five numbers with no heading are a puzzle. Two words turn them into a table of
+                contents for something the visitor is about to be asked to do. */}
+            <div style={s.railLabel}>How it works</div>
+            <nav style={narrow ? { ...s.rail, ...s.railNarrow } : s.rail} aria-label="Steps">
+              {BEATS.map((b, i) => (
+                <button key={b.n} onClick={() => pick(i)} aria-current={i === beat}
                       style={{ ...s.railItem, ...(i === beat ? s.railOn : i < beat ? s.railDone : {}) }}>
                 <span style={s.railTop}>
                   <span style={s.railNum}>{pad(i + 1)}</span>
@@ -146,8 +194,9 @@ function Assembling({ primary, accent, name }) {
                 </span>
                 <span style={{ ...s.railRule, ...(i <= beat ? s.railRuleOn : {}) }} />
               </button>
-            ))}
-          </nav>
+              ))}
+            </nav>
+          </div>
         </header>
 
         {/* The only thing on screen that moves. */}
@@ -166,14 +215,14 @@ function Assembling({ primary, accent, name }) {
 
         <footer style={narrow ? { ...s.foot, ...s.footNarrow } : s.foot}>
           <div style={s.copy}>
-            <div style={s.step}>Step {pad(beat + 1)} / {pad(BEATS.length)}</div>
-            <h2 key={`t${beat}`} style={s.title}>{BEATS[beat].title}</h2>
-            <p key={`n${beat}`} style={s.note}>{BEATS[beat].note}</p>
+            <div style={s.step}>{payoff ? 'Your turn' : `Step ${pad(beat + 1)} / ${pad(BEATS.length)}`}</div>
+            <h2 key={`t${beat}${payoff}`} style={s.title}>{(payoff ? PAYOFF : BEATS[beat]).title}</h2>
+            <p key={`n${beat}${payoff}`} style={s.note}>{(payoff ? PAYOFF : BEATS[beat]).note}</p>
           </div>
           {/* Live from the first frame. The scroll version earned the CTA at the end, which is
               defensible in a story and indefensible on a storefront: someone who already knows what
               they want should never have to wait out a demo to find the button. */}
-          <button style={{ ...s.cta, ...(done ? s.ctaDone : {}) }}>Design yours<span style={s.arrow}>→</span></button>
+          <button style={{ ...s.cta, ...(payoff ? s.ctaDone : {}) }}>Design yours<span style={s.arrow}>→</span></button>
         </footer>
       </div>
     </div>
@@ -210,18 +259,24 @@ const s = {
             padding: 'clamp(16px, 3vh, 30px) clamp(20px, 4vw, 64px) clamp(20px, 4vh, 40px)',
             display: 'flex', flexDirection: 'column', gap: 'clamp(10px, 2vh, 22px)' },
 
-  head:   { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between',
+  head:   { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between',
             gap: 'clamp(10px, 2vw, 28px)', flex: '0 0 auto' },
+  brand:  { minWidth: 0 },
+  promise:{ fontFamily: SERIF, fontSize: 'clamp(15px, 1.5vw, 21px)', fontStyle: 'italic', color: '#5D584F',
+            margin: '6px 0 0' },
+  railWrap: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 9, flex: '1 1 260px' },
+  railLabel: { fontFamily: SANS, fontSize: 9.5, fontWeight: 700, letterSpacing: 2.2, textTransform: 'uppercase',
+               color: MUTED },
   wordmark: { fontFamily: SANS, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em',
               fontSize: 'clamp(24px, 4.4vw, 52px)', color: INK, lineHeight: 1, overflowWrap: 'break-word' },
 
   // Buttons, not labels — the rail IS the navigation. Sized to the touch target, not to the type:
   // 11px text with 4px of padding is a control only a mouse can hit.
-  rail:   { display: 'flex', alignItems: 'flex-end', gap: 'clamp(8px, 1.6vw, 22px)', flex: '1 1 260px',
+  rail:   { display: 'flex', alignItems: 'flex-end', gap: 'clamp(8px, 1.6vw, 22px)', width: '100%',
             justifyContent: 'flex-end' },
   // On a phone the rail wraps to its own line, where right-aligning it under a left-aligned
   // wordmark leaves a hole in the middle. Spread it edge to edge instead.
-  railNarrow: { justifyContent: 'space-between', flex: '1 1 100%' },
+  railNarrow: { justifyContent: 'space-between' },
   railItem: { display: 'flex', flexDirection: 'column', gap: 7, background: 'none', border: 'none',
               padding: '8px 0 0', cursor: 'pointer', color: '#C2BCB0', font: 'inherit',
               transition: 'color 300ms ease', minWidth: 0, WebkitTapHighlightColor: 'transparent' },
