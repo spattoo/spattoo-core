@@ -4,7 +4,7 @@ import { useCakeDesign } from '../src/designer/hooks/useCakeDesign.js';
 import { GLAZE_DEFAULTS } from '../src/designer/shared/glaze/glazeMaterial.js';
 import { CakePreview } from '../src/designer/canvas/CakeCanvas.jsx';
 import { useNarrow } from '../src/shared/useNarrow.js';
-import BakerDoodle from './BakerDoodle.jsx';
+import Appu from './Appu.jsx';
 
 /* ── PROTOTYPE: the cake builds itself, on one screen ────────────────────────────────────────────
  *
@@ -51,42 +51,42 @@ import BakerDoodle from './BakerDoodle.jsx';
 // find its own edge". Lovely writing about work the visitor will never do, narrated at someone who
 // has just landed on a stranger's page and does not yet know what they are looking at.
 //
-// They are the visitor's CHOICES now, in second person, in the order the designer asks for them. It
-// is the same five beats and the same cake; what changed is who the sentence is about. A customer
-// who reads "Add your tiers — one, two, three, as many as the day asks for" knows two things the
-// old copy never told them: that this is something they do, and that they can have three.
-//
-// The baker's name goes INTO the colour step. "Every shade FEELINGS bakes in" says the palette
+// They are the visitor's CHOICES now, in second person, in the order the designer asks for them.
+// The baker's name goes INTO the colour step: "every shade FEELINGS bakes in" says the palette
 // belongs to this shop and not to a template, which is the one claim this hero can make that a
 // stock photo cannot.
+//
+// GANACHE IS GONE. A poured chocolate glaze is a gorgeous piece of rendering and it did not belong
+// to this theme — glossy and photographic next to a hand-drawn narrator, and it read as a lid
+// rather than a drip. It was also quietly destroying the step before it: the glaze covered the tier
+// that had just been given the baker's accent colour, so "pick your colours" showed one of the two
+// colours it had just promised. Cutting it fixes the beat and the palette in one go.
 const beatsFor = name => [
-  // Beat one is the OPENING state, so nothing can visibly change on it — which rules out a caption
-  // like "start with a size", promising a choice the cake is not seen making. It names the choices
-  // instead. (If this becomes a real hero, setTierShape can morph round → heart here and earn it.)
   { n: 'Start',  title: 'Start with a cake',  note: 'Round, heart or square, from six inches up. Your call.' },
   { n: 'Tiers',  title: 'Add your tiers',     note: 'One, two, three — as many as the day asks for.' },
   { n: 'Colour', title: 'Pick your colours',  note: `Every shade ${name} bakes in, on any part of the cake.` },
-  { n: 'Finish', title: 'Choose a finish',    note: 'Buttercream, ganache, or a poured glaze left to find its own edge.' },
   { n: 'Name',   title: 'Add their name',     note: 'Piped by hand, exactly as you type it.' },
 ];
 
-// The demo ends by asking for the sale, not with a caption. The cake lands, holds for a beat, and
-// then the copy turns to the visitor — because "And a name" is where the old version stopped, and
-// stopping on a caption wastes the one moment the visitor is most persuaded.
-// What the character says before the demo starts. This is the whole pitch, delivered by someone
-// rather than printed above a rail: it names what the visitor can do, and who bakes it.
+// Appu introduces himself before he introduces anything else. A stranger's storefront that opens
+// with a character who is not named is a mascot; one who says who he is, is a host.
 const greetingFor = name => ({
-  title: 'You can design your own cake',
-  note: `Every part of it — colours, tiers, the name on top. ${name} bakes it.`,
+  title: 'Hi — I\'m Appu',
+  note: `You can design your own cake here. Every part of it. ${name} bakes it.`,
 });
 
-const GREET_MS = 2900;   // long enough to read, short enough that the demo still feels prompt
+const PAYOFF = { title: 'Now make yours', note: 'The same four steps, in your hands. About two minutes.' };
 
-const PAYOFF = { title: 'Now make yours', note: 'The same five steps, in your hands. About two minutes.' };
-
-const DWELL = 1900;   // how long a finished beat holds before the next one starts
-const REBUILD = 260;
-const PAYOFF_IN = 1500;  // how long the finished cake holds before the page asks for the sale  // and how fast it replays when someone jumps several steps at once
+// ── SAY, THEN DO ────────────────────────────────────────────────────────────────────────────────
+// The first cut fired the line and the mutation on the same frame, so the visitor had to read a
+// sentence and watch a cake change at once and did neither. Every beat is two moments now: Appu
+// SAYS what is about to happen, and only then does the cake do it. The pause between them is not
+// dead time, it is the whole reason the demo is comprehensible.
+const GREET_MS = 3000;   // he arrives on an EMPTY stage and introduces himself; nothing is built yet
+const SAY_MS   = 1900;   // the line is up and the cake has not moved
+const DO_MS    = 1400;   // the change has landed and is allowed to be looked at
+const REBUILD  = 220;    // replay speed when someone jumps back and the cake rebuilds
+const PAYOFF_IN = 1500;
 const pad = i => String(i).padStart(2, '0');
 
 function Assembling({ primary, accent, name }) {
@@ -98,91 +98,87 @@ function Assembling({ primary, accent, name }) {
   const GREETING = useMemo(() => greetingFor(name), [name]);
   const [beat, setBeat] = useState(0);
   const [auto, setAuto] = useState(true);
-  const [greeted, setGreeted] = useState(false);
-  const built = useRef(-1);                 // which beat the CAKE is at, which trails `beat` while it catches up
+  const [stage, setStage] = useState('greet');   // 'greet' → an empty stage and an introduction
+  const [acted, setActed] = useState(false);     // has THIS beat's change landed yet
+  const [hasCake, setHasCake] = useState(false);
+  const [payoff, setPayoff] = useState(false);
+  const applied = useRef(-1);                    // the last beat whose mutation has run; -1 is an empty stage
   const narrow = useNarrow(860);
 
-  // One beat's worth of mutation. Nothing here knows about scrolling, autoplay or the rail — it is
-  // the recipe, and everything else just decides when to call it.
+  // One beat's worth of mutation, and nothing else. -1 is the empty stage: the demo now opens with
+  // no cake at all, so that "start with a cake" has something to actually DO.
   function apply(i) {
     const a = apiRef.current;
-    if (i === 0) { a.resetDesign(); a.setTierColor(0, '#F1EAE0'); return; }
+    if (i === -1) { a.resetDesign(); a.setTierColor(0, '#F1EAE0'); setHasCake(false); return; }
+    if (i === 0) { a.resetDesign(); a.setTierColor(0, '#F1EAE0'); setHasCake(true); return; }
     if (i === 1) a.addTier();
     if (i === 2) { a.setTierColor(0, primary); a.setTierColor(1, accent); }
     if (i === 3) {
-      // Glaze is a frosting TYPE, not a flag. The first pass patched `{ on, coverage }` onto
-      // tier.glaze — fields that do not exist (the real ones are colors/flow/warp/contrast/streak/
-      // drip) and which CakeTier reads only when the frosting's `render` is 'glaze'. The beat fired,
-      // the state changed, the cake looked identical: the worst kind of bug, because nothing errored.
-      a.setTierFrostingType(1, 'glaze');
-      a.setTierGlaze(1, { ...GLAZE_DEFAULTS, colors: ['#4A2E1C'], drip: 0.46, flow: 3.2 });
-    }
-    if (i === 4) {
       // WRITING, not a text element. CakeThumbnailScene — the scene CakePreview mounts — reads only
-      // { tiers, stickers, writing, piping }: it has no code path for `texts` at all, so the earlier
-      // beat added something the preview could never draw. The preview scene is a SUBSET of the
+      // { tiers, stickers, writing, piping }: it has no code path for `texts` at all, so an earlier
+      // pass added something the preview could never draw. The preview scene is a SUBSET of the
       // editor's, and that is invisible from either call site. Writing is also right semantically:
       // it IS the piped message.
       a.setWriting({ text: name, surface: 'side', color: '#FFFFFF', fit: 0.7, thickness: 0.035, softness: 0.75 });
     }
   }
 
-  // Walk the cake TOWARDS the selected beat, one step per timer, rather than snapping to it. Jumping
-  // from Tier to Name still plays all four steps — the assembly is the product demo, so skipping it
-  // to arrive at a finished cake would throw away the only thing this hero has that a photo doesn't.
-  //
-  // Going backwards has to rebuild from nothing: the beats are additive (a tier, a colour, a glaze)
-  // and none of them has an inverse. Cheap, because the whole recipe is five calls.
-  const [arrived, setArrived] = useState(false);
+  // He arrives, introduces himself, and only then does anything get built.
   useEffect(() => {
-    let timer = 0, dead = false;
-    setArrived(false);
-    const step = () => {
-      if (dead) return;
-      if (built.current > beat) { apply(0); built.current = 0; }
-      else if (built.current < beat) { built.current += 1; apply(built.current); }
-      if (built.current !== beat) { timer = setTimeout(step, REBUILD); return; }
-      setArrived(true);                       // the CAKE is here, not just the selection
-    };
-    step();
-    return () => { dead = true; clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [beat]);
+    if (stage !== 'greet') return;
+    const t = setTimeout(() => setStage('run'), GREET_MS);
+    return () => clearTimeout(t);
+  }, [stage]);
 
-  // Keyed off arrival, not off a timer started when the last step was SELECTED — on a slow device
-  // those are different moments, and asking for the sale over a half-built cake is worse than
-  // asking a second late.
-  const [payoff, setPayoff] = useState(false);
+  // The beat's two moments. Catch the cake up to the state BEFORE this beat (instantly, silently,
+  // if someone has jumped), hold there while the line is read, then perform the change.
+  useEffect(() => {
+    if (stage !== 'run') return;
+    let dead = false; const timers = [];
+    setActed(false);
+    if (applied.current >= beat) { apply(-1); applied.current = -1; }   // jumped back: start over
+    const chain = () => {
+      if (dead) return;
+      if (applied.current < beat - 1) {          // silent catch-up, no narration for skipped steps
+        applied.current += 1; apply(applied.current);
+        timers.push(setTimeout(chain, REBUILD));
+        return;
+      }
+      timers.push(setTimeout(() => {             // ← the pause. He has spoken; now it happens.
+        if (dead) return;
+        applied.current = beat; apply(beat); setActed(true);
+      }, SAY_MS));
+    };
+    chain();
+    return () => { dead = true; timers.forEach(clearTimeout); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, beat]);
+
+  // Autoplay advances only once the change has LANDED and been held. Driving off a fixed clock
+  // would let the next line arrive while the last one was still happening, which is the bug this
+  // whole rewrite exists to fix.
+  useEffect(() => {
+    if (!auto || !acted || beat >= BEATS.length - 1) return;
+    const t = setTimeout(() => setBeat(b => b + 1), DO_MS);
+    return () => clearTimeout(t);
+  }, [auto, acted, beat, BEATS.length]);
+
   useEffect(() => {
     setPayoff(false);
-    if (!arrived || beat !== BEATS.length - 1) return;
+    if (!acted || beat !== BEATS.length - 1) return;
     const t = setTimeout(() => setPayoff(true), PAYOFF_IN);
     return () => clearTimeout(t);
-  }, [arrived, beat, BEATS.length]);
-
-  // The character speaks first and the cake waits for it. A demo that starts assembling while the
-  // narrator is still saying hello has two things talking at once, which is how you get a visitor
-  // who reads neither.
-  useEffect(() => {
-    const t = setTimeout(() => setGreeted(true), GREET_MS);
-    return () => clearTimeout(t);
-  }, []);
-
-  // It plays itself. Nobody arrives at a storefront intending to operate it.
-  useEffect(() => {
-    if (!auto || !greeted || beat >= BEATS.length - 1) return;
-    const t = setTimeout(() => setBeat(b => b + 1), DWELL);
-    return () => clearTimeout(t);
-  }, [auto, greeted, beat]);
+  }, [acted, beat, BEATS.length]);
 
   // Taking the wheel stops the autopilot. A page that keeps advancing after you have chosen a step
   // is arguing with you.
-  const pick = i => { setAuto(false); setGreeted(true); setBeat(i); };
+  const pick = i => { setAuto(false); setStage('run'); setBeat(i); };
 
   // One line, one pose. Everything the character says and does is derived here rather than being
-  // threaded through the markup, so "what is he doing on the ganache step" has exactly one answer.
-  const line = !greeted ? GREETING : payoff ? PAYOFF : BEATS[beat];
-  const pose = !greeted ? 'wave' : payoff ? 'wave' : beat === BEATS.length - 1 ? 'pipe' : 'point';
+  // threaded through the markup, so "what is he doing on the colour step" has exactly one answer.
+  const greeting = stage === 'greet';
+  const line = greeting ? GREETING : payoff ? PAYOFF : BEATS[beat];
+  const pose = greeting || payoff ? 'wave' : beat === BEATS.length - 1 ? 'pipe' : 'point';
 
   
 
@@ -227,22 +223,33 @@ function Assembling({ primary, accent, name }) {
           {/* Pulled IN. The default camera is framed for a thumbnail in a grid, where a margin of
               air around the cake is what keeps a wall of them legible. Alone on a hero it just reads
               as a small cake on a large page, and the whole point of this section is the object. */}
-          <div style={s.cake}>
+          <div style={{ ...s.cake, opacity: hasCake ? 1 : 0 }}>
+            {/* eslint-disable-next-line */}
             <CakePreview design={api.design} autoRotate={false}
                          cameraPosition={[0, 4.2, 5.9]} target={[0, 1.9, 0]} />
           </div>
+
+          {/* Appu stands ON the horizon, not under the stage in a caption bar. Same ground line as
+              the cake, same scene — a narrator parked below the frame is commentary; one standing
+              next to the thing he is describing is in the story. His bubble sits ABOVE him, in the
+              upper-left air the cake never uses. */}
+          {/* Desktop: bubble stacked directly over his head, tail pointing down at him.
+              Phone: there is no lane wide enough for both, and narrowing the canvas CROPS the cake
+              rather than moving it (the render is fit to height). So the bubble goes to the dead air
+              at the top of the stage and Appu keeps the floor — no tail, because he is the only
+              character on the page and nothing else could be speaking. */}
+          <div style={narrow ? s.narratorNarrow : s.narrator}>
+            <div key={line.title} style={narrow ? { ...s.bubble, ...s.bubbleNarrow } : s.bubble}>
+              <h2 style={s.title}>{line.title}</h2>
+              <p style={s.note}>{line.note}</p>
+              {!narrow && <><span style={s.tailInk} aria-hidden="true" /><span style={s.tailFill} aria-hidden="true" /></>}
+            </div>
+            <Appu pose={pose} apron={primary}
+                  style={narrow ? { ...s.doodle, ...s.doodleNarrow } : s.doodle} />
+          </div>
         </div>
 
-        <footer style={narrow ? { ...s.foot, ...s.footNarrow } : s.foot}>
-          <div style={s.narrator}>
-            <BakerDoodle pose={pose} apron={primary}
-                         style={narrow ? { ...s.doodle, ...s.doodleNarrow } : s.doodle} />
-            <div style={s.bubble}>
-              <span style={s.tailInk} aria-hidden="true" /><span style={s.tailFill} aria-hidden="true" />
-              <h2 key={`t${line.title}`} style={s.title}>{line.title}</h2>
-              <p key={`n${line.note}`} style={s.note}>{line.note}</p>
-            </div>
-          </div>
+        <footer style={s.foot}>
           {/* Live from the first frame. The scroll version earned the CTA at the end, which is
               defensible in a story and indefensible on a storefront: someone who already knows what
               they want should never have to wait out a demo to find the button. */}
@@ -317,38 +324,42 @@ const s = {
   // and the cake pushes the footer off the bottom of a short phone.
   cakeWrap: { position: 'relative', flex: '1 1 auto', minHeight: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  cake:   { width: '100%', height: '100%', maxWidth: 760 },
-  horizon: { position: 'absolute', left: '-50vw', right: '-50vw', top: '95%', height: 1, background: INK, opacity: 0.10 },
+  // Fades in on the first beat rather than being there from the start — "start with a cake" has to
+  // have something to do, and a cake already present makes the opening line a lie.
+  cake:   { width: '100%', height: '100%', maxWidth: 760, transition: 'opacity 700ms ease' },
+  // 99%, not 95%: the preview scene RE-FRAMES as the cake grows, so the base sits lower with two
+  // tiers than with one and a single line cannot meet both. Aligned to the two-tier state, which is
+  // what is on screen for most of the demo.
+  horizon: { position: 'absolute', left: '-50vw', right: '-50vw', top: '99%', height: 1, background: INK, opacity: 0.10 },
 
-  foot:   { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', minWidth: 0,
-            gap: 'clamp(14px, 3vw, 40px)', flex: '0 0 auto' },
-  footNarrow: { flexDirection: 'column', alignItems: 'stretch' },
-  // The character walks on from the left; the bubble opens a beat later, once he has arrived. Both
-  // are one-shot — nothing here loops, because a looping mascot beside a rotating cake is a
-  // screensaver.
-  narrator: { display: 'flex', alignItems: 'flex-end', gap: 'clamp(10px, 1.6vw, 20px)', minWidth: 0,
-              flex: '1 1 auto', animation: 'walkOn 720ms cubic-bezier(.2,.8,.3,1) both' },
-  doodle:  { height: 'clamp(122px, 21vh, 208px)', width: 'auto', flex: '0 0 auto', overflow: 'visible' },
-  doodleNarrow: { height: 'clamp(92px, 15vh, 128px)' },
+  foot:   { display: 'flex', justifyContent: 'flex-end', flex: '0 0 auto' },
+  // He walks on from the left; the bubble opens once he has arrived. Both are one-shot — nothing
+  // loops, because a mascot bobbing beside a rotating cake is a screensaver.
+  narrator: { position: 'absolute', left: 0, bottom: '1%', display: 'flex', flexDirection: 'column',
+              alignItems: 'flex-start', gap: 10, maxWidth: 'min(52%, 470px)', pointerEvents: 'none',
+              animation: 'walkOn 760ms cubic-bezier(.2,.8,.3,1) both' },
+  narratorNarrow: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                    justifyContent: 'space-between', alignItems: 'flex-start', pointerEvents: 'none',
+                    animation: 'walkOn 760ms cubic-bezier(.2,.8,.3,1) both' },
+  bubbleNarrow: { marginLeft: 0, width: '100%', boxSizing: 'border-box' },
+  doodle:  { height: 'clamp(122px, 22vh, 212px)', width: 'auto', flex: '0 0 auto', overflow: 'visible' },
+  doodleNarrow: { height: 'clamp(96px, 16vh, 132px)' },
   bubble:  { position: 'relative', background: '#fff', border: `2.4px solid ${INK}`, borderRadius: 20,
-             padding: 'clamp(12px, 1.6vw, 20px) clamp(14px, 2vw, 24px)', maxWidth: 460, minWidth: 0,
-             marginBottom: 'clamp(14px, 3vh, 34px)',
-             animation: 'popOn 420ms 420ms cubic-bezier(.34,1.5,.5,1) both' },
+             padding: 'clamp(12px, 1.5vw, 19px) clamp(14px, 1.9vw, 23px)', marginLeft: 'clamp(6px, 1vw, 18px)',
+             animation: 'popOn 380ms cubic-bezier(.34,1.5,.5,1) both' },
   // Two triangles, ink then fill, the fill inset by the border width — a single triangle would have
-  // no outline and a bordered pseudo-element cannot make a diagonal.
-  tailInk:  { position: 'absolute', left: -15, bottom: 16, width: 0, height: 0,
-              borderTop: '9px solid transparent', borderBottom: '11px solid transparent',
-              borderRight: `15px solid ${INK}` },
-  tailFill: { position: 'absolute', left: -11, bottom: 18, width: 0, height: 0,
-              borderTop: '7px solid transparent', borderBottom: '8px solid transparent',
-              borderRight: '12px solid #fff' },
-  step:   { fontFamily: SANS, fontSize: 10.5, fontWeight: 700, letterSpacing: 2.4, textTransform: 'uppercase',
-            color: MUTED, marginBottom: 10, fontVariantNumeric: 'tabular-nums' },
+  // no outline, and a bordered pseudo-element cannot make a diagonal.
+  tailInk:  { position: 'absolute', left: 30, bottom: -16, width: 0, height: 0,
+              borderLeft: '10px solid transparent', borderRight: '13px solid transparent',
+              borderTop: `16px solid ${INK}` },
+  tailFill: { position: 'absolute', left: 33, bottom: -11, width: 0, height: 0,
+              borderLeft: '7px solid transparent', borderRight: '9px solid transparent',
+              borderTop: '12px solid #fff' },
   title:  { fontFamily: SERIF, fontSize: 'clamp(22px, 2.4vw, 36px)', fontWeight: 500, color: INK,
             margin: '0 0 5px', lineHeight: 1.08, animation: 'beatIn 460ms cubic-bezier(.2,.7,.2,1)' },
   note:   { fontFamily: SANS, fontSize: 13, lineHeight: 1.65, color: '#5D584F', margin: 0,
             animation: 'beatIn 460ms 60ms backwards cubic-bezier(.2,.7,.2,1)' },
-  cta:    { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 12, background: INK,
+  cta:    { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 12, pointerEvents: 'auto', background: INK,
             color: PAPER, border: 'none', padding: '15px 26px', fontFamily: SANS, fontSize: 12.5,
             fontWeight: 700, letterSpacing: 1.6, textTransform: 'uppercase', cursor: 'pointer',
             flex: '0 0 auto', transition: 'transform 420ms cubic-bezier(.2,.7,.2,1)' },

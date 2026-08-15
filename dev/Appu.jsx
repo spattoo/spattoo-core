@@ -1,8 +1,8 @@
 import React from 'react';
 
-/* ── The narrator ───────────────────────────────────────────────────────────────────────────────
+/* ── Appu, the narrator ───────────────────────────────────────────────────────────────────────────────
  *
- * A doodle baker who walks on and tells the visitor, in words, that the cake on screen is theirs to
+ * Appu: a doodle baker who walks on and tells the visitor, in words, that the cake on screen is theirs to
  * design. The promise used to be a line of italic text above the step rail: correct, small, and
  * competing with a rotating 3D cake, which it lost. A drawn character with a speech bubble does not
  * lose that fight.
@@ -37,7 +37,7 @@ const INK = '#16150F';
 // (the first guess) merely lifted the hand to waist height and read as standing still.
 const ARM_ANGLE = { wave: -96, point: -78, pipe: -52, rest: 4 };
 
-export default function BakerDoodle({ pose = 'rest', apron = '#E9B7C2', style }) {
+export default function Appu({ pose = 'rest', apron = '#E9B7C2', style }) {
   const angle = ARM_ANGLE[pose] ?? ARM_ANGLE.rest;
   return (
     <svg viewBox="0 0 158 244" style={style} aria-hidden="true"
