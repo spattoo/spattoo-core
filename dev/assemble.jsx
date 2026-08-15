@@ -61,11 +61,14 @@ import Appu from './Appu.jsx';
 // rather than a drip. It was also quietly destroying the step before it: the glaze covered the tier
 // that had just been given the baker's accent colour, so "pick your colours" showed one of the two
 // colours it had just promised. Cutting it fixes the beat and the palette in one go.
+// `pose` is part of the beat, not a lookup somewhere else: the sentence and the gesture are the
+// same authoring decision, and a beat that describes the top tier while the hand points at the
+// board is worse than no gesture at all.
 const beatsFor = name => [
-  { n: 'Start',  title: 'Start with a cake',  note: 'Round, heart or square, from six inches up. Your call.' },
-  { n: 'Tiers',  title: 'Add your tiers',     note: 'One, two, three — as many as the day asks for.' },
-  { n: 'Colour', title: 'Pick your colours',  note: `Every shade ${name} bakes in, on any part of the cake.` },
-  { n: 'Name',   title: 'Add their name',     note: 'Piped by hand, exactly as you type it.' },
+  { n: 'Start',  pose: 'point',    title: 'Start with a cake',  note: 'Round, heart or square, from six inches up. Your call.' },
+  { n: 'Tiers',  pose: 'pointUp',  title: 'Add your tiers',     note: 'One, two, three — as many as the day asks for.' },
+  { n: 'Colour', pose: 'point',    title: 'Pick your colours',  note: `Every shade ${name} bakes in, on any part of the cake.` },
+  { n: 'Name',   pose: 'pipe',     title: 'Add their name',     note: 'Piped by hand, exactly as you type it.' },
 ];
 
 // Appu introduces himself before he introduces anything else. A stranger's storefront that opens
@@ -178,7 +181,7 @@ function Assembling({ primary, accent, name }) {
   // threaded through the markup, so "what is he doing on the colour step" has exactly one answer.
   const greeting = stage === 'greet';
   const line = greeting ? GREETING : payoff ? PAYOFF : BEATS[beat];
-  const pose = greeting || payoff ? 'wave' : beat === BEATS.length - 1 ? 'pipe' : 'point';
+  const pose = greeting || payoff ? 'wave' : BEATS[beat].pose;
 
   
 
@@ -233,16 +236,16 @@ function Assembling({ primary, accent, name }) {
               the cake, same scene — a narrator parked below the frame is commentary; one standing
               next to the thing he is describing is in the story. His bubble sits ABOVE him, in the
               upper-left air the cake never uses. */}
-          {/* Desktop: bubble stacked directly over his head, tail pointing down at him.
-              Phone: there is no lane wide enough for both, and narrowing the canvas CROPS the cake
-              rather than moving it (the render is fit to height). So the bubble goes to the dead air
-              at the top of the stage and Appu keeps the floor — no tail, because he is the only
-              character on the page and nothing else could be speaking. */}
-          <div style={narrow ? s.narratorNarrow : s.narrator}>
+          {/* The bubble is stacked directly over his head at EVERY size. Parking it at the top of a
+              phone screen split the character from his own line — two objects with nothing joining
+              them, and the tail could not reach. What makes it fit instead is making him TALLER on a
+              phone: his head rises, the bubble rides up with it, and it clears the band where the
+              name is piped, which is the one thing the last beat exists to show. */}
+          <div style={narrow ? { ...s.narrator, ...s.narratorNarrow } : s.narrator}>
             <div key={line.title} style={narrow ? { ...s.bubble, ...s.bubbleNarrow } : s.bubble}>
               <h2 style={s.title}>{line.title}</h2>
               <p style={s.note}>{line.note}</p>
-              {!narrow && <><span style={s.tailInk} aria-hidden="true" /><span style={s.tailFill} aria-hidden="true" /></>}
+              <span style={s.tailInk} aria-hidden="true" /><span style={s.tailFill} aria-hidden="true" />
             </div>
             <Appu pose={pose} apron={primary}
                   style={narrow ? { ...s.doodle, ...s.doodleNarrow } : s.doodle} />
@@ -338,12 +341,10 @@ const s = {
   narrator: { position: 'absolute', left: 0, bottom: '1%', display: 'flex', flexDirection: 'column',
               alignItems: 'flex-start', gap: 10, maxWidth: 'min(52%, 470px)', pointerEvents: 'none',
               animation: 'walkOn 760ms cubic-bezier(.2,.8,.3,1) both' },
-  narratorNarrow: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                    justifyContent: 'space-between', alignItems: 'flex-start', pointerEvents: 'none',
-                    animation: 'walkOn 760ms cubic-bezier(.2,.8,.3,1) both' },
-  bubbleNarrow: { marginLeft: 0, width: '100%', boxSizing: 'border-box' },
+  narratorNarrow: { maxWidth: 'min(94%, 360px)' },
+  bubbleNarrow: { marginLeft: 0 },
   doodle:  { height: 'clamp(122px, 22vh, 212px)', width: 'auto', flex: '0 0 auto', overflow: 'visible' },
-  doodleNarrow: { height: 'clamp(96px, 16vh, 132px)' },
+  doodleNarrow: { height: 'clamp(132px, 21vh, 176px)' },   // taller than desktop-relative: it is what lifts the bubble
   bubble:  { position: 'relative', background: '#fff', border: `2.4px solid ${INK}`, borderRadius: 20,
              padding: 'clamp(12px, 1.5vw, 19px) clamp(14px, 1.9vw, 23px)', marginLeft: 'clamp(6px, 1vw, 18px)',
              animation: 'popOn 380ms cubic-bezier(.34,1.5,.5,1) both' },

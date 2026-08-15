@@ -33,9 +33,18 @@ const INK = '#16150F';
 
 // One arm does all the acting. Rotated about the shoulder, so the elbow and hand follow for free.
 // Angles are absolute rotations of a limb that naturally hangs 47° BELOW horizontal, so the useful
-// numbers are far larger than they look: -108 is a raised wave, -92 points up at the cake, and -26
-// (the first guess) merely lifted the hand to waist height and read as standing still.
-const ARM_ANGLE = { wave: -96, point: -78, pipe: -52, rest: 4 };
+// numbers are far larger than they look: -96 is a raised wave, and -26 (the first guess) merely
+// lifted the hand to waist height and read as standing still.
+//
+// He stands to the LEFT of the cake, so every pointing angle aims right and the only variable is
+// height: pointUp reaches the top tier, point the middle, pointLow the base where the name is piped.
+// One generic point held through every beat is a character gesturing at a page; a character whose
+// hand tracks the thing being described is a character explaining something.
+// Measured against where the cake actually IS on screen, not against intuition. He stands at the
+// left edge and the cake is far to his right, so even its top tier is only ~26° above his hand —
+// the first numbers here (-104 for "up") aimed at the ceiling. The usable range is narrow, so the
+// three aims are spread slightly wider than the true geometry to stay readable at a glance.
+const ARM_ANGLE = { wave: -96, pointUp: -82, point: -66, pointLow: -52, pipe: -52, rest: 4 };
 
 export default function Appu({ pose = 'rest', apron = '#E9B7C2', style }) {
   const angle = ARM_ANGLE[pose] ?? ARM_ANGLE.rest;
