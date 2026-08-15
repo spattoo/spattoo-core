@@ -75,10 +75,12 @@ const beatsFor = name => [
 // with a character who is not named is a mascot; one who says who he is, is a host.
 const greetingFor = name => ({
   title: 'Hi — I\'m Appu',
-  note: `You can design your own cake here. Every part of it. ${name} bakes it.`,
+  // Kept to two lines on a phone. A third line grows the bubble downward onto the cake, and the
+  // bubble is anchored to his head so it cannot simply move — the copy has to do the fitting.
+  note: `Every part of it, your way. ${name} bakes it.`,
 });
 
-const PAYOFF = { title: 'Now make yours', note: 'The same four steps, in your hands. About two minutes.' };
+const PAYOFF = { title: 'Now make yours', note: 'Four steps. About two minutes.' };
 
 // ── SAY, THEN DO ────────────────────────────────────────────────────────────────────────────────
 // The first cut fired the line and the mutation on the same frame, so the visitor had to read a
@@ -91,6 +93,29 @@ const DO_MS    = 1400;   // the change has landed and is allowed to be looked at
 const REBUILD  = 220;    // replay speed when someone jumps back and the cake rebuilds
 const PAYOFF_IN = 1500;
 const pad = i => String(i).padStart(2, '0');
+
+// ── THE CAMERA IS A CHARACTER TOO ───────────────────────────────────────────────────────────────
+// Sixteen seconds from one fixed viewpoint reads as a diagram. It opens wide on an empty stage,
+// pushes IN as the cake gains detail — which is exactly when detail is worth seeing — and swings a
+// little off-axis at the payoff so the finished cake turns to face the visitor. Nothing dramatic:
+// the object still has to be legible, and a hero that swoops is a hero that is showing off.
+const CAM = {
+  wide:  { pos: [0.0, 4.9, 7.1], look: 2.0 },
+  mid:   { pos: [0.0, 4.4, 6.3], look: 1.95 },
+  close: { pos: [0.0, 4.0, 5.6], look: 1.9 },
+  hero:  { pos: [1.5, 4.1, 5.6], look: 1.9 },
+};
+const CAM_FOR = ['wide', 'mid', 'close', 'close'];
+const CAM_MS = 1100;
+const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+// Which camera this moment wants. Split out so the lerp effect depends on a single stable object
+// identity rather than on three pieces of state it would have to re-derive.
+function greetingOrPayoffCam(stage, payoff, beat) {
+  if (stage === 'greet') return CAM.wide;
+  if (payoff) return CAM.hero;
+  return CAM[CAM_FOR[Math.min(beat, CAM_FOR.length - 1)]];
+}
 
 function Assembling({ primary, accent, name }) {
   const api = useCakeDesign();
@@ -108,13 +133,23 @@ function Assembling({ primary, accent, name }) {
   const applied = useRef(-1);                    // the last beat whose mutation has run; -1 is an empty stage
   const narrow = useNarrow(860);
 
+  // A REAL buttercream wall, not a matte cylinder. FROSTINGS.buttercream carries wave/swirl/rustic
+  // styles that are pure shader and geometry — no catalogue row, no fetch, so the hero still draws
+  // its first frame without waiting on anything. The old default read as moulded plastic, which is
+  // a strange thing to put at the centre of a page selling cake.
+  const dress = (a, i) => {
+    a.setTierColor(i, '#F1EAE0');
+    a.setTierFrostingType(i, 'buttercream');
+    a.setTierFrostingStyle(i, 'rustic');
+  };
+
   // One beat's worth of mutation, and nothing else. -1 is the empty stage: the demo now opens with
   // no cake at all, so that "start with a cake" has something to actually DO.
   function apply(i) {
     const a = apiRef.current;
-    if (i === -1) { a.resetDesign(); a.setTierColor(0, '#F1EAE0'); setHasCake(false); return; }
-    if (i === 0) { a.resetDesign(); a.setTierColor(0, '#F1EAE0'); setHasCake(true); return; }
-    if (i === 1) a.addTier();
+    if (i === -1) { a.resetDesign(); dress(a, 0); setHasCake(false); return; }
+    if (i === 0) { a.resetDesign(); dress(a, 0); setHasCake(true); return; }
+    if (i === 1) { a.addTier(); dress(a, 1); }
     if (i === 2) { a.setTierColor(0, primary); a.setTierColor(1, accent); }
     if (i === 3) {
       // WRITING, not a text element. CakeThumbnailScene — the scene CakePreview mounts — reads only
@@ -125,6 +160,29 @@ function Assembling({ primary, accent, name }) {
       a.setWriting({ text: name, surface: 'side', color: '#FFFFFF', fit: 0.7, thickness: 0.035, softness: 0.75 });
     }
   }
+
+  // Lerped in a ref and mirrored into state once per frame: CameraRig reads the position from its
+  // props, so the only way to MOVE it is to re-render with new numbers. Cheap here because the scene
+  // config is memoised on `design` and does not rebuild.
+  const wantCam = greetingOrPayoffCam(stage, payoff, beat);
+  const [cam, setCam] = useState(CAM.wide);
+  const camFrom = useRef(CAM.wide);
+  useEffect(() => {
+    const from = camFrom.current, to = wantCam;
+    if (from === to) return;
+    let raf = 0, t0 = 0;
+    const tick = ts => {
+      if (!t0) t0 = ts;
+      const k = ease(Math.min(1, (ts - t0) / CAM_MS));
+      setCam({
+        pos: from.pos.map((v, i) => v + (to.pos[i] - v) * k),
+        look: from.look + (to.look - from.look) * k,
+      });
+      if (k < 1) raf = requestAnimationFrame(tick); else camFrom.current = to;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [wantCam]);
 
   // He arrives, introduces himself, and only then does anything get built.
   useEffect(() => {
@@ -228,8 +286,13 @@ function Assembling({ primary, accent, name }) {
               as a small cake on a large page, and the whole point of this section is the object. */}
           <div style={{ ...s.cake, opacity: hasCake ? 1 : 0 }}>
             {/* eslint-disable-next-line */}
-            <CakePreview design={api.design} autoRotate={false}
-                         cameraPosition={[0, 4.2, 5.9]} target={[0, 1.9, 0]} />
+            {/* On a phone the camera AIMS LOWER and stands FURTHER BACK: aiming lifts the cake in
+                the frame so Appu's bubble stops covering the piped name, and the extra distance
+                keeps the whole cake between the rail above and the bubble below. Aiming is the right
+                lever — shrinking the canvas width crops the render, and shrinking its height just
+                shrinks the cake without moving it. */}
+            <CakePreview design={api.design} autoRotate={payoff}
+                         cameraPosition={narrow ? [cam.pos[0], cam.pos[1], cam.pos[2] * 1.3] : cam.pos} target={[0, cam.look - (narrow ? 1.6 : 0), 0]} />
           </div>
 
           {/* Appu stands ON the horizon, not under the stage in a caption bar. Same ground line as
