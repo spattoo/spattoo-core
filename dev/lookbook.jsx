@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { useNarrow } from '../src/shared/useNarrow.js';
+import CreamBand from './CreamBand.jsx';
 
 /* ── PROTOTYPE: the Lookbook ─────────────────────────────────────────────────────────────────────
  *
@@ -84,88 +85,54 @@ function Lookbook() {
 
   return (
     <div style={s.page}>
+      {/* NAV ONLY. The reference puts the bakery's logo in a dark bar AND spells the name out
+          underneath it — the same identity twice in one screen. Atelier already settled this in this
+          codebase with headerBrand:false: "the hero IS the wordmark here, so the header does not
+          repeat it." The name appears once, large, below. */}
       <header style={s.head}>
-        <div style={s.brand}>{BAKER}</div>
         <nav style={s.nav}><span style={s.navItem}>Our story</span><span style={s.navItem}>Contact</span></nav>
       </header>
 
-      {/* ── PHONE: name, button, then the cake bleeding off the bottom ──────────────────────────
-          From a bakery site whose hero is a big name over a MACRO crop of crust and seeds running to
-          all three edges. The lesson is not "use a photo" — it is that texture at close range is
-          appetite, and that type over a bleeding image reads as a shopfront where type in a card
-          reads as a web page.
-          What fills the slot is the baker's photo if they set one, and otherwise their own cake,
-          cropped hard — we own the camera, so we can crop INTO the buttercream instead of framing
-          the whole object. A generated stock photo would be the one thing on this storefront that is
-          not the baker's work, and identical in every shop that picked the theme. */}
-      {narrow ? (
-        <section style={s.phone}>
-          <div style={s.pTop}>
-            <div style={s.kicker}>Custom cakes · made to order</div>
-            <h1 style={s.pName}>{BAKER}</h1>
-            <p style={s.pLine}>Every cake here is a starting point.</p>
-            <button style={s.ctaMain} onClick={() => onStart(t)}>{CTA} <span aria-hidden="true">→</span></button>
-          </div>
-          {/* Bleeds left, right and bottom. A margin here would put the cake in a box and undo it. */}
-          <div style={s.pArt}>
-            {HERO_IMAGE
-              ? <img src={HERO_IMAGE} alt="" style={{ ...s.pImg, opacity: 1 }} />
-              : TEMPLATES.map((x, n) => (
-                  <img key={x.id} src={x.thumbnail_url} alt="" style={{ ...s.pImg, opacity: n === i ? 1 : 0 }} />
-                ))}
-            <div style={s.pScrim} />
-            <div style={s.pOver} key={t.id}>
-              <div style={s.pOverName}>{t.name}</div>
-              <div style={s.pOverFacts}>{facts(t)}</div>
-            </div>
-            <nav style={s.pDots} aria-label="Cakes">
-              {TEMPLATES.map((x, n) => (
-                <button key={x.id} onClick={() => go(n)} aria-current={n === i} aria-label={x.name} style={s.dotHit}>
-                  <span style={{ ...s.dot, ...s.dotLight, ...(n === i ? s.dotOnLight : null) }} />
-                </button>
-              ))}
-            </nav>
-          </div>
-        </section>
-      ) : (
+      {/* ── THE HERO ─────────────────────────────────────────────────────────────────────────────
+          The composition, not the photograph, is what was worth taking from the reference: the name
+          large, and a band of texture bleeding off the left, right and bottom edges with a line of
+          practical information sitting on it.
+          The name is the hero. Everything under it is a SURFACE — which is why no cake goes here.
+          A cake on white is an object and asks to be looked at; this band asks nothing, which is its
+          job. The cakes live below, where a catalogue belongs, once the name has done its work.
+          Same shape at every width: it was strong enough on a phone to be worth keeping on a
+          desktop, and one composition beats two that have to agree with each other. */}
       <section style={s.hero}>
-        {/* LEFT — what the shop is, the story of the cake currently showing, and the way in. The
-            button never moves as slides change; only the words above it do. */}
-        <div style={s.copy}>
+        <div style={s.top}>
           <div style={s.kicker}>Custom cakes · made to order</div>
-          <h1 style={s.title}>Every cake here is a starting point.</h1>
-
-          <div key={t.id} style={s.slideCopy}>
-            <div style={s.meta}><span style={s.num}>{pad(i + 1)}</span> {facts(t)}</div>
-            <h2 style={s.name}>{t.name}</h2>
-            <p style={s.story}>{t.story}</p>
-          </div>
-
-          <div style={s.actions}>
-            <button style={s.ctaMain} onClick={() => onStart(t)}>{CTA} <span aria-hidden="true">→</span></button>
-            <button style={s.ctaQuiet} onClick={() => onStart(t)}>or start from {t.name}</button>
-          </div>
+          <h1 style={s.name}>{BAKER}</h1>
+          <p style={s.line}>Every cake here is a starting point.</p>
+          <button style={s.ctaMain} onClick={() => onStart(t)}>{CTA} <span aria-hidden="true">→</span></button>
         </div>
 
-        {/* RIGHT — the catalogue itself. Range is shown by moving THROUGH it on one screen rather
-            than by scrolling past it over six. */}
-        <div style={s.stage}>
-          <div style={s.frame}>
-            {TEMPLATES.map((x, n) => (
-              <img key={x.id} src={x.thumbnail_url} alt=""
-                   style={{ ...s.img, opacity: n === i ? 1 : 0, transform: n === i ? 'none' : 'scale(1.02)' }} />
-            ))}
-          </div>
-          <nav style={s.dots} aria-label="Cakes">
-            {TEMPLATES.map((x, n) => (
-              <button key={x.id} onClick={() => go(n)} aria-current={n === i} aria-label={x.name} style={s.dotHit}>
-                <span style={{ ...s.dot, ...(n === i ? s.dotOn : null) }} />
-              </button>
-            ))}
-          </nav>
+        <div style={s.band}>
+          {HERO_IMAGE
+            ? <img src={HERO_IMAGE} alt="" style={s.bandImg} />
+            : <CreamBand ink={INK} tint="#EFE7DA" style={s.bandArt} />}
+          {/* Where the reference put its street address: the practical line, on the texture. */}
+          <div style={s.bandLine}>Hyderabad · three days&rsquo; notice · delivered</div>
         </div>
       </section>
-      )}
+
+      {/* The catalogue, under the name's screen rather than in it. Every thumbnail is still a door
+          into the designer with that design loaded. */}
+      <section style={s.strip}>
+        <div style={s.stripHead}>Start from one of these</div>
+        <div style={s.stripRow}>
+          {TEMPLATES.map((x, n) => (
+            <button key={x.id} onClick={() => onStart(x)} style={s.chip} aria-label={`Start from ${x.name}`}>
+              <img src={x.thumbnail_url} alt="" style={s.chipImg} />
+              <span style={s.chipName}>{x.name}</span>
+              <span style={s.chipFacts}>{facts(x)}</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* There was a "Nothing here quite right?" block here with two more buttons — design from
           scratch, send a photo. Both are already the FIRST SCREEN of the flow: DesignFacet opens
@@ -196,70 +163,42 @@ const s = {
 
   // One screen: catalogue, story and button together. Nothing here is allowed to push the button
   // below the fold — that was the whole failure of the first pass.
-  // ── PHONE ─────────────────────────────────────────────────────────────────────────────────
-  phone: { display: 'flex', flexDirection: 'column', minHeight: 'calc(100svh - 53px)' },
-  pTop:  { padding: '24px 20px 20px', flex: '0 0 auto' },
-  pName: { fontFamily: SERIF, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em',
-           fontSize: 'clamp(32px, 10vw, 52px)', color: INK, margin: '10px 0 0', lineHeight: 1,
-           overflowWrap: 'break-word' },
-  pLine: { fontFamily: SERIF, fontSize: 18, lineHeight: 1.3, color: INK, margin: '10px 0 18px' },
-  // flex:1 with minHeight:0 — the cake takes whatever the words leave, so a long bakery name eats
-  // into the picture rather than pushing the button off a short screen.
-  pArt:  { position: 'relative', flex: '1 1 auto', minHeight: 240, overflow: 'hidden' },
-  // objectFit cover at 62% pushes past the silhouette and into the WALL, which is where the
-  // buttercream texture is. Framing the whole cake gives a picture of an object; this gives a
-  // surface, which is the entire point of the reference.
-  pImg:  { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-           objectPosition: 'center 62%', transition: 'opacity 620ms ease' },
-  pScrim: { position: 'absolute', inset: 0,
-            background: 'linear-gradient(to top, rgba(20,19,16,0.66) 0%, rgba(20,19,16,0.14) 44%, transparent 72%)' },
-  pOver: { position: 'absolute', left: 20, right: 20, bottom: 46, animation: 'slideIn 460ms cubic-bezier(.2,.7,.2,1)' },
-  pOverName: { fontFamily: SERIF, fontWeight: 600, fontSize: 25, color: '#FFF', lineHeight: 1.1 },
-  pOverFacts: { fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: 1.6, textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.82)', marginTop: 6 },
-  pDots: { position: 'absolute', left: 12, bottom: 6, display: 'flex', gap: 4 },
-  dotLight:   { boxShadow: 'inset 0 0 0 1.5px #FFF', opacity: 0.5 },
-  dotOnLight: { backgroundColor: '#FFF', opacity: 1, transform: 'scale(1.3)' },
-
-  hero: { display: 'flex', gap: 'clamp(20px, 4vw, 68px)', alignItems: 'center', flexWrap: 'wrap',
-          maxWidth: 1180, margin: '0 auto', padding: 'clamp(22px, 4vh, 56px) clamp(16px, 4vw, 56px)' },
-  copy: { flex: '1 1 340px', minWidth: 0 },
+  hero: { display: 'flex', flexDirection: 'column', minHeight: 'calc(100svh - 49px)' },
+  top:  { padding: 'clamp(26px, 5vh, 64px) clamp(20px, 5vw, 64px) clamp(22px, 4vh, 44px)',
+          flex: '0 0 auto', maxWidth: 1180, margin: '0 auto', width: '100%' },
   kicker: { fontFamily: SANS, fontSize: 10.5, fontWeight: 700, letterSpacing: 2.6,
             textTransform: 'uppercase', color: MUTED },
-  title: { fontFamily: SERIF, fontWeight: 600, color: INK, margin: '12px 0 0',
-           fontSize: 'clamp(30px, 3.6vw, 52px)', lineHeight: 1.12 },
+  name: { fontFamily: SERIF, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em',
+          fontSize: 'clamp(34px, 8vw, 96px)', color: INK, margin: '12px 0 0', lineHeight: 1,
+          overflowWrap: 'break-word' },
+  line: { fontFamily: SERIF, fontSize: 'clamp(18px, 2vw, 28px)', lineHeight: 1.3, color: INK,
+          margin: '12px 0 22px' },
 
-  // The slide's own words. Keyed on the template id so React remounts it and the fade replays —
-  // without the key the text swaps on a live node and nothing tells the eye it changed.
-  slideCopy: { marginTop: 'clamp(18px, 3vh, 34px)', minHeight: 172,
-               animation: 'slideIn 460ms cubic-bezier(.2,.7,.2,1)' },
-  meta: { fontFamily: SANS, fontSize: 11, fontWeight: 600, letterSpacing: 1.2, textTransform: 'uppercase',
-          color: MUTED },
-  num:  { fontVariantNumeric: 'tabular-nums', opacity: 0.7, marginRight: 8 },
-  name: { fontFamily: SERIF, fontWeight: 600, color: INK, fontSize: 'clamp(24px, 2.6vw, 34px)',
-          margin: '8px 0 0', lineHeight: 1.15 },
-  story:{ fontFamily: SANS, fontSize: 13.5, lineHeight: 1.8, color: '#5D584F', margin: '10px 0 0', maxWidth: 460 },
-
-  actions: { display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', marginTop: 22 },
+  // flex:1 with minHeight — the band takes whatever the words leave, so a long bakery name eats into
+  // the texture rather than pushing the button off a short screen.
   ctaMain: { fontFamily: SANS, fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase',
              background: INK, color: PAPER, border: 'none', padding: '16px 28px', cursor: 'pointer' },
-  ctaQuiet:{ fontFamily: SANS, fontSize: 12, fontWeight: 600, color: MUTED, background: 'none',
-             border: 'none', borderBottom: `1px solid ${MUTED}`, padding: '0 0 5px', cursor: 'pointer' },
 
-  stage: { flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' },
-  // Fixed height and stacked images: the slides cross-fade in place, so the page does not reflow
-  // when a taller cake arrives and the button never moves under a thumb going for it.
-  frame: { position: 'relative', width: '100%', maxWidth: 460, height: 'clamp(280px, 46vh, 460px)' },
-  img: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
-         transition: 'opacity 620ms ease, transform 620ms cubic-bezier(.2,.8,.3,1)' },
+  band: { position: 'relative', flex: '1 1 auto', minHeight: 210, overflow: 'hidden', background: PAPER },
+  bandArt: { position: 'absolute', inset: 0, width: '100%', height: '100%' },
+  bandImg: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+             objectPosition: 'center 62%' },
+  bandLine: { position: 'absolute', left: 0, right: 0, bottom: 'clamp(16px, 3vh, 30px)', textAlign: 'center',
+              fontFamily: SANS, fontSize: 11, fontWeight: 700, letterSpacing: 2.2, textTransform: 'uppercase',
+              color: INK, opacity: 0.62 },
 
-  dots: { display: 'flex', gap: 4, marginTop: 14 },
-  dotHit: { width: 28, height: 28, display: 'grid', placeItems: 'center', padding: 0, border: 'none',
-            background: 'none', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' },
-  dot: { width: 7, height: 7, borderRadius: '50%', boxShadow: `inset 0 0 0 1.5px ${INK}`, opacity: 0.3,
-         transition: 'opacity 260ms ease, background-color 260ms ease, transform 260ms ease' },
-  dotOn: { backgroundColor: INK, opacity: 1, transform: 'scale(1.3)' },
-
+  strip: { padding: 'clamp(30px, 6vh, 72px) clamp(20px, 5vw, 64px)', maxWidth: 1180, margin: '0 auto' },
+  stripHead: { fontFamily: SANS, fontSize: 10.5, fontWeight: 700, letterSpacing: 2.4,
+               textTransform: 'uppercase', color: MUTED, marginBottom: 18 },
+  // Scrolls sideways rather than wrapping: a baker with eleven templates gets a rail, not eleven
+  // rows that bury everything under them.
+  stripRow: { display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'thin' },
+  chip: { flex: '0 0 auto', width: 150, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          textAlign: 'left', font: 'inherit', display: 'flex', flexDirection: 'column', gap: 2 },
+  chipImg: { width: '100%', height: 150, objectFit: 'contain', display: 'block' },
+  chipName: { fontFamily: SERIF, fontSize: 17, fontWeight: 600, color: INK, marginTop: 6 },
+  chipFacts: { fontFamily: SANS, fontSize: 9.5, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase',
+               color: MUTED },
 
   toast: { position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 9,
            background: INK, color: PAPER, fontFamily: SANS, fontSize: 12.5, padding: '13px 20px',
