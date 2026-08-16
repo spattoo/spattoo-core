@@ -19,11 +19,10 @@ import Appu from './Appu.jsx';
  * finished cake, on a page whose entire job is to get them into the designer. A hero that demands
  * work before it pays is a hero people leave.
  *
- * So the five beats moved into a rail across the TOP, the whole thing fits one screen, and it plays
- * ITSELF: the cake assembles on load without anyone touching anything. The rail is not decoration —
- * every step is a button, so you can jump to Ganache, go back to Stack, watch it rebuild. Autoplay
- * stops the moment someone taps, because taking the wheel and having the page keep driving is
- * infuriating.
+ * So the whole thing fits one screen and plays ITSELF: the cake assembles on load without anyone
+ * touching anything, narrated by Appu. Four dots by the button carry what the step rail used to —
+ * how long this is, how far in we are, and a way back into any step. Autoplay stops the moment
+ * someone taps, because taking the wheel and having the page keep driving is infuriating.
  *
  * Same beats, same real designer calls. What changed is that watching is now free and steering is
  * optional, where before watching cost four flicks of the thumb.
@@ -37,7 +36,7 @@ import Appu from './Appu.jsx';
  *   · a warm paper ground with light pooling in the centre, and a horizon the cake stands ON. An
  *     object with no ground reads as a cut-out, which is most of why a 3D render looks like clip-art
  *   · a three-column grid — step copy left, cake centre and large, recipe index right
- *   · an index that doubles as the progress meter — now the header rail, and now tappable
+ *   · a progress meter that is four dots and no words — the cake is the only thing worth reading
  *   · one motion per beat, cross-faded. Everything moving at once is a screensaver
  *
  * Built only from primitives the designer owns outright — tiers, colour, frosting, glaze, writing.
@@ -296,32 +295,13 @@ function Assembling({ primary, accent, name }) {
       <div style={s.vignette} aria-hidden="true" />
 
       <div style={s.frame}>
-        {/* HEADER — identity, then the five steps. The rail is the recipe, the progress meter and
-            the navigation all at once; three jobs, one row, no extra furniture. */}
+        {/* Just the shop's name. The step rail that lived here — "HOW IT WORKS", then 01 START,
+            02 TIERS… — was captioning something Appu now says out loud, and five tracked labels
+            above the cake is documentation furniture on a page whose one job is to make a cake look
+            worth ordering. What it also did, quietly, was tell the visitor this was a SEQUENCE with
+            an end and offer a way back into it; that job survives as the dots by the button. */}
         <header style={s.head}>
-          {/* The promise that used to sit here in small italics is gone: correct, unmissable in a
-              code review, and invisible on a page where a 3D cake is turning six inches away. The
-              character says it out loud instead. */}
           <div style={s.brand}><div style={s.wordmark}>{name}</div></div>
-          <div style={s.railWrap}>
-            {/* Five numbers with no heading are a puzzle. Two words turn them into a table of
-                contents for something the visitor is about to be asked to do. */}
-            <div style={s.railLabel}>How it works</div>
-            <nav style={narrow ? { ...s.rail, ...s.railNarrow } : s.rail} aria-label="Steps">
-              {BEATS.map((b, i) => (
-                <button key={b.n} onClick={() => pick(i)} aria-current={i === beat}
-                      style={{ ...s.railItem, ...(i === beat ? s.railOn : i < beat ? s.railDone : {}) }}>
-                <span style={s.railTop}>
-                  <span style={s.railNum}>{pad(i + 1)}</span>
-                  {/* On a phone five labels do not fit, so only the live one is spelled out. The
-                      numbers still carry the sequence, and the title below says which step it is. */}
-                  {(!narrow || i === beat) && <span style={s.railName}>{b.n}</span>}
-                </span>
-                <span style={{ ...s.railRule, ...(i <= beat ? s.railRuleOn : {}) }} />
-              </button>
-              ))}
-            </nav>
-          </div>
         </header>
 
         {/* The only thing on screen that moves. */}
@@ -340,7 +320,7 @@ function Assembling({ primary, accent, name }) {
                 lever — shrinking the canvas width crops the render, and shrinking its height just
                 shrinks the cake without moving it. */}
             <CakePreview design={api.design} autoRotate={payoff}
-                         cameraPosition={narrow ? [cam.pos[0], cam.pos[1], cam.pos[2] * 1.18] : cam.pos} target={[0, cam.look - (narrow ? 0.95 : 0), 0]} />
+                         cameraPosition={narrow ? [cam.pos[0], cam.pos[1], cam.pos[2] * 1.08] : cam.pos} target={[0, cam.look - (narrow ? 0.95 : 0), 0]} />
           </div>
 
           {/* Appu stands ON the horizon, not under the stage in a caption bar. Same ground line as
@@ -370,6 +350,18 @@ function Assembling({ primary, accent, name }) {
         </div>
 
         <footer style={s.foot}>
+          {/* Four dots: how long this is, how far in we are, and the only way to see it again.
+              Filled behind, ringed ahead — no numbers, no labels, nothing to read. */}
+          <nav style={s.dots} aria-label="Steps">
+            {BEATS.map((b, i) => (
+              // The BUTTON is the touch target and the SPAN is the dot. Styling the ring onto the
+              // button drew a 30px circle round a 10px mark; the visual has to be its own element.
+              <button key={b.n} onClick={() => pick(i)} aria-label={`Step ${pad(i + 1)}: ${b.n}`}
+                      aria-current={i === beat} style={s.dotHit}>
+                <span style={{ ...s.dot, ...(i === beat ? s.dotOn : i < beat ? s.dotDone : {}) }} />
+              </button>
+            ))}
+          </nav>
           {/* Live from the first frame. The scroll version earned the CTA at the end, which is
               defensible in a story and indefensible on a storefront: someone who already knows what
               they want should never have to wait out a demo to find the button. */}
@@ -410,35 +402,21 @@ const s = {
             padding: 'clamp(16px, 3vh, 30px) clamp(20px, 4vw, 64px) clamp(20px, 4vh, 40px)',
             display: 'flex', flexDirection: 'column', gap: 'clamp(10px, 2vh, 22px)' },
 
-  head:   { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between',
-            gap: 'clamp(10px, 2vw, 28px)', flex: '0 0 auto' },
+  head:   { flex: '0 0 auto' },
   brand:  { minWidth: 0 },
 
-  railWrap: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 9, flex: '1 1 260px' },
-  railLabel: { fontFamily: SANS, fontSize: 9.5, fontWeight: 700, letterSpacing: 2.2, textTransform: 'uppercase',
-               color: MUTED },
   wordmark: { fontFamily: SANS, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em',
               fontSize: 'clamp(24px, 4.4vw, 52px)', color: INK, lineHeight: 1, overflowWrap: 'break-word' },
 
-  // Buttons, not labels — the rail IS the navigation. Sized to the touch target, not to the type:
-  // 11px text with 4px of padding is a control only a mouse can hit.
-  rail:   { display: 'flex', alignItems: 'flex-end', gap: 'clamp(8px, 1.6vw, 22px)', width: '100%',
-            justifyContent: 'flex-end' },
-  // On a phone the rail wraps to its own line, where right-aligning it under a left-aligned
-  // wordmark leaves a hole in the middle. Spread it edge to edge instead.
-  railNarrow: { justifyContent: 'space-between' },
-  railItem: { display: 'flex', flexDirection: 'column', gap: 7, background: 'none', border: 'none',
-              padding: '8px 0 0', cursor: 'pointer', color: '#C2BCB0', font: 'inherit',
-              transition: 'color 300ms ease', minWidth: 0, WebkitTapHighlightColor: 'transparent' },
-  railTop: { display: 'flex', alignItems: 'baseline', gap: 7, whiteSpace: 'nowrap' },
-  railNum: { fontFamily: SANS, fontSize: 10, fontWeight: 700, letterSpacing: 1.4, opacity: 0.6,
-             fontVariantNumeric: 'tabular-nums' },
-  railName:{ fontFamily: SANS, fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase' },
-  railOn:   { color: INK },
-  railDone: { color: MUTED },
-  railRule: { display: 'block', height: 1, background: INK, opacity: 0.12, transformOrigin: 'left',
-              transform: 'scaleX(0.3)', transition: 'transform 460ms cubic-bezier(.2,.7,.2,1), opacity 360ms ease' },
-  railRuleOn: { transform: 'scaleX(1)', opacity: 0.38 },
+  // A dot is 10px and says everything the rail said except the words. Sized to the TOUCH target
+  // via padding, not to the ink: a 10px control is a control only a mouse can hit.
+  dots:   { display: 'flex', alignItems: 'center', gap: 4 },
+  dotHit: { width: 30, height: 30, display: 'grid', placeItems: 'center', padding: 0, border: 'none',
+            background: 'none', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' },
+  dot:    { width: 8, height: 8, borderRadius: '50%', boxShadow: `inset 0 0 0 1.5px ${INK}`,
+            opacity: 0.3, transition: 'opacity 300ms ease, background-color 300ms ease' },
+  dotDone: { backgroundColor: INK, opacity: 0.35 },
+  dotOn:   { backgroundColor: INK, opacity: 1, transform: 'scale(1.25)' },
 
   // flex:1 with minHeight:0 — without the minHeight a flex child refuses to shrink below its content
   // and the cake pushes the footer off the bottom of a short phone.
@@ -452,7 +430,7 @@ const s = {
   // what is on screen for most of the demo.
   horizon: { position: 'absolute', left: '-50vw', right: '-50vw', top: '99%', height: 1, background: INK, opacity: 0.10 },
 
-  foot:   { display: 'flex', justifyContent: 'flex-end', flex: '0 0 auto' },
+  foot:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flex: '0 0 auto' },
   // He walks on from the left; the bubble opens once he has arrived. Both are one-shot — nothing
   // loops, because a mascot bobbing beside a rotating cake is a screensaver.
   narrator: { position: 'absolute', left: 0, right: 0, bottom: '1%', display: 'flex',
