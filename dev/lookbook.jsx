@@ -113,16 +113,11 @@ function Lookbook() {
         </div>
       </section>
 
-      {/* The other two doors, below the fold, where someone who has seen the whole catalogue and
-          liked none of it will be. Above the fold they would compete with the cakes. */}
-      <section style={s.tail}>
-        <p style={s.tailHead}>Nothing here quite right?</p>
-        <div style={s.tailRow}>
-          <button style={s.tailBtn}>Design one from scratch <span aria-hidden="true">→</span></button>
-          <button style={s.tailBtnQuiet}>I have a photo to send <span aria-hidden="true">→</span></button>
-        </div>
-      </section>
-
+      {/* There was a "Nothing here quite right?" block here with two more buttons — design from
+          scratch, send a photo. Both are already the FIRST SCREEN of the flow: DesignFacet opens
+          with all three doors. So the storefront was duplicating the flow's own opening, and
+          apologising in the process — a shop does not ask a customer to admit that nothing on the
+          shelves appealed. One way in, and the flow does the branching it already knows how to do. */}
       {started && (
         <div style={s.toast} role="status">
           Opening the designer with <b>{started.name}</b> loaded — {started.tier_count} tiers, {started.shape}.
@@ -186,14 +181,6 @@ const s = {
          transition: 'opacity 260ms ease, background-color 260ms ease, transform 260ms ease' },
   dotOn: { backgroundColor: INK, opacity: 1, transform: 'scale(1.3)' },
 
-  tail: { borderTop: '1px solid #E4DED2', padding: 'clamp(40px, 8vh, 96px) clamp(16px, 4vw, 56px)',
-          maxWidth: 1180, margin: '0 auto' },
-  tailHead: { fontFamily: SERIF, fontSize: 'clamp(23px, 3vw, 38px)', color: INK, margin: '0 0 22px' },
-  tailRow: { display: 'flex', gap: 14, flexWrap: 'wrap' },
-  tailBtn: { fontFamily: SANS, fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase',
-             background: INK, color: PAPER, border: 'none', padding: '15px 26px', cursor: 'pointer' },
-  tailBtnQuiet: { fontFamily: SANS, fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase',
-                  background: 'none', color: INK, border: `1px solid ${INK}`, padding: '15px 26px', cursor: 'pointer' },
 
   toast: { position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 9,
            background: INK, color: PAPER, fontFamily: SANS, fontSize: 12.5, padding: '13px 20px',
