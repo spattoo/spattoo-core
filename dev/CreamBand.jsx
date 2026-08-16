@@ -32,10 +32,21 @@ import React from 'react';
 // reshuffles on every re-render twitches, and a hero that twitches is a bug nobody can name.
 const rnd = n => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
 
+// Mix towards the page colour. The band has to be the BAKER'S colour without becoming a block of it:
+// a hero band at full saturation stops being a ground and starts being a poster.
+const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mix = (a, b, k) => '#' + hex2rgb(a).map((v, i) => Math.round(v + (hex2rgb(b)[i] - v) * k))
+  .map(v => v.toString(16).padStart(2, '0')).join('');
+
 const DRIPS = 26;      // tongues across the top edge
 const SPRINKLES = 90;
 
-export default function CreamBand({ ink = '#1C1B18', tint = '#EFE7DA', side = '#E3D8C6', style }) {
+export default function CreamBand({ ink = '#1C1B18', accent = '#A8654B', paper = '#F7F4EE', style }) {
+  // Two steps of the SAME hue rather than two unrelated colours: the icing is the baker's accent
+  // pulled most of the way to paper, the cake beneath it one step deeper. One colour, two values —
+  // which is what makes it read as light falling on a surface instead of as two stripes.
+  const tint = mix(paper, accent, 0.16);
+  const side = mix(paper, accent, 0.30);
   const w = 900, h = 380;
   // Two fills, both bleeding to every edge: ICING on top, the cake's SIDE below it, and the drips
   // are where one becomes the other. The previous pass filled only a thin ribbon and left the rest
@@ -49,7 +60,13 @@ export default function CreamBand({ ink = '#1C1B18', tint = '#EFE7DA', side = '#
   const step = w / DRIPS;
   let d = `M0 0 L${w} 0 L${w} ${ICE}`;
   for (let i = DRIPS; i >= 0; i--) {
-    const cx = i * step, half = step * (0.24 + rnd(i) * 0.16), depth = 10 + rnd(i * 3.7) * 90;
+    // Position jitters as well as depth. Depth alone was not enough: tongues pinned to an even grid
+    // still read as a border with some long teeth, because the EYE finds the rhythm in the spacing
+    // before it notices the lengths. And the depth spread runs 10–150 now rather than 10–100 — a
+    // range that never quite doubles reads as noise on one shape rather than as different drips.
+    const cx = i * step + (rnd(i * 8.3) - 0.5) * step * 0.55;
+    const half = step * (0.2 + rnd(i) * 0.22);
+    const depth = 10 + Math.pow(rnd(i * 3.7), 1.6) * 150;
     d += ` L${cx + half} ${ICE} C${cx + half} ${ICE + depth} ${cx - half} ${ICE + depth} ${cx - half} ${ICE}`;
   }
   d += ` L0 ${ICE} Z`;

@@ -43,6 +43,8 @@ const TEMPLATES = [
 ];
 
 const BAKER = 'AARAVI';
+// ?accent=%23A8654B — the baker's own colour, so the band is not the same beige in every shop.
+const ACCENT = new URLSearchParams(location.search).get('accent') || '#A8654B';
 
 // ── THE IMAGE SLOT ──────────────────────────────────────────────────────────────────────────────
 // A baker's own hero photo if they have set one, otherwise the cake currently showing. The
@@ -113,7 +115,7 @@ function Lookbook() {
         <div style={s.band}>
           {HERO_IMAGE
             ? <img src={HERO_IMAGE} alt="" style={s.bandImg} />
-            : <CreamBand ink={INK} tint="#EFE7DA" style={s.bandArt} />}
+            : <CreamBand ink={INK} accent={ACCENT} paper={PAPER} style={s.bandArt} />}
           {/* Where the reference put its street address: the practical line, on the texture. */}
           <div style={s.bandLine}>Hyderabad · three days&rsquo; notice · delivered</div>
         </div>
