@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
+import { useNarrow } from '../src/shared/useNarrow.js';
 
 /* ── PROTOTYPE: the Lookbook ─────────────────────────────────────────────────────────────────────
  *
@@ -41,6 +42,18 @@ const TEMPLATES = [
 ];
 
 const BAKER = 'AARAVI';
+
+// ── THE IMAGE SLOT ──────────────────────────────────────────────────────────────────────────────
+// A baker's own hero photo if they have set one, otherwise the cake currently showing. The
+// COMPOSITION does not care which — same bleed, same crop, same type over it.
+//
+// ⚠️ This is not how hero_image behaves today. CustomerStorefront does
+// `heroType = heroImage ? 'photo' : tokens.hero.type`, so setting a photo REPLACES the template's
+// hero with the generic photo one. For every other theme that is fine. For this one it would delete
+// the concept the baker chose the theme for: their catalogue would vanish the moment they uploaded
+// a picture. A template that owns an image slot has to consume hero_image rather than be overridden
+// by it — a real change to that line when this gets wired.
+const HERO_IMAGE = new URLSearchParams(location.search).get('photo');   // ?photo=/sample-cake-2.png
 const CTA = 'Let’s make your cake';   // the storefront's own designLabel, not a string invented here
 const DWELL = 5200;                        // how long a slide holds before the next one
 const pad = n => String(n).padStart(2, '0');
@@ -54,6 +67,7 @@ function Lookbook() {
   const [i, setI] = useState(0);
   const [auto, setAuto] = useState(true);
   const [started, setStarted] = useState(null);
+  const narrow = useNarrow(860);
   const t = TEMPLATES[i];
 
   // Slow, and it stops for good the moment anybody touches a dot. A carousel that keeps moving
@@ -75,6 +89,45 @@ function Lookbook() {
         <nav style={s.nav}><span style={s.navItem}>Our story</span><span style={s.navItem}>Contact</span></nav>
       </header>
 
+      {/* ── PHONE: name, button, then the cake bleeding off the bottom ──────────────────────────
+          From a bakery site whose hero is a big name over a MACRO crop of crust and seeds running to
+          all three edges. The lesson is not "use a photo" — it is that texture at close range is
+          appetite, and that type over a bleeding image reads as a shopfront where type in a card
+          reads as a web page.
+          What fills the slot is the baker's photo if they set one, and otherwise their own cake,
+          cropped hard — we own the camera, so we can crop INTO the buttercream instead of framing
+          the whole object. A generated stock photo would be the one thing on this storefront that is
+          not the baker's work, and identical in every shop that picked the theme. */}
+      {narrow ? (
+        <section style={s.phone}>
+          <div style={s.pTop}>
+            <div style={s.kicker}>Custom cakes · made to order</div>
+            <h1 style={s.pName}>{BAKER}</h1>
+            <p style={s.pLine}>Every cake here is a starting point.</p>
+            <button style={s.ctaMain} onClick={() => onStart(t)}>{CTA} <span aria-hidden="true">→</span></button>
+          </div>
+          {/* Bleeds left, right and bottom. A margin here would put the cake in a box and undo it. */}
+          <div style={s.pArt}>
+            {HERO_IMAGE
+              ? <img src={HERO_IMAGE} alt="" style={{ ...s.pImg, opacity: 1 }} />
+              : TEMPLATES.map((x, n) => (
+                  <img key={x.id} src={x.thumbnail_url} alt="" style={{ ...s.pImg, opacity: n === i ? 1 : 0 }} />
+                ))}
+            <div style={s.pScrim} />
+            <div style={s.pOver} key={t.id}>
+              <div style={s.pOverName}>{t.name}</div>
+              <div style={s.pOverFacts}>{facts(t)}</div>
+            </div>
+            <nav style={s.pDots} aria-label="Cakes">
+              {TEMPLATES.map((x, n) => (
+                <button key={x.id} onClick={() => go(n)} aria-current={n === i} aria-label={x.name} style={s.dotHit}>
+                  <span style={{ ...s.dot, ...s.dotLight, ...(n === i ? s.dotOnLight : null) }} />
+                </button>
+              ))}
+            </nav>
+          </div>
+        </section>
+      ) : (
       <section style={s.hero}>
         {/* LEFT — what the shop is, the story of the cake currently showing, and the way in. The
             button never moves as slides change; only the words above it do. */}
@@ -112,6 +165,7 @@ function Lookbook() {
           </nav>
         </div>
       </section>
+      )}
 
       {/* There was a "Nothing here quite right?" block here with two more buttons — design from
           scratch, send a photo. Both are already the FIRST SCREEN of the flow: DesignFacet opens
@@ -142,6 +196,31 @@ const s = {
 
   // One screen: catalogue, story and button together. Nothing here is allowed to push the button
   // below the fold — that was the whole failure of the first pass.
+  // ── PHONE ─────────────────────────────────────────────────────────────────────────────────
+  phone: { display: 'flex', flexDirection: 'column', minHeight: 'calc(100svh - 53px)' },
+  pTop:  { padding: '24px 20px 20px', flex: '0 0 auto' },
+  pName: { fontFamily: SERIF, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em',
+           fontSize: 'clamp(32px, 10vw, 52px)', color: INK, margin: '10px 0 0', lineHeight: 1,
+           overflowWrap: 'break-word' },
+  pLine: { fontFamily: SERIF, fontSize: 18, lineHeight: 1.3, color: INK, margin: '10px 0 18px' },
+  // flex:1 with minHeight:0 — the cake takes whatever the words leave, so a long bakery name eats
+  // into the picture rather than pushing the button off a short screen.
+  pArt:  { position: 'relative', flex: '1 1 auto', minHeight: 240, overflow: 'hidden' },
+  // objectFit cover at 62% pushes past the silhouette and into the WALL, which is where the
+  // buttercream texture is. Framing the whole cake gives a picture of an object; this gives a
+  // surface, which is the entire point of the reference.
+  pImg:  { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+           objectPosition: 'center 62%', transition: 'opacity 620ms ease' },
+  pScrim: { position: 'absolute', inset: 0,
+            background: 'linear-gradient(to top, rgba(20,19,16,0.66) 0%, rgba(20,19,16,0.14) 44%, transparent 72%)' },
+  pOver: { position: 'absolute', left: 20, right: 20, bottom: 46, animation: 'slideIn 460ms cubic-bezier(.2,.7,.2,1)' },
+  pOverName: { fontFamily: SERIF, fontWeight: 600, fontSize: 25, color: '#FFF', lineHeight: 1.1 },
+  pOverFacts: { fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: 1.6, textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.82)', marginTop: 6 },
+  pDots: { position: 'absolute', left: 12, bottom: 6, display: 'flex', gap: 4 },
+  dotLight:   { boxShadow: 'inset 0 0 0 1.5px #FFF', opacity: 0.5 },
+  dotOnLight: { backgroundColor: '#FFF', opacity: 1, transform: 'scale(1.3)' },
+
   hero: { display: 'flex', gap: 'clamp(20px, 4vw, 68px)', alignItems: 'center', flexWrap: 'wrap',
           maxWidth: 1180, margin: '0 auto', padding: 'clamp(22px, 4vh, 56px) clamp(16px, 4vw, 56px)' },
   copy: { flex: '1 1 340px', minWidth: 0 },
