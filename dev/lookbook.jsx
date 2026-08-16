@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { useNarrow } from '../src/shared/useNarrow.js';
-import CreamBand from './CreamBand.jsx';
+import CakeLine from './CakeLine.jsx';
 
 /* ── PROTOTYPE: the Lookbook ─────────────────────────────────────────────────────────────────────
  *
@@ -45,6 +45,12 @@ const TEMPLATES = [
 const BAKER = 'AARAVI';
 // ?accent=%23A8654B — the baker's own colour, so the band is not the same beige in every shop.
 const ACCENT = new URLSearchParams(location.search).get('accent') || '#A8654B';
+
+// The band's ground: the baker's accent pulled most of the way to paper. Full saturation behind a
+// line drawing swallows the line.
+const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mix = (a, b, k) => '#' + hex2rgb(a).map((v, i) => Math.round(v + (hex2rgb(b)[i] - v) * k))
+  .map(v => v.toString(16).padStart(2, '0')).join('');
 
 // ── THE IMAGE SLOT ──────────────────────────────────────────────────────────────────────────────
 // A baker's own hero photo if they have set one, otherwise the cake currently showing. The
@@ -115,7 +121,20 @@ function Lookbook() {
         <div style={s.band}>
           {HERO_IMAGE
             ? <img src={HERO_IMAGE} alt="" style={s.bandImg} />
-            : <CreamBand ink={INK} accent={ACCENT} paper={PAPER} style={s.bandArt} />}
+            : (
+              /* THE DRAWING HAS TO SAY WHAT IT IS. The band was an abstract texture — poured icing,
+                 drips, sprinkles — and the first person to see it asked what it meant, which is the
+                 only review that matters. A photograph of crust survives being cropped to
+                 abstraction because it still carries crumb, gloss and shadow; a flat two-tone vector
+                 carries none of that, so with the object removed there was nothing left but a wavy
+                 line between two beiges.
+                 So the band holds the two-tier drawing instead, scaled up and cropped by the frame.
+                 Still drawn, still no render, still bleeding to three edges — but recognisably a
+                 cake, which the texture never managed to be. */
+              <div style={s.bandCake}>
+                <CakeLine ink={INK} ground={mix(PAPER, ACCENT, 0.16)} style={s.bandCakeArt} />
+              </div>
+            )}
           {/* Where the reference put its street address: the practical line, on the texture. */}
           <div style={s.bandLine}>Hyderabad · three days&rsquo; notice · delivered</div>
         </div>
@@ -181,8 +200,12 @@ const s = {
   ctaMain: { fontFamily: SANS, fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase',
              background: INK, color: PAPER, border: 'none', padding: '16px 28px', cursor: 'pointer' },
 
-  band: { position: 'relative', flex: '1 1 auto', minHeight: 210, overflow: 'hidden', background: PAPER },
-  bandArt: { position: 'absolute', inset: 0, width: '100%', height: '100%' },
+  band: { position: 'relative', flex: '1 1 auto', minHeight: 210, overflow: 'hidden' },
+  // The drawing is BIGGER than the band and anchored to its top, so the frame crops the cake's
+  // lower half away. A drawing that fits inside the band would be an illustration sitting in a box;
+  // one that runs out of it is a crop, which is what the reference does with its loaf.
+  bandCake: { position: 'absolute', inset: 0, display: 'flex', justifyContent: 'center', overflow: 'hidden' },
+  bandCakeArt: { width: 'min(112%, 620px)', height: 'auto', marginTop: 'clamp(-40px, -4vh, -12px)' },
   bandImg: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
              objectPosition: 'center 62%' },
   bandLine: { position: 'absolute', left: 0, right: 0, bottom: 'clamp(16px, 3vh, 30px)', textAlign: 'center',
