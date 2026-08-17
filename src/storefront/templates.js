@@ -173,6 +173,48 @@ const ATELIER_TOKENS = {
   cake:       'brand',
 };
 
+// ── INK ─────────────────────────────────────────────────────────────────────────────────────────
+// Everything on the page is drawn in ink on paper: no photograph, no render, no rotating cake. That
+// is the whole theme, and it is why it is called Ink.
+//
+// It exists because of a complaint that was correct — Spotlight, Aurora and Atelier are the same
+// storefront in different clothes, and bakers can tell. Their tokens are radius, shadow, align,
+// edges: every one of them a STYLE. The thing all three share is the 3D cake in the hero, so no
+// amount of restyling around it makes them feel like different shops. This theme's hero is a
+// DRAWING, which nothing else uses.
+const INK_TOKENS = {
+  font:      SANS,
+  serif:     "'Cormorant Garamond', Georgia, serif",
+  brandFont: "'Cormorant Garamond', Georgia, serif",
+  brandMark: 'caps',
+  // Ink on paper, warmer than Atelier's bone — this theme is drawn rather than printed, and a warm
+  // ground is what makes a line drawing read as ink rather than as a diagram.
+  pageBg:     '#EFE7DA',
+  heading:    '#2E3A46',
+  text:       '#4A5560',
+  muted:      '#8C8578',
+  cardBorder: '#DED3C2',
+  shadow:     '0 1px 0 rgba(46,58,70,0.06)',
+  contentWidth: 640,
+  inkMix:     { with: '#2E3A46', amount: 0.82 },
+  hero:       { type: 'ink' },
+  edges:      'rule',
+  radius:     0,
+  cardStyle:  'flat',
+  align:      'left',
+  // The hero IS the wordmark — the same rule Atelier settled. A logo in the header and the name
+  // spelled out in the hero is the same identity twice on one screen.
+  headerBrand: false,
+  // Cormorant 600, widely tracked, chosen over the same face at 700 and a light Montserrat: a
+  // high-contrast serif has hairlines close to the DRAWING'S own line, so the mark and the
+  // illustration read as one hand. 600 is also the lightest weight the host loads (spattoo-web
+  // layout.tsx) — asking for 300 gives a faux-light that looks right only where the font is
+  // installed locally.
+  ownsType:   true,
+  // No 3D cake anywhere in this theme.
+  cake:       'brand',
+};
+
 export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
 
 export const TEMPLATES = {
@@ -193,6 +235,14 @@ export const TEMPLATES = {
     // theme.
     defaults: { primary: '#1A1A18', accent: '#A8654B', ctaColor: '#F7F5F1' },
     controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
+  },
+  ink: {
+    key: 'ink', label: 'Ink', tokens: INK_TOKENS,
+    // The type IS the design here, as in Patisserie and Atelier — a font picker would undo it.
+    controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
+    // Ink on paper, and a terracotta the drawing is tinted with. The wordmark and the linework are
+    // the same near-black; the accent is the only colour on the page.
+    defaults: { primary: '#2E3A46', accent: '#A8654B', ctaColor: '#EFE7DA' },
   },
   patisserie: {
     key: 'patisserie', label: 'Patisserie', tokens: PATISSERIE_TOKENS,
