@@ -1704,6 +1704,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const q = elemSearch.trim().toLowerCase();
     return (els ?? []).filter(el => {
       if (el.placement_config?.pattern_only === true) return false;
+      // Inside a category, show only that category — the dbs accumulate across every category
+      // visited this session, so without this the second one opened would show the first as well.
+      // Search deliberately ignores the category: someone typing "lion" wants the lion, not to be
+      // told it is filed elsewhere.
+      if (!q && activeCategory && el.category_id !== activeCategory.id) return false;
       if (!q) return true;
       return `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q);
     });
@@ -1729,6 +1734,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const pipingPopupRef = useRef(null);
   useEffect(() => { if (pipingPopupRef.current) pipingPopupRef.current.scrollTop = 0; }, [expandedPipingId]);
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
+  // ── Browse by category (migration 065) ──────────────────────────────────────────────────────────
+  // The panel opens onto CATEGORIES, and nothing is fetched until one is tapped. 86 decorations in a
+  // flat grid is hard to search on any connection, and on mobile data it is 102 KB of JSON and 430
+  // KB of thumbnails before the customer has expressed any interest at all.
+  //
+  // `loadedCategories` is what makes going back and forth free — a category already fetched is not
+  // fetched again. `allElementsLoaded` is the separate question "do we hold the whole catalogue",
+  // which search and saved designs need and no number of category loads can answer.
+  const [categories, setCategories]           = useState([]);
+  const [activeCategory, setActiveCategory]   = useState(null);
+  const [loadedCategories, setLoadedCategories] = useState(() => new Set());
+  const [allElementsLoaded, setAllElementsLoaded] = useState(false);
 
   // Capabilities fetched eagerly on mount so edit controls work
   // even before the elements panel is opened (e.g. text, piping selected directly)
@@ -2447,19 +2464,31 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   // `force` re-reads the catalog even though it's already loaded — used after the user uploads their
   // own decoration, which adds a row the in-memory copy doesn't know about.
-  async function loadElementsIfNeeded(force = false) {
-    if (!force && elementById.size > 0) return;
+  //
+  // `categoryId` loads ONE browsing category instead of the lot (migration 065) — what the panel
+  // does on a category tap. Those rows are MERGED into what is already held rather than replacing
+  // it: `elementById` is how a placed sticker resolves its own source element, so replacing the map
+  // when the customer opens a second category would strip the placement rules off decorations
+  // already standing on the cake.
+  //
+  // Loading everything stays the default and stays correct for the cases that need it — a saved
+  // design references arbitrary elements, and search has to see all of them.
+  async function loadElementsIfNeeded(force = false, categoryId = null) {
+    if (!force && !categoryId && allElementsLoaded) return;
+    if (categoryId && loadedCategories.has(categoryId)) return;
     setElementTypesLoading(true);
     let rows = [];
     if (apiClient) {
-      rows = await apiClient.fetchElements({ parentsOnly: true });
+      rows = await apiClient.fetchElements({ parentsOnly: true, ...(categoryId ? { categoryId } : {}) });
     } else {
-      const { data: topLevelData } = await supabase
+      let q = supabase
         .from('cake_elements')
-        .select('id, name, description, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id, default_color, allowed_actions')
+        .select('id, name, description, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id, category_id, default_color, allowed_actions')
         .is('parent_id', null)
         .eq('is_active', true)
         .order('sort_order');
+      if (categoryId) q = q.eq('category_id', categoryId);
+      const { data: topLevelData } = await q;
       rows = topLevelData ?? [];
     }
     // Normalise relative keys to full URLs so the canvas renderers work consistently
@@ -2487,7 +2516,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       return { ...r, image_url: resolveUrl(r.image_url), thumbnail_url: resolveUrl(r.thumbnail_url), placement_config: pc };
     });
 
-    setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
+    // Which type cards to render. Unioned on a category load — the set drives the picker, so
+    // replacing it would hide the type cards belonging to a category opened a moment ago.
+    setActiveElementTypeIds(prev => {
+      const next = categoryId ? new Set(prev) : new Set();
+      rows.forEach(r => next.add(r.element_type_id));
+      return next;
+    });
     // Match the food-foil type tolerantly (slug or name contains "foil") so routing fires regardless of
     // the exact slug the admin chose (food-foil / food_foil / gold foil …).
     const foilTypeId     = elementTypes.find(et => /foil/i.test(et.slug ?? '') || /foil/i.test(et.name ?? ''))?.id;
@@ -2519,17 +2554,66 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // generic `others` bucket and render via the same draggable grid as every other type (their
     // hero/stand behaviour is config, not type — see above).
     const knownTypeIds         = new Set([scatteredDecorTypeId, picksTypeId, imageTopperTypeId, pipingStampTypeId].filter(Boolean));
-    setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
-    setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
-    setStampsDb(rows.filter(r => r.element_type_id === pipingStampTypeId));
-    setImageTopperDb(rows.filter(r => r.element_type_id === imageTopperTypeId));
+
+    // A CATEGORY load adds to what is held; a full load is the truth and replaces it. Merging by id
+    // rather than concatenating, because two categories can legitimately contain the same element
+    // and a duplicate card in the picker is a bug the customer sees.
+    const mergeById = (prev, next) => {
+      if (!categoryId) return next;
+      const seen = new Set(next.map(r => r.id));
+      return [...prev.filter(r => !seen.has(r.id)), ...next].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    };
+
+    setScatteredDecorDb(prev => mergeById(prev, rows.filter(r => r.element_type_id === scatteredDecorTypeId)));
+    setPicksDb        (prev => mergeById(prev, rows.filter(r => r.element_type_id === picksTypeId)));
+    setStampsDb       (prev => mergeById(prev, rows.filter(r => r.element_type_id === pipingStampTypeId)));
+    setImageTopperDb  (prev => mergeById(prev, rows.filter(r => r.element_type_id === imageTopperTypeId)));
+
     const others = {};
     rows.filter(r => !knownTypeIds.has(r.element_type_id)).forEach(r => {
       (others[r.element_type_id] ??= []).push(r);
     });
-    setOtherElementsDb(others);
-    setElementById(new Map(rows.map(r => [r.id, r])));
+    setOtherElementsDb(prev => {
+      if (!categoryId) return others;
+      const out = { ...prev };
+      for (const [typeId, list] of Object.entries(others)) out[typeId] = mergeById(out[typeId] ?? [], list);
+      return out;
+    });
+
+    // NEVER replaced on a category load. This map is what a placed sticker reads to find its own
+    // element — swapping it for one category's worth would leave every decoration already on the
+    // cake unable to resolve its placement rules.
+    setElementById(prev => {
+      const next = categoryId ? new Map(prev) : new Map();
+      rows.forEach(r => next.set(r.id, r));
+      return next;
+    });
+    if (categoryId) setLoadedCategories(prev => new Set(prev).add(categoryId));
+    else            setAllElementsLoaded(true);
     setElementTypesLoading(false);
+  }
+
+  // Searching has to see the WHOLE catalogue, not the categories that happen to have been opened.
+  // "lion" must find the lion whether or not the customer has been into Animals. So the first
+  // keystroke pulls the lot — once, and only for someone who actually searched, which is the
+  // difference between this and the old behaviour of doing it for everybody on open.
+  useEffect(() => {
+    if (elementsOpen && elemSearch.trim() && !allElementsLoaded) loadElementsIfNeeded();
+  }, [elemSearch, elementsOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "My decorations" is a category to the customer even though it is an OWNERSHIP filter rather than
+  // a row in element_categories. It earns a card in the same grid because that is where someone will
+  // look for their own pictures — behind a real category is the one place they would never think to.
+  const MY_DECORATIONS = { id: '__mine__', name: 'My decorations' };
+
+  // Tapping a category. The elements arrive on demand; a category already visited is instant,
+  // because loadElementsIfNeeded short-circuits on `loadedCategories`.
+  async function openCategory(cat) {
+    setActiveCategory(cat);
+    // Mine has no category_id to filter on — the rows are identified by carrying a baker_id — so it
+    // is the one card that needs the whole catalogue. Fine: it is opened rarely and by someone who
+    // has uploaded something, not by every customer on arrival.
+    await loadElementsIfNeeded(false, cat.id === MY_DECORATIONS.id ? null : cat.id);
   }
 
   async function openElements() {
@@ -2539,7 +2623,29 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setToolsOpen(false);
     // Note: do NOT close the piping stack here — picking another element should add a
     // card to the existing stack, not wipe it.
-    if (opening) await loadElementsIfNeeded();
+    if (!opening) return;
+
+    // Back to the category list each time the panel opens, rather than resuming where the customer
+    // left off. Reopening is how you go and look for something ELSE; landing back inside Animals
+    // would hide every other category behind a Back button they have no reason to press.
+    setActiveCategory(null);
+
+    // Categories only — no elements. This is the whole point: the menu can be drawn from a list of
+    // eleven names with counts, and nothing else is fetched until the customer picks one.
+    if (!categories.length) {
+      try {
+        const cats = apiClient
+          ? await apiClient.fetchElementCategories?.()
+          : (await supabase.from('element_categories').select('id, slug, name, sort_order').eq('is_active', true).order('sort_order')).data;
+        if (cats?.length) setCategories(cats);
+        // No categories configured (or the call failed) → fall back to loading everything, which is
+        // exactly how this panel behaved before. An environment that has not run migration 065 gets
+        // the old experience rather than an empty panel.
+        else await loadElementsIfNeeded();
+      } catch {
+        await loadElementsIfNeeded();
+      }
+    }
   }
 
   // Tools flyout (Cream Pen, …). Opening jumps straight to the cream-pen editor when a
@@ -6623,7 +6729,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
             )}
             <div style={s.flyoutHeader}>
-              <span style={s.flyoutTitle}>Elements</span>
+              {/* Inside a category the title becomes the way out. One control: the customer went in
+                  by tapping a name, so they come back by tapping the same name with an arrow on it. */}
+              {activeCategory ? (
+                <button
+                  onClick={() => setActiveCategory(null)}
+                  style={{ ...s.flyoutTitle, display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                  <span aria-hidden style={{ fontSize: 15, lineHeight: 1 }}>‹</span>
+                  {activeCategory.name}
+                </button>
+              ) : (
+                <span style={s.flyoutTitle}>Elements</span>
+              )}
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
             </div>
 
@@ -6639,6 +6756,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {elementTypesLoading && (
               <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}><CakeSpinner size={20} /></div>
             )}
+
+            {/* ── The category menu ─────────────────────────────────────────────────────────────
+                What the panel opens onto. Names and counts only — no element has been fetched at
+                this point, which is the entire reason for it: 86 decorations meant 102 KB of JSON
+                and 430 KB of thumbnails before the customer had shown interest in any of them.
+
+                Skipped entirely while searching (search is across everything) and, deliberately,
+                when no categories exist — an environment without migration 065 falls back to the
+                flat list it always had rather than showing an empty panel. */}
+            {!!categories.length && !activeCategory && !elemSearch.trim() && !elementTypesLoading && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))', gap: 8, marginBottom: 10 }}>
+                {[...categories, ...(hasCap('element:manage') ? [MY_DECORATIONS] : [])].map(cat => (
+                  <button key={cat.id} onClick={() => openCategory(cat)}
+                    style={{ ...s.elementCard, padding: '14px 8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                             alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 62 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 800, color: '#444', textAlign: 'center', lineHeight: 1.25 }}>{cat.name}</div>
+                    {cat.count != null && (
+                      <div style={{ fontSize: 9.5, fontWeight: 700, color: '#a49aa1' }}>{cat.count}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Everything below is the element picker as it was. It is now gated: with categories
+                configured it appears only once one is chosen, or while searching. Without them it
+                renders immediately, exactly as before. */}
+            {(!categories.length || (activeCategory && activeCategory.id !== MY_DECORATIONS.id) || elemSearch.trim()) && <>
 
             {/* Ring-popup elements — own groups, tap a style to open the popup. */}
             {renderRingPickerCard('Cream Piping', pipingPickerEls)}
@@ -6672,7 +6817,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 must stay a topper, or it loses the placement rules its type gives it. The API decides
                 what "mine" means: a baker sees their bakery's library, a customer additionally sees
                 their own private uploads and never another customer's. */}
-            {!elemSearch.trim() && hasCap('element:manage') && (
+            </>}{/* end of the gated element picker */}
+
+            {/* Reached through its own card in the category grid. Rendered here, outside the gated
+                picker, because it is an OWNERSHIP filter over elements already loaded rather than an
+                element type — an uploaded topper must stay a topper or it loses its placement rules.
+                Also still shown when no categories exist, which is the pre-065 layout unchanged. */}
+            {!elemSearch.trim() && hasCap('element:manage')
+              && (activeCategory?.id === MY_DECORATIONS.id || (!categories.length && !activeCategory)) && (
               <>
                 <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', margin: '14px 0 8px' }}>
                   My decorations
