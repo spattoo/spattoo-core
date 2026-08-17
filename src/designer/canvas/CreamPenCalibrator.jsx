@@ -1,6 +1,7 @@
 import { Suspense, useMemo, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { SafeEnvironment } from './TextureErrorBoundary.jsx';
+import { envProps } from './envMap.js';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { creamMaterialProps } from './CakeTier.jsx';
@@ -98,7 +99,7 @@ export default function CreamPenCalibrator({ nozzle, thickness, softness, color,
         <directionalLight position={[4, 9, 6]} intensity={1.3} />
         <directionalLight position={[-3, 3, -3]} intensity={0.4} />
         <Suspense fallback={<SceneLoader size={18} />}>
-          <SafeEnvironment preset="apartment" />
+          <SafeEnvironment {...envProps()} />
           <mesh position={[0, -0.002, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
             <circleGeometry args={[boardR, 48]} />
             <meshStandardMaterial color={BOARD_COLOR} roughness={0.6} metalness={0.05} />

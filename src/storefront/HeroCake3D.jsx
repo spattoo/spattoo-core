@@ -1,6 +1,8 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Environment, OrbitControls, ContactShadows } from '@react-three/drei';
+import { OrbitControls, ContactShadows } from '@react-three/drei';
+import { SafeEnvironment } from '../designer/canvas/TextureErrorBoundary.jsx';
+import { envProps } from '../designer/canvas/envMap.js';
 import * as THREE from 'three';
 import { SceneLoader } from '../designer/canvas/CakeSpinner.jsx';
 // Reuse the designer's PURE drip generators (no heavy deps) rather than re-authoring drip geometry.
@@ -198,7 +200,11 @@ export default function HeroCake3D({ primary = '#2C4433', accent = '#6B8C74', he
         <pointLight position={[3, 2, 4]} intensity={0.5} color="#ffffff" />
         {grid && <StudioGrid color={gridColor} opacity={gridOpacity} />}
         <Suspense fallback={<SceneLoader size={22} />}>
-          <Environment preset="apartment" />
+          {/* SafeEnvironment, not a raw <Environment>: this is the storefront HERO, so a failed
+              HDRI here used to be an unguarded throw on first paint. And envProps rather than a
+              preset — the preset is a 1.4 MB fetch from raw.githubusercontent.com, which is both the
+              slowest thing on the page and a CSP violation waiting for CSP_ENFORCE. */}
+          <SafeEnvironment {...envProps()} />
           <Cake primary={primary} drip={drip} dripColor={dripColor} />
         </Suspense>
         {/* Contact shadow grounds the cake so it doesn't look like a floating 2D sticker. Invisible
