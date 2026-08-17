@@ -6766,15 +6766,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 when no categories exist — an environment without migration 065 falls back to the
                 flat list it always had rather than showing an empty panel. */}
             {!!categories.length && !activeCategory && !elemSearch.trim() && !elementTypesLoading && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))', gap: 8, marginBottom: 10 }}>
+              // minmax(84px) rather than 104: the flyout is narrow on a phone, and at 104 it
+              // collapses to ONE column — a stack of full-width word-cards, which is the least
+              // appealing possible way into a library of pictures. 84 keeps two columns at the
+              // narrowest the panel gets and gives three as soon as there is room.
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 10 }}>
                 {[...categories, ...(hasCap('element:manage') ? [MY_DECORATIONS] : [])].map(cat => (
                   <button key={cat.id} onClick={() => openCategory(cat)}
-                    style={{ ...s.elementCard, padding: '14px 8px', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                             alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 62 }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 800, color: '#444', textAlign: 'center', lineHeight: 1.25 }}>{cat.name}</div>
-                    {cat.count != null && (
-                      <div style={{ fontSize: 9.5, fontWeight: 700, color: '#a49aa1' }}>{cat.count}</div>
-                    )}
+                    style={{ ...s.elementCard, padding: 0, cursor: 'pointer', gap: 0, overflow: 'hidden' }}>
+                    {/* The picture is the label. Someone hunting for a lion recognises one long
+                        before they read the word "Animals", and this is a visual product — a
+                        column of text was the one thing the picker should never have been. */}
+                    <div style={{ width: '100%', aspectRatio: '1 / 1', background: '#FAFAF8',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                      {cat.thumbnail_url ? (
+                        <img src={cat.thumbnail_url} alt="" loading="lazy" decoding="async"
+                             style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6, boxSizing: 'border-box' }} />
+                      ) : (
+                        // My decorations, and any category whose elements have no thumbnail yet.
+                        <span aria-hidden style={{ fontSize: 20, opacity: 0.28 }}>◍</span>
+                      )}
+                      {cat.count != null && (
+                        <span style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(255,255,255,0.9)',
+                                       borderRadius: 20, padding: '1px 6px', fontSize: 9, fontWeight: 800, color: '#8a8288' }}>
+                          {cat.count}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#444', textAlign: 'center',
+                                  lineHeight: 1.2, padding: '5px 4px 7px', width: '100%', boxSizing: 'border-box' }}>
+                      {cat.name}
+                    </div>
                   </button>
                 ))}
               </div>
