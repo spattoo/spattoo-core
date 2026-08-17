@@ -1065,12 +1065,17 @@ function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column', ca
               ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
             <span style={{ fontWeight: 800, color: '#2C4433', fontSize: row ? 13 : 13.5 }}>
               {t.name}
-              {/* 👑 marks a PREMIUM theme on every plan, including the plans that can publish it —
-                  a Blaze baker had nothing at all telling them which of these they are paying for.
-                  It is not a substitute for the state badges below: those say what a plan may DO
+              {/* ♛ marks a PREMIUM theme on every plan, including the plans that can publish it — a
+                  Blaze baker had nothing at all telling them which of these they are paying for. It
+                  is not a substitute for the state badges below: those say what a plan may DO
                   ("Blaze" = cannot publish yet, "Paused" = had it, will have it again), and this
-                  says what the theme IS. Approved emoji use — INVARIANTS §7 keeps the list. */}
-              {t.is_premium && <span style={s.crown} title="Premium theme" aria-label="Premium theme">👑</span>}
+                  says what the theme IS.
+                  A TEXT GLYPH, not the U+1F451 crown emoji, and that is the whole reason it needs no exception
+                  to INVARIANTS §7 — which already allows plain typographic glyphs used functionally
+                  (✕ close, ✓ saved, ★ rating). It also simply works better: it inherits the label's
+                  colour, dims, and scales with the type, where a colour bitmap at 11px was a smudge
+                  and could be neither tinted nor faded. */}
+              {t.is_premium && <span style={s.crown} title="Premium theme" aria-label="Premium theme">♛</span>}
             </span>
             {/* "Soon" wins when a theme is both: an inactive theme cannot be chosen on ANY plan, so
                 telling a Flame baker to upgrade for it would sell them something that does not
@@ -1136,9 +1141,10 @@ const s = {
   // plan badge next to "Soon", which is a statement about us and stays neutral.
   // Small, and set back from the name — a tier mark, not a decoration competing with the word it
   // qualifies. aria-label carries the meaning, since an emoji read aloud is not one.
-  // 13px and full strength. At 11px with reduced opacity it rendered as a smudge — an emoji is a
-  // colour bitmap at small sizes, so it cannot be dimmed and shrunk the way a text glyph can.
-  crown:  { marginLeft: 6, fontSize: 13, verticalAlign: 'middle', lineHeight: 1 },
+  // Inherits the theme name's colour — no colour of its own, so it reads as part of the label
+  // rather than as a badge stuck beside it. Slightly set back, because a tier mark should qualify
+  // the name and not compete with it.
+  crown:  { marginLeft: 6, fontSize: 13, verticalAlign: 'baseline', lineHeight: 1, opacity: 0.7 },
   locked:   { fontSize: 9.5, fontWeight: 800, color: '#9A6B16', background: '#FBF0DA', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   // Paused reads as a STATE, not a restriction — same shape as `locked` so the row stays even, but
   // the amber of "you cannot have this" would be the wrong note for a theme that is theirs and
