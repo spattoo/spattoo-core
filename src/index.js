@@ -16,6 +16,10 @@ export { shapeView } from './designer/controls/ShapePicker.jsx';
 export { captureThumbnailBlob } from './designer/utils/thumbnail.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
+// Exported so the DESIGNER route can gate itself with the same verification the storefront uses,
+// rather than growing a second OTP screen that drifts from this one. See the "one exception" note
+// in VerifyStep.jsx for why that route asks at the door when nothing else does.
+export { default as VerifyStep } from './storefront/facets/VerifyStep.jsx';
 export { default as OrdersPanel } from './orders/OrdersPanel.jsx';
 // Shared subscription-plan picker (select-to-expand) + pricing helpers — used by the billing
 // screen AND the signup onboarding wizard so the plan catalog lives in ONE place (the DB), not
