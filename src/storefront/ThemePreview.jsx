@@ -1027,11 +1027,20 @@ function PausedThemeNotice({ theme, fallbackName, onUpgrade }) {
 // Theme selector — ONE component for both placements: a vertical card list in the desktop sidebar
 // (layout='column') and a horizontal scrolling chip bar on the mobile preview (layout='row'). Same
 // data + selection; only the arrangement differs, so there's no duplicate theme-list logic.
+// Basic themes first, premium after, each group keeping the order the DB gave it. Sorted HERE rather
+// than by re-numbering sort_order, because this encodes the RULE — a basic theme added later with a
+// high sort_order still lands above the premium ones, where re-numbering would need doing again every
+// time a row is added and would silently drift the day somebody forgot.
+//
+// Why basic first: the list opens with what every baker can actually publish today. Leading with a
+// theme most of them cannot use reads as a paywall before an offer.
+const byTier = themes => [...themes].sort((a, b) => (a.is_premium ? 1 : 0) - (b.is_premium ? 1 : 0));
+
 function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column', canPremium = false }) {
   const row = layout === 'row';
   return (
     <div style={row ? s.themeBar : s.themeList}>
-      {themes.map(t => {
+      {byTier(themes).map(t => {
         const sel = t.id === themeId, off = !t.is_active;
         // Shown to every plan rather than filtered out. A premium theme a Flame baker can see and
         // not choose is an upgrade prompt; one they never knew existed is not — and a list quietly
@@ -1054,7 +1063,15 @@ function ThemePicker({ themes, themeId, primary, onSelect, layout = 'column', ca
             title={paused ? 'Yours — paused while you are off Blaze' : locked ? 'Preview it — publishing needs Blaze' : undefined}
             style={{ ...(row ? s.themeChip : s.themeBtn), borderColor: sel ? primary : '#D9DED9', borderWidth: sel ? 2 : 1,
               ...(sel && row ? { background: '#F3F7F4' } : {}), opacity: off ? 0.5 : 1, cursor: off ? 'default' : 'pointer' }}>
-            <span style={{ fontWeight: 800, color: '#2C4433', fontSize: row ? 13 : 13.5 }}>{t.name}</span>
+            <span style={{ fontWeight: 800, color: '#2C4433', fontSize: row ? 13 : 13.5 }}>
+              {t.name}
+              {/* 👑 marks a PREMIUM theme on every plan, including the plans that can publish it —
+                  a Blaze baker had nothing at all telling them which of these they are paying for.
+                  It is not a substitute for the state badges below: those say what a plan may DO
+                  ("Blaze" = cannot publish yet, "Paused" = had it, will have it again), and this
+                  says what the theme IS. Approved emoji use — INVARIANTS §7 keeps the list. */}
+              {t.is_premium && <span style={s.crown} title="Premium theme" aria-label="Premium theme">👑</span>}
+            </span>
             {/* "Soon" wins when a theme is both: an inactive theme cannot be chosen on ANY plan, so
                 telling a Flame baker to upgrade for it would sell them something that does not
                 work yet. */}
@@ -1117,6 +1134,11 @@ const s = {
   soon:     { fontSize: 9.5, fontWeight: 800, color: '#9BB5A2', background: '#F0F4F1', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   // Warm rather than grey: this is an invitation to upgrade, not a disabled control. Reads as a
   // plan badge next to "Soon", which is a statement about us and stays neutral.
+  // Small, and set back from the name — a tier mark, not a decoration competing with the word it
+  // qualifies. aria-label carries the meaning, since an emoji read aloud is not one.
+  // 13px and full strength. At 11px with reduced opacity it rendered as a smudge — an emoji is a
+  // colour bitmap at small sizes, so it cannot be dimmed and shrunk the way a text glyph can.
+  crown:  { marginLeft: 6, fontSize: 13, verticalAlign: 'middle', lineHeight: 1 },
   locked:   { fontSize: 9.5, fontWeight: 800, color: '#9A6B16', background: '#FBF0DA', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   // Paused reads as a STATE, not a restriction — same shape as `locked` so the row stays even, but
   // the amber of "you cannot have this" would be the wrong note for a theme that is theirs and

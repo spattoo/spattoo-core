@@ -234,13 +234,29 @@ through its right‑side popup (#3a). It MUST NOT branch on element type, slug, 
 - **"Piping" is not a panel category** — it's just an element whose config places it as a hugging
   ring. Do not group, label, or special‑case the picker by piping vs decor.
 
-## 7. No emojis in the UI — RULE IS ON. ZERO pictographic emoji, anywhere.
-This is a **hard rule and a recurring offender** — emoji keep creeping back in and getting removed
+## 7. No pictographic emoji in the UI — WITHOUT PRIOR DISCUSSION AND APPROVAL
+**AMENDED 2026-08-17.** The rule was an absolute ban; it is now a **gate**. An emoji may be used
+only where it has been discussed and approved, and every approved use is listed below. Everything
+else in this section stands unchanged — the default is still no, and "it looked friendlier" is not a
+discussion. The reason for the gate rather than the ban: the ban was written because emoji arrived by
+reflex, as decoration, in placeholders and empty states. A mark that is deliberately chosen for a
+specific job is a different thing, and the ban could not tell them apart.
+
+**APPROVED USES — the whole list:**
+
+| approved | where | what it marks |
+|---|---|---|
+| 2026-08-17 | storefront theme picker (`ThemePicker`) | 👑 on a PREMIUM theme. It marks a tier, sits beside a name, and is not standing in for a control or filling an empty state. |
+
+Adding a row here needs the same approval the first one did. An emoji that appears in a diff without a
+row is the old offence.
+
+This has been **a recurring offender** — emoji keep creeping back in and getting removed
 (✨ cluster button, 🎂 "no preview" placeholder, 🔍 filter banner, 🏪/📷 settings, 🔒 lock state, …).
 The app is professional; it must never show a pictographic/colour emoji (`U+1F000–1FAFF` and friends:
 🎂🔍🏪📷🔒✨ etc.) — **including empty-states, placeholders, fallbacks, and "no preview" cells**, which
 is exactly where they hide.
-- **Never** put an emoji in UI text — buttons, labels, hints, card titles, toasts, **placeholders/empty
+- **Never** put an unapproved emoji in UI text — buttons, labels, hints, card titles, toasts, **placeholders/empty
   states**. Use plain words, or the existing **SVG icon/glyph system** (e.g. `PhotoGlyph`, the `*Icon`
   components) for a visual.
 - A control must look like the control it is: a real button style (`s.toolbarBtn` / bg + padding), not
