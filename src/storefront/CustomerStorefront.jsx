@@ -329,9 +329,16 @@ export default function CustomerStorefront({
   // Pacifico and a geometric sans, and the "premium" theme would look like the standard one wearing
   // a shopfront. `ownsType` opts out, and its `controls` omit the font knob so nothing is offered
   // that does nothing.
-  const tokens = template.tokens.ownsType
+  const baseTokens = template.tokens.ownsType
     ? template.tokens
     : applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
+  // ── THE BAKER'S CHOSEN PAPER ──────────────────────────────────────────────────────────────────
+  // Resolved into the TOKENS, before anything reads them, because `pageBg` is derived twice — once
+  // here for inline SVG fills and once inside styles() from `tk` — and the two had no idea about
+  // each other. Overriding the token feeds both from one decision; setting a local variable fed
+  // only the one I happened to be looking at, and the page kept painting itself the default while
+  // every value I could print said otherwise.
+  const tokens = withGround(baseTokens, baker.storefront_customizations?.page_bg);
 
   // COLOUR SOURCE = the baker's brand (the pickers), for EVERY template — full baker control. Each
   // template's palette (gradient, cake, band, ink) is DERIVED from these in buildPalette, so moving a
@@ -367,7 +374,7 @@ export default function CustomerStorefront({
     .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
     .sf-gallery::-webkit-scrollbar { display: none; }
   `;
-  const pageBg = tokens.pageBgMode === 'heroTop' ? pal.heroTop : tokens.pageBg;   // aurora: derived cream top; else the fixed token. (exposed for inline SVG fills)
+  const pageBg = tokens.pageBgMode === 'heroTop' ? pal.heroTop : tokens.pageBg;   // aurora: derived cream top; else the token — which `withGround` may already have replaced. (exposed for inline SVG fills)
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
@@ -1064,6 +1071,20 @@ function inkHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, hand
       </div>
     </section>
   );
+}
+
+// A theme may offer a short list of GROUNDS — the paper its ink is printed on. The list is the
+// validator: a stored value is honoured only if it is still in that list, so a ground saved under a
+// different theme, or one dropped from the list later, degrades to the theme's default rather than
+// painting a page whose ink was never designed for it.
+//
+// Compared case-INSENSITIVELY. A colour input yields '#e4e8de' and the list is written '#E4E8DE';
+// an exact match would have silently ignored every ground a baker picked through the picker while
+// working perfectly for anything typed by hand.
+export function withGround(tokens, stored) {
+  if (!tokens.grounds?.length || !stored) return tokens;
+  const hit = tokens.grounds.find(g => g.value.toLowerCase() === String(stored).toLowerCase());
+  return hit ? { ...tokens, pageBg: hit.value } : tokens;
 }
 
 // The registry — template `hero.type` (or a baker photo) selects one. 'none' → no hero (just sections).

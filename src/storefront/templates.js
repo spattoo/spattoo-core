@@ -213,6 +213,27 @@ const INK_TOKENS = {
   ownsType:   true,
   // No 3D cake anywhere in this theme.
   cake:       'brand',
+  // ── THE PAPER THE INK SITS ON ─────────────────────────────────────────────────────────────
+  // A baker picks the ground from THIS LIST and nothing else. Not a free colour picker, for the
+  // same reason this theme has no font picker: the background here is not decoration, it is the
+  // paper — the wordmark, the body text and the DRAWING'S linework are all one fixed ink laid on
+  // it. A dark ground would not restyle the page, it would erase it.
+  //
+  // A free picker is possible, but it is a different feature: every ink on the page would have to
+  // be DERIVED from the chosen ground rather than fixed, and the result is a theme that can look
+  // like anything, which is not what someone chooses Ink for.
+  //
+  // The list is also the validator. The renderer honours a stored ground only if it appears here,
+  // so a value that arrives from an older theme, a hand-edited payload or a future edit to this
+  // list degrades to the default instead of painting an unreadable shop.
+  grounds: [
+    { key: 'paper',  label: 'Paper',  value: '#EFE7DA' },   // the default — warm, and the one the drawing was drawn on
+    { key: 'bone',   label: 'Bone',   value: '#F4F1EA' },
+    { key: 'oat',    label: 'Oat',    value: '#E8DFCD' },
+    { key: 'blush',  label: 'Blush',  value: '#F2E6E2' },
+    { key: 'sage',   label: 'Sage',   value: '#E4E8DE' },
+    { key: 'mist',   label: 'Mist',   value: '#E6EAEC' },
+  ],
 };
 
 export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
@@ -239,7 +260,7 @@ export const TEMPLATES = {
   ink: {
     key: 'ink', label: 'Ink', tokens: INK_TOKENS,
     // The type IS the design here, as in Patisserie and Atelier — a font picker would undo it.
-    controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
+    controls: [...DEFAULT_CONTROLS.filter(c => c !== 'font'), 'ground'],
     // Ink on paper, and a terracotta the drawing is tinted with. The wordmark and the linework are
     // the same near-black; the accent is the only colour on the page.
     defaults: { primary: '#2E3A46', accent: '#A8654B', ctaColor: '#EFE7DA' },

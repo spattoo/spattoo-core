@@ -458,6 +458,31 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       <Swatch label="Hero & button text" value={customizations.cta_color || TEMPLATES[themeKey]?.defaults?.ctaColor || primary} onChange={v => setText('cta_color', v)} />
       <p style={s.hlHint}>Sets the headline, subtitle and button text. Buttons themselves use your band (primary) colour.</p>
     </>),
+    // Only rendered by templates that declare `tokens.grounds` and list 'ground' in controls — the
+    // panel is data-driven (templateControls.map), so a theme without grounds never sees this.
+    ground: () => {
+      const grounds = TEMPLATES[themeKey]?.tokens?.grounds;
+      if (!grounds?.length) return null;
+      const current = customizations.page_bg || grounds[0].value;
+      return (
+        <>
+          <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Paper</div>
+          <div style={s.groundRow}>
+            {grounds.map(g => (
+              <button key={g.key} type="button" onClick={() => setText('page_bg', g.value)}
+                      aria-pressed={g.value === current} title={g.label}
+                      style={{ ...s.groundChip, background: g.value,
+                               ...(g.value === current ? s.groundChipOn : null) }}>
+                <span style={s.groundName}>{g.label}</span>
+              </button>
+            ))}
+          </div>
+          {/* Says WHY it is a list and not a picker, where a baker will ask the question. */}
+          <p style={s.hlHint}>The colour your page is printed on. A short list rather than a picker —
+            this theme is one ink on paper, and the drawing and the type are all that same ink.</p>
+        </>
+      );
+    },
     hero: () => (<>
       <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Hero cake</div>
       <p style={s.hlHint}>Show one of your templates as the hero, or keep the branded 3D cake.</p>
@@ -1110,6 +1135,14 @@ const s = {
   hlEditorCap: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.8, textTransform: 'uppercase', color: '#9BB5A2', marginBottom: 2 },
   sectionToggle: { display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, fontWeight: 700, color: '#2C4433', cursor: 'pointer' },
   moveBtn:  { width: 28, height: 28, borderRadius: 7, border: '1px solid #D9DED9', background: '#F8FBF9', color: '#2C4433', fontSize: 14, lineHeight: 1, cursor: 'pointer' },
+  groundRow:  { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  // The chip IS the paper: a swatch that shows the colour as a small square beside a label makes the
+  // baker match two things, where a chip printed ON the colour is the page in miniature.
+  groundChip: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 64,
+                padding: '10px 12px', border: '1px solid #D9D3C6', borderRadius: 10, cursor: 'pointer',
+                font: 'inherit' },
+  groundChipOn: { borderColor: '#2E3A46', boxShadow: '0 0 0 2px rgba(46,58,70,0.18)' },
+  groundName: { fontSize: 11, fontWeight: 700, letterSpacing: 0.4, color: '#2E3A46' },
   hlHint:   { fontSize: 11.5, fontWeight: 500, color: '#6B8C74', lineHeight: 1.5, margin: '0 0 10px' },
   hlImgRow: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   hlUpload: { width: 40, height: 40, borderRadius: 8, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 20, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },

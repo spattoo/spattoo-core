@@ -56,6 +56,10 @@ function Preview() {
       // Full-bleed only when a wide hero image is set; otherwise the branded curve/split hero.
       hero_image: hero === 'fullbleed' ? '/sample-cake-1.png' : null,
       font_key: font,
+      // ?bg=#E4E8DE — exercise a theme's `grounds` without going through the customiser. The
+      // renderer validates it against the theme's own list, so an off-list value here is also the
+      // test that a bad stored ground falls back rather than painting the page.
+      ...(new URLSearchParams(location.search).get('bg') ? { page_bg: new URLSearchParams(location.search).get('bg') } : {}),
       ...((ctaColor || tplDefaults.ctaColor) ? { cta_color: ctaColor || tplDefaults.ctaColor } : {}),
       // Exercise the section-array + Highlight section (baker lever). Highlight sits after gallery.
       sections: [
