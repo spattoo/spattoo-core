@@ -783,14 +783,14 @@ textarea in `ManagePlans.jsx`) is a prerequisite once the table firms up.
   DROP destination-merchandising machinery (festive banners/campaigns, promo engine, occasion
   reminders, real-time slots, Instagram embed). Baseline = first-impression essentials (gallery,
   WhatsApp CTA, reviews display, pricing, story, FSSAI, FAQ). Full ladder + build phases in
-  [STOREFRONT_TEMPLATES_PLAN.md](./STOREFRONT_TEMPLATES_PLAN.md). (Research-backed; recalibrated.)
+  [Storefront Templates plan](https://github.com/spattoo/spattoo-docs/blob/main/plans/storefront-templates.md). (Research-backed; recalibrated.)
 
 ## Future features (post-MVP roadmap, not scheduled)
 - **Live co-design session (Forge)** — baker + customer finalize the design together in real-time
   (baker-led; customer watches live on phone + directs by voice over WhatsApp). A closing tool
   (↑conversion, fewer revisions, live upsell) + Forge's 2nd pillar. Depends on the core
   state-management refactor (state must be centralized/serializable) + a managed real-time layer.
-  Full brainstorm: [LIVE_CODESIGN_BRAINSTORM.md](./LIVE_CODESIGN_BRAINSTORM.md).
+  Full brainstorm: [Live Co-Design brainstorm](https://github.com/spattoo/spattoo-docs/blob/main/plans/live-codesign-brainstorm.md).
 - **Custom domain (#9)** — the #1 first-paid lever industry-wide; strong Flame/Blaze hook once the
   infra is built/tested.
 - **WhatsApp Business-API notifications (#20)** — likely Blaze/Forge hook later (big India channel).
