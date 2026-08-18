@@ -16,6 +16,9 @@ export { shapeView } from './designer/controls/ShapePicker.jsx';
 export { captureThumbnailBlob } from './designer/utils/thumbnail.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
+// Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to
+// cut fondant around. Exported because the host decides WHERE "Cut-outs" is reached from.
+export { default as CutoutSheet } from './chefsdesk/CutoutSheet.jsx';
 // Exported so the DESIGNER route can gate itself with the same verification the storefront uses,
 // rather than growing a second OTP screen that drifts from this one. See the "one exception" note
 // in VerifyStep.jsx for why that route asks at the door when nothing else does.
