@@ -260,10 +260,20 @@ export const TEMPLATES = {
   ink: {
     key: 'ink', label: 'Ink', tokens: INK_TOKENS,
     // The type IS the design here, as in Patisserie and Atelier — a font picker would undo it.
-    controls: [...DEFAULT_CONTROLS.filter(c => c !== 'font'), 'ground'],
-    // Ink on paper, and a terracotta the drawing is tinted with. The wordmark and the linework are
-    // the same near-black; the accent is the only colour on the page.
-    defaults: { primary: '#2E3A46', accent: '#A8654B', ctaColor: '#EFE7DA' },
+    // 'ground' sits next to 'brandColors' so every colour decision is in one place. It was last in
+    // the list, which put the Paper swatches below the photo, text, section and review controls —
+    // a baker changing their palette had to scroll past four unrelated panels to find half of it.
+    controls: (() => {
+      const c = DEFAULT_CONTROLS.filter(x => x !== 'font');
+      return [...c.slice(0, c.indexOf('brandColors') + 1), 'ground', ...c.slice(c.indexOf('brandColors') + 1)];
+    })(),
+    // ⚠️ PRIMARY IS A COLOUR, NOT THE INK — the correction to a mistake this theme shipped with, and
+    // the same one Atelier made: primary was #2E3A46, the ink itself. buildPalette derives the whole
+    // page from primary (`bandSoftA = lighten(primary, 0.66)` is the "Our story" band, the empty
+    // gallery is `lighten(primary, .42)`), so setting it to the ink painted every surface slate-grey
+    // on a warm paper page. The theme's identity is carried by its TOKENS — the paper, the ink type,
+    // the drawing — never by this picker, which exists to tint the furniture.
+    defaults: { primary: '#A8654B', accent: '#C9A98A', ctaColor: '#F7F2E9' },
   },
   patisserie: {
     key: 'patisserie', label: 'Patisserie', tokens: PATISSERIE_TOKENS,

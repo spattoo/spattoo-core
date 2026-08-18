@@ -24,7 +24,9 @@ const SAMPLE_BAKER = {
   portrait_url: null,
   storefront_customizations: {},
   accepting_orders: true,
-  gallery: [
+  // ?gallery=none — the EMPTY state. It has its own colours (a gradient off the palette) and was
+  // unreachable in this harness, so nobody saw that it clashed until a baker did.
+  gallery: new URLSearchParams(location.search).get('gallery') === 'none' ? [] : [
     { url: '/sample-cake-1.png', caption: 'Three-tier celebration cake' },
     { url: '/sample-cake-2.png', caption: 'Floral buttercream' },
     { url: '/sample-cake-3.png', caption: 'Chocolate drip finish' },
