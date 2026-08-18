@@ -63,6 +63,34 @@ const fmtIn = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 let _uid = 0;
 const uid = () => `it${++_uid}`;
 
+// ── Proof that the page printed at the size it says ─────────────────────────────────────────────
+// A 50 mm square in the corner, labelled. It exists because "Fit to page" is the default in most
+// print dialogs and quietly rescales by a few percent — a template that is 96% of the right size
+// looks completely correct and ruins the fondant it was cut against. A baker who lays a ruler on
+// this square finds out in two seconds; without it, they find out at the cake.
+//
+// Drawn in PAGE units from the known A4 width, not from the item layout, so it is right regardless
+// of what is on the sheet — including an empty one.
+const CAL_MM = 50;
+function drawCalibration(ctx, W, H) {
+  const pxPerMm = W / 210;               // A4 portrait is 210 mm wide, by definition
+  const side = CAL_MM * pxPerMm;
+  const pad  = 8 * pxPerMm;
+  const x = pad, y = H - pad - side;
+
+  ctx.save();
+  ctx.strokeStyle = '#2C2A26';
+  ctx.lineWidth = Math.max(1, 0.3 * pxPerMm);
+  ctx.setLineDash([]);
+  ctx.strokeRect(x, y, side, side);
+  ctx.fillStyle = '#2C2A26';
+  ctx.font = `${Math.round(3.2 * pxPerMm)}px sans-serif`;
+  ctx.textBaseline = 'top';
+  ctx.fillText(`${CAL_MM} mm — measure me`, x, y + side + 1.5 * pxPerMm);
+  ctx.fillText('If this is not 50 mm, turn OFF "Fit to page"', x, y + side + 5.5 * pxPerMm);
+  ctx.restore();
+}
+
 export default function A4Sheet({
   sources = [],
   // Auto-place the first source, centred. True for an order (its photos are the reason the sheet was
@@ -74,6 +102,11 @@ export default function A4Sheet({
   // it knows what failed to load and therefore what would help.
   error = '',
   fileName = 'print-sheet.pdf',
+  // Print a measured square in the page corner. OFF by default so the Edible Print Studio is not
+  // silently changed — but any sheet whose output has to be a real SIZE should turn it on, because
+  // "Fit to page" is on by default in most print dialogs and shrinks everything a few percent with
+  // nothing on screen to say so. A baker who measures the square catches it before cutting fondant.
+  calibration = false,
   // How a caller offers "add another image". Omitted by the order sheet, whose sources are fixed —
   // its images are the order's, and there is no meaningful way to add a photo the customer did not
   // send. A button that opened an empty picker would be worse than no button.
@@ -225,6 +258,7 @@ export default function A4Sheet({
           // page's own aspect, which looks almost right and is not.
           src.draw(ctx, Math.round(it.x * W), Math.round(it.y * H), Math.round(it.w * W), Math.round(it.h * W));
         }
+        if (calibration) drawCalibration(ctx, W, H);
       }, { dpi: 300, portrait: true });
       downloadPdf(blob, fileName);
     } finally { setBusy(false); }

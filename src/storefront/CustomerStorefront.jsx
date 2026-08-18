@@ -3,6 +3,7 @@ import FacetShell from './facets/FacetShell.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
 import Shopfront from './heroes/Shopfront.jsx';
+import CakeLine from './heroes/CakeLine.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
 import { resolveTemplate } from './templates.js';
 import { Captcha } from '../auth/Captcha.jsx';
@@ -328,9 +329,16 @@ export default function CustomerStorefront({
   // Pacifico and a geometric sans, and the "premium" theme would look like the standard one wearing
   // a shopfront. `ownsType` opts out, and its `controls` omit the font knob so nothing is offered
   // that does nothing.
-  const tokens = template.tokens.ownsType
+  const baseTokens = template.tokens.ownsType
     ? template.tokens
     : applyFontTheme(template.tokens, baker.storefront_customizations?.font_key);
+  // ── THE BAKER'S CHOSEN PAPER ──────────────────────────────────────────────────────────────────
+  // Resolved into the TOKENS, before anything reads them, because `pageBg` is derived twice — once
+  // here for inline SVG fills and once inside styles() from `tk` — and the two had no idea about
+  // each other. Overriding the token feeds both from one decision; setting a local variable fed
+  // only the one I happened to be looking at, and the page kept painting itself the default while
+  // every value I could print said otherwise.
+  const tokens = withGround(baseTokens, baker.storefront_customizations?.page_bg);
 
   // COLOUR SOURCE = the baker's brand (the pickers), for EVERY template — full baker control. Each
   // template's palette (gradient, cake, band, ink) is DERIVED from these in buildPalette, so moving a
@@ -366,7 +374,7 @@ export default function CustomerStorefront({
     .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
     .sf-gallery::-webkit-scrollbar { display: none; }
   `;
-  const pageBg = tokens.pageBgMode === 'heroTop' ? pal.heroTop : tokens.pageBg;   // aurora: derived cream top; else the fixed token. (exposed for inline SVG fills)
+  const pageBg = tokens.pageBgMode === 'heroTop' ? pal.heroTop : tokens.pageBg;   // aurora: derived cream top; else the token — which `withGround` may already have replaced. (exposed for inline SVG fills)
   const { steps } = buildContent(baker);
   const testimonials = baker.testimonials || [];   // real reviews; empty → reviews section hidden
 
@@ -1023,6 +1031,62 @@ function photoHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, ha
     </section>
   );
 }
+/* ── Ink: the name, then the drawing ─────────────────────────────────────────────────────────────
+ *
+ * The baker's NAME is the hero. Everything below it is the drawing — no photograph, no render, and
+ * no rotating 3D cake, because that cake is shared by three themes and is most of why they read as
+ * one storefront in different clothes.
+ *
+ * The name is set here rather than in the header: tokens.headerBrand is false, so the header carries
+ * navigation only and the identity appears exactly once, large. A logo in a bar plus the name spelled
+ * out underneath is the same thing twice on one screen — the rule Atelier settled first.
+ *
+ * The drawing is tinted from the baker's palette, so this is not the same picture in every shop that
+ * picks the theme: the linework is their primary, the fills a wash of their accent.
+ */
+function inkHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, handleCta, pal, accent, wide }) {
+  const sub = txt('hero_subtitle');
+  return (
+    <section style={s.inkHero}>
+      <div style={s.inkInner}>
+        <div style={s.inkCopy}>
+          <div style={s.inkKicker}>{txt('hero_tagline')}</div>
+          <h1 style={s.inkName}>{baker.name}</h1>
+          {sub && <p style={s.inkSub}>{sub}</p>}
+          {expired ? (
+            <p style={s.expired}>This invite has expired. Please ask {baker.name} for a new link.</p>
+          ) : (
+            <button type="button" className="sf-cta" disabled={notAcceptingOrders}
+              style={{ ...s.inkCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+              onClick={handleCta}>
+              {notAcceptingOrders ? 'Not taking new orders' : designLabel}
+            </button>
+          )}
+        </div>
+        {/* The linework is the same near-black as the wordmark — read off the style rather than
+            re-declared, so the drawing can never drift from the type beside it. The fills are a
+            WASH of the baker's accent: full strength behind a line drawing swallows the line. */}
+        <CakeLine ink={s.inkName.color} ground={mix(s.page.background, accent, 0.14)}
+                  style={s.inkArt} />
+      </div>
+    </section>
+  );
+}
+
+// A theme may offer a short list of GROUNDS — the paper its ink is printed on. The list is the
+// validator: a stored value is honoured only if it is still in that list, so a ground saved under a
+// different theme, or one dropped from the list later, degrades to the theme's default rather than
+// painting a page whose ink was never designed for it.
+//
+// Compared case-INSENSITIVELY. A colour input yields '#e4e8de' and the list is written '#E4E8DE';
+// an exact match would have silently ignored every ground a baker picked through the picker while
+// working perfectly for anything typed by hand.
+export function withGround(tokens, stored) {
+  if (!tokens.grounds?.length || !stored) return tokens;
+  const hit = tokens.grounds.find(g => g.value.toLowerCase() === String(stored).toLowerCase());
+  return hit ? { ...tokens, pageBg: hit.value } : tokens;
+}
+
 // The registry — template `hero.type` (or a baker photo) selects one. 'none' → no hero (just sections).
 /* ── Patisserie: the cake in a hand-drawn shop window ─────────────────────────────────────────────
  *
@@ -1132,6 +1196,7 @@ const HERO_RENDERERS = {
   'photo':         photoHero,
   'shopfront':     shopfrontHero,
   'atelier':       atelierHero,
+  'ink':           inkHero,
   'none':          () => null,
 };
 
@@ -1308,6 +1373,30 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
       fontFamily: handFont, cursor: 'pointer', letterSpacing: 0.2,
       boxShadow: '0 10px 24px rgba(70,60,66,0.14)',
     },
+    // ── Ink ──────────────────────────────────────────────────────────────────────────────────
+    inkHero:   { background: pageBg },
+    inkInner:  { maxWidth: 1040, margin: '0 auto', display: 'flex', alignItems: 'center',
+                 gap: wide ? 48 : 18, flexWrap: 'wrap',
+                 padding: wide ? '30px 24px 40px' : '20px 16px 26px' },
+    inkCopy:   { flex: '1 1 300px', minWidth: 0 },
+    inkKicker: { fontFamily: FONT, fontSize: 10.5, fontWeight: 700, letterSpacing: 2.6,
+                 textTransform: 'uppercase', color: muted },
+    // Cormorant 600, widely tracked. The tracking is what makes a serif read as a MARK rather than
+    // as a heading — and it is why the wordmark does not need a second weight to feel deliberate.
+    inkName:   { fontFamily: SERIF, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.15em',
+                 fontSize: desktop ? 62 : wide ? 46 : 32, color: heading, margin: '12px 0 0',
+                 lineHeight: 1, overflowWrap: 'break-word' },
+    inkSub:    { fontFamily: SERIF, fontSize: wide ? 22 : 18, lineHeight: 1.35, color: text,
+                 margin: '14px 0 0', maxWidth: 460 },
+    inkCta:    { marginTop: wide ? 26 : 20, background: pal.cta, color: pal.onCta, border: 'none',
+                 borderRadius: 0, padding: wide ? '16px 30px' : '14px 24px',
+                 fontFamily: FONT, fontSize: 12.5, fontWeight: 700, letterSpacing: 1.5,
+                 textTransform: 'uppercase', cursor: 'pointer' },
+    // The drawing sizes off the COLUMN, not the viewport: on a phone it sits under the words at full
+    // width, on a desktop it takes the right half.
+    inkArt:    { flex: '1 1 300px', width: '100%', maxWidth: wide ? 420 : 320, height: 'auto',
+                 alignSelf: 'center', margin: wide ? 0 : '4px auto 0' },
+
     curveHero:  { background: pageBg },
     curveBand:  { position: 'relative', background: bandStrong, padding: wide ? '54px 24px 80px' : '40px 22px 66px', textAlign: 'center' },
     curveTitle: { fontFamily: SERIF, fontSize: wide ? 34 : 26, fontWeight: 700, color: pal.heroText, margin: '0 auto', lineHeight: 1.2, letterSpacing: 0.2, maxWidth: 560, textShadow: `0 1px 12px ${alpha(darken(primary, 0.2), 0.28)}` },

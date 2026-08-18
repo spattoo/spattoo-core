@@ -13,6 +13,18 @@ import { useOtp } from '../useOtp.js';
 // because by then they want to be called. The draft lives in localStorage, so somebody who bails
 // half-way through verification loses none of what they built.
 //
+// ── THE ONE EXCEPTION: THE 3D DESIGNER ──────────────────────────────────────────────────────────
+// `/{slug}/design` asks first, and the reason is not that designing is more precious than browsing.
+// It is that the designer CANNOT WORK without a session: every catalogue route behind it
+// (/api/elements, /element-types, /materials, /textures, /cake-shapes) requires one, so an
+// unverified visitor got the shell, an empty decorations panel, and a console full of 401s with
+// nothing on screen explaining why. The choice there was never "verify or browse" — it was "verify
+// or a broken page". Found 2026-08-17 on super-bake.spattoo.dev.
+//
+// So the rule stands everywhere it was written for. It bends only where the alternative is showing
+// someone a room with nothing in it. If those catalogue routes ever accept an anonymous caller with
+// a valid baker slug, this exception should go with them.
+//
 // ── WHY THE NUMBER IS TYPED HERE, NOT EARLIER ───────────────────────────────────────────────────
 // The date facet used to ask for a phone. It no longer does. Collecting it there and verifying it
 // here would ask the same question twice, and the second ask reads as though the first was not

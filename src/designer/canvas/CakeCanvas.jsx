@@ -121,18 +121,11 @@ function boardClearanceFor(tier, height) {
   return sidePipingClearance({ bands, yBottom: tier.baseY, yTop: tier.baseY + height });
 }
 
-// Image-based lighting (HDRI). We self-host the env map on R2 — the host supplies
-// the assets base (cfAssetsBase, an env var, dev/prod-specific); only this PATH is
-// a constant. We avoid drei's `preset` (a public CDN that 503s/400s and, on
-// failure, poisoned the shared loader cache → dimmed the studio). A module-level
-// singleton (set by CakeDesigner each render, read by the scenes) so the value
-// crosses the R3F <Canvas> boundary without threading a prop through 6 components.
-const ENV_HDR_PATH = 'code/env/lebombo_1k.hdr';
-let _envMapUrl = null;
-export function configureEnvMap(cfAssetsBase) {
-  _envMapUrl = cfAssetsBase ? `${String(cfAssetsBase).replace(/\/$/, '')}/${ENV_HDR_PATH}` : null;
-}
-function envMapUrl() { return _envMapUrl; }
+// Image-based lighting (HDRI) lives in envMap.js — its own module because the four PREVIEW canvases
+// need the same answer, and they are rendered by this file, so reaching back here would be a cycle.
+// Re-exported so `configureEnvMap` stays part of this module's public surface for CakeDesigner.
+export { configureEnvMap, envProps } from './envMap.js';
+import { envProps as _envProps } from './envMap.js';
 
 // Scene ENVIRONMENT config — data, with a default, so the look is tunable without a code change (the
 // host may override via configureSceneEnv). `intensity` is the global IBL/reflection brightness: a WET
@@ -170,9 +163,9 @@ export function SceneLights({ shadows = false }) {
 // the capture is free to choose its own (utils/thumbnail.js flattens onto white). Shared so the
 // live scene and CakeThumbnailScene can never drift (they browned differently on dev before this).
 export function SceneEnv() {
-  return envMapUrl()
-    ? <SafeEnvironment files={envMapUrl()} environmentIntensity={SCENE_ENV.intensity} />
-    : <SafeEnvironment preset={SCENE_ENV.presetFallback} environmentIntensity={SCENE_ENV.intensity} />;
+  // envProps picks self-hosted-or-preset; intensity is this scene's own, which the previews do not
+  // share (they are small and lit for legibility, not for how a glaze reads wet).
+  return <SafeEnvironment {..._envProps(SCENE_ENV.presetFallback)} environmentIntensity={SCENE_ENV.intensity} />;
 }
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side

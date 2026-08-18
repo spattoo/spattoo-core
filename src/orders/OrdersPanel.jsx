@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen } from './dietary.js';
 import {
@@ -7,6 +7,7 @@ import {
 } from './statuses.js';
 import OrdersCalendar from './OrdersCalendar.jsx';
 import XrayReport from './xray/XrayReport.jsx';
+import CutoutSheet from '../chefsdesk/CutoutSheet.jsx';
 import { hasXraySpec, resolveXraySpec } from './xray/resolveXraySpec.js';
 import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
@@ -61,6 +62,15 @@ const XrayGlyph = () => (
     <path d="M6 2.6h7.5L19 8v12a1.4 1.4 0 0 1-1.4 1.4H6A1.4 1.4 0 0 1 4.6 20V4A1.4 1.4 0 0 1 6 2.6Z" />
     <path d="M13 2.8V8.4h5.6" />
     <line x1="8" y1="13" x2="15" y2="13" /><line x1="8" y1="16.5" x2="13.5" y2="16.5" />
+  </svg>
+);
+// Scissors on a dashed line — the cut-out sheet. Dashes because the sheet's own language is a
+// dashed line for "drawn, not cut", so the icon and the paper agree.
+const CutoutGlyph = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="6" cy="18" r="2.4" /><circle cx="6" cy="6" r="2.4" />
+    <line x1="8" y1="16.4" x2="19" y2="5.5" /><line x1="8" y1="7.6" x2="19" y2="18.5" />
+    <line x1="2.5" y1="12" x2="21.5" y2="12" strokeDasharray="2.5 2.5" strokeWidth="1.3" />
   </svg>
 );
 const Cube3D = () => (
@@ -131,6 +141,69 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
       <IconAction glyph={<XrayGlyph />} label="X-Ray report" short="X-Ray" onClick={() => setOpen(true)} variant={variant} />
       {open && <XrayReport order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+// ── Print & cut-outs launcher ───────────────────────────────────────────────────────────────────
+// Beside X-Ray because it answers the next question. X-Ray says WHAT to build; this hands over the
+// paper you build it with — each decoration as a printable sticker and as an outline to cut fondant
+// around.
+//
+// Gated on the design having placeable decorations, not on a plan. A cut-out is the shape of an
+// element the baker has already been given; charging again for a picture of its edge would be
+// charging twice for the same thing.
+//
+// Element IDs are read the same way report.js reads `placeableElementIds` — stickers plus legacy
+// `decorations`, deduped. Deliberately the same expression: if the two ever disagreed, the button
+// would appear for a cake with nothing to print, or hide for one with plenty.
+function CutoutLauncher({ order, apiClient, variant }) {
+  const [open, setOpen] = useState(false);
+  const { design } = resolveXraySpec(order);
+  const ids = useMemo(() => [...new Set(
+    [...(design?.stickers ?? []), ...(design?.decorations ?? [])].map(s => s?.elementId).filter(Boolean),
+  )], [design]);
+
+  if (!ids.length) return null;
+  return (
+    <>
+      <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs" short="Cut-outs"
+                  onClick={() => setOpen(true)} variant={variant} />
+      {open && <CutoutModal ids={ids} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+// The catalogue is fetched here rather than read off the design: a saved snapshot carries element
+// IDs and placement, not image URLs, and the sheet needs pixels to trace. One call, filtered — the
+// same call the designer makes to fill its own picker.
+function CutoutModal({ ids, order, apiClient, onClose }) {
+  const [elements, setElements] = useState(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve(apiClient?.fetchElements?.({ parentsOnly: true }))
+      .then(rows => { if (alive) setElements((rows ?? []).filter(r => ids.includes(r.id))); })
+      .catch(e => { if (alive) { setErr(e?.message || 'Could not load the decorations.'); setElements([]); } });
+    return () => { alive = false; };
+  }, [ids.join(','), apiClient]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,22,0.55)', zIndex: 60,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+         onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 14, maxWidth: 1040, width: '100%',
+                    maxHeight: '92vh', overflow: 'auto', position: 'relative' }}
+           onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} aria-label="Close"
+                style={{ position: 'absolute', top: 10, right: 12, border: 'none', background: 'none',
+                         fontSize: 20, cursor: 'pointer', color: '#6B8C74', zIndex: 1 }}>×</button>
+        {err && <div style={{ padding: 16, color: '#B42318', fontWeight: 600, fontSize: 13 }}>{err}</div>}
+        {elements === null
+          ? <div style={{ padding: 40, textAlign: 'center', color: '#6B8C74', fontWeight: 600 }}>Loading decorations…</div>
+          : <CutoutSheet elements={elements} title={order?.customer_name || order?.id || 'cake'} />}
+      </div>
+    </div>
   );
 }
 
@@ -982,6 +1055,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
       }}>
         <XrayLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
         <PhotoXrayLauncher order={order} apiClient={apiClient} variant={v} />
+        <CutoutLauncher order={order} apiClient={apiClient} variant={v} />
         <IconAction
           glyph={<Cube3D />}
           label={designLocked ? 'View in 3D' : 'Edit in 3D'}

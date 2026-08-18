@@ -117,6 +117,25 @@ const PATISSERIE_TOKENS = {
   contentWidth: 600,
   inkMix:     { with: '#2E3A46', amount: 0.72 },
   hero:       { type: 'shopfront' },
+  // ── THE PAPER THE SHOP IS DRAWN ON ────────────────────────────────────────────────────────
+  // Same idea as Ink and for the same reason: this theme is an illustration, and its background is
+  // the sheet the illustration sits on rather than a colour behind a layout. The Shopfront drawing
+  // takes `paper={s.page.background}`, so the facade, the awning and the window all re-tint with
+  // the choice — nothing to wire, and nothing that can disagree with the page.
+  //
+  // Every option is light. A dark ground would not restyle this theme, it would leave a line
+  // drawing with no paper under it — which is why this is a list and not a picker.
+  //
+  // Ivory is FIRST and is the current pageBg exactly, so a baker who has never touched this keeps
+  // the shop they already published.
+  grounds: [
+    { key: 'ivory',  label: 'Ivory',  value: '#FFFCF8' },   // today's default
+    { key: 'cream',  label: 'Cream',  value: '#FBF3E7' },
+    { key: 'blush',  label: 'Blush',  value: '#FBEFEF' },
+    { key: 'mint',   label: 'Mint',   value: '#EDF5F1' },
+    { key: 'sky',    label: 'Sky',    value: '#EEF3F7' },
+    { key: 'butter', label: 'Butter', value: '#FCF4DF' },
+  ],
   // Bands end in scallops rather than the product's signature wave — the same edge as the awning
   // and the doily, so the motif carries down the page instead of stopping at the hero.
   edges:      'scallop',
@@ -173,6 +192,77 @@ const ATELIER_TOKENS = {
   cake:       'brand',
 };
 
+// ── INK ─────────────────────────────────────────────────────────────────────────────────────────
+// Everything on the page is drawn in ink on paper: no photograph, no render, no rotating cake. That
+// is the whole theme, and it is why it is called Ink.
+//
+// It exists because of a complaint that was correct — Spotlight, Aurora and Atelier are the same
+// storefront in different clothes, and bakers can tell. Their tokens are radius, shadow, align,
+// edges: every one of them a STYLE. The thing all three share is the 3D cake in the hero, so no
+// amount of restyling around it makes them feel like different shops. This theme's hero is a
+// DRAWING, which nothing else uses.
+const INK_TOKENS = {
+  font:      SANS,
+  serif:     "'Cormorant Garamond', Georgia, serif",
+  brandFont: "'Cormorant Garamond', Georgia, serif",
+  brandMark: 'caps',
+  // Ink on paper, warmer than Atelier's bone — this theme is drawn rather than printed, and a warm
+  // ground is what makes a line drawing read as ink rather than as a diagram.
+  pageBg:     '#EFE7DA',
+  heading:    '#2E3A46',
+  text:       '#4A5560',
+  muted:      '#8C8578',
+  cardBorder: '#DED3C2',
+  shadow:     '0 1px 0 rgba(46,58,70,0.06)',
+  contentWidth: 640,
+  inkMix:     { with: '#2E3A46', amount: 0.82 },
+  hero:       { type: 'ink' },
+  edges:      'rule',
+  radius:     0,
+  cardStyle:  'flat',
+  align:      'left',
+  // The hero IS the wordmark — the same rule Atelier settled. A logo in the header and the name
+  // spelled out in the hero is the same identity twice on one screen.
+  headerBrand: false,
+  // Cormorant 600, widely tracked, chosen over the same face at 700 and a light Montserrat: a
+  // high-contrast serif has hairlines close to the DRAWING'S own line, so the mark and the
+  // illustration read as one hand. 600 is also the lightest weight the host loads (spattoo-web
+  // layout.tsx) — asking for 300 gives a faux-light that looks right only where the font is
+  // installed locally.
+  ownsType:   true,
+  // No 3D cake anywhere in this theme.
+  cake:       'brand',
+  // ── THE PAPER THE INK SITS ON ─────────────────────────────────────────────────────────────
+  // A baker picks the ground from THIS LIST and nothing else. Not a free colour picker, for the
+  // same reason this theme has no font picker: the background here is not decoration, it is the
+  // paper — the wordmark, the body text and the DRAWING'S linework are all one fixed ink laid on
+  // it. A dark ground would not restyle the page, it would erase it.
+  //
+  // A free picker is possible, but it is a different feature: every ink on the page would have to
+  // be DERIVED from the chosen ground rather than fixed, and the result is a theme that can look
+  // like anything, which is not what someone chooses Ink for.
+  //
+  // The list is also the validator. The renderer honours a stored ground only if it appears here,
+  // so a value that arrives from an older theme, a hand-edited payload or a future edit to this
+  // list degrades to the default instead of painting an unreadable shop.
+  grounds: [
+    { key: 'paper',  label: 'Paper',  value: '#EFE7DA' },   // the default — warm, and the one the drawing was drawn on
+    { key: 'bone',   label: 'Bone',   value: '#F4F1EA' },
+    { key: 'oat',    label: 'Oat',    value: '#E8DFCD' },
+    { key: 'blush',  label: 'Blush',  value: '#F2E6E2' },
+    { key: 'sage',   label: 'Sage',   value: '#E4E8DE' },
+    { key: 'mist',   label: 'Mist',   value: '#E6EAEC' },
+  ],
+};
+
+// Put the paper picker immediately after the colour pickers. Extracted the moment a second theme
+// wanted it: the same splice written twice is the copy that drifts, and "where does Paper go" is a
+// rule about the panel, not a fact about a theme.
+const withGroundControl = list => {
+  const at = list.indexOf('brandColors');
+  return at < 0 ? [...list, 'ground'] : [...list.slice(0, at + 1), 'ground', ...list.slice(at + 1)];
+};
+
 export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
 
 export const TEMPLATES = {
@@ -194,11 +284,23 @@ export const TEMPLATES = {
     defaults: { primary: '#1A1A18', accent: '#A8654B', ctaColor: '#F7F5F1' },
     controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
   },
+  ink: {
+    key: 'ink', label: 'Ink', tokens: INK_TOKENS,
+    // The type IS the design here, as in Patisserie and Atelier — a font picker would undo it.
+    controls: withGroundControl(DEFAULT_CONTROLS.filter(c => c !== 'font')),
+    // ⚠️ PRIMARY IS A COLOUR, NOT THE INK — the correction to a mistake this theme shipped with, and
+    // the same one Atelier made: primary was #2E3A46, the ink itself. buildPalette derives the whole
+    // page from primary (`bandSoftA = lighten(primary, 0.66)` is the "Our story" band, the empty
+    // gallery is `lighten(primary, .42)`), so setting it to the ink painted every surface slate-grey
+    // on a warm paper page. The theme's identity is carried by its TOKENS — the paper, the ink type,
+    // the drawing — never by this picker, which exists to tint the furniture.
+    defaults: { primary: '#A8654B', accent: '#C9A98A', ctaColor: '#F7F2E9' },
+  },
   patisserie: {
     key: 'patisserie', label: 'Patisserie', tokens: PATISSERIE_TOKENS,
     // Every control except `font` — the theme owns its typography (ownsType), so offering the picker
     // would be offering a knob that is wired to nothing.
-    controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
+    controls: withGroundControl(DEFAULT_CONTROLS.filter(c => c !== 'font')),
     // Blush facade, duck-egg trim, cherry for the CTA — the three colours that carry the style, and
     // all three stay editable: the facade, the awning and the hearts are painted FROM these pickers,
     // so a baker who wants a mint-green shop gets one rather than a picture they cannot change.

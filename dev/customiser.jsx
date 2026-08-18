@@ -4,9 +4,16 @@ import ThemePreview from '../src/storefront/ThemePreview.jsx';
 
 // Dev-only harness for the storefront CUSTOMISER (ThemePreview) — this is where the Mobile/Desktop
 // preview toggle lives. Uses sample data + a stub apiClient (no network). Not shipped; a dev aid.
+// MIRRORS THE LIVE storefront_themes ROWS. In the app this list comes from the API, not from code,
+// so a stale stub here silently hides whole themes from the harness — this one still described the
+// world before Patisserie shipped, which is why the Ink work could not be checked in the customiser
+// at all. If a theme is added to the database, add it here too, is_premium included: the premium
+// preview/upgrade path cannot be exercised without it.
 const THEMES = [
-  { id: 1, key: 'spotlight', name: 'Standard', is_active: true },
-  { id: 2, key: 'aurora',    name: 'Aurora',   is_active: true },
+  { id: 1, key: 'spotlight',  name: 'Standard',   is_active: true,  is_premium: false },
+  { id: 2, key: 'patisserie', name: 'Patisserie', is_active: true,  is_premium: true  },
+  { id: 3, key: 'aurora',     name: 'Aurora',     is_active: true,  is_premium: false },
+  { id: 4, key: 'ink',        name: 'Ink',        is_active: true,  is_premium: true  },
 ];
 
 const SAMPLE_GALLERY = [
@@ -51,7 +58,9 @@ const apiClient = {
     curated: false,
     flavours: Array.from({ length: 18 }, (_, i) => ({ id: `f${i}`, name: `Flavour ${i + 1}`, excluded: false })),
   }),
-  fetchEntitlements: async () => ({ ent: { premium_themes: false } }),
+  // ?premium=1 → a Blaze baker (can publish a premium theme); default is Flame, which may PREVIEW
+  // one and is sent to billing on publish. Both paths matter and neither was reachable before.
+  fetchEntitlements: async () => ({ ent: { premium_themes: new URLSearchParams(location.search).get('premium') === '1' } }),
   // Two tiered designs with NO min_weight_kg, which is the state the publish review exists to
   // catch — and the state every one of Super&bake's tiered templates is actually in.
   fetchTemplates: async () => ([
