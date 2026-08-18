@@ -8774,6 +8774,17 @@ const s = {
     // the phone just stopped having, in a place with four times the room. Left as-is deliberately
     // rather than fixed blind; see the note in plans/, and it wants its own look.
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    // ⚠️ THE LEFT PADDING IS LOAD-BEARING, and the negative margin cancels it visually.
+    // `overflow: hidden` clips at the CONTENT BOX, and Pacifico's lowercase f has ink that starts
+    // 1.35px LEFT of the text origin at 26px (measured: actualBoundingBoxLeft = -1.35). With the
+    // glyph sitting flush against that edge, the f's curl was shaved flat — which is what
+    // "feelings&flavours" showed in production, and what any name beginning f/j/y would show.
+    // The padding moves the clip edge left to make room; the equal negative margin puts the
+    // wordmark back exactly where it was, so nothing else in the header moves. Removing either one
+    // alone re-breaks it or shifts the mark 10px right.
+    // Not a Pacifico quirk to special-case: script and italic faces routinely have negative left
+    // side bearings, and this style is the only place a script face meets an overflow clip.
+    paddingLeft: 10, marginLeft: -10,
   },
 
   // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
