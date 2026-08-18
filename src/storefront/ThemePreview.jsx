@@ -1141,12 +1141,14 @@ const s = {
   // plan badge next to "Soon", which is a statement about us and stays neutral.
   // Small, and set back from the name — a tier mark, not a decoration competing with the word it
   // qualifies. aria-label carries the meaning, since an emoji read aloud is not one.
-  // 16px, full strength, in the SAME amber the "Blaze" badge uses. Inheriting the label's colour at
-  // 13px/70% was almost invisible: ♛ is a fine-stroked glyph, so it loses far more to dimming than a
-  // solid word does, and it was being asked to carry a meaning at a weight the eye skipped.
-  // Borrowing the tier's amber also does a second job — the mark and the badge now say the same
-  // thing in the same colour, instead of the mark reading as punctuation next to the name.
-  crown:  { marginLeft: 7, fontSize: 16, verticalAlign: '-0.08em', lineHeight: 1, color: '#9A6B16' },
+  // 20px against a 13.5px label — which looks wrong written down and is right on screen. ♛ is drawn
+  // at roughly HALF its em height, so a font-size set to match the label yields a mark half the size
+  // of the letters beside it. This was set at 13 and then 16 by reasoning from the number instead of
+  // looking at the glyph, and both were too small; the em box is not the mark.
+  //
+  // Still shorter than the row's own padding, so nothing reflows. Amber, matching the "Blaze" badge,
+  // so the mark and the badge say one thing in one colour.
+  crown:  { marginLeft: 7, fontSize: 20, verticalAlign: '-0.12em', lineHeight: 1, color: '#9A6B16' },
   locked:   { fontSize: 9.5, fontWeight: 800, color: '#9A6B16', background: '#FBF0DA', padding: '2px 7px', borderRadius: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
   // Paused reads as a STATE, not a restriction — same shape as `locked` so the row stays even, but
   // the amber of "you cannot have this" would be the wrong note for a theme that is theirs and
