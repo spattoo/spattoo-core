@@ -117,6 +117,25 @@ const PATISSERIE_TOKENS = {
   contentWidth: 600,
   inkMix:     { with: '#2E3A46', amount: 0.72 },
   hero:       { type: 'shopfront' },
+  // ── THE PAPER THE SHOP IS DRAWN ON ────────────────────────────────────────────────────────
+  // Same idea as Ink and for the same reason: this theme is an illustration, and its background is
+  // the sheet the illustration sits on rather than a colour behind a layout. The Shopfront drawing
+  // takes `paper={s.page.background}`, so the facade, the awning and the window all re-tint with
+  // the choice — nothing to wire, and nothing that can disagree with the page.
+  //
+  // Every option is light. A dark ground would not restyle this theme, it would leave a line
+  // drawing with no paper under it — which is why this is a list and not a picker.
+  //
+  // Ivory is FIRST and is the current pageBg exactly, so a baker who has never touched this keeps
+  // the shop they already published.
+  grounds: [
+    { key: 'ivory',  label: 'Ivory',  value: '#FFFCF8' },   // today's default
+    { key: 'cream',  label: 'Cream',  value: '#FBF3E7' },
+    { key: 'blush',  label: 'Blush',  value: '#FBEFEF' },
+    { key: 'mint',   label: 'Mint',   value: '#EDF5F1' },
+    { key: 'sky',    label: 'Sky',    value: '#EEF3F7' },
+    { key: 'butter', label: 'Butter', value: '#FCF4DF' },
+  ],
   // Bands end in scallops rather than the product's signature wave — the same edge as the awning
   // and the doily, so the motif carries down the page instead of stopping at the hero.
   edges:      'scallop',
@@ -236,6 +255,14 @@ const INK_TOKENS = {
   ],
 };
 
+// Put the paper picker immediately after the colour pickers. Extracted the moment a second theme
+// wanted it: the same splice written twice is the copy that drifts, and "where does Paper go" is a
+// rule about the panel, not a fact about a theme.
+const withGroundControl = list => {
+  const at = list.indexOf('brandColors');
+  return at < 0 ? [...list, 'ground'] : [...list.slice(0, at + 1), 'ground', ...list.slice(at + 1)];
+};
+
 export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
 
 export const TEMPLATES = {
@@ -260,13 +287,7 @@ export const TEMPLATES = {
   ink: {
     key: 'ink', label: 'Ink', tokens: INK_TOKENS,
     // The type IS the design here, as in Patisserie and Atelier — a font picker would undo it.
-    // 'ground' sits next to 'brandColors' so every colour decision is in one place. It was last in
-    // the list, which put the Paper swatches below the photo, text, section and review controls —
-    // a baker changing their palette had to scroll past four unrelated panels to find half of it.
-    controls: (() => {
-      const c = DEFAULT_CONTROLS.filter(x => x !== 'font');
-      return [...c.slice(0, c.indexOf('brandColors') + 1), 'ground', ...c.slice(c.indexOf('brandColors') + 1)];
-    })(),
+    controls: withGroundControl(DEFAULT_CONTROLS.filter(c => c !== 'font')),
     // ⚠️ PRIMARY IS A COLOUR, NOT THE INK — the correction to a mistake this theme shipped with, and
     // the same one Atelier made: primary was #2E3A46, the ink itself. buildPalette derives the whole
     // page from primary (`bandSoftA = lighten(primary, 0.66)` is the "Our story" band, the empty
@@ -279,7 +300,7 @@ export const TEMPLATES = {
     key: 'patisserie', label: 'Patisserie', tokens: PATISSERIE_TOKENS,
     // Every control except `font` — the theme owns its typography (ownsType), so offering the picker
     // would be offering a knob that is wired to nothing.
-    controls: DEFAULT_CONTROLS.filter(c => c !== 'font'),
+    controls: withGroundControl(DEFAULT_CONTROLS.filter(c => c !== 'font')),
     // Blush facade, duck-egg trim, cherry for the CTA — the three colours that carry the style, and
     // all three stay editable: the facade, the awning and the hearts are painted FROM these pickers,
     // so a baker who wants a mint-green shop gets one rather than a picture they cannot change.
