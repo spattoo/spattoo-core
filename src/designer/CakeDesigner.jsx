@@ -3763,12 +3763,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (!partEl) { console.warn(`[decor_pattern] part element_id not found: "${part.element_id}" — check the parts JSON`); return; }
       const mode = zoneMode(partEl.placement_config, hit.zone);
       // Part offset is interpreted in the surface's own coordinates: on the TOP it's (x, z) in
-      // cake units; on a WALL (side / middle tier) `dx` becomes an angular offset in radians so
-      // the parts sit side-by-side around the wall (e.g. two unicorn eyes on the front face),
-      // height left at the default so they stay level.
+      // cake units; on a WALL (side / middle tier) `dx` becomes an angular offset in radians so the
+      // parts fan around the wall, and `dz` raises or lowers them.
+      //
+      // `dz` used to be DROPPED on a wall — every part stayed level. That was right for the two
+      // things patterns had been used for (unicorn eyes, a piping pair, both horizontal) and it
+      // silently ruled out anything stacked: a honeycomb of football panels is rows above rows, and
+      // authoring one produced a single squashed line with no error to explain it. Both existing
+      // patterns carry dz: 0, so nothing authored before this behaves differently.
       const isWall = hit.zone === ZONES.SIDE || hit.zone === ZONES.MIDDLE_TIER;
       const partHit = isWall
-        ? { ...hit, theta: (hit.theta ?? 0) + (part.dx ?? 0) }
+        ? { ...hit, theta: (hit.theta ?? 0) + (part.dx ?? 0), y: (hit.y ?? 0) + (part.dz ?? 0) }
         : { ...hit, x: (hit.x ?? 0) + (part.dx ?? 0), z: (hit.z ?? 0) + (part.dz ?? 0) };
       ids.push(addSticker(partEl, partHit.zone, partHit.tierIndex, mode ?? 'stand', partHit,
         { id: baseId + i, patternId, patternElementId: pattern.id, patternDeletable: deletable, flipX: part.mirror === true }));
