@@ -59,10 +59,21 @@ export const SELECTION_COLOR  = '#6c47ff';   // emissive highlight on selected e
 export const PIPING_FRONT_ANGLE = Math.PI / 2;
 
 // ── Camera ────────────────────────────────────────────────────────────────────
-export const CAMERA_POSITION        = [0, 5.5, 7.9];
+export const CAMERA_POSITION        = [0, 4.85, 6.95];
 // Pulled in ~15% from [0,7,10.8] so the cake is larger and reaches under the right-side popup
 // (the see-through overlay needs cake behind it to read), while still leaving clear headroom above
 // for tall toppers. Tune by eye; if a multi-tier cake clips at the top, switch to height-adaptive.
+//
+// 2026-08-19: a further ~12% in, from [0,5.5,7.9] — a single short tier still read as small on a
+// desktop viewport, which is most of the headroom the note above was protecting. That headroom is
+// now largely spent, so this is close to the ceiling for a FIXED camera: the next complaint about
+// framing should be answered with a height-adaptive distance rather than another number here.
+// Derive it from the cake's own height so a short tier fills the frame and a tall one still fits —
+// a fixed camera cannot do both, which is why it has now been tuned twice.
+//
+// MOBILE is deliberately NOT changed. It sits further out (9.3 vs 7.9) to compensate for a narrow
+// viewport, and the complaint that prompted this was on desktop; moving it blind risks clipping on
+// the surface that matters most.
 export const CAMERA_POSITION_MOBILE = [0, 6.3, 9.3];
 export const CAMERA_FOV             = 42;
 
