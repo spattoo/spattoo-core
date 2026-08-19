@@ -2247,7 +2247,16 @@ function CakeScene({
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
         <planeGeometry args={[30, 30]} />
-        <meshStandardMaterial color="#fce8d5" roughness={0.85} />
+        {/* Was #fce8d5 — warm, saturated, and almost exactly the same LIGHTNESS as an ivory cake, so
+            a white cake had nothing to separate from and read as flat. The fix is a wider value gap,
+            and the direction came from the TEMPLATE THUMBNAILS: they flatten onto white and the same
+            cake reads perfectly there, because an ivory cake against near-white becomes the darker,
+            more saturated object.
+            So lighter and much less saturated, rather than darker. It also closes a gap that existed
+            anyway — the studio and the thumbnail looked like two different products.
+            ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
+            the first failure to show up, and a fix at one end can break the other. */}
+        <meshStandardMaterial color="#faf7f4" roughness={0.85} />
       </mesh>
 
       {board.kind === 'rect' ? (
