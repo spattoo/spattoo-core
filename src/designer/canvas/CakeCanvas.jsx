@@ -37,6 +37,7 @@ import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
+import { cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
@@ -2753,9 +2754,17 @@ function CameraRig({ fov, position }) {
 
 export function CakePreview({
   design, autoRotate = true, style, enableZoom = false,
-  fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = [0, 2, 0],
+  fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = null,
 }) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
+  // Aim at THIS cake's middle by default, the same rule the editor uses (cakeAimTarget) — a preview
+  // and the editor showing the same cake framed differently is the sort of difference nobody reports
+  // and everybody notices. Was a hardcoded [0, 2, 0], which is above a one-tier cake entirely.
+  // An explicit `target` still wins: the shape picker frames for a different question (see shapeView).
+  const aim = useMemo(
+    () => target ?? cakeAimTarget(config.tiers.map(t => t.height)),
+    [target, config],
+  );
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
       <Canvas
@@ -2768,7 +2777,7 @@ export function CakePreview({
         <Suspense fallback={null}>
           <CakeThumbnailScene config={config} />
         </Suspense>
-        <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={target} />
+        <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={aim} />
       </Canvas>
     </div>
   );
@@ -2805,6 +2814,13 @@ export default function CakeCanvas({
   const cameraRef   = useRef(null);
   const tierDataRef = useRef([]);
   const glRef       = useRef(null);
+
+  // Where the camera looks — this cake's own middle (see the OrbitControls target below). Memoised on
+  // the tier HEIGHTS rather than on `config`: the target is re-applied to the controls whenever this
+  // array changes, and a fresh one every render would re-aim the camera on every edit — including
+  // while a decoration is being dragged, which would fight the drag.
+  const tierHeights = (config.tiers ?? []).map(t => t.height);
+  const aimTarget = useMemo(() => cakeAimTarget(tierHeights), [tierHeights.join()]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Expose a hit-test function so the parent can raycast without drag events
   useEffect(() => {
@@ -2954,15 +2970,18 @@ export default function CakeCanvas({
         // Where the camera AIMS, which decides where the cake sits vertically in frame — a separate
         // question from CAMERA_POSITION, which only decides how big it is.
         //
-        // Was [0, 2, 0]. A single tier is about a unit tall, so aiming at y=2 pointed ABOVE the
-        // cake: it sat low in the viewport and took the board's FRONT label off the bottom of the
-        // screen with it. Lowering the aim lifts the whole scene and brings the floor back.
+        // THIS CAKE's middle, not a constant. It was [0, 2, 0], then [0, 1.55, 0]: tuned by one
+        // number twice, and wrong both times, because the question has no constant answer. 1.55 is
+        // exactly the top of a single tier (0.1 board + 1.45), so the camera looked at the very top
+        // of a one-tier cake and the cake sat in the bottom half of the frame, taking the board's
+        // FRONT label off the bottom edge with it. The same number aims into the middle of a
+        // two-tier stack and below the middle of a three.
         //
-        // 1.55 is a compromise, and the third time this scene has been tuned by one number. A tall
-        // multi-tier cake wants a higher aim and a short one wants a lower — no constant is right
-        // for both. The fix is to aim at the cake's own mid-height, alongside the height-adaptive
-        // DISTANCE noted on CAMERA_POSITION; they are the same change and should land together.
-        target={[0, 1.55, 0]}
+        // Still outstanding, and the other half of the same problem: the height-adaptive DISTANCE
+        // noted on CAMERA_POSITION. Aim decides where the cake SITS, distance decides how BIG it is,
+        // and a tall cake now sits right but is still framed by a camera fixed at a short cake's
+        // distance.
+        target={aimTarget}
       />
     </Canvas>
   );
