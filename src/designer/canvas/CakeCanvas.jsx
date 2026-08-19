@@ -3005,7 +3005,18 @@ export default function CakeCanvas({
         autoRotate={autoRotate && (creamPaint != null || (selectedTier === null && selectedTextId === null && !pipingTarget))}
         autoRotateSpeed={0.8}
         maxPolarAngle={Math.PI / 2.05}
-        target={[0, 2, 0]}
+        // Where the camera AIMS, which decides where the cake sits vertically in frame — a separate
+        // question from CAMERA_POSITION, which only decides how big it is.
+        //
+        // Was [0, 2, 0]. A single tier is about a unit tall, so aiming at y=2 pointed ABOVE the
+        // cake: it sat low in the viewport and took the board's FRONT label off the bottom of the
+        // screen with it. Lowering the aim lifts the whole scene and brings the floor back.
+        //
+        // 1.55 is a compromise, and the third time this scene has been tuned by one number. A tall
+        // multi-tier cake wants a higher aim and a short one wants a lower — no constant is right
+        // for both. The fix is to aim at the cake's own mid-height, alongside the height-adaptive
+        // DISTANCE noted on CAMERA_POSITION; they are the same change and should land together.
+        target={[0, 1.55, 0]}
       />
     </Canvas>
   );
