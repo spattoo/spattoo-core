@@ -121,6 +121,33 @@ function boardClearanceFor(tier, height) {
   return sidePipingClearance({ bands, yBottom: tier.baseY, yTop: tier.baseY + height });
 }
 
+// ── The scene a design resolves to ──────────────────────────────────────────────────────────────
+// Where each tier sits, how tall the finished stack is, and the board underneath it. ONE resolver, so
+// the live editor and the off-screen capture cannot end up standing the same cake at two heights.
+// Everything is nullable for a cake with NO tiers — a real state (an empty preview), and better
+// answered with nothing to draw than with a throw halfway through a render.
+function resolveCakeScene(config) {
+  let stackY = 0.1;
+  const tierData = (config.tiers ?? []).map(tier => {
+    const baseY = stackY;
+    stackY += tier.height;
+    return { ...tier, baseY };
+  });
+  // Fraction of each tier's top hidden under the tier resting on it — top-surface finish handles clamp
+  // to the visible ring [topInnerFrac, 1] so a flake can't be dragged under the upper tier (shared
+  // stacking helper, same rule the rim-ring limits use).
+  tierData.forEach((td, i) => { td.topInnerFrac = occludedTopFrac(tierData, i); });
+  const bottomTier = tierData[0] ?? null;
+  return {
+    tierData,
+    stackY,
+    bottomTier,
+    topTier:   tierData[tierData.length - 1] ?? null,
+    bottomShp: bottomTier ? tierShape(bottomTier) : null,
+    board:     bottomTier ? boardOf(bottomTier) : null,
+  };
+}
+
 // Image-based lighting (HDRI) lives in envMap.js — its own module because the four PREVIEW canvases
 // need the same answer, and they are rendered by this file, so reaching back here would be a cycle.
 // Re-exported so `configureEnvMap` stays part of this module's public surface for CakeDesigner.
@@ -2167,8 +2194,9 @@ function CakeScene({
   creamPaint = null, onCreamPaint,
   tierDataRef,
 }) {
-  const { tiers, texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null, nameBlocks = null } = config;
-  const orbitBlockSet = useRef(new Set());
+  // Only what the EDITING surface itself draws (handles, catchers) is read here — everything that is
+  // part of the cake is read by CakeContent, from the same config.
+  const { boardGrass = null, nameBlocks = null } = config;
   // A decoration selects via native pointerup + pointer capture, which breaks its r3f `stopPropagation`
   // — so the r3f `click` still leaks to the tier/board underneath and toggles the cake's selection off,
   // wiping the decoration you just picked (needs a second click). We already know at pointer-down (the
@@ -2220,23 +2248,11 @@ function CakeScene({
     return () => canvas.removeEventListener('pointerdown', onCaptureDown, { capture: true });
   }, [gl, camera, scene]);
 
-  let stackY = 0.1;
-  const tierData = tiers.map(tier => {
-    const baseY = stackY;
-    stackY += tier.height;
-    return { ...tier, baseY };
-  });
-  // Fraction of each tier's top hidden under the tier resting on it — top-surface finish handles clamp
-  // to the visible ring [topInnerFrac, 1] so a flake can't be dragged under the upper tier (shared
-  // stacking helper, same rule the rim-ring limits use).
-  tierData.forEach((td, i) => { td.topInnerFrac = occludedTopFrac(tierData, i); });
+  // Where the cake stands, resolved ONCE and handed to CakeContent — so the board this scene draws is
+  // the same board the cake's own contents are placed against (see resolveCakeScene).
+  const cakeScene = resolveCakeScene(config);
+  const { tierData, bottomShp, board } = cakeScene;
   tierDataRef.current = tierData;
-
-  const bottomTier = tierData[0];
-  const bottomShp = tierShape(bottomTier);
-  const board = boardOf(bottomTier);   // one board descriptor — visible mesh + writing + pen all use it
-  const minTextY = 0.1 + 0.18;
-  const maxTextY = stackY - 0.18;
 
   return (
     <>
@@ -2259,139 +2275,35 @@ function CakeScene({
         <meshStandardMaterial color="#faf7f4" roughness={0.85} />
       </mesh>
 
-      {board.kind === 'rect' ? (
-        <RoundedBox position={[0, 0.05, 0]} args={[board.width, 0.1, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
-          onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
-          <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
-        </RoundedBox>
-      ) : (
-        <mesh position={[0, 0.05, 0]} castShadow receiveShadow
-          onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
-          <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
-          <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
-        </mesh>
-      )}
-
-      {/* Grass STANDING ON THE BOARD, ringing the cake — the base of the football cake. Bounded
-          outward by the board and inward by the cake wall, which is why grassSeats needed a `hole`:
-          two different outlines, where a top-surface band only ever hollows out its own.
-          `ringWidth` is how far across the board-to-cake gap it reaches, so it means the same thing
-          on a 6" round and a sheet. Seated at board height (the tier stack starts at 0.1). */}
-      {boardGrass && (
-        <GrassPatch
-          {...boardGrass}
-          shape={board}
-          topY={0.1}
-          patchRadius={board.radius}
-          inset={boardRingInset(board, bottomShp, boardGrass.ringWidth)}
-          hole={boardGrassHole(bottomShp, boundingRadius(bottomShp),
-            boardClearanceFor(bottomTier, boardGrass.height ?? 0.16))}
-        />
-      )}
-
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
-      <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />
+      {bottomShp && <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />}
 
-      {tierData.map((tier, i) => (
-        <group key={i}>
-          <CakeTier
-            radius={tier.radius}
-            height={tier.height}
-            color={tier.color}
-            gradient={tier.gradient ?? null}
-            glaze={tier.glaze ?? null}
-            yBase={tier.baseY}
-            shape={tier.shape ?? 'round'}
-            shapeFamily={tier.shapeFamily ?? null}
-            shapeConfig={tier.shapeConfig ?? null}
-            width={tier.width}
-            depth={tier.depth}
-            cornerR={tier.cornerR}
-            frostingType={tier.frostingType}
-            frostingStyle={tier.frostingStyle}
-            styleParams={tier.styleParams}
-            dusting={tier.dusting ?? null}
-            foil={tier.foil ?? null}
-            selected={selectedTier === i}
-            topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
-            bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
-            creamLayers={tier.creamLayers ?? []}
-            highlightPipingId={highlightPipingId}
-            pipingMovable={isPipingMovable}
-            onPipingInstanceMove={onPipingInstanceMove
-              ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
-              : null}
-            onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
-            onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
-            onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onTierClick(i); }}
-          />
-          {/* Piped grass on this tier's top. Outside CakeTier because it is not part of the cake's
-              body or its borders — it is a treatment laid ON the finished top, the way the football
-              cake has smooth buttercream underneath and grass over it. Rendered from the resolved
-              tierData so it fits the tier's real footprint, round or sheet. */}
-          {tier.grass && (
-            <GrassPatch
-              shape={tierShape(tier)}
-              topY={tier.baseY + tier.height}
-              patchRadius={tier.radius}
-              {...tier.grass}
-            />
-          )}
-          {selectedPiping?.tierIndex === i && pipingToolbar && (
-            <Html
-              position={[tier.radius + 0.35, tier.baseY + (selectedPiping.zone === 'top' ? tier.height + 0.1 : 0.1), 0]}
-              zIndexRange={[200, 0]}
-            >
-              {pipingToolbar}
-            </Html>
-          )}
-        </group>
-      ))}
+      {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
+          off-screen capture and the read-only previews render, so what a customer sees and what the
+          saved thumbnail shows are the same cake by construction. Everything BELOW this point is
+          editing furniture: handles, catchers, pickers, present only while the cake is being worked on. */}
+      <CakeContent
+        config={config}
+        scene={cakeScene}
+        edit={{
+          orbitRef, gestureOnStickerRef,
+          selectedTier, onTierClick, onDeselect,
+          selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, pipingToolbar,
+          onPipingInstanceMove, isPipingMovable,
+          selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
+          selectedAgeId, onAgeSelect, onAgeMove,
+          selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
+          stickerToolbar, stickerResize, isStickerMovable,
+          onWritingClick, onWritingMove, writingSelected,
+          penDrawMode, penStyle, onAddStroke,
+        }}
+      />
 
       {creamPaint && tierData[creamPaint.tierIndex] && (
         <CreamPaintTarget
           tier={tierData[creamPaint.tierIndex]}
           onPaint={(theta01, frac) => onCreamPaint?.(creamPaint.tierIndex, creamPaint.layerId, theta01, frac)}
-        />
-      )}
-
-      {writing?.text?.trim() && (() => {
-        const topTier = tierData[tierData.length - 1];
-        const writingOrbitEnable = enabled => {
-          if (enabled) orbitBlockSet.current.delete('__writing__'); else orbitBlockSet.current.add('__writing__');
-          if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
-        };
-        return (
-          <CreamWriting
-            writing={writing}
-            topY={stackY}
-            topRadius={topTier.radius}
-            shape={topTier.shape ?? 'round'}
-            width={topTier.width}
-            depth={topTier.depth}
-            shp={tierShape(topTier)}
-            tiers={tierData}
-            boardRadius={board.radius}
-            boardY={0.1}
-            boardShp={board}
-            onClick={onWritingClick}
-            onMove={onWritingMove}
-            onOrbitEnable={writingOrbitEnable}
-            selected={writingSelected}
-          />
-        );
-      })()}
-
-      {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
-          highest tier. Each block is its own placement, so the arrangement IS the data — see
-          nameBlockRun. */}
-      {nameBlocks?.blocks?.length > 0 && (
-        <NameBlocks
-          {...nameBlocks}
-          blocks={nameBlocks.blocks}
-          surfaceRadius={nameBlocks.zone === 'top' ? tierData[tierData.length - 1].radius : board.radius}
-          y={nameBlocks.zone === 'top' ? stackY : 0.1}
         />
       )}
 
@@ -2436,22 +2348,203 @@ function CakeScene({
         onMove={onFoilMove} onSelect={onFoilSelect} catcherFlag="isFoilCatcher" handleFlag="isFoilHandle"
         color="#f0d878" selColor="#3D5A44" />}{/* no marker dot — default; grab the shard directly */}
 
+      {pipingTarget && (
+        <CreamStylePicker styles={pipingStyles} onSelect={onPipingStyleSelect} onCancel={onPipingCancel} />
+      )}
+    </>
+  );
+}
+
+// A missing callback means "this surface does not edit", not a crash — see CakeContent's `edit`.
+const NOOP = () => {};
+
+// ── Everything a design contains ────────────────────────────────────────────────────────────────
+// The ONE renderer for a cake's CONTENTS (INVARIANTS #2), shared by the live editor, by the off-screen
+// capture behind template thumbnails and order snapshots, and by every read-only preview.
+//
+// It exists because the capture used to be a SECOND, hand-copied scene. It drew tiers and decorations
+// and silently skipped everything added to the cake after it was written — piped grass, fondant letter
+// blocks, second-cream layers, 3D text. A saved template's picture then showed a DIFFERENT cake from
+// the one on screen, and nothing failed to say so: the football template came back with a bald top.
+// A new element type now lands here once, and every surface that shows a cake gets it.
+//
+// `edit` carries the whole interactive surface — selection, drag callbacks, toolbars — and is OPTIONAL.
+// Without it every element renders static, which is exactly what a capture and a preview want, so no
+// element renderer has to know which surface it is being drawn on. What `edit` does NOT cover is the
+// editing FURNITURE (drag handles, catchers, pickers): that is not part of the cake, so it stays in
+// CakeScene and never risks being photographed. Nor is the ROOM — the floor and the studio background
+// are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
+// its own, and it is what every board-level finish is placed against.
+function CakeContent({ config, scene, edit = null }) {
+  const { texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null, nameBlocks = null } = config;
+  const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
+  const {
+    orbitRef = null, gestureOnStickerRef = null,
+    selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
+    selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
+    onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
+    onPipingInstanceMove = null, isPipingMovable = () => true,
+    selectedTextId = null, onTextSelect = NOOP, onTextMove = NOOP, onTextContentChange = NOOP, textToolbar = null,
+    selectedAgeId = null, onAgeSelect, onAgeMove,
+    selectedStickerIds = null, onStickerSelect = NOOP, onStickerLongPress, onStickerMove = NOOP,
+    onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
+    onWritingClick, onWritingMove, writingSelected = false,
+    penDrawMode = false, penStyle, onAddStroke,
+  } = edit ?? {};
+
+  // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
+  // what makes "any". With no orbitRef (a capture, a still preview) there is no orbit to stand down
+  // and every one of these calls is a no-op — which is why the element renderers below need no branch.
+  const orbitBlockSet = useRef(new Set());
+  const orbitEnableFor = id => enabled => {
+    if (enabled) orbitBlockSet.current.delete(id); else orbitBlockSet.current.add(id);
+    if (orbitRef?.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
+  };
+
+  const minTextY = 0.1 + 0.18;
+  const maxTextY = stackY - 0.18;
+
+  const onBoardClick = e => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onDeselect(); };
+
+  return (
+    <>
+      {/* The board. Part of the CAKE, not of the room it is photographed in: no cake stands on its
+          own, and every real cake picture has one under it — so it is drawn here, where the capture
+          and the previews get it too, rather than only in the editor's studio. It is also what every
+          board-level finish (a ring of grass, letter blocks at the foot, writing on the board) is
+          placed against, so drawing it anywhere else left those standing on nothing. */}
+      {board && (board.kind === 'rect' ? (
+        <RoundedBox position={[0, 0.05, 0]} args={[board.width, 0.1, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
+          onClick={onBoardClick}>
+          <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
+        </RoundedBox>
+      ) : (
+        <mesh position={[0, 0.05, 0]} castShadow receiveShadow onClick={onBoardClick}>
+          <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
+          <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
+        </mesh>
+      ))}
+
+      {/* Grass STANDING ON THE BOARD, ringing the cake — the base of the football cake. Bounded
+          outward by the board and inward by the cake wall, which is why grassSeats needed a `hole`:
+          two different outlines, where a top-surface band only ever hollows out its own.
+          `ringWidth` is how far across the board-to-cake gap it reaches, so it means the same thing
+          on a 6" round and a sheet. Seated at board height (the tier stack starts at 0.1). */}
+      {boardGrass && board && (
+        <GrassPatch
+          {...boardGrass}
+          shape={board}
+          topY={0.1}
+          patchRadius={board.radius}
+          inset={boardRingInset(board, bottomShp, boardGrass.ringWidth)}
+          hole={boardGrassHole(bottomShp, boundingRadius(bottomShp),
+            boardClearanceFor(bottomTier, boardGrass.height ?? 0.16))}
+        />
+      )}
+
+      {tierData.map((tier, i) => (
+        <group key={i}>
+          <CakeTier
+            radius={tier.radius}
+            height={tier.height}
+            color={tier.color}
+            gradient={tier.gradient ?? null}
+            glaze={tier.glaze ?? null}
+            yBase={tier.baseY}
+            shape={tier.shape ?? 'round'}
+            shapeFamily={tier.shapeFamily ?? null}
+            shapeConfig={tier.shapeConfig ?? null}
+            width={tier.width}
+            depth={tier.depth}
+            cornerR={tier.cornerR}
+            frostingType={tier.frostingType}
+            frostingStyle={tier.frostingStyle}
+            styleParams={tier.styleParams}
+            dusting={tier.dusting ?? null}
+            foil={tier.foil ?? null}
+            selected={selectedTier === i}
+            topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
+            bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
+            creamLayers={tier.creamLayers ?? []}
+            highlightPipingId={highlightPipingId}
+            pipingMovable={isPipingMovable}
+            onPipingInstanceMove={onPipingInstanceMove
+              ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
+              : null}
+            onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
+            onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
+            onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onTierClick(i); }}
+          />
+          {/* Piped grass on this tier's top. Outside CakeTier because it is not part of the cake's
+              body or its borders — it is a treatment laid ON the finished top, the way the football
+              cake has smooth buttercream underneath and grass over it. Rendered from the resolved
+              tierData so it fits the tier's real footprint, round or sheet. */}
+          {tier.grass && (
+            <GrassPatch
+              shape={tierShape(tier)}
+              topY={tier.baseY + tier.height}
+              patchRadius={tier.radius}
+              {...tier.grass}
+            />
+          )}
+          {selectedPiping?.tierIndex === i && pipingToolbar && (
+            <Html
+              position={[tier.radius + 0.35, tier.baseY + (selectedPiping.zone === 'top' ? tier.height + 0.1 : 0.1), 0]}
+              zIndexRange={[200, 0]}
+            >
+              {pipingToolbar}
+            </Html>
+          )}
+        </group>
+      ))}
+
+      {/* Typed cream writing. */}
+      {writing?.text?.trim() && topTier && board && (
+        <CreamWriting
+          writing={writing}
+          topY={stackY}
+          topRadius={topTier.radius}
+          shape={topTier.shape ?? 'round'}
+          width={topTier.width}
+          depth={topTier.depth}
+          shp={tierShape(topTier)}
+          tiers={tierData}
+          boardRadius={board.radius}
+          boardY={0.1}
+          boardShp={board}
+          onClick={onWritingClick}
+          onMove={onWritingMove}
+          onOrbitEnable={orbitEnableFor('__writing__')}
+          selected={writingSelected}
+        />
+      )}
+
+      {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
+          highest tier. Each block is its own placement, so the arrangement IS the data — see
+          nameBlockRun. */}
+      {nameBlocks?.blocks?.length > 0 && topTier && board && (
+        <NameBlocks
+          {...nameBlocks}
+          blocks={nameBlocks.blocks}
+          surfaceRadius={nameBlocks.zone === 'top' ? topTier.radius : board.radius}
+          y={nameBlocks.zone === 'top' ? stackY : 0.1}
+        />
+      )}
+
+      {/* Freehand cream-pen strokes. Committed strokes are part of the cake and always drawn; the
+          catchers that CATCH a new stroke appear only in draw mode, which no capture is ever in. */}
       <CreamPen
         piping={piping}
         drawMode={penDrawMode}
         penStyle={penStyle}
         tierData={tierData}
-        board={{ shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 }}
+        board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 } : undefined}
         onAddStroke={onAddStroke}
       />
 
-      {pipingTarget && (
-        <CreamStylePicker styles={pipingStyles} onSelect={onPipingStyleSelect} onCancel={onPipingCancel} />
-      )}
-
-      {texts.map(t => {
+      {bottomTier && texts.map(t => {
         const hostTier = tierData.find(td => t.y >= td.baseY && t.y < td.baseY + td.height)
-          ?? tierData[0];
+          ?? bottomTier;
         return (
           <DraggableText
             key={t.id}
@@ -2466,44 +2559,32 @@ function CakeScene({
               })}
             onContentChange={onTextContentChange}
             toolbar={selectedTextId === t.id ? textToolbar : null}
-            onOrbitEnable={enabled => {
-              if (enabled) orbitBlockSet.current.delete(t.id); else orbitBlockSet.current.add(t.id);
-              if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
-            }}
+            onOrbitEnable={orbitEnableFor(t.id)}
           />
         );
       })}
 
-      {ages.map(a => {
-        const topTier = tierData[tierData.length - 1];
-        return (
-          <AgeNumber
-            key={a.id}
-            age={a}
-            topY={stackY}
-            topRadius={topTier.radius}
-            shape={topTier.shape ?? 'round'}
-            width={topTier.width}
-            depth={topTier.depth}
-            shp={tierShape(topTier)}
-            selected={selectedAgeId === a.id}
-            onClick={() => onAgeSelect?.(a.id)}
-            onMove={pos => onAgeMove?.(a.id, pos)}
-            onOrbitEnable={enabled => {
-              if (enabled) orbitBlockSet.current.delete(a.id); else orbitBlockSet.current.add(a.id);
-              if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
-            }}
-          />
-        );
-      })}
+      {topTier && ages.map(a => (
+        <AgeNumber
+          key={a.id}
+          age={a}
+          topY={stackY}
+          topRadius={topTier.radius}
+          shape={topTier.shape ?? 'round'}
+          width={topTier.width}
+          depth={topTier.depth}
+          shp={tierShape(topTier)}
+          selected={selectedAgeId === a.id}
+          onClick={() => onAgeSelect?.(a.id)}
+          onMove={pos => onAgeMove?.(a.id, pos)}
+          onOrbitEnable={orbitEnableFor(a.id)}
+        />
+      ))}
 
-      {stickers.map(sticker => {
-        const tier = tierData[sticker.tierIndex] ?? tierData[0];
+      {bottomTier && stickers.map(sticker => {
+        const tier = tierData[sticker.tierIndex] ?? bottomTier;
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
-        const orbitEnable = enabled => {
-          if (enabled) orbitBlockSet.current.delete(sticker.id); else orbitBlockSet.current.add(sticker.id);
-          if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
-        };
+        const orbitEnable = orbitEnableFor(sticker.id);
 
         const isSelected = selectedStickerIds?.has(sticker.id) ?? false;
         // When this sticker is part of a multi-selection, dragging it moves the whole
@@ -2571,16 +2652,16 @@ function CakeScene({
   );
 }
 
+// The cake as it is PHOTOGRAPHED: no floor, no editing furniture — the cake, on its board, on a
+// transparent field, which is what the thumbnail crop, the order snapshot and the inline previews all
+// want. The cake itself is the shared CakeContent with no `edit`, so this scene cannot fall behind
+// what the editor draws — which is the whole reason it no longer has a copy of it.
+//
+// The board is IN the picture. No cake stands on its own and every real cake photograph has one, so a
+// capture without it reads as a cake floating in mid-air — and board-level finishes (a grass ring,
+// letter blocks at the foot) had nothing to stand on. Only the ROOM is left out: the floor plane and
+// the studio background belong to the editor, not to the cake.
 function CakeThumbnailScene({ config }) {
-  const { tiers, stickers = [], writing = null, piping = [] } = config;
-
-  let stackY = 0.1;
-  const tierData = tiers.map(tier => {
-    const baseY = stackY;
-    stackY += tier.height;
-    return { ...tier, baseY };
-  });
-
   return (
     <>
       <SceneLights />
@@ -2588,151 +2669,7 @@ function CakeThumbnailScene({ config }) {
           `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
           no `background` prop — so the capture stays transparent. */}
       <SceneEnv />
-      {tierData.map((tier, i) => (
-        <CakeTier
-          key={i}
-          radius={tier.radius}
-          height={tier.height}
-          color={tier.color}
-          gradient={tier.gradient ?? null}
-          glaze={tier.glaze ?? null}
-          yBase={tier.baseY}
-          shape={tier.shape ?? 'round'}
-          shapeFamily={tier.shapeFamily ?? null}
-          shapeConfig={tier.shapeConfig ?? null}
-          width={tier.width}
-          depth={tier.depth}
-          cornerR={tier.cornerR}
-          frostingType={tier.frostingType}
-          frostingStyle={tier.frostingStyle}
-          styleParams={tier.styleParams}
-          dusting={tier.dusting ?? null}
-          foil={tier.foil ?? null}
-          selected={false}
-          topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
-          bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
-          onTopPipingClick={() => {}}
-          onBottomPipingClick={() => {}}
-          onClick={() => {}}
-        />
-      ))}
-      {stickers.map(sticker => {
-        const tier = tierData[sticker.tierIndex] ?? tierData[0];
-        const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
-        // Insert modifier (base sunk into the surface at an angle) — mirror the interactive render (no
-        // measured seatHalf here, so use STICKER_SIZE/2 as the half-length). Signalled by insertDepth
-        // != null (0 valid); composes with the pose (stand base-seats, so both flags are true — the py
-        // below checks isInsertPv first so burial wins).
-        const isInsertPv = sticker.insertDepth != null;
-        const insertDepthPv = sticker.insertDepth ?? DEFAULT_INSERT_DEPTH;
-        if (isSide) {
-          const tshp = tierShape(tier);
-          const off = sideSeatOffset(tier.radius) + (sticker.radialOffset ?? 0)
-            - (isInsertPv ? insertDepthPv * STICKER_SIZE * (sticker.scale ?? 1) : 0);
-          const sampler = tierReliefSampler(tier);
-          const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
-          let px, pz, yaw, r = 0;
-          if (!isRoundWall(tshp)) {
-            const pl = rectSidePlacement(tshp, sticker.u ?? 0, off);
-            px = pl.x; pz = pl.z; yaw = pl.yaw;
-          } else {
-            // rest on the live wall surface (highest relief under the element's footprint); flat wall → 0
-            const half = (STICKER_SIZE * (sticker.scale ?? 1)) / 2;
-            const lift = sampler
-              ? maxReliefUnder(sampler,
-                  Math.atan2(Math.cos(sticker.theta), Math.sin(sticker.theta)),
-                  Math.min(1, Math.max(0, (sticker.y - tier.baseY) / tier.height)),
-                  half / tier.radius, half / tier.height)
-              : 0;
-            r = tier.radius + off + lift;
-            px = r * Math.sin(sticker.theta); pz = r * Math.cos(sticker.theta); yaw = sticker.theta;
-          }
-          return (
-            <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
-              <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} curved={!thumbIsGlb && isRoundWall(tshp)} curveRadius={r} stickerScale={sticker.scale ?? 1} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
-              </group>
-            </group>
-          );
-        }
-        const topY = tier.baseY + tier.height;
-        const isPerchPv = sticker.placementMode === 'perch';
-        const isVergePv = sticker.placementMode === 'verge';
-        // Stand base-seats; perch & a centre-seat verge centre-seat (mid-spine on the rim edge, then
-        // recline outward). A base-seat verge (verge.seat='base') base-seats like stand.
-        const baseSeatedPv = sticker.placementMode === 'stand' || (isVergePv && sticker.vergeSeat === 'base');
-        const py   = topY + (sticker.yOffset ?? 0) + (
-          isInsertPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1) * (1 - 2 * insertDepthPv)
-          : baseSeatedPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1)
-          : (isPerchPv || isVergePv) ? 0 : FLAT_STICKER_Y_OFFSET);
-        if (baseSeatedPv || isPerchPv || isVergePv || isInsertPv) {
-          const seatLiftPv = (baseSeatedPv || isInsertPv) ? STICKER_SIZE / 2 : 0;
-          const yawPv   = (isVergePv ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0) + (sticker.rotation ?? 0);
-          const tiltXPv = (isVergePv || isInsertPv) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
-          return (
-            <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
-              <group rotation={[0, yawPv, 0]}>
-                <group position={[0, -seatLiftPv, 0]}>
-                  <group rotation={[tiltXPv, 0, 0]}>
-                    <group position={[0, seatLiftPv, 0]}>
-                      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
-                    </group>
-                  </group>
-                </group>
-              </group>
-            </group>
-          );
-        }
-        return (
-          <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} />
-          </group>
-        );
-      })}
-
-      {/* Freehand cream-pen strokes — committed only (drawMode off = no catchers/draw). */}
-      <CreamPen piping={piping} />
-
-      {/* Typed cream writing — static (no drag/select handlers). */}
-      {writing?.text?.trim() && (() => {
-        const topTier = tierData[tierData.length - 1];
-        const bottomTier = tierData[0];
-        const board = boardOf(bottomTier);
-        return (
-          <CreamWriting
-            writing={writing}
-            topY={stackY}
-            topRadius={topTier.radius}
-            shape={topTier.shape ?? 'round'}
-            width={topTier.width}
-            depth={topTier.depth}
-            shp={tierShape(topTier)}
-            tiers={tierData}
-            boardRadius={board.radius}
-            boardY={0.1}
-            boardShp={board}
-            selected={false}
-          />
-        );
-      })()}
-
-      {/* Gold age numbers — static (no drag/select). */}
-      {(config.ages ?? []).map(a => {
-        const topTier = tierData[tierData.length - 1];
-        return (
-          <AgeNumber
-            key={a.id}
-            age={a}
-            topY={stackY}
-            topRadius={topTier.radius}
-            shape={topTier.shape ?? 'round'}
-            width={topTier.width}
-            depth={topTier.depth}
-            shp={tierShape(topTier)}
-            selected={false}
-          />
-        );
-      })}
+      <CakeContent config={config} scene={resolveCakeScene(config)} />
     </>
   );
 }
