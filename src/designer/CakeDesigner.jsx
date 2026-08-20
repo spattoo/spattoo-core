@@ -1437,6 +1437,14 @@ const EDIT_PANEL_MIN = 108;
  *  which is the entire reason any of this is here. */
 const EDIT_PANEL_MAX_VH = 0.6;
 
+/** The element stack's width on a phone. */
+const STACK_W_MOBILE = 156;
+/** The flyout handle's width — it lives on the right edge and never moves. */
+const STACK_TAB_W = 22;
+/** How far the stack sits in from the right on a phone: clear of the handle, plus the same 10 of
+ *  breathing room it has on a desktop. Derived, so widening the handle never lands it on the panel. */
+const STACK_RIGHT_MOBILE = STACK_TAB_W + 10;
+
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
@@ -1723,6 +1731,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // cardId. expandedPipingId holds the expanded card's cardId; only one is open at a time.
   const [pipingCards,        setPipingCards]        = useState([]);
   const [expandedPipingId,   setExpandedPipingId]   = useState(null);
+  // Is the element stack pulled OUT? Phone only — see the flyout below. Shut by default, because a
+  // baker opens the designer to look at the cake, not at a list of what is on it.
+  const [stackFlyoutOpen,    setStackFlyoutOpen]    = useState(false);
   // Which ring's color picker popup is open, keyed `${cardId}-${zone}-${tierIndex}` (null = none),
   // plus the screen-space anchor (the tapped Color dot) the floating popup positions against.
   const [pipingColorKey,     setPipingColorKey]     = useState(null);
@@ -4846,6 +4857,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'cream' ? true
          : card.type === 'tool' ? selectedEl.tool === card.tool
          : selectedEl?.id === card.id);
+
+  // ── The stack is a FLYOUT on a phone ──────────────────────────────────────────────────────────
+  // Shut by default, pulled out by a tab on the right edge. It used to be permanently open, and on a
+  // 335px viewport a list of a dozen decorations covered the cake it was describing — you could not
+  // see the thing you were editing. Desktop keeps it open: there is room beside the cake there, and
+  // hiding it would cost a click for nothing.
+  //
+  // It cannot simply be DROPPED on a phone, which is the tempting version of this fix. Grass, letter
+  // blocks, gold leaf and luster dust have no pointer handlers on the cake at all — their drag handles
+  // only exist inside their own mode, and their card is what opens that mode. Take the stack away and
+  // a baker can add grass and then never edit or remove it.
+  //
+  // And it springs open by itself whenever a card is EXPANDED, because selecting a decoration on the
+  // cake is what expands that decoration's card. With the flyout shut, tapping a decoration would
+  // otherwise look like nothing happened at all.
+  const stackHasExpandedCard = decorationCards.some(isCardSelected)
+    || selectedEl?.type === 'writing'
+    || expandedPipingId != null;
+  const stackShown = !isMobile || stackFlyoutOpen || stackHasExpandedCard;
+
+  // Closing pulls the flyout shut AND collapses whatever was expanded. Without the second half the
+  // panel springs straight back open, because an expanded card is itself a reason to be open.
+  function toggleStackFlyout() {
+    if (stackShown) { setStackFlyoutOpen(false); clearAllSelections(); }
+    else setStackFlyoutOpen(true);
+  }
+
   function selectDecorationCard(card) {
     // Every card is a single exclusive selection routed through selectExclusive (selectedEl + the
     // highlight Set written together), so clicking any card can never leave a previous card OR a canvas
@@ -7562,13 +7600,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           })()}
 
           {/* ── Unified element stack: decorations + piping in one accordion ── */}
-          {elementStackOpen && (
+          {/* The flyout's handle — phone only (see stackShown). It NEVER MOVES: parked on the right
+              edge at the vertical middle, where a thumb already rests and clear of both the
+              notification bell above and the Actions pill below, while the stack opens to its left
+              (STACK_RIGHT_MOBILE leaves the lane). One target in one place that opens and closes.
+              Tried the other way first — the handle riding the panel's edge — and it ends up floating
+              in the middle of the cake whenever the panel is shorter than the stage, which is most of
+              the time: it reads as a stray button rather than the handle of the thing beside it. */}
+          {elementStackOpen && isMobile && (
+            <button onClick={toggleStackFlyout}
+              aria-label={stackShown ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
+              aria-expanded={stackShown}
+              style={s.stackTab}>
+              {stackShown ? '▶' : '◀'}
+            </button>
+          )}
+
+          {elementStackOpen && stackShown && (
             <div ref={pipingPopupRef} className="piping-popup-scroll"
               style={isMobile
                 // Mobile: a see-through, narrower overlay so the cake shows THROUGH the stack (the cards
                 // carry the fill). Light tint + a small blur (not the heavy 18px frost, which washed the
                 // cake out to white). Scroll/maxHeight kept so a long element list still works.
-                ? { ...s.editPopup, width: 156, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
+                ? { ...s.editPopup, width: STACK_W_MOBILE, right: STACK_RIGHT_MOBILE, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
                 : s.editPopup}>
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
@@ -9220,6 +9274,22 @@ const s = {
 
   // Right-side per-element edit popup (desktop sticker/topper) — same chrome as
   // the piping popup so element editing feels consistent.
+  // The flyout handle. Half-rounded on the outer edge so it reads as something to pull rather than a
+  // button that happens to be at the edge, and narrow enough that shut, it costs the cake 22px.
+  stackTab: {
+    position: 'absolute', top: '50%', right: 0, transform: 'translateY(-50%)',
+    width: STACK_TAB_W, height: 56, padding: 0,
+    border: 'none', borderRadius: '10px 0 0 10px',
+    background: 'rgba(255,255,255,0.82)',
+    backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+    boxShadow: '0 2px 10px rgba(107,45,66,0.18)',
+    color: '#6b2d42', fontSize: 10, lineHeight: 1,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer',
+    // Above the stack itself (20), so the handle stays pressable when the panel is out.
+    zIndex: 21,
+    pointerEvents: 'auto',
+  },
   editPopup: {
     position: 'absolute',
     right: 10, top: 12,
