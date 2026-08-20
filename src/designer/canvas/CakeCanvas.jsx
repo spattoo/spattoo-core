@@ -2762,8 +2762,8 @@ export function CakePreview({
   // and everybody notices. Was a hardcoded [0, 2, 0], which is above a one-tier cake entirely.
   // An explicit `target` still wins: the shape picker frames for a different question (see shapeView).
   const aim = useMemo(
-    () => target ?? cakeAimTarget(config.tiers.map(t => t.height)),
-    [target, config],
+    () => target ?? cakeAimTarget(config.tiers.map(t => t.height), cameraPosition),
+    [target, config, cameraPosition],
   );
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
@@ -2820,7 +2820,10 @@ export default function CakeCanvas({
   // array changes, and a fresh one every render would re-aim the camera on every edit — including
   // while a decoration is being dragged, which would fight the drag.
   const tierHeights = (config.tiers ?? []).map(t => t.height);
-  const aimTarget = useMemo(() => cakeAimTarget(tierHeights), [tierHeights.join()]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // Keyed on the CAMERA too: the phone's sits further out than the desktop's, and the sit is an angle
+  // off that distance (framing.js). A target computed for one camera floats the cake on the other.
+  const aimTarget = useMemo(() => cakeAimTarget(tierHeights, cameraPosition),
+    [tierHeights.join(), cameraPosition.join()]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Expose a hit-test function so the parent can raycast without drag events
   useEffect(() => {

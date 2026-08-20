@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { cakeAimY, cakeAimTarget, cakeMiddleY, cakeStackHeight, CAKE_AIM_LIFT } from './framing.js';
-import { BOTTOM_H, TIER_HEIGHT_STEP } from '../constants.js';
+import { cakeAimY, cakeAimTarget, cakeMiddleY, cakeStackHeight, cameraDistance, CAKE_SIT_FRAC } from './framing.js';
+import { BOTTOM_H, TIER_HEIGHT_STEP, CAMERA_POSITION, CAMERA_POSITION_MOBILE } from '../constants.js';
 
 // The three cakes the old constant could not serve at once.
 const ONE   = [BOTTOM_H];
@@ -34,38 +34,65 @@ describe('cakeMiddleY', () => {
   });
 });
 
+// The angle the aim sits above the cake's middle, which is what the eye actually reads.
+const sitAngle = (tiers, cam) =>
+  Math.atan((cakeAimY(tiers, cam) - cakeMiddleY(tiers)) / cameraDistance(cam)) * 180 / Math.PI;
+
+describe('cameraDistance', () => {
+  it('is the length of the camera position — a cake stands at the origin', () => {
+    expect(cameraDistance([0, 3, 4])).toBeCloseTo(5);
+  });
+
+  it('never returns zero, so the sit can always be divided by it', () => {
+    expect(cameraDistance([0, 0, 0])).toBeGreaterThan(0);
+    expect(cameraDistance(null)).toBeGreaterThan(0);
+  });
+});
+
 describe('cakeAimY', () => {
   it('aims ABOVE the middle, which is what sits the cake low in frame instead of floating it', () => {
     for (const tiers of [ONE, TWO, THREE]) {
-      expect(cakeAimY(tiers)).toBeGreaterThan(cakeMiddleY(tiers));
+      expect(cakeAimY(tiers, CAMERA_POSITION)).toBeGreaterThan(cakeMiddleY(tiers));
     }
   });
 
-  it('sits every cake by the SAME amount — the lift is fixed, only the middle moves', () => {
-    const sit = tiers => cakeAimY(tiers) - cakeMiddleY(tiers);
-    expect(sit(ONE)).toBeCloseTo(sit(THREE));
-    expect(sit(ONE)).toBeCloseTo(CAKE_AIM_LIFT);
+  it('sits every cake by the same ANGLE — only the middle moves', () => {
+    expect(sitAngle(ONE, CAMERA_POSITION)).toBeCloseTo(sitAngle(THREE, CAMERA_POSITION));
+  });
+
+  it('sits the cake the same on a PHONE, where the camera is further out', () => {
+    // The bug this replaced: a world-space lift tuned on the desktop camera covered a quarter less
+    // of the frame on the phone's, which sits 1.33x further back — so the cake read as floating on a
+    // phone and correct on a desktop. As an angle, both cameras get the same shot.
+    expect(cameraDistance(CAMERA_POSITION_MOBILE)).toBeGreaterThan(cameraDistance(CAMERA_POSITION));
+    expect(sitAngle(ONE, CAMERA_POSITION_MOBILE)).toBeCloseTo(sitAngle(ONE, CAMERA_POSITION));
+    // …which means the phone's aim is higher in world terms, not the same number.
+    expect(cakeAimY(ONE, CAMERA_POSITION_MOBILE)).toBeGreaterThan(cakeAimY(ONE, CAMERA_POSITION));
   });
 
   it('aims higher at a taller cake — the whole point of not using a constant', () => {
-    expect(cakeAimY(ONE)).toBeLessThan(cakeAimY(TWO));
-    expect(cakeAimY(TWO)).toBeLessThan(cakeAimY(THREE));
+    expect(cakeAimY(ONE, CAMERA_POSITION)).toBeLessThan(cakeAimY(TWO, CAMERA_POSITION));
+    expect(cakeAimY(TWO, CAMERA_POSITION)).toBeLessThan(cakeAimY(THREE, CAMERA_POSITION));
   });
 
-  it('reproduces the old framing on a one-tier cake, which is the look that was asked back', () => {
-    // The hand-tuned constant was [0, 1.55, 0]. On the cake this app makes most, the adaptive rule
-    // must land on the same spot — otherwise "keep the old look" was not honoured.
-    expect(cakeAimY(ONE)).toBeCloseTo(1.55, 2);
+  it('reproduces the old framing on a one-tier cake at the desktop camera', () => {
+    // The hand-tuned constant was [0, 1.55, 0]. On the cake this app makes most, and the camera it
+    // was tuned against, the rule must land on the same spot — otherwise "keep the old look" was
+    // not honoured. CAKE_SIT_FRAC is derived from exactly this.
+    expect(cakeAimY(ONE, CAMERA_POSITION)).toBeCloseTo(1.55, 1);
+    expect(CAKE_SIT_FRAC).toBeGreaterThan(0);
   });
 
   it('no longer aims over the top of a tall cake, which is what cut the top tier off', () => {
     const top = 0.1 + cakeStackHeight(THREE);
-    expect(cakeAimY(THREE)).toBeLessThan(top);
+    for (const cam of [CAMERA_POSITION, CAMERA_POSITION_MOBILE]) {
+      expect(cakeAimY(THREE, cam)).toBeLessThan(top);
+    }
   });
 });
 
 describe('cakeAimTarget', () => {
   it('is the aim on the Y axis, centred in X and Z', () => {
-    expect(cakeAimTarget(TWO)).toEqual([0, cakeAimY(TWO), 0]);
+    expect(cakeAimTarget(TWO, CAMERA_POSITION)).toEqual([0, cakeAimY(TWO, CAMERA_POSITION), 0]);
   });
 });
