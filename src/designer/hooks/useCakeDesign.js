@@ -268,6 +268,10 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     stickers: migrateTopperToSticker(templateDesign),
     writing:  templateDesign.writing ?? null,
     piping:   templateDesign.piping ?? [],
+    // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
+    // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
+    boardGrass: templateDesign.boardGrass ?? null,
+    nameBlocks: templateDesign.nameBlocks ?? null,
   };
 }
 
