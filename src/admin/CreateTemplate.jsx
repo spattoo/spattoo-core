@@ -191,6 +191,9 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
   const [saveMsg, setSaveMsg]     = useState(null);
   const canvasContainerRef = useRef();
   const thumbContainerRef  = useRef();
+  // See FitCakeCamera: a hidden or minimised window stops animating, so ask for a frame before
+  // reading one out of the canvas rather than trusting that the browser drew it.
+  const thumbRenderNowRef  = useRef(null);
   const hitTestRef         = useRef(null);
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el }
 
@@ -404,6 +407,7 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
   }), [tiers, topper, stickers]);
 
   function captureThumbnail() {
+    thumbRenderNowRef.current?.();
     const canvas = thumbContainerRef.current?.querySelector('canvas');
     if (!canvas) return;
     setThumbnail(canvas.toDataURL('image/webp', 0.85));
@@ -784,7 +788,7 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
 
       {/* Hidden off-screen canvas for thumbnail capture */}
       <Suspense fallback={null}>
-        <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
+        <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} renderNowRef={thumbRenderNowRef} />
       </Suspense>
     </>
   );

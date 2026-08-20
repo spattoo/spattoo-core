@@ -1856,6 +1856,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const textInputRef = useRef();
   const thumbContainerRef = useRef();
+  // Draws the capture canvas a frame on demand. The browser stops animating a hidden or minimised
+  // window, so a save made in the background would otherwise photograph a frame that was never
+  // rendered — see FitCakeCamera. Every capture below asks for a frame first.
+  const thumbRenderNowRef = useRef(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen,  setProfileOpen]  = useState(false);
   const [chefsDeskOpen, setChefsDeskOpen] = useState(false);   // Chef's Desk menu (Color Guide, …)
@@ -2411,6 +2415,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
     // Capture from the off-screen thumbnail canvas (no floor, flattened onto white) as a compact WebP.
     // Keep the blob here — the onSaveTemplate callback path hands the raw blob to the host.
+    thumbRenderNowRef.current?.();
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
 
@@ -4427,6 +4432,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // placement), then open the invite panel with it attached so the baker sends a customer straight
   // into THIS design. The design rides on the invite (design_snapshot) — no template row is created.
   async function handleShareDraft() {
+    thumbRenderNowRef.current?.();
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
     setInviteLiveSessionId(null);
@@ -4437,6 +4443,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   async function handleOrderSubmit(formData) {
     // Thumbnail → R2 (never base64 in the JSON body) + the full design snapshot, via the
     // shared helpers so order / template / share all serialise identically.
+    thumbRenderNowRef.current?.();
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
     const designSnapshot = buildDesignSnapshot(design);
@@ -8641,7 +8648,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
 
       {/* Off-screen thumbnail canvas — no floor, transparent background */}
-      <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
+      <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} renderNowRef={thumbRenderNowRef} />
 
       {/* Floating sticker ghost while pointer-dragging from elements panel */}
       {dragGhost && (

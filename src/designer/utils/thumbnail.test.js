@@ -176,6 +176,41 @@ describe('captureThumbnailBlob — crops to the cake when pixels are readable', 
   });
 });
 
+// ── An unrendered frame must not become a thumbnail ─────────────────────────────────────────────
+// A browser stops driving requestAnimationFrame while its window is hidden or minimised, so a baker
+// who saves with the window in the background hands the capture a drawing buffer that was never
+// drawn into. The cake renders on a TRANSPARENT canvas, so that buffer is not blank — it is empty,
+// and flattening it onto the white background turns it into a perfectly plausible white rectangle
+// that uploads without complaint. The save succeeds and the card comes back blank.
+//
+// Every caller already handles a missing thumbnail; none can handle a wrong one, because nothing
+// knows it is wrong. So an empty frame must produce NOTHING.
+describe('captureThumbnailBlob — refuses to photograph a frame that was never rendered', () => {
+  const emptyCanvas = () => {
+    const W = 400, H = 400;
+    const data = new Uint8ClampedArray(W * H * 4);          // every alpha 0 — nothing was drawn
+    const flatCanvas = { width: 0, height: 0,
+      getContext: () => ({ fillRect: () => {}, drawImage: () => {}, getImageData: () => ({ data }) }),
+      toBlob: cb => cb({ type: 'image/webp' }) };
+    vi.stubGlobal('document', { createElement: () => flatCanvas });
+    return { width: W, height: H, toBlob: cb => cb({ type: 'image/webp', from: 'source' }) };
+  };
+
+  it('returns null rather than a white rectangle', async () => {
+    expect(await captureThumbnailBlob(emptyCanvas())).toBe(null);
+  });
+
+  it('still captures when the pixels cannot be read, since emptiness is then unproven', async () => {
+    // No getImageData: the frame may well be fine, we simply cannot tell. Old behaviour — capture it.
+    const flatCanvas = { width: 0, height: 0,
+      getContext: () => ({ fillRect: () => {}, drawImage: () => {} }),
+      toBlob: cb => cb({ type: 'image/webp' }) };
+    vi.stubGlobal('document', { createElement: () => flatCanvas });
+    const source = { width: 400, height: 400, toBlob: cb => cb({ type: 'image/webp', from: 'source' }) };
+    expect(await captureThumbnailBlob(source)).not.toBe(null);
+  });
+});
+
 // The panel hugs the left edge, so the preview normally opens to its right — but the same panel
 // can be docked near a narrow viewport's right edge, and a preview hanging off-screen is worse
 // than none. These pin the flip and the clamp.

@@ -80,6 +80,12 @@ export function previewPosition(rect, size, vw, vh, gap = 12, edge = 8) {
 
 // The opaque bounds of a (possibly WebGL) source canvas. Needs a 2D copy because getImageData is a
 // 2D-context call and the source is a WebGL canvas.
+//
+// THREE answers, and the difference between the last two is the difference between a thumbnail and a
+// blank white rectangle stored as one:
+//   a rect     — this is where the cake is
+//   null       — the pixels were read and NOTHING is drawn
+//   undefined  — the pixels could not be read at all, so we know nothing either way
 function contentBounds(source) {
   const probe = document.createElement('canvas');
   probe.width = source.width;
@@ -87,7 +93,7 @@ function contentBounds(source) {
   const ctx = probe.getContext('2d', { willReadFrequently: true });
   // Bail before drawing anything if pixels can't be read back — no point paying for a composite
   // whose result we cannot inspect.
-  if (typeof ctx?.getImageData !== 'function') return null;
+  if (typeof ctx?.getImageData !== 'function') return undefined;
   ctx.drawImage(source, 0, 0);
   return alphaBounds(ctx.getImageData(0, 0, probe.width, probe.height).data, probe.width, probe.height);
 }
@@ -114,11 +120,27 @@ export function captureThumbnailBlob(canvas, { quality = THUMB_QUALITY, timeoutM
     if (!canvas) return resolve(null);
     try {
       const timeout = setTimeout(() => resolve(null), timeoutMs);
-      // A crop of null (nothing drawn, or the probe failed) falls through to the whole frame, which
-      // is exactly the old behaviour — a thumbnail is never worth failing a save over.
       let rect = null;
       if (crop) {
-        try { rect = contentCrop(contentBounds(canvas), canvas.width, canvas.height); } catch { rect = null; }
+        try {
+          const bounds = contentBounds(canvas);
+          // NOTHING was drawn. Return no thumbnail rather than a picture of nothing.
+          //
+          // The cake renders on a transparent canvas, so an unrendered frame is not blank — it is
+          // EMPTY, and flattening it onto the background below turns it into a perfectly plausible
+          // white rectangle that uploads without complaint. That is not hypothetical: a browser stops
+          // driving requestAnimationFrame while its window is hidden or minimised, so a baker who
+          // saves a template with the window in the background gets a frame that was never rendered.
+          // The save succeeds and the card comes back blank, with nothing anywhere reporting a fault.
+          //
+          // A missing thumbnail is already handled everywhere (every caller treats null as non-fatal
+          // and carries on without one). A WRONG thumbnail is handled nowhere, because nothing knows
+          // it is wrong. Prefer the failure the code already understands.
+          if (bounds === null) { clearTimeout(timeout); return resolve(null); }
+          // `undefined` = the pixels could not be read, so emptiness is unproven. Fall through and
+          // capture the whole frame, exactly as before — a thumbnail is not worth failing a save over.
+          if (bounds) rect = contentCrop(bounds, canvas.width, canvas.height);
+        } catch { rect = null; }
       }
       const source = (background || rect) ? flattenOnto(canvas, background, rect) : canvas;
       source.toBlob(blob => { clearTimeout(timeout); resolve(blob ?? null); }, 'image/webp', quality);

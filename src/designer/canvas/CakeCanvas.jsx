@@ -2685,9 +2685,9 @@ const _fitDir = new THREE.Vector3();
 // instead of the old fixed [0,2,0] target + distance that left short cakes tiny and
 // low. Geometry-driven (no element-type branching); recomputed each frame so it
 // tracks live edits and async-loaded GLBs. Keeps the original front-above view angle.
-function FitCakeCamera({ groupRef }) {
-  const camera = useThree(s => s.camera);
-  useFrame(() => {
+function FitCakeCamera({ groupRef, renderNowRef }) {
+  const { camera, gl, scene } = useThree();
+  const fit = () => {
     const g = groupRef.current;
     if (!g) return;
     _fitBox.setFromObject(g);
@@ -2701,11 +2701,35 @@ function FitCakeCamera({ groupRef }) {
     camera.position.copy(c).addScaledVector(_fitDir, dist);
     camera.lookAt(c);
     camera.updateProjectionMatrix();
-  });
+  };
+  useFrame(fit);
+
+  // Draw a frame ON DEMAND, so a capture photographs the cake as it is NOW.
+  //
+  // Every frame this canvas draws comes from requestAnimationFrame, and a browser stops driving that
+  // while its window is hidden or minimised. The capture reads the drawing buffer directly
+  // (preserveDrawingBuffer), so with animation stopped it gets whatever was painted last — which can
+  // predate the design it is supposed to be a picture of. Rendering here is a direct call and does
+  // not care whether the browser is animating: measured with requestAnimationFrame stubbed out, the
+  // buffer still holds the previous frame and this still produces a new one.
+  //
+  // It cannot rescue every case, and the limit is worth knowing: if the window was hidden from the
+  // moment the page loaded, react-three-fiber never measures the container, so no renderer is ever
+  // created and there is nothing here to ask. That capture comes back EMPTY rather than stale, and is
+  // caught at the other end — captureThumbnailBlob refuses to encode a frame with nothing in it.
+  useEffect(() => {
+    if (!renderNowRef) return;
+    renderNowRef.current = () => { fit(); gl.render(scene, camera); };
+    return () => { renderNowRef.current = null; };
+  });   // no dep array: `fit` closes over the current group, and this must never hold a stale one
+
   return null;
 }
 
-export function CakeThumbnailCanvas({ config, containerRef }) {
+// `renderNowRef` is handed back to the caller, who calls it immediately before capturing. Optional:
+// a host that never captures (or captures while visibly on screen) can leave it out and nothing
+// changes. See FitCakeCamera for why a capture cannot simply trust that a frame exists.
+export function CakeThumbnailCanvas({ config, containerRef, renderNowRef }) {
   const groupRef = useRef();
   return (
     <div ref={containerRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 }}>
@@ -2716,7 +2740,7 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
         style={{ width: 400, height: 400 }}
       >
         <group ref={groupRef}><CakeThumbnailScene config={config} /></group>
-        <FitCakeCamera groupRef={groupRef} />
+        <FitCakeCamera groupRef={groupRef} renderNowRef={renderNowRef} />
       </Canvas>
     </div>
   );
