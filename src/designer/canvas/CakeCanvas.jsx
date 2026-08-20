@@ -37,7 +37,7 @@ import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { cakeAimTarget } from '../geometry/framing.js';
+import { fitDistance, sitFromSlack, cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
@@ -2204,6 +2204,8 @@ function CakeScene({
   // capture raycast below) whether the gesture is on a decoration/grip; record it so the tier and
   // background click handlers ignore a click that a decoration owns. No per-type logic.
   const gestureOnStickerRef = useRef(false);
+  // What FitCakeToView measures: the cake, and only the cake.
+  const cakeGroupRef = useRef();
   const { gl, camera, scene } = useThree();
 
   // Capture-phase pointerdown fires before OrbitControls' bubble-phase listener.
@@ -2284,6 +2286,10 @@ function CakeScene({
           off-screen capture and the read-only previews render, so what a customer sees and what the
           saved thumbnail shows are the same cake by construction. Everything BELOW this point is
           editing furniture: handles, catchers, pickers, present only while the cake is being worked on. */}
+      {/* Wrapped so the camera can MEASURE it (FitCakeToView). The group holds the cake and nothing
+          else — the floor is a 30x30 plane and the handles float above it, and either inside this
+          group would swamp the bounds and frame the room instead of the cake. */}
+      <group ref={cakeGroupRef}>
       <CakeContent
         config={config}
         scene={cakeScene}
@@ -2300,6 +2306,8 @@ function CakeScene({
           penDrawMode, penStyle, onAddStroke,
         }}
       />
+      </group>
+      <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} />
 
       {creamPaint && tierData[creamPaint.tierIndex] && (
         <CreamPaintTarget
@@ -2685,6 +2693,84 @@ const _fitDir = new THREE.Vector3();
 // instead of the old fixed [0,2,0] target + distance that left short cakes tiny and
 // low. Geometry-driven (no element-type branching); recomputed each frame so it
 // tracks live edits and async-loaded GLBs. Keeps the original front-above view angle.
+// ── Keeping the whole cake in the picture, live ─────────────────────────────────────────────────
+// The editor's camera stood at a constant distance, and a constant cannot frame every cake. It was
+// tuned four times before this: in so a single tier was not a speck, back out so a three-tier stack
+// kept its top, in again, and each time the cake it was NOT tuned against went wrong. The one that
+// finally made it undeniable was two tiers with a tall topper — the tallest thing the app can make —
+// which ran its board off the bottom of the screen.
+//
+// So the distance is measured, not chosen: fit the cake's own bounding sphere (framing.js). The
+// capture camera has always done this; the editor is only now asking the same question.
+//
+// TWO THINGS MAKE THE LIVE CASE DIFFERENT from the capture's, and both are about the person using it:
+//
+//   The camera is THEIRS. They can orbit it, and re-fitting must never undo that. So only the
+//   DISTANCE and the TARGET move; the direction from target to camera is read back and preserved,
+//   which reads as the cake being zoomed to fit rather than the view being snatched away.
+//
+//   Measuring costs something. setFromObject walks every mesh, and a grass cake has thousands of
+//   instances, so this runs on a stride rather than every frame, and only acts when the cake has
+//   MATERIALLY changed size. Adding a tier re-frames; nudging a decoration does not, which also
+//   means the view holds still during a drag.
+const FIT_STRIDE = 12;          // frames between measurements — 5/sec at 60fps, invisible for an edit
+const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
+function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
+  const { camera, size } = useThree();
+  // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
+  // when the controls are actually ready. The ref alone is a timing bug — on the frames before it is
+  // attached, the aim written here is discarded by the controls' own update, which goes on pointing
+  // at the origin. That put the camera at the right DISTANCE aiming at the floor, and the visible
+  // result was a two-tier cake with its top cut off: the fit looked broken when only the aim was.
+  const controls = useThree(s => s.controls);
+  const applied = useRef(null);
+  const tick = useRef(0);
+
+  useFrame(() => {
+    if (!enabled) return;
+    // Every frame until the cake has been framed once, on a stride after that. The first fit must
+    // not wait: until it lands the camera is wherever it was left, and a stride's delay is a visible
+    // jump from the wrong framing to the right one. Once settled, the deadband makes most ticks
+    // free — but the MEASUREMENT is not, so it is the measurement that gets throttled.
+    if (++tick.current % (applied.current ? FIT_STRIDE : 1)) return;
+    const g = groupRef.current;
+    // Nothing recorded until the controls exist, so the first real fit is not swallowed by the
+    // deadband as "already applied".
+    if (!g || !(controls ?? orbitRef?.current)) return;
+    _fitBox.setFromObject(g);
+    if (_fitBox.isEmpty()) return;
+    _fitBox.getBoundingSphere(_fitSphere);
+
+    const R = _fitSphere.radius;
+    const cy = _fitSphere.center.y;
+    const aspect = size.width / Math.max(size.height, 1);
+    const prev = applied.current;
+    // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
+    // the frame it has to fit inside is different.
+    if (prev && Math.abs(prev.R - R) < FIT_DEADBAND && Math.abs(prev.cy - cy) < FIT_DEADBAND
+             && Math.abs(prev.aspect - aspect) < 0.01) return;
+    applied.current = { R, cy, aspect };
+
+    const dist = fitDistance(R, camera.fov, aspect);
+    const ctl = controls ?? orbitRef?.current;
+    const target = ctl?.target;
+    const aimY = cy + sitFromSlack(R, dist, camera.fov);
+
+    // Preserve the user's angles: take the direction they are currently looking from, and only
+    // change how far along it the camera stands.
+    _fitDir.copy(camera.position).sub(target ?? _fitSphere.center).normalize();
+    if (!Number.isFinite(_fitDir.x) || _fitDir.lengthSq() < 0.5) {
+      _fitDir.set(0, CAMERA_POSITION[1], CAMERA_POSITION[2]).normalize();   // first frame: no orbit yet
+    }
+    if (target) target.set(0, aimY, 0);
+    camera.position.set(0, aimY, 0).addScaledVector(_fitDir, dist);
+    camera.updateProjectionMatrix();
+    ctl?.update();
+  });
+
+  return null;
+}
+
 function FitCakeCamera({ groupRef, renderNowRef }) {
   const { camera, gl, scene } = useThree();
   const fit = () => {
@@ -2839,16 +2925,6 @@ export default function CakeCanvas({
   const tierDataRef = useRef([]);
   const glRef       = useRef(null);
 
-  // Where the camera looks — this cake's own middle (see the OrbitControls target below). Memoised on
-  // the tier HEIGHTS rather than on `config`: the target is re-applied to the controls whenever this
-  // array changes, and a fresh one every render would re-aim the camera on every edit — including
-  // while a decoration is being dragged, which would fight the drag.
-  const tierHeights = (config.tiers ?? []).map(t => t.height);
-  // Keyed on the CAMERA too: the phone's sits further out than the desktop's, and the sit is an angle
-  // off that distance (framing.js). A target computed for one camera floats the cake on the other.
-  const aimTarget = useMemo(() => cakeAimTarget(tierHeights, cameraPosition),
-    [tierHeights.join(), cameraPosition.join()]);   // eslint-disable-line react-hooks/exhaustive-deps
-
   // Expose a hit-test function so the parent can raycast without drag events
   useEffect(() => {
     if (!hitTestRef) return;
@@ -2994,21 +3070,11 @@ export default function CakeCanvas({
         autoRotate={autoRotate && (creamPaint != null || (selectedTier === null && selectedTextId === null && !pipingTarget))}
         autoRotateSpeed={0.8}
         maxPolarAngle={Math.PI / 2.05}
-        // Where the camera AIMS, which decides where the cake sits vertically in frame — a separate
-        // question from CAMERA_POSITION, which only decides how big it is.
-        //
-        // THIS CAKE's middle, not a constant. It was [0, 2, 0], then [0, 1.55, 0]: tuned by one
-        // number twice, and wrong both times, because the question has no constant answer. 1.55 is
-        // exactly the top of a single tier (0.1 board + 1.45), so the camera looked at the very top
-        // of a one-tier cake and the cake sat in the bottom half of the frame, taking the board's
-        // FRONT label off the bottom edge with it. The same number aims into the middle of a
-        // two-tier stack and below the middle of a three.
-        //
-        // Still outstanding, and the other half of the same problem: the height-adaptive DISTANCE
-        // noted on CAMERA_POSITION. Aim decides where the cake SITS, distance decides how BIG it is,
-        // and a tall cake now sits right but is still framed by a camera fixed at a short cake's
-        // distance.
-        target={aimTarget}
+        // NO `target` prop, deliberately. FitCakeToView owns both the aim and the distance now, and
+        // it writes them onto these controls directly — a React-managed target would be re-applied on
+        // every render and fight it. The history of this line is why: [0,2,0], then [0,1.55,0], then
+        // a computed aim over a fixed distance, each right for the cake it was checked against and
+        // wrong for the next one. Framing is measured from the cake, not declared here.
       />
     </Canvas>
   );

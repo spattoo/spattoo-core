@@ -17,6 +17,44 @@
 // The old constant conflated them: it was a lift that happened to be right for one cake's middle.
 const BOARD_H = 0.1;   // the board's own thickness — the tier stack starts on top of it
 
+// ── Fitting a cake to the frame ─────────────────────────────────────────────────────────────────
+// How far back a camera must stand for the whole cake to be inside the picture. This is the part
+// that was hand-tuned for years, and every tune was right for one cake: pull in until a single tier
+// fills the frame and a three-tier stack loses its top; pull back until the stack fits and the
+// single tier is a speck. Add a tall topper and it breaks again, because the cake got taller and the
+// camera did not move.
+//
+// `radius` is the cake's BOUNDING SPHERE — measured from what is actually rendered, toppers and all,
+// not derived from tier heights. A sphere is used rather than a box because it is the one shape that
+// does not change size as the cake is orbited: fit it once and the cake stays inside the frame from
+// every angle, which a turntable needs.
+//
+// `aspect` is the viewport's, and it matters more than anything else on a phone. A tall narrow frame
+// is limited by its WIDTH, so the binding constraint is the smaller of the two half-angles. Without
+// this term a camera fitted on a desktop crops the board off the sides of a phone.
+export const FIT_MARGIN = 1.42;   // air around the cake; 1.0 would have it touching all four edges
+
+export function fitDistance(radius, fovDeg, aspect, margin = FIT_MARGIN) {
+  const vHalf = (fovDeg / 2) * Math.PI / 180;
+  const hHalf = Math.atan(Math.tan(vHalf) * Math.max(aspect || 1, 0.01));
+  return (Math.max(radius, 0.01) / Math.sin(Math.min(vHalf, hHalf))) * margin;
+}
+
+// How far above the cake's middle to aim, given how much ROOM there is above and below it.
+//
+// The sit used to be a fixed angle, and a fixed angle cannot know when it has run out of room: on a
+// tall cake — two tiers and a topper — it went on pushing down until the board left the bottom of
+// the frame, which is exactly what it was added to prevent. Expressed as a fraction of the SLACK it
+// is self-limiting. A cake that fills the frame gets no sit because there is none to give; a small
+// cake gets the full amount and stands on the lower third where an object on a table belongs.
+export const SIT_OF_SLACK = 0.42;
+
+export function sitFromSlack(radius, distance, fovDeg, frac = SIT_OF_SLACK) {
+  const vHalf = (fovDeg / 2) * Math.PI / 180;
+  const halfFrameAtCake = distance * Math.tan(vHalf);
+  return Math.max(0, halfFrameAtCake - radius) * frac;
+}
+
 // How far above the cake's middle the camera looks — as a FRACTION OF ITS DISTANCE from the cake,
 // not in world units. The sit is an ANGLE: how far the aim is tilted above the cake's middle. Move
 // the camera back and the same world offset covers less of the frame.

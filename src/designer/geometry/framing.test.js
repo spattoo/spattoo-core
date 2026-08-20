@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { cakeAimY, cakeAimTarget, cakeMiddleY, cakeStackHeight, cameraDistance, CAKE_SIT_FRAC } from './framing.js';
+import { cakeAimY, cakeAimTarget, cakeMiddleY, cakeStackHeight, cameraDistance, CAKE_SIT_FRAC,
+         fitDistance, sitFromSlack } from './framing.js';
 import { BOTTOM_H, TIER_HEIGHT_STEP, CAMERA_POSITION, CAMERA_POSITION_MOBILE } from '../constants.js';
 
 // The three cakes the old constant could not serve at once.
@@ -94,5 +95,77 @@ describe('cakeAimY', () => {
 describe('cakeAimTarget', () => {
   it('is the aim on the Y axis, centred in X and Z', () => {
     expect(cakeAimTarget(TWO, CAMERA_POSITION)).toEqual([0, cakeAimY(TWO, CAMERA_POSITION), 0]);
+  });
+});
+
+// ── Fitting the cake to the frame ───────────────────────────────────────────────────────────────
+// The camera stood at a fixed distance and was hand-tuned four times, each tune right for the cake
+// it was checked against: in so a single tier was not a speck, out so a three-tier kept its top, in
+// again. Two tiers plus a tall topper — the tallest thing the app makes — then ran its board off the
+// bottom of the screen. A constant cannot answer this, so the distance is measured from the cake.
+describe('fitDistance', () => {
+  const FOV = 42, WIDE = 1.4, PHONE = 335 / 560;
+
+  it('stands further back for a bigger cake — the whole point', () => {
+    expect(fitDistance(1.4, FOV, WIDE)).toBeLessThan(fitDistance(2.5, FOV, WIDE));
+  });
+
+  it('scales with the cake, so every cake gets the same framing', () => {
+    // Twice the cake, twice the distance: the cake occupies the same share of the frame either way.
+    expect(fitDistance(3, FOV, WIDE) / fitDistance(1.5, FOV, WIDE)).toBeCloseTo(2);
+  });
+
+  it('stands FURTHER back on a narrow frame, which is what a phone needs', () => {
+    // A tall narrow viewport is limited by its width, so the same cake needs more distance there.
+    // Without this a camera fitted on a desktop crops the board off the sides of a phone.
+    expect(fitDistance(1.8, FOV, PHONE)).toBeGreaterThan(fitDistance(1.8, FOV, WIDE));
+  });
+
+  it('leaves air around the cake rather than fitting it edge to edge', () => {
+    const r = 2;
+    const half = (FOV / 2) * Math.PI / 180;
+    expect(fitDistance(r, FOV, WIDE)).toBeGreaterThan(r / Math.sin(half));
+  });
+
+  it('never divides by zero on an empty or degenerate cake', () => {
+    expect(Number.isFinite(fitDistance(0, FOV, WIDE))).toBe(true);
+    expect(Number.isFinite(fitDistance(1.5, FOV, 0))).toBe(true);
+  });
+});
+
+describe('sitFromSlack', () => {
+  const FOV = 42;
+
+  it('sits the cake below centre when there is room to', () => {
+    const r = 1.5, d = fitDistance(r, FOV, 1.4);
+    expect(sitFromSlack(r, d, FOV)).toBeGreaterThan(0);
+  });
+
+  it('gives up the sit rather than push a tall cake out of frame', () => {
+    // THE BUG. A fixed-angle sit went on pushing down however tall the cake got, until the board
+    // left the bottom edge — which is the opposite of what a sit is for. As a share of the slack it
+    // cannot: no slack, no sit.
+    //
+    // "Fills the frame" is d·tan(halfFov) = r — the half-frame AT THE CAKE equals the cake. (Not
+    // r/sin, which is where a sphere touches the frustum's sloping sides; measured at its centre
+    // plane that one still leaves a few percent, and this test asserted otherwise at first.)
+    const r = 2.5;
+    const tooClose = r / Math.tan((FOV / 2) * Math.PI / 180);
+    expect(sitFromSlack(r, tooClose, FOV)).toBe(0);
+    expect(sitFromSlack(r, tooClose * 0.8, FOV)).toBe(0);   // closer still: still no sit, never negative
+  });
+
+  it('never returns a negative sit, which would lift the cake off the top instead', () => {
+    expect(sitFromSlack(5, 1, FOV)).toBe(0);
+  });
+
+  it('keeps the whole cake inside the frame at the fitted distance', () => {
+    // The real invariant: aim + the cake's own radius must stay within the half-frame, or something
+    // goes off an edge. Checked across every cake size the app can make.
+    for (const r of [1.2, 1.5, 2.0, 2.5, 3.0, 4.0]) {
+      const d = fitDistance(r, FOV, 1.4);
+      const halfFrame = d * Math.tan((FOV / 2) * Math.PI / 180);
+      expect(sitFromSlack(r, d, FOV) + r).toBeLessThanOrEqual(halfFrame + 1e-9);
+    }
   });
 });
