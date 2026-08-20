@@ -4877,10 +4877,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     || expandedPipingId != null;
   const stackShown = !isMobile || stackFlyoutOpen || stackHasExpandedCard;
 
-  // Closing pulls the flyout shut AND collapses whatever was expanded. Without the second half the
-  // panel springs straight back open, because an expanded card is itself a reason to be open.
+  // Opened by picking something ON THE CAKE rather than by the handle → show ONLY that element's
+  // card. Tapping a lion is a question about the lion; answering it with a list of the other eleven
+  // decorations puts the rest of the cake behind a column the baker did not ask for. The handle is
+  // what asks for the list, and it still does.
+  const stackSingleCard = isMobile && !stackFlyoutOpen && stackHasExpandedCard;
+
+  // The handle has three states to move between, not two: shut, one card, and the whole list.
+  //   · shut or one card → open the list. From a single card that is "and show me the others",
+  //     which beats making the baker close the card first and then pull the handle.
+  //   · list → shut, AND collapse whatever was expanded. Without the second half the panel springs
+  //     straight back open, because an expanded card is itself a reason to be shown.
   function toggleStackFlyout() {
-    if (stackShown) { setStackFlyoutOpen(false); clearAllSelections(); }
+    if (stackFlyoutOpen) { setStackFlyoutOpen(false); clearAllSelections(); }
     else setStackFlyoutOpen(true);
   }
 
@@ -7609,10 +7618,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               the time: it reads as a stray button rather than the handle of the thing beside it. */}
           {elementStackOpen && isMobile && (
             <button onClick={toggleStackFlyout}
-              aria-label={stackShown ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
-              aria-expanded={stackShown}
+              // Reads the LIST's state, not the panel's: with one card showing, the handle still
+              // offers the list, so it must still point outward and still say "show".
+              aria-label={stackFlyoutOpen ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
+              aria-expanded={stackFlyoutOpen}
               style={s.stackTab}>
-              {stackShown ? '▶' : '◀'}
+              {stackFlyoutOpen ? '▶' : '◀'}
             </button>
           )}
 
@@ -7631,6 +7642,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   of this group. Clicking the expanded card collapses it; clicking a collapsed
                   card opens it (and collapses any open piping card). */}
               {[...decorationCards]
+                .filter(c => !stackSingleCard || isCardSelected(c))
                 .sort((a, b) => (isCardSelected(b) ? 1 : 0) - (isCardSelected(a) ? 1 : 0))
                 .map(card => {
                   const expanded = isCardSelected(card);
@@ -7668,7 +7680,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
               {/* Writing card (typed cream "Texts") — one card; its expanded body is the
                   full composer. Like the others it stays until "Remove" deletes the writing. */}
-              {hasWriting && (() => {
+              {hasWriting && !(stackSingleCard && selectedEl?.type !== 'writing') && (() => {
                 const expanded = selectedEl?.type === 'writing';
                 const name = (design.writing?.text && design.writing.text.trim()) || 'Texts';
                 return (
@@ -7701,7 +7713,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {(expandedPipingId
                 ? [pipingCards.find(c => c.cardId === expandedPipingId), ...pipingCards.filter(c => c.cardId !== expandedPipingId)].filter(Boolean)
                 : pipingCards
-              ).map((card) => {
+              ).filter(c => !stackSingleCard || c.cardId === expandedPipingId)
+               .map((card) => {
                 const expanded = card.cardId === expandedPipingId;
                 // Number instances of the SAME element ("Soft Swirl 1", "Soft Swirl 2", …)
                 // so duplicate cards are distinguishable; a lone instance stays unnumbered.
