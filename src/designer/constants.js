@@ -71,10 +71,21 @@ export const CAMERA_POSITION        = [0, 4.85, 6.95];
 // Derive it from the cake's own height so a short tier fills the frame and a tall one still fits —
 // a fixed camera cannot do both, which is why it has now been tuned twice.
 //
-// MOBILE is deliberately NOT changed. It sits further out (9.3 vs 7.9) to compensate for a narrow
-// viewport, and the complaint that prompted this was on desktop; moving it blind risks clipping on
-// the surface that matters most.
-export const CAMERA_POSITION_MOBILE = [0, 6.3, 9.3];
+// MOBILE. Same DIRECTION as the desktop camera (both ≈34° above the horizon) — the two differ only
+// in how far back they stand, which is the one thing a narrow viewport actually changes.
+//
+// 2026-08-20: in 15%, from [0, 6.3, 9.3]. Measured rather than guessed, because a phone frame is
+// bound by its WIDTH, not its height: at 9.3 a one-tier cake's board already spanned 70% of the
+// frame's width while filling only 18% of its height. That is where "the cake looks like it is
+// floating on a phone" comes from — but it is NOT a distance problem, and the room to fix it by
+// moving the camera is small. The board touches the side edges at 30% closer; 15% keeps a margin.
+//
+// The rest of that vertical emptiness cannot be closed by any camera. A phone stage is ~1.7x taller
+// than wide and a one-tier cake with its board is ~2.3x wider than tall: a wide flat object cannot
+// fill a tall frame without being cropped. What is left is where the emptiness SITS (framing.js) and
+// how firmly the cake reads as standing on the floor — contact shadow and ground contrast — not how
+// far away the camera is. Do not answer the next report of this with another number here.
+export const CAMERA_POSITION_MOBILE = [0, 5.36, 7.91];
 export const CAMERA_FOV             = 42;
 
 // ── Top cap ───────────────────────────────────────────────────────────────────
