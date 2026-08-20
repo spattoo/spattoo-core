@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cakeAimY, cakeAimTarget, cakeStackHeight, CAKE_AIM_FRAC } from './framing.js';
+import { cakeAimY, cakeAimTarget, cakeMiddleY, cakeStackHeight, CAKE_AIM_LIFT } from './framing.js';
 import { BOTTOM_H, TIER_HEIGHT_STEP } from '../constants.js';
 
 // The three cakes the old constant could not serve at once.
@@ -23,32 +23,44 @@ describe('cakeStackHeight', () => {
   });
 });
 
+describe('cakeMiddleY', () => {
+  it('counts the board — it is part of the cake that is being framed', () => {
+    expect(cakeMiddleY(ONE)).toBeCloseTo((0.1 + BOTTOM_H) / 2);
+  });
+
+  it('rises with the cake', () => {
+    expect(cakeMiddleY(ONE)).toBeLessThan(cakeMiddleY(TWO));
+    expect(cakeMiddleY(TWO)).toBeLessThan(cakeMiddleY(THREE));
+  });
+});
+
 describe('cakeAimY', () => {
-  it('aims higher at a taller cake — the whole point', () => {
+  it('aims ABOVE the middle, which is what sits the cake low in frame instead of floating it', () => {
+    for (const tiers of [ONE, TWO, THREE]) {
+      expect(cakeAimY(tiers)).toBeGreaterThan(cakeMiddleY(tiers));
+    }
+  });
+
+  it('sits every cake by the SAME amount — the lift is fixed, only the middle moves', () => {
+    const sit = tiers => cakeAimY(tiers) - cakeMiddleY(tiers);
+    expect(sit(ONE)).toBeCloseTo(sit(THREE));
+    expect(sit(ONE)).toBeCloseTo(CAKE_AIM_LIFT);
+  });
+
+  it('aims higher at a taller cake — the whole point of not using a constant', () => {
     expect(cakeAimY(ONE)).toBeLessThan(cakeAimY(TWO));
     expect(cakeAimY(TWO)).toBeLessThan(cakeAimY(THREE));
   });
 
-  it('aims INSIDE the cake, never above its top or below its board', () => {
-    for (const tiers of [ONE, TWO, THREE]) {
-      const top = cakeStackHeight(tiers);
-      expect(cakeAimY(tiers)).toBeGreaterThan(0);
-      expect(cakeAimY(tiers)).toBeLessThan(top);
-    }
+  it('reproduces the old framing on a one-tier cake, which is the look that was asked back', () => {
+    // The hand-tuned constant was [0, 1.55, 0]. On the cake this app makes most, the adaptive rule
+    // must land on the same spot — otherwise "keep the old look" was not honoured.
+    expect(cakeAimY(ONE)).toBeCloseTo(1.55, 2);
   });
 
-  it('leaves the slack ABOVE the cake, where toppers are — so it aims below the true middle', () => {
-    const top = cakeStackHeight(THREE);
-    expect(cakeAimY(THREE)).toBeLessThan(top / 2);
-    expect(CAKE_AIM_FRAC).toBeLessThan(0.5);
-  });
-
-  it('fixes the case that prompted it: a single tier was aimed at from above its own top', () => {
-    // The old constant was 1.55 — a single tier's top is 0.1 (board) + 1.45, i.e. exactly 1.55. The
-    // camera looked at the very top of the cake, so the cake sat in the bottom half of the frame.
-    const singleTierTop = 0.1 + BOTTOM_H;
-    expect(1.55).toBeCloseTo(singleTierTop);
-    expect(cakeAimY(ONE)).toBeLessThan(singleTierTop);
+  it('no longer aims over the top of a tall cake, which is what cut the top tier off', () => {
+    const top = 0.1 + cakeStackHeight(THREE);
+    expect(cakeAimY(THREE)).toBeLessThan(top);
   });
 });
 

@@ -3,7 +3,6 @@ import { CakePreview } from '../canvas/CakeCanvas.jsx';
 import { starterDesign } from '../hooks/useCakeDesign.js';
 import { tierGeometry } from '../cakeShapes.js';
 import { isGlyphFamily, glyphTierDims, GLYPH_FAMILIES } from '../geometry/glyphShape.js';
-import { cakeAimY } from '../geometry/framing.js';
 import GlyphInput, { GLYPH_INPUT_PROPS } from './GlyphInput.jsx';
 import { Panel } from '../../shared/Panel.jsx';
 
@@ -43,9 +42,10 @@ export function shapeView(design) {
   // Fit the LARGER of the cake's height and its width, with headroom for the board it stands on.
   const fit = Math.max(totalH * 1.5, maxW * 1.25);
   const dist = (fit / 2) / Math.tan((SHAPE_FOV / 2) * (Math.PI / 180));
-  // Aim at the cake's middle, not the board. This tile's rule became the app's: the designer camera
-  // was a hand-tuned constant until it was extracted here (see geometry/framing.js).
-  const cy = cakeAimY(boxes.map(b => b.height));
+  // Aim at the cake's middle, not the board. Deliberately NOT the designer's rule (framing.js): that
+  // one aims above the middle to sit the cake low on a big stage, which is right for a stage and
+  // wrong for a 96px tile — here the shape is the whole subject and wants to be centred in its box.
+  const cy = totalH * 0.45;
   return {
     fov: SHAPE_FOV,
     cameraPosition: [0, cy + dist * Math.sin(SHAPE_ELEV), dist * Math.cos(SHAPE_ELEV)],
