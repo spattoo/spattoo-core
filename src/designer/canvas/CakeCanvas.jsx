@@ -37,7 +37,7 @@ import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { fitDistance, sitFromSlack, cakeAimTarget } from '../geometry/framing.js';
+import { fitDistance, sitFromSlack, seenHalfHeight, cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
@@ -2686,6 +2686,7 @@ function CakeThumbnailScene({ config }) {
 // Reusable temps for the per-frame bbox fit (avoid per-frame allocation).
 const _fitBox = new THREE.Box3();
 const _fitSphere = new THREE.Sphere();
+const _fitCenter = new THREE.Vector3();
 const _fitDir = new THREE.Vector3();
 
 // Frames the capture camera to the cake's ACTUAL rendered bounds (tiers + toppers +
@@ -2739,29 +2740,39 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
     if (!g || !(controls ?? orbitRef?.current)) return;
     _fitBox.setFromObject(g);
     if (_fitBox.isEmpty()) return;
-    _fitBox.getBoundingSphere(_fitSphere);
 
-    const R = _fitSphere.radius;
-    const cy = _fitSphere.center.y;
+    // A CYLINDER, not a sphere: the widest reach across the board, and the height. The box's own X/Z
+    // extents rotate with the cake, so the width is taken as the larger half-extent — which for a
+    // round cake IS the radius, and for a sheet is its longest side, i.e. what could ever swing into
+    // frame as it turns.
+    const halfW = Math.max(_fitBox.max.x - _fitBox.min.x, _fitBox.max.z - _fitBox.min.z) / 2;
+    const halfH = (_fitBox.max.y - _fitBox.min.y) / 2;
+    const cy = (_fitBox.max.y + _fitBox.min.y) / 2;
     const aspect = size.width / Math.max(size.height, 1);
     const prev = applied.current;
     // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
     // the frame it has to fit inside is different.
-    if (prev && Math.abs(prev.R - R) < FIT_DEADBAND && Math.abs(prev.cy - cy) < FIT_DEADBAND
-             && Math.abs(prev.aspect - aspect) < 0.01) return;
-    applied.current = { R, cy, aspect };
+    if (prev && Math.abs(prev.halfW - halfW) < FIT_DEADBAND && Math.abs(prev.halfH - halfH) < FIT_DEADBAND
+             && Math.abs(prev.cy - cy) < FIT_DEADBAND && Math.abs(prev.aspect - aspect) < 0.01) return;
+    applied.current = { halfW, halfH, cy, aspect };
 
-    const dist = fitDistance(R, camera.fov, aspect);
     const ctl = controls ?? orbitRef?.current;
     const target = ctl?.target;
-    const aimY = cy + sitFromSlack(R, dist, camera.fov);
 
     // Preserve the user's angles: take the direction they are currently looking from, and only
     // change how far along it the camera stands.
-    _fitDir.copy(camera.position).sub(target ?? _fitSphere.center).normalize();
+    _fitDir.copy(camera.position).sub(target ?? _fitBox.getCenter(_fitCenter)).normalize();
     if (!Number.isFinite(_fitDir.x) || _fitDir.lengthSq() < 0.5) {
       _fitDir.set(0, CAMERA_POSITION[1], CAMERA_POSITION[2]).normalize();   // first frame: no orbit yet
     }
+
+    // The distance depends on how far the camera is TILTED, and the tilt is the user's to choose —
+    // so it is read from where they are looking from, not assumed. Orbit down towards the table and
+    // the cake covers less height, so the camera closes in; orbit up and it backs off.
+    const elevation = Math.asin(Math.max(-1, Math.min(1, _fitDir.y)));
+    const dist = fitDistance(halfW, halfH, elevation, camera.fov, aspect);
+    const aimY = cy + sitFromSlack(seenHalfHeight(halfW, halfH, elevation), dist, camera.fov);
+
     if (target) target.set(0, aimY, 0);
     camera.position.set(0, aimY, 0).addScaledVector(_fitDir, dist);
     camera.updateProjectionMatrix();

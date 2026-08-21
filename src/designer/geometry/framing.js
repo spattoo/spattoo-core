@@ -24,20 +24,47 @@ const BOARD_H = 0.1;   // the board's own thickness — the tier stack starts on
 // single tier is a speck. Add a tall topper and it breaks again, because the cake got taller and the
 // camera did not move.
 //
-// `radius` is the cake's BOUNDING SPHERE — measured from what is actually rendered, toppers and all,
-// not derived from tier heights. A sphere is used rather than a box because it is the one shape that
-// does not change size as the cake is orbited: fit it once and the cake stays inside the frame from
-// every angle, which a turntable needs.
+// A cake is measured as a CYLINDER: `halfW`, its radius across the board, and `halfH`, half its
+// height. Both come from what is actually rendered, toppers and all.
 //
-// `aspect` is the viewport's, and it matters more than anything else on a phone. A tall narrow frame
-// is limited by its WIDTH, so the binding constraint is the smaller of the two half-angles. Without
-// this term a camera fitted on a desktop crops the board off the sides of a phone.
-export const FIT_MARGIN = 1.42;   // air around the cake; 1.0 would have it touching all four edges
+// A cylinder, not a sphere, and that is the whole correction. A sphere was the obvious rotation-proof
+// shape and it is badly wrong here: a cake with its board is a WIDE FLAT disc, so the sphere around
+// it is far taller than the cake is. The frame then reserves vertical room for a sphere that is
+// mostly empty air, and the cake shrinks into the middle of it — which is precisely "the camera is
+// too far and the cake looks like it is floating".
+//
+// A standing cylinder is just as rotation-proof, because its silhouette from every azimuth is the
+// same rectangle. That is the property a turntable needs, and a sphere is not the only shape with it.
+//
+// ── The camera looks DOWN, so height alone is not the vertical extent ───────────────────────────
+// Tilted by `elevation`, a standing cylinder projects taller than its height: the near rim of the
+// board swings down into the picture. The vertical extent is the height foreshortened plus the
+// board's depth stood up — h·cos + w·sin. Leave the second term out and the board is exactly what
+// runs off the bottom of the frame, which is the bug this whole rule was written to end.
+//
+// `aspect` is the viewport's, and it matters most on a phone: a tall narrow frame is limited by its
+// WIDTH, so the width constraint wins there and the height constraint wins on a desktop. Asking both
+// and taking the larger distance is what makes one rule serve both shapes.
+// Air around the cake. 1.0 has it touching the tightest edge; this leaves about 12% of the half-frame
+// clear once the sit below has taken its share, which is the difference between a cake standing in a
+// picture and a cake jammed into one. Raising it does less than it looks: the sit is a fraction of
+// the slack, so it eats part of every increase.
+export const FIT_MARGIN = 1.22;
 
-export function fitDistance(radius, fovDeg, aspect, margin = FIT_MARGIN) {
+export function fitDistance(halfW, halfH, elevationRad, fovDeg, aspect, margin = FIT_MARGIN) {
   const vHalf = (fovDeg / 2) * Math.PI / 180;
   const hHalf = Math.atan(Math.tan(vHalf) * Math.max(aspect || 1, 0.01));
-  return (Math.max(radius, 0.01) / Math.sin(Math.min(vHalf, hHalf))) * margin;
+  const w = Math.max(halfW, 0.01);
+  const h = Math.max(halfH, 0.01);
+  const halfSeen = seenHalfHeight(w, h, elevationRad);
+  return Math.max(w / Math.tan(hHalf), halfSeen / Math.tan(vHalf)) * margin;
+}
+
+// What the cake covers VERTICALLY on screen, once the camera's downward tilt is accounted for.
+// Shared with the sit, which has to know the same number or it hands back slack that is not there.
+export function seenHalfHeight(halfW, halfH, elevationRad) {
+  return Math.max(halfH, 0) * Math.abs(Math.cos(elevationRad))
+       + Math.max(halfW, 0) * Math.abs(Math.sin(elevationRad));
 }
 
 // How far above the cake's middle to aim, given how much ROOM there is above and below it.
@@ -47,12 +74,14 @@ export function fitDistance(radius, fovDeg, aspect, margin = FIT_MARGIN) {
 // the frame, which is exactly what it was added to prevent. Expressed as a fraction of the SLACK it
 // is self-limiting. A cake that fills the frame gets no sit because there is none to give; a small
 // cake gets the full amount and stands on the lower third where an object on a table belongs.
-export const SIT_OF_SLACK = 0.42;
+// Under half, and that is the point: the sit must never consume the air the margin just bought, or
+// the board ends up against the bottom edge — which is the bug all of this exists to end.
+export const SIT_OF_SLACK = 0.35;
 
-export function sitFromSlack(radius, distance, fovDeg, frac = SIT_OF_SLACK) {
+export function sitFromSlack(halfSeen, distance, fovDeg, frac = SIT_OF_SLACK) {
   const vHalf = (fovDeg / 2) * Math.PI / 180;
   const halfFrameAtCake = distance * Math.tan(vHalf);
-  return Math.max(0, halfFrameAtCake - radius) * frac;
+  return Math.max(0, halfFrameAtCake - Math.max(halfSeen, 0)) * frac;
 }
 
 // How far above the cake's middle the camera looks — as a FRACTION OF ITS DISTANCE from the cake,
