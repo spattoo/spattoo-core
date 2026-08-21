@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { cakeAimY, cakeAimTarget, cakeMiddleY, cakeStackHeight, cameraDistance, CAKE_SIT_FRAC,
-         fitDistance, sitFromSlack, seenHalfHeight } from './framing.js';
+         fitDistance, fitDistanceTight, sitFromSlack } from './framing.js';
 import { BOTTOM_H, TIER_HEIGHT_STEP, CAMERA_POSITION, CAMERA_POSITION_MOBILE } from '../constants.js';
 
 // The three cakes the old constant could not serve at once.
@@ -112,22 +112,11 @@ const ELEV = 34 * Math.PI / 180;          // the studio camera's tilt above the 
 const ONE_TIER  = { w: 1.8, h: 0.775 };   // board radius; half of board+tier
 const THREE_TIER = { w: 1.8, h: 2.155 };
 
-describe('seenHalfHeight', () => {
-  it('is just the height when the camera is level with the cake', () => {
-    expect(seenHalfHeight(1.8, 0.775, 0)).toBeCloseTo(0.775);
-  });
-
-  it('grows as the camera tilts down, because the board swings into view', () => {
-    // THE BUG THIS EXISTS FOR. Ignore it and a wide board is exactly what runs off the bottom edge.
-    expect(seenHalfHeight(1.8, 0.775, ELEV)).toBeGreaterThan(0.775);
-  });
-
-  it('is the width from directly overhead — the cake is then a disc', () => {
-    expect(seenHalfHeight(1.8, 0.775, Math.PI / 2)).toBeCloseTo(1.8);
-  });
-});
-
 describe('fitDistance', () => {
+  // The exact solve, not an estimate: for each corner of the cylinder's silhouette, the distance
+  // that puts it on the frame edge; the largest wins.
+  const touching = (w, h, a) => fitDistanceTight(w, h, ELEV, FOV, a);
+
   it('stands further back for a taller cake', () => {
     expect(fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE))
       .toBeLessThan(fitDistance(THREE_TIER.w, THREE_TIER.h, ELEV, FOV, WIDE));
@@ -138,31 +127,44 @@ describe('fitDistance', () => {
       .toBeLessThan(fitDistance(3.0, 0.775, ELEV, FOV, WIDE));
   });
 
-  it('does not reserve height for a wide flat cake that has none', () => {
-    // The sphere fit did exactly that, and it is why the camera ended up too far away. A sphere round
-    // a one-tier cake has radius hypot(1.8, 0.775) — much taller than the cake — so anchoring the
-    // frame to it wastes the difference. Fitting the real shape must come in closer than that.
-    const spherish = Math.hypot(ONE_TIER.w, ONE_TIER.h) / Math.sin((FOV / 2) * Math.PI / 180);
-    expect(fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE)).toBeLessThan(spherish);
-  });
-
   it('stands FURTHER back on a narrow frame, which is what a phone needs', () => {
     expect(fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, PHONE))
       .toBeGreaterThan(fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE));
   });
 
-  it('keeps the whole cake in frame, on every shape of viewport and cake', () => {
-    // The invariant that matters: at the fitted distance, both the cake's width and its seen height
-    // are inside the frame. Checked over the cakes and screens the app actually has.
+  it('accounts for the near board rim being closer than the cake\'s middle', () => {
+    // THE BUG, twice. Measuring the extent in the plane through the CENTRE stands about 20% too
+    // close, because the near front rim of the board projects bigger than that plane suggests — and
+    // that rim is precisely what kept ending up off the bottom of the screen.
+    const c = Math.cos(ELEV), s2 = Math.sin(ELEV);
+    const centrePlane = (ONE_TIER.h * c + ONE_TIER.w * s2) / Math.tan((FOV / 2) * Math.PI / 180);
+    expect(touching(ONE_TIER.w, ONE_TIER.h, WIDE)).toBeGreaterThan(centrePlane * 1.1);
+  });
+
+  it('puts EVERY corner of the cake inside the frame, on every screen and every cake', () => {
+    // The invariant, checked against the projection itself rather than against the formula that
+    // produced it: each silhouette corner, at its own distance from the camera, inside the frustum.
     const vHalf = (FOV / 2) * Math.PI / 180;
+    const c = Math.cos(ELEV), s2 = Math.sin(ELEV);
     for (const aspect of [PHONE, 0.8, 1.2, 2.2, 3.0]) {
-      for (const c of [ONE_TIER, THREE_TIER, { w: 2.6, h: 0.8 }, { w: 1.4, h: 3.2 }]) {
-        const d = fitDistance(c.w, c.h, ELEV, FOV, aspect);
-        const hHalf = Math.atan(Math.tan(vHalf) * aspect);
-        expect(d * Math.tan(hHalf)).toBeGreaterThanOrEqual(c.w);
-        expect(d * Math.tan(vHalf)).toBeGreaterThanOrEqual(seenHalfHeight(c.w, c.h, ELEV));
+      const hHalf = Math.atan(Math.tan(vHalf) * aspect);
+      for (const cake of [ONE_TIER, THREE_TIER, { w: 2.6, h: 0.8 }, { w: 1.4, h: 3.2 }]) {
+        const d = fitDistance(cake.w, cake.h, ELEV, FOV, aspect);
+        for (const px of [cake.w, -cake.w]) {
+          for (const py of [cake.h, -cake.h]) {
+            const along  = d - (px * c + py * s2);
+            const across = Math.abs(py * c - px * s2);
+            expect(across).toBeLessThanOrEqual(along * Math.tan(vHalf) + 1e-9);
+            expect(cake.w).toBeLessThanOrEqual((d - py * s2) * Math.tan(hHalf) + 1e-9);
+          }
+        }
       }
     }
+  });
+
+  it('leaves real air rather than fitting flush', () => {
+    expect(fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE))
+      .toBeGreaterThan(touching(ONE_TIER.w, ONE_TIER.h, WIDE));
   });
 
   it('never divides by zero on an empty or degenerate cake', () => {
@@ -172,27 +174,24 @@ describe('fitDistance', () => {
 });
 
 describe('sitFromSlack', () => {
-  it('sits the cake below centre when there is room to', () => {
-    const seen = seenHalfHeight(ONE_TIER.w, ONE_TIER.h, ELEV);
+  it('sits the cake below centre using the air the margin bought', () => {
+    const tight = fitDistanceTight(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE);
     const d = fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE);
-    expect(sitFromSlack(seen, d, FOV)).toBeGreaterThan(0);
+    expect(sitFromSlack(tight, d, FOV)).toBeGreaterThan(0);
   });
 
-  it('gives up the sit rather than push a tall cake out of frame', () => {
+  it('gives up the sit entirely when there is no air', () => {
     // A fixed-angle sit went on pushing down however tall the cake got, until the board left the
-    // bottom edge — the opposite of what a sit is for. As a share of the slack it cannot.
-    const seen = 2.5;
-    const tooClose = seen / Math.tan((FOV / 2) * Math.PI / 180);   // cake exactly fills the height
-    expect(sitFromSlack(seen, tooClose, FOV)).toBe(0);
-    expect(sitFromSlack(seen, tooClose * 0.8, FOV)).toBe(0);
+    // bottom edge — the opposite of what a sit is for. Tied to the margin it cannot.
+    const tight = fitDistanceTight(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE);
+    expect(sitFromSlack(tight, tight, FOV)).toBe(0);
+    expect(sitFromSlack(tight, tight * 0.8, FOV)).toBe(0);   // closer than touching: still never negative
   });
 
-  it('keeps the whole cake inside the frame at the fitted distance', () => {
-    const vHalf = (FOV / 2) * Math.PI / 180;
-    for (const c of [ONE_TIER, THREE_TIER, { w: 2.6, h: 0.8 }]) {
-      const seen = seenHalfHeight(c.w, c.h, ELEV);
-      const d = fitDistance(c.w, c.h, ELEV, FOV, WIDE);
-      expect(sitFromSlack(seen, d, FOV) + seen).toBeLessThanOrEqual(d * Math.tan(vHalf) + 1e-9);
-    }
+  it('never takes all of the air, or the cake ends up against the edge again', () => {
+    const tight = fitDistanceTight(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE);
+    const d = fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE);
+    const air = (d - tight) * Math.tan((FOV / 2) * Math.PI / 180);
+    expect(sitFromSlack(tight, d, FOV)).toBeLessThan(air);
   });
 });

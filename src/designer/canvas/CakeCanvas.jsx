@@ -37,7 +37,7 @@ import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { fitDistance, sitFromSlack, seenHalfHeight, cakeAimTarget } from '../geometry/framing.js';
+import { fitDistance, fitDistanceTight, sitFromSlack, cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
@@ -2770,8 +2770,11 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
     // so it is read from where they are looking from, not assumed. Orbit down towards the table and
     // the cake covers less height, so the camera closes in; orbit up and it backs off.
     const elevation = Math.asin(Math.max(-1, Math.min(1, _fitDir.y)));
+    const tight = fitDistanceTight(halfW, halfH, elevation, camera.fov, aspect);
     const dist = fitDistance(halfW, halfH, elevation, camera.fov, aspect);
-    const aimY = cy + sitFromSlack(seenHalfHeight(halfW, halfH, elevation), dist, camera.fov);
+    // The sit takes a share of the air the margin bought, and nothing else — so it can never push
+    // the cake past the edge it was standing back from.
+    const aimY = cy + sitFromSlack(tight, dist, camera.fov);
 
     if (target) target.set(0, aimY, 0);
     camera.position.set(0, aimY, 0).addScaledVector(_fitDir, dist);

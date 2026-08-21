@@ -36,35 +36,52 @@ const BOARD_H = 0.1;   // the board's own thickness — the tier stack starts on
 // A standing cylinder is just as rotation-proof, because its silhouette from every azimuth is the
 // same rectangle. That is the property a turntable needs, and a sphere is not the only shape with it.
 //
-// ── The camera looks DOWN, so height alone is not the vertical extent ───────────────────────────
-// Tilted by `elevation`, a standing cylinder projects taller than its height: the near rim of the
-// board swings down into the picture. The vertical extent is the height foreshortened plus the
-// board's depth stood up — h·cos + w·sin. Leave the second term out and the board is exactly what
-// runs off the bottom of the frame, which is the bug this whole rule was written to end.
+// ── Perspective, which is where the two previous attempts went wrong ────────────────────────────
+// It is tempting to measure the cake's extent in the plane through its CENTRE and fit that. Both
+// earlier versions did, and both put the camera about 20% too close, because the near front rim of
+// the BOARD is closer to the camera than the centre is and therefore projects bigger than the
+// estimate. That rim is the exact point that kept ending up off the bottom of the screen.
 //
-// `aspect` is the viewport's, and it matters most on a phone: a tall narrow frame is limited by its
-// WIDTH, so the width constraint wins there and the height constraint wins on a desktop. Asking both
-// and taking the larger distance is what makes one rule serve both shapes.
-// Air around the cake. 1.0 has it touching the tightest edge; this leaves about 12% of the half-frame
-// clear once the sit below has taken its share, which is the difference between a cake standing in a
-// picture and a cake jammed into one. Raising it does less than it looks: the sit is a fraction of
-// the slack, so it eats part of every increase.
-export const FIT_MARGIN = 1.22;
-
-export function fitDistance(halfW, halfH, elevationRad, fovDeg, aspect, margin = FIT_MARGIN) {
+// There is no need to approximate. The silhouette of a standing cylinder, in the vertical plane
+// through the cake and the camera, is a rectangle with four corners. For each corner, ask what
+// distance would put it exactly on the frame edge, and take the largest answer. Closed form, exact,
+// and it names its own worst case rather than hiding it in a fudge factor.
+//
+//   px — how far the corner is toward the camera, horizontally (±halfW)
+//   py — how far it is above the cake's middle (±halfH)
+//
+// Along the view axis it sits at  d − (px·cos + py·sin); across it, at  py·cos − px·sin. Requiring
+// the second to be within tan(halfFov) of the first and solving for d gives the line below.
+function tightDistance(halfW, halfH, elevationRad, fovDeg, aspect) {
   const vHalf = (fovDeg / 2) * Math.PI / 180;
   const hHalf = Math.atan(Math.tan(vHalf) * Math.max(aspect || 1, 0.01));
-  const w = Math.max(halfW, 0.01);
-  const h = Math.max(halfH, 0.01);
-  const halfSeen = seenHalfHeight(w, h, elevationRad);
-  return Math.max(w / Math.tan(hHalf), halfSeen / Math.tan(vHalf)) * margin;
+  const c = Math.cos(elevationRad), s = Math.sin(elevationRad);
+  let d = 0;
+  for (const px of [halfW, -halfW]) {
+    for (const py of [halfH, -halfH]) {
+      const across = Math.abs(py * c - px * s);
+      d = Math.max(d, across / Math.tan(vHalf) + px * c + py * s);
+    }
+  }
+  // Sideways, the widest points are the silhouette's edges — out of that plane, so px is 0 for them
+  // and only their height shifts how far away they are.
+  d = Math.max(d, halfW / Math.tan(hHalf) + Math.abs(halfH * s));
+  return Math.max(d, 0.01);
 }
 
-// What the cake covers VERTICALLY on screen, once the camera's downward tilt is accounted for.
-// Shared with the sit, which has to know the same number or it hands back slack that is not there.
-export function seenHalfHeight(halfW, halfH, elevationRad) {
-  return Math.max(halfH, 0) * Math.abs(Math.cos(elevationRad))
-       + Math.max(halfW, 0) * Math.abs(Math.sin(elevationRad));
+// How much further back than EXACTLY TOUCHING to stand. 1.0 puts the cake's worst corner precisely
+// on the frame edge, so this reads as "25% more room than the cake strictly needs" — a number worth
+// arguing about, unlike the fudge factors it replaces.
+export const FIT_MARGIN = 1.25;
+
+export function fitDistance(halfW, halfH, elevationRad, fovDeg, aspect, margin = FIT_MARGIN) {
+  return fitDistanceTight(halfW, halfH, elevationRad, fovDeg, aspect) * margin;
+}
+
+// The distance at which the cake exactly touches the frame. Exported so the sit can work out how
+// much air the margin actually bought, rather than estimating it a second way and disagreeing.
+export function fitDistanceTight(halfW, halfH, elevationRad, fovDeg, aspect) {
+  return tightDistance(Math.max(halfW, 0.01), Math.max(halfH, 0.01), elevationRad, fovDeg, aspect);
 }
 
 // How far above the cake's middle to aim, given how much ROOM there is above and below it.
@@ -78,10 +95,11 @@ export function seenHalfHeight(halfW, halfH, elevationRad) {
 // the board ends up against the bottom edge — which is the bug all of this exists to end.
 export const SIT_OF_SLACK = 0.35;
 
-export function sitFromSlack(halfSeen, distance, fovDeg, frac = SIT_OF_SLACK) {
+export function sitFromSlack(tightDist, distance, fovDeg, frac = SIT_OF_SLACK) {
   const vHalf = (fovDeg / 2) * Math.PI / 180;
-  const halfFrameAtCake = distance * Math.tan(vHalf);
-  return Math.max(0, halfFrameAtCake - Math.max(halfSeen, 0)) * frac;
+  // The air the margin bought, measured at the cake. Standing back by (distance - tight) widens the
+  // frame by that much times tan(halfFov); the cake did not grow, so all of it is spare room.
+  return Math.max(0, distance - tightDist) * Math.tan(vHalf) * frac;
 }
 
 // How far above the cake's middle the camera looks — as a FRACTION OF ITS DISTANCE from the cake,
