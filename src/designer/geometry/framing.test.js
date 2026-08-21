@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { cakeAimY, cakeAimTarget, cakeMiddleY, cakeStackHeight, cameraDistance, CAKE_SIT_FRAC,
-         fitDistance, fitDistanceTight, sitFromSlack } from './framing.js';
+         fitDistance, fitDistanceTight, sitFromSlack, framedHeight, MIN_FRAMED_TOP } from './framing.js';
 import { BOTTOM_H, TIER_HEIGHT_STEP, CAMERA_POSITION, CAMERA_POSITION_MOBILE } from '../constants.js';
 
 // The three cakes the old constant could not serve at once.
@@ -193,5 +193,43 @@ describe('sitFromSlack', () => {
     const d = fitDistance(ONE_TIER.w, ONE_TIER.h, ELEV, FOV, WIDE);
     const air = (d - tight) * Math.tan((FOV / 2) * Math.PI / 180);
     expect(sitFromSlack(tight, d, FOV)).toBeLessThan(air);
+  });
+});
+
+// ── A new cake should look like a finished one ──────────────────────────────────────────────────
+// A bare cake is short, so fitting it exactly brings the camera close and it fills the frame; the
+// same cake with grass and a topper is taller, so the camera stands back. Both correctly fitted,
+// and they read as different sizes — which is what "a new cake is bigger than a template" meant.
+// The framed shape reserves a topper's worth of height, because in a designer that is what is about
+// to be there.
+describe('framedHeight', () => {
+  it('reserves headroom above a short cake', () => {
+    // A bare one-tier reaches 1.55 (board + tier); the framed box reaches the reserve instead.
+    const { halfH, centerY } = framedHeight(0, 1.55);
+    expect(halfH * 2).toBeCloseTo(MIN_FRAMED_TOP);
+    expect(centerY).toBeCloseTo(MIN_FRAMED_TOP / 2);
+  });
+
+  it('leaves a tall cake alone — it is already using the room', () => {
+    const tall = 4.21;                       // three tiers
+    const { halfH, centerY } = framedHeight(0, tall);
+    expect(halfH * 2).toBeCloseTo(tall);
+    expect(centerY).toBeCloseTo(tall / 2);
+  });
+
+  it('frames a bare cake at the same distance as one that already has a topper', () => {
+    // The point of the whole thing: a new cake and a decorated one of the same tier count are shot
+    // from the same place, so they are the same size on screen.
+    const ELEV2 = 34 * Math.PI / 180;
+    const bare      = framedHeight(0, 1.55);            // nothing on top yet
+    const decorated = framedHeight(0, 2.4);             // grass + a ball, roughly the football template
+    expect(fitDistanceTight(1.8, bare.halfH, ELEV2, 42, 1.5))
+      .toBeCloseTo(fitDistanceTight(1.8, decorated.halfH, ELEV2, 42, 1.5), 1);
+  });
+
+  it('never shrinks the cake it was given', () => {
+    for (const top of [0.5, 1.55, 2.4, 4.21, 6]) {
+      expect(framedHeight(0, top).halfH * 2).toBeGreaterThanOrEqual(top - 1e-9);
+    }
   });
 });

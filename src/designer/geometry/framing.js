@@ -69,6 +69,32 @@ function tightDistance(halfW, halfH, elevationRad, fovDeg, aspect) {
   return Math.max(d, 0.01);
 }
 
+// ── Room for what is about to be put on top ─────────────────────────────────────────────────────
+// A bare cake is SHORT, so fitting it exactly brings the camera close and it fills the frame; the
+// same cake with grass and a topper is taller, so the camera stands back and the cake body reads
+// smaller. Both are correctly fitted and they look like different sizes, which is what "a new cake
+// is bigger than a template" means.
+//
+// The cake is not really the subject on its own, though. This is a designer: a cake here is a cake
+// that is ABOUT to have something stood on top of it. So the framed shape reserves a topper's worth
+// of height above the board even when nothing is there yet.
+//
+// Two things fall out of that, and the second is the better reason. A new cake is framed like a
+// finished one — and adding the first topper no longer LURCHES the camera, because the room it needs
+// was already in the picture.
+//
+// 2.4 is measured, not picked: it is the height at which a bare one-tier cake fits at the same
+// distance as the football template (grass + ball), which is the framing that was asked for. Taller
+// cakes are unaffected — they already exceed it, so this only ever stops a short cake crowding in.
+export const MIN_FRAMED_TOP = 2.4;
+
+// The box to frame, given what is actually rendered: the cake, plus the headroom above if the cake
+// is not already using it. Returns the same shape the fit wants — half-height and centre.
+export function framedHeight(boxMinY, boxMaxY, minTop = MIN_FRAMED_TOP) {
+  const top = Math.max(boxMaxY, minTop);
+  return { halfH: (top - boxMinY) / 2, centerY: (top + boxMinY) / 2 };
+}
+
 // How much further back than EXACTLY TOUCHING to stand. 1.0 puts the cake's worst corner precisely
 // on the frame edge, so this reads as "25% more room than the cake strictly needs" — a number worth
 // arguing about, unlike the fudge factors it replaces.

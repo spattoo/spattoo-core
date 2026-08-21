@@ -37,7 +37,7 @@ import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { fitDistance, fitDistanceTight, sitFromSlack, cakeAimTarget } from '../geometry/framing.js';
+import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
@@ -2746,8 +2746,9 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
     // round cake IS the radius, and for a sheet is its longest side, i.e. what could ever swing into
     // frame as it turns.
     const halfW = Math.max(_fitBox.max.x - _fitBox.min.x, _fitBox.max.z - _fitBox.min.z) / 2;
-    const halfH = (_fitBox.max.y - _fitBox.min.y) / 2;
-    const cy = (_fitBox.max.y + _fitBox.min.y) / 2;
+    // Height INCLUDING the headroom a topper will want, so a bare cake is framed like a finished one
+    // and standing the first topper on it does not lurch the camera (see framedHeight).
+    const { halfH, centerY: cy } = framedHeight(_fitBox.min.y, _fitBox.max.y);
     const aspect = size.width / Math.max(size.height, 1);
     const prev = applied.current;
     // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
