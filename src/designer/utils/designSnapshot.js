@@ -22,7 +22,11 @@
 // with the finish absent → toCanvasConfig defaults it to buttercream and the finish is silently lost. They
 // were missing here; a glaze design would come back plain. (Backward-compatible: absent on an old snapshot
 // → still defaults, exactly as before; present on a new one → restored.)
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'glaze', 'dusting', 'foil'];
+// `grass` and `creamLayers` were missing, and both were lost the same way glaze was: added to the
+// cake, never added to this list. A template saved with piped grass on its top came back bald, and
+// its THUMBNAIL still showed the grass — the picture is captured from the canvas, not from the
+// snapshot, so the two disagreed with nothing to say so. See the round-trip guard in the test.
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {
@@ -55,7 +59,11 @@ export function buildDesignSnapshot(design) {
     texts:    design.texts,
     ages:     design.ages,
     stickers: design.stickers,
-    writing:  design.writing ?? null,   // typed cream lettering
-    piping:   design.piping ?? [],       // freehand cream-pen strokes
+    writing:  design.writing ?? null,      // typed cream lettering
+    piping:   design.piping ?? [],          // freehand cream-pen strokes
+    // Design-level, not per-tier, because the BOARD is: a ring of grass round the cake's foot and a
+    // name spelled in fondant cubes both stand on it, not on any one tier.
+    boardGrass: design.boardGrass ?? null,
+    nameBlocks: design.nameBlocks ?? null,
   };
 }

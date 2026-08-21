@@ -1437,6 +1437,14 @@ const EDIT_PANEL_MIN = 108;
  *  which is the entire reason any of this is here. */
 const EDIT_PANEL_MAX_VH = 0.6;
 
+/** The element stack's width on a phone. */
+const STACK_W_MOBILE = 156;
+/** The flyout handle's width — it lives on the right edge and never moves. */
+const STACK_TAB_W = 22;
+/** How far the stack sits in from the right on a phone: clear of the handle, plus the same 10 of
+ *  breathing room it has on a desktop. Derived, so widening the handle never lands it on the panel. */
+const STACK_RIGHT_MOBILE = STACK_TAB_W + 10;
+
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
@@ -1723,6 +1731,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // cardId. expandedPipingId holds the expanded card's cardId; only one is open at a time.
   const [pipingCards,        setPipingCards]        = useState([]);
   const [expandedPipingId,   setExpandedPipingId]   = useState(null);
+  // Is the element stack pulled OUT? Phone only — see the flyout below. Shut by default, because a
+  // baker opens the designer to look at the cake, not at a list of what is on it.
+  const [stackFlyoutOpen,    setStackFlyoutOpen]    = useState(false);
   // Which ring's color picker popup is open, keyed `${cardId}-${zone}-${tierIndex}` (null = none),
   // plus the screen-space anchor (the tapped Color dot) the floating popup positions against.
   const [pipingColorKey,     setPipingColorKey]     = useState(null);
@@ -1845,6 +1856,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const textInputRef = useRef();
   const thumbContainerRef = useRef();
+  // Draws the capture canvas a frame on demand. The browser stops animating a hidden or minimised
+  // window, so a save made in the background would otherwise photograph a frame that was never
+  // rendered — see FitCakeCamera. Every capture below asks for a frame first.
+  const thumbRenderNowRef = useRef(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen,  setProfileOpen]  = useState(false);
   const [chefsDeskOpen, setChefsDeskOpen] = useState(false);   // Chef's Desk menu (Color Guide, …)
@@ -2400,6 +2415,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
     // Capture from the off-screen thumbnail canvas (no floor, flattened onto white) as a compact WebP.
     // Keep the blob here — the onSaveTemplate callback path hands the raw blob to the host.
+    thumbRenderNowRef.current?.();
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
 
@@ -3763,12 +3779,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (!partEl) { console.warn(`[decor_pattern] part element_id not found: "${part.element_id}" — check the parts JSON`); return; }
       const mode = zoneMode(partEl.placement_config, hit.zone);
       // Part offset is interpreted in the surface's own coordinates: on the TOP it's (x, z) in
-      // cake units; on a WALL (side / middle tier) `dx` becomes an angular offset in radians so
-      // the parts sit side-by-side around the wall (e.g. two unicorn eyes on the front face),
-      // height left at the default so they stay level.
+      // cake units; on a WALL (side / middle tier) `dx` becomes an angular offset in radians so the
+      // parts fan around the wall, and `dz` raises or lowers them.
+      //
+      // `dz` used to be DROPPED on a wall — every part stayed level. That was right for the two
+      // things patterns had been used for (unicorn eyes, a piping pair, both horizontal) and it
+      // silently ruled out anything stacked: a honeycomb of football panels is rows above rows, and
+      // authoring one produced a single squashed line with no error to explain it. Both existing
+      // patterns carry dz: 0, so nothing authored before this behaves differently.
       const isWall = hit.zone === ZONES.SIDE || hit.zone === ZONES.MIDDLE_TIER;
       const partHit = isWall
-        ? { ...hit, theta: (hit.theta ?? 0) + (part.dx ?? 0) }
+        ? { ...hit, theta: (hit.theta ?? 0) + (part.dx ?? 0), y: (hit.y ?? 0) + (part.dz ?? 0) }
         : { ...hit, x: (hit.x ?? 0) + (part.dx ?? 0), z: (hit.z ?? 0) + (part.dz ?? 0) };
       ids.push(addSticker(partEl, partHit.zone, partHit.tierIndex, mode ?? 'stand', partHit,
         { id: baseId + i, patternId, patternElementId: pattern.id, patternDeletable: deletable, flipX: part.mirror === true }));
@@ -4411,6 +4432,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // placement), then open the invite panel with it attached so the baker sends a customer straight
   // into THIS design. The design rides on the invite (design_snapshot) — no template row is created.
   async function handleShareDraft() {
+    thumbRenderNowRef.current?.();
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
     setInviteLiveSessionId(null);
@@ -4421,6 +4443,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   async function handleOrderSubmit(formData) {
     // Thumbnail → R2 (never base64 in the JSON body) + the full design snapshot, via the
     // shared helpers so order / template / share all serialise identically.
+    thumbRenderNowRef.current?.();
     const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
     const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
     const designSnapshot = buildDesignSnapshot(design);
@@ -4841,6 +4864,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'cream' ? true
          : card.type === 'tool' ? selectedEl.tool === card.tool
          : selectedEl?.id === card.id);
+
+  // ── The stack is a FLYOUT on a phone ──────────────────────────────────────────────────────────
+  // Shut by default, pulled out by a tab on the right edge. It used to be permanently open, and on a
+  // 335px viewport a list of a dozen decorations covered the cake it was describing — you could not
+  // see the thing you were editing. Desktop keeps it open: there is room beside the cake there, and
+  // hiding it would cost a click for nothing.
+  //
+  // It cannot simply be DROPPED on a phone, which is the tempting version of this fix. Grass, letter
+  // blocks, gold leaf and luster dust have no pointer handlers on the cake at all — their drag handles
+  // only exist inside their own mode, and their card is what opens that mode. Take the stack away and
+  // a baker can add grass and then never edit or remove it.
+  //
+  // And it springs open by itself whenever a card is EXPANDED, because selecting a decoration on the
+  // cake is what expands that decoration's card. With the flyout shut, tapping a decoration would
+  // otherwise look like nothing happened at all.
+  const stackHasExpandedCard = decorationCards.some(isCardSelected)
+    || selectedEl?.type === 'writing'
+    || expandedPipingId != null;
+  const stackShown = !isMobile || stackFlyoutOpen || stackHasExpandedCard;
+
+  // Opened by picking something ON THE CAKE rather than by the handle → show ONLY that element's
+  // card. Tapping a lion is a question about the lion; answering it with a list of the other eleven
+  // decorations puts the rest of the cake behind a column the baker did not ask for. The handle is
+  // what asks for the list, and it still does.
+  const stackSingleCard = isMobile && !stackFlyoutOpen && stackHasExpandedCard;
+
+  // The handle has three states to move between, not two: shut, one card, and the whole list.
+  //   · shut or one card → open the list. From a single card that is "and show me the others",
+  //     which beats making the baker close the card first and then pull the handle.
+  //   · list → shut, AND collapse whatever was expanded. Without the second half the panel springs
+  //     straight back open, because an expanded card is itself a reason to be shown.
+  function toggleStackFlyout() {
+    if (stackFlyoutOpen) { setStackFlyoutOpen(false); clearAllSelections(); }
+    else setStackFlyoutOpen(true);
+  }
+
   function selectDecorationCard(card) {
     // Every card is a single exclusive selection routed through selectExclusive (selectedEl + the
     // highlight Set written together), so clicking any card can never leave a previous card OR a canvas
@@ -7557,13 +7616,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           })()}
 
           {/* ── Unified element stack: decorations + piping in one accordion ── */}
-          {elementStackOpen && (
+          {/* The flyout's handle — phone only (see stackShown). It NEVER MOVES: parked on the right
+              edge at the vertical middle, where a thumb already rests and clear of both the
+              notification bell above and the Actions pill below, while the stack opens to its left
+              (STACK_RIGHT_MOBILE leaves the lane). One target in one place that opens and closes.
+              Tried the other way first — the handle riding the panel's edge — and it ends up floating
+              in the middle of the cake whenever the panel is shorter than the stage, which is most of
+              the time: it reads as a stray button rather than the handle of the thing beside it. */}
+          {elementStackOpen && isMobile && (
+            <button onClick={toggleStackFlyout}
+              // Reads the LIST's state, not the panel's: with one card showing, the handle still
+              // offers the list, so it must still point outward and still say "show".
+              aria-label={stackFlyoutOpen ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
+              aria-expanded={stackFlyoutOpen}
+              style={s.stackTab}>
+              {stackFlyoutOpen ? '▶' : '◀'}
+            </button>
+          )}
+
+          {elementStackOpen && stackShown && (
             <div ref={pipingPopupRef} className="piping-popup-scroll"
               style={isMobile
                 // Mobile: a see-through, narrower overlay so the cake shows THROUGH the stack (the cards
                 // carry the fill). Light tint + a small blur (not the heavy 18px frost, which washed the
                 // cake out to white). Scroll/maxHeight kept so a long element list still works.
-                ? { ...s.editPopup, width: 156, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
+                ? { ...s.editPopup, width: STACK_W_MOBILE, right: STACK_RIGHT_MOBILE, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
                 : s.editPopup}>
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
@@ -7572,6 +7649,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   of this group. Clicking the expanded card collapses it; clicking a collapsed
                   card opens it (and collapses any open piping card). */}
               {[...decorationCards]
+                .filter(c => !stackSingleCard || isCardSelected(c))
                 .sort((a, b) => (isCardSelected(b) ? 1 : 0) - (isCardSelected(a) ? 1 : 0))
                 .map(card => {
                   const expanded = isCardSelected(card);
@@ -7609,7 +7687,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
               {/* Writing card (typed cream "Texts") — one card; its expanded body is the
                   full composer. Like the others it stays until "Remove" deletes the writing. */}
-              {hasWriting && (() => {
+              {hasWriting && !(stackSingleCard && selectedEl?.type !== 'writing') && (() => {
                 const expanded = selectedEl?.type === 'writing';
                 const name = (design.writing?.text && design.writing.text.trim()) || 'Texts';
                 return (
@@ -7642,7 +7720,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {(expandedPipingId
                 ? [pipingCards.find(c => c.cardId === expandedPipingId), ...pipingCards.filter(c => c.cardId !== expandedPipingId)].filter(Boolean)
                 : pipingCards
-              ).map((card) => {
+              ).filter(c => !stackSingleCard || c.cardId === expandedPipingId)
+               .map((card) => {
                 const expanded = card.cardId === expandedPipingId;
                 // Number instances of the SAME element ("Soft Swirl 1", "Soft Swirl 2", …)
                 // so duplicate cards are distinguishable; a lone instance stays unnumbered.
@@ -8569,7 +8648,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
 
       {/* Off-screen thumbnail canvas — no floor, transparent background */}
-      <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
+      <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} renderNowRef={thumbRenderNowRef} />
 
       {/* Floating sticker ghost while pointer-dragging from elements panel */}
       {dragGhost && (
@@ -8774,6 +8853,17 @@ const s = {
     // the phone just stopped having, in a place with four times the room. Left as-is deliberately
     // rather than fixed blind; see the note in plans/, and it wants its own look.
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    // ⚠️ THE LEFT PADDING IS LOAD-BEARING, and the negative margin cancels it visually.
+    // `overflow: hidden` clips at the CONTENT BOX, and Pacifico's lowercase f has ink that starts
+    // 1.35px LEFT of the text origin at 26px (measured: actualBoundingBoxLeft = -1.35). With the
+    // glyph sitting flush against that edge, the f's curl was shaved flat — which is what
+    // "feelings&flavours" showed in production, and what any name beginning f/j/y would show.
+    // The padding moves the clip edge left to make room; the equal negative margin puts the
+    // wordmark back exactly where it was, so nothing else in the header moves. Removing either one
+    // alone re-breaks it or shifts the mark 10px right.
+    // Not a Pacifico quirk to special-case: script and italic faces routinely have negative left
+    // side bearings, and this style is the only place a script face meets an overflow clip.
+    paddingLeft: 10, marginLeft: -10,
   },
 
   // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
@@ -9204,6 +9294,22 @@ const s = {
 
   // Right-side per-element edit popup (desktop sticker/topper) — same chrome as
   // the piping popup so element editing feels consistent.
+  // The flyout handle. Half-rounded on the outer edge so it reads as something to pull rather than a
+  // button that happens to be at the edge, and narrow enough that shut, it costs the cake 22px.
+  stackTab: {
+    position: 'absolute', top: '50%', right: 0, transform: 'translateY(-50%)',
+    width: STACK_TAB_W, height: 56, padding: 0,
+    border: 'none', borderRadius: '10px 0 0 10px',
+    background: 'rgba(255,255,255,0.82)',
+    backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+    boxShadow: '0 2px 10px rgba(107,45,66,0.18)',
+    color: '#6b2d42', fontSize: 10, lineHeight: 1,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer',
+    // Above the stack itself (20), so the handle stays pressable when the panel is out.
+    zIndex: 21,
+    pointerEvents: 'auto',
+  },
   editPopup: {
     position: 'absolute',
     right: 10, top: 12,

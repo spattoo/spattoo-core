@@ -65,6 +65,27 @@ All placed decor — scattered, picks, image‑topper, topper, top&side — live
 renderers were likewise removed (balls are now GLB spheres on this same path) — do not reintroduce a
 parallel one.
 
+### 2b. ONE renderer for the whole cake, not just for decor
+`CakeContent` draws **everything a design contains** — the board, tiers and their finishes, grass,
+letter blocks, writing, cream strokes, text, ages, decorations. Every surface that shows a cake renders
+THAT: the live editor (`CakeScene`), the off-screen capture behind template thumbnails and order
+snapshots (`CakeThumbnailScene`), and the inline previews (`CakePreview`). Its `edit` prop carries the
+whole interactive surface and is optional — absent, everything renders static — so no element renderer
+needs to know which surface it is on.
+
+The line is cake vs. not-cake, and it is drawn twice. Editing FURNITURE (drag handles, catchers, style
+pickers, the FRONT marker) and the ROOM (floor plane, studio background) both stay in `CakeScene`,
+which is why neither is ever photographed. The BOARD is cake: no cake stands on its own, every real
+cake photograph has one, and it is what board-level finishes are placed against.
+
+A new element type is added HERE, once. `canvas/cakeContent.test.js` fails if a field
+`toCanvasConfig` puts on a design is read by nobody.
+
+Cautionary tale: the capture used to be a second, hand-copied scene, and it silently skipped every
+element type added after it was written — grass, letter blocks, second-cream layers, 3D text. A
+football template was saved with a grass top and its thumbnail came back bald, and nothing anywhere
+reported a failure. **A cake that is drawn twice will eventually be two different cakes.**
+
 ## 3. Reuse the shared components — do not reimplement
 - `PreviewTile` — preview + corner checkbox + label. Used by the piping popup AND the placement chooser.
 - `SizeDial` — the ONE size control (piping, hero chooser, scatter card). No parallel sliders.

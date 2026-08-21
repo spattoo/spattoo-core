@@ -42,7 +42,10 @@ export function shapeView(design) {
   // Fit the LARGER of the cake's height and its width, with headroom for the board it stands on.
   const fit = Math.max(totalH * 1.5, maxW * 1.25);
   const dist = (fit / 2) / Math.tan((SHAPE_FOV / 2) * (Math.PI / 180));
-  const cy = totalH * 0.45;                       // aim at the cake's middle, not the board
+  // Aim at the cake's middle, not the board. Deliberately NOT the designer's rule (framing.js): that
+  // one aims above the middle to sit the cake low on a big stage, which is right for a stage and
+  // wrong for a 96px tile — here the shape is the whole subject and wants to be centred in its box.
+  const cy = totalH * 0.45;
   return {
     fov: SHAPE_FOV,
     cameraPosition: [0, cy + dist * Math.sin(SHAPE_ELEV), dist * Math.cos(SHAPE_ELEV)],

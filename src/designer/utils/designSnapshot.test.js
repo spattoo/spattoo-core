@@ -33,3 +33,64 @@ describe('glaze survives the snapshot round-trip and reaches the renderer', () =
     expect(buildDesignSnapshot(plain).tiers[0].glaze).toBeUndefined();
   });
 });
+
+// ── Everything on the cake must survive being saved ─────────────────────────────────────────────
+// The pinned test above guards ONE field, glaze, because glaze was once dropped. Grass, letter
+// blocks, board grass and second-cream layers were dropped in exactly the same way and for exactly
+// the same reason: the round-trip is a hand-maintained list of field names, and four element types
+// were added to the cake without being added to it. A saved template then came back as a plain cake,
+// and — because the thumbnail is captured from the CANVAS, not from the snapshot — its picture still
+// showed the grass. The cake in the picture and the cake you got were different cakes.
+//
+// So this guards the ROUND-TRIP ITSELF rather than any one field: whatever the renderer reads
+// (toCanvasConfig) must be identical after design → snapshot → load. A new element type that is not
+// added to OPTIONAL_TIER_FIELDS / buildDesignSnapshot / normalizeDesign fails here, at the moment it
+// is added, instead of on a customer's cake.
+describe('a saved design comes back as the same cake', () => {
+  // Every field the renderer reads, set to something recognisable. layerIds are explicit because
+  // loading assigns them to piping that has none, and that is a legitimate difference, not a loss.
+  const FULL = {
+    tiers: [{
+      color: '#f3f0ec', radius: 1.2, height: 1.45,
+      shape: 'round', shapeFamily: 'circle', shapeConfig: { r: 1 },
+      width: 2.4, depth: 2.4, cornerR: 0.1,
+      frostingType: 'buttercream', frostingStyle: 'wave', styleParams: { depth: 0.4 },
+      gradient: { stops: [{ color: '#fff', at: 0 }] },
+      glaze: { colors: ['#2a1810'], flow: 2 },
+      dusting: { splashes: [{ u: 0.2, v: 0.4 }], color: '#d4af37' },
+      foil: { flakes: [{ u: 0.1, v: 0.3 }], finish: 'gold' },
+      grass: { color: '#4caf3d', height: 0.2, overhang: 0.5, patches: [{ u: 0.1, v: 0.5, r: 0.3 }] },
+      creamLayers: [{ id: 'c1', color: '#e0479e', from: 0.1, to: 0.6 }],
+      topPipings: [{ layerId: 'p1', glbUrl: 'x.glb', color: '#fff' }],
+      bottomPipings: [{ layerId: 'p2', glbUrl: 'y.glb', color: '#eee' }],
+    }],
+    texts:    [{ id: 't1', content: 'HELLO', theta: 0, y: 0.7, fontSize: 0.2, color: '#e0479e' }],
+    ages:     [{ id: 'a1', value: '30', size: 0.95, finish: 'gold' }],
+    stickers: [{ id: 's1', elementId: 'e1', imageUrl: 'lion.glb', zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1 }],
+    writing:  { text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' },
+    piping:   [{ id: 'k1', points: [[0, 0], [1, 1]], color: '#fff' }],
+    boardGrass: { color: '#3f9c33', height: 0.16, ringWidth: 0.8, patches: [{ u: 0.5, v: 0.9, r: 0.3 }] },
+    nameBlocks: { zone: 'board', text: 'CAKE', size: 0.3, blockColor: '#f7f5f2',
+                  blocks: [{ char: 'C', u: 0.1, v: 0.9, yaw: 0.6 }] },
+  };
+
+  const roundTrip = d => normalizeDesign(buildDesignSnapshot(d));
+
+  it('reaches the renderer with every field intact', () => {
+    expect(toCanvasConfig(roundTrip(FULL))).toEqual(toCanvasConfig(FULL));
+  });
+
+  // Named individually as well as in the whole-config check above, so a failure says WHICH element
+  // type was lost rather than printing two large objects and leaving you to diff them.
+  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams']) {
+    it(`tier.${key} survives`, () => {
+      expect(roundTrip(FULL).tiers[0][key]).toEqual(FULL.tiers[0][key]);
+    });
+  }
+
+  for (const key of ['boardGrass', 'nameBlocks', 'writing', 'texts', 'ages', 'stickers', 'piping']) {
+    it(`design.${key} survives`, () => {
+      expect(roundTrip(FULL)[key]).toEqual(FULL[key]);
+    });
+  }
+});
