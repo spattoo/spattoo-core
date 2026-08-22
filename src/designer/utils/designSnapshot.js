@@ -43,6 +43,21 @@ export function cakeShapeOf(design) {
     : 'round';
 }
 
+// ── A message, whichever shape it is in ─────────────────────────────────────────────────────────
+// `writings` became a LIST on 2026-08-22: `surface` lives on the writing, so one object could only
+// ever be on the top OR the side OR the board, and a cake wanting "9" on the side and a name on the
+// board had no way to ask.
+//
+// Every design saved before then carries a single nullable `writing` OBJECT. This reads both, and it
+// lives HERE — beside the serializer — because BOTH ends of the round-trip need it: normalizeDesign
+// promotes on the way in, and this promotes on the way OUT. Reading only on the way in was not
+// enough; buildDesignSnapshot dropped a legacy message before normalizeDesign ever saw it, so
+// re-saving an old cake silently lost its writing. The test found that, not review.
+export function writingsOf(design) {
+  if (Array.isArray(design?.writings)) return design.writings;
+  return design?.writing ? [design.writing] : [];
+}
+
 export function buildDesignSnapshot(design) {
   return {
     shape: cakeShapeOf(design),
@@ -59,7 +74,10 @@ export function buildDesignSnapshot(design) {
     texts:    design.texts,
     ages:     design.ages,
     stickers: design.stickers,
-    writing:  design.writing ?? null,      // typed cream lettering
+    // A LIST since 2026-08-22: `surface` lives on the writing, so one object could only ever be on
+    // the top or the side or the board. Saved designs from before carry a single `writing` object;
+    // normalizeDesign promotes it, so nothing downstream has to know both shapes.
+    writings: writingsOf(design),           // typed cream lettering, one per placement
     piping:   design.piping ?? [],          // freehand cream-pen strokes
     // Design-level, not per-tier, because the BOARD is: a ring of grass round the cake's foot and a
     // name spelled in fondant cubes both stand on it, not on any one tier.

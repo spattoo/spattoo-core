@@ -1544,7 +1544,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1610,6 +1610,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   ];
   const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: 0.03, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
+  // Which message the Texts editor is pointed at. `setWriting` writes to THAT one, so the twenty-odd
+  // controls below (font, colour, thickness, curve…) are unchanged by writings becoming a list —
+  // they always meant "the message being edited", and now that is said once here instead of being
+  // implied by there only ever being one.
+  const selectedWritingId = selectedEl?.type === 'writing' ? (selectedEl.id ?? null) : null;
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [elementById, setElementById] = useState(() => new Map()); // id → element row, for placed-sticker config lookups
@@ -2671,7 +2676,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setToolsOpen(opening);
     setElementsOpen(false);
     setTemplatesOpen(false);
-    if (opening) { focusEditor('tools'); setActiveTool(design.writing?.text ? 'cream-pen' : null); }
+    if (opening) { focusEditor('tools'); setActiveTool(writings.some(w => w.text) ? 'cream-pen' : null); }
   }
 
   // Open (or focus) a card for this element in the accordion stack. Picking a new
@@ -4842,7 +4847,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // at a time across both groups; collapsing/minimising a card never closes the
   // stack — only removing an element drops its card, and the stack closes when none
   // remain. Adding a piping does not hide the decoration cards (and vice versa).
-  const hasWriting = !!design.writing;
+  const writings = design.writings ?? [];
+  const activeWriting = writings.find(w => w.id === selectedWritingId) ?? null;
+  const setWriting = changes => { if (selectedWritingId) updateWriting(selectedWritingId, changes); };
+  const clearWriting = () => { if (selectedWritingId) removeWriting(selectedWritingId); };
+  const hasWriting = writings.length > 0;
   const elementStackOpen = (decorationCards.length > 0 || pipingCards.length > 0 || hasWriting)
     && !toolsOpen
     && selectedEl?.type !== 'tier';
@@ -5877,7 +5886,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // in the unified element stack (it used to live in the tools drawer). The colour
   // picker drops in inline; "Remove writing" deletes the element and closes its card.
   function renderWritingEditor() {
-    const w = design.writing ?? {};
+    const w = activeWriting ?? {};
     const isMultiline = (w.text ?? '').includes('\n');
     const surface = w.surface ?? 'top';
     const SURFACES = [{ k: 'top', label: 'Top' }, { k: 'side', label: 'Side' }, { k: 'board', label: 'Board' }];
@@ -6979,7 +6988,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
-                  onClick={() => { if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing' }); setElementsOpen(false); }}
+                  onClick={() => { const id = addWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
                     <TextIcon size={22} />
@@ -7285,9 +7294,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               selectedAgeId={selectedAgeId}
               onAgeSelect={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false); selectExclusive({ type: 'age', id }); }}
               onAgeMove={(id, pos) => updateAge(id, pos)}
-              onWritingClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing' }); setElementsOpen(false); }}
-              onWritingMove={moves => setWriting(moves)}
-              writingSelected={selectedEl?.type === 'writing'}
+              onWritingClick={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
+              onWritingMove={(id, moves) => updateWriting(id, moves)}
+              selectedWritingId={selectedWritingId}
               penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen'}
               penStyle={penStyle}
               onAddStroke={addStroke}
@@ -7685,17 +7694,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   );
                 })}
 
-              {/* Writing card (typed cream "Texts") — one card; its expanded body is the
-                  full composer. Like the others it stays until "Remove" deletes the writing. */}
-              {hasWriting && !(stackSingleCard && selectedEl?.type !== 'writing') && (() => {
-                const expanded = selectedEl?.type === 'writing';
-                const name = (design.writing?.text && design.writing.text.trim()) || 'Texts';
+              {/* Writing cards (typed cream "Texts") — ONE PER MESSAGE, since each carries its own
+                  surface. Its expanded body is the full composer. Like the others each stays until
+                  "Remove" deletes that message. An untyped one still gets a card: it is the thing
+                  you type into, so it cannot wait for content to exist. */}
+              {writings.map(wr => !(stackSingleCard && selectedWritingId !== wr.id) && (() => {
+                const expanded = selectedWritingId === wr.id;
+                const name = (wr.text && wr.text.trim()) || 'Texts';
                 return (
-                  <div key="writing" style={stackCardStyle(expanded)}>
+                  <div key={`writing-${wr.id}`} style={stackCardStyle(expanded)}>
                     <div role="button"
                       onClick={() => {
                         if (expanded) { clearAllSelections(); }
-                        else { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing' }); }
+                        else { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id: wr.id }); }
                       }}
                       style={stackCardHeaderStyle(expanded)}>
                       <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -7711,7 +7722,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     )}
                   </div>
                 );
-              })()}
+              })())}
 
               {/* Piping cards — one collapsible card per added piping element. Picking a
                   new element from the left appends a card here; the cake renders all of them

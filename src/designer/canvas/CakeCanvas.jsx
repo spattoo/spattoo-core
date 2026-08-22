@@ -2186,7 +2186,7 @@ function CakeScene({
   // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
   // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
   stickerResize = null,
-  onWritingClick, onWritingMove, writingSelected = false,
+  onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
@@ -2302,7 +2302,7 @@ function CakeScene({
           selectedAgeId, onAgeSelect, onAgeMove,
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
-          onWritingClick, onWritingMove, writingSelected,
+          onWritingClick, onWritingMove, selectedWritingId,
           penDrawMode, penStyle, onAddStroke,
         }}
       />
@@ -2385,7 +2385,7 @@ const NOOP = () => {};
 // are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
 // its own, and it is what every board-level finish is placed against.
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], boardGrass = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
@@ -2397,7 +2397,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedAgeId = null, onAgeSelect, onAgeMove,
     selectedStickerIds = null, onStickerSelect = NOOP, onStickerLongPress, onStickerMove = NOOP,
     onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
-    onWritingClick, onWritingMove, writingSelected = false,
+    onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penStyle, onAddStroke,
   } = edit ?? {};
 
@@ -2507,10 +2507,15 @@ function CakeContent({ config, scene, edit = null }) {
         </group>
       ))}
 
-      {/* Typed cream writing. */}
-      {writing?.text?.trim() && topTier && board && (
+      {/* Typed cream writing — one per message, because `surface` belongs to the writing: a cake can
+          carry "9" on the side and a name on the board at the same time. An empty one renders
+          nothing (it is a card waiting to be typed into), which is why the text guard is per-item
+          rather than around the map. Orbit is keyed per id so dragging one message does not free the
+          camera for another. */}
+      {topTier && board && writings.map(w => w?.text?.trim() ? (
         <CreamWriting
-          writing={writing}
+          key={w.id}
+          writing={w}
           topY={stackY}
           topRadius={topTier.radius}
           shape={topTier.shape ?? 'round'}
@@ -2521,12 +2526,12 @@ function CakeContent({ config, scene, edit = null }) {
           boardRadius={board.radius}
           boardY={0.1}
           boardShp={board}
-          onClick={onWritingClick}
-          onMove={onWritingMove}
-          onOrbitEnable={orbitEnableFor('__writing__')}
-          selected={writingSelected}
+          onClick={() => onWritingClick?.(w.id)}
+          onMove={moves => onWritingMove?.(w.id, moves)}
+          onOrbitEnable={orbitEnableFor(`__writing__${w.id}`)}
+          selected={selectedWritingId === w.id}
         />
-      )}
+      ) : null)}
 
       {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
           highest tier. Each block is its own placement, so the arrangement IS the data — see
@@ -2926,7 +2931,7 @@ export default function CakeCanvas({
   hitTestRef,
   snapCameraRef,
   cameraPosition = CAMERA_POSITION,
-  onWritingClick, onWritingMove, writingSelected = false,
+  onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
@@ -3053,7 +3058,7 @@ export default function CakeCanvas({
         isStickerMovable={isStickerMovable}
         onWritingClick={onWritingClick}
         onWritingMove={onWritingMove}
-        writingSelected={writingSelected}
+        selectedWritingId={selectedWritingId}
         penDrawMode={penDrawMode}
         penStyle={penStyle}
         onAddStroke={onAddStroke}

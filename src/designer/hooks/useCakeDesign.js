@@ -11,7 +11,7 @@ import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
-import { pickTierFields } from '../utils/designSnapshot.js';
+import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 // Frosting types now live in the frostings registry; re-export so existing importers
@@ -33,7 +33,7 @@ const DEFAULT_DESIGN = {
   texts: [],
   ages: [],        // gold 3D balloon-number toppers standing on the cake top (see AgeNumber)
   stickers: [],
-  writing: null,   // one cream-pen message piped on the cake top (see CreamWriting)
+  writings: [],    // cream-pen messages piped on the cake (see CreamWriting) — one per placement
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
 };
 
@@ -124,7 +124,7 @@ export function toCanvasConfig(design) {
     texts:    design.texts ?? [],
     ages:     design.ages ?? [],
     stickers: design.stickers ?? [],
-    writing:  design.writing ?? null,
+    writings: normalizeWritings(design),
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
@@ -181,6 +181,25 @@ const DEFAULT_WRITING = {
   boardX: undefined, boardZ: undefined,   // board placement (default seeded in CreamWriting)
   sideAngle: 0, sideY: undefined,         // side placement (default = mid of bottom tier)
 };
+
+// ── One message, or several ─────────────────────────────────────────────────────────────────────
+// `writings` is a LIST because a message belongs to a surface: `surface` is part of the writing, so
+// a single object could only ever be on the top OR the side OR the board. A cake wanting "9" on the
+// side and a name on the board needs two, and there was no way to ask for the second — clicking
+// Texts again just reopened the first.
+//
+// Everything written before this carries a single nullable `writing` OBJECT, and that shape is baked
+// into saved orders and templates, which are not ours to rewrite. So it is promoted on the way IN,
+// here, and nothing downstream reads both shapes.
+const newWritingId = () => crypto.randomUUID();
+const withWritingId = (w) => (w?.id ? w : { ...w, id: newWritingId() });
+// Ids only — NOT a merge with DEFAULT_WRITING. Defaults are seeded when a message is created and
+// re-merged on every edit (as setWriting always did); folding them in on the way IN instead would
+// rewrite a saved design on load, so what came back from a template would no longer equal what was
+// saved. Reading a field a stored writing never had is the renderer's job (`w.thickness ?? 0.03`).
+function normalizeWritings(design) {
+  return writingsOf(design).map(withWritingId);
+}
 
 // Each piping carries a stable layerId so a tier can hold multiple stacked piping
 // layers per zone and every layer stays addressable across edits/renders.
@@ -266,7 +285,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     // GLB element standing on the top surface (or hugging the side). Placement is now fully
     // config-driven, so there is no separate topper slot or renderer.
     stickers: migrateTopperToSticker(templateDesign),
-    writing:  templateDesign.writing ?? null,
+    writings: normalizeWritings(templateDesign),
     piping:   templateDesign.piping ?? [],
     // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
@@ -1122,13 +1141,22 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     });
   }
 
-  // Cream-pen writing — a single message on the cake top. Merges changes onto the
-  // existing writing (seeding defaults on first edit); pass null/'' text to clear.
-  function setWriting(changes) {
-    setDesign(prev => ({ ...prev, writing: { ...DEFAULT_WRITING, ...prev.writing, ...changes } }));
+  // Cream-pen writing. Each message is its own instance with its own surface, so "Texts" ADDS
+  // rather than reopening: addWriting returns the new id, because the caller has to select the card
+  // it just created and cannot find it by content (a new message is empty, and so is any other).
+  function addWriting(changes = {}) {
+    const id = newWritingId();
+    setDesign(prev => ({ ...prev, writings: [...(prev.writings ?? []), { ...DEFAULT_WRITING, ...changes, id }] }));
+    return id;
   }
-  function clearWriting() {
-    setDesign(prev => ({ ...prev, writing: null }));
+  function updateWriting(id, changes) {
+    setDesign(prev => ({
+      ...prev,
+      writings: (prev.writings ?? []).map(w => w.id === id ? { ...DEFAULT_WRITING, ...w, ...changes } : w),
+    }));
+  }
+  function removeWriting(id) {
+    setDesign(prev => ({ ...prev, writings: (prev.writings ?? []).filter(w => w.id !== id) }));
   }
 
   // Freehand cream-pen strokes. addStroke appends a finished stroke (seeding defaults);
@@ -1191,10 +1219,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
+    addWriting, updateWriting, removeWriting,
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    setWriting, clearWriting,
     addStroke, removeStroke, clearPiping,
     resetDesign,
     addStickerBatch,

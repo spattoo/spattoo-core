@@ -9,7 +9,7 @@ describe('glaze survives the snapshot round-trip and reaches the renderer', () =
   const glaze = { colors: ['#2a1810', '#8a5a30', '#efd9b8'], flow: 2.6, warp: 1.1, contrast: 3.2, streak: 0.12, drip: 0.18 };
   const design = {
     tiers: [{ shape: 'round', color: '#ffffff', frostingType: 'glaze', glaze, topPipings: [], bottomPipings: [], creamLayers: [] }],
-    texts: [], ages: [], stickers: [], writing: null, piping: [],
+    texts: [], ages: [], stickers: [], writings: [], piping: [],
   };
 
   it('buildDesignSnapshot preserves tier.glaze', () => {
@@ -67,7 +67,8 @@ describe('a saved design comes back as the same cake', () => {
     texts:    [{ id: 't1', content: 'HELLO', theta: 0, y: 0.7, fontSize: 0.2, color: '#e0479e' }],
     ages:     [{ id: 'a1', value: '30', size: 0.95, finish: 'gold' }],
     stickers: [{ id: 's1', elementId: 'e1', imageUrl: 'lion.glb', zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1 }],
-    writing:  { text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' },
+    writings: [{ id: 'w1', text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' },
+               { id: 'w2', text: 'Love, Mum',      font: 'script', surface: 'board', color: '#e0479e' }],
     piping:   [{ id: 'k1', points: [[0, 0], [1, 1]], color: '#fff' }],
     boardGrass: { color: '#3f9c33', height: 0.16, ringWidth: 0.8, patches: [{ u: 0.5, v: 0.9, r: 0.3 }] },
     nameBlocks: { zone: 'board', text: 'CAKE', size: 0.3, blockColor: '#f7f5f2',
@@ -88,9 +89,22 @@ describe('a saved design comes back as the same cake', () => {
     });
   }
 
-  for (const key of ['boardGrass', 'nameBlocks', 'writing', 'texts', 'ages', 'stickers', 'piping']) {
+  for (const key of ['boardGrass', 'nameBlocks', 'writings', 'texts', 'ages', 'stickers', 'piping']) {
     it(`design.${key} survives`, () => {
       expect(roundTrip(FULL)[key]).toEqual(FULL[key]);
     });
   }
+
+  // A message became a LIST on 2026-08-22. Every template and order saved before that holds a single
+  // nullable `writing` OBJECT, and those are not ours to rewrite — a saved order is a record of what
+  // somebody bought. So the promotion is the compatibility guarantee, and it is asserted rather than
+  // assumed: drop it and every old cake silently loses its message on load, with nothing to see.
+  it('a legacy single `writing` object is promoted to the writings list', () => {
+    const legacy = { ...FULL, writing: { text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' } };
+    delete legacy.writings;
+    const out = roundTrip(legacy).writings;
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ text: 'Happy Birthday', surface: 'top', color: '#ffffff' });
+    expect(out[0].id).toBeTruthy();          // minted on promotion — the list is addressable by id
+  });
 });

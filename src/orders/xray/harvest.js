@@ -5,6 +5,15 @@ import { normalizeHex } from './gelLibrary.js';
 // deliberately exclude it from the cream-colour table.
 const BOARD_HEX = normalizeHex('#fce8d5');
 
+// Cream-pen messages, whichever shape the snapshot is in. A message became a LIST on 2026-08-22 (a
+// cake can carry "9" on the side and a name on the board); every order placed before that stored a
+// single nullable `writing` OBJECT, and a saved order is a record of what was ordered — it is never
+// rewritten. So both shapes are read here, forever, rather than the old one being migrated away.
+function writingList(design) {
+  if (Array.isArray(design?.writings)) return design.writings;
+  return design?.writing ? [design.writing] : [];
+}
+
 const tierLabel = (i, n) => (n === 1 ? 'Cake' : i === 0 ? 'Base tier' : i === n - 1 ? 'Top tier' : `Tier ${i + 1}`);
 
 // Piping was once stored as singular topPiping/bottomPiping; newer designs use
@@ -44,7 +53,7 @@ export function harvestColors(design) {
   });
   (design?.piping ?? []).forEach(p => add(p?.color, 'Cream pen'));
   (design?.texts ?? []).forEach(t => add(t?.color, 'Text'));
-  if (design?.writing) add(design.writing.color, 'Message');
+  writingList(design).forEach(w => add(w?.color, 'Message'));
   // stickers (current) and decorations (legacy) — only when they carry a colour.
   [...(design?.stickers ?? []), ...(design?.decorations ?? [])].forEach(s => { if (s?.color) add(s.color, s?.name || 'Decoration'); });
 
@@ -129,7 +138,8 @@ export function harvestPiping(design) {
 //   design.decorations                    legacy stickers (pre-migration designs)
 //   design.texts                          text on the cake
 //   design.ages                           gold 3D balloon numbers
-//   design.writing                        cream-pen message (ONE object, nullable)
+//   design.writings                       cream-pen messages (LIST; older designs: `writing`, one
+//                                         nullable object — see writingList)
 //   design.piping                         freehand cream-pen strokes
 //
 // ── ORDER ─────────────────────────────────────────────────────────────────────
@@ -191,11 +201,9 @@ export function harvestPlaceables(design) {
     `age-${a?.id ?? idx}`,
   ));
 
-  // Nullable SINGLE object, not an array — the shape most likely to be dropped by an
-  // enumerator written in a hurry.
-  if (design?.writing?.text) {
-    push(finishing, `Message — "${design.writing.text}"`, 'cream pen', 'writing');
-  }
+  writingList(design).forEach((w, idx) => {
+    if (w?.text) push(finishing, `Message — "${w.text}"`, 'cream pen', `writing-${w.id ?? idx}`);
+  });
 
   (design?.piping ?? []).forEach((p, idx) => push(
     finishing,
