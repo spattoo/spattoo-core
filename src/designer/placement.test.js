@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -552,5 +552,22 @@ describe('zoneSeatFields — an explicitly picked pose', () => {
 
   it('with no pose asked for, answers exactly as before', () => {
     expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+  });
+});
+
+describe('clampLean — one limit for both lean axes', () => {
+  it('holds a lean inside the limit', () => {
+    expect(clampLean(0.4)).toBeCloseTo(0.4, 6);
+    expect(clampLean(-0.4)).toBeCloseTo(-0.4, 6);
+  });
+
+  it('clamps both directions', () => {
+    expect(clampLean(99)).toBe(LEAN_LIMIT);
+    expect(clampLean(-99)).toBe(-LEAN_LIMIT);
+  });
+
+  it('treats a missing value as upright', () => {
+    expect(clampLean(undefined)).toBe(0);
+    expect(clampLean(null)).toBe(0);
   });
 });

@@ -363,6 +363,20 @@ function isWallZone(zone) {
   return zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
 }
 
+// ── How far an element may lean ─────────────────────────────────────────────────────────────────
+// Two axes, one limit: `tiltAngle` tips an element front/back and `rollAngle` tips it left/right (on
+// a wall, that second one spins it in the plane of the wall — a jersey sitting diagonally). ±1.2 rad
+// is about 69°; past that an element reads as fallen over rather than leaning, and its base starts to
+// lift out of the seat its base-pivot holds it in.
+//
+// Here rather than beside the toolbar because it is a rule about placement, not about a button: the
+// popup control and the chooser's TiltRow both nudge through it, so they cannot drift to different
+// limits.
+export const LEAN_LIMIT = 1.2;
+export function clampLean(value) {
+  return Math.max(-LEAN_LIMIT, Math.min(LEAN_LIMIT, +((value ?? 0)).toFixed(3)));
+}
+
 // ── Per-zone placement config ─────────────────────────────────────────────────────────────────
 // A zone's entry in `placement_config` is EITHER a mode string ("hug") or an object carrying
 // per-zone config ({ mode, seat, insert, ... }). `zoneCfg` normalises both so callers never branch

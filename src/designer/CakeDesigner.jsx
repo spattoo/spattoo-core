@@ -12,7 +12,7 @@ import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
@@ -603,14 +603,24 @@ function supportsTopAndSide(el) {
 // allowed_actions.delete rule (0.1.68); the extraction kept it.
 
 // Tilt stepper (−/°/+) — decor-specific (piping has no tilt); paired with the shared SizeDial.
-function TiltRow({ tiltAngle, onChange }) {
-  const ta = tiltAngle ?? 0;
+// Nudge one lean axis, through the shared clamp (placement.js) so this and the chooser's TiltRow
+// cannot end up with different limits.
+const leanStep = (v, d) => clampLean((v ?? 0) + d);
+const leanDeg  = (v) => `${Math.round((v ?? 0) * 180 / Math.PI)}°`;
+
+// Tilt is TWO axes: ↑↓ leans front/back, ←→ leans left/right (on a wall, that second one spins the
+// element in the plane of the wall). Four arrows in one row rather than two −/+ rows: the mapping to
+// what is on screen is direct, and it costs less width on a phone.
+function TiltRow({ tiltAngle, rollAngle, onChange }) {
+  const ta = tiltAngle ?? 0, ra = rollAngle ?? 0;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tilt</span>
-      <button style={s.tbIconBtn} onClick={() => onChange(Math.max(-1.2, +(ta - 0.1).toFixed(3)))}>−</button>
-      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 28, textAlign: 'center' }}>{Math.round(ta * 180 / Math.PI)}°</span>
-      <button style={s.tbIconBtn} onClick={() => onChange(Math.min(1.2, +(ta + 0.1).toFixed(3)))}>+</button>
+      <button style={s.tbIconBtn} title="Lean back"  onClick={() => onChange({ tiltAngle: leanStep(ta, -0.1) })}>↑</button>
+      <button style={s.tbIconBtn} title="Lean forward" onClick={() => onChange({ tiltAngle: leanStep(ta,  0.1) })}>↓</button>
+      <button style={s.tbIconBtn} title="Lean left"  onClick={() => onChange({ rollAngle: leanStep(ra, -0.1) })}>←</button>
+      <button style={s.tbIconBtn} title="Lean right" onClick={() => onChange({ rollAngle: leanStep(ra,  0.1) })}>→</button>
+      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 46, textAlign: 'center' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>
     </div>
   );
 }
@@ -659,7 +669,8 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
                   <span style={cap}>Size</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
-                  <TiltRow tiltAngle={slot.sticker.tiltAngle} onChange={v => onUpdate(slot.sticker.id, { tiltAngle: v })} />
+                  <TiltRow tiltAngle={slot.sticker.tiltAngle} rollAngle={slot.sticker.rollAngle}
+                           onChange={patch => onUpdate(slot.sticker.id, patch)} />
                 </div>
                 {/* Bury — only for an inserted instance (insertDepth != null), same signal as the renderer. */}
                 {slot.sticker.insertDepth != null && (
@@ -3636,6 +3647,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   //   yOffset     a height nudge tuned against a standing seat is wrong against a flat one
   //   tiltAngle   only the upright branch leans; a stale tilt makes a stood-up element lurch
+  //   rollAngle   the same, on the other axis
   //   insertDepth burial is upright-only
   //
   // `rotation` is deliberately KEPT: it is spin in both poses (yaw standing, in-plane hugging), so
@@ -3649,7 +3661,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!el || !sticker) return;
     const seat = zoneSeatFields(el.placement_config, sticker.zone, mode);
     if (seat.placementMode === sticker.placementMode) return;
-    const next = { ...seat, yOffset: 0, tiltAngle: 0, insertDepth: null };
+    const next = { ...seat, yOffset: 0, tiltAngle: 0, rollAngle: 0, insertDepth: null };
     if (sticker.zone === ZONES.TOP_SURFACE) {
       const tier = canvasConfig.tiers[sticker.tierIndex] ?? canvasConfig.tiers[0];
       const margin = seat.placementMode === 'stand' ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
@@ -5534,7 +5546,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       }
       // Insert modifier (top or side): if the target zone carries an `insert` modifier, re-bake the
       // lean/fan/depth via the SAME helper the add path uses, so a moved insert doesn't lose its angle
-      // (the reset below zeroes tiltAngle/rotation). Composes with the zone's pose (`mode`).
+      // (the reset below zeroes tiltAngle/rollAngle/rotation). Composes with the zone's pose (`mode`).
       const zi = zoneInsert(pc, slot.zone);
       if (zi) {
         const s = insertSeat(zi);
@@ -5583,7 +5595,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         updateSticker(instance.id, {
           zone: slot.zone, tierIndex: slot.tierIndex,
           ...zoneSeatFields(pc, slot.zone, slot.mode),
-          x: 0, z: 0, tiltAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0, insertDepth: null,
+          x: 0, z: 0, tiltAngle: 0, rollAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0, insertDepth: null,
           ...pos,
         });
         return;
@@ -5893,15 +5905,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Move arrows were removed — elements are repositioned by dragging them
     // directly with the pointer, so the nudge buttons were redundant.
 
-    // Tilt (lean) — gated by the `tilt` capability.
+    // Tilt (lean) — BOTH axes, gated by the one `tilt` capability. Front/back and left/right are one
+    // capability on purpose: they are the same gesture to a customer, and asking an admin to permit
+    // them separately would be a distinction nobody placing a cake decoration perceives.
     if (c.tilt && el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
-      const ta = sticker?.tiltAngle ?? 0;
+      const ta = sticker?.tiltAngle ?? 0, ra = sticker?.rollAngle ?? 0;
       groups.push({ key: 'ta', divider: true, controls: [
         <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
-        <button key="ta-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.max(-1.2, +((ta) - 0.1).toFixed(3)) })}>−</button>,
-        <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(ta * 180 / Math.PI)}°</span>,
-        <button key="ta+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { tiltAngle: Math.min(1.2, +((ta) + 0.1).toFixed(3)) })}>+</button>,
+        <button key="ta-up"    style={s.tbIconBtn} title="Lean back"    onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta, -0.1) })}>↑</button>,
+        <button key="ta-down"  style={s.tbIconBtn} title="Lean forward" onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta,  0.1) })}>↓</button>,
+        <button key="ta-left"  style={s.tbIconBtn} title="Lean left"    onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra, -0.1) })}>←</button>,
+        <button key="ta-right" style={s.tbIconBtn} title="Lean right"   onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra,  0.1) })}>→</button>,
+        <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 46 }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,
       ] });
     }
 

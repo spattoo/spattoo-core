@@ -155,7 +155,7 @@ function migrateTopperToSticker(templateDesign) {
     z: tp.z ?? 0,
     scale: (tp.scale ?? 1) * 5,
     baseRotation: [0, -Math.PI / 2, 0],   // legacy CakeTopper faced toppers with this offset
-    yOffset: 0, rotation: 0, radialOffset: 0, tiltAngle: 0, groupId: null,
+    yOffset: 0, rotation: 0, radialOffset: 0, tiltAngle: 0, rollAngle: 0, groupId: null,
     color: tp.color ?? null,
     // Resize is opt-in (see the main placement path). A legacy topper carries no allowed_actions, so
     // it lands non-resizable like any unconfigured element; it can still be MOVED and edited.
@@ -920,6 +920,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
           tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
+          // The OTHER lean axis: tiltAngle tips an element front/back, rollAngle tips it left/right
+          // (and on a wall, spins it in the plane of that wall — a jersey sitting diagonally). Always
+          // starts upright: no placement mode seeds a sideways lean, and a config that wanted one
+          // would seed it here beside seatTilt.
+          rollAngle:     0,
           // Insert modifier: fraction of the element's LENGTH sunk into the surface (render scales by
           // measured length), and the RENDER'S "is inserted" signal — non-null iff the zone carried an
           // insert modifier (0 is valid: buried-but-flush). null otherwise. See placement.js zoneInsert

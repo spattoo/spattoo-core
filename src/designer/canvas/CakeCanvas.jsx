@@ -1607,8 +1607,10 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
-      {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
-      <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
+      {/* Both lean axes. X leans the pick up (+) or down (−) along the cake side; Z rolls it in the
+          PLANE of the wall, which is how a jersey ends up sitting diagonally — the one thing the wall
+          had no control for at all. One Euler, so a combined lean is a single predictable rotation. */}
+      <group rotation={[sticker.tiltAngle ?? 0, 0, sticker.rollAngle ?? 0]}>
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
@@ -1959,10 +1961,15 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
     const yaw   = radialYaw + (sticker.rotation ?? 0);
     const tiltX = (isVerge || isInsert) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+    // Left/right lean. It rides INSIDE the base-pivot groups below with tiltX, deliberately: the
+    // pivot translates down by seatLift, rotates, translates back, so the element leans about the
+    // point where it touches the cake. Rolled outside that, a leaning figure swings a foot into the
+    // air. Billboarding does not interfere — it is locked to Y only, so an inner lean survives it.
+    const rollZ = sticker.rollAngle ?? 0;
     const inner = (
       <group rotation={[0, yaw, 0]}>
         <group position={[0, -seatLift, 0]}>
-          <group rotation={[tiltX, 0, 0]}>
+          <group rotation={[tiltX, 0, rollZ]}>
             <group position={[0, seatLift, 0]}>
               {innerContent(onDown)}
             </group>
