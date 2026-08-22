@@ -3608,9 +3608,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   // ── Re-pose a placed decoration ─────────────────────────────────────────────────────────────────
-  // A jersey on the cake top reads as a standing topper OR as a decal lying flat, and which is right
-  // is the customer's taste rather than a property of the jersey. The pose is per-INSTANCE (it always
-  // was — `placementMode` lives on the sticker), so this changes one decoration and leaves its
+  // A jersey on the cake top reads as a standing topper OR as a decal hugging the surface, and which
+  // is right is the customer's taste rather than a property of the jersey. The pose is per-INSTANCE (it
+  // always was — `placementMode` lives on the sticker), so this changes one decoration and leaves its
   // siblings alone.
   //
   // A pose change is a RE-SEAT, not a field edit. Three of the instance's fields mean different
@@ -3621,11 +3621,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //   tiltAngle   only the upright branch leans; a stale tilt makes a stood-up element lurch
   //   insertDepth burial is upright-only
   //
-  // `rotation` is deliberately KEPT: it is spin in both poses (yaw standing, in-plane lying), so
+  // `rotation` is deliberately KEPT: it is spin in both poses (yaw standing, in-plane hugging), so
   // losing it would undo work the customer can see.
   //
   // x/z are re-clamped because the legal area differs — a standing element may sit right at the rim
-  // (margin 0), while lying it needs half its width of clearance or it hangs off the edge. Without
+  // (margin 0), while hugging it needs half its width of clearance or it hangs off the edge. Without
   // this, flipping an element parked at the rim leaves it overhanging.
   function setStickerPose(sticker, mode) {
     const el = elementById.get(sticker?.elementId);
@@ -5499,7 +5499,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
       // Mode via zoneMode (never the raw value) so the { mode, seat } object form doesn't leak into
       // placementMode / edgeSeatSeed — INVARIANTS #1.
-      // The TILE's pose, not the zone default — picking "Top lying" has to seat it lying.
+      // The TILE's pose, not the zone default — picking "Top hugging" has to seat it hugging.
       const mode = slot.mode ?? zoneMode(pc, slot.zone, 'hug');
       // Rim: seed the front-edge seat + lean via the SAME helper addSticker uses, so the move path
       // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
@@ -5546,7 +5546,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Resolve via zoneMode (never the raw value) so the { mode, … } object form and the legacy
       // `insert` position both surface as their upright pose (TopperPreview keys upright off 'stand').
       // scaleRange caps the stand-slot Size dial from config (placement_config.scale); hug uses hugMul.
-      const POSE_LABEL = { stand: 'standing', hug: 'lying', perch: 'perched', verge: 'over edge' };
+      const POSE_LABEL = { stand: 'standing', hug: 'hugging', perch: 'perched', verge: 'over edge' };
       return { ...slot,
         key:   slot.poseChoice ? `${slot.key}-${slot.mode}` : slot.key,
         label: slot.poseChoice ? `${label} ${POSE_LABEL[slot.mode] ?? slot.mode}` : label,
@@ -5835,11 +5835,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         ] });
       }
       // Pose — only where the element's config offers this zone more than one (zoneHasChoice), so an
-      // element with a single pose grows no control. Standing vs lying is a RE-SEAT: see
+      // element with a single pose grows no control. Standing vs hugging is a RE-SEAT: see
       // setStickerPose for why yOffset/tilt/insert are cleared and x/z re-clamped.
       if (sticker && zoneHasChoice(elementById.get(sticker.elementId)?.placement_config, sticker.zone)) {
         const poses = zoneModes(elementById.get(sticker.elementId)?.placement_config, sticker.zone);
-        const POSE_LABEL = { stand: 'Standing', hug: 'Lying', perch: 'Perched', verge: 'Over edge' };
+        // "Hugging", not "lying" — `hug` is the word this codebase and its authoring screens have
+        // always used for an element laid against a surface, so the customer-facing label matches
+        // the one everyone already says.
+        const POSE_LABEL = { stand: 'Standing', hug: 'Hugging', perch: 'Perched', verge: 'Over edge' };
         groups.push({ key: 'pose', divider: true, controls: [
           <span key="pose-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Pose</span>,
           ...poses.map(m => (
@@ -5856,7 +5859,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // (Tilt moved out below — now gated by the `tilt` capability)
       // Spin (rotation) — any decoration on the top surface. Flat mode spins it in the plane of the
       // surface and stand spins its facing; both read `sticker.rotation`, so gating this on `stand`
-      // (as it was) left a lying element rotatable by the renderer and unrotatable by the customer —
+      // (as it was) left a hugging element rotatable by the renderer and unrotatable by the customer —
       // which only became visible once a pose could be flipped.
       if (sticker?.zone === 'top_surface') {
         const rot = sticker?.rotation ?? 0;

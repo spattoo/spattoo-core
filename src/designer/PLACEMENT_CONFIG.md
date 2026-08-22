@@ -206,7 +206,7 @@ A zone's value may name a LIST instead of a single mode, **default first**:
 ```
 
 Some elements read equally well either way on the same surface — a football jersey on the cake top
-stands up like a topper or lies flat like a decal — and which is right is the customer's taste, not a
+stands up like a topper or hugs the surface like a decal — and which is right is the customer's taste, not a
 property of the element.
 
 * **`modes[0]` is the default.** A drop, and every existing caller of `zoneMode`, gets it. A config
@@ -218,12 +218,12 @@ property of the element.
   through `zoneSeatFields(pc, zone, mode)`, which validates the pick against this list — a pose the
   zone no longer offers falls back to the default rather than rendering something the element does
   not claim to do.
-* **Authoring:** the checkbox on the zone row ("Let the customer also lie it flat"). Offered only on
+* **Authoring:** the checkbox on the zone row ("Let the customer also hug it here"). Offered only on
   a FLAT surface and only between `stand` and `hug` — a wall has one sensible pose, and perch/verge
   are defined by the rim edge they sit on.
 * **Changing pose is a RE-SEAT**, not a field edit: `yOffset`, `tiltAngle` and `insertDepth` are
   cleared (they mean different things, or nothing, in the other pose) and `x`/`z` are re-clamped
-  (a standing element may sit at the rim; lying it needs half its width of clearance). `rotation` is
+  (a standing element may sit at the rim; hugging it needs half its width of clearance). `rotation` is
   kept — it is spin in both.
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).
