@@ -52,6 +52,7 @@ import { frostingAllowsStyles } from '../frostings.js';
 import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { toCanvasConfig } from '../hooks/useCakeDesign.js';
+import ReelDirector from '../reel/ReelDirector.jsx';
 
 // ── Board footprint ─────────────────────────────────────────────────────────────────────────────
 // The board under a cake, sized to CONTAIN the bottom tier. A number cake sits on a RECTANGULAR board (a
@@ -2930,6 +2931,9 @@ export default function CakeCanvas({
   isStickerMovable,
   hitTestRef,
   snapCameraRef,
+  // Filled with the reel recorder when the designer passes it — catalogue authors only, so for
+  // every other baker this is undefined and ReelDirector never mounts.
+  reelRef = null,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
@@ -3022,6 +3026,10 @@ export default function CakeCanvas({
       <CameraCapture cameraRef={cameraRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} orbitRef={orbitRef} />
+      {/* Fills reelRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
+          camera only exists inside the Canvas, so anything that drives it has to live in here and
+          hand a function out. Renders nothing; costs nothing when reelRef is not passed. */}
+      {reelRef && <ReelDirector reelRef={reelRef} orbitRef={orbitRef} />}
       <CakeScene
         config={config}
         selectedTier={selectedTier}

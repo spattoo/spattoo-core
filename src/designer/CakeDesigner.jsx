@@ -1983,6 +1983,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const navMenuRef       = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
+  // Filled by ReelDirector when the baker is a catalogue author. Null otherwise — and the canvas
+  // only mounts the director when it is passed, so every other bakery renders nothing extra.
+  const reelRef          = useRef(null);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
 
@@ -2000,6 +2003,29 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // primary_color/accent_color directly and never went through here.
   const primaryColor = '#1a1a1a';
   const accentColor  = '#333333';
+
+  // ── Reel recording — catalogue authors only ───────────────────────────────────────────────────
+  // A per-BAKER flag (bakers.is_catalog_author, migration 070), not a per-user capability: hasCap
+  // answers "may this person do X" and this asks "is this bakery one of ours". The same bakeries
+  // publish catalogue templates and film them. See spattoo-docs/features/reel-capture.md.
+  const isCatalogAuthor = !!bakerData?.is_catalog_author;
+
+  async function runReel() {
+    if (!reelRef.current) { setSaveMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
+    setSaveMsg({ ok: true, text: 'Recording… hold still for 2.5 seconds.' });
+    try {
+      const safe = (design?.name || 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const { instagramReady, mimeType } = await reelRef.current({ filename: `${safe || 'cake'}-reel` });
+      // ⚠️ Say when it is NOT an MP4. Instagram rejects WebM, and a baker who is only told
+      // "downloaded" finds that out at the moment they try to post — by which time the cake may not
+      // even be on screen any more.
+      setSaveMsg(instagramReady
+        ? { ok: true, text: 'Reel downloaded — ready for Instagram.' }
+        : { ok: false, text: `Downloaded as ${mimeType?.includes('webm') ? 'WebM' : mimeType}. Instagram needs MP4 — convert it before posting, or record in a newer Chrome.` });
+    } catch (e) {
+      setSaveMsg({ ok: false, text: `Couldn't record: ${e.message}` });
+    }
+  }
 
   // Identity, not chrome: the avatar says WHOSE account this is, so it keeps the bakery's colour —
   // it is the one place in the app where the brand is the content rather than the decoration.
@@ -2168,6 +2194,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           // for two different things is a coin toss. This one chooses which global templates the
           // bakery OFFERS, which is what features/template-visibility.md calls it.
           { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true) },
+        ] : []),
+        // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
+        // this person do X", and this asks "is this bakery one of ours" — a question no user-level
+        // permission can answer. See spattoo-docs/features/reel-capture.md.
+        ...(isCatalogAuthor ? [
+          { id: 'reel', label: 'Record a reel', open: () => runReel() },
         ] : []),
         ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true) }] : []),
         ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
@@ -7319,6 +7351,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               isStickerMovable={isStickerMovable}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
+              reelRef={isCatalogAuthor ? reelRef : null}
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
             />
           </Suspense>
