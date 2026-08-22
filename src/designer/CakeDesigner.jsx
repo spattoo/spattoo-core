@@ -2212,7 +2212,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       ],
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities]);
+  // ⚠️ isCatalogAuthor MUST be here. bakerData arrives from fetchBakerProfile AFTER mount, so the
+  // memo first runs with the flag still false — without the dependency it never recomputes and
+  // 'Record a reel' never appears, however correct the gate is. The exhaustive-deps rule is
+  // disabled on this memo, so nothing warns; the only protection is remembering, which is worth
+  // knowing before adding the next asynchronously-loaded condition to this list.
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, isCatalogAuthor]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
