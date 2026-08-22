@@ -1610,11 +1610,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   ];
   const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: 0.03, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
-  // Which message the Texts editor is pointed at. `setWriting` writes to THAT one, so the twenty-odd
-  // controls below (font, colour, thickness, curve…) are unchanged by writings becoming a list —
-  // they always meant "the message being edited", and now that is said once here instead of being
-  // implied by there only ever being one.
-  const selectedWritingId = selectedEl?.type === 'writing' ? (selectedEl.id ?? null) : null;
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [elementById, setElementById] = useState(() => new Map()); // id → element row, for placed-sticker config lookups
@@ -1809,6 +1804,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const selectedPiping  = selectedEl?.type === 'piping'  ? selectedEl       : null;
   const selectedTextId  = selectedEl?.type === 'text'    ? selectedEl.id    : null;
   const selectedAgeId   = selectedEl?.type === 'age'     ? selectedEl.id    : null;
+  // Which message the Texts editor is pointed at. `setWriting` writes to THAT one, so the twenty-odd
+  // controls below (font, colour, thickness, curve…) are unchanged by writings becoming a list —
+  // they always meant "the message being edited", and now that is said once here instead of being
+  // implied by there only ever being one.
+  //
+  // ⚠️ It MUST live below `const [selectedEl] = useState(...)`. It was declared ~160 lines above it,
+  // which is the temporal dead zone: `const` is hoisted but unreadable until its initialiser runs, so
+  // CakeDesignerInner threw "Cannot access 'selectedEl' before initialization" on EVERY render and
+  // the whole app showed "Something went wrong". Minified it reads as an unrecognisable name, which
+  // is most of why it was not obvious from production. Keep derivations next to what they derive.
+  const selectedWritingId = selectedEl?.type === 'writing' ? (selectedEl.id ?? null) : null;
   const selectedAge     = design.ages.find(a => a.id === selectedAgeId) ?? null;
   const selectedStickerId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
   // For a selected `hue_regions` sticker, derive its colour regions (from the image) once — the toolbar
