@@ -385,11 +385,38 @@ export function zoneCfg(placementConfig, zone) {
   return obj;
 }
 
+// ── One zone, more than one pose ────────────────────────────────────────────────────────────────
+// Some elements read equally well in two poses on the SAME surface: a football jersey on the cake
+// top can stand up like a topper or lie flat like a decal, and which one is right is the customer's
+// taste, not a property of the jersey. A zone used to name exactly one mode, so the element could
+// only offer whichever the author happened to pick.
+//
+// `modes` is the list a zone allows, FIRST ENTRY FIRST — it is the default a drop uses, so a config
+// carrying one mode behaves exactly as it did. The legacy `mode` string is the one-entry case, which
+// is why nothing has to be migrated: every existing element already answers this correctly.
+//
+//   "top_surface": "stand"                                  → ['stand']
+//   "top_surface": { "mode": "stand" }                       → ['stand']
+//   "top_surface": { "modes": ["stand", "hug"] }             → ['stand', 'hug']   (stand is default)
+export function zoneModes(placementConfig, zone, fallback) {
+  const cfg = zoneCfg(placementConfig, zone);
+  const list = Array.isArray(cfg.modes) ? cfg.modes.filter(Boolean) : [];
+  if (list.length) return list;
+  const single = cfg.mode ?? fallback;
+  return single ? [single] : [];
+}
+
+// May this zone be posed at all? The toggle and the extra chooser tile both hang off this, so an
+// element with one pose grows no controls — the ~50 that exist today are untouched.
+export function zoneHasChoice(placementConfig, zone) {
+  return zoneModes(placementConfig, zone).length > 1;
+}
+
 // The placement MODE (the POSITION) for a zone ("hug" | "stand" | "perch" | "verge"), from string or
 // object form. Never returns "insert" — that is a modifier now (see zoneInsert), promoted away by
-// zoneCfg.
+// zoneCfg. With `modes`, this is the DEFAULT (the first) — what a drop gets before anyone chooses.
 export function zoneMode(placementConfig, zone, fallback) {
-  return zoneCfg(placementConfig, zone).mode ?? fallback;
+  return zoneModes(placementConfig, zone, fallback)[0] ?? fallback;
 }
 
 // The per-zone INSERT modifier ({ depth, lean_deg, jitter_deg }) or null. Insert sinks an element's
@@ -421,9 +448,16 @@ export function zoneSeat(placementConfig, zone) {
 // never from the raw `placement_config[zone]` value — keeps the string and `{ mode, seat }` object
 // forms interchangeable. (The move path previously set neither, so moving a proud element off the
 // wall and back left it flush/buried and could leak the raw object into `placementMode`.)
-export function zoneSeatFields(placementConfig, zone) {
+// `mode` overrides the zone default — the customer picked a pose (a chooser tile, or the card's
+// Standing/Lying toggle). It is validated against what the zone actually allows rather than trusted:
+// a pose is only meaningful where the config offers it, and a stale value (say a design saved while
+// an element allowed two poses, loaded after an admin cut it back to one) must fall back rather than
+// render something the element no longer claims to do.
+export function zoneSeatFields(placementConfig, zone, mode = null) {
+  const allowed = zoneModes(placementConfig, zone, 'hug');
+  const picked  = mode && allowed.includes(mode) ? mode : (allowed[0] ?? 'hug');
   return {
-    placementMode: zoneMode(placementConfig, zone, 'hug'),
+    placementMode: picked,
     sideProud:     zoneSeat(placementConfig, zone) === 'proud',
   };
 }

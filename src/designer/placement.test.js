@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneInsert, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -498,5 +498,59 @@ describe('insertSeat — buried-and-angled seat: lean±jitter, fan spin, depth (
     const lo = insertSeat({ lean_deg: 10, jitter_deg: 30 }, () => 0);
     expect(lo.tiltAngle).toBeCloseTo((10 - 30) * D2R, 6);
     expect(lo.fanYaw).toBeCloseTo(-30 * D2R, 6);
+  });
+});
+
+// ── Two poses on one surface ────────────────────────────────────────────────────────────────────
+// A jersey stands on the cake top or lies flat on it, and which is right is the customer's taste.
+// The list is ordered: the FIRST entry is what a drop gets, so a config naming one pose behaves
+// exactly as it did — that is what makes this additive rather than a migration.
+describe('zoneModes — the poses a zone allows, default first', () => {
+  it('reads the legacy string form as a one-pose zone', () => {
+    expect(zoneModes({ top_surface: 'stand' }, 'top_surface')).toEqual(['stand']);
+  });
+
+  it('reads the object form as a one-pose zone', () => {
+    expect(zoneModes({ top_surface: { mode: 'stand' } }, 'top_surface')).toEqual(['stand']);
+  });
+
+  it('reads a modes list, default first', () => {
+    expect(zoneModes({ top_surface: { modes: ['stand', 'hug'] } }, 'top_surface')).toEqual(['stand', 'hug']);
+  });
+
+  it('zoneMode still answers the DEFAULT, so every existing caller is unchanged', () => {
+    expect(zoneMode({ top_surface: { modes: ['stand', 'hug'] } }, 'top_surface')).toBe('stand');
+    expect(zoneMode({ top_surface: 'hug' }, 'top_surface')).toBe('hug');
+  });
+
+  it('only a real list is a choice — one pose grows no controls', () => {
+    expect(zoneHasChoice({ top_surface: 'stand' }, 'top_surface')).toBe(false);
+    expect(zoneHasChoice({ top_surface: { modes: ['stand'] } }, 'top_surface')).toBe(false);
+    expect(zoneHasChoice({ top_surface: { modes: ['stand', 'hug'] } }, 'top_surface')).toBe(true);
+  });
+
+  it('falls back for a zone the config never mentions', () => {
+    expect(zoneModes({}, 'top_surface', 'hug')).toEqual(['hug']);
+    expect(zoneModes({}, 'top_surface')).toEqual([]);
+  });
+});
+
+describe('zoneSeatFields — an explicitly picked pose', () => {
+  const pc = { top_surface: { modes: ['stand', 'hug'] } };
+
+  it('honours a pose the zone offers', () => {
+    expect(zoneSeatFields(pc, 'top_surface', 'hug').placementMode).toBe('hug');
+  });
+
+  it('falls back to the default for a pose the zone does NOT offer', () => {
+    // The case that matters: a design saved while the element allowed two poses, loaded after an
+    // admin cut it back to one. Trusting the stored value would render a pose the element no longer
+    // claims to do — so it is validated against the config, not carried.
+    expect(zoneSeatFields({ top_surface: 'stand' }, 'top_surface', 'hug').placementMode).toBe('stand');
+    expect(zoneSeatFields(pc, 'top_surface', 'perch').placementMode).toBe('stand');
+  });
+
+  it('with no pose asked for, answers exactly as before', () => {
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
   });
 });

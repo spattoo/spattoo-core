@@ -192,10 +192,39 @@ From `PLACEMENT_MODES` in `constants.js`:
 | Mode | Used on | Behavior |
 |---|---|---|
 | `stand` | `top_surface` | Stands upright on the surface; billboarded for 2D, full model for GLB. Size from `r`/scale. |
-| `hug` | `side`, `top_surface` | Lies flat against the surface; size derived from the wall (`hug_fill`), bends around round walls. |
+| `hug` | `side`, `top_surface` | Lies flat against the surface; size derived from the wall (`hug_fill`), bends around round walls. On a flat surface it can be offered alongside `stand` — see `modes` below. |
 | `perch` | `rim` | A figure seated on the top edge — its centre straddles the edge (legs over the side, body above). Leans on world-X. Calibrated by `perch` (§ below). Legged 3D toppers. |
 | ~~`insert`~~ | — | **No longer a mode.** Insert is a per-zone **MODIFIER** (`<zone>.insert`, see §1) that composes with a `stand`/`hug` pose — it does not select a position. The legacy `mode:"insert"` value is auto-promoted (→ `stand` on a flat surface, `hug` against a wall) by `zoneCfg`; kept here only so old configs keep rendering. |
 | `verge` | `rim` | Reclines radially **OUTWARD** by `verge.angle_deg` so the body cantilevers over the edge into the air. World-oriented (never billboarded); auto-faces outward, re-orienting as it's dragged round the rim. For butterflies, flowers. Conventionally `rim`, but like every mode it's a config value usable on any allowed surface. Calibrated by `verge`: `{ seat, angle_deg, y_offset, edge_inset }` — **`seat`** = `'center'` (default; the MID-SPINE/geometry centre rests on the rim edge and the body drapes over the lip) or `'base'` (the body BASE seats on the top surface and leans from there); **`angle_deg`** default-tilt in degrees (default 35; seeds the per-instance Tilt control); **`edge_inset`** radial pull-in from the rim (− pushes out over the lip); **`y_offset`** height nudge. Dragging an edge-seated element rim-locks it (snaps to the perimeter — never inward, so a centre-seat element can't bury itself); a base-seat verge drags freely on the top like `stand`. _Planned (with the faux-ball work): **`edge_drag`** = `'rim'` (default, locked to the perimeter) \| `'outward'` (may be dragged OUT over the lip for a "spill over the edge" look, while inward is always clamped to the rim — for faux balls)._ |
+
+### Two poses on one surface — `modes`
+
+A zone's value may name a LIST instead of a single mode, **default first**:
+
+```jsonc
+"top_surface": { "modes": ["stand", "hug"] }     // stands by default; the customer may lay it flat
+```
+
+Some elements read equally well either way on the same surface — a football jersey on the cake top
+stands up like a topper or lies flat like a decal — and which is right is the customer's taste, not a
+property of the element.
+
+* **`modes[0]` is the default.** A drop, and every existing caller of `zoneMode`, gets it. A config
+  naming one mode is the one-entry case, so nothing needed migrating.
+* **The pose is per INSTANCE.** It has always lived on the sticker as `placementMode`, so two jerseys
+  on one cake can differ.
+* **Where the customer picks:** an extra preview tile in the placement chooser (elements with
+  `single_per_slot`), and a `Pose` toggle on the decoration's toolbar (everything else). Both write
+  through `zoneSeatFields(pc, zone, mode)`, which validates the pick against this list — a pose the
+  zone no longer offers falls back to the default rather than rendering something the element does
+  not claim to do.
+* **Authoring:** the checkbox on the zone row ("Let the customer also lie it flat"). Offered only on
+  a FLAT surface and only between `stand` and `hug` — a wall has one sensible pose, and perch/verge
+  are defined by the rim edge they sit on.
+* **Changing pose is a RE-SEAT**, not a field edit: `yOffset`, `tiltAngle` and `insertDepth` are
+  cleared (they mean different things, or nothing, in the other pose) and `x`/`z` are re-clamped
+  (a standing element may sit at the rim; lying it needs half its width of clearance). `rotation` is
+  kept — it is spin in both.
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).
 

@@ -12,13 +12,13 @@ import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneInsert, zoneSeatFields } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
 import { Panel } from '../shared/Panel.jsx';
-import { tierShape } from './geometry/surface.js';
+import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -3607,6 +3607,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive(isSame ? null : { type: 'tier', index: i });
   }
 
+  // ── Re-pose a placed decoration ─────────────────────────────────────────────────────────────────
+  // A jersey on the cake top reads as a standing topper OR as a decal lying flat, and which is right
+  // is the customer's taste rather than a property of the jersey. The pose is per-INSTANCE (it always
+  // was — `placementMode` lives on the sticker), so this changes one decoration and leaves its
+  // siblings alone.
+  //
+  // A pose change is a RE-SEAT, not a field edit. Three of the instance's fields mean different
+  // things (or nothing) in the other pose, and carrying them across is how an element ends up
+  // floating, leaning, or half-buried:
+  //
+  //   yOffset     a height nudge tuned against a standing seat is wrong against a flat one
+  //   tiltAngle   only the upright branch leans; a stale tilt makes a stood-up element lurch
+  //   insertDepth burial is upright-only
+  //
+  // `rotation` is deliberately KEPT: it is spin in both poses (yaw standing, in-plane lying), so
+  // losing it would undo work the customer can see.
+  //
+  // x/z are re-clamped because the legal area differs — a standing element may sit right at the rim
+  // (margin 0), while lying it needs half its width of clearance or it hangs off the edge. Without
+  // this, flipping an element parked at the rim leaves it overhanging.
+  function setStickerPose(sticker, mode) {
+    const el = elementById.get(sticker?.elementId);
+    if (!el || !sticker) return;
+    const seat = zoneSeatFields(el.placement_config, sticker.zone, mode);
+    if (seat.placementMode === sticker.placementMode) return;
+    const next = { ...seat, yOffset: 0, tiltAngle: 0, insertDepth: null };
+    if (sticker.zone === ZONES.TOP_SURFACE) {
+      const tier = canvasConfig.tiers[sticker.tierIndex] ?? canvasConfig.tiers[0];
+      const margin = seat.placementMode === 'stand' ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
+      const { x, z } = topClampInset(tierShape(tier), sticker.x ?? 0, sticker.z ?? 0, margin);
+      next.x = x; next.z = z;
+    }
+    updateSticker(sticker.id, next);
+  }
+
   function handleTextSelect(id) {
     focusEditor('decoration');
     selectExclusive({ type: 'text', id });
@@ -5446,10 +5481,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const elId = srcEl.id;
     const multiTier = design.tiers.length > 1;
     const isSideZone = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
-    const onSlot = (sk, slot) =>
+    const sameSurface = (sk, slot) =>
       slot.zone === ZONES.TOP_SURFACE ? sk.zone === ZONES.TOP_SURFACE
       : slot.zone === ZONES.RIM       ? sk.zone === ZONES.RIM && sk.tierIndex === slot.tierIndex
       : isSideZone(sk.zone) && sk.tierIndex === slot.tierIndex;
+    // A zone that offers two poses gets a tile EACH, so the tick has to say which pose is on — the
+    // surface alone would light both. Where a zone offers one pose the mode is not compared at all:
+    // an instance placed before the element gained a second pose carries whatever it carries, and
+    // matching on it would show a placed element as unplaced.
+    const onSlot = (sk, slot) =>
+      sameSurface(sk, slot) && (!slot.poseChoice || sk.placementMode === slot.mode);
     // How the element sits on a slot comes ENTIRELY from config (placement_config[zone]) — never a
     // hardcoded per-zone default (INVARIANTS #1). Position is just the seat point on that surface.
     const seatOnSlot = slot => {
@@ -5458,7 +5499,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
       // Mode via zoneMode (never the raw value) so the { mode, seat } object form doesn't leak into
       // placementMode / edgeSeatSeed — INVARIANTS #1.
-      const mode = zoneMode(pc, slot.zone, 'hug');
+      // The TILE's pose, not the zone default — picking "Top lying" has to seat it lying.
+      const mode = slot.mode ?? zoneMode(pc, slot.zone, 'hug');
       // Rim: seed the front-edge seat + lean via the SAME helper addSticker uses, so the move path
       // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
       let pos;
@@ -5483,7 +5525,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       }
       return { mode, pos };
     };
-    const slots = placementSlots(srcEl, design.tiers.length).map(slot => {
+    // One tile per zone × POSE. A jersey that stands or lies on the top gets two previews of the
+    // real thing (TopperPreview renders from `mode`), so the choice is made the same way the surface
+    // is — not by a separate control the customer has to find afterwards. Single-pose zones expand to
+    // exactly one tile, which is what every element today already produces.
+    const slots = placementSlots(srcEl, design.tiers.length).flatMap(slot => {
+      const poses = zoneModes(pc, slot.zone, 'hug');
+      return poses.map(mode => ({ ...slot, mode, poseChoice: poses.length > 1 }));
+    }).map(slot => {
       const label = slot.zone === ZONES.RIM
           ? (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} edge` : 'Edge')
         : slot.placement === 'top' ? 'Top'
@@ -5497,7 +5546,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Resolve via zoneMode (never the raw value) so the { mode, … } object form and the legacy
       // `insert` position both surface as their upright pose (TopperPreview keys upright off 'stand').
       // scaleRange caps the stand-slot Size dial from config (placement_config.scale); hug uses hugMul.
-      return { ...slot, label, checked, sticker, mode: zoneMode(pc, slot.zone), scaleRange: scaleRangeOf(srcEl, 0.5, 8, 0.1) };
+      const POSE_LABEL = { stand: 'standing', hug: 'lying', perch: 'perched', verge: 'over edge' };
+      return { ...slot,
+        key:   slot.poseChoice ? `${slot.key}-${slot.mode}` : slot.key,
+        label: slot.poseChoice ? `${label} ${POSE_LABEL[slot.mode] ?? slot.mode}` : label,
+        checked, sticker, scaleRange: scaleRangeOf(srcEl, 0.5, 8, 0.1) };
     });
     const onToggle = slot => {
       if (instance) {
@@ -5512,7 +5565,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // `pos` re-seeds only the fields the new zone needs.
         updateSticker(instance.id, {
           zone: slot.zone, tierIndex: slot.tierIndex,
-          ...zoneSeatFields(pc, slot.zone),
+          ...zoneSeatFields(pc, slot.zone, slot.mode),
           x: 0, z: 0, tiltAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0, insertDepth: null,
           ...pos,
         });
@@ -5522,6 +5575,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (slot.checked) {
         design.stickers.filter(s => s.elementId === elId && onSlot(s, slot)).forEach(s => removeSticker(s.id));
       } else {
+        // Two poses are two tiles but ONE surface. Picking the other pose for a surface that is
+        // already occupied RE-POSES what is there rather than stacking a second copy on it — and
+        // re-posing keeps the position the customer dragged it to, which remove-and-re-add would
+        // throw away by seating the replacement back at the centre.
+        const here = slot.poseChoice
+          ? design.stickers.find(s => s.elementId === elId && sameSurface(s, slot))
+          : null;
+        if (here) { setStickerPose(here, slot.mode); return; }
         const { mode, pos } = seatOnSlot(slot);
         addSticker(srcEl, slot.zone, slot.tierIndex, mode, pos);
       }
@@ -5773,9 +5834,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
         ] });
       }
+      // Pose — only where the element's config offers this zone more than one (zoneHasChoice), so an
+      // element with a single pose grows no control. Standing vs lying is a RE-SEAT: see
+      // setStickerPose for why yOffset/tilt/insert are cleared and x/z re-clamped.
+      if (sticker && zoneHasChoice(elementById.get(sticker.elementId)?.placement_config, sticker.zone)) {
+        const poses = zoneModes(elementById.get(sticker.elementId)?.placement_config, sticker.zone);
+        const POSE_LABEL = { stand: 'Standing', hug: 'Lying', perch: 'Perched', verge: 'Over edge' };
+        groups.push({ key: 'pose', divider: true, controls: [
+          <span key="pose-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Pose</span>,
+          ...poses.map(m => (
+            <button key={`pose-${m}`}
+              style={{ ...s.tbIconBtn, width: 'auto', padding: '0 8px', fontSize: 10, fontWeight: 800,
+                background: sticker.placementMode === m ? '#1a1a1a' : undefined,
+                color: sticker.placementMode === m ? '#fff' : undefined }}
+              onClick={() => setStickerPose(sticker, m)}>
+              {POSE_LABEL[m] ?? m}
+            </button>
+          )),
+        ] });
+      }
       // (Tilt moved out below — now gated by the `tilt` capability)
-      // Spin (rotation) — top_surface stand stickers only
-      if (sticker?.zone === 'top_surface' && sticker?.placementMode === 'stand') {
+      // Spin (rotation) — any decoration on the top surface. Flat mode spins it in the plane of the
+      // surface and stand spins its facing; both read `sticker.rotation`, so gating this on `stand`
+      // (as it was) left a lying element rotatable by the renderer and unrotatable by the customer —
+      // which only became visible once a pose could be flipped.
+      if (sticker?.zone === 'top_surface') {
         const rot = sticker?.rotation ?? 0;
         groups.push({ key: 'sp', divider: true, controls: [
           <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Spin</span>,
