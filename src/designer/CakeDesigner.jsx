@@ -18,6 +18,7 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
 import { Panel } from '../shared/Panel.jsx';
+import ReelOptions from './reel/ReelOptions.jsx';
 import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
@@ -1992,6 +1993,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Filled by ReelDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const reelRef          = useRef(null);
+  const [reelOptsOpen, setReelOptsOpen] = useState(false);
+  const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
 
@@ -2019,6 +2022,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   async function runReel(opts = {}) {
     if (!reelRef.current) { setSaveMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
     const secs = opts.seconds ?? 4.5;
+    // The panel closes for the take — it sits over the canvas, and the canvas is what is being
+    // filmed. It is NOT unmounted, so the settings are still there for the next cake.
+    setReelOptsOpen(false);
+    setReelBusy(true);
     setSaveMsg({ ok: true, text: `Recording… hold still for ${secs} seconds.` });
     try {
       const safe = (design?.name || 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -2031,6 +2038,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         : { ok: false, text: `Downloaded as ${mimeType?.includes('webm') ? 'WebM' : mimeType}. Instagram needs MP4 — convert it before posting, or record in a newer Chrome.` });
     } catch (e) {
       setSaveMsg({ ok: false, text: `Couldn't record: ${e.message}` });
+    } finally {
+      setReelBusy(false);
     }
   }
 
@@ -2205,11 +2214,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
         // permission can answer. See spattoo-docs/features/reel-capture.md.
-        // Two entries rather than a checkbox: the same number of clicks, and no stored preference
-        // that can silently record the wrong shape weeks after it was set.
+        // One entry: the choices that make two takes differ from each other live in the panel it
+        // opens, because they are chosen per cake rather than set once.
         ...(isCatalogAuthor ? [
-          { id: 'reel',    label: 'Record a reel',        open: () => runReel({ pingPong: true }) },
-          { id: 'reel1way',label: 'Record a one-way turn', open: () => runReel({ pingPong: false, seconds: 2.5 }) },
+          { id: 'reel', label: 'Record a reel', open: () => setReelOptsOpen(true) },
         ] : []),
         ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true) }] : []),
         ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
@@ -8596,6 +8604,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         primaryColor={primaryColor}
         accentColor={accentColor}
       />
+
+      {/* Reel options — catalogue authors only. Not mounted at all otherwise, so the panel is not
+          a thing every other baker's designer carries around unrendered. */}
+      {isCatalogAuthor && (
+        <ReelOptions open={reelOptsOpen} busy={reelBusy}
+                     onClose={() => setReelOptsOpen(false)} onRecord={runReel} />
+      )}
 
       {/* ── Templates panel (hide/show Spattoo's global templates) ── */}
       <TemplatesPanel

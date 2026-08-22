@@ -57,6 +57,11 @@ const STUBS = {
       // the text is a different size again. A harness that can only show one of the three is how a
       // branch goes unlooked-at for months.
       logo_url: LOGO_SRC, storefront_published: true,
+      // ⚠️ A catalogue author, so the reel recorder is REACHABLE here. It is gated on this flag, and
+      // a harness that cannot reach a state hides every bug in it — this feature shipped three times
+      // before anybody could see it, twice with a defect that one load of this page would have
+      // caught. `?author=no` switches it off to check the gate still hides it.
+      is_catalog_author: PARAMS.get('author') !== 'no',
     },
     user: { firstName: 'Asha', lastName: 'Otto' },
   }),
