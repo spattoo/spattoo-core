@@ -2016,12 +2016,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // publish catalogue templates and film them. See spattoo-docs/features/reel-capture.md.
   const isCatalogAuthor = !!bakerData?.is_catalog_author;
 
-  async function runReel() {
+  async function runReel(opts = {}) {
     if (!reelRef.current) { setSaveMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
-    setSaveMsg({ ok: true, text: 'Recording… hold still for 2.5 seconds.' });
+    const secs = opts.seconds ?? 4.5;
+    setSaveMsg({ ok: true, text: `Recording… hold still for ${secs} seconds.` });
     try {
       const safe = (design?.name || 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const { instagramReady, mimeType } = await reelRef.current({ filename: `${safe || 'cake'}-reel` });
+      const { instagramReady, mimeType } = await reelRef.current({ ...opts, filename: `${safe || 'cake'}-reel` });
       // ⚠️ Say when it is NOT an MP4. Instagram rejects WebM, and a baker who is only told
       // "downloaded" finds that out at the moment they try to post — by which time the cake may not
       // even be on screen any more.
@@ -2204,8 +2205,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
         // permission can answer. See spattoo-docs/features/reel-capture.md.
+        // Two entries rather than a checkbox: the same number of clicks, and no stored preference
+        // that can silently record the wrong shape weeks after it was set.
         ...(isCatalogAuthor ? [
-          { id: 'reel', label: 'Record a reel', open: () => runReel() },
+          { id: 'reel',    label: 'Record a reel',        open: () => runReel({ pingPong: true }) },
+          { id: 'reel1way',label: 'Record a one-way turn', open: () => runReel({ pingPong: false, seconds: 2.5 }) },
         ] : []),
         ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true) }] : []),
         ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
