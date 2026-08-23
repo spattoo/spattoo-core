@@ -1868,6 +1868,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // pipingTarget: { tierIndex, zone } — triggers in-canvas style picker
   const [pipingTarget, setPipingTarget] = useState(null);
   const [saveModal, setSaveModal] = useState(false);
+  // After a template saves, offer to film it — see handleSaveTemplate. Separate from saveMsg so the
+  // modal can stay open on a success it would otherwise close itself out of.
+  const [reelOffer, setReelOffer] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateOffering, setTemplateOffering] = useState('standard');
   const [templateWeight, setTemplateWeight] = useState('');
@@ -2517,6 +2520,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // No rights attestation here: a template is the baker's design library, seen only by their own
   // invited customers. The IP gate is the storefront Publish button (ThemePreview) — the one moment
   // content becomes world-visible.
+  /* Closing the save modal and clearing what was typed into it. One function because there are now
+   * three ways out — the ✕, "Record a reel" and "Not now" — and a form that half-resets on one of
+   * them shows the last template's name to the next one. */
+  function closeSaveModal() {
+    setSaveModal(false); setSaveMsg(null); setReelOffer(false);
+    setTemplateName(''); setTemplateWeight('');
+    setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set());
+  }
+
   async function handleSaveTemplate() {
     if (!templateName.trim()) return;
     // ── A tiered template needs its floor ────────────────────────────────────────────────────────
@@ -2564,11 +2576,25 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         maxAge:       templateMaxAge !== '' ? parseInt(templateMaxAge, 10) : null,
         occasionTagIds: [...templateOccasionIds],
       });
-      setSaveMsg({ ok: true, text: 'Template saved!' });
-      setTimeout(() => {
-        setSaveModal(false); setSaveMsg(null); setTemplateName(''); setTemplateWeight('');
-        setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set());
-      }, 1200);
+      /* ── Saving a template is the moment to offer a reel ──────────────────────────────────────
+       * Not a nag and not a coach-mark. A baker has just finished a design they thought worth
+       * keeping — which is the same judgement that makes a design worth posting — and they are
+       * looking at it, on the screen that can film it. Ten minutes later they are somewhere else and
+       * the thought is gone.
+       *
+       * It also puts the feature in front of bakers who would never go looking through the Actions
+       * sheet for it, at the one moment the answer is obviously yes.
+       *
+       * ⚠️ Only when there is something to offer. A baker whose plan cannot record must get the
+       * modal they have always got — closing itself, out of the way — rather than a dead end or,
+       * worse, an upsell at the end of a task they just completed. */
+      if (canRecordReel) {
+        setSaveMsg({ ok: true, text: 'Template saved.' });
+        setReelOffer(true);
+      } else {
+        setSaveMsg({ ok: true, text: 'Template saved!' });
+        setTimeout(closeSaveModal, 1200);
+      }
     } catch (err) {
       setSaveMsg({ ok: false, text: err.message });
     } finally {
@@ -2589,7 +2615,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   useEffect(() => {
     if (apiClient) {
       apiClient.fetchElementTypes().then(data => { if (data) setElementTypes(data); });
-      apiClient.fetchTags?.().then(data => { if (data) setFilterTags(data); }).catch(() => {});
+      // ⚠️ Array.isArray, not a truthiness check. `if (data)` accepts an OBJECT, and the save
+      // modal calls filterTags.filter() — so any host whose fetchTags answers with an envelope
+      // ({ items: [] }, an error body) white-screens the modal rather than showing no occasions.
+      // Found because the harness's catch-all stub returns exactly that shape.
+      apiClient.fetchTags?.().then(data => { if (Array.isArray(data)) setFilterTags(data); }).catch(() => {});
     } else {
       supabase
         .from('element_types')
@@ -8570,7 +8600,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Save as Template modal ── */}
       {saveModal && (
-        <Panel onClose={() => setSaveModal(false)} title="Save as Template" width={380}>
+        <Panel onClose={closeSaveModal} title="Save as Template" width={380}>
             <input
               style={s.modalInput}
               placeholder="Template name..."
@@ -8651,13 +8681,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {saveMsg.text}
               </div>
             )}
-            <button
-              style={{ ...s.orderBtn, ...brandBtn, marginTop: 14, opacity: saving || !templateName.trim() ? 0.6 : 1 }}
-              onClick={handleSaveTemplate}
-              disabled={saving || !templateName.trim()}
-            >
-              {saving ? 'Saving...' : 'Save as Template'}
-            </button>
+            {/* Once it is saved, the Save button has nothing left to do — offering the reel in its
+                place is one decision on screen rather than two. "Not now" is a real, equal-weight
+                way out: the offer is worth making once and is not worth pressing. */}
+            {reelOffer ? (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, color: '#666', lineHeight: 1.55, marginBottom: 10 }}>
+                  Film it turning, ready to post. It takes a few seconds and the video downloads to
+                  this device.
+                </div>
+                <button
+                  style={{ ...s.orderBtn, ...brandBtn }}
+                  onClick={() => { closeSaveModal(); openReelPanel(); }}
+                >
+                  Record a reel
+                </button>
+                <button
+                  style={{ ...s.orderBtn, background: 'transparent', color: '#888',
+                           border: 'none', marginTop: 4 }}
+                  onClick={closeSaveModal}
+                >
+                  Not now
+                </button>
+              </div>
+            ) : (
+              <button
+                style={{ ...s.orderBtn, ...brandBtn, marginTop: 14, opacity: saving || !templateName.trim() ? 0.6 : 1 }}
+                onClick={handleSaveTemplate}
+                disabled={saving || !templateName.trim()}
+              >
+                {saving ? 'Saving...' : 'Save as Template'}
+              </button>
+            )}
         </Panel>
       )}
 

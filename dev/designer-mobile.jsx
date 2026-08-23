@@ -18,6 +18,10 @@ import { CakeDesigner } from '../src/index.js';
 
 const CAPS = [
   'design:create', 'order:view', 'order:manage', 'customer:manage',
+  // ⚠️ template:manage gates BOTH "Save as Template" entries — the Actions sheet item and the
+  // desktop button. Without it the entire save flow was unreachable here, and with it the offer to
+  // record a reel that now follows a successful save.
+  'template:manage',
   'element:manage', 'store:manage', 'billing:manage',
 ];
 
@@ -87,12 +91,29 @@ const STUBS = {
   fetchTextures:       async () => ([]),
   fetchTextStyles:     async () => ([]),
   fetchBakerFlavours:  async () => ({ curated: true, flavours: [], visibility: {} }),
+  // Real occasion tags. The catch-all Proxy below answers unknown methods with an OBJECT, and the
+  // save-as-template modal maps over this — so without a stub the modal threw
+  // "filterTags.filter is not a function" and had never once opened in this harness.
+  fetchTags:           async () => ([
+    { id: 't1', name: 'Birthday',  slug: 'birthday',  category: 'occasion' },
+    { id: 't2', name: 'Wedding',   slug: 'wedding',   category: 'occasion' },
+    { id: 't3', name: 'Anniversary', slug: 'anniversary', category: 'occasion' },
+  ]),
 };
 
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),
 });
 
+/* ⚠️ onSaveTemplate is a PROP, not an apiClient method, so the Proxy above cannot stand in for it.
+ * Without it "Save as Template" answers "Saving templates is unavailable here" and the whole success
+ * path — including the offer to record a reel, which only appears there — was unreachable in the
+ * harness. Resolves rather than rejects; `?save=fail` exercises the error branch. */
+const onSaveTemplate = async t => {
+  if (PARAMS.get('save') === 'fail') throw new Error('Could not save (stubbed failure).');
+  console.log('[harness] saved template', t.name, t);
+};
+
 createRoot(document.getElementById('root')).render(
-  <CakeDesigner apiClient={apiClient} cfAssetsBase="" />,
+  <CakeDesigner apiClient={apiClient} cfAssetsBase="" onSaveTemplate={onSaveTemplate} />,
 );
