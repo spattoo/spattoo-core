@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach,
+  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale,
 } from './rainbow.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
@@ -437,5 +437,62 @@ describe('position is not a function of size', () => {
     const a = rainbowBands({ offsetX: null, innerRadius: 0.3 }, CAKE).centerX;
     const b = rainbowBands({ offsetX: null, innerRadius: 0.6 }, CAKE).centerX;
     expect(b).toBeGreaterThan(a);
+  });
+});
+
+// ── An arch standing ON the cake fits ON the cake ───────────────────────────────────────────────
+// Both feet on the top is not a rainbow leaning against the cake — it is one standing on it, and a
+// foot over the edge is resting on nothing. It hung off the side, because the position and
+// proportions were the ones tuned for the leaning version and nothing said the standing one differs.
+describe('standing on the cake', () => {
+  const ON_TOP = { footLeft: 'top', footRight: 'top' };
+
+  it('keeps every foot within the cake', () => {
+    for (const offsetX of [0, 0.4, 0.71, 1.2]) {
+      const { bands } = rainbowBands({ ...ON_TOP, offsetX }, CAKE);
+      for (const b of bands) {
+        for (const end of [b.path[0], b.path[b.path.length - 1]]) {
+          expect(Math.hypot(end.x, end.z), `offset ${offsetX}: band ${b.index} hangs off the edge`)
+            .toBeLessThanOrEqual(CAKE.radius + 1e-6);
+        }
+      }
+    }
+  });
+
+  it('shrinks to fit rather than moving — the position is still the author\'s', () => {
+    const asked = 0.71;
+    const { centerX, bands } = rainbowBands({ ...ON_TOP, offsetX: asked }, CAKE);
+    expect(centerX).toBeCloseTo(asked * CAKE.radius, 9);          // stayed put
+    const wide = rainbowBands({ footLeft: 'top', footRight: 'board', offsetX: asked }, CAKE);
+    expect(bands[bands.length - 1].radius).toBeLessThan(wide.bands[wide.bands.length - 1].radius);
+  });
+
+  it('keeps its proportions while it shrinks', () => {
+    const big = rainbowBands({ ...ON_TOP, offsetX: 0 }, CAKE);
+    const squeezed = rainbowBands({ ...ON_TOP, offsetX: 0.9 }, CAKE);
+    const ratio = b => b.bands[b.bands.length - 1].radius / b.thickness;
+    expect(ratio(squeezed)).toBeCloseTo(ratio(big), 6);
+  });
+
+  it('still rests its underside on the top after shrinking', () => {
+    // The seat is half a rope, and the ropes just got thinner. Working the seat out BEFORE the
+    // shrink left the feet hovering above the cake by the difference.
+    const { bands, thickness } = rainbowBands({ ...ON_TOP, offsetX: 0.9 }, CAKE);
+    expect(Math.min(...bands[0].path.map(p => p.y)) - thickness / 2).toBeCloseTo(CAKE.topY, 6);
+  });
+
+  it('leaves a rainbow that already fits completely alone', () => {
+    expect(fitOnTopScale({ centerX: 0, standoff: 0, outerRadius: 0.5, cakeRadius: 1.2 })).toBe(1);
+  });
+
+  it('does not shrink one that is LEANING — that one is not standing on the cake', () => {
+    // The fit only applies to an arch STANDING on the top. A leaning one has a leg on the board, so
+    // it is allowed to be wider than the cake — that is how it clears it. Asserted as "the sizes
+    // came through untouched", not "the radius exceeds the cake": the radius does not have to, only
+    // the FOOT does, and I had written the wrong one.
+    const lean = rainbowBands({ footLeft: 'top', footRight: 'board' }, CAKE);
+    expect(lean.thickness).toBeCloseTo(RAINBOW_DEFAULTS.thickness * CAKE.radius, 9);
+    const foot = lean.bands[0].path[lean.bands[0].path.length - 1];
+    expect(Math.hypot(foot.x, foot.z)).toBeGreaterThan(CAKE.radius);
   });
 });
