@@ -43,9 +43,13 @@ export default function RainbowArch({
   const p = { ...RAINBOW_DEFAULTS, ...params };
   const { bands } = useMemo(() => rainbowBands(p, cake), [JSON.stringify(p), JSON.stringify(cake)]);
 
+  // On a wall, `flatten` has to press the rope toward the WALL, not toward the world's centre —
+  // squashing world Z drags a wrapped rope straight inside the cake. Passing the tier radius is what
+  // tells bandGeometry which of the two it is.
+  const wallRadius = p.surface === 'side' ? (cake?.radius ?? null) : null;
   const geometries = useMemo(
-    () => bands.map(b => bandGeometry(b, { flatten: p.flatten, tubeSegments: p.tubeSegments })),
-    [bands, p.flatten, p.tubeSegments],
+    () => bands.map(b => bandGeometry(b, { flatten: p.flatten, tubeSegments: p.tubeSegments, wallRadius })),
+    [bands, p.flatten, p.tubeSegments, wallRadius],
   );
 
   // A tube per band per slider drag, and nothing else frees them. Grass gets away without this by

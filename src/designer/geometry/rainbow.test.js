@@ -591,18 +591,21 @@ describe('hugging the side', () => {
   const SIDE = { surface: 'side', footLeft: 'board', footRight: 'board' };
 
   it('holds every point at the same distance from the axis — that is what hugging is', () => {
-    const { bands, cakeRadius } = rainbowBands(SIDE, CAKE);
-    const want = cakeRadius + RAINBOW_DEFAULTS.proud * cakeRadius;
+    const { bands, cakeRadius, thickness } = rainbowBands(SIDE, CAKE);
+    // The CENTRELINE sits half a rope clear of the wall, so the rope's inner face rests on it —
+    // the same seat rule the feet follow. It used to be measured to the wall itself, which put
+    // half of every rope inside the cake.
+    const want = cakeRadius + RAINBOW_DEFAULTS.proud * cakeRadius + thickness / 2;
     for (const b of bands) for (const pt of b.path) {
       expect(Math.hypot(pt.x, pt.z)).toBeCloseTo(want, 6);
     }
   });
 
   it('sits just proud of the wall, not hovering off it', () => {
-    const { bands, cakeRadius } = rainbowBands(SIDE, CAKE);
-    const out = Math.hypot(bands[0].path[0].x, bands[0].path[0].z) - cakeRadius;
-    expect(out).toBeGreaterThan(0);
-    expect(out).toBeLessThan(RAINBOW_DEFAULTS.thickness * cakeRadius);
+    const { bands, cakeRadius, thickness } = rainbowBands(SIDE, CAKE);
+    const face = Math.hypot(bands[0].path[0].x, bands[0].path[0].z) - thickness / 2 - cakeRadius;
+    expect(face).toBeGreaterThanOrEqual(0);                       // on the wall, not in it
+    expect(face).toBeLessThan(RAINBOW_DEFAULTS.thickness * cakeRadius);   // and not hovering
   });
 
   it('keeps its heights — the wall is vertical, so a foot on the board still is', () => {
@@ -747,5 +750,64 @@ describe('sitting on the cake top', () => {
     const { bands } = onTop(1);
     const outer = bands[bands.length - 1];
     expect(outer.radius).toBeLessThan(CAKE.radius * 0.85);
+  });
+});
+
+// ── Flatten presses toward the surface the rope is ON ───────────────────────────────────────────
+// It squashes the mesh, and WHICH WAY depends on where the rope is. A flat arch lies in the XY plane
+// so world Z is right. A rope bent round the cake lies AT the cake's radius, and the same scale drags
+// it toward the world centre — at flatten 0.55 a wall rainbow's mesh went from z 1.16–1.27 to
+// 0.52–0.57 on a 1.2 cake and disappeared. It was not missing, it was buried.
+describe('flatten on a wall', () => {
+  const WALL = { surface: 'side', footLeft: 'board', footRight: 'board', spring: 0, offsetX: 0, scale: 0.6 };
+  const meshZ = flatten => {
+    const { bands } = rainbowBands({ ...WALL, flatten }, CAKE);
+    const g = bandGeometry(bands[0], { flatten, wallRadius: CAKE.radius });
+    g.computeBoundingBox();
+    return g.boundingBox;
+  };
+
+  it('leaves a pressed rope ON the wall, not inside the cake', () => {
+    const bb = meshZ(0.55);
+    expect(bb.max.z).toBeGreaterThan(CAKE.radius);
+    expect(bb.min.z).toBeGreaterThan(CAKE.radius * 0.95);
+  });
+
+  it('presses it thinner without pushing it into the cake', () => {
+    // Measured RADIALLY, not by the bounding box. On a curved rope the box's min z is the angular
+    // END of the arc, not its innermost surface — comparing those says nothing about depth and my
+    // first version of this test failed on exactly that confusion.
+    const radial = flatten => {
+      const { bands } = rainbowBands({ ...WALL, flatten }, CAKE);
+      const g = bandGeometry(bands[0], { flatten, wallRadius: CAKE.radius });
+      const pos = g.attributes.position;
+      let lo = Infinity, hi = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const r = Math.hypot(pos.getX(i), pos.getZ(i));
+        lo = Math.min(lo, r); hi = Math.max(hi, r);
+      }
+      return { lo, hi };
+    };
+    const round = radial(0), flat = radial(0.55);
+    expect(flat.hi - flat.lo).toBeLessThan(round.hi - round.lo);   // thinner
+    expect(flat.hi).toBeLessThan(round.hi);                        // stands less proud
+    // Pressing pulls it toward the wall — that is what pressing IS — so it does end nearer than the
+    // round one (1.211 against 1.224 here). What must hold is that it stays OUT of the cake.
+    expect(flat.lo).toBeGreaterThanOrEqual(CAKE.radius);
+  });
+
+  it('still squashes a FLAT arch against its own plane', () => {
+    const { bands } = rainbowBands({ footLeft: 'board', footRight: 'board', standoff: 0 }, CAKE);
+    const g = bandGeometry(bands[0], { flatten: 0.6 });   // no wallRadius — the flat path
+    const plain = bandGeometry(bands[0], { flatten: 0 });
+    g.computeBoundingBox(); plain.computeBoundingBox();
+    const depth = b => b.boundingBox.max.z - b.boundingBox.min.z;
+    expect(depth(g)).toBeLessThan(depth(plain));
+  });
+
+  it('seats the rope ON the wall rather than half inside it', () => {
+    const { bands, thickness } = rainbowBands(WALL, CAKE);
+    const centre = Math.hypot(bands[0].path[0].x, bands[0].path[0].z);
+    expect(centre - thickness / 2).toBeGreaterThanOrEqual(CAKE.radius - 1e-6);
   });
 });

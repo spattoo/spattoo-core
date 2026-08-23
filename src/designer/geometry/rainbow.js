@@ -205,10 +205,15 @@ export function fitOnTopScale({ centerX, standoff, outerRadius, cakeRadius }) {
  * Every point ends the same distance from the axis, which is what hugging means and what a flat
  * plane cannot do — laid against a round cake its middle touches and its ends float.
  */
-export function wrapToWall(points, { radius, theta0 = 0, proud = 0 }) {
-  const r = radius + proud;
+export function wrapToWall(points, { radius, theta0 = 0, proud = 0, seat = 0 }) {
+  // `seat` lifts the CENTRELINE clear of the wall by half a rope, the same rule the feet follow: a
+  // path point is the middle of the tube, so a rope laid at exactly radius+proud is half buried.
+  const r = radius + proud + seat;
   return points.map(p => {
-    const th = theta0 + p.x / radius;
+    // Divided by the rope's OWN radius, not the cake's. Arc length is r·θ, so θ = x/r is what keeps
+    // the rope the length it was drawn as — dividing by the cake's radius while placing it further
+    // out stretched every rope by the ratio between them, quietly making it more fondant to roll.
+    const th = theta0 + p.x / r;
     return new THREE.Vector3(Math.sin(th) * r, p.y, Math.cos(th) * r);
   });
 }
@@ -344,7 +349,7 @@ export function rainbowBands(params = {}, cake = {}) {
       path: onWall
         ? wrapToWall(
             bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, arcSegments: p.arcSegments }),
-            { radius: R, theta0: p.theta ?? 0, proud: (p.proud ?? 0) * R },
+            { radius: R, theta0: p.theta ?? 0, proud: (p.proud ?? 0) * R, seat: thickness / 2 },
           )
         : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, arcSegments: p.arcSegments }),
       thickness,
@@ -371,12 +376,40 @@ export function rainbowBoardReach(params = {}, cake = {}, margin = 0.12) {
   return far + thickness / 2 + margin * cakeRadius;
 }
 
-/** The tube for one band. Flatten squashes the cross-section in Z, turning a rope into a flat band. */
-export function bandGeometry(band, { flatten = 0, tubeSegments = RAINBOW_DEFAULTS.tubeSegments } = {}) {
+/**
+ * The tube for one band. `flatten` turns a round rope into a pressed ribbon.
+ *
+ * WHICH WAY it presses depends on where the rope is. A flat arch lies in the XY plane, so squashing
+ * world Z presses it against that plane — right. A rope bent round the cake lies AT z ≈ the cake's
+ * radius, so the same scale drags the whole thing toward the world centre and straight inside the
+ * cake: at flatten 0.55 a wall rainbow's mesh moved from z 1.16–1.27 to 0.52–0.57 on a 1.2 cake, and
+ * vanished. It was not missing, it was buried.
+ *
+ * So on a wall it presses RADIALLY — toward the wall surface, which is what "pressed onto the cake"
+ * means there. `wallRadius` says the rope is wrapped and where the wall is.
+ */
+export function bandGeometry(band, { flatten = 0, tubeSegments = RAINBOW_DEFAULTS.tubeSegments, wallRadius = null } = {}) {
   const curve = new THREE.CatmullRomCurve3(band.path, false, 'centripetal');
   const geo = new THREE.TubeGeometry(curve, band.path.length - 1, band.thickness / 2, tubeSegments, false);
   const squash = 1 - Math.max(0, Math.min(0.95, flatten));
-  if (squash !== 1) geo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1, squash));
+  if (squash === 1) return geo;
+
+  if (wallRadius == null) {
+    geo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1, squash));
+    return geo;
+  }
+
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r < 1e-9) continue;
+    const k = (wallRadius + (r - wallRadius) * squash) / r;
+    pos.setX(i, x * k);
+    pos.setZ(i, z * k);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
   return geo;
 }
 
