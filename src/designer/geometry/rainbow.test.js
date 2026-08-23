@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX,
+  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach,
 } from './rainbow.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
@@ -16,17 +16,29 @@ describe('it fits the cake it is given', () => {
   // The whole reason this is generated instead of modelled. A GLB authored for a single tier is
   // wrong on a stack, and there is no scale factor that fixes it — the legs stretch while the arch
   // must not.
-  it('a leg to the board reaches it, however tall the cake', () => {
+  // Asserted against the rope's UNDERSIDE, not its centreline. A path point is the middle of the
+  // tube, so a foot placed exactly on the surface buries half a rope in it — which is what the first
+  // version did, and it read as the rainbow being pushed into the icing.
+  it('a leg to the board RESTS on it, however tall the cake', () => {
     for (const topY of [0.6, 1.0, 2.4]) {
-      const { bands } = rainbowBands({ footLeft: 'board', footRight: 'board' }, { ...CAKE, topY });
-      expect(Math.min(...bands[0].path.map(p => p.y))).toBeCloseTo(CAKE.boardY, 6);
+      const { bands, thickness } = rainbowBands({ footLeft: 'board', footRight: 'board' }, { ...CAKE, topY });
+      const underside = Math.min(...bands[0].path.map(p => p.y)) - thickness / 2;
+      expect(underside).toBeCloseTo(CAKE.boardY, 6);
     }
   });
 
-  it('a leg to the top stops on the cake instead', () => {
-    const { bands, footLeftY } = rainbowBands({ footLeft: 'top', footRight: 'top', spring: 1.3 }, CAKE);
-    expect(footLeftY).toBe(CAKE.topY);
-    expect(Math.min(...bands[0].path.map(p => p.y))).toBeCloseTo(CAKE.topY, 6);
+  it('a leg to the top rests on the cake instead', () => {
+    const { bands, thickness } = rainbowBands({ footLeft: 'top', footRight: 'top', spring: 1.3 }, CAKE);
+    const underside = Math.min(...bands[0].path.map(p => p.y)) - thickness / 2;
+    expect(underside).toBeCloseTo(CAKE.topY, 6);
+  });
+
+  it('nothing dips BELOW the surface it stands on', () => {
+    for (const feet of [['board', 'board'], ['top', 'top'], ['top', 'board']]) {
+      const { bands, thickness } = rainbowBands({ footLeft: feet[0], footRight: feet[1] }, CAKE);
+      const lowest = Math.min(...bands.flatMap(b => b.path.map(p => p.y))) - thickness / 2;
+      expect(lowest, `${feet.join('/')} sinks into the board`).toBeGreaterThanOrEqual(CAKE.boardY - 1e-6);
+    }
   });
 
   it('with no legs it is a bare arch — nothing hangs below the springing point', () => {
@@ -43,17 +55,13 @@ describe('it fits the cake it is given', () => {
   // other. A single leg setting could only ever be symmetric, so this was unreachable — the arch
   // either straddled the cake or perched on it, and neither is the reference.
   it('lands one foot on the cake and the other on the board', () => {
-    const { bands, footLeftY, footRightY } = rainbowBands({ footLeft: 'top', footRight: 'board' }, CAKE);
-    expect(footLeftY).toBe(CAKE.topY);
-    expect(footRightY).toBe(CAKE.boardY);
-    const ys = bands[0].path.map(p => p.y);
+    const { bands, thickness } = rainbowBands({ footLeft: 'top', footRight: 'board' }, CAKE);
     const left  = bands[0].path[0];
     const right = bands[0].path[bands[0].path.length - 1];
-    expect(left.y).toBeCloseTo(CAKE.topY, 6);
-    expect(right.y).toBeCloseTo(CAKE.boardY, 6);
+    expect(left.y  - thickness / 2).toBeCloseTo(CAKE.topY, 6);
+    expect(right.y - thickness / 2).toBeCloseTo(CAKE.boardY, 6);
     expect(left.x).toBeLessThan(0);
     expect(right.x).toBeGreaterThan(0);
-    expect(Math.min(...ys)).toBeCloseTo(CAKE.boardY, 6);
   });
 
   it('and the other way round, without the shape changing', () => {
@@ -64,9 +72,9 @@ describe('it fits the cake it is given', () => {
   });
 
   it('one leg only — the other side simply ends where the arc does', () => {
-    const { bands } = rainbowBands({ footLeft: 'none', footRight: 'board', spring: 1 }, CAKE);
+    const { bands, thickness } = rainbowBands({ footLeft: 'none', footRight: 'board', spring: 1 }, CAKE);
     const path = bands[0].path;
-    expect(path[path.length - 1].y).toBeCloseTo(CAKE.boardY, 6);
+    expect(path[path.length - 1].y - thickness / 2).toBeCloseTo(CAKE.boardY, 6);
     expect(path[0].y).toBeGreaterThan(CAKE.boardY);
   });
 
@@ -229,7 +237,7 @@ describe('where the resting foot lands', () => {
     const { bands } = rainbowBands(ON_CAKE, CAKE);
     for (const b of bands) {
       const foot = b.path[0];
-      expect(foot.y).toBeCloseTo(CAKE.topY, 6);
+      expect(foot.y).toBeGreaterThan(CAKE.topY);   // resting ON it, so above by half a rope
       expect(Math.abs(foot.x), `band ${b.index} rests ${foot.x.toFixed(2)} out, past a ${CAKE.radius} cake`)
         .toBeLessThanOrEqual(CAKE.radius + 1e-6);
     }
@@ -239,7 +247,7 @@ describe('where the resting foot lands', () => {
     const { bands } = rainbowBands(ON_CAKE, CAKE);
     for (const b of bands) {
       const foot = b.path[b.path.length - 1];
-      expect(foot.y).toBeCloseTo(CAKE.boardY, 6);
+      expect(foot.y).toBeGreaterThan(CAKE.boardY);
       expect(Math.abs(foot.x), `band ${b.index} comes down THROUGH the cake`).toBeGreaterThan(CAKE.radius);
     }
   });
@@ -258,5 +266,36 @@ describe('where the resting foot lands', () => {
 
   it('an explicit offsetX overrides the derivation, for a look nobody predicted', () => {
     expect(rainbowBands({ ...ON_CAKE, offsetX: 0 }, CAKE).centerX).toBe(0);
+  });
+});
+
+// ── The board has to be big enough to stand it on ───────────────────────────────────────────────
+// A board sized for the cake alone is not a board for a cake with a rainbow leaning off it: the
+// descending leg lands outside the tier, and on a standard board it lands outside the board too —
+// a decoration resting on nothing. The cake's furniture answers to what is standing on it, the same
+// way the arch answers to the cake's height.
+describe('rainbowBoardReach', () => {
+  it('covers the furthest foot, not just the cake', () => {
+    const reach = rainbowBoardReach({ footLeft: 'top', footRight: 'board' }, CAKE);
+    expect(reach).toBeGreaterThan(CAKE.radius);
+  });
+
+  it('covers every point of every band, including the rope\'s own width', () => {
+    const params = { footLeft: 'top', footRight: 'board' };
+    const { bands, thickness } = rainbowBands(params, CAKE);
+    const far = Math.max(...bands.flatMap(b => b.path.map(p => Math.abs(p.x))));
+    expect(rainbowBoardReach(params, CAKE, 0)).toBeGreaterThanOrEqual(far + thickness / 2 - 1e-9);
+  });
+
+  it('grows with the cake, like everything else here', () => {
+    const small = rainbowBoardReach({}, { ...CAKE, radius: 1 });
+    const big   = rainbowBoardReach({}, { ...CAKE, radius: 2 });
+    expect(big).toBeGreaterThan(small);
+  });
+
+  it('accounts for how far BACK it stands, not only how far out', () => {
+    const near = rainbowBoardReach({ standoff: 0 }, CAKE, 0);
+    const far  = rainbowBoardReach({ standoff: 3 }, CAKE, 0);
+    expect(far).toBeGreaterThan(near);
   });
 });

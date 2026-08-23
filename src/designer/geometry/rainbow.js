@@ -135,8 +135,15 @@ export function rainbowBands(params = {}, cake = {}) {
   const thickness = p.thickness * R;
   const gap = p.gap * R;
   const innerRadius = p.innerRadius * R;
-  const footLeftY  = legFootY(p.footLeft,  { topY, boardY });
-  const footRightY = legFootY(p.footRight, { topY, boardY });
+  // Seat the rope's UNDERSIDE on the surface, not its centreline. A path point is the middle of the
+  // tube, so a foot placed exactly on the cake top buries half a rope in the cake — which is what
+  // the first version did, and it read as the rainbow being pushed into the icing. Same rule the
+  // stickers follow with seatHalf: an element rests ON a surface, it does not intersect it.
+  const seat = thickness / 2;
+  const rawLeft  = legFootY(p.footLeft,  { topY, boardY });
+  const rawRight = legFootY(p.footRight, { topY, boardY });
+  const footLeftY  = rawLeft  == null ? null : rawLeft  + seat;
+  const footRightY = rawRight == null ? null : rawRight + seat;
   // The springing point, measured up from the BOARD through the cake's height — so a taller cake
   // pushes it up in proportion and the rainbow keeps its relationship to the cake rather than to a
   // number. Never below the feet: an arc that starts under its own legs is inside out.
@@ -150,7 +157,10 @@ export function rainbowBands(params = {}, cake = {}) {
   const outerRadius = bandRadius(p.bands - 1, { innerRadius, thickness, gap });
   const centerX = p.offsetX != null
     ? p.offsetX * R
-    : archCenterX({ footLeftY, footRightY, outerRadius, cakeRadius: R, topFootAt: p.topFootAt, topY });
+    // The RAW foot heights, before the seat lift. Comparing the seated ones against topY would never
+    // match — they sit half a rope above it by design — so the arch would quietly stop leaning and
+    // the resting feet would go back to hanging beside the cake.
+    : archCenterX({ footLeftY: rawLeft, footRightY: rawRight, outerRadius, cakeRadius: R, topFootAt: p.topFootAt, topY });
 
   const bands = [];
   for (let i = 0; i < p.bands; i++) {
@@ -167,6 +177,24 @@ export function rainbowBands(params = {}, cake = {}) {
     });
   }
   return { bands, thickness, gap, archY, footLeftY, footRightY, standoff, centerX, cakeRadius: R };
+}
+
+/**
+ * How far out the rainbow reaches, so the BOARD can be made big enough to stand it on.
+ *
+ * A board sized for the cake alone is not a board for a cake with a rainbow leaning off it — the
+ * descending leg lands outside the tier, and on a standard board it lands outside the board too,
+ * which is a decoration resting on nothing. The cake's own furniture has to answer to what is
+ * standing on it, the same way the arch answers to the cake's height.
+ *
+ * Returns the radius the board needs. The caller takes the larger of this and its normal size:
+ * shrinking a board to fit a small rainbow would be the wrong way round.
+ */
+export function rainbowBoardReach(params = {}, cake = {}, margin = 0.12) {
+  const { bands, thickness, centerX, cakeRadius } = rainbowBands(params, cake);
+  let far = 0;
+  for (const b of bands) for (const pt of b.path) far = Math.max(far, Math.abs(pt.x), Math.abs(pt.z));
+  return far + thickness / 2 + margin * cakeRadius;
 }
 
 /** The tube for one band. Flatten squashes the cross-section in Z, turning a rope into a flat band. */
