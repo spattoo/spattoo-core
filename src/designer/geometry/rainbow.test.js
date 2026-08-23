@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale,
+  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale, wrapToWall,
 } from './rainbow.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
@@ -535,5 +535,110 @@ describe('scale', () => {
     for (const b of bands) for (const end of [b.path[0], b.path[b.path.length - 1]]) {
       expect(Math.hypot(end.x, end.z)).toBeLessThanOrEqual(CAKE.radius + 1e-6);
     }
+  });
+});
+
+// ── It leans either way, for free ───────────────────────────────────────────────────────────────
+// Left leg on the board and right foot on the cake, or the other way round. Swapping the feet used
+// to leave the arch shifted the wrong way — the falling leg landed at 0.42 on a 1.2 cake, inside it,
+// and the clearance rule stepped the whole thing 1.27 backwards to escape. The position is measured
+// TOWARD THE FALLING SIDE now, so the mirror costs nothing.
+describe('leaning either way', () => {
+  const mirror = feet => rainbowBands({ footLeft: feet[0], footRight: feet[1] }, CAKE);
+
+  it('mirrors exactly when the feet are swapped', () => {
+    const a = mirror(['top', 'board']).bands[0].path;
+    const b = mirror(['board', 'top']).bands[0].path;
+    expect(a[0].x).toBeCloseTo(-b[b.length - 1].x, 6);
+    expect(a[a.length - 1].x).toBeCloseTo(-b[0].x, 6);
+  });
+
+  it('rests on the cake and falls past it, whichever way round', () => {
+    for (const feet of [['top', 'board'], ['board', 'top']]) {
+      const { bands } = mirror(feet);
+      const restIdx = feet[0] === 'top' ? 0 : bands[0].path.length - 1;
+      const fallIdx = feet[0] === 'top' ? bands[0].path.length - 1 : 0;
+      for (const b of bands) {
+        expect(Math.abs(b.path[restIdx].x), `${feet.join('/')}: rest foot off the cake`)
+          .toBeLessThanOrEqual(CAKE.radius + 1e-6);
+        expect(Math.abs(b.path[fallIdx].x), `${feet.join('/')}: falling leg through the cake`)
+          .toBeGreaterThan(CAKE.radius);
+      }
+    }
+  });
+
+  it('is never stepped back in either direction — it clears by being wide', () => {
+    for (const feet of [['top', 'board'], ['board', 'top']]) {
+      expect(mirror(feet).standoff, `${feet.join('/')} had to step back`).toBe(0);
+    }
+  });
+
+  it('reads offsetX as a plain position when there is no lean', () => {
+    // Both feet alike is not a lean, so the sign stays as written — otherwise a backdrop would flip
+    // depending on which foot somebody happened to name first.
+    for (const feet of [['board', 'board'], ['top', 'top'], ['none', 'none']]) {
+      const { centerX } = rainbowBands({ footLeft: feet[0], footRight: feet[1], offsetX: 0.5 }, CAKE);
+      expect(centerX).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ── On the wall, facing front ───────────────────────────────────────────────────────────────────
+// The other way a rainbow appears on a cake: laid ON the side, hugging it. Not a flat arch turned
+// sideways — against a round cake a flat one touches in the middle and floats at the ends, which is
+// the same problem festoon.js bends imported strips to solve.
+describe('hugging the side', () => {
+  const SIDE = { surface: 'side', footLeft: 'board', footRight: 'board' };
+
+  it('holds every point at the same distance from the axis — that is what hugging is', () => {
+    const { bands, cakeRadius } = rainbowBands(SIDE, CAKE);
+    const want = cakeRadius + RAINBOW_DEFAULTS.proud * cakeRadius;
+    for (const b of bands) for (const pt of b.path) {
+      expect(Math.hypot(pt.x, pt.z)).toBeCloseTo(want, 6);
+    }
+  });
+
+  it('sits just proud of the wall, not hovering off it', () => {
+    const { bands, cakeRadius } = rainbowBands(SIDE, CAKE);
+    const out = Math.hypot(bands[0].path[0].x, bands[0].path[0].z) - cakeRadius;
+    expect(out).toBeGreaterThan(0);
+    expect(out).toBeLessThan(RAINBOW_DEFAULTS.thickness * cakeRadius);
+  });
+
+  it('keeps its heights — the wall is vertical, so a foot on the board still is', () => {
+    const { bands, thickness } = rainbowBands(SIDE, CAKE);
+    const lowest = Math.min(...bands.flatMap(b => b.path.map(p => p.y)));
+    expect(lowest - thickness / 2).toBeCloseTo(CAKE.boardY, 6);
+  });
+
+  it('keeps each rope the length it was drawn as', () => {
+    // Arc length over radius is the whole reason the angle is computed that way: a rope bent round
+    // the cake must not become a different amount of fondant to roll.
+    const flat = rainbowBands({ ...SIDE, surface: 'top', standoff: 0 }, CAKE);
+    const wall = rainbowBands(SIDE, CAKE);
+    const len = path => path.reduce((n, p, i) => i ? n + p.distanceTo(path[i - 1]) : 0, 0);
+    for (let i = 0; i < flat.bands.length; i++) {
+      expect(len(wall.bands[i].path)).toBeCloseTo(len(flat.bands[i].path), 1);
+    }
+  });
+
+  it('goes where it is put round the cake', () => {
+    const front = rainbowBands({ ...SIDE, theta: 0 }, CAKE).bands[0].path[0];
+    const back  = rainbowBands({ ...SIDE, theta: Math.PI }, CAKE).bands[0].path[0];
+    expect(front.z).toBeGreaterThan(0);      // 0 faces front
+    expect(back.z).toBeLessThan(0);
+  });
+
+  it('is never stepped back or shrunk — a wall rainbow is ON the wall by construction', () => {
+    const { standoff, thickness } = rainbowBands({ ...SIDE, footLeft: 'top', footRight: 'top' }, CAKE);
+    expect(standoff).toBe(0);
+    expect(thickness).toBeCloseTo(RAINBOW_DEFAULTS.thickness * CAKE.radius, 9);
+  });
+
+  it('wrapToWall is the bend on its own, for anything else that needs it', () => {
+    const [pt] = wrapToWall([{ x: 0, y: 1 }], { radius: 2, theta0: 0, proud: 0.1 });
+    expect(pt.z).toBeCloseTo(2.1, 6);
+    expect(pt.x).toBeCloseTo(0, 6);
+    expect(pt.y).toBe(1);
   });
 });

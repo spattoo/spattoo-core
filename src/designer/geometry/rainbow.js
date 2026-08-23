@@ -49,6 +49,17 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // off the top of the cake on one side, arcs over, and sweeps down past the edge to the board on
   // the other. Both to 'board' is the backdrop; both to 'top' is the small arch that sits on the
   // cake. One of each is the one everybody actually means.
+  // WHICH SURFACE it sits on.
+  //   'top'  — an arch over the cake: a flat plane, feet on the board and/or the cake top.
+  //   'side' — laid ON the wall, facing front: the same arch, bent around the tier so it hugs.
+  // A wall rainbow is not a flat one turned sideways. Left flat against a round cake its middle would
+  // touch and its ends float — which is exactly what festoon.js bends imported strips to avoid.
+  surface: 'top',
+  // Where round the wall it sits, radians, for `surface: 'side'`. 0 is the front.
+  theta: 0,
+  // How far the ropes stand off the wall, × tier radius. Small: fondant pressed onto buttercream
+  // sits on it, it does not hover.
+  proud: 0.02,
   footLeft:  'top',
   footRight: 'board',
   // Where a foot RESTING ON THE CAKE sits, as a fraction of the tier radius out from the middle
@@ -64,6 +75,12 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   //
   // The default is the value that derivation produced at the default proportions, so the shape that
   // was tuned against the references is unchanged; it is simply frozen instead of recomputed.
+  //
+  // MEASURED TOWARD THE FALLING SIDE, not toward +x. A rainbow leans: one foot rests on the cake and
+  // the other falls past its edge to the board, and the arch has to sit off-centre TOWARD the side it
+  // falls down. Signing it against the world instead meant swapping the feet left the arch shifted
+  // the wrong way — the falling leg landed on the cake and the clearance rule shoved the whole thing
+  // backwards to escape. Now mirroring is free: swap the feet and it leans the other way, unchanged.
   offsetX: 0.71,
   // Only consulted when offsetX is null — the old derived behaviour, kept because it is genuinely
   // useful when authoring a NEW shape: set the resting foot where you want it, read off the offsetX
@@ -179,6 +196,24 @@ export function fitOnTopScale({ centerX, standoff, outerRadius, cakeRadius }) {
 }
 
 /**
+ * Bend a flat arch around the tier so it lies ON the wall.
+ *
+ * `x` in the flat path is a distance ALONG the wall, so it becomes an angle by dividing by the
+ * radius — arc length over radius, which keeps each rope the length it was drawn as. Height is
+ * untouched, because the wall is vertical: a foot that rested on the board still does.
+ *
+ * Every point ends the same distance from the axis, which is what hugging means and what a flat
+ * plane cannot do — laid against a round cake its middle touches and its ends float.
+ */
+export function wrapToWall(points, { radius, theta0 = 0, proud = 0 }) {
+  const r = radius + proud;
+  return points.map(p => {
+    const th = theta0 + p.x / radius;
+    return new THREE.Vector3(Math.sin(th) * r, p.y, Math.cos(th) * r);
+  });
+}
+
+/**
  * How far back the rainbow must stand so no part of it is INSIDE the cake.
  *
  * The cake is a cylinder. Anything below its top has to be outside its footprint — and the footprint
@@ -236,14 +271,25 @@ export function rainbowBands(params = {}, cake = {}) {
   // A number stands; null derives. Deriving MOVES the rainbow when any size changes, which is why
   // it is no longer the default — see offsetX. The RAW foot heights go in, before the seat lift:
   // comparing the seated ones against topY would never match, since they sit half a rope above it.
+  // Which way it leans: +1 when the falling foot is on the right, -1 when it is on the left. Both
+  // feet alike (standing on the cake, or a backdrop on the board) has no lean, so it keeps +1 and
+  // offsetX reads as a plain position.
+  const fallsRight = rawLeft === topY && rawRight !== topY;
+  const fallsLeft  = rawRight === topY && rawLeft !== topY;
+  const leanSign = fallsLeft ? -1 : 1;
+
   const centerX = p.offsetX != null
-    ? p.offsetX * R
+    ? p.offsetX * R * leanSign
     : archCenterX({ footLeftY: rawLeft, footRightY: rawRight, outerRadius, cakeRadius: R, topFootAt: p.topFootAt, topY });
 
   // Standing on the cake? Then it fits on the cake. Both feet on the top means the whole thing has to
   // be within the footprint — a foot over the edge rests on nothing. The proportions shrink together
   // until it fits; the position stays exactly where it was put.
-  const standingOnTop = rawLeft === topY && rawRight === topY;
+  // On the WALL there is nothing to clear and nothing to fit: the ropes are pressed onto the tier at
+  // its own radius, so the standoff, the step-back and the top-fit all stop meaning anything, and
+  // `centerX` becomes a distance ALONG the wall for wrapToWall to turn into an angle.
+  const onWall = p.surface === 'side';
+  const standingOnTop = !onWall && rawLeft === topY && rawRight === topY;
   let placedX = centerX;
   if (standingOnTop) {
     // Position is the author's — except it cannot be somewhere the cake is not. A standing arch
@@ -275,7 +321,9 @@ export function rainbowBands(params = {}, cake = {}) {
   for (let i = 0; i < p.bands; i++) radii.push(bandRadius(i, { innerRadius, thickness, gap }));
   const trial = radii.flatMap(radius =>
     bandPath({ radius, archY, footLeftY, footRightY, standoff, centerX, arcSegments: p.arcSegments }));
-  const clearStandoff = Math.max(standoff, requiredStandoff(trial, { cakeRadius: R, topY, thickness }));
+  const clearStandoff = onWall
+    ? 0
+    : Math.max(standoff, requiredStandoff(trial, { cakeRadius: R, topY, thickness }));
 
   const bands = [];
   for (let i = 0; i < p.bands; i++) {
@@ -287,7 +335,12 @@ export function rainbowBands(params = {}, cake = {}) {
       // Wraps the palette rather than running out: an author who asks for 8 bands from 6 colours
       // gets a repeat, not two undefined ropes.
       color: p.colors[i % p.colors.length],
-      path: bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, arcSegments: p.arcSegments }),
+      path: onWall
+        ? wrapToWall(
+            bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, arcSegments: p.arcSegments }),
+            { radius: R, theta0: p.theta ?? 0, proud: (p.proud ?? 0) * R },
+          )
+        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, arcSegments: p.arcSegments }),
       thickness,
     });
   }
