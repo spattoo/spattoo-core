@@ -30,8 +30,11 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 //   logoUrl     string?   wordmark/logo to show
 //   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
-//   onShareStore () => void — opens the host's share-your-store card. Same handoff as
+//   onShareStore (opts?) => void — opens the host's share-your-store card. Same handoff as
 //                 onReviewFlavours / onUpgrade: the host owns that modal, this screen does not.
+//                 `{ justPublished: true }` only on a first publish — it changes the heading to
+//                 "You're live — here's your link". The Share button passes nothing: a baker who
+//                 reached for the card already knows they are live.
 //   onUpgrade   () => void — open billing. Called instead of publishing when the baker is LOOKING
 //               at a premium theme their plan cannot publish.
 //   onClose     () => void
@@ -445,7 +448,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       // AFTER the close, deliberately: publish() closes the customiser, so a card opened before this
       // would be fighting a screen on its way out. The host renders it above everything, which is
       // where a "here is your shop" moment belongs anyway — over the dashboard, not inside an editor.
-      if (!wasPublished) onShareStore?.();
+      if (!wasPublished) onShareStore?.({ justPublished: true });
     } finally {
       setPublishing(false);
     }
@@ -680,7 +683,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               than something to change. Only when it IS live — before that the address resolves to a
               shop nobody can see, and handing out a dead link is worse than offering nothing. */}
           {published && onShareStore && (
-            <button type="button" style={s.share} onClick={onShareStore} title="Share your storefront link">
+            <button type="button" style={s.share} onClick={() => onShareStore?.()} title="Share your storefront link">
               Share
             </button>
           )}
