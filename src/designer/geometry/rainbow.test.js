@@ -685,3 +685,35 @@ describe('the wall shape', () => {
     }
   });
 });
+
+// ── A wall rainbow is symmetric ─────────────────────────────────────────────────────────────────
+// It leans only because it has two surfaces to reach: the cake top on one side, the board on the
+// other. A wall is ONE surface, so an arch pressed onto it has both ends at the same height. Letting
+// the feet differ gave one end stopping mid-wall while the other ran to the board — not a thing
+// anybody makes, and it took a screenshot to notice.
+describe('on the wall, both ends are level', () => {
+  const ends = params => {
+    const { bands } = rainbowBands({ surface: 'side', scale: 0.6, ...params }, CAKE);
+    const p = bands[0].path;
+    return [p[0].y, p[p.length - 1].y];
+  };
+
+  it('ignores a mismatched second foot rather than obeying it', () => {
+    for (const feet of [['board', 'none'], ['none', 'board'], ['board', 'top'], ['top', 'none']]) {
+      const [l, r] = ends({ footLeft: feet[0], footRight: feet[1] });
+      expect(l, `${feet.join('/')} came out lopsided`).toBeCloseTo(r, 9);
+    }
+  });
+
+  it('follows the LEFT foot, so which one wins is not a coin toss', () => {
+    const onBoard = ends({ footLeft: 'board', footRight: 'none' });
+    const floating = ends({ footLeft: 'none', footRight: 'board' });
+    expect(onBoard[0]).toBeLessThan(floating[0]);
+  });
+
+  it('still leans over the CAKE, where there really are two surfaces', () => {
+    const { bands } = rainbowBands({ footLeft: 'top', footRight: 'board' }, CAKE);
+    const p = bands[0].path;
+    expect(p[0].y).not.toBeCloseTo(p[p.length - 1].y, 2);
+  });
+});

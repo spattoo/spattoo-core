@@ -264,8 +264,15 @@ export function rainbowBands(params = {}, cake = {}) {
   let innerRadius = p.innerRadius * R * size;
   const standoff = (p.standoff ?? 0) * R;
 
-  const rawLeft  = legFootY(p.footLeft,  { topY, boardY });
-  const rawRight = legFootY(p.footRight, { topY, boardY });
+  // ON THE WALL BOTH ENDS ARE LEVEL. A rainbow LEANS only because it has two surfaces to reach —
+  // the cake top on one side, the board on the other. A wall is one surface, so an arch pressed onto
+  // it is symmetric: two ends at the same height, always. Letting the feet differ there produced one
+  // end stopping mid-wall while the other ran down to the board, which is not a thing anybody makes.
+  //
+  // footLeft is the authority and footRight is ignored, rather than both being read and disagreeing.
+  const onWall = p.surface === 'side';
+  const rawLeft  = legFootY(p.footLeft, { topY, boardY });
+  const rawRight = onWall ? rawLeft : legFootY(p.footRight, { topY, boardY });
   let outerRadius = bandRadius(p.bands - 1, { innerRadius, thickness, gap });
 
   // A number stands; null derives. Deriving MOVES the rainbow when any size changes, which is why
@@ -288,7 +295,6 @@ export function rainbowBands(params = {}, cake = {}) {
   // On the WALL there is nothing to clear and nothing to fit: the ropes are pressed onto the tier at
   // its own radius, so the standoff, the step-back and the top-fit all stop meaning anything, and
   // `centerX` becomes a distance ALONG the wall for wrapToWall to turn into an angle.
-  const onWall = p.surface === 'side';
   const standingOnTop = !onWall && rawLeft === topY && rawRight === topY;
   let placedX = centerX;
   if (standingOnTop) {
