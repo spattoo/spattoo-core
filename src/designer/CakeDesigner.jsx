@@ -7346,7 +7346,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <span style={{ fontSize: 10, color: '#aaa' }}>kg+</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Age</span>
+                  {/* "Suits age", not "Age" — this filters the CATALOGUE by who a design suits
+                      (cake_template_attrs.min_age/max_age), and stores nothing about anybody. Bare
+                      "Age" read as though the baker were being asked for the child's, which is the
+                      same thing the order form's label did and the number topper's before it. */}
+                  <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Suits age</span>
                   <input type="number" min="0" max="120" step="1" placeholder="e.g. 8" value={filterAge} onChange={e => setFilterAge(e.target.value)}
                     style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #999999', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
                   <span style={{ fontSize: 10, color: '#aaa' }}>yrs</span>
@@ -8666,7 +8670,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <input style={{ ...s.modalInput }} type="number" min="0" step="0.5" placeholder="e.g. 2" value={templateWeight} onChange={e => setTemplateWeight(e.target.value)} />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Age Range</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Suits ages</div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <input style={{ ...s.modalInput, width: '50%' }} type="number" min="0" step="1" placeholder="Min" value={templateMinAge} onChange={e => setTemplateMinAge(e.target.value)} />
                   <span style={{ color: '#aaa', fontSize: 12 }}>–</span>
