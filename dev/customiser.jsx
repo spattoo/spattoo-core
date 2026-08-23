@@ -83,6 +83,10 @@ function Harness() {
       appAccent="#c98b94"
       onPublish={async (p) => { console.log('[dev] publish', p); }}
       onUnpublish={async () => { console.log('[dev] unpublish'); }}
+      // ⚠️ Without this the Share button does not render at all — it is gated on
+      // `published && onShareStore`, and this harness supplied the first but not the second, so the
+      // control was invisible here however published the sample baker was.
+      onShareStore={(opts) => console.log('[dev] share store', opts ?? '(from the Share button)')}
       onClose={() => console.log('[dev] close')}
     />
   );

@@ -7,6 +7,7 @@ import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './sto
 import { TEMPLATES } from './templates.js';
 import RightsAttestation from '../legal/RightsAttestation.jsx';
 import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
+import { ShareIcon } from '../shared/icons.jsx';
 
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
@@ -683,8 +684,15 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               than something to change. Only when it IS live — before that the address resolves to a
               shop nobody can see, and handing out a dead link is worse than offering nothing. */}
           {published && onShareStore && (
-            <button type="button" style={s.share} onClick={() => onShareStore?.()} title="Share your storefront link">
-              Share
+            /* Icon, not the word. This row is Share / Unpublish / Publish, and on a phone three
+               words compete for a width that only really has room for the one that matters. The
+               glyph is the same one the designer's rail uses for Share, so it is a mark a baker has
+               already learned rather than a new one to decode.
+               ⚠️ Icon-only means the label has to live somewhere a screen reader can reach it:
+               aria-label carries it, and title gives the same words to a mouse. */
+            <button type="button" style={s.share} onClick={() => onShareStore?.()}
+                    aria-label="Share your storefront link" title="Share your storefront link">
+              <ShareIcon size={17} />
             </button>
           )}
           {isWide && published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
@@ -1128,7 +1136,11 @@ const s = {
   pillDraft:{ color: '#9A6B16', background: '#FBF0DA' },
   // Quiet, like Unpublish — the loud button on this row is Publish, and Share must not compete
   // with it. Narrower padding than Unpublish so both fit beside Publish on a phone.
-  share:    { border: '1px solid #D9D5CE', background: '#fff', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#4A4A4A' },
+  // Square now that it holds a glyph rather than a word. inline-flex + centring so the icon sits on
+  // the button's optical centre; without it the svg's line box adds a couple of pixels underneath
+  // and the button no longer lines up with Unpublish and Publish beside it.
+  share:    { border: '1px solid #D9D5CE', background: '#fff', borderRadius: 10, padding: '9px', cursor: 'pointer', color: '#4A4A4A',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 0 },
   unpublish:{ border: '1px solid #E3D3D3', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#9A4040' },
   // App action button (like Save Settings) — coloured by the APP brand (appPrimary/appAccent props),
   // NOT the baker's storefront theme. Background is applied inline from those props.

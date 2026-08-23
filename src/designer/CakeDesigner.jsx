@@ -19,6 +19,9 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
 import { Panel, Z } from '../shared/Panel.jsx';
+// Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
+// declared here any more.
+import { ShareIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import { DESIGNER_GROUND } from './constants.js';
@@ -927,17 +930,6 @@ function InviteIcon({ size = 20 }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M22 2 11 13" />
       <path d="M22 2 15 22l-4-9-9-4Z" />
-    </svg>
-  );
-}
-
-function ShareIcon({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
     </svg>
   );
 }
