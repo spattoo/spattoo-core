@@ -642,3 +642,46 @@ describe('hugging the side', () => {
     expect(pt.y).toBe(1);
   });
 });
+
+// ── A wall rainbow is a SMALL half-circle, not an arch bent sideways ────────────────────────────
+// Read off the reference photos after the first version got it wrong in three ways at once: it was
+// 93% of the cake's width and 177% of the wall's HEIGHT, and it had straight legs. None of the
+// references has legs — the arc springs off the board and its ends touch it.
+describe('the wall shape', () => {
+  const WALL = {
+    surface: 'side', footLeft: 'board', footRight: 'board',
+    offsetX: 0, spring: 0, scale: 0.6, flatten: 0.55,
+  };
+
+  it('has no straight legs — the arc springs off the board', () => {
+    const { archY, footLeftY, footRightY } = rainbowBands(WALL, CAKE);
+    expect(archY).toBeCloseTo(footLeftY, 6);
+    expect(archY).toBeCloseTo(footRightY, 6);
+  });
+
+  it('fits comfortably inside the wall rather than towering over it', () => {
+    const { bands } = rainbowBands(WALL, CAKE);
+    const outer = bands[bands.length - 1];
+    const height = Math.max(...outer.path.map(p => p.y)) - CAKE.boardY;
+    const wall = CAKE.topY - CAKE.boardY;
+    expect(height).toBeLessThan(wall);            // the first version was 1.77× this
+    expect(height / wall).toBeGreaterThan(0.3);   // and not a badge either
+  });
+
+  it('spans a modest arc of the cake, not most of the way round it', () => {
+    const { bands, cakeRadius } = rainbowBands(WALL, CAKE);
+    const outer = bands[bands.length - 1];
+    const sweepDeg = (outer.radius * 2 / cakeRadius) * 180 / Math.PI;
+    expect(sweepDeg).toBeLessThan(90);            // was 107°
+    expect(sweepDeg).toBeGreaterThan(35);
+  });
+
+  it('ends ON the board, both of them', () => {
+    const { bands, thickness } = rainbowBands(WALL, CAKE);
+    for (const b of bands) {
+      for (const end of [b.path[0], b.path[b.path.length - 1]]) {
+        expect(end.y - thickness / 2).toBeCloseTo(CAKE.boardY, 6);
+      }
+    }
+  });
+});
