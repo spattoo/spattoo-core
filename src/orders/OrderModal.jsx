@@ -1045,7 +1045,14 @@ export default function OrderModal({
                   </label>
                   {(occasion === 'birthday' || occasion === 'anniversary') && (
                     <label style={{ ...field, flex: '0 1 110px' }}>
-                      <span style={lbl}>{occasion === 'birthday' ? 'Age on cake' : 'Which year'}</span>
+                      {/* "Number on cake", never "Age" — the same rule the designer's number topper
+                          follows. A 6 on a birthday cake is usually somebody's age, but the field is
+                          not asking for one and the column does not store one: `orders.cake_number`
+                          is production data the baker pipes, and 25 on an anniversary cake is years
+                          married. Labelling it "Age" made the form appear to collect a child's age,
+                          which is a materially different thing to hold under DPDP — for a word.
+                          One label for both occasions now: "Which year" said the same thing twice. */}
+                      <span style={lbl}>Number on cake</span>
                       <input style={inp} inputMode="numeric" value={cakeNumber} placeholder="e.g. 1"
                              onChange={e => setCakeNumber(e.target.value.replace(/\D/g, '').slice(0, 4))} />
                     </label>
