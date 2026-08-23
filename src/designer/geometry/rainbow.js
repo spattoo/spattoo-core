@@ -369,6 +369,28 @@ export function rainbowBands(params = {}, cake = {}) {
  * Returns the radius the board needs. The caller takes the larger of this and its normal size:
  * shrinking a board to fit a small rainbow would be the wrong way round.
  */
+/**
+ * How far out the FALLING foot lands, from the cake's axis, outer edge included.
+ *
+ * On the bottom tier this is a question the board answers by growing (`rainbowBoardReach`). On any
+ * tier above it there is no board — the surface underneath is the tier below, a disc of a fixed
+ * radius that cannot be widened. So the same arch that stands fine on the bottom rests on NOTHING
+ * one tier up, and the picture does not say so: a foot in mid-air looks exactly like a foot on a
+ * surface until you move the camera.
+ *
+ * Measured at the lowest point of the lowest band, which is the foot that reaches furthest down and
+ * out. Returns 0 when nothing falls (both feet on the top, or a wrapped wall rainbow).
+ */
+export function rainbowFootReach(params = {}, cake = {}) {
+  const { bands, thickness } = rainbowBands(params, cake);
+  let lowest = null;
+  for (const b of bands) {
+    for (const pt of b.path) if (!lowest || pt.y < lowest.y) lowest = pt;
+  }
+  if (!lowest) return 0;
+  return Math.hypot(lowest.x, lowest.z) + thickness / 2;
+}
+
 export function rainbowBoardReach(params = {}, cake = {}, margin = 0.12) {
   const { bands, thickness, centerX, cakeRadius } = rainbowBands(params, cake);
   let far = 0;

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale, wrapToWall,
+  rainbowFootReach,
 } from './rainbow.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
@@ -809,5 +810,64 @@ describe('flatten on a wall', () => {
     const { bands, thickness } = rainbowBands(WALL, CAKE);
     const centre = Math.hypot(bands[0].path[0].x, bands[0].path[0].z);
     expect(centre - thickness / 2).toBeGreaterThanOrEqual(CAKE.radius - 1e-6);
+  });
+});
+
+// ── Standing on a tier, not on the cake ──────────────────────────────────────
+// The geometry takes { radius, topY, boardY } and has never asked whether that is a whole cake or
+// one tier of a stack. That is the whole of multi-tier support — IF it is true. These pin it.
+describe('a rainbow on an upper tier', () => {
+  const TIER1 = { r: 1.2, top: 1.55 };                 // board 0.1 + 1.45
+  const tier2 = { radius: 0.92, topY: 2.88, boardY: TIER1.top };
+
+  it('seats its falling foot on the tier below, not on the board', () => {
+    const { bands, thickness } = rainbowBands(
+      { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' }, tier2);
+    const lowest = Math.min(...bands.flatMap(b => b.path.map(v => v.y)));
+    // A path point is the middle of the tube, so a seated rope's centreline sits half a rope up.
+    expect(lowest).toBeCloseTo(TIER1.top + thickness / 2, 5);
+  });
+
+  it('keeps out of the tier it stands against', () => {
+    const { bands } = rainbowBands(
+      { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' }, tier2);
+    const inside = bands.flatMap(b => b.path).filter(
+      v => v.y < tier2.topY - 1e-6 && Math.hypot(v.x, v.z) < tier2.radius - 1e-6);
+    expect(inside).toHaveLength(0);
+  });
+
+  it('scales to the TIER, so tier 2 gets a smaller rainbow than tier 1', () => {
+    const on = c => {
+      const { bands } = rainbowBands(RAINBOW_DEFAULTS, c);
+      const xs = bands.flatMap(b => b.path).map(v => v.x);
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    const wide = on({ radius: 1.2, topY: 1.55, boardY: 0.1 });
+    const narrow = on(tier2);
+    // Same ratios, smaller tier: the arch is narrower by the same proportion the tier is.
+    expect(narrow / wide).toBeCloseTo(0.92 / 1.2, 2);
+  });
+
+  it('lands its falling foot ON the tier below at the authored size', () => {
+    // Worth pinning, because the arch's widest BULGE reaches 1.51 here — past tier 1's edge — while
+    // the foot lands at 1.03, well inside it. Reading the bulge as the foot is how you conclude a
+    // sound arch is floating.
+    const reach = rainbowFootReach({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' }, tier2);
+    expect(reach).toBeLessThan(TIER1.r);
+  });
+
+  it('reports a falling foot that overhangs the tier below', () => {
+    // The board can GROW to catch a foot; a tier cannot. Past about 1.5× the authored size the foot
+    // passes tier 1's edge and rests on nothing — which a still picture cannot show, so it has to be
+    // a number the studio can print.
+    const big = rainbowFootReach(
+      { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', scale: 1.8 }, tier2);
+    expect(big).toBeGreaterThan(TIER1.r);
+  });
+
+  it('reports nothing falling when both feet rest on the tier top', () => {
+    const reach = rainbowFootReach(
+      { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'top', offsetX: 0 }, tier2);
+    expect(reach).toBeLessThan(tier2.radius);
   });
 });
