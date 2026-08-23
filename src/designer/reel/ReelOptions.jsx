@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelBlock } from '../../shared/Panel.jsx';
 import { DESIGNER_GROUND } from '../constants.js';
+import { pickMimeType, isInstagramReady, recordButtonState } from './recordReel.js';
 
 /* ── The shot, chosen before it is taken ─────────────────────────────────────────────────────────
  *
@@ -34,7 +35,7 @@ const GROUNDS = [
 const LENGTHS = [2.5, 3.5, 4.5, 6];
 const SWEEPS  = [90, 120, 150, 180];
 
-export default function ReelOptions({ open, onClose, onRecord, busy, onGround, brandPrimary, isMobile = false }) {
+export default function ReelOptions({ open, onClose, onRecord, busy, onGround, brandPrimary, isMobile = false, loading = false }) {
   const [pingPong, setPingPong] = useState(true);
   // +1 turns one way, -1 the other. The camera code takes a signed arc, so this is a multiplier
   // rather than a branch.
@@ -51,6 +52,21 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
   // Push the choice into the scene, including on open — the preview is only truthful if the ground
   // on screen is the one that will record.
   useEffect(() => { if (open) onGround?.(ground); }, [open, ground, onGround]);
+
+  /* ⚠️ Asked when the panel OPENS, not after the take.
+   *
+   * A browser that cannot encode MP4 hands back WebM, which Instagram refuses. Finding that out
+   * afterwards means the baker has spent the take, closed the designer and is standing in Instagram
+   * when they learn it — at which point the cake may not even be on screen any more. Answering here
+   * costs one synchronous call and lets them switch browser before spending anything.
+   *
+   * In practice this fires almost nowhere: current Chrome and iOS Safari both do H.264. It is for
+   * the older Android WebViews and Firefox, where it fires every time and is the only warning that
+   * would have helped. */
+  const mime = open ? pickMimeType() : null;
+  const willBeWebM = open && !isInstagramReady(mime);
+  // One decision, made in one testable place — see recordButtonState.
+  const btn = recordButtonState({ busy, loading, mime, seconds });
 
   if (!open) return null;
 
@@ -142,19 +158,34 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
         </div>
       </PanelBlock>
 
+      {/* Before the take, not after it — see willBeWebM above. */}
+      {willBeWebM && (
+        <div style={{ fontSize: 12, lineHeight: 1.55, color: '#8A5A1E', background: '#FDF3E3',
+                      border: '1px solid #F0DCB8', borderRadius: 9, padding: '9px 11px' }}>
+          {mime
+            ? 'This browser records WebM, which Instagram will not accept. It will still download, but open Spattoo in Chrome or Safari to get a file you can post.'
+            : 'This browser cannot record video at all. Open Spattoo in Chrome or Safari.'}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-        <button disabled={busy}
+        <button disabled={btn.disabled}
                 onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })}
                 style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
                          background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
-                         cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1 }}>
-          {busy ? 'Recording…' : `Record ${seconds}s`}
+                         cursor: btn.disabled ? 'default' : 'pointer',
+                         opacity: btn.disabled ? 0.5 : 1 }}>
+          {btn.label}
         </button>
       </div>
-      {/* Whatever is on screen is in every frame — and unlike the Playwright script, there is no
-          pause here in which to notice. */}
+
+      {/* ⚠️ Disabled while ANY decoration is still resolving. A topper that finishes mid-take pops
+          into the middle of the reel, and a reel is the one thing here that leaves the app — it
+          cannot be quietly re-rendered afterwards the way a thumbnail can. */}
       <div style={{ fontSize: 11.5, color: '#6E8577', lineHeight: 1.5 }}>
-        Deselect everything first — a selection outline or a drag handle will be in every frame.
+        {loading
+          ? 'Waiting for the decorations to finish loading — one arriving mid-take would pop into the middle of the reel.'
+          : 'The frame above is exactly what records. Drag the cake to change where it starts.'}
       </div>
     </Panel>
   );

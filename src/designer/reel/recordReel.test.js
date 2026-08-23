@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { pickMimeType, isInstagramReady, extensionFor, recordCanvas } from './recordReel.js';
+import { pickMimeType, isInstagramReady, extensionFor, recordCanvas, recordButtonState } from './recordReel.js';
 
 describe('pickMimeType', () => {
   it('prefers MP4/H.264, because that is what Instagram accepts', () => {
@@ -90,5 +90,51 @@ describe('recordCanvas', () => {
     const { canvas } = stubEnv();
     await expect(recordCanvas(canvas, async () => {}, { mimeType: null }))
       .rejects.toThrow(/cannot record video/);
+  });
+});
+
+describe('recordButtonState', () => {
+  const MP4 = 'video/mp4;codecs=avc1.42E01E';
+
+  it('is pressable when the browser can record and nothing is in flight', () => {
+    expect(recordButtonState({ mime: MP4, seconds: 4.5 }))
+      .toEqual({ disabled: false, label: 'Record 4.5s', reason: null });
+  });
+
+  it('refuses while a decoration is still loading, and says so on the button', () => {
+    // A topper that finishes mid-take pops into the middle of the reel — and a reel is the one
+    // artefact here that leaves the app, so it cannot be quietly re-rendered afterwards.
+    expect(recordButtonState({ mime: MP4, loading: true }))
+      .toMatchObject({ disabled: true, label: 'Still loading…', reason: 'loading' });
+  });
+
+  it('refuses outright when the browser cannot record at all', () => {
+    expect(recordButtonState({ mime: null })).toMatchObject({ disabled: true, reason: 'unsupported' });
+  });
+
+  it('still allows a WebM-only browser to record', () => {
+    // WebM is not postable to Instagram and the panel says so — but the file is still worth having,
+    // and refusing to record it would be us deciding what a baker may do with their own video.
+    const webm = recordButtonState({ mime: 'video/webm;codecs=vp9' });
+    expect(webm.disabled).toBe(false);
+  });
+
+  it('reports the most immediate reason, not the most severe', () => {
+    // Mid-take, "the decorations are loading" is true and useless. What the baker needs to know is
+    // that it is already running and they should hold still.
+    expect(recordButtonState({ busy: true, loading: true, mime: null }))
+      .toMatchObject({ label: 'Recording…', reason: 'busy' });
+    // And a browser that cannot record outranks a loading decoration: waiting will not help.
+    expect(recordButtonState({ loading: true, mime: null }).reason).toBe('unsupported');
+  });
+
+  it('carries the chosen length into the label', () => {
+    expect(recordButtonState({ mime: MP4, seconds: 2.5 }).label).toBe('Record 2.5s');
+    expect(recordButtonState({ mime: MP4, seconds: 6 }).label).toBe('Record 6s');
+  });
+
+  it('defaults to disabled rather than pressable when called with nothing', () => {
+    // Fail closed: no mime means no evidence the browser can record.
+    expect(recordButtonState().disabled).toBe(true);
   });
 });

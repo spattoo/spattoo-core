@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { recordCanvas, pickMimeType, isInstagramReady, extensionFor, downloadBlob } from './recordReel.js';
 import { snapshotScene } from './sceneSnapshot.js';
 import { drawCaption, ensureCaptionFont, CAPTION } from './reelCaption.js';
+import { planTake, medianOf, progressAt } from './takePlan.js';
 import { CAMERA_POSITION_MOBILE, DESIGNER_GROUND } from '../constants.js';
 
 /* ── The reel shot: a slow arc with a push in ────────────────────────────────────────────────────
@@ -89,7 +90,9 @@ export default function ReelDirector({ reelRef, orbitRef }) {
       zoomTo = 0.78,               // closest distance as a fraction of the starting distance
       // Turn and return, so the reel loops without a jump. The arc and the dolly both come home.
       pingPong = false,
-      width = 1080, height = 1920, // the reel format, rendered at this size whatever the screen is
+      // The size ASKED for. What is actually recorded comes from planTake() below — a device that
+      // cannot sustain this gets a cheaper take rather than a juddering one.
+      width: wantWidth = 1080, height: wantHeight = 1920,
       filename = 'cake-reel',
       // The one line burned into every frame — the bakery's own name, or our mark. Composed by the
       // caller from the `reel_branding` entitlement; see reelCaption.js.
@@ -114,6 +117,19 @@ export default function ReelDirector({ reelRef, orbitRef }) {
       const snap = snapshotScene({ camera, gl, scene, controls });
       const startPos = camera.position.clone();
 
+      /* ⚠️ The realistic failure on the phones this most needs to work on.
+       *
+       * Recording holds a 1080×1920 drawing buffer, a second 1080×1920 canvas and a growing MP4, on
+       * top of every topper texture already resident. A phone under memory pressure answers by
+       * taking the WebGL context away — and WebGL does not throw when that happens. gl.render()
+       * quietly does nothing, drawImage yields blank frames, and the take runs to completion and
+       * downloads a black video. Which is far worse than an error, because it looks like it worked.
+       *
+       * Caught here so the loop can stop and SAY what happened. */
+      let contextLost = false;
+      const onContextLost = () => { contextLost = true; };
+      gl.domElement.addEventListener('webglcontextlost', onContextLost);
+
       try {
         if (controls) { controls.autoRotate = false; controls.enabled = false; }
 
@@ -121,9 +137,46 @@ export default function ReelDirector({ reelRef, orbitRef }) {
         // so only the drawing buffer changes — the on-screen canvas stretches for the duration,
         // which reads as "recording" rather than as a glitch.
         gl.setPixelRatio(1);
-        gl.setSize(width, height, false);
-        camera.aspect = width / height;
+        gl.setSize(wantWidth, wantHeight, false);
+        camera.aspect = wantWidth / wantHeight;
         camera.updateProjectionMatrix();
+
+        /* ── Can this device actually do it? ──────────────────────────────────────────────────────
+         * Ten frames at the size being asked for, timed. This is not a synthetic benchmark: it is
+         * THIS cake, at THIS size, on THIS device — a loaded cake with a dozen toppers on an old
+         * Android is a completely different proposition from an empty one, and no static rule about
+         * device class would tell them apart.
+         *
+         * Measured across animation frames on purpose. rAF-to-rAF delta is exactly the question
+         * being asked — "can it sustain the shot?" — where timing gl.render() alone would measure
+         * how fast the driver accepts commands, which is not the same thing and is usually instant.
+         *
+         * The first two are discarded: the frame after a resize pays for reallocating the drawing
+         * buffer, and it is not representative of anything. */
+        const samples = [];
+        let mark = performance.now();
+        for (let i = 0; i < 12; i++) {
+          gl.render(scene, camera);
+          await new Promise(r => requestAnimationFrame(r));
+          const now = performance.now();
+          if (i >= 2) samples.push(now - mark);
+          mark = now;
+        }
+        const measured = medianOf(samples);
+        const plan = planTake(measured);
+        const { width, height } = plan;
+
+        // Logged, not shown. The baker does not need a millisecond figure — but anybody testing this
+        // on an actual old phone does, and "it looked fine to me" is not a measurement. This is the
+        // only way to find out what a device actually managed without a cable and a profiler.
+        console.info('[reel] probe %sms/frame → %s%s',
+          measured == null ? '?' : measured.toFixed(1), plan.label, plan.demoted ? ' (demoted)' : '');
+
+        if (plan.demoted) {
+          gl.setSize(width, height, false);
+          camera.aspect = width / height;
+          camera.updateProjectionMatrix();
+        }
 
         // Spherical coords around the orbit target: the arc is an azimuth sweep, the push-in a
         // radius. Both from where the baker left the camera, so the shot starts on their framing.
@@ -131,7 +184,6 @@ export default function ReelDirector({ reelRef, orbitRef }) {
         const arc = (arcDeg / 360) * TAU;
 
         const mimeType = pickMimeType();
-        const frames = Math.max(2, Math.round(seconds * 60));
 
         /* ── Why a second canvas ──────────────────────────────────────────────────────────────────
          * WebGL cannot draw text, and putting the name in the 3D scene as a plane would make it
@@ -154,13 +206,27 @@ export default function ReelDirector({ reelRef, orbitRef }) {
         // Quicksand is not resident, and the substitution is invisible until the reel is posted.
         if (caption) await ensureCaptionFont(height * CAPTION.sizeFrac);
 
+        let frameCount = 0;
         const blob = await recordCanvas(composite, async requestFrame => {
-          for (let i = 0; i < frames; i++) {
-            const t = (pingPong ? outAndBack : smootherstep)(i / (frames - 1));
+          /* ⚠️ Driven by the CLOCK, not by a frame counter.
+           *
+           * This used to run `seconds × 60` iterations, one per animation frame. On a phone managing
+           * 30fps that took twice as long to get through — and MediaRecorder timestamps in real
+           * time, so a 4.5s take came out as a 9s reel at half speed. Nothing reported it. The file
+           * was perfectly valid; it was just not the shot anyone asked for.
+           *
+           * From the clock, a slow device produces FEWER frames across the same 4.5 seconds. The
+           * length and the movement are what the baker chose; how many frames it took is the
+           * machine's business, and the probe above is what keeps that number decent. */
+          const started = performance.now();
+          let t = 0;
+          do {
+            t = progressAt(performance.now() - started, seconds);
+            const eased = (pingPong ? outAndBack : smootherstep)(t);
             const s = new THREE.Spherical(
-              start.radius * (1 + (zoomTo - 1) * t),
+              start.radius * (1 + (zoomTo - 1) * eased),
               start.phi,
-              start.theta + arc * t,
+              start.theta + arc * eased,
             );
             camera.position.copy(target.clone().add(new THREE.Vector3().setFromSpherical(s)));
             camera.lookAt(aimBelow(target, s.radius, camera.fov));
@@ -171,17 +237,31 @@ export default function ReelDirector({ reelRef, orbitRef }) {
             ctx.drawImage(gl.domElement, 0, 0, width, height);
             drawCaption(ctx, { text: caption, width, height, ground });
             requestFrame();
-            onProgress?.((i + 1) / frames);
+            frameCount++;
+            if (contextLost) {
+              throw new Error('the 3D view was reset part-way through — the device may be low on '
+                + 'memory. Close some tabs, or try a shorter reel.');
+            }
+            onProgress?.(t);
             // Yield so the tab paints and stays responsive; rAF also keeps us on the display clock.
             await new Promise(r => requestAnimationFrame(r));
-          }
+          } while (t < 1);
+          // `do…while` rather than `while`: a take must record at least one frame even if the tab
+          // was backgrounded long enough that the very first clock reading is already past the end.
         }, { mimeType });
 
         downloadBlob(blob, `${filename}.${extensionFor(mimeType)}`);
-        return { mimeType, instagramReady: isInstagramReady(mimeType), size: blob.size };
+        return {
+          mimeType, instagramReady: isInstagramReady(mimeType), size: blob.size,
+          // Reported so the UI can SAY it recorded smaller, rather than a baker noticing later that
+          // this one is softer than the last one and having nothing to attribute it to.
+          resolution: plan.label, demoted: plan.demoted,
+          fps: Math.round(frameCount / seconds),
+        };
       } finally {
         // Always, even on a throw: a half-restored camera is a designer that looks broken with no
         // clue why.
+        gl.domElement.removeEventListener('webglcontextlost', onContextLost);
         snap.restore();
         camera.lookAt(target);   // aim is not part of the snapshot — it is derived from the target
         busy.current = false;

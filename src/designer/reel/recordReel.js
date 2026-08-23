@@ -91,3 +91,24 @@ export function downloadBlob(blob, filename) {
   // revoked in the same tick.
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
+
+/* ── What the Record button should say and whether it should be pressable ────────────────────────
+ *
+ * A pure function because there is no component-rendering setup in this repo — every test here is a
+ * test of logic — and this decision has four inputs that interact. Leaving it inline as a chain of
+ * ternaries in the JSX means the one combination nobody thought about is the one that ships.
+ *
+ * `loading` is true while any decoration is still resolving. Filming then is the quiet failure this
+ * exists to prevent: a topper that finishes mid-take POPS INTO the middle of the reel, and a reel is
+ * the one artefact here that leaves the app — it cannot be re-rendered afterwards the way a
+ * thumbnail can.
+ */
+export function recordButtonState({ busy = false, loading = false, mime = null, seconds = 4.5 } = {}) {
+  // Order matters: it reports the most immediate reason, not the most severe one. Mid-take, "the
+  // decorations are loading" is true and useless — what the baker needs to know is that it is
+  // already running and they should hold still.
+  if (busy)     return { disabled: true,  label: 'Recording…',    reason: 'busy' };
+  if (!mime)    return { disabled: true,  label: `Record ${seconds}s`, reason: 'unsupported' };
+  if (loading)  return { disabled: true,  label: 'Still loading…', reason: 'loading' };
+  return { disabled: false, label: `Record ${seconds}s`, reason: null };
+}

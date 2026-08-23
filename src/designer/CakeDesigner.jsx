@@ -12,12 +12,13 @@ import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
+import { useAnyLoading } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
-import { Panel } from '../shared/Panel.jsx';
+import { Panel, Z } from '../shared/Panel.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import { DESIGNER_GROUND } from './constants.js';
@@ -2055,6 +2056,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which ground the preview is showing, so the overlay can pick its contrast the same way the
   // recorder does. Mirrors what was handed to setGround; the scene holds a THREE.Color, not a hex.
   const [reelGround, setReelGround] = useState(DESIGNER_GROUND);
+  // True while any decoration is still resolving. The same registry the canvas spinner reads —
+  // deliberately not a second notion of "is it ready", which would drift from the visible one.
+  const decorLoading = useAnyLoading();
+  /* ⚠️ NOT saveMsg. The reel's messages were written to saveMsg, which renders in exactly one place
+   * — inside the save-as-template modal — so every one of them was set and never seen: the WebM
+   * warning, "Recording… hold still", "Couldn't record", all of it. The feature had no voice at all
+   * and nothing said so, because setting state always succeeds.
+   *
+   * { ok, text } | null. Successes clear themselves; failures do not, because they carry an
+   * instruction the baker needs to still be there when they look up. */
+  const [reelMsg, setReelMsg] = useState(null);
+  useEffect(() => {
+    if (!reelMsg?.ok) return;                       // failures stay until they are dismissed
+    const id = setTimeout(() => setReelMsg(null), 7000);
+    return () => clearTimeout(id);
+  }, [reelMsg]);
   // Measured rather than assumed: the caption's size is a fraction of the FRAME's height, and the
   // frame is sized by CSS (min() against the viewport). Nothing in JS knows how tall it came out.
   const reelFrameRef = useRef(null);
@@ -2083,28 +2100,40 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }
 
   async function runReel(opts = {}) {
-    if (!reelRef.current) { setSaveMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
+    if (!reelRef.current) { setReelMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
+    // ⚠️ A decoration that arrives mid-take POPS INTO the reel — and a reel is the one artefact here
+    // that leaves the app and cannot be quietly re-rendered afterwards. The Record button is disabled
+    // while anything is in flight; this is the second line of defence, for the case where the last
+    // topper starts loading between the tap and the first frame.
+    if (decorLoading) {
+      setReelMsg({ ok: false, text: 'Still loading the decorations — give it a moment so they are all in shot.' });
+      return;
+    }
     const secs = opts.seconds ?? 4.5;
     // The panel closes for the take — it sits over the canvas, and the canvas is what is being
     // filmed. It is NOT unmounted, so the settings are still there for the next cake, and the 9:16
     // framing stays up so the shot on screen is still the shot being recorded.
     setReelOptsOpen(false);
     setReelBusy(true);
-    setSaveMsg({ ok: true, text: `Recording… hold still for ${secs} seconds.` });
+    setReelMsg({ ok: true, text: `Recording… hold still for ${secs} seconds.` });
     try {
       const safe = (design?.name || 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const { instagramReady, mimeType } = await reelRef.current.record({
+      const { instagramReady, mimeType, resolution, demoted } = await reelRef.current.record({
         ...opts, filename: `${safe || 'cake'}-reel`,
         caption: reelCaptionText, ground: reelGround,
       });
       // ⚠️ Say when it is NOT an MP4. Instagram rejects WebM, and a baker who is only told
       // "downloaded" finds that out at the moment they try to post — by which time the cake may not
       // even be on screen any more.
-      setSaveMsg(instagramReady
-        ? { ok: true, text: 'Reel downloaded — ready for Instagram.' }
-        : { ok: false, text: `Downloaded as ${mimeType?.includes('webm') ? 'WebM' : mimeType}. Instagram needs MP4 — convert it before posting, or record in a newer Chrome.` });
+      // Say when it recorded smaller. Silence here means a baker eventually notices one reel is
+      // softer than the rest with nothing to attribute it to — and the honest version also tells
+      // them the lever they have: fewer decorations, or a newer phone.
+      const smaller = demoted ? ` Recorded at ${resolution} — this device could not hold full size.` : '';
+      setReelMsg(instagramReady
+        ? { ok: true, text: `Reel downloaded — ready for Instagram.${smaller}` }
+        : { ok: false, text: `Downloaded as ${mimeType?.includes('webm') ? 'WebM' : mimeType}. Instagram needs MP4 — convert it before posting, or record in a newer Chrome.${smaller}` });
     } catch (e) {
-      setSaveMsg({ ok: false, text: `Couldn't record: ${e.message}` });
+      setReelMsg({ ok: false, text: `Couldn't record: ${e.message}` });
     } finally {
       setReelBusy(false);
     }
@@ -8818,9 +8847,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* Reel options — catalogue authors only. Not mounted at all otherwise, so the panel is not
           a thing every other baker's designer carries around unrendered. */}
+      {/* ── The reel's own voice ──────────────────────────────────────────────────────────────────
+          Bottom-centre, above everything, because it has to be legible DURING a take — "hold still
+          for 4.5 seconds" said after the fact is not an instruction. Safe to sit over the designer:
+          the recording captures the canvas, not the screen, so nothing here reaches the file.
+
+          Failures are dismissible and stay put; they carry an instruction (open Chrome, close some
+          tabs, convert before posting) that has to still be there when the baker looks up. */}
+      {reelMsg && (
+        <div
+          role="status"
+          onClick={() => setReelMsg(null)}
+          style={{
+            position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 78,
+            zIndex: Z.toast, maxWidth: 'min(440px, calc(100vw - 32px))',
+            padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+            background: reelMsg.ok ? '#2C4433' : '#8C2F26', color: '#fff',
+            fontSize: 13, fontWeight: 600, lineHeight: 1.5, textAlign: 'center',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.28)',
+          }}>
+          {reelMsg.text}
+        </div>
+      )}
+
       {canRecordReel && (
         <ReelOptions
           open={reelOptsOpen} busy={reelBusy} isMobile={isMobile}
+          // So the panel can disable Record and SAY why, rather than letting a baker film a cake
+          // that is still assembling itself.
+          loading={decorLoading}
           // The ground is applied LIVE while the panel is open — it flows straight back down as
           // `filmGround`, which paints the scene's sky AND its floor, so the swatch you pick is the
           // colour that records rather than a separate thing we hope agrees.
