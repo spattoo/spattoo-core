@@ -717,3 +717,35 @@ describe('on the wall, both ends are level', () => {
     expect(p[0].y).not.toBeCloseTo(p[p.length - 1].y, 2);
   });
 });
+
+// ── An arch on the cake rests ON the cake ───────────────────────────────────────────────────────
+// `spring` above 1 puts the springing point ABOVE the cake top, and an arch whose feet are on the
+// top then grows LEGS to reach it — 0.38 of stilt, floating clear of the thing it was supposed to be
+// sitting on. That is a real capability (a hooped arch standing proud), but it is not what "sitting
+// on top" means, and it was the default.
+describe('sitting on the cake top', () => {
+  const onTop = spring => rainbowBands({ footLeft: 'top', footRight: 'top', spring, scale: 0.75, offsetX: 0, standoff: 0 }, CAKE);
+
+  it('has no legs at spring 1 — the arc rests straight on the surface', () => {
+    const { archY, footLeftY } = onTop(1);
+    expect(archY).toBeCloseTo(footLeftY, 9);
+  });
+
+  it('and none below 1 either, because the feet pin it', () => {
+    for (const spring of [0, 0.5, 1]) {
+      const { archY, footLeftY } = onTop(spring);
+      expect(archY, `spring ${spring} lifted it off the cake`).toBeCloseTo(footLeftY, 9);
+    }
+  });
+
+  it('DOES stand on legs above 1 — kept, because a hooped arch is a real thing to want', () => {
+    const { archY, footLeftY } = onTop(1.3);
+    expect(archY).toBeGreaterThan(footLeftY + 0.1);
+  });
+
+  it('lands its feet inboard of the rim, not balanced on the edge', () => {
+    const { bands } = onTop(1);
+    const outer = bands[bands.length - 1];
+    expect(outer.radius).toBeLessThan(CAKE.radius * 0.85);
+  });
+});
