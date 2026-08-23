@@ -99,6 +99,7 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // back was compensating for an arch too shallow to clear any other way; fix the proportions and
   // the need disappears. A little forward or back is taste; it is not what clears the cake.
   standoff: 0,
+  behind: false,
   flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
 
   arcSegments: 96,     // along the path
@@ -318,16 +319,34 @@ export function rainbowBands(params = {}, cake = {}) {
   // Seat the rope's UNDERSIDE on the surface, not its centreline. A path point is the middle of the
   // tube, so a foot placed exactly on the cake top buries half a rope in the cake. Same rule the
   // stickers follow with seatHalf: an element rests ON a surface, it does not intersect it.
-  const seat = thickness / 2;
-  const footLeftY  = rawLeft  == null ? null : rawLeft  + seat;
-  const footRightY = rawRight == null ? null : rawRight + seat;
+  let seat = thickness / 2;
+  let footLeftY  = rawLeft  == null ? null : rawLeft  + seat;
+  let footRightY = rawRight == null ? null : rawRight + seat;
   // The springing point, measured up from the BOARD through the cake's height — so a taller cake
   // pushes it up in proportion and the rainbow keeps its relationship to the cake rather than to a
   // number. Never below the HIGHER foot: the arc has to start above whichever leg is shorter, or
   // that side would bend downwards to reach its own foot.
   const cakeHeight = Math.max(0, topY - boardY);
-  const highestFoot = Math.max(footLeftY ?? boardY, footRightY ?? boardY);
-  const archY = Math.max(highestFoot, boardY + cakeHeight * (p.spring ?? 1));
+
+  // A BACKDROP stands taller than what it stands behind. That is the whole of what the arrangement
+  // is: an arch rising behind the cake and framing it. An arch whose crown stops level with the top
+  // shows two legs either side of a tier and nothing else — which is not a rainbow, it is a mistake.
+  //
+  // So the springing point has a floor: high enough that the crown clears the top by a quarter of the
+  // height. It cannot be a fixed `spring` instead, because the arch's size relative to its tier is
+  // not fixed — on an upper tier the feet must land on the tier below, which caps the radius, and
+  // the value that cleared by 32% on a whole cake cleared by 0.7% up there.
+  //
+  // A floor, not a replacement: the slider still raises it, so the control stays live.
+  const archFloor = (outer, th) => (p.behind
+    ? topY + cakeHeight * 0.25 - outer - th / 2
+    : -Infinity);
+  const springAt = () => Math.max(
+    Math.max(footLeftY ?? boardY, footRightY ?? boardY),
+    boardY + cakeHeight * (p.spring ?? 1),
+    archFloor(outerRadius, thickness),
+  );
+  let archY = springAt();
 
   // How far back the arch must stand to keep out of the cake. Wanted BEFORE the support fit below,
   // because a step-back moves the feet away from the axis too — fitting against the authored
@@ -378,6 +397,12 @@ export function rainbowBands(params = {}, cake = {}) {
       if (k >= 0.99999) break;
       supportFit *= k;
       innerRadius *= k; thickness *= k; gap *= k; outerRadius *= k;
+      // Everything measured off the rope's thickness moves with it: a thinner rope seats lower, and
+      // a smaller arch needs a higher springing point to clear the same top.
+      seat = thickness / 2;
+      footLeftY  = rawLeft  == null ? null : rawLeft  + seat;
+      footRightY = rawRight == null ? null : rawRight + seat;
+      archY = springAt();
       ({ pts: trial } = pathsFor(innerRadius, thickness, gap, standoff));
       clearStandoff = stepBack(trial, thickness);
     }
@@ -401,7 +426,11 @@ export function rainbowBands(params = {}, cake = {}) {
             bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, arcSegments: p.arcSegments }),
             { radius: R, theta0: p.theta ?? 0, proud: (p.proud ?? 0) * R, seat: thickness / 2 },
           )
-        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, arcSegments: p.arcSegments }),
+        // Behind means BEHIND. z is the distance from the cake's middle along the view axis, and the
+        // clearance rule only ever returns a magnitude — so without a sign every arrangement stood on
+        // the camera's side of the cake, including the one called "behind, both down". It was in
+        // front of the cake it was supposedly a backdrop for.
+        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff * (p.behind ? -1 : 1), centerX: placedX, arcSegments: p.arcSegments }),
       thickness,
     });
   }

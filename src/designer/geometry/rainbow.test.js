@@ -915,3 +915,72 @@ describe('a rainbow on an upper tier', () => {
     expect(reach).toBeLessThan(tier2.radius);
   });
 });
+
+// ── The backdrop ────────────────────────────────────────────────────────────
+// It is the one arrangement that stands on the far side of the cake, and the only one whose whole
+// point is a proportion: an arch rising ABOVE what it stands behind. Both had to be asked for.
+describe('behind, both down', () => {
+  const BACKDROP = { ...RAINBOW_DEFAULTS, footLeft: 'board', footRight: 'board',
+                     spring: 0.55, offsetX: 0, standoff: 0, flatten: 0.15, behind: true };
+  const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+
+  it('stands on the far side of the cake, not the near one', () => {
+    // The camera looks down +z. requiredStandoff only ever returns a magnitude, so without a sign
+    // every arrangement stood between the viewer and the cake — including this one.
+    const { bands } = rainbowBands(BACKDROP, CAKE);
+    for (const b of bands) for (const pt of b.path) expect(pt.z).toBeLessThan(0);
+  });
+
+  it('leaves every other arrangement on the near side', () => {
+    // Never negative, rather than always positive: a leaning arch on a single tier needs no step-back
+    // at all (its legs already clear the cake in x), so it sits flat on z = 0. The sign only appears
+    // once something pushes it, and it must push toward the viewer.
+    for (const params of [
+      { footLeft: 'top', footRight: 'board' },
+      { footLeft: 'board', footRight: 'top' },
+      { footLeft: 'board', footRight: 'board', spring: 0.55, offsetX: 0 },
+    ]) {
+      const { bands } = rainbowBands({ ...RAINBOW_DEFAULTS, ...params }, CAKE);
+      for (const b of bands) for (const pt of b.path) expect(pt.z).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('rises above the cake on any tier of any stack', () => {
+    // The failure this pins: a fixed `spring` is a fixed fraction of the HEIGHT, but how far the
+    // crown reaches above the springing point is the arch's RADIUS — and on an upper tier that is
+    // capped by the tier the feet land on. 0.55 cleared a whole cake by 32% and an upper tier by
+    // 0.7%: two legs either side of a tier with nothing joining them over the top.
+    const tiers = [
+      CAKE,
+      { radius: 0.92, topY: 2.88, boardY: 1.55, supportRadius: 1.2 },
+      { radius: 0.64, topY: 3.98, boardY: 2.88, supportRadius: 0.92 },
+    ];
+    for (const c of tiers) {
+      const { bands } = rainbowBands(BACKDROP, c);
+      const crown = Math.max(...bands.flatMap(b => b.path.map(v => v.y)));
+      const height = c.topY - c.boardY;
+      expect((crown - c.topY) / height).toBeGreaterThan(0.15);
+    }
+  });
+
+  it('takes spring as a floor, so the slider still raises it', () => {
+    const low = rainbowBands(BACKDROP, CAKE);
+    const high = rainbowBands({ ...BACKDROP, spring: 1.0 }, CAKE);
+    const crownOf = r => Math.max(...r.bands.flatMap(b => b.path.map(v => v.y)));
+    expect(crownOf(high)).toBeGreaterThan(crownOf(low));
+  });
+
+  it('lifts only where the spring does not already clear the top', () => {
+    const crownOf = (c, cake) => Math.max(...rainbowBands(c, cake).bands.flatMap(b => b.path.map(v => v.y)));
+    const plain = { ...BACKDROP, behind: false };
+
+    // On a whole cake the arch is big enough that spring 0.55 already clears by 32%, so the floor is
+    // not binding and turning it on changes nothing but the side it stands on.
+    expect(crownOf(plain, CAKE)).toBeCloseTo(crownOf(BACKDROP, CAKE), 6);
+
+    // On an upper tier it is the only thing holding the crown above the tier.
+    const upper = { radius: 0.92, topY: 2.88, boardY: 1.55, supportRadius: 1.2 };
+    expect(crownOf(plain, upper)).toBeLessThan(upper.topY + 0.05);
+    expect(crownOf(BACKDROP, upper)).toBeGreaterThan(upper.topY + 0.2);
+  });
+});
