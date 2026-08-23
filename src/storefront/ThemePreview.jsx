@@ -30,10 +30,12 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 //   logoUrl     string?   wordmark/logo to show
 //   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
+//   onShareStore () => void — opens the host's share-your-store card. Same handoff as
+//                 onReviewFlavours / onUpgrade: the host owns that modal, this screen does not.
 //   onUpgrade   () => void — open billing. Called instead of publishing when the baker is LOOKING
 //               at a premium theme their plan cannot publish.
 //   onClose     () => void
-export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onReviewFlavours, onUpgrade, onClose }) {
+export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onReviewFlavours, onUpgrade, onShareStore, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
   // A baker with no colour on file falls back to the SELECTED template's designed defaults (not a
@@ -409,6 +411,11 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   async function publish() {
     if (busy) return;   // wait for in-flight uploads to finish
+    // Read BEFORE the publish flips it. A baker who has just gone live for the first time has never
+    // seen their storefront address — they published a shop and were given nothing to send anyone.
+    // So the share card is offered at that moment, and only that moment; on an Update they already
+    // know the link and a popup would be in the way.
+    const wasPublished = published;
     setPublishing(true);
     try {
       // 1. appearance — theme / colours / portrait (PATCH /baker/profile via host)
@@ -435,6 +442,10 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       setPublishConfirm(false);
       setPublishRights(false);
       onClose?.();
+      // AFTER the close, deliberately: publish() closes the customiser, so a card opened before this
+      // would be fighting a screen on its way out. The host renders it above everything, which is
+      // where a "here is your shop" moment belongs anyway — over the dashboard, not inside an editor.
+      if (!wasPublished) onShareStore?.();
     } finally {
       setPublishing(false);
     }
@@ -665,6 +676,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           <span style={{ ...s.statusPill, ...(published ? s.pillLive : s.pillDraft) }}>{published ? '● Live' : 'Draft'}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Share sits with the status, not the actions: it is about the shop being live rather
+              than something to change. Only when it IS live — before that the address resolves to a
+              shop nobody can see, and handing out a dead link is worse than offering nothing. */}
+          {published && onShareStore && (
+            <button type="button" style={s.share} onClick={onShareStore} title="Share your storefront link">
+              Share
+            </button>
+          )}
           {isWide && published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
           <button type="button" style={{ ...s.publish, background: `linear-gradient(135deg, ${appPrimary}, ${appAccent})`, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy}
             onClick={() => {
@@ -1104,6 +1123,9 @@ const s = {
   statusPill:{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.5 },
   pillLive: { color: '#1B7A4B', background: '#E4F4EA' },
   pillDraft:{ color: '#9A6B16', background: '#FBF0DA' },
+  // Quiet, like Unpublish — the loud button on this row is Publish, and Share must not compete
+  // with it. Narrower padding than Unpublish so both fit beside Publish on a phone.
+  share:    { border: '1px solid #D9D5CE', background: '#fff', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#4A4A4A' },
   unpublish:{ border: '1px solid #E3D3D3', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#9A4040' },
   // App action button (like Save Settings) — coloured by the APP brand (appPrimary/appAccent props),
   // NOT the baker's storefront theme. Background is applied inline from those props.

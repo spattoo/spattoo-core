@@ -8919,6 +8919,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       <SettingsPanel
         open={settingsPanelOpen}
         onClose={() => setSettingsPanelOpen(false)}
+        // The same share card the sidebar opens — the customiser offers it too, since a baker who
+        // has just published is the one person who does not yet know their storefront address.
+        onShareStore={onShareStore}
         // The publish review's "Review my flavours". Closes Settings on the way so the baker lands
         // ON the flavour list rather than behind it — the customiser has already closed itself.
         onReviewFlavours={() => { setSettingsPanelOpen(false); setFlavoursPanelOpen(true); }}
