@@ -28,6 +28,11 @@ import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
+
+// The rail's minimum spacing between stacked items. Used by sidebarNav's `gap` AND as the floor for
+// the measured tools gap below the divider — one number, because the two groups sit in one column
+// and any disagreement shows up as the bottom pair being crammed together on a short window.
+const RAIL_MIN_GAP = 2;
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
@@ -2059,6 +2064,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // True while any decoration is still resolving. The same registry the canvas spinner reads —
   // deliberately not a second notion of "is it ready", which would drift from the visible one.
   const decorLoading = useAnyLoading();
+
   /* ⚠️ NOT saveMsg. The reel's messages were written to saveMsg, which renders in exactly one place
    * — inside the save-as-template modal — so every one of them was set and never seen: the WebM
    * warning, "Recording… hold still", "Couldn't record", all of it. The feature had no voice at all
@@ -2285,6 +2291,64 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // added to one of them and not the other. `tourNonce` / `startNonce` / `TourIcon` are left in
     // place deliberately — unused today, and exactly what a new home would need.
   ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities, orderMode]);
+
+  /* ── The tools below the divider must sit on the nav's rhythm ────────────────────────────────
+   * sidebarNav is `flex: 1` with `justify-content: space-evenly`, so its items spread to fill the
+   * blade — 68px apart on a 900px window, tightening toward the bare 2px gap on a short one. The
+   * tools group below the divider is a plain stack, so it sat at its natural 49px however tall the
+   * window was. On a laptop that reads as Chef's Desk and Settings being crammed together while
+   * everything above them is evenly spaced.
+   *
+   * Measured rather than hard-coded, because the nav's pitch is not a constant — it is whatever
+   * space-evenly worked out for this viewport. A fixed gap would match at exactly one window height
+   * and be wrong at every other, which is the bug again with a different number.
+   *
+   * ⚠️ Declared HERE, below railItems and isMobile. A dependency array is evaluated on every render,
+   * so sitting this above them threw "Cannot access 'isMobile' before initialization" — the same
+   * temporal-dead-zone shape that took the app down for an hour on 2026-08-22.
+   */
+  /* ⚠️ A callback ref held in STATE, not useRef.
+   *
+   * With useRef the effect ran once at mount — when the designer was still on its loading screen and
+   * the rail did not exist yet — found `.current` null, bailed, and never ran again, because neither
+   * dependency changes when the rail finally mounts. Everything else was correct and the gap simply
+   * stayed at its default. Storing the node in state re-runs the effect the moment it appears. */
+  const [railNavEl, setRailNavEl] = useState(null);
+  // 2, because that is sidebarNav's own `gap` — its floor when the viewport is too short to spread.
+  // Floored at 4 instead, the two groups settled 2px apart on any window under ~750px: the nav had
+  // bottomed out at its gap and this one had bottomed out at a different number.
+  const [toolGap, setToolGap] = useState(RAIL_MIN_GAP);
+  useLayoutEffect(() => {
+    const nav = railNavEl;
+    if (isMobile || !nav) return undefined;
+    const measure = () => {
+      const items = nav.querySelectorAll('button[data-tour]');
+      if (items.length < 2) return;
+      const a = items[0].getBoundingClientRect();
+      const b = items[1].getBoundingClientRect();
+      const pitch = (b.top + b.height / 2) - (a.top + a.height / 2);
+      // pitch = gap + item height, so the gap that reproduces it is pitch - height. Floored at the
+      // nav's own gap so a mid-layout measurement of 0 cannot collapse the group.
+      if (a.height <= 0 || pitch <= 0) return;
+      const next = Math.max(RAIL_MIN_GAP, Math.round(pitch - a.height));
+      /* ⚠️ This is a FEEDBACK LOOP, deliberately damped.
+       *
+       * Widening this gap makes the tools group taller, which leaves the flex:1 nav less height,
+       * which shortens the nav's own pitch — so measuring again gives a slightly different answer
+       * and the observer fires once more. The maths converges quickly (each round moves the answer
+       * by about a fifth of the last change), but "quickly" is not "never", and a 1px disagreement
+       * ping-ponging forever would spin the ResizeObserver for the life of the session.
+       *
+       * So: ignore movements of a pixel or less. The loop settles in three or four sub-frame rounds
+       * and then stops entirely. */
+      setToolGap(prev => (Math.abs(prev - next) > 1 ? next : prev));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [isMobile, railNavEl, railItems.length]);
+
 
   // ── Chef's Desk + Settings, declared ONCE ───────────────────────────────────────────────────────
   // These were written TWICE — desktop rail and phone header — each with a comment asking the next
@@ -6942,7 +7006,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={s.sidebar}>
           <SpatulaFrame />
           <div style={s.sidebarInner}>
-          <nav className="spattoo-rail-nav" style={s.sidebarNav}>
+          <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
             {railItems.map(({ id, label, icon, menu }) => {
               const active = railItemActive(id, menu);
               const isNew  = id === 'new';
@@ -6979,7 +7043,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           <div style={s.sidebarDivider} />
 
-          <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          {/* gap is measured from the nav above — see toolGap. */}
+          <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: toolGap }}>
             {/* ── Chef's Desk — baker fulfilment tools (Color Guide, Edible Print Studio, …) ────────
                 BELOW the divider, with Settings and Profile, and deliberately not inside <nav>.
                 The nav scrolls (sidebarNav: overflowY auto) with its scrollbar hidden on purpose — a
@@ -9346,7 +9411,9 @@ const s = {
     flex: 1, width: '100%', minHeight: 0,
     display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'space-evenly',
-    padding: '4px 0', gap: 2,   // gap = floor spacing; space-evenly spreads items down the blade
+    // gap = floor spacing; space-evenly spreads items down the blade. Shared with the tools group
+    // below the divider, which matches this rail's pitch and must bottom out on the same number.
+    padding: '4px 0', gap: RAIL_MIN_GAP,
     overflowY: 'auto', scrollbarWidth: 'none',   // a scrollbar in a 64px rail is worse than none
   },
   // Stacked nav item: icon box on top, label below.
