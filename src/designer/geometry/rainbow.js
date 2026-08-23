@@ -39,7 +39,11 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   scale: 1,
   innerRadius: 0.30,   // × tier radius — the hole under the arch
   thickness:   0.115,  // × tier radius — one rope's diameter
-  gap:         0.012,  // × tier radius — daylight between ropes; 0 = ropes touching
+  // Ropes TOUCH. Zero, and there is no control for it: a rainbow is fondant, and separate ropes with
+  // daylight between them do not hold each other up — they are one piece pressed together, or they
+  // are six ropes that fall over. Kept as a parameter because the geometry reads more clearly with
+  // it named than with the arithmetic silently assuming zero.
+  gap:         0,
   // The two feet land INDEPENDENTLY — 'board' | 'top' | 'none' each. A single setting could only
   // ever make a symmetric arch, and the shape a rainbow cake actually uses is lopsided: it springs
   // off the top of the cake on one side, arcs over, and sweeps down past the edge to the board on
@@ -79,7 +83,7 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // the need disappears. A little forward or back is taste; it is not what clears the cake.
   standoff: 0,
   flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
-  lean: 0,             // degrees, tipped back from vertical
+
   arcSegments: 96,     // along the path
   tubeSegments: 12,    // around the rope
 });

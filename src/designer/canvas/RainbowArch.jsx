@@ -66,15 +66,9 @@ export default function RainbowArch({
 
   useEffect(() => () => grains?.forEach(t => t.dispose()), [grains]);
 
-  // Lean tips the whole arch back from vertical, about the point where its feet stand — leaning
-  // about the centre would swing them off the board.
-  const lean = (p.lean ?? 0) * Math.PI / 180;
-
   return (
     <group rotation={[0, yaw, 0]}>
-      <group position={[0, cake?.boardY ?? 0, 0]} rotation={[lean, 0, 0]}>
-        <group position={[0, -(cake?.boardY ?? 0), 0]}>
-          {bands.map((b, i) => (
+      {bands.map((b, i) => (
             <mesh key={b.index} geometry={geometries[i]} castShadow receiveShadow>
               {/* normalScale matches the GLB path's 1.5 — at the shipped 0.5 the grain was too faint
                   to see, which is recorded there and is just as true on a rope. */}
@@ -86,9 +80,7 @@ export default function RainbowArch({
                 normalScale={grains ? new THREE.Vector2(1.5, 1.5) : undefined}
               />
             </mesh>
-          ))}
-        </group>
-      </group>
+      ))}
     </group>
   );
 }
