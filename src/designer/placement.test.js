@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
-import { TIER_RADII } from './constants.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
+import { TIER_RADII, STICKER_SIZE } from './constants.js';
+import { topContains } from './geometry/surface.js';
+import { scaledOutline } from './geometry/shapes.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
 // for the real types; if a type ever diverges, a shared assertion here breaks. Guards the exact
@@ -627,5 +629,49 @@ describe('surfaceFitMax — the fit is the CAKE\'s size, not a number someone ty
     expect(surfaceFitMax({ zone: 'top_surface', scale: 1 }, round(1.2))).toBe(null);
     expect(surfaceFitMax({ zone: 'top_surface', sheetShape: 'round' }, null)).toBe(null);
     expect(surfaceFitMax({ zone: 'board', sheetShape: 'round' }, round(1.2))).toBe(null);
+  });
+});
+
+// ── A sheet on a cake that is not round ─────────────────────────────────────────────────────────
+// Heart, hexagon, butterfly and number cakes report an OUTLINE with a bounding box. The fit used to
+// be that box, and a square filling a heart's box hangs off the shoulders and the point — a real
+// overhang, on photo frames as much as on sheets. And a heart-shaped sheet had no way to say it was
+// heart-shaped, so it inscribed a square in the middle of a heart cake instead of covering it.
+describe('frameTopMaxScale on non-round cakes', () => {
+  // The REAL heart, built the way tierShape builds it — not an approximation of one. A hand-written
+  // polygon would be testing my idea of a heart rather than the shape a customer's cake actually is.
+  const heart = {
+    kind: 'outline', family: 'heart', halfW: 1.2, halfD: 1.2,
+    outline: scaledOutline('heart', {}, 1.2, 1.2),
+  };
+
+  it('a square sheet on a heart cake stays INSIDE the heart', () => {
+    const s = frameTopMaxScale(heart, 'round', 1);
+    const e = (STICKER_SIZE / 2) * s;             // half-extent of the placed artwork
+    for (const [x, z] of [[e, e], [-e, e], [e, -e], [-e, -e]]) {
+      expect(topContains(heart, x, z), `corner ${x.toFixed(3)},${z.toFixed(3)} is off the cake`).toBe(true);
+    }
+  });
+
+  it('and is smaller than the bounding box would have allowed — the old bug', () => {
+    const box = Math.min(heart.halfW, heart.halfD) / (STICKER_SIZE / 2);
+    expect(frameTopMaxScale(heart, 'round', 1)).toBeLessThan(box);
+  });
+
+  it('a HEART sheet on a heart cake fills it instead of hiding in the middle', () => {
+    const matched = frameTopMaxScale(heart, 'heart', 1);
+    const square  = frameTopMaxScale(heart, 'round', 1);
+    expect(matched).toBeGreaterThan(square);
+    expect(matched).toBeCloseTo(Math.min(heart.halfW, heart.halfD) / (STICKER_SIZE / 2), 6);
+  });
+
+  it('a heart sheet on a ROUND cake still inscribes — a shape match is not assumed', () => {
+    const round = { kind: 'round', radius: 1.2 };
+    expect(frameTopMaxScale(round, 'heart', 1)).toBeCloseTo(frameTopMaxScale(round, 'rect', 1), 6);
+  });
+
+  it('a rect sheet on a sheet cake fills to the nearest edge', () => {
+    const sheetCake = { kind: 'rect', halfW: 1.08, halfD: 0.78 };
+    expect(frameTopMaxScale(sheetCake, 'rect', 1)).toBeCloseTo(0.78 / (STICKER_SIZE / 2), 6);
   });
 });

@@ -241,9 +241,15 @@ see migration 032) and a `sheet` block that says it fits the surface.
 
 | Key | Meaning |
 |---|---|
-| `shape` | `round` fills a round top to the rim; anything else inscribes as a box, so a square sheet cannot overhang |
+| `shape` | the artwork's own silhouette — `round`, `rect`, or an outline family (`heart`, `hexagon`, a number…). **Matching the cake's shape fills it**; anything else inscribes so it cannot overhang |
 | `fill` | the artwork's extent as a fraction of its square plane — transparent margin taken off, so the ARTWORK's edge reaches the rim rather than the plane's |
 
+* **Shape-matched artwork covers the cake.** A heart sheet on a heart cake fills it; a square one
+  inscribes a square in the middle of it. Two identical shapes meet exactly when their bounding boxes
+  do, so the match needs no polygon work — which is what makes authoring a heart version worth doing.
+* **On an outline cake, a non-matching sheet is inscribed against the real polygon.** `halfW`/`halfD`
+  are a heart's BOUNDING BOX, and a square filling that box hangs off the shoulders and the point.
+  (This was a live overhang on every heart/hexagon/number cake, for photo frames as well as sheets.)
 * **It lands at its fit.** A sheet is printed to cover the cake top, so the drop seeds the scale from
   the tier being placed on — there is no authored number that would be right for both a single tier
   and the top of a three-tier stack.

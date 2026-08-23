@@ -60,7 +60,10 @@ export function tierShape(tier) {
     const halfW = (tier.width ?? r * 2) / 2;
     const halfD = (tier.depth ?? r * 2) / 2;
     const outline = scaledOutline(family, config, halfW, halfD);
-    if (outline) return { kind: 'outline', halfW, halfD, outline };
+    // `family` travels with the descriptor so a reader can ask "is this the SAME shape as that?" —
+    // an edible sheet cut as a heart fills a heart cake exactly, and inscribes on anything else. The
+    // outline alone cannot answer that without comparing polygons.
+    if (outline) return { kind: 'outline', family, halfW, halfD, outline };
   }
 
   return { kind: 'round', radius: tier.radius ?? 1.2 };

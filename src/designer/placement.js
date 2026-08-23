@@ -1,7 +1,7 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
 import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC } from './constants.js';
-import { topClamp, snapToRim, tierShape } from './geometry/surface.js';
+import { topClamp, snapToRim, tierShape, topContains } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
 // element via placement_config.hug_fill.
@@ -174,16 +174,55 @@ export function scaleRangeOf(element, dMin, dMax, dStep) {
 //   rect cake (any frame)     → grows to the nearest edge (inscribed; fills when shapes/aspect match)
 // `frameShape` is the authored placement_config.photo.shape ('round' | 'rect' | 'other'); anything
 // not 'round' is treated as a box (bounding-square) so hearts/stars inscribe rather than overhang.
+// The largest scale whose artwork BOX stays inside an outline top (heart, hexagon, number…). Found by
+// bisection on the four corners rather than analytically, because the outline is an arbitrary polygon
+// and there is no closed form for "largest axis-aligned square inside it".
+//
+// Conservative on purpose: a ROUND piece of artwork would fit slightly larger than its bounding box
+// allows. Erring small leaves a hair of icing showing; erring large hangs the sheet off the cake, and
+// only one of those is a picture somebody has to explain to a customer.
+function largestBoxInside(shp, halfAtUnitScale) {
+  let lo = 0, hi = (Math.max(shp.halfW, shp.halfD) / halfAtUnitScale) * 1.5;
+  for (let i = 0; i < 28; i++) {
+    const mid = (lo + hi) / 2;
+    const e = halfAtUnitScale * mid;
+    const inside = topContains(shp, e, e) && topContains(shp, -e, e)
+                && topContains(shp, e, -e) && topContains(shp, -e, -e);
+    if (inside) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
 export function frameTopMaxScale(shp, frameShape, fill = 1, stickerSize = STICKER_SIZE) {
   // `fill` = the shape's half-extent as a fraction of the plane half (measured from the mask at
   // authoring time). Using it makes the SHAPE's edge — not the square plane — reach the boundary, so
   // a mask with any transparent margin still grows exactly to the rim.
   const h = (stickerSize / 2) * (fill > 0 ? fill : 1);
+
+  // ── Same silhouette as the cake → it FILLS ──────────────────────────────────────────────────────
+  // A heart sheet on a heart cake, a rectangle on a sheet cake. Two identical shapes meet exactly
+  // when their bounding boxes do, so matching the box matches the outline — no polygon work needed.
+  // This is what makes shape-matched artwork worth authoring: it covers the cake instead of hiding
+  // inside a square drawn in the middle of it.
+  const cakeFamily = shp.kind === 'round' ? 'round' : (shp.family ?? shp.kind);
+  if (frameShape && frameShape === cakeFamily) {
+    if (shp.kind === 'round') return Math.max(1, shp.radius / h);
+    return Math.max(1, Math.min(shp.halfW, shp.halfD) / h);
+  }
+
   let s;
   if (shp.kind === 'round') {
+    // A square in a circle is corner-limited; a round frame reaches the rim.
     s = frameShape === 'round' ? shp.radius / h : shp.radius / (h * Math.SQRT2);
-  } else {
+  } else if (shp.kind === 'rect') {
+    // Straight edges: the nearest one limits it.
     s = Math.min(shp.halfW, shp.halfD) / h;
+  } else {
+    // An OUTLINE top (heart, hexagon, butterfly, number). halfW/halfD are its BOUNDING BOX, and a
+    // square filling that box hangs off the curves — a heart is nowhere near its box at the
+    // shoulders or the point. This branch used the box and so overhung on every one of these shapes,
+    // for photo frames as well as sheets. The real polygon answers it.
+    s = largestBoxInside(shp, h);
   }
   return Math.max(1, s);   // never below 1× (a tiny cake shouldn't trap the dial under the default)
 }
