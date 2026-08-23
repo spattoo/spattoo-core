@@ -248,7 +248,7 @@ describe('the mesh', () => {
 // centred arch is wider than the cake, so a foot stopping at cake-top height stops beside it, not on
 // it. The arch has to lean toward the board side.
 describe('where the resting foot lands', () => {
-  const ON_CAKE = { footLeft: 'top', footRight: 'board' };
+  const ON_CAKE = { offsetX: null, footLeft: 'top', footRight: 'board' };
 
   it('puts every foot that rests on the cake WITHIN the cake', () => {
     const { bands } = rainbowBands(ON_CAKE, CAKE);
@@ -269,15 +269,18 @@ describe('where the resting foot lands', () => {
     }
   });
 
+  // These two describe the DERIVATION (offsetX: null), which is no longer the default — deriving is
+  // what made a size control move the rainbow. It is still worth having for authoring a new shape,
+  // so it is still worth testing; it just has to be asked for.
   it('mirrors when the resting foot is the other one', () => {
-    const a = rainbowBands({ footLeft: 'top', footRight: 'board' }, CAKE).centerX;
-    const b = rainbowBands({ footLeft: 'board', footRight: 'top' }, CAKE).centerX;
+    const a = rainbowBands({ offsetX: null, footLeft: 'top', footRight: 'board' }, CAKE).centerX;
+    const b = rainbowBands({ offsetX: null, footLeft: 'board', footRight: 'top' }, CAKE).centerX;
     expect(b).toBeCloseTo(-a, 6);
   });
 
   it('does not lean at all when both feet land the same way', () => {
-    expect(rainbowBands({ footLeft: 'board', footRight: 'board' }, CAKE).centerX).toBe(0);
-    expect(rainbowBands({ footLeft: 'top', footRight: 'top' }, CAKE).centerX).toBe(0);
+    expect(rainbowBands({ offsetX: null, footLeft: 'board', footRight: 'board' }, CAKE).centerX).toBe(0);
+    expect(rainbowBands({ offsetX: null, footLeft: 'top', footRight: 'top' }, CAKE).centerX).toBe(0);
     expect(archCenterX({ footLeftY: 1, footRightY: 1, outerRadius: 2, cakeRadius: 1, topY: 1 })).toBe(0);
   });
 
@@ -400,5 +403,39 @@ describe('the default rainbow', () => {
   it('stands taller than the cake, so the arch reads above it', () => {
     const { bands, archY } = rainbowBands({}, CAKE);
     expect(archY + bands[bands.length - 1].radius).toBeGreaterThan(CAKE.topY * 1.5);
+  });
+});
+
+// ── Changing a SIZE must not move it ────────────────────────────────────────────────────────────
+// Sandeep: dragging the inner radius walked the rainbow across the cake. It did — position was
+// derived from the outer radius, so a smaller hole meant a smaller outer radius meant a different
+// centre. Where it stands is the author's decision; a size control has no business changing it.
+describe('position is not a function of size', () => {
+  it('stays put across the whole inner-radius range', () => {
+    const at = ir => rainbowBands({ innerRadius: ir }, CAKE).centerX;
+    const base = at(0.30);
+    for (const ir of [0.15, 0.20, 0.45, 0.60, 0.9]) {
+      expect(at(ir), `inner radius ${ir} moved it`).toBeCloseTo(base, 9);
+    }
+  });
+
+  it('stays put when the ropes get fatter or the bands multiply', () => {
+    const base = rainbowBands({}, CAKE).centerX;
+    expect(rainbowBands({ thickness: 0.2 }, CAKE).centerX).toBeCloseTo(base, 9);
+    expect(rainbowBands({ bands: 9 }, CAKE).centerX).toBeCloseTo(base, 9);
+    expect(rainbowBands({ gap: 0.05 }, CAKE).centerX).toBeCloseTo(base, 9);
+  });
+
+  it('and moves only when asked', () => {
+    expect(rainbowBands({ offsetX: 0 }, CAKE).centerX).toBe(0);
+    expect(rainbowBands({ offsetX: 1 }, CAKE).centerX).toBeCloseTo(CAKE.radius, 9);
+  });
+
+  it('can still DERIVE a position, for authoring a new shape', () => {
+    // offsetX null asks "put the resting foot here and tell me where that lands the arch" — useful
+    // once, when tuning a shape. Not the default, because it is the behaviour that moved things.
+    const a = rainbowBands({ offsetX: null, innerRadius: 0.3 }, CAKE).centerX;
+    const b = rainbowBands({ offsetX: null, innerRadius: 0.6 }, CAKE).centerX;
+    expect(b).toBeGreaterThan(a);
   });
 });

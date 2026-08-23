@@ -46,8 +46,20 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // Where a foot RESTING ON THE CAKE sits, as a fraction of the tier radius out from the middle
   // (0 = the centre, 1 = the rim). Null derives it, which is almost always what you want — see
   // archCenterX. Only meaningful when one foot is on the top and the other is not.
-  // Well inboard on the cake top, not out at the rim. Pushing the resting foot IN slides the whole
-  // arch out, which is what brings the descending legs down beside the cake instead of over it.
+  // WHERE IT STANDS, × tier radius, along the cake. A fixed number, not a derived one.
+  //
+  // It used to be derived from the outer radius so the resting foot always landed at `topFootAt`.
+  // That quietly made POSITION a function of SIZE: dragging the inner radius from 0.2 to 0.6 slid
+  // the whole rainbow 0.4R across the cake, because a smaller hole means a smaller outer radius
+  // means a different centre. Changing how big something is must not move it — where it stands is
+  // the author's decision, and nothing else's.
+  //
+  // The default is the value that derivation produced at the default proportions, so the shape that
+  // was tuned against the references is unchanged; it is simply frozen instead of recomputed.
+  offsetX: 0.71,
+  // Only consulted when offsetX is null — the old derived behaviour, kept because it is genuinely
+  // useful when authoring a NEW shape: set the resting foot where you want it, read off the offsetX
+  // it implies, then fix it there.
   topFootAt: 0.28,
   // Where the arc STARTS, as a fraction of the cake's height: 0 = the board, 1 = the top of the
   // cake, above 1 = clear of it. Pinning it to the top was wrong — that makes the arch straddle the
@@ -188,6 +200,8 @@ export function rainbowBands(params = {}, cake = {}) {
   const standoff = (p.standoff ?? 0) * R;
 
   const outerRadius = bandRadius(p.bands - 1, { innerRadius, thickness, gap });
+  // A number stands; null derives. Deriving MOVES the rainbow when any size changes, which is why
+  // it is no longer the default — see offsetX.
   const centerX = p.offsetX != null
     ? p.offsetX * R
     // The RAW foot heights, before the seat lift. Comparing the seated ones against topY would never
