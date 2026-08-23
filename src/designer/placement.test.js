@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
 import { TIER_RADII } from './constants.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -569,5 +569,63 @@ describe('clampLean — one limit for both lean axes', () => {
   it('treats a missing value as upright', () => {
     expect(clampLean(undefined)).toBe(0);
     expect(clampLean(null)).toBe(0);
+  });
+});
+
+// ── Artwork that fits a surface ─────────────────────────────────────────────────────────────────
+// An edible sheet is printed artwork the baker lays on the cake. It must grow until it meets the rim
+// and stop — an overhanging disc is not a look, it is a sheet that will not fit the cake it was
+// bought for. A photo frame already had this rule; the sheet borrows it.
+describe('surfaceFit — where the two fit numbers come from', () => {
+  it('an ordinary decoration does not fit a surface — it is sized by taste', () => {
+    expect(surfaceFit({ scale: 2 })).toBe(null);
+  });
+
+  it('a sheet reads its own artwork', () => {
+    expect(surfaceFit({ sheetShape: 'round', sheetFill: 0.9 })).toEqual({ shape: 'round', fill: 0.9 });
+  });
+
+  it('a photo frame grows its fill by the border ring drawn around it', () => {
+    // The ring is part of what must not overhang, so the bound has to include it.
+    const fit = surfaceFit({ photoMask: 'm.png', photoShape: 'round', photoFill: 0.8, borderWidth: 0.25 });
+    expect(fit.fill).toBeCloseTo(1.0, 6);
+  });
+
+  it('a sheet wins over photo fields, so an element cannot be both', () => {
+    const fit = surfaceFit({ sheetShape: 'rect', sheetFill: 1, photoMask: 'm.png', photoFill: 0.5 });
+    expect(fit).toEqual({ shape: 'rect', fill: 1 });
+  });
+});
+
+describe('surfaceFitMax — the fit is the CAKE\'s size, not a number someone typed', () => {
+  const round = (radius) => ({ shape: 'round', radius, height: 1 });
+
+  it('a round sheet on a round top reaches the rim', () => {
+    const wide   = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 }, round(1.2));
+    const narrow = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 }, round(0.6));
+    // The SAME sheet is smaller on a narrower cake — which is the whole point, and the reason an
+    // authored default scale could never be right for every cake.
+    expect(narrow).toBeLessThan(wide);
+    expect(narrow / wide).toBeCloseTo(0.5, 6);
+  });
+
+  it('a square sheet on a round top inscribes rather than overhanging', () => {
+    const r = round(1.2);
+    const circle = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 }, r);
+    const box    = surfaceFitMax({ zone: 'top_surface', sheetShape: 'rect',  sheetFill: 1 }, r);
+    expect(box).toBeCloseTo(circle / Math.SQRT2, 6);
+  });
+
+  it('transparent margin around the artwork is taken off the bound', () => {
+    const full = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 },   round(1.2));
+    const half = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 0.5 }, round(1.2));
+    // Artwork filling half its plane has to scale twice as far for its EDGE to reach the same rim.
+    expect(half).toBeCloseTo(full * 2, 6);
+  });
+
+  it('answers null for anything that does not fit a surface, so the authored max stands', () => {
+    expect(surfaceFitMax({ zone: 'top_surface', scale: 1 }, round(1.2))).toBe(null);
+    expect(surfaceFitMax({ zone: 'top_surface', sheetShape: 'round' }, null)).toBe(null);
+    expect(surfaceFitMax({ zone: 'board', sheetShape: 'round' }, round(1.2))).toBe(null);
   });
 });

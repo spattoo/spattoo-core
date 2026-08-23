@@ -242,6 +242,43 @@ export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKE
 export const STICKER_SCALE_RANGE = Object.freeze({ min: 0.25, max: 8, step: 0.05 });
 export const HUG_MUL_RANGE       = Object.freeze({ min: 0.3,  max: 3, step: 0.05 });
 
+// ── Artwork that fits a surface ─────────────────────────────────────────────────────────────────
+// Two different things want the same rule: a photo-cake frame, and an EDIBLE SHEET (printed artwork
+// a baker lays on the cake — the football disc). Both are flat pictures that should grow until they
+// meet the boundary of the surface and stop, and neither should ever overhang the rim.
+//
+// They differ only in where the two numbers come from, so this is the ONE place that decides, and
+// the geometry (frameTopMaxScale / frameSideMaxScale) stays shared:
+//
+//   sheet  the artwork IS the picture — its shape and extent are authored on the element
+//   photo  the MASK is the shape, and the fill grows by the border ring drawn around it
+//
+// Returns null when an element is not surface-fitting, which is nearly all of them — an ordinary
+// decoration is sized by taste, not by the cake.
+export function surfaceFit(sticker) {
+  if (sticker?.sheetShape) {
+    return { shape: sticker.sheetShape, fill: sticker.sheetFill ?? 1 };
+  }
+  if (sticker?.photoMask) {
+    return { shape: sticker.photoShape, fill: (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)) };
+  }
+  return null;
+}
+
+// The largest an element may be scaled on a given surface — its fit, when it has one, else the
+// element's authored max. `tier` is a CANVAS tier (radius resolved), not a design tier.
+export function surfaceFitMax(sticker, tier, floor = 0) {
+  const fit = surfaceFit(sticker);
+  if (!fit || !tier) return null;
+  if (sticker.zone === ZONES.TOP_SURFACE) {
+    return Math.max(floor, frameTopMaxScale(tierShape(tier), fit.shape, fit.fill));
+  }
+  if (sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER) {
+    return Math.max(floor, frameSideMaxScale(tier?.height ?? 0, fit.fill));
+  }
+  return null;
+}
+
 export function stickerSizeControl(element, sticker, tier = null) {
   if (isDynamicHug(sticker)) {
     return { key: 'hugMul', value: sticker?.hugMul ?? 1, ...HUG_MUL_RANGE };
@@ -249,17 +286,8 @@ export function stickerSizeControl(element, sticker, tier = null) {
   const { min, max, step } = scaleRangeOf(
     element, STICKER_SCALE_RANGE.min, STICKER_SCALE_RANGE.max, STICKER_SCALE_RANGE.step);
 
-  let capped = max;
-  if (sticker?.photoMask && tier) {
-    const fill = (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0));
-    // Never cap below one step above the floor, or the control would have no travel.
-    const floor = min + step;
-    if (sticker.zone === ZONES.TOP_SURFACE) {
-      capped = Math.max(floor, frameTopMaxScale(tierShape(tier), sticker.photoShape, fill));
-    } else if (sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER) {
-      capped = Math.max(floor, frameSideMaxScale(tier?.height ?? 0, fill));
-    }
-  }
+  // Never cap below one step above the floor, or the control would have no travel.
+  const capped = surfaceFitMax(sticker, tier, min + step) ?? max;
   return { key: 'scale', value: sticker?.scale ?? 1, min, max: capped, step };
 }
 

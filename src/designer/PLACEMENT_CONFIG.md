@@ -228,6 +228,31 @@ property of the element.
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).
 
+## 2b. Edible sheets (`sheet`)
+
+Printed artwork a baker lays on the cake — the football disc on a top surface. **Not a new kind of
+element**: it is an ordinary row with `medium: 'edible_paper'` (which routes its guide to print-only,
+see migration 032) and a `sheet` block that says it fits the surface.
+
+```jsonc
+"top_surface": "hug",
+"sheet": { "shape": "round", "fill": 0.98 }
+```
+
+| Key | Meaning |
+|---|---|
+| `shape` | `round` fills a round top to the rim; anything else inscribes as a box, so a square sheet cannot overhang |
+| `fill` | the artwork's extent as a fraction of its square plane — transparent margin taken off, so the ARTWORK's edge reaches the rim rather than the plane's |
+
+* **It lands at its fit.** A sheet is printed to cover the cake top, so the drop seeds the scale from
+  the tier being placed on — there is no authored number that would be right for both a single tier
+  and the top of a three-tier stack.
+* **The Size dial is capped, not replaced.** No new control: the dial's MAX becomes the fit, so it
+  reaches the rim and refuses to go past it.
+* Same rule as a photo-cake frame, and the same geometry (`frameTopMaxScale`). They differ only in
+  where the two numbers come from — a sheet's artwork IS the picture, a frame's mask is the shape and
+  its fill grows by the border ring. `surfaceFit` is the one place that decides.
+
 ## 3. Pattern fields (`decor_pattern` and `piping_pattern`)
 
 | Key | Type | Default | Meaning |

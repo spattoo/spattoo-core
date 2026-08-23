@@ -3,7 +3,7 @@ import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_M
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
-import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields, zoneInsert } from '../placement.js';
+import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields, zoneInsert, surfaceFitMax } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
@@ -14,6 +14,15 @@ import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
+
+// A design tier does not carry its own radius — the stack's widths are positional (TIER_RADII[i]) and
+// only get resolved on the way to the canvas. Anything that needs the REAL width of a tier before
+// then (seeding an edible sheet at its fit, say) has to resolve it the same way, so this is the one
+// place that knows how. Reading `t.radius ?? 0` instead would size a sheet against a cake that does
+// not exist.
+export function tierRadius(t, i) {
+  return t?.radius ?? TIER_RADII[i] ?? 0.35;
+}
 // Frosting types now live in the frostings registry; re-export so existing importers
 // (FrostingPicker, admin CreateTemplate) keep resolving them from here.
 export { FROSTING_TYPES };
@@ -86,7 +95,7 @@ export function toCanvasConfig(design) {
       const isRound = family === 'circle';
       const isRect  = family === 'rounded_rect';
       const isGlyph = isGlyphFamily(family);
-      const r = t.radius ?? TIER_RADII[i] ?? 0.35;
+      const r = tierRadius(t, i);
       // A glyph cake's (number/letter) footprint AND vertical thickness are DERIVED (from its typed
       // characters + its size config), not authored on the tier — so resolve them once here and every
       // downstream reader (stacking, board, camera, cream) speaks the true box. The mesh extrudes by the
@@ -751,7 +760,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // guard; `patternDeletable` mirrors the pattern's placement_config.parts_deletable).
   function addSticker(element, zone, tierIndex, placementMode, position = {}, extra = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
-    const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : element.placement_config?.photo?.mask ? 3.5 : 1);
+    let defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : element.placement_config?.photo?.mask ? 3.5 : 1);
+    // A sheet lands at its FIT, not at an authored default. An edible disc is bought and printed to
+    // cover the cake top — a customer who has to drag a dial to get there has been asked to do the
+    // one thing the product already knows the answer to. And there is no single authored number that
+    // would work: the right size is the cake's, and the top tier of a three-tier stack is not the
+    // width of a single.
+    const sheetCfg = element.placement_config?.sheet;
+    if (sheetCfg && zone === ZONES.TOP_SURFACE) {
+      defaultScale = null;   // resolved below, once the tier being placed on is known
+    }
     // Edge-seated modes (perch, verge) seat onto the front rim edge and carry a calibrated lean —
     // computed by the shared edgeSeatSeed helper (same seed the chooser's move path uses, so both
     // paths land identically). Verge leans about the rim tangent at render (radial-outward); perch
@@ -829,6 +847,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.TOP_SURFACE, { x: px, z: pz }, siblings));
         }
       }
+      // A sheet's default size is the CAKE's, so it can only be resolved here — inside the updater,
+      // where the tier being placed on is known. Radius is resolved through tierRadius for the same
+      // reason: a design tier carries no width of its own.
+      const seededScale = defaultScale ?? (() => {
+        const i = tierIndex ?? 0;
+        const t = prev.tiers[i] ?? prev.tiers[0];
+        const fitted = surfaceFitMax(
+          { zone, sheetShape: sheetCfg?.shape ?? null, sheetFill: sheetCfg?.fill ?? 1 },
+          t ? { ...t, radius: tierRadius(t, i) } : null,
+        );
+        return fitted ?? 1;
+      })();
       return {
         ...prev,
         stickers: [...prev.stickers, {
@@ -894,6 +924,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           photoOverlay:   element.placement_config?.photo?.overlay ?? null,   // optional decorative border art
           photoShape:     element.placement_config?.photo?.shape ?? null,     // 'round'|'rect'|'other' — top-fit max-size rule
           photoFill:      element.placement_config?.photo?.fill ?? 1,         // shape extent as a fraction of the plane (measured) — exact fit-to-rim
+          // An EDIBLE SHEET: printed artwork the baker lays on the cake (the football disc). Same
+          // fit-to-the-boundary rule as a photo frame, different provenance — the artwork IS the
+          // picture, so there is no mask and no border ring. See placement.js surfaceFit.
+          sheetShape:     element.placement_config?.sheet?.shape ?? null,      // 'round' | 'rect'
+          sheetFill:      element.placement_config?.sheet?.fill ?? 1,          // artwork extent within its square plane
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1, rot: 0 },   // pan (UV fraction) + zoom + 2D rotation (deg); cover-fit baseline at zoom 1
@@ -911,7 +946,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           y:             seatY,                // side: seat height on the wall
           x:             px,
           z:             pz,
-          scale:         extra.scale ?? defaultScale,   // scatter passes a small per-instance radius
+          scale:         extra.scale ?? seededScale,   // scatter passes a small per-instance radius; a sheet lands at its fit
           // The GLB's authored facing offset (e.g. toppers need [0,-90,0]° to face front).
           // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
