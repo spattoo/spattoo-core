@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry,
+  RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX,
 } from './rainbow.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
@@ -215,5 +215,48 @@ describe('the mesh', () => {
     const xOf = g => g.boundingBox.max.x - g.boundingBox.min.x;
     expect(zOf(flat)).toBeLessThan(zOf(round));
     expect(xOf(flat)).toBeCloseTo(xOf(round), 6);
+  });
+});
+
+// ── A foot on the cake has to land ON the cake ──────────────────────────────────────────────────
+// The first asymmetric render got the SHAPE right and left the resting feet hanging in mid-air: a
+// centred arch is wider than the cake, so a foot stopping at cake-top height stops beside it, not on
+// it. The arch has to lean toward the board side.
+describe('where the resting foot lands', () => {
+  const ON_CAKE = { footLeft: 'top', footRight: 'board' };
+
+  it('puts every foot that rests on the cake WITHIN the cake', () => {
+    const { bands } = rainbowBands(ON_CAKE, CAKE);
+    for (const b of bands) {
+      const foot = b.path[0];
+      expect(foot.y).toBeCloseTo(CAKE.topY, 6);
+      expect(Math.abs(foot.x), `band ${b.index} rests ${foot.x.toFixed(2)} out, past a ${CAKE.radius} cake`)
+        .toBeLessThanOrEqual(CAKE.radius + 1e-6);
+    }
+  });
+
+  it('and pushes the descending leg clear of the cake, onto the board', () => {
+    const { bands } = rainbowBands(ON_CAKE, CAKE);
+    for (const b of bands) {
+      const foot = b.path[b.path.length - 1];
+      expect(foot.y).toBeCloseTo(CAKE.boardY, 6);
+      expect(Math.abs(foot.x), `band ${b.index} comes down THROUGH the cake`).toBeGreaterThan(CAKE.radius);
+    }
+  });
+
+  it('mirrors when the resting foot is the other one', () => {
+    const a = rainbowBands({ footLeft: 'top', footRight: 'board' }, CAKE).centerX;
+    const b = rainbowBands({ footLeft: 'board', footRight: 'top' }, CAKE).centerX;
+    expect(b).toBeCloseTo(-a, 6);
+  });
+
+  it('does not lean at all when both feet land the same way', () => {
+    expect(rainbowBands({ footLeft: 'board', footRight: 'board' }, CAKE).centerX).toBe(0);
+    expect(rainbowBands({ footLeft: 'top', footRight: 'top' }, CAKE).centerX).toBe(0);
+    expect(archCenterX({ footLeftY: 1, footRightY: 1, outerRadius: 2, cakeRadius: 1, topY: 1 })).toBe(0);
+  });
+
+  it('an explicit offsetX overrides the derivation, for a look nobody predicted', () => {
+    expect(rainbowBands({ ...ON_CAKE, offsetX: 0 }, CAKE).centerX).toBe(0);
   });
 });
