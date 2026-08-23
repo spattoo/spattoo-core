@@ -2084,6 +2084,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     return () => ro.disconnect();
   }, [reelFraming]);
 
+  /* Everything the reel panel changed, put back — the framing, the scrim, the ground, the camera.
+   *
+   * ⚠️ One function because there are TWO ways out and only one of them used to do this. The ✕ tore
+   * the preview down; finishing a take did not, and left the designer wearing the 9:16 crop, the
+   * scrim and the reel's ground with the panel gone — so there was no visible way back at all. The
+   * baker's only escape was to guess that reopening the panel and closing it would clear it.
+   *
+   * It runs in runReel's `finally`, so a take that THREW restores too. A failed recording stranding
+   * the designer is the same bug with worse timing. */
+  function closeReelPanel() {
+    setReelOptsOpen(false);
+    setReelFraming(false);
+    setReelGround(DESIGNER_GROUND);
+    reelRef.current?.endPreview?.();
+  }
+
   function openReelPanel() {
     // Drop any selection first. Handles, grips and the piping toolbar are editing furniture that
     // renders IN the scene, so whatever was selected when the baker hit Record would have been
@@ -2134,6 +2150,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       setReelMsg({ ok: false, text: `Couldn't record: ${e.message}` });
     } finally {
       setReelBusy(false);
+      // Back to the designer. The message stays up to say what happened — it is a toast, not part
+      // of the framing — so nothing is lost by clearing the preview here.
+      closeReelPanel();
     }
   }
 
@@ -8942,7 +8961,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           // colour that records rather than a separate thing we hope agrees.
           onGround={g => setReelGround(g || DESIGNER_GROUND)}
           brandPrimary={bakerData?.primary_color || null}
-          onClose={() => { setReelOptsOpen(false); setReelFraming(false); reelRef.current?.endPreview?.(); }}
+          onClose={closeReelPanel}
           onRecord={runReel} />
       )}
 
