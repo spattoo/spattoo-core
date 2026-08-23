@@ -33,6 +33,15 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   thickness:   0.09,   // × tier radius — one rope's diameter
   gap:         0.012,  // × tier radius — daylight between ropes; 0 = ropes touching
   legs: 'board',       // 'board' | 'top' | 'none'
+  // Where the arc STARTS, as a fraction of the cake's height: 0 = the board, 1 = the top of the
+  // cake, above 1 = clear of it. Pinning it to the top was wrong — that makes the arch straddle the
+  // cake like a cage, with a leg standing off each side. On a real one the arc springs from about
+  // halfway up and the cake overlaps its lower half.
+  spring: 0.6,
+  // How far BEHIND the cake it stands, × tier radius. A rainbow is a backdrop, not a hoop the cake
+  // sits inside: at 0 it is centred on the cake and the legs come down either side of it, which is
+  // the thing no real cake does.
+  standoff: 0.9,
   flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
   lean: 0,             // degrees, tipped back from vertical
   arcSegments: 96,     // along the path
@@ -58,16 +67,17 @@ export function legFootY(legs, { topY = 0, boardY = 0 } = {}) {
  * no corner between them to round off or crease. That is why this can be sampled as one smooth run
  * of points rather than stitched from separate curves with a join to argue about.
  */
-export function bandPath({ radius, archY, footY, arcSegments = RAINBOW_DEFAULTS.arcSegments }) {
+export function bandPath({ radius, archY, footY, standoff = 0, arcSegments = RAINBOW_DEFAULTS.arcSegments }) {
   const pts = [];
+  const z = standoff;   // one plane, set back from the cake's centre — a rainbow is flat
   const hasLegs = footY != null && footY < archY;
-  if (hasLegs) pts.push(new THREE.Vector3(-radius, footY, 0));
+  if (hasLegs) pts.push(new THREE.Vector3(-radius, footY, z));
   // Left (π) round to right (0). Descending so the run reads left-to-right with the legs.
   for (let i = 0; i <= arcSegments; i++) {
     const a = Math.PI - (i / arcSegments) * Math.PI;
-    pts.push(new THREE.Vector3(Math.cos(a) * radius, archY + Math.sin(a) * radius, 0));
+    pts.push(new THREE.Vector3(Math.cos(a) * radius, archY + Math.sin(a) * radius, z));
   }
-  if (hasLegs) pts.push(new THREE.Vector3(radius, footY, 0));
+  if (hasLegs) pts.push(new THREE.Vector3(radius, footY, z));
   return pts;
 }
 
@@ -92,8 +102,12 @@ export function rainbowBands(params = {}, cake = {}) {
   const gap = p.gap * R;
   const innerRadius = p.innerRadius * R;
   const footY = legFootY(p.legs, { topY, boardY });
-  // The arch springs from the top of the cake — its legs hang BELOW that when they run to the board.
-  const archY = topY;
+  // The springing point, measured up from the BOARD through the cake's height — so a taller cake
+  // pushes it up in proportion and the rainbow keeps its relationship to the cake rather than to a
+  // number. Never below the feet: an arc that starts under its own legs is inside out.
+  const cakeHeight = Math.max(0, topY - boardY);
+  const archY = Math.max(footY ?? boardY, boardY + cakeHeight * (p.spring ?? 1));
+  const standoff = (p.standoff ?? 0) * R;
 
   const bands = [];
   for (let i = 0; i < p.bands; i++) {
@@ -101,14 +115,15 @@ export function rainbowBands(params = {}, cake = {}) {
     bands.push({
       index: i,
       radius,
+      standoff,
       // Wraps the palette rather than running out: an author who asks for 8 bands from 6 colours
       // gets a repeat, not two undefined ropes.
       color: p.colors[i % p.colors.length],
-      path: bandPath({ radius, archY, footY, arcSegments: p.arcSegments }),
+      path: bandPath({ radius, archY, footY, standoff, arcSegments: p.arcSegments }),
       thickness,
     });
   }
-  return { bands, thickness, gap, archY, footY, cakeRadius: R };
+  return { bands, thickness, gap, archY, footY, standoff, cakeRadius: R };
 }
 
 /** The tube for one band. Flatten squashes the cross-section in Z, turning a rope into a flat band. */

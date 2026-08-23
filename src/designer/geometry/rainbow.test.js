@@ -32,9 +32,12 @@ describe('it fits the cake it is given', () => {
   });
 
   it('with no legs it is a bare arch — nothing hangs below the springing point', () => {
-    const { bands } = rainbowBands({ legs: 'none' }, CAKE);
+    // Asserted against the springing point the model REPORTS, not against the cake top. It used to
+    // say topY, because the arch was pinned there — which is what made it straddle the cake like a
+    // cage instead of standing behind it.
+    const { bands, archY } = rainbowBands({ legs: 'none' }, CAKE);
     expect(legFootY('none', CAKE)).toBe(null);
-    expect(Math.min(...bands[0].path.map(p => p.y))).toBeCloseTo(CAKE.topY, 6);
+    expect(Math.min(...bands[0].path.map(p => p.y))).toBeCloseTo(archY, 6);
   });
 
   it('every size is a RATIO of the cake, so a wider cake gets a wider rainbow', () => {
@@ -93,7 +96,47 @@ describe('the path', () => {
   });
 
   it('is flat in Z — a rainbow is a plane, not a spiral', () => {
-    expect(bandPath({ radius: 2, archY: 1, footY: 0 }).every(p => p.z === 0)).toBe(true);
+    const pts = bandPath({ radius: 2, archY: 1, footY: 0, standoff: 1.4 });
+    expect(pts.every(p => p.z === pts[0].z)).toBe(true);
+  });
+});
+
+// ── It stands BEHIND the cake ───────────────────────────────────────────────────────────────────
+// The first render straddled the cake: arch overhead, a leg planted either side, the cake sitting
+// inside it like a hoop. No real cake does that — the rainbow is a backdrop. Two things were wrong,
+// and both were assumptions I had baked in rather than authored.
+describe('where it stands', () => {
+  it('is set back from the cake, not centred on it', () => {
+    const { bands, standoff } = rainbowBands({}, CAKE);
+    expect(standoff).toBeGreaterThan(0);
+    expect(bands.every(b => b.path.every(p => p.z === standoff))).toBe(true);
+  });
+
+  it('sets back in proportion, so a wider cake is cleared by the same margin', () => {
+    const a = rainbowBands({}, { ...CAKE, radius: 1 }).standoff;
+    const b = rainbowBands({}, { ...CAKE, radius: 2 }).standoff;
+    expect(b).toBeCloseTo(a * 2, 6);
+  });
+
+  it('can still be centred, for an arch that sits ON the cake', () => {
+    expect(rainbowBands({ standoff: 0 }, CAKE).standoff).toBe(0);
+  });
+
+  it('springs partway up the cake, not from its top', () => {
+    const { archY } = rainbowBands({ spring: 0.6 }, CAKE);
+    expect(archY).toBeGreaterThan(CAKE.boardY);
+    expect(archY).toBeLessThan(CAKE.topY);
+  });
+
+  it('measures the springing point against the CAKE, so a taller one lifts it', () => {
+    const short = rainbowBands({ spring: 0.6 }, { ...CAKE, topY: 1.0 }).archY;
+    const tall  = rainbowBands({ spring: 0.6 }, { ...CAKE, topY: 2.8 }).archY;
+    expect(tall).toBeGreaterThan(short);
+  });
+
+  it('never springs below its own feet — an arc under its legs is inside out', () => {
+    const { archY, footY } = rainbowBands({ spring: 0, legs: 'top' }, CAKE);
+    expect(archY).toBeGreaterThanOrEqual(footY);
   });
 });
 
