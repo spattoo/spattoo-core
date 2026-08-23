@@ -29,8 +29,12 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   bands: 6,
   // Pastel, matching the fondant a baker actually colours — a saturated spectrum reads as plastic.
   colors: ['#F5A3B8', '#F7C59F', '#F7E7A0', '#A8D5A2', '#A3C7E8', '#C9AEDD'],
-  innerRadius: 0.55,   // × tier radius — the hole under the arch
-  thickness:   0.09,   // × tier radius — one rope's diameter
+  // Read off the references rather than picked: a TIGHT hole under a stack of FAT ropes. That
+  // proportion is what makes the band stack itself reach past the cake, so the legs come down beside
+  // it and nearly touch. A wide hole with thin ropes gives a shallow hoop that can only miss the
+  // cake by being shoved backwards — a different object, and not one anybody decorates.
+  innerRadius: 0.30,   // × tier radius — the hole under the arch
+  thickness:   0.115,  // × tier radius — one rope's diameter
   gap:         0.012,  // × tier radius — daylight between ropes; 0 = ropes touching
   // The two feet land INDEPENDENTLY — 'board' | 'top' | 'none' each. A single setting could only
   // ever make a symmetric arch, and the shape a rainbow cake actually uses is lopsided: it springs
@@ -42,16 +46,22 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // Where a foot RESTING ON THE CAKE sits, as a fraction of the tier radius out from the middle
   // (0 = the centre, 1 = the rim). Null derives it, which is almost always what you want — see
   // archCenterX. Only meaningful when one foot is on the top and the other is not.
-  topFootAt: 0.55,
+  // Well inboard on the cake top, not out at the rim. Pushing the resting foot IN slides the whole
+  // arch out, which is what brings the descending legs down beside the cake instead of over it.
+  topFootAt: 0.28,
   // Where the arc STARTS, as a fraction of the cake's height: 0 = the board, 1 = the top of the
   // cake, above 1 = clear of it. Pinning it to the top was wrong — that makes the arch straddle the
   // cake like a cage, with a leg standing off each side. On a real one the arc springs from about
   // halfway up and the cake overlaps its lower half.
-  spring: 0.6,
-  // How far BEHIND the cake it stands, × tier radius. A rainbow is a backdrop, not a hoop the cake
-  // sits inside: at 0 it is centred on the cake and the legs come down either side of it, which is
-  // the thing no real cake does.
-  standoff: 0.9,
+  spring: 1,
+  // How far behind the cake's CENTRE LINE it stands, × tier radius. Zero by default.
+  //
+  // This was 0.9, and that was wrong twice over. A rainbow of these proportions clears the cake by
+  // being WIDER than it, not by standing behind it — so setting it back put the rainbow at the front
+  // of the board with a visible gap down the side, which is not how one is ever decorated. Standing
+  // back was compensating for an arch too shallow to clear any other way; fix the proportions and
+  // the need disappears. A little forward or back is taste; it is not what clears the cake.
+  standoff: 0,
   flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
   lean: 0,             // degrees, tipped back from vertical
   arcSegments: 96,     // along the path

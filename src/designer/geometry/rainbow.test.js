@@ -60,8 +60,11 @@ describe('it fits the cake it is given', () => {
     const right = bands[0].path[bands[0].path.length - 1];
     expect(left.y  - thickness / 2).toBeCloseTo(CAKE.topY, 6);
     expect(right.y - thickness / 2).toBeCloseTo(CAKE.boardY, 6);
-    expect(left.x).toBeLessThan(0);
-    expect(right.x).toBeGreaterThan(0);
+    // Not "left is left of centre": the arch is shifted sideways so its resting foot lands on the
+    // cake, so an inner band's resting end can sit right of the middle and still be on the cake.
+    // What matters is that one end rests ON it and the other comes down OUTSIDE it.
+    expect(Math.abs(left.x)).toBeLessThanOrEqual(CAKE.radius);
+    expect(Math.abs(right.x)).toBeGreaterThan(CAKE.radius);
   });
 
   it('and the other way round, without the shape changing', () => {
@@ -144,8 +147,11 @@ describe('the path', () => {
 // inside it like a hoop. No real cake does that — the rainbow is a backdrop. Two things were wrong,
 // and both were assumptions I had baked in rather than authored.
 describe('where it stands', () => {
-  it('is set back from the cake, not centred on it', () => {
-    const { bands, standoff } = rainbowBands({}, CAKE);
+  it('is FLAT, at whatever depth it stands', () => {
+    // This used to assert the default was set BACK. It is not any more: a rainbow of the reference
+    // proportions clears the cake by being wider than it, and standing it back put it at the front
+    // of the board with a gap down the side. What is still true is that it is one plane.
+    const { bands, standoff } = rainbowBands({ standoff: 0.7 }, CAKE);
     expect(standoff).toBeGreaterThan(0);
     expect(bands.every(b => b.path.every(p => p.z === standoff))).toBe(true);
   });
@@ -355,5 +361,44 @@ describe('it never goes into the cake', () => {
     // not be "lift everything above the cake" — that would flatten reference 1.
     const { archY } = rainbowBands({ spring: 0.5, standoff: 2, footLeft: 'board', footRight: 'board' }, CAKE);
     expect(archY).toBeLessThan(CAKE.topY);
+  });
+});
+
+// ── The default has to LOOK like the reference ──────────────────────────────────────────────────
+// Every earlier version was reachable by dragging sliders and wrong when it opened, which is the
+// only state most people will ever see. The defaults are read off the reference photos: a tight hole
+// under fat ropes, sitting on the cake's centre line, legs coming down beside it near enough to
+// touch. These assertions are what "looks right" decomposes into.
+describe('the default rainbow', () => {
+  it('sits on the cake\'s centre line, not behind it', () => {
+    // It was 0.9 back, which put it at the FRONT of the board with a gap down the side. Standing
+    // back was compensating for an arch too shallow to clear the cake any other way.
+    expect(RAINBOW_DEFAULTS.standoff).toBe(0);
+    expect(rainbowBands({}, CAKE).standoff).toBe(0);   // and nothing pushes it back
+  });
+
+  it('brings its descending legs down beside the cake, nearly touching', () => {
+    const { bands, thickness, centerX } = rainbowBands({}, CAKE);
+    const face = centerX + bands[0].radius - thickness / 2;   // inner face of the innermost leg
+    expect(face).toBeGreaterThan(CAKE.radius);                // outside — it does not cut in
+    expect(face - CAKE.radius).toBeLessThan(thickness);       // and within a rope's width of it
+  });
+
+  it('has a tight hole under fat ropes — that is what makes it clear the cake', () => {
+    // The stack must be wider than the hole, or the arch is a shallow hoop that can only miss the
+    // cake by standing behind it.
+    const stack = RAINBOW_DEFAULTS.bands * (RAINBOW_DEFAULTS.thickness + RAINBOW_DEFAULTS.gap);
+    expect(stack).toBeGreaterThan(RAINBOW_DEFAULTS.innerRadius);
+  });
+
+  it('rests its top foot inboard on the cake, not out at the rim', () => {
+    const { bands, centerX } = rainbowBands({}, CAKE);
+    const rest = Math.abs(centerX - bands[bands.length - 1].radius);
+    expect(rest).toBeLessThan(CAKE.radius * 0.6);
+  });
+
+  it('stands taller than the cake, so the arch reads above it', () => {
+    const { bands, archY } = rainbowBands({}, CAKE);
+    expect(archY + bands[bands.length - 1].radius).toBeGreaterThan(CAKE.topY * 1.5);
   });
 });
