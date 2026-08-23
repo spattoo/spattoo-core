@@ -33,6 +33,10 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // proportion is what makes the band stack itself reach past the cake, so the legs come down beside
   // it and nearly touch. A wide hole with thin ropes gives a shallow hoop that can only miss the
   // cake by being shoved backwards — a different object, and not one anybody decorates.
+  // Overall size — multiplies the hole, the ropes and the gaps together, so the SHAPE is untouched
+  // and only how big it is changes. Separate from innerRadius on purpose: that one changes the
+  // PROPORTION (a tighter hole under the same ropes), which is a different rainbow, not a bigger one.
+  scale: 1,
   innerRadius: 0.30,   // × tier radius — the hole under the arch
   thickness:   0.115,  // × tier radius — one rope's diameter
   gap:         0.012,  // × tier radius — daylight between ropes; 0 = ropes touching
@@ -214,9 +218,11 @@ export function rainbowBands(params = {}, cake = {}) {
   // Sizes are settled BEFORE anything is derived from them. The seat lift is half a rope, so working
   // it out first and shrinking the ropes afterwards left the feet hovering above the cake by the
   // difference — a gap nothing in the picture explained.
-  let thickness = p.thickness * R;
-  let gap = p.gap * R;
-  let innerRadius = p.innerRadius * R;
+  // Size multiplies all three together, so the proportions survive it — see `scale`.
+  const size = p.scale ?? 1;
+  let thickness = p.thickness * R * size;
+  let gap = p.gap * R * size;
+  let innerRadius = p.innerRadius * R * size;
   const standoff = (p.standoff ?? 0) * R;
 
   const rawLeft  = legFootY(p.footLeft,  { topY, boardY });

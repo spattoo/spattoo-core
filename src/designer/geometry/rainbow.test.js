@@ -496,3 +496,44 @@ describe('standing on the cake', () => {
     expect(Math.hypot(foot.x, foot.z)).toBeGreaterThan(CAKE.radius);
   });
 });
+
+// ── Size changes the size and nothing else ──────────────────────────────────────────────────────
+// A standing arch is fitted onto the cake, so it can come out small — and the only control for that
+// was innerRadius, which changes the PROPORTION. A tighter hole under the same ropes is a different
+// rainbow, not a bigger one, so making it bigger needed a control of its own.
+describe('scale', () => {
+  const LEAN = { footLeft: 'top', footRight: 'board' };
+
+  it('makes it bigger without changing its shape', () => {
+    const one = rainbowBands({ ...LEAN, scale: 1 }, CAKE);
+    const two = rainbowBands({ ...LEAN, scale: 2 }, CAKE);
+    expect(two.thickness).toBeCloseTo(one.thickness * 2, 9);
+    for (let i = 0; i < one.bands.length; i++) {
+      expect(two.bands[i].radius).toBeCloseTo(one.bands[i].radius * 2, 9);
+    }
+  });
+
+  it('does not move it, like every other size control here', () => {
+    const at = scale => rainbowBands({ ...LEAN, scale }, CAKE).centerX;
+    expect(at(2)).toBeCloseTo(at(0.5), 9);
+  });
+
+  it('is not the same as changing the inner radius', () => {
+    // Both make the outer band smaller; only one keeps the rope-to-hole ratio, and that ratio is
+    // what decides whether the thing still reads as a rainbow.
+    const ratio = b => b.thickness / b.bands[0].radius;
+    expect(ratio(rainbowBands({ ...LEAN, scale: 0.6 }, CAKE)))
+      .toBeCloseTo(ratio(rainbowBands({ ...LEAN, scale: 1 }, CAKE)), 6);
+    expect(ratio(rainbowBands({ ...LEAN, innerRadius: 0.6 }, CAKE)))
+      .not.toBeCloseTo(ratio(rainbowBands({ ...LEAN, innerRadius: 0.3 }, CAKE)), 2);
+  });
+
+  it('a STANDING arch stays fitted to the cake however big it is asked to be', () => {
+    // Not the control failing: an arch on the cake top is bounded by the cake, and asking for five
+    // times the size cannot change what it is standing on.
+    const { bands } = rainbowBands({ footLeft: 'top', footRight: 'top', offsetX: 0, scale: 5 }, CAKE);
+    for (const b of bands) for (const end of [b.path[0], b.path[b.path.length - 1]]) {
+      expect(Math.hypot(end.x, end.z)).toBeLessThanOrEqual(CAKE.radius + 1e-6);
+    }
+  });
+});
