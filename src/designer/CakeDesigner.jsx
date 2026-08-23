@@ -9358,17 +9358,28 @@ const s = {
     // the phone just stopped having, in a place with four times the room. Left as-is deliberately
     // rather than fixed blind; see the note in plans/, and it wants its own look.
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-    // ⚠️ THE LEFT PADDING IS LOAD-BEARING, and the negative margin cancels it visually.
-    // `overflow: hidden` clips at the CONTENT BOX, and Pacifico's lowercase f has ink that starts
-    // 1.35px LEFT of the text origin at 26px (measured: actualBoundingBoxLeft = -1.35). With the
-    // glyph sitting flush against that edge, the f's curl was shaved flat — which is what
-    // "feelings&flavours" showed in production, and what any name beginning f/j/y would show.
-    // The padding moves the clip edge left to make room; the equal negative margin puts the
-    // wordmark back exactly where it was, so nothing else in the header moves. Removing either one
-    // alone re-breaks it or shifts the mark 10px right.
-    // Not a Pacifico quirk to special-case: script and italic faces routinely have negative left
-    // side bearings, and this style is the only place a script face meets an overflow clip.
+    /* ⚠️ THE PADDING IS LOAD-BEARING, and the equal negative margins cancel it visually.
+     * `overflow: hidden` (needed for the ellipsis above) clips at the CONTENT BOX, and Pacifico's
+     * ink does not fit inside a 1.2 line-height box. The padding moves the clip edge out; the
+     * negative margin puts the wordmark back exactly where it was, so nothing else in the header
+     * moves. Removing either one alone re-breaks it or shifts the mark.
+     *
+     * ⚠️ THE BOTTOM IS THE ONE THAT MATTERS, and an earlier fix here got the axis wrong.
+     * It read `actualBoundingBoxLeft = -1.35` as "ink starts 1.35px left of the origin" and padded
+     * the LEFT. The sign says the opposite — positive means ink extends left, so -1.35 means there
+     * is no left overhang at all — and the padding did nothing. Measured directly: sweeping
+     * padding-left from 10 to 40 produces a byte-identical render, so none of it was ever load
+     * bearing. What is clipped is the DESCENDER: Pacifico's lowercase f tails below the baseline and
+     * curls left, and at 26px on a 1.2 line-height it was being sheared off flat. That is what
+     * "feelings&flavours" shows in production, and what any name containing f/g/j/y shows.
+     *
+     * 8px is the measured minimum at which the render becomes pixel-identical to the same text with
+     * the clip removed entirely; 10 for a little headroom.
+     *
+     * The left padding is kept — it costs nothing, it is cancelled, and a face/initial with a real
+     * negative left side bearing would need it — but it is insurance, not the fix. */
     paddingLeft: 10, marginLeft: -10,
+    paddingBottom: 10, marginBottom: -10,
   },
 
   // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
