@@ -848,21 +848,65 @@ describe('a rainbow on an upper tier', () => {
     expect(narrow / wide).toBeCloseTo(0.92 / 1.2, 2);
   });
 
-  it('lands its falling foot ON the tier below at the authored size', () => {
-    // Worth pinning, because the arch's widest BULGE reaches 1.51 here — past tier 1's edge — while
-    // the foot lands at 1.03, well inside it. Reading the bulge as the foot is how you conclude a
-    // sound arch is floating.
-    const reach = rainbowFootReach({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' }, tier2);
-    expect(reach).toBeLessThan(TIER1.r);
+  it('would hang half its bands off the tier below, unfitted', () => {
+    // What the picture showed and the first measurement missed. Every band's foot seats at the same
+    // height, so "the lowest point" is a tie the INNERMOST band wins by being first in the list —
+    // and it reported 1.03, the foot nearest the middle, about an arch reaching 1.51.
+    const { bands, thickness } = rainbowBands(
+      { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' }, tier2);
+    const lowY = Math.min(...bands.flatMap(b => b.path.map(v => v.y)));
+    const feet = bands.map(b => {
+      const low = b.path.filter(v => v.y < lowY + thickness * 0.5);
+      return Math.max(...low.map(v => Math.hypot(v.x, v.z)));
+    });
+    expect(feet.filter(f => f > TIER1.r).length).toBeGreaterThanOrEqual(3);
+    expect(rainbowFootReach({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' }, tier2))
+      .toBeGreaterThan(TIER1.r);
   });
 
-  it('reports a falling foot that overhangs the tier below', () => {
-    // The board can GROW to catch a foot; a tier cannot. Past about 1.5× the authored size the foot
-    // passes tier 1's edge and rests on nothing — which a still picture cannot show, so it has to be
-    // a number the studio can print.
-    const big = rainbowFootReach(
-      { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', scale: 1.8 }, tier2);
-    expect(big).toBeGreaterThan(TIER1.r);
+  it('shrinks until the falling foot lands, when told what is underneath', () => {
+    const held = { ...tier2, supportRadius: TIER1.r };
+    const p = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' };
+    // 1e-3 of a 1.2 unit tier, not float-exact: the fit lands the foot ON the rim, so this is an
+    // equality dressed as an inequality and the last digits are noise.
+    expect(rainbowFootReach(p, held)).toBeLessThanOrEqual(TIER1.r + 1e-3);
+    expect(rainbowBands(p, held).supportFit).toBeLessThan(1);
+    // The SHAPE is untouched — all six ropes are still there, shrunk together.
+    expect(rainbowBands(p, held).bands).toHaveLength(RAINBOW_DEFAULTS.bands);
+  });
+
+  it('mirrors, and lands on the other side too', () => {
+    const held = { ...tier2, supportRadius: TIER1.r };
+    expect(rainbowFootReach({ ...RAINBOW_DEFAULTS, footLeft: 'board', footRight: 'top' }, held))
+      .toBeLessThanOrEqual(TIER1.r + 1e-3);
+  });
+
+  it('leaves the bottom tier alone, because the board grows instead', () => {
+    // No supportRadius means nothing limits it — rainbowBoardReach widens the board to meet the
+    // foot. Shrinking here would be solving a problem the board already solves.
+    const bottom = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+    const p = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' };
+    expect(rainbowBands(p, bottom).supportFit).toBe(1);
+    expect(rainbowBoardReach(p, bottom)).toBeGreaterThan(rainbowFootReach(p, bottom));
+  });
+
+  it('does not shrink an arch that stands on the tier, or one on the wall', () => {
+    const held = { ...tier2, supportRadius: TIER1.r };
+    // Nothing falls in either case, so the tier below is not load-bearing and not a limit.
+    expect(rainbowBands({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'top', offsetX: 0 }, held)
+      .supportFit).toBe(1);
+    expect(rainbowBands({ ...RAINBOW_DEFAULTS, surface: 'side', footLeft: 'board', spring: 0.18 }, held)
+      .supportFit).toBe(1);
+  });
+
+  it('cannot be fixed by dropping bands, which is why it shrinks instead', () => {
+    // The obvious lever does not reach. offsetX 0.71 puts the arch centre at 0.65 and the hole adds
+    // 0.28 before any rope exists, so a 1.20 surface leaves room for about two bands — going 6 → 3
+    // still lands at 1.25, off the edge. Scaling keeps the rainbow a rainbow; dropping ropes makes
+    // it a different decoration and STILL does not fit.
+    const footOf = bands => rainbowFootReach(
+      { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', bands }, tier2);
+    expect(footOf(3)).toBeGreaterThan(TIER1.r);
   });
 
   it('reports nothing falling when both feet rest on the tier top', () => {

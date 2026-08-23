@@ -314,6 +314,7 @@ export function rainbowBands(params = {}, cake = {}) {
     if (k < 1) { innerRadius *= k; thickness *= k; gap *= k; outerRadius *= k; }
   }
 
+
   // Seat the rope's UNDERSIDE on the surface, not its centreline. A path point is the middle of the
   // tube, so a foot placed exactly on the cake top buries half a rope in the cake. Same rule the
   // stickers follow with seatHalf: an element rests ON a surface, it does not intersect it.
@@ -328,13 +329,62 @@ export function rainbowBands(params = {}, cake = {}) {
   const highestFoot = Math.max(footLeftY ?? boardY, footRightY ?? boardY);
   const archY = Math.max(highestFoot, boardY + cakeHeight * (p.spring ?? 1));
 
+  // How far back the arch must stand to keep out of the cake. Wanted BEFORE the support fit below,
+  // because a step-back moves the feet away from the axis too — fitting against the authored
+  // standoff and then stepping back lands the foot outside the surface it was just fitted to.
+  const stepBack = (t, th) => (onWall ? 0 : Math.max(standoff, requiredStandoff(t, { cakeRadius: R, topY, thickness: th })));
+  const pathsFor = (inner, th, g, so) => {
+    const rs = [];
+    for (let i = 0; i < p.bands; i++) rs.push(bandRadius(i, { innerRadius: inner, thickness: th, gap: g }));
+    return { rs, pts: rs.flatMap(radius =>
+      bandPath({ radius, archY, footLeftY, footRightY, standoff: so, centerX, arcSegments: p.arcSegments })) };
+  };
+
+  let { pts: trial } = pathsFor(innerRadius, thickness, gap, standoff);
+  let clearStandoff = stepBack(trial, thickness);
+
+  // A FALLING foot has to land on something too.
+  //
+  // Off the bottom tier it lands on the board, and the board GROWS to meet it (rainbowBoardReach) —
+  // so nothing shrinks and nothing needs to. One tier up, the surface underneath is the tier below:
+  // a fixed disc that cannot be widened. There the standing-on-top rule applies again, just measured
+  // against what is actually under the foot rather than what the arch stands on.
+  //
+  // Without it the outer bands hang in the air, and that does not read as broken in a picture — the
+  // arch looks whole and only a second look finds the ends stopping over nothing. At the authored
+  // size on a 0.92 tier the six feet land at 0.98 … 1.51 across a tier ending at 1.20: half the
+  // rainbow unsupported, by default.
+  const support = cake.supportRadius;
+  const falling = !onWall && !standingOnTop && (rawLeft !== topY || rawRight !== topY);
+  let supportFit = 1;
+  if (falling && Number.isFinite(support) && support > 0) {
+    // Solved by iteration, because the two rules feed each other. Shrinking the arch does NOT reduce
+    // the step-back the way you would expect — the position is fixed, so a smaller arch sits closer
+    // in and needs MORE room to clear the tier, which eats the width it was just given. One pass
+    // fitted a 0.64x arch and then stepped it back from 0.27 to 0.49, putting the foot at 1.30 on a
+    // surface ending at 1.20: fitted, and still hanging off.
+    //
+    // Each round shrinks and re-measures. It settles because the step-back is bounded by the tier
+    // and the scale only falls; a dozen rounds is far more than it takes, and stopping early with
+    // the foot still out is caught by the tests rather than shipped.
+    for (let i = 0; i < 12; i++) {
+      // Less half a rope, so the whole tube lands rather than its centreline: fitting the centreline
+      // to the rim leaves the outer half curling over the edge, and then the measurement and the fit
+      // disagree by exactly thickness/2 — which reads as the rule not working.
+      const k = fitOnTopScale({
+        centerX: placedX, standoff: clearStandoff, outerRadius, cakeRadius: support - thickness / 2 });
+      // Tight, because each round's leftover is a foot still over the edge. Stopping at 0.999 left
+      // it 0.0003 out — invisible, and exactly the kind of "nearly" a test should not accept.
+      if (k >= 0.99999) break;
+      supportFit *= k;
+      innerRadius *= k; thickness *= k; gap *= k; outerRadius *= k;
+      ({ pts: trial } = pathsFor(innerRadius, thickness, gap, standoff));
+      clearStandoff = stepBack(trial, thickness);
+    }
+  }
+
   const radii = [];
   for (let i = 0; i < p.bands; i++) radii.push(bandRadius(i, { innerRadius, thickness, gap }));
-  const trial = radii.flatMap(radius =>
-    bandPath({ radius, archY, footLeftY, footRightY, standoff, centerX, arcSegments: p.arcSegments }));
-  const clearStandoff = onWall
-    ? 0
-    : Math.max(standoff, requiredStandoff(trial, { cakeRadius: R, topY, thickness }));
 
   const bands = [];
   for (let i = 0; i < p.bands; i++) {
@@ -355,7 +405,7 @@ export function rainbowBands(params = {}, cake = {}) {
       thickness,
     });
   }
-  return { bands, thickness, gap, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, cakeRadius: R };
+  return { bands, thickness, gap, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, cakeRadius: R, supportFit };
 }
 
 /**
@@ -383,12 +433,19 @@ export function rainbowBands(params = {}, cake = {}) {
  */
 export function rainbowFootReach(params = {}, cake = {}) {
   const { bands, thickness } = rainbowBands(params, cake);
-  let lowest = null;
-  for (const b of bands) {
-    for (const pt of b.path) if (!lowest || pt.y < lowest.y) lowest = pt;
+  const pts = bands.flatMap(b => b.path);
+  if (!pts.length) return 0;
+
+  // EVERY band's foot, not the lowest single point. All six feet seat at the same height, so "the
+  // lowest point" is a tie the innermost band wins by being first in the list — and the innermost
+  // foot is the one nearest the middle. That reported 1.03 on a rainbow whose outer foot was at
+  // 1.51, i.e. it said "lands on the tier" about an arch with half of it hanging off.
+  const lowY = Math.min(...pts.map(v => v.y));
+  let far = 0;
+  for (const v of pts) {
+    if (v.y < lowY + thickness * 0.5) far = Math.max(far, Math.hypot(v.x, v.z));
   }
-  if (!lowest) return 0;
-  return Math.hypot(lowest.x, lowest.z) + thickness / 2;
+  return far + thickness / 2;
 }
 
 export function rainbowBoardReach(params = {}, cake = {}, margin = 0.12) {
