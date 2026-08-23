@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Panel, PanelBlock } from '../../shared/Panel.jsx';
+import { DESIGNER_GROUND } from '../constants.js';
 
 /* ── The shot, chosen before it is taken ─────────────────────────────────────────────────────────
  *
@@ -12,16 +13,44 @@ import { Panel, PanelBlock } from '../../shared/Panel.jsx';
  * anything that does not belongs in the code, not in front of the person filming.
  */
 
+/* ── The grounds ─────────────────────────────────────────────────────────────────────────────────
+ * A CURATED LIST, not a colour picker — the same call the storefront themes made for exactly this
+ * problem (templates.js `grounds`). A free picker means somebody records a cake on neon pink at the
+ * moment they are trying to post something, and the bakers who would not need the freedom anyway.
+ *
+ * The baker's own primary is offered FIRST but is not the default, because a dark green brand behind
+ * a dark green cake is mush and no rule we could write would predict that. They look and choose.
+ */
+const GROUNDS = [
+  // Literally the designer's own ground, imported rather than retyped: picking Studio — or opening
+  // the panel, which selects it — must leave the scene exactly as the baker had it.
+  { key: 'studio', label: 'Studio', value: DESIGNER_GROUND },
+  { key: 'cream',  label: 'Cream',  value: '#FBF3E7' },
+  { key: 'blush',  label: 'Blush',  value: '#FBEFEF' },
+  { key: 'slate',  label: 'Slate',  value: '#2E3A36' },
+  { key: 'ink',    label: 'Ink',    value: '#14181A' },
+];
+
 const LENGTHS = [2.5, 3.5, 4.5, 6];
 const SWEEPS  = [90, 120, 150, 180];
 
-export default function ReelOptions({ open, onClose, onRecord, busy }) {
+export default function ReelOptions({ open, onClose, onRecord, busy, onGround, brandPrimary, isMobile = false }) {
   const [pingPong, setPingPong] = useState(true);
   // +1 turns one way, -1 the other. The camera code takes a signed arc, so this is a multiplier
   // rather than a branch.
   const [dir, setDir]           = useState(1);
   const [seconds, setSeconds]   = useState(4.5);
   const [arcDeg, setArcDeg]     = useState(120);
+  const [ground, setGround]     = useState(GROUNDS[0].value);
+
+  // Brand colour first, if they have one and it is not already in the list.
+  const grounds = brandPrimary && !GROUNDS.some(g => g.value.toLowerCase() === brandPrimary.toLowerCase())
+    ? [{ key: 'brand', label: 'Your colour', value: brandPrimary }, ...GROUNDS]
+    : GROUNDS;
+
+  // Push the choice into the scene, including on open — the preview is only truthful if the ground
+  // on screen is the one that will record.
+  useEffect(() => { if (open) onGround?.(ground); }, [open, ground, onGround]);
 
   if (!open) return null;
 
@@ -35,7 +64,9 @@ export default function ReelOptions({ open, onClose, onRecord, busy }) {
                   textTransform: 'uppercase', marginBottom: 6 };
 
   return (
-    <Panel onClose={onClose} title="Record a reel" width={400}
+    // isMobile makes Panel a bottom sheet, which is what leaves the top of the screen free for the
+    // 9:16 preview. On desktop it stays centred and the preview moves to the left instead.
+    <Panel onClose={onClose} title="Record a reel" width={400} isMobile={isMobile}
            subtitle="Films the cake and downloads it at 1080×1920.">
       <PanelBlock>
         <div>
@@ -63,6 +94,25 @@ export default function ReelOptions({ open, onClose, onRecord, busy }) {
           <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
             Film the second cake the other way. Two cakes turning identically read as one idea
             repeated, however different the cakes are.
+          </div>
+        </div>
+      </PanelBlock>
+
+      <PanelBlock>
+        <div>
+          <div style={label}>Background</div>
+          <div style={row}>
+            {grounds.map(g => (
+              <button key={g.key} onClick={() => setGround(g.value)} title={g.label}
+                      aria-label={g.label} aria-pressed={ground === g.value}
+                      style={{ width: 34, height: 34, borderRadius: 8, cursor: 'pointer', padding: 0,
+                               background: g.value,
+                               border: ground === g.value ? '3px solid #2C4433' : '1.5px solid #D8E0DA' }} />
+            ))}
+          </div>
+          <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
+            Changes the cake behind you as you pick, so what you see is what records. A dark cake
+            wants a light ground and the other way round.
           </div>
         </div>
       </PanelBlock>

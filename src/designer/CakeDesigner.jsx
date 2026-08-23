@@ -19,6 +19,8 @@ import { CHROME_STOPS } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
 import { Panel } from '../shared/Panel.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
+import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
+import { DESIGNER_GROUND } from './constants.js';
 import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
@@ -1896,6 +1898,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked, matching how xray_reports is
   // handled a few files over — one convention for "your plan does not include this" beats two.
   const [printStudioEnabled,  setPrintStudioEnabled]  = useState(false);
+  // Reels. Two entitlements, because "may record" and "whose name is on it" are different questions
+  // — see spattoo-docs/plans/reel-for-bakers.md §2e.
+  const [reelCapture,  setReelCapture]  = useState(false);   // may record at all
+  const [reelBranding, setReelBranding] = useState(false);   // their own name, vs "made with Spattoo"
   // ── Has the baker ever curated their flavour list? ────────────────────────────────────────────
   // false = never opened the screen, which is not "no preference": a global flavour with no
   // settings row is OFFERED (spattoo-api lib/flavourList.js), so this baker's storefront would
@@ -2005,6 +2011,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const reelRef          = useRef(null);
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
+  // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
+  // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
+  const [reelFraming, setReelFraming]   = useState(false);
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -2029,18 +2038,62 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // answers "may this person do X" and this asks "is this bakery one of ours". The same bakeries
   // publish catalogue templates and film them. See spattoo-docs/features/reel-capture.md.
   const isCatalogAuthor = !!bakerData?.is_catalog_author;
+  // Catalogue authors get the recorder regardless of plan — they need it to announce catalogue
+  // templates, which is a different question from what a subscription buys.
+  const canRecordReel = reelCapture || isCatalogAuthor;
+
+  /* The one line burned into every frame. DERIVED, never stored: the preview overlay and the
+   * recorder both read this, so they cannot disagree about what the baker is about to publish.
+   *
+   * A catalogue author is not automatically branded — `is_catalog_author` says WHO writes the public
+   * templates, `reel_branding` says whose name is on a video. Spattoo's own catalogue account happens
+   * to be on a plan that carries both, which is why they look the same from in here. */
+  const reelCaptionText = captionText({ bakeryName: bakerData?.name, ownBranding: reelBranding });
+  // Which ground the preview is showing, so the overlay can pick its contrast the same way the
+  // recorder does. Mirrors what was handed to setGround; the scene holds a THREE.Color, not a hex.
+  const [reelGround, setReelGround] = useState(DESIGNER_GROUND);
+  // Measured rather than assumed: the caption's size is a fraction of the FRAME's height, and the
+  // frame is sized by CSS (min() against the viewport). Nothing in JS knows how tall it came out.
+  const reelFrameRef = useRef(null);
+  const [reelFrameH, setReelFrameH] = useState(0);
+  useLayoutEffect(() => {
+    const el = reelFrameRef.current;
+    if (!reelFraming || !el) { setReelFrameH(0); return; }
+    const measure = () => setReelFrameH(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [reelFraming]);
+
+  function openReelPanel() {
+    // Drop any selection first. Handles, grips and the piping toolbar are editing furniture that
+    // renders IN the scene, so whatever was selected when the baker hit Record would have been
+    // filmed along with the cake.
+    handleDeselect();
+    setReelOptsOpen(true);
+    setReelFraming(true);
+    setReelGround(DESIGNER_GROUND);            // the panel opens on Studio, which IS the designer's
+
+    // Portrait camera + the chosen ground, applied now so the panel's preview is the real frame.
+    reelRef.current?.beginPreview?.();
+  }
 
   async function runReel(opts = {}) {
     if (!reelRef.current) { setSaveMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
     const secs = opts.seconds ?? 4.5;
     // The panel closes for the take — it sits over the canvas, and the canvas is what is being
-    // filmed. It is NOT unmounted, so the settings are still there for the next cake.
+    // filmed. It is NOT unmounted, so the settings are still there for the next cake, and the 9:16
+    // framing stays up so the shot on screen is still the shot being recorded.
     setReelOptsOpen(false);
     setReelBusy(true);
     setSaveMsg({ ok: true, text: `Recording… hold still for ${secs} seconds.` });
     try {
       const safe = (design?.name || 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const { instagramReady, mimeType } = await reelRef.current({ ...opts, filename: `${safe || 'cake'}-reel` });
+      const { instagramReady, mimeType } = await reelRef.current.record({
+        ...opts, filename: `${safe || 'cake'}-reel`,
+        caption: reelCaptionText, ground: reelGround,
+      });
       // ⚠️ Say when it is NOT an MP4. Instagram rejects WebM, and a baker who is only told
       // "downloaded" finds that out at the moment they try to post — by which time the cake may not
       // even be on screen any more.
@@ -2119,9 +2172,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (!canManageStore || !apiClient?.fetchEntitlements) return;
     let alive = true;
     apiClient.fetchEntitlements()
-      .then(res => { if (alive) setPrintStudioEnabled(res?.ent?.edible_print_studio === true); })
+      .then(res => {
+        if (!alive) return;
+        setPrintStudioEnabled(res?.ent?.edible_print_studio === true);
+        setReelCapture(res?.ent?.reel_capture === true);
+        setReelBranding(res?.ent?.reel_branding === true);
+      })
       .catch(() => {});   // a failed lookup leaves the tool hidden, which is the safe way round
     return () => { alive = false; };
+    // ⚠️ This fetch is gated on canManageStore, so the reel flags inherit that condition — a designer
+    // without store:manage would never see the option. Left as-is rather than widened, because
+    // STAFF_UI_ENABLED is false and every user therefore has the capability today. If staff logins
+    // are ever switched on, this is the line that decides whether they can record.
   }, [canManageStore, apiClient]);
 
   // Live co-design (Phase 1) — opt-in; fully inert unless enableLive/liveSessionId is set, so the
@@ -2225,22 +2287,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
         // permission can answer. See spattoo-docs/features/reel-capture.md.
-        // One entry: the choices that make two takes differ from each other live in the panel it
-        // opens, because they are chosen per cake rather than set once.
-        ...(isCatalogAuthor ? [
-          { id: 'reel', label: 'Record a reel', open: () => setReelOptsOpen(true) },
-        ] : []),
+
         ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true) }] : []),
         ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
       ],
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // ⚠️ isCatalogAuthor MUST be here. bakerData arrives from fetchBakerProfile AFTER mount, so the
-  // memo first runs with the flag still false — without the dependency it never recomputes and
-  // 'Record a reel' never appears, however correct the gate is. The exhaustive-deps rule is
-  // disabled on this memo, so nothing warns; the only protection is remembering, which is worth
-  // knowing before adding the next asynchronously-loaded condition to this list.
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, isCatalogAuthor]);
+  // ⚠️ EVERY asynchronously-loaded condition used above must be in this list. exhaustive-deps is
+  // disabled here, so nothing warns — and the failure is silent and total: the value arrives after
+  // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
+  // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
+  // is the live example: it is false until fetchEntitlements resolves.
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -7415,8 +7473,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             bottom: isMobile && showRightPanel ? editSheetH : 0,
             transition: 'right 0.18s ease, bottom 0.18s ease',
           }}>
+          {/* Darkens everything outside the 9:16 crop so the frame you are about to record is
+              obvious without a word of explanation. Behind the canvas box, never over it. */}
+          {reelFraming && <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,26,22,0.55)',
+                                        pointerEvents: 'none' }} />}
+          {/* ⚠️ ALWAYS RENDERED, style toggled — never wrapped conditionally. Giving <CakeCanvas> a
+              new parent remounts the R3F root, which throws the scene away and re-downloads every
+              topper GLB. The whole preview is a style change on this one box.
+
+              R3F sizes the canvas from its container, so constraining this to 9:16 makes the drawing
+              buffer and camera.aspect follow by themselves — no gl.setSize, and what is on screen IS
+              what records. The wrapper above already relies on the same behaviour for the edit
+              sheet. */}
+          <div style={reelFraming
+            // ⚠️ The frame has to sit where the PANEL IS NOT. A truthful preview you cannot see is
+            // worthless, and the first cut of this put a centred modal straight on top of it.
+            //   phone   — the panel is a bottom sheet, so the frame takes the upper half
+            //   desktop — the panel is centred, so the frame moves into the free space at the left
+            ? (isMobile
+                ? { position: 'absolute', top: 8, bottom: 'auto', left: '50%', right: 'auto',
+                    transform: 'translateX(-50%)', height: '46%', aspectRatio: '9 / 16',
+                    boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' }
+                // Parked immediately left of the panel, which is ~424px wide and centred in the
+                // VIEWPORT. Hence vw and not %: this box is positioned inside the canvas container,
+                // whose own 50% sits right of the viewport's by half the tool rail — anchoring on
+                // `calc(50% + …)` put the frame 40px underneath the panel on a 1200px window.
+                //
+                // Width is the smaller of "what is left beside the panel" and "what this much height
+                // allows", so the frame shrinks on a narrow window and on a short one, and 9:16 is
+                // never the thing that gives. A clamped WIDTH with aspect-ratio would silently
+                // letterbox instead — an untruthful preview, which is the one bug this cannot have.
+                : { position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+                    right: 'calc(50vw + 212px)', left: 'auto', bottom: 'auto',
+                    width: 'max(160px, min(calc(50vw - 320px), 46vh))',
+                    height: 'auto', aspectRatio: '9 / 16',
+                    boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' })
+            : { position: 'absolute', inset: 0 }}
+            ref={reelFrameRef}>
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
+              // Non-null only while the reel panel is open. Paints the scene's sky and floor one
+              // colour and puts the editing furniture away — see CakeScene's filmGround.
+              filmGround={reelFraming ? reelGround : null}
               config={canvasConfig}
               autoRotate={creamAutoRotate}
               creamPaint={creamPaint}
@@ -7476,10 +7574,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               isStickerMovable={isStickerMovable}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
-              reelRef={isCatalogAuthor ? reelRef : null}
+              reelRef={canRecordReel ? reelRef : null}
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
             />
           </Suspense>
+          {/* ── The name, as it will be burned in ────────────────────────────────────────────────
+              Inside the 9:16 box and nowhere else, so it moves and scales with the frame.
+
+              A DOM overlay rather than something drawn into the scene, because that is the cheap
+              honest option: the recorder writes this same line with canvas 2D from the SAME
+              fractions in reelCaption.js, so the two agree by construction rather than by anyone
+              remembering to keep them in step. What differs is only the rasteriser.
+
+              ⚠️ pointerEvents none. This sits over the canvas, and the baker is still dragging to
+              frame the cake underneath it. */}
+          {reelFraming && reelFrameH > 0 && (
+            <div style={{
+              position: 'absolute', left: 0, right: 0,
+              // CAPTION.bottomFrac is to the text's BASELINE, so the box is bottom-aligned there and
+              // the line sits on it — matching where fillText puts it with textBaseline 'alphabetic'.
+              bottom: `${CAPTION.bottomFrac * 100}%`,
+              textAlign: 'center', pointerEvents: 'none',
+              fontFamily: CAPTION.family,
+              fontWeight: CAPTION.weight,
+              fontSize: reelFrameH * CAPTION.sizeFrac,
+              letterSpacing: reelFrameH * CAPTION.sizeFrac * CAPTION.trackingFrac,
+              lineHeight: 1,
+              color: captionColours(reelGround).fill,
+              textShadow: `0 0 ${reelFrameH * CAPTION.sizeFrac * 0.5}px ${captionColours(reelGround).halo}`,
+            }}>{reelCaptionText}</div>
+          )}
+          </div>
           </div>
 
           {/* ONE loader for the whole canvas while any decoration loads (e.g. opening a
@@ -8304,6 +8429,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {hasCap('customer:manage') && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); handleShareDraft(); }}>
                   Share draft to customer
                 </button>}
+                {/* Beside the other things you do to a FINISHED cake, not in a tools or settings
+                    menu — those hold things you configure or things that help you make a cake, and
+                    this is neither. See spattoo-docs/plans/reel-for-bakers.md §1b. */}
+                {canRecordReel && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); openReelPanel(); }}>
+                  Record a reel
+                </button>}
               </ActionSheet>
             </div>
           </div>
@@ -8325,6 +8456,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
               onClick={handleShareDraft}>
               Share the draft
+            </button>}
+            {/* The quietest button in the row, deliberately: every other action here leads to money
+                — an order, a customer, a saved template — and this one leads to a file. It earns its
+                place next to them because it is the same KIND of act (something you do with a
+                finished cake), not because it is as important. */}
+            {canRecordReel && <button
+              style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.6, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+              onClick={openReelPanel}>
+              Record a reel
             </button>}
           </div>
         )
@@ -8623,9 +8763,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* Reel options — catalogue authors only. Not mounted at all otherwise, so the panel is not
           a thing every other baker's designer carries around unrendered. */}
-      {isCatalogAuthor && (
-        <ReelOptions open={reelOptsOpen} busy={reelBusy}
-                     onClose={() => setReelOptsOpen(false)} onRecord={runReel} />
+      {canRecordReel && (
+        <ReelOptions
+          open={reelOptsOpen} busy={reelBusy} isMobile={isMobile}
+          // The ground is applied LIVE while the panel is open — it flows straight back down as
+          // `filmGround`, which paints the scene's sky AND its floor, so the swatch you pick is the
+          // colour that records rather than a separate thing we hope agrees.
+          onGround={g => setReelGround(g || DESIGNER_GROUND)}
+          brandPrimary={bakerData?.primary_color || null}
+          onClose={() => { setReelOptsOpen(false); setReelFraming(false); reelRef.current?.endPreview?.(); }}
+          onRecord={runReel} />
       )}
 
       {/* ── Templates panel (hide/show Spattoo's global templates) ── */}

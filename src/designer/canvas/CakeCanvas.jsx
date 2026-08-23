@@ -27,6 +27,7 @@ import {
   PICKER_ORIGIN_X, PICKER_STEP_X, PICKER_ORIGIN_Z, PICKER_STEP_Z,
   CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
   FLAT_STICKER_Y_OFFSET,
+  DESIGNER_GROUND,
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
@@ -2169,6 +2170,16 @@ function CreamPaintTarget({ tier, onPaint }) {
 }
 
 function CakeScene({
+  /* Non-null while the reel panel is open: the hex the baker picked as the reel's ground.
+   *
+   * It paints the SKY AND THE FLOOR THE SAME COLOUR, which is the whole point. Left as two colours
+   * the 30×30 floor plane ends inside a portrait frame and draws a hard diagonal horizon across the
+   * top of every reel — and worse, picking a dark ground gave a dark sky over a near-white floor,
+   * so the two dark swatches were unusable. One colour edge to edge is a cyclorama: no seam, and the
+   * cake's own shadow is the only thing telling you there is a floor at all.
+   *
+   * It also doubles as "we are filming", which is why the front marker keys off it. */
+  filmGround = null,
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
@@ -2268,12 +2279,20 @@ function CakeScene({
   return (
     <>
       <SceneLights shadows />
-      <color attach="background" args={['#f4f4f5']} />
+      <color attach="background" args={[filmGround || DESIGNER_GROUND]} />
       <SceneEnv />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
-        <planeGeometry args={[30, 30]} />
+        {/* ⚠️ MUCH bigger while filming, and not for the reason it looks like.
+            Matching the floor's colour to the sky's is not enough to hide the join: the floor is a
+            lit standard material and the background is a flat clear colour, so the two render
+            differently however equal their hex. The 30×30 plane's far edge landed inside a portrait
+            frame and drew a hard diagonal across the top of every reel.
+            Pushing the edge far past the frame turns the floor into a cyclorama — it fills the shot
+            edge to edge and the only thing left telling you there is a floor at all is the cake's
+            own shadow, which is exactly what a photographer would want. Two triangles either way. */}
+        <planeGeometry args={filmGround ? [400, 400] : [30, 30]} />
         {/* Was #fce8d5 — warm, saturated, and almost exactly the same LIGHTNESS as an ivory cake, so
             a white cake had nothing to separate from and read as flat. The fix is a wider value gap,
             and the direction came from the TEMPLATE THUMBNAILS: they flatten onto white and the same
@@ -2283,12 +2302,16 @@ function CakeScene({
             anyway — the studio and the thumbnail looked like two different products.
             ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
             the first failure to show up, and a fix at one end can break the other. */}
-        <meshStandardMaterial color="#faf7f4" roughness={0.85} />
+        <meshStandardMaterial color={filmGround || '#faf7f4'} roughness={0.85} />
       </mesh>
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
-      {bottomShp && <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />}
+      {/* ⚠️ Not while filming. It is an editing aid — it tells the baker which way the cake faces
+          while they work — and it was being burned into finished reels, where it reads as a stray
+          watermark nobody can explain. */}
+      {bottomShp && !filmGround
+        && <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />}
 
       {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
           off-screen capture and the read-only previews render, so what a customer sees and what the
@@ -2941,6 +2964,8 @@ export default function CakeCanvas({
   // Filled with the reel recorder when the designer passes it — catalogue authors only, so for
   // every other baker this is undefined and ReelDirector never mounts.
   reelRef = null,
+  // The reel's ground while the panel is open, else null. See CakeScene.
+  filmGround = null,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
@@ -3038,6 +3063,7 @@ export default function CakeCanvas({
           hand a function out. Renders nothing; costs nothing when reelRef is not passed. */}
       {reelRef && <ReelDirector reelRef={reelRef} orbitRef={orbitRef} />}
       <CakeScene
+        filmGround={filmGround}
         config={config}
         selectedTier={selectedTier}
         onTierClick={i  => { if (!pointerRef.current.dragged) onTierClick(i); }}

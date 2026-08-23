@@ -66,7 +66,19 @@ const STUBS = {
     user: { firstName: 'Asha', lastName: 'Otto' },
   }),
   fetchBakerSettings:  async () => ({ delivery: { home_delivery: true, radius_km: 10 }, lead_time_days: 2 }),
-  fetchEntitlements:   async () => ({ ent: { premium_themes: false, edible_print_studio: true } }),
+  /* ⚠️ The reel entitlements are BOTH switchable, because they are separate questions and each has
+   * a branch nobody could otherwise look at:
+   *
+   *   ?capture=yes  — reel_capture WITHOUT is_catalog_author. This is how every ordinary paying
+   *                   baker reaches the feature; pair it with ?author=no to see the path they get.
+   *   ?branding=no  — reel_branding off, so the frames carry "made with Spattoo" instead of the
+   *                   bakery's name. Defaulting this to ON meant the free mark — the version most
+   *                   bakers will actually publish — rendered nowhere in the harness. */
+  fetchEntitlements:   async () => ({ ent: {
+    premium_themes: false, edible_print_studio: true,
+    reel_capture:  PARAMS.get('capture') === 'yes',
+    reel_branding: PARAMS.get('branding') !== 'no',
+  } }),
   fetchElementTypes:   async () => ([]),
   fetchElements:       async () => ([]),
   fetchTemplates:      async () => ([]),
