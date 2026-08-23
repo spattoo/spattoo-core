@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   emptyDraft, isFilled, emptyFacets, canSubmit, toOrderPayload,
   saveDraft, loadDraft, clearDraft, today, FACETS, withTierCount, splitName, STORAGE_VERSION,
-  OCCASIONS, RECIPIENTS, occasionsByRelevance,
+  OCCASIONS, RECIPIENTS, occasionsByRelevance, offerableOccasions, occasionAllowedFor, rankedOccasions,
 } from './cakeDraft.js';
 
 // The draft is the contract every facet writes through and the shape the baker's order is built
@@ -414,11 +414,23 @@ describe('a draft from an older version of the app', () => {
 describe('occasionsByRelevance', () => {
   const keys = ([k]) => k;
 
-  it('never loses an occasion, whoever it is for', () => {
+  // Was "never loses an occasion, whoever it is for". That rule held until it met a child: ranking
+  // a wedding lower still leaves a cake shop offering to make one. So the invariant is now "loses
+  // nothing EXCEPT what we refuse to offer", and the refusals are named one by one below — a rule
+  // that can quietly grow is a rule nobody can check.
+  it('loses nothing except the refusals', () => {
     for (const [r] of RECIPIENTS) {
       const { likely, other } = occasionsByRelevance(r);
       const seen = [...likely, ...other].map(keys).sort();
-      expect(seen).toEqual(OCCASIONS.map(keys).sort());
+      const expected = offerableOccasions(r).map(keys).sort();
+      expect(seen).toEqual(expected);
+    }
+  });
+
+  it('offers every occasion to everyone but a child', () => {
+    for (const [r] of RECIPIENTS) {
+      if (r === 'child') continue;
+      expect(offerableOccasions(r).map(keys).sort()).toEqual(OCCASIONS.map(keys).sort());
     }
   });
 
@@ -430,12 +442,36 @@ describe('occasionsByRelevance', () => {
     }
   });
 
-  // The combination that started this.
-  it('demotes a bridal shower for a child, and keeps a birthday up top', () => {
+  // The combination that started this: a child, offered a wedding. These three cannot lawfully
+  // involve a child, so they are not on the page at all — not demoted, not behind a heading. This
+  // test used to assert the opposite ("demotes a bridal shower … other contains it"), which is what
+  // made the change a decision rather than a tweak.
+  it('never offers a wedding, engagement or bridal shower for a child', () => {
     const { likely, other } = occasionsByRelevance('child');
+    const shown = [...likely, ...other].map(keys);
+    for (const banned of ['wedding', 'engagement', 'bridal_shower']) {
+      expect(shown, `${banned} is offered for a child`).not.toContain(banned);
+    }
     expect(likely.map(keys)).toContain('birthday');
-    expect(likely.map(keys)).not.toContain('bridal_shower');
-    expect(other.map(keys)).toContain('bridal_shower');
+  });
+
+  it('keeps the merely unlikely, because a missing occasion is a dead end', () => {
+    // A farewell for a child is real — "my daughter is moving abroad". Ranked down, never removed.
+    const shown = rankedOccasions('child').map(keys);
+    expect(shown).toContain('farewell');
+    expect(shown).toContain('corporate');
+  });
+
+  it('occasionAllowedFor answers for one pair, so a stale answer can be dropped', () => {
+    expect(occasionAllowedFor('child', 'wedding')).toBe(false);
+    expect(occasionAllowedFor('child', 'birthday')).toBe(true);
+    expect(occasionAllowedFor('couple', 'wedding')).toBe(true);
+    expect(occasionAllowedFor('', 'wedding')).toBe(true);        // nothing chosen refuses nothing
+  });
+
+  it('rankedOccasions is the same two groups, flattened for a button grid', () => {
+    const { likely, other } = occasionsByRelevance('couple');
+    expect(rankedOccasions('couple')).toEqual([...likely, ...other]);
   });
 
   it('puts the office do first for colleagues and nowhere near a couple', () => {
@@ -450,7 +486,7 @@ describe('occasionsByRelevance', () => {
     for (const r of ['', undefined, null, 'nonsense']) {
       const { likely, other } = occasionsByRelevance(r);
       expect(likely).toEqual([]);
-      expect(other).toBe(OCCASIONS);
+      expect(other).toEqual(OCCASIONS);   // an unknown recipient refuses nothing
     }
   });
 

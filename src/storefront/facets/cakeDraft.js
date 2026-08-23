@@ -385,19 +385,55 @@ const LIKELY_OCCASIONS = {
   colleagues: ['corporate', 'farewell', 'new_job', 'festival', 'other'],
 };
 
+// ── Occasions that must NOT be offered for a child ──────────────────────────────────────────────
+// Everything else here is RANKED, never removed: a baker taking an order by phone has to be able to
+// record what they are told, and an occasion missing from a customer's list is a dead end that loses
+// the order rather than correcting it.
+//
+// These three are different in kind. A wedding, an engagement and a bridal shower cannot lawfully
+// involve a child, so offering them is not an unlikely suggestion — it is a cake shop appearing to
+// take the order. Ranking them lower still leaves them on the page.
+//
+// The rule is deliberately "legally impossible for a child", not "feels wrong". A crisp test is one
+// somebody can apply to the next occasion added; a list of things that felt off is one that grows by
+// opinion and shrinks by whoever is tidying up.
+const NEVER_FOR = {
+  child: ['wedding', 'engagement', 'bridal_shower'],
+};
+
+/** The occasions offerable at all for `recipient`. Everything, minus anything NEVER_FOR removes. */
+export function offerableOccasions(recipient) {
+  const banned = new Set(NEVER_FOR[recipient] ?? []);
+  return banned.size ? OCCASIONS.filter(([k]) => !banned.has(k)) : OCCASIONS;
+}
+
+/** Is this a combination we would refuse to offer? Used to drop a stale answer when the recipient
+ *  changes under it — picking `couple` → Wedding and then switching to `child` must not keep it. */
+export function occasionAllowedFor(recipient, occasion) {
+  return !(NEVER_FOR[recipient] ?? []).includes(occasion);
+}
+
 /**
  * OCCASIONS split into the ones that suit `recipient` and the rest, both in the canonical order.
  * Returns `{ likely, other }`; `likely` is empty when no recipient is chosen, so a caller with
  * nothing to go on renders `other` as the plain full list it has always been.
  */
 export function occasionsByRelevance(recipient) {
+  const offerable = offerableOccasions(recipient);
   const keys = LIKELY_OCCASIONS[recipient];
-  if (!keys) return { likely: [], other: OCCASIONS };
+  if (!keys) return { likely: [], other: offerable };
   const set = new Set(keys);
   return {
-    likely: OCCASIONS.filter(([k]) => set.has(k)),
-    other:  OCCASIONS.filter(([k]) => !set.has(k)),
+    likely: offerable.filter(([k]) => set.has(k)),
+    other:  offerable.filter(([k]) => !set.has(k)),
   };
+}
+
+/** The same order as a FLAT list — likely first, the rest after. For the storefront, whose option
+ *  grid renders one list of buttons and has no group to put a heading on. */
+export function rankedOccasions(recipient) {
+  const { likely, other } = occasionsByRelevance(recipient);
+  return [...likely, ...other];
 }
 
 export const OCCASION_LABEL = {
