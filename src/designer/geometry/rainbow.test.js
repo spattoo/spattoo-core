@@ -151,9 +151,20 @@ describe('where it stands', () => {
   });
 
   it('sets back in proportion, so a wider cake is cleared by the same margin', () => {
-    const a = rainbowBands({}, { ...CAKE, radius: 1 }).standoff;
-    const b = rainbowBands({}, { ...CAKE, radius: 2 }).standoff;
+    // The WHOLE cake doubles, not just its radius. The reported standoff is now the CLEARED one —
+    // pushed back if anything would otherwise be inside the cake — and that depends on the cake's
+    // height as much as its width, so scaling one alone is not a scaled cake.
+    const a = rainbowBands({}, { radius: 1, topY: 1.0, boardY: 0.1 }).standoff;
+    const b = rainbowBands({}, { radius: 2, topY: 2.0, boardY: 0.2 }).standoff;
     expect(b).toBeCloseTo(a * 2, 6);
+  });
+
+  it('reports the standoff it ACTUALLY used, not the one it was asked for', () => {
+    // A rainbow told to stand closer than it can without cutting through the cake stands where it
+    // must. What somebody typed cannot make a decoration pass through the icing.
+    const asked = 0.1;
+    const { standoff } = rainbowBands({ standoff: asked, footLeft: 'board', footRight: 'board' }, CAKE);
+    expect(standoff).toBeGreaterThan(asked * CAKE.radius);
   });
 
   it('can still be centred, for an arch that sits ON the cake', () => {
@@ -297,5 +308,52 @@ describe('rainbowBoardReach', () => {
     const near = rainbowBoardReach({ standoff: 0 }, CAKE, 0);
     const far  = rainbowBoardReach({ standoff: 3 }, CAKE, 0);
     expect(far).toBeGreaterThan(near);
+  });
+});
+
+// ── Nothing may be INSIDE the cake ──────────────────────────────────────────────────────────────
+// The one that kept getting away. Two earlier versions passed every test they had and were visibly
+// pushed into the icing, because the tests only ever asked where the FEET were. A rope is a solid
+// with a width: its centreline can be clear of the cake while half its body is inside it.
+//
+// The cake is a cylinder — radius `radius`, from boardY up to topY. A point is inside it when it is
+// below the top AND within the footprint. Swept over the whole band, with the rope's own width, at
+// every inner radius somebody might drag to.
+describe('it never goes into the cake', () => {
+  const insideCake = (pt, thickness) =>
+    (pt.y - thickness / 2) < CAKE.topY - 1e-6 &&
+    Math.hypot(pt.x, pt.z) < CAKE.radius - 1e-6 &&
+    (pt.y + thickness / 2) > CAKE.boardY + 1e-6;
+
+  for (const innerRadius of [0.15, 0.3, 0.55, 0.9, 1.2]) {
+    it(`stays out of it at inner radius ${innerRadius}`, () => {
+      for (const feet of [['top', 'board'], ['board', 'board'], ['top', 'top'], ['board', 'top']]) {
+        const params = { innerRadius, footLeft: feet[0], footRight: feet[1] };
+        const { bands, thickness } = rainbowBands(params, CAKE);
+        for (const b of bands) {
+          for (const pt of b.path) {
+            expect(insideCake(pt, thickness),
+              `${feet.join('/')} band ${b.index} is inside the cake at (${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)})`)
+              .toBe(false);
+          }
+        }
+      }
+    });
+  }
+
+  it('stays out of it however low the arch is asked to spring', () => {
+    for (const spring of [0, 0.3, 0.6, 1]) {
+      const { bands, thickness } = rainbowBands({ spring, innerRadius: 0.25 }, CAKE);
+      for (const b of bands) for (const pt of b.path) {
+        expect(insideCake(pt, thickness), `spring ${spring} put band ${b.index} in the cake`).toBe(false);
+      }
+    }
+  });
+
+  it('a rainbow standing well BEHIND the cake may still spring low — it is not over it', () => {
+    // The backdrop look. Clearing the cake is about the footprint, not about height, so this must
+    // not be "lift everything above the cake" — that would flatten reference 1.
+    const { archY } = rainbowBands({ spring: 0.5, standoff: 2, footLeft: 'board', footRight: 'board' }, CAKE);
+    expect(archY).toBeLessThan(CAKE.topY);
   });
 });

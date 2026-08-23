@@ -121,6 +121,29 @@ export function bandRadius(i, { innerRadius, thickness, gap }) {
 }
 
 /**
+ * How far back the rainbow must stand so no part of it is INSIDE the cake.
+ *
+ * The cake is a cylinder. Anything below its top has to be outside its footprint — and the footprint
+ * is a distance in the PLANE, hypot(x, z), not a distance in x. That was the hole: a descending leg
+ * can be well clear in x and still be inside the cake, because the arch itself stands only a little
+ * way back. At a standoff of 1.08 on a 1.2 cake, a leg at x = 0.42 is 1.16 out — through the icing.
+ *
+ * So for every point that dips below the top, the arch is pushed back until that point clears, with
+ * the rope's own width counted. The authored standoff is a MINIMUM, never a cap: what somebody typed
+ * cannot make a decoration pass through the cake.
+ */
+export function requiredStandoff(points, { cakeRadius, topY, thickness }) {
+  const clear = cakeRadius + thickness / 2;
+  let need = 0;
+  for (const pt of points) {
+    if (pt.y - thickness / 2 >= topY) continue;          // above the cake — its footprint is irrelevant
+    const spare = clear * clear - pt.x * pt.x;
+    if (spare > 0) need = Math.max(need, Math.sqrt(spare));
+  }
+  return need;
+}
+
+/**
  * Every band of a rainbow, sized against the cake it stands on.
  *
  * `cake` is the geometry it must fit: { radius, topY, boardY }. Ratios become world units here and
@@ -162,21 +185,30 @@ export function rainbowBands(params = {}, cake = {}) {
     // the resting feet would go back to hanging beside the cake.
     : archCenterX({ footLeftY: rawLeft, footRightY: rawRight, outerRadius, cakeRadius: R, topFootAt: p.topFootAt, topY });
 
+  // Built twice: once to see where the rope wants to go, then again once we know how far back it has
+  // to stand to keep out of the cake. Cheaper than reasoning about which point will be the worst —
+  // and the worst point moves as the bands, the spring and the lean all change.
+  const radii = [];
+  for (let i = 0; i < p.bands; i++) radii.push(bandRadius(i, { innerRadius, thickness, gap }));
+  const trial = radii.flatMap(radius =>
+    bandPath({ radius, archY, footLeftY, footRightY, standoff, centerX, arcSegments: p.arcSegments }));
+  const clearStandoff = Math.max(standoff, requiredStandoff(trial, { cakeRadius: R, topY, thickness }));
+
   const bands = [];
   for (let i = 0; i < p.bands; i++) {
-    const radius = bandRadius(i, { innerRadius, thickness, gap });
+    const radius = radii[i];
     bands.push({
       index: i,
       radius,
-      standoff,
+      standoff: clearStandoff,
       // Wraps the palette rather than running out: an author who asks for 8 bands from 6 colours
       // gets a repeat, not two undefined ropes.
       color: p.colors[i % p.colors.length],
-      path: bandPath({ radius, archY, footLeftY, footRightY, standoff, centerX, arcSegments: p.arcSegments }),
+      path: bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX, arcSegments: p.arcSegments }),
       thickness,
     });
   }
-  return { bands, thickness, gap, archY, footLeftY, footRightY, standoff, centerX, cakeRadius: R };
+  return { bands, thickness, gap, archY, footLeftY, footRightY, standoff: clearStandoff, centerX, cakeRadius: R };
 }
 
 /**
