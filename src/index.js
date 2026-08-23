@@ -87,6 +87,11 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
 // renders it under — a colour picked beneath a brighter key is simply the wrong colour, and the
 // designer's own rig carries a note about exactly that overexposure washing the cake top toward white.
 export { SceneLights, SceneEnv } from './designer/canvas/CakeCanvas.jsx';
+// A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
+// is a different distance on every cake — the same argument the chocolate drip made for its radius.
+// Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".
+export { rainbowBands, bandGeometry, bandPath, bandRadius, legFootY, rainbowGuide, RAINBOW_DEFAULTS } from './designer/geometry/rainbow.js';
+export { default as RainbowArch } from './designer/canvas/RainbowArch.jsx';
 // Fondant letter blocks. Layout is separate from the renderer for the same reason grass's is: one
 // word in, N placements out, and nothing downstream owns a single block.
 export { nameBlockLayout, nameBlockRun, nameBlockYaw, boardRunRadius, NAME_BLOCK_DEFAULTS } from './designer/geometry/nameBlocks.js';
