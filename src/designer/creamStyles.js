@@ -24,7 +24,10 @@ export const CREAM_STYLES = {
     params: [
       { key: 'relief',  label: 'Depth',      min: 0,    max: 0.12, step: 0.005, default: 0.06, user: true },
       { key: 'lobes',   label: 'Waviness',   min: 1,    max: 6,    step: 1,     default: 2,    user: true },
-      { key: 'ridges',  label: 'Bands',      min: 3,    max: 16,   step: 1,     default: 6,    user: false },
+      // 'Ridges', matching the key and what it actually controls. It was labelled 'Bands', which
+      // collides with the STRIPES colour feature landing on the same panel — one meaning ridge count
+      // on the shape axis, the other colour on the colour axis. user:false, so nothing a baker sees.
+      { key: 'ridges',  label: 'Ridges',     min: 3,    max: 16,   step: 1,     default: 6,    user: false },
       { key: 'waveAmp', label: 'Wave swing', min: 0,    max: 1,    step: 0.05,  default: 0.35, user: false },
       { key: 'ribbonW', label: 'Line width', min: 0.02, max: 0.2,  step: 0.01,  default: 0.05, user: false },
       { key: 'falloff', label: 'Top fade',   min: 0,    max: 1,    step: 0.05,  default: 0.4,  user: false },

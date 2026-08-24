@@ -1,5 +1,13 @@
 // ── Cake geometry constants ───────────────────────────────────────────────────
 // Radii for each tier slot (index 0 = bottom tier, ascending toward top).
+/* The designer's own ground — the clear colour behind the cake while editing.
+ *
+ * Exported because the reel panel offers it back as the "Studio" swatch, and the reel's whole promise
+ * is that what you see is what records. When these two were separate literals they disagreed
+ * (#f4f4f5 here, #E8EDE9 there), so merely OPENING the reel panel changed the ground the baker had
+ * not asked to change — a silent edit in the one feature that must not have any. */
+export const DESIGNER_GROUND = '#f4f4f5';
+
 export const TIER_RADII = [1.2, 0.9, 0.65, 0.45];
 
 // Y-coordinate of the cake board surface and the default tier height.

@@ -1,0 +1,596 @@
+import * as THREE from 'three';
+
+// ── A fondant rainbow ─────────────────────────────────────────────────────────────────────────
+// Concentric rounded ropes: an arch, optionally on legs that run down to the board. The band count,
+// the colours and how far the legs reach are all authored.
+//
+// ── WHY PROCEDURAL AND NOT A MODELLED ASSET ───────────────────────────────────────────────────
+// A modelled arch is authored at ONE leg length, and the whole point of this decoration is that the
+// legs reach the board — which is a different distance on a single tier than on a stack, and
+// different again on a taller tier. chocolateDrip.js met this first and grass.js restated it: a
+// modelled patch is authored at one radius, so it builds from the tier's real geometry instead.
+//
+// It also passes grass.js's test for when procedural work succeeds here — it fails on subjects with
+// "a precise familiar signature the eye can check" (isomalt's refraction, a palette knife's tool
+// marks) and succeeds where there is none. A fondant rainbow is concentric tubes. There is no
+// material trick to get wrong; it is geometry, and geometry is the thing this can actually do.
+//
+// ── EVERYTHING IS A RATIO OF THE CAKE ─────────────────────────────────────────────────────────
+// Not one measurement here is a world constant. `innerRadius`, `thickness` and `gap` are fractions
+// of the tier's radius, so the same authored rainbow suits a 6" and a 10" without being re-tuned —
+// and INVARIANTS #8 says a world dimension is never hardcoded anyway.
+//
+// The ratios are also what the baker's guide can honestly say. We cannot promise "roll a 42 cm
+// rope": the baker bakes the cake they bake, and a millimetre is a promise about a cake we have not
+// seen. "The outer band is about 1.6× the width of the cake" survives any size they choose, which is
+// the same reason the X-ray stores `tier_width_ratio` and derives millimetres last (openai.js).
+
+export const RAINBOW_DEFAULTS = Object.freeze({
+  bands: 6,
+  // Pastel, matching the fondant a baker actually colours — a saturated spectrum reads as plastic.
+  colors: ['#F5A3B8', '#F7C59F', '#F7E7A0', '#A8D5A2', '#A3C7E8', '#C9AEDD'],
+  // Read off the references rather than picked: a TIGHT hole under a stack of FAT ropes. That
+  // proportion is what makes the band stack itself reach past the cake, so the legs come down beside
+  // it and nearly touch. A wide hole with thin ropes gives a shallow hoop that can only miss the
+  // cake by being shoved backwards — a different object, and not one anybody decorates.
+  // Overall size — multiplies the hole, the ropes and the gaps together, so the SHAPE is untouched
+  // and only how big it is changes. Separate from innerRadius on purpose: that one changes the
+  // PROPORTION (a tighter hole under the same ropes), which is a different rainbow, not a bigger one.
+  scale: 1,
+  innerRadius: 0.30,   // × tier radius — the hole under the arch
+  thickness:   0.115,  // × tier radius — one rope's diameter
+  // Ropes TOUCH. Zero, and there is no control for it: a rainbow is fondant, and separate ropes with
+  // daylight between them do not hold each other up — they are one piece pressed together, or they
+  // are six ropes that fall over. Kept as a parameter because the geometry reads more clearly with
+  // it named than with the arithmetic silently assuming zero.
+  gap:         0,
+  // The two feet land INDEPENDENTLY — 'board' | 'top' | 'none' each. A single setting could only
+  // ever make a symmetric arch, and the shape a rainbow cake actually uses is lopsided: it springs
+  // off the top of the cake on one side, arcs over, and sweeps down past the edge to the board on
+  // the other. Both to 'board' is the backdrop; both to 'top' is the small arch that sits on the
+  // cake. One of each is the one everybody actually means.
+  // WHICH SURFACE it sits on.
+  //   'top'  — an arch over the cake: a flat plane, feet on the board and/or the cake top.
+  //   'side' — laid ON the wall, facing front: the same arch, bent around the tier so it hugs.
+  // A wall rainbow is not a flat one turned sideways. Left flat against a round cake its middle would
+  // touch and its ends float — which is exactly what festoon.js bends imported strips to avoid.
+  surface: 'top',
+  // Where round the wall it sits, radians, for `surface: 'side'`. 0 is the front.
+  theta: 0,
+  // How far the ropes stand off the wall, × tier radius. FIXED, with no control — the same call as
+  // `gap`, for the same reason: it is not a decision anybody makes. Fondant pressed onto a cake is
+  // pressed onto it, and the only reason this is not zero is to stop the two surfaces flickering
+  // against each other, which is a rendering detail rather than a choice about the decoration.
+  proud: 0.02,
+  footLeft:  'top',
+  footRight: 'board',
+  // Where a foot RESTING ON THE CAKE sits, as a fraction of the tier radius out from the middle
+  // (0 = the centre, 1 = the rim). Null derives it, which is almost always what you want — see
+  // archCenterX. Only meaningful when one foot is on the top and the other is not.
+  // WHERE IT STANDS, × tier radius, along the cake. A fixed number, not a derived one.
+  //
+  // It used to be derived from the outer radius so the resting foot always landed at `topFootAt`.
+  // That quietly made POSITION a function of SIZE: dragging the inner radius from 0.2 to 0.6 slid
+  // the whole rainbow 0.4R across the cake, because a smaller hole means a smaller outer radius
+  // means a different centre. Changing how big something is must not move it — where it stands is
+  // the author's decision, and nothing else's.
+  //
+  // The default is the value that derivation produced at the default proportions, so the shape that
+  // was tuned against the references is unchanged; it is simply frozen instead of recomputed.
+  //
+  // MEASURED TOWARD THE FALLING SIDE, not toward +x. A rainbow leans: one foot rests on the cake and
+  // the other falls past its edge to the board, and the arch has to sit off-centre TOWARD the side it
+  // falls down. Signing it against the world instead meant swapping the feet left the arch shifted
+  // the wrong way — the falling leg landed on the cake and the clearance rule shoved the whole thing
+  // backwards to escape. Now mirroring is free: swap the feet and it leans the other way, unchanged.
+  offsetX: 0.71,
+  // Only consulted when offsetX is null — the old derived behaviour, kept because it is genuinely
+  // useful when authoring a NEW shape: set the resting foot where you want it, read off the offsetX
+  // it implies, then fix it there.
+  topFootAt: 0.28,
+  // Where the arc STARTS, as a fraction of the cake's height: 0 = the board, 1 = the top of the
+  // cake, above 1 = clear of it. Pinning it to the top was wrong — that makes the arch straddle the
+  // cake like a cage, with a leg standing off each side. On a real one the arc springs from about
+  // halfway up and the cake overlaps its lower half.
+  spring: 1,
+  // How far behind the cake's CENTRE LINE it stands, × tier radius. Zero by default.
+  //
+  // This was 0.9, and that was wrong twice over. A rainbow of these proportions clears the cake by
+  // being WIDER than it, not by standing behind it — so setting it back put the rainbow at the front
+  // of the board with a visible gap down the side, which is not how one is ever decorated. Standing
+  // back was compensating for an arch too shallow to clear any other way; fix the proportions and
+  // the need disappears. A little forward or back is taste; it is not what clears the cake.
+  standoff: 0,
+  flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
+
+  arcSegments: 96,     // along the path
+  tubeSegments: 12,    // around the rope
+});
+
+// Where the feet stop, in world Y.
+//   board — the top of the board, so it stands beside the cake (reference 1)
+//   top   — the top of the cake, so it sits on it (references 2 and 4)
+//   none  — no legs at all: a bare half-circle
+// The distance is never authored, only chosen: `board` on a three-tier stack is a long way further
+// than on a single, and that is the whole reason this is not a GLB.
+export function legFootY(legs, { topY = 0, boardY = 0 } = {}) {
+  if (legs === 'top') return topY;
+  if (legs === 'none') return null;
+  return boardY;
+}
+
+/**
+ * The centreline of ONE band, as world points: up the left leg, over the arch, down the right.
+ *
+ * The leg meets the arc TANGENTIALLY — a semicircle's end tangent is already vertical — so there is
+ * no corner between them to round off or crease. That is why this can be sampled as one smooth run
+ * of points rather than stitched from separate curves with a join to argue about.
+ */
+export function bandPath({ radius, archY, footLeftY, footRightY, standoff = 0, centerX = 0, arcSegments = RAINBOW_DEFAULTS.arcSegments }) {
+  const pts = [];
+  const z = standoff;   // one plane, set back from the cake's centre — a rainbow is flat
+  // Each leg is drawn only if its foot is BELOW where the arc springs. A foot at or above that is
+  // not a short leg, it is no leg — the arc simply ends there.
+  const hasLeft  = footLeftY  != null && footLeftY  < archY;
+  const hasRight = footRightY != null && footRightY < archY;
+  if (hasLeft) pts.push(new THREE.Vector3(centerX - radius, footLeftY, z));
+  // Left (π) round to right (0). Descending so the run reads left-to-right with the legs.
+  for (let i = 0; i <= arcSegments; i++) {
+    const a = Math.PI - (i / arcSegments) * Math.PI;
+    pts.push(new THREE.Vector3(centerX + Math.cos(a) * radius, archY + Math.sin(a) * radius, z));
+  }
+  if (hasRight) pts.push(new THREE.Vector3(centerX + radius, footRightY, z));
+  return pts;
+}
+
+/** Centreline radius of band `i`, counting outwards from the arch's hole. */
+/**
+ * How far the arch is shifted SIDEWAYS, so a foot that rests on the cake actually lands on it.
+ *
+ * A centred arch is wider than the cake, so a foot stopping at cake-top height stops in mid-air
+ * beside it — which is exactly what the first asymmetric render did. Shifting the arch toward the
+ * board side puts the resting foot back on the cake and pushes the descending leg clear of the rim.
+ *
+ * Derived from the OUTERMOST band, because that is the one that would overhang first; the inner
+ * bands then fan inboard of it across the top, which is what the reference does.
+ *
+ * Zero when both feet land the same way — a symmetric arch has nothing to lean out of the way of.
+ */
+export function archCenterX({ footLeftY, footRightY, outerRadius, cakeRadius, topFootAt = 0.55, topY }) {
+  const leftOnTop  = footLeftY  === topY;
+  const rightOnTop = footRightY === topY;
+  if (leftOnTop === rightOnTop) return 0;          // both on the cake, or neither
+  const rest = cakeRadius * Math.max(0, Math.min(1, topFootAt));
+  // Push the resting side inboard: left foot sits at −rest, so the centre moves right, and mirrored.
+  return leftOnTop ? outerRadius - rest : rest - outerRadius;
+}
+
+export function bandRadius(i, { innerRadius, thickness, gap }) {
+  return innerRadius + thickness / 2 + i * (thickness + gap);
+}
+
+/**
+ * An arch STANDING ON THE CAKE has to fit on it.
+ *
+ * When both feet rest on the top surface, the rainbow is not leaning against the cake — it is
+ * standing on it, and a foot hanging over the edge is resting on nothing. Its span is set by the
+ * outermost band, and both feet sit at centre ± that radius, so the whole thing fits exactly when
+ * that reaches no further than the rim. The standoff counts too: a foot is only on the cake if it is
+ * inside the FOOTPRINT, which is a distance in the plane.
+ *
+ * Returns the factor to shrink the band radii by — 1 when it already fits. Shrinking rather than
+ * moving is deliberate, and it is Sandeep's rule: where it stands is the author's choice, so when
+ * something has to give it is the size.
+ */
+export function fitOnTopScale({ centerX, standoff, outerRadius, cakeRadius }) {
+  if (!(outerRadius > 0)) return 1;
+  // Solve for the radius, not for the whole reach. The far foot sits at |centerX| + radius, and only
+  // the RADIUS shrinks — the position is fixed. Scaling the reach instead (which is what I wrote
+  // first) leaves the offset un-shrunk, so the answer overshoots by exactly centerX and a band still
+  // hangs off the edge.
+  //
+  // The standoff eats into the room across, because the footprint is a circle: standing a rainbow
+  // back on a round cake leaves it less width, not the same width further away.
+  const across = Math.sqrt(Math.max(0, cakeRadius * cakeRadius - standoff * standoff));
+  const room = across - Math.abs(centerX);
+  if (room <= 0) return 0.05;      // the position itself is off the cake — as small as is drawable
+  return Math.min(1, room / outerRadius);
+}
+
+/**
+ * Bend a flat arch around the tier so it lies ON the wall.
+ *
+ * `x` in the flat path is a distance ALONG the wall, so it becomes an angle by dividing by the
+ * radius — arc length over radius, which keeps each rope the length it was drawn as. Height is
+ * untouched, because the wall is vertical: a foot that rested on the board still does.
+ *
+ * Every point ends the same distance from the axis, which is what hugging means and what a flat
+ * plane cannot do — laid against a round cake its middle touches and its ends float.
+ */
+export function wrapToWall(points, { radius, theta0 = 0, proud = 0, seat = 0 }) {
+  // `seat` lifts the CENTRELINE clear of the wall by half a rope, the same rule the feet follow: a
+  // path point is the middle of the tube, so a rope laid at exactly radius+proud is half buried.
+  const r = radius + proud + seat;
+  return points.map(p => {
+    // Divided by the rope's OWN radius, not the cake's. Arc length is r·θ, so θ = x/r is what keeps
+    // the rope the length it was drawn as — dividing by the cake's radius while placing it further
+    // out stretched every rope by the ratio between them, quietly making it more fondant to roll.
+    const th = theta0 + p.x / r;
+    return new THREE.Vector3(Math.sin(th) * r, p.y, Math.cos(th) * r);
+  });
+}
+
+/**
+ * How far back the rainbow must stand so no part of it is INSIDE the cake.
+ *
+ * The cake is a cylinder. Anything below its top has to be outside its footprint — and the footprint
+ * is a distance in the PLANE, hypot(x, z), not a distance in x. That was the hole: a descending leg
+ * can be well clear in x and still be inside the cake, because the arch itself stands only a little
+ * way back. At a standoff of 1.08 on a 1.2 cake, a leg at x = 0.42 is 1.16 out — through the icing.
+ *
+ * So for every point that dips below the top, the arch is pushed back until that point clears, with
+ * the rope's own width counted. The authored standoff is a MINIMUM, never a cap: what somebody typed
+ * cannot make a decoration pass through the cake.
+ */
+export function requiredStandoff(points, { cakeRadius, topY, thickness }) {
+  const clear = cakeRadius + thickness / 2;
+  // A hair of tolerance, and it is not cosmetic. A foot RESTING on the cake top sits at exactly
+  // topY + thickness/2, so its underside comes back as topY ± 1e-16 — and on the wrong side of that
+  // it reads as being inside the cake. An arch standing neatly on the cake was then shoved backwards
+  // to escape a cake it was already on top of, which showed up as it hanging off the far edge.
+  const EPS = 1e-9;
+  let need = 0;
+  for (const pt of points) {
+    if (pt.y - thickness / 2 >= topY - EPS) continue;     // above the cake — its footprint is irrelevant
+    const spare = clear * clear - pt.x * pt.x;
+    if (spare > 0) need = Math.max(need, Math.sqrt(spare));
+  }
+  return need;
+}
+
+/**
+ * Every band of a rainbow, sized against the cake it stands on.
+ *
+ * `cake` is the geometry it must fit: { radius, topY, boardY }. Ratios become world units here and
+ * ONLY here, so every caller — the canvas, the studio preview, the guide — reads one answer.
+ */
+export function rainbowBands(params = {}, cake = {}) {
+  const p = { ...RAINBOW_DEFAULTS, ...params };
+  const R = cake.radius ?? 1;
+  const topY = cake.topY ?? 0;
+  const boardY = cake.boardY ?? 0;
+
+  // ── Order matters here, and it bit once ──────────────────────────────────────────────────────
+  // Sizes are settled BEFORE anything is derived from them. The seat lift is half a rope, so working
+  // it out first and shrinking the ropes afterwards left the feet hovering above the cake by the
+  // difference — a gap nothing in the picture explained.
+  // Size multiplies all three together, so the proportions survive it — see `scale`.
+  const size = p.scale ?? 1;
+  let thickness = p.thickness * R * size;
+  let gap = p.gap * R * size;
+  let innerRadius = p.innerRadius * R * size;
+  const standoff = (p.standoff ?? 0) * R;
+
+  // ON THE WALL BOTH ENDS ARE LEVEL. A rainbow LEANS only because it has two surfaces to reach —
+  // the cake top on one side, the board on the other. A wall is one surface, so an arch pressed onto
+  // it is symmetric: two ends at the same height, always. Letting the feet differ there produced one
+  // end stopping mid-wall while the other ran down to the board, which is not a thing anybody makes.
+  //
+  // footLeft is the authority and footRight is ignored, rather than both being read and disagreeing.
+  const onWall = p.surface === 'side';
+  const rawLeft  = legFootY(p.footLeft, { topY, boardY });
+  const rawRight = onWall ? rawLeft : legFootY(p.footRight, { topY, boardY });
+  let outerRadius = bandRadius(p.bands - 1, { innerRadius, thickness, gap });
+
+  // A number stands; null derives. Deriving MOVES the rainbow when any size changes, which is why
+  // it is no longer the default — see offsetX. The RAW foot heights go in, before the seat lift:
+  // comparing the seated ones against topY would never match, since they sit half a rope above it.
+  // Which way it leans: +1 when the falling foot is on the right, -1 when it is on the left. Both
+  // feet alike (standing on the cake, or a backdrop on the board) has no lean, so it keeps +1 and
+  // offsetX reads as a plain position.
+  const fallsRight = rawLeft === topY && rawRight !== topY;
+  const fallsLeft  = rawRight === topY && rawLeft !== topY;
+  const leanSign = fallsLeft ? -1 : 1;
+
+  const centerX = p.offsetX != null
+    ? p.offsetX * R * leanSign
+    : archCenterX({ footLeftY: rawLeft, footRightY: rawRight, outerRadius, cakeRadius: R, topFootAt: p.topFootAt, topY });
+
+  // Standing on the cake? Then it fits on the cake. Both feet on the top means the whole thing has to
+  // be within the footprint — a foot over the edge rests on nothing. The proportions shrink together
+  // until it fits; the position stays exactly where it was put.
+  // On the WALL there is nothing to clear and nothing to fit: the ropes are pressed onto the tier at
+  // its own radius, so the standoff, the step-back and the top-fit all stop meaning anything, and
+  // `centerX` becomes a distance ALONG the wall for wrapToWall to turn into an angle.
+  const standingOnTop = !onWall && rawLeft === topY && rawRight === topY;
+  let placedX = centerX;
+  if (standingOnTop) {
+    // Position is the author's — except it cannot be somewhere the cake is not. A standing arch
+    // placed past the rim has nothing under it, and no amount of shrinking fixes that, so this is
+    // the one case the position is clamped. It keeps a quarter of the cake in reserve, or the "fix"
+    // would be an arch scaled to nothing balanced on the very edge.
+    const across = Math.sqrt(Math.max(0, R * R - standoff * standoff));
+    const limit = across * 0.75;
+    placedX = Math.max(-limit, Math.min(limit, centerX));
+    const k = fitOnTopScale({ centerX: placedX, standoff, outerRadius, cakeRadius: R });
+    if (k < 1) { innerRadius *= k; thickness *= k; gap *= k; outerRadius *= k; }
+  }
+
+
+  // Seat the rope's UNDERSIDE on the surface, not its centreline. A path point is the middle of the
+  // tube, so a foot placed exactly on the cake top buries half a rope in the cake. Same rule the
+  // stickers follow with seatHalf: an element rests ON a surface, it does not intersect it.
+  let seat = thickness / 2;
+  let footLeftY  = rawLeft  == null ? null : rawLeft  + seat;
+  let footRightY = rawRight == null ? null : rawRight + seat;
+  // The springing point, measured up from the BOARD through the cake's height — so a taller cake
+  // pushes it up in proportion and the rainbow keeps its relationship to the cake rather than to a
+  // number. Never below the HIGHER foot: the arc has to start above whichever leg is shorter, or
+  // that side would bend downwards to reach its own foot.
+  const cakeHeight = Math.max(0, topY - boardY);
+  const springAt = () => Math.max(
+    Math.max(footLeftY ?? boardY, footRightY ?? boardY),
+    boardY + cakeHeight * (p.spring ?? 1),
+  );
+  let archY = springAt();
+
+  // How far back the arch must stand to keep out of the cake. Wanted BEFORE the support fit below,
+  // because a step-back moves the feet away from the axis too — fitting against the authored
+  // standoff and then stepping back lands the foot outside the surface it was just fitted to.
+  const stepBack = (t, th) => (onWall ? 0 : Math.max(standoff, requiredStandoff(t, { cakeRadius: R, topY, thickness: th })));
+  const pathsFor = (inner, th, g, so) => {
+    const rs = [];
+    for (let i = 0; i < p.bands; i++) rs.push(bandRadius(i, { innerRadius: inner, thickness: th, gap: g }));
+    return { rs, pts: rs.flatMap(radius =>
+      bandPath({ radius, archY, footLeftY, footRightY, standoff: so, centerX, arcSegments: p.arcSegments })) };
+  };
+
+  let { pts: trial } = pathsFor(innerRadius, thickness, gap, standoff);
+  let clearStandoff = stepBack(trial, thickness);
+
+  // A FALLING foot has to land on something too.
+  //
+  // What that something IS depends on the tier: the board off the bottom one, the tier below on any
+  // other. NEITHER grows. A board is a thing the baker buys, sized to the cake and priced with it, so
+  // widening it silently is changing the order to fit the decoration — and a tier cannot be widened
+  // at all. So the standing-on-top rule applies again, measured against what is actually under the
+  // foot rather than what the arch stands on.
+  //
+  // The caller says what is under it, through `cake.supportRadius`. Absent means nothing limits it.
+  //
+  // Without it the outer bands hang in the air, and that does not read as broken in a picture — the
+  // arch looks whole and only a second look finds the ends stopping over nothing. At the authored
+  // size on a 0.92 tier the six feet land at 0.98 … 1.51 across a tier ending at 1.20: half the
+  // rainbow unsupported, by default.
+  const support = cake.supportRadius;
+  const falling = !onWall && !standingOnTop && (rawLeft !== topY || rawRight !== topY);
+  let supportFit = 1;
+  if (falling && Number.isFinite(support) && support > 0) {
+    // Solved by iteration, because the two rules feed each other. Shrinking the arch does NOT reduce
+    // the step-back the way you would expect — the position is fixed, so a smaller arch sits closer
+    // in and needs MORE room to clear the tier, which eats the width it was just given. One pass
+    // fitted a 0.64x arch and then stepped it back from 0.27 to 0.49, putting the foot at 1.30 on a
+    // surface ending at 1.20: fitted, and still hanging off.
+    //
+    // Each round shrinks and re-measures. It settles because the step-back is bounded by the tier
+    // and the scale only falls; a dozen rounds is far more than it takes, and stopping early with
+    // the foot still out is caught by the tests rather than shipped.
+    for (let i = 0; i < 12; i++) {
+      // Less half a rope, so the whole tube lands rather than its centreline: fitting the centreline
+      // to the rim leaves the outer half curling over the edge, and then the measurement and the fit
+      // disagree by exactly thickness/2 — which reads as the rule not working.
+      const k = fitOnTopScale({
+        centerX: placedX, standoff: clearStandoff, outerRadius, cakeRadius: support - thickness / 2 });
+      // Tight, because each round's leftover is a foot still over the edge. Stopping at 0.999 left
+      // it 0.0003 out — invisible, and exactly the kind of "nearly" a test should not accept.
+      if (k >= 0.99999) break;
+      supportFit *= k;
+      innerRadius *= k; thickness *= k; gap *= k; outerRadius *= k;
+      // Everything measured off the rope's thickness moves with it: a thinner rope seats lower, and
+      // a smaller arch needs a higher springing point to clear the same top.
+      seat = thickness / 2;
+      footLeftY  = rawLeft  == null ? null : rawLeft  + seat;
+      footRightY = rawRight == null ? null : rawRight + seat;
+      archY = springAt();
+      ({ pts: trial } = pathsFor(innerRadius, thickness, gap, standoff));
+      clearStandoff = stepBack(trial, thickness);
+    }
+  }
+
+  const radii = [];
+  for (let i = 0; i < p.bands; i++) radii.push(bandRadius(i, { innerRadius, thickness, gap }));
+
+  const bands = [];
+  for (let i = 0; i < p.bands; i++) {
+    const radius = radii[i];
+    bands.push({
+      index: i,
+      radius,
+      standoff: clearStandoff,
+      // Wraps the palette rather than running out: an author who asks for 8 bands from 6 colours
+      // gets a repeat, not two undefined ropes.
+      color: p.colors[i % p.colors.length],
+      path: onWall
+        ? wrapToWall(
+            bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, arcSegments: p.arcSegments }),
+            { radius: R, theta0: p.theta ?? 0, proud: (p.proud ?? 0) * R, seat: thickness / 2 },
+          )
+        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, arcSegments: p.arcSegments }),
+      thickness,
+    });
+  }
+  return { bands, thickness, gap, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, cakeRadius: R, supportFit };
+}
+
+/**
+ * How far out the rainbow reaches, so the BOARD can be made big enough to stand it on.
+ *
+ * A board sized for the cake alone is not a board for a cake with a rainbow leaning off it — the
+ * descending leg lands outside the tier, and on a standard board it lands outside the board too,
+ * which is a decoration resting on nothing. The cake's own furniture has to answer to what is
+ * standing on it, the same way the arch answers to the cake's height.
+ *
+ * Returns the radius the board needs. The caller takes the larger of this and its normal size:
+ * shrinking a board to fit a small rainbow would be the wrong way round.
+ */
+/**
+ * How far out the FALLING foot lands, from the cake's axis, outer edge included.
+ *
+ * Kept for a caller that can afford a bigger board — the designer's own board does not grow. On any
+ * tier above it there is no board — the surface underneath is the tier below, a disc of a fixed
+ * radius that cannot be widened. So the same arch that stands fine on the bottom rests on NOTHING
+ * one tier up, and the picture does not say so: a foot in mid-air looks exactly like a foot on a
+ * surface until you move the camera.
+ *
+ * Measured at the lowest point of the lowest band, which is the foot that reaches furthest down and
+ * out. Returns 0 when nothing falls (both feet on the top, or a wrapped wall rainbow).
+ */
+export function rainbowFootReach(params = {}, cake = {}) {
+  const { bands, thickness } = rainbowBands(params, cake);
+  const pts = bands.flatMap(b => b.path);
+  if (!pts.length) return 0;
+
+  // EVERY band's foot, not the lowest single point. All six feet seat at the same height, so "the
+  // lowest point" is a tie the innermost band wins by being first in the list — and the innermost
+  // foot is the one nearest the middle. That reported 1.03 on a rainbow whose outer foot was at
+  // 1.51, i.e. it said "lands on the tier" about an arch with half of it hanging off.
+  const lowY = Math.min(...pts.map(v => v.y));
+  let far = 0;
+  for (const v of pts) {
+    if (v.y < lowY + thickness * 0.5) far = Math.max(far, Math.hypot(v.x, v.z));
+  }
+  return far + thickness / 2;
+}
+
+export function rainbowBoardReach(params = {}, cake = {}, margin = 0.12) {
+  const { bands, thickness, centerX, cakeRadius } = rainbowBands(params, cake);
+  let far = 0;
+  for (const b of bands) for (const pt of b.path) far = Math.max(far, Math.abs(pt.x), Math.abs(pt.z));
+  return far + thickness / 2 + margin * cakeRadius;
+}
+
+/**
+ * The tube for one band. `flatten` turns a round rope into a pressed ribbon.
+ *
+ * WHICH WAY it presses depends on where the rope is. A flat arch lies in the XY plane, so squashing
+ * world Z presses it against that plane — right. A rope bent round the cake lies AT z ≈ the cake's
+ * radius, so the same scale drags the whole thing toward the world centre and straight inside the
+ * cake: at flatten 0.55 a wall rainbow's mesh moved from z 1.16–1.27 to 0.52–0.57 on a 1.2 cake, and
+ * vanished. It was not missing, it was buried.
+ *
+ * So on a wall it presses RADIALLY — toward the wall surface, which is what "pressed onto the cake"
+ * means there. `wallRadius` says the rope is wrapped and where the wall is.
+ */
+export function bandGeometry(band, { flatten = 0, tubeSegments = RAINBOW_DEFAULTS.tubeSegments, wallRadius = null } = {}) {
+  const curve = new THREE.CatmullRomCurve3(band.path, false, 'centripetal');
+  const geo = new THREE.TubeGeometry(curve, band.path.length - 1, band.thickness / 2, tubeSegments, false);
+  const squash = 1 - Math.max(0, Math.min(0.95, flatten));
+  if (squash === 1) return geo;
+
+  if (wallRadius == null) {
+    geo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1, squash));
+    return geo;
+  }
+
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r < 1e-9) continue;
+    const k = (wallRadius + (r - wallRadius) * squash) / r;
+    pos.setX(i, x * k);
+    pos.setZ(i, z * k);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Handles speak u in 0…1 and the geometry speaks radians, so both directions WRAP rather than clamp:
+// dragging past the back of the cake carries on round it, it does not stick there.
+const TAU = Math.PI * 2;
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const wrapU = x => ((x % 1) + 1) % 1;
+const wrapAngle = a => ((a % TAU) + TAU) % TAU;
+
+/**
+ * Where a rainbow's drag handle sits — the arch's CENTRE standing on the surface.
+ *
+ * Not the cake's middle. A leaning rainbow is offset along its own plane, so a handle at the axis
+ * would be a dot the customer grabs that is nowhere near the thing it moves.
+ *
+ * The two surfaces have different words for the same two freedoms, and both maps are exact rather
+ * than approximate, because the geometry already thinks in the handle machinery's terms:
+ *   over the cake — round is `yaw`, out is `standoff`. A point (0, y, standoff) turned by yaw lands
+ *                   at (standoff·sin yaw, y, standoff·cos yaw), which is precisely where a
+ *                   top-surface handle is drawn from (angle, radial fraction). Same formula, so the
+ *                   handle and the arch cannot drift apart.
+ *   on the wall   — round is `theta`, up is `spring`. Those ARE the wall rainbow's two position
+ *                   numbers; nothing had to be invented for it.
+ */
+export function rainbowHandleAt(params = {}, cake = {}) {
+  const p = { ...RAINBOW_DEFAULTS, ...params };
+  const R = cake.radius ?? 1;
+  if (p.surface === 'side') {
+    return { surface: 'side', u: wrapU((p.theta ?? 0) / TAU), v: clamp01(p.spring ?? 1) };
+  }
+  // The EFFECTIVE numbers, not the authored ones. The clearance rule can push an arch further back
+  // than it was asked to stand, and a handle drawn from the request would float in front of it.
+  const { centerX, standoff } = rainbowBands(p, cake);
+  return {
+    surface: 'top_surface',
+    u: wrapU(((p.yaw ?? 0) + Math.atan2(centerX, standoff)) / TAU),
+    v: R > 0 ? Math.min(1, Math.hypot(centerX, standoff) / R) : 0,
+  };
+}
+
+/**
+ * The parameters after a drag to (u, v) — the inverse of the above.
+ *
+ * Holds the lean. `offsetX` is the arch's SHAPE, not its position: how far it straddles along its
+ * own plane is what makes it "over, falling right" rather than "sitting on top", and a drag that
+ * quietly flattened it would be moving a different rainbow to where you pointed.
+ *
+ * Which means the centre cannot come closer to the axis than the lean itself, and the drag stops
+ * there rather than going imaginary. An honest limit, and a visible one: the arch simply will not
+ * come any further in.
+ */
+export function rainbowDragTo(params = {}, cake = {}, u = 0, v = 0) {
+  const p = { ...RAINBOW_DEFAULTS, ...params };
+  if (p.surface === 'side') return { theta: wrapAngle(u * TAU), spring: clamp01(v) };
+
+  const R = cake.radius ?? 1;
+  const { centerX } = rainbowBands(p, cake);
+  const want = clamp01(v) * R;
+  // hypot(centerX, standoff) = want. Below the lean there is no solution, so it rests at zero.
+  const standoff = Math.sqrt(Math.max(0, want * want - centerX * centerX));
+  return {
+    yaw: wrapAngle(u * TAU - Math.atan2(centerX, standoff)),
+    standoff: R > 0 ? standoff / R : 0,
+  };
+}
+
+/**
+ * What a baker needs, in the only terms that survive them baking a different size.
+ *
+ * Deliberately NOT millimetres. The cake in the designer is a nominal one; the baker rolls a rope,
+ * offers it up and trims. A ratio is true whatever they bake, and it is also how they work.
+ * `mmPerUnit` is optional and only appears where an order pins a real size — derived last, never
+ * stored, exactly as the X-ray's print template treats tier_width_ratio.
+ */
+export function rainbowGuide(params = {}, cake = {}, mmPerUnit = null) {
+  const { bands, cakeRadius } = rainbowBands(params, cake);
+  const cakeWidth = cakeRadius * 2;
+  return bands.map(b => {
+    const curve = new THREE.CatmullRomCurve3(b.path, false, 'centripetal');
+    const length = curve.getLength();
+    return {
+      index: b.index,
+      color: b.color,
+      // "This rope is 1.6 times as wide as the cake" — a sentence that stays true at any size.
+      lengthOfCakeWidth: +(length / cakeWidth).toFixed(2),
+      thicknessOfCakeWidth: +(b.thickness / cakeWidth).toFixed(3),
+      lengthMm: mmPerUnit ? Math.round(length * mmPerUnit) : null,
+    };
+  });
+}

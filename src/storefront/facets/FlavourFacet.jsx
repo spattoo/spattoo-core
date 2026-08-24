@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
 import FlavourWheel from './FlavourWheel.jsx';
 import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS } from './suggestFlavour.js';
-import { OCCASIONS, everyTier } from './cakeDraft.js';
+import { rankedOccasions, everyTier } from './cakeDraft.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -158,7 +158,11 @@ const QUESTIONS = [
   },
   // The same list the details facet uses — they write the same field, so offering different sets
   // would let the answer depend on which screen happened to ask.
-  { key: 'occasion', title: "What's the occasion?", options: OCCASIONS },
+  // Ordered by who the cake is for — recipient is asked first, so this always has it. Likely
+  // occasions lead; the rest follow rather than disappearing, because a customer whose occasion is
+  // missing has a dead end and leaves. The exception is NEVER_FOR (see cakeDraft.js): a wedding,
+  // engagement or bridal shower is not offered for a child at all.
+  { key: 'occasion', title: "What's the occasion?", options: a => rankedOccasions(a.recipient) },
   // ── The title, which the third option made stale ──────────────────────────────────────────────
   // "Play it safe, or something different?" named TWO things and there are three — quietly wrong
   // from the moment the hint was added, since a question that lists its own answers has to list all

@@ -1,7 +1,7 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
 import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC } from './constants.js';
-import { topClamp, snapToRim, tierShape } from './geometry/surface.js';
+import { topClamp, snapToRim, tierShape, topContains } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
 // element via placement_config.hug_fill.
@@ -174,16 +174,55 @@ export function scaleRangeOf(element, dMin, dMax, dStep) {
 //   rect cake (any frame)     → grows to the nearest edge (inscribed; fills when shapes/aspect match)
 // `frameShape` is the authored placement_config.photo.shape ('round' | 'rect' | 'other'); anything
 // not 'round' is treated as a box (bounding-square) so hearts/stars inscribe rather than overhang.
+// The largest scale whose artwork BOX stays inside an outline top (heart, hexagon, number…). Found by
+// bisection on the four corners rather than analytically, because the outline is an arbitrary polygon
+// and there is no closed form for "largest axis-aligned square inside it".
+//
+// Conservative on purpose: a ROUND piece of artwork would fit slightly larger than its bounding box
+// allows. Erring small leaves a hair of icing showing; erring large hangs the sheet off the cake, and
+// only one of those is a picture somebody has to explain to a customer.
+function largestBoxInside(shp, halfAtUnitScale) {
+  let lo = 0, hi = (Math.max(shp.halfW, shp.halfD) / halfAtUnitScale) * 1.5;
+  for (let i = 0; i < 28; i++) {
+    const mid = (lo + hi) / 2;
+    const e = halfAtUnitScale * mid;
+    const inside = topContains(shp, e, e) && topContains(shp, -e, e)
+                && topContains(shp, e, -e) && topContains(shp, -e, -e);
+    if (inside) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
 export function frameTopMaxScale(shp, frameShape, fill = 1, stickerSize = STICKER_SIZE) {
   // `fill` = the shape's half-extent as a fraction of the plane half (measured from the mask at
   // authoring time). Using it makes the SHAPE's edge — not the square plane — reach the boundary, so
   // a mask with any transparent margin still grows exactly to the rim.
   const h = (stickerSize / 2) * (fill > 0 ? fill : 1);
+
+  // ── Same silhouette as the cake → it FILLS ──────────────────────────────────────────────────────
+  // A heart sheet on a heart cake, a rectangle on a sheet cake. Two identical shapes meet exactly
+  // when their bounding boxes do, so matching the box matches the outline — no polygon work needed.
+  // This is what makes shape-matched artwork worth authoring: it covers the cake instead of hiding
+  // inside a square drawn in the middle of it.
+  const cakeFamily = shp.kind === 'round' ? 'round' : (shp.family ?? shp.kind);
+  if (frameShape && frameShape === cakeFamily) {
+    if (shp.kind === 'round') return Math.max(1, shp.radius / h);
+    return Math.max(1, Math.min(shp.halfW, shp.halfD) / h);
+  }
+
   let s;
   if (shp.kind === 'round') {
+    // A square in a circle is corner-limited; a round frame reaches the rim.
     s = frameShape === 'round' ? shp.radius / h : shp.radius / (h * Math.SQRT2);
-  } else {
+  } else if (shp.kind === 'rect') {
+    // Straight edges: the nearest one limits it.
     s = Math.min(shp.halfW, shp.halfD) / h;
+  } else {
+    // An OUTLINE top (heart, hexagon, butterfly, number). halfW/halfD are its BOUNDING BOX, and a
+    // square filling that box hangs off the curves — a heart is nowhere near its box at the
+    // shoulders or the point. This branch used the box and so overhung on every one of these shapes,
+    // for photo frames as well as sheets. The real polygon answers it.
+    s = largestBoxInside(shp, h);
   }
   return Math.max(1, s);   // never below 1× (a tiny cake shouldn't trap the dial under the default)
 }
@@ -242,6 +281,43 @@ export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKE
 export const STICKER_SCALE_RANGE = Object.freeze({ min: 0.25, max: 8, step: 0.05 });
 export const HUG_MUL_RANGE       = Object.freeze({ min: 0.3,  max: 3, step: 0.05 });
 
+// ── Artwork that fits a surface ─────────────────────────────────────────────────────────────────
+// Two different things want the same rule: a photo-cake frame, and an EDIBLE SHEET (printed artwork
+// a baker lays on the cake — the football disc). Both are flat pictures that should grow until they
+// meet the boundary of the surface and stop, and neither should ever overhang the rim.
+//
+// They differ only in where the two numbers come from, so this is the ONE place that decides, and
+// the geometry (frameTopMaxScale / frameSideMaxScale) stays shared:
+//
+//   sheet  the artwork IS the picture — its shape and extent are authored on the element
+//   photo  the MASK is the shape, and the fill grows by the border ring drawn around it
+//
+// Returns null when an element is not surface-fitting, which is nearly all of them — an ordinary
+// decoration is sized by taste, not by the cake.
+export function surfaceFit(sticker) {
+  if (sticker?.sheetShape) {
+    return { shape: sticker.sheetShape, fill: sticker.sheetFill ?? 1 };
+  }
+  if (sticker?.photoMask) {
+    return { shape: sticker.photoShape, fill: (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)) };
+  }
+  return null;
+}
+
+// The largest an element may be scaled on a given surface — its fit, when it has one, else the
+// element's authored max. `tier` is a CANVAS tier (radius resolved), not a design tier.
+export function surfaceFitMax(sticker, tier, floor = 0) {
+  const fit = surfaceFit(sticker);
+  if (!fit || !tier) return null;
+  if (sticker.zone === ZONES.TOP_SURFACE) {
+    return Math.max(floor, frameTopMaxScale(tierShape(tier), fit.shape, fit.fill));
+  }
+  if (sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER) {
+    return Math.max(floor, frameSideMaxScale(tier?.height ?? 0, fit.fill));
+  }
+  return null;
+}
+
 export function stickerSizeControl(element, sticker, tier = null) {
   if (isDynamicHug(sticker)) {
     return { key: 'hugMul', value: sticker?.hugMul ?? 1, ...HUG_MUL_RANGE };
@@ -249,17 +325,8 @@ export function stickerSizeControl(element, sticker, tier = null) {
   const { min, max, step } = scaleRangeOf(
     element, STICKER_SCALE_RANGE.min, STICKER_SCALE_RANGE.max, STICKER_SCALE_RANGE.step);
 
-  let capped = max;
-  if (sticker?.photoMask && tier) {
-    const fill = (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0));
-    // Never cap below one step above the floor, or the control would have no travel.
-    const floor = min + step;
-    if (sticker.zone === ZONES.TOP_SURFACE) {
-      capped = Math.max(floor, frameTopMaxScale(tierShape(tier), sticker.photoShape, fill));
-    } else if (sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER) {
-      capped = Math.max(floor, frameSideMaxScale(tier?.height ?? 0, fill));
-    }
-  }
+  // Never cap below one step above the floor, or the control would have no travel.
+  const capped = surfaceFitMax(sticker, tier, min + step) ?? max;
   return { key: 'scale', value: sticker?.scale ?? 1, min, max: capped, step };
 }
 
@@ -327,6 +394,16 @@ export function placementSlots(element, tierCount) {
       slots.push({ key: `rim-${i}`, placement: 'top', zone: ZONES.RIM, tierIndex: i });
     }
   }
+  if (zones.includes(ZONES.BOARD)) {
+    /* The board is ONE slot for the whole cake, not one per tier — there is only one board, and it
+     * belongs to the cake rather than to any tier. tierIndex 0 so every "which tier does this sit
+     * against" reader downstream resolves the bottom tier, which is the one the board is sized to.
+     *
+     * `placement: 'top'` because a board decoration STANDS on a flat surface, exactly like a
+     * top-surface one — same seat, same drag, same renderer, a different plane. Calling it its own
+     * placement would have meant a second copy of all of that. */
+    slots.push({ key: 'board', placement: 'top', zone: ZONES.BOARD, tierIndex: 0 });
+  }
   if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) {
     for (let i = n - 1; i >= 0; i--) {
       slots.push({ key: `side-${i}`, placement: 'side', zone: ZONES.SIDE, tierIndex: i });
@@ -363,6 +440,20 @@ function isWallZone(zone) {
   return zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
 }
 
+// ── How far an element may lean ─────────────────────────────────────────────────────────────────
+// Two axes, one limit: `tiltAngle` tips an element front/back and `rollAngle` tips it left/right (on
+// a wall, that second one spins it in the plane of the wall — a jersey sitting diagonally). ±1.2 rad
+// is about 69°; past that an element reads as fallen over rather than leaning, and its base starts to
+// lift out of the seat its base-pivot holds it in.
+//
+// Here rather than beside the toolbar because it is a rule about placement, not about a button: the
+// popup control and the chooser's TiltRow both nudge through it, so they cannot drift to different
+// limits.
+export const LEAN_LIMIT = 1.2;
+export function clampLean(value) {
+  return Math.max(-LEAN_LIMIT, Math.min(LEAN_LIMIT, +((value ?? 0)).toFixed(3)));
+}
+
 // ── Per-zone placement config ─────────────────────────────────────────────────────────────────
 // A zone's entry in `placement_config` is EITHER a mode string ("hug") or an object carrying
 // per-zone config ({ mode, seat, insert, ... }). `zoneCfg` normalises both so callers never branch
@@ -385,11 +476,38 @@ export function zoneCfg(placementConfig, zone) {
   return obj;
 }
 
+// ── One zone, more than one pose ────────────────────────────────────────────────────────────────
+// Some elements read equally well in two poses on the SAME surface: a football jersey on the cake
+// top can stand up like a topper or lie flat like a decal, and which one is right is the customer's
+// taste, not a property of the jersey. A zone used to name exactly one mode, so the element could
+// only offer whichever the author happened to pick.
+//
+// `modes` is the list a zone allows, FIRST ENTRY FIRST — it is the default a drop uses, so a config
+// carrying one mode behaves exactly as it did. The legacy `mode` string is the one-entry case, which
+// is why nothing has to be migrated: every existing element already answers this correctly.
+//
+//   "top_surface": "stand"                                  → ['stand']
+//   "top_surface": { "mode": "stand" }                       → ['stand']
+//   "top_surface": { "modes": ["stand", "hug"] }             → ['stand', 'hug']   (stand is default)
+export function zoneModes(placementConfig, zone, fallback) {
+  const cfg = zoneCfg(placementConfig, zone);
+  const list = Array.isArray(cfg.modes) ? cfg.modes.filter(Boolean) : [];
+  if (list.length) return list;
+  const single = cfg.mode ?? fallback;
+  return single ? [single] : [];
+}
+
+// May this zone be posed at all? The toggle and the extra chooser tile both hang off this, so an
+// element with one pose grows no controls — the ~50 that exist today are untouched.
+export function zoneHasChoice(placementConfig, zone) {
+  return zoneModes(placementConfig, zone).length > 1;
+}
+
 // The placement MODE (the POSITION) for a zone ("hug" | "stand" | "perch" | "verge"), from string or
 // object form. Never returns "insert" — that is a modifier now (see zoneInsert), promoted away by
-// zoneCfg.
+// zoneCfg. With `modes`, this is the DEFAULT (the first) — what a drop gets before anyone chooses.
 export function zoneMode(placementConfig, zone, fallback) {
-  return zoneCfg(placementConfig, zone).mode ?? fallback;
+  return zoneModes(placementConfig, zone, fallback)[0] ?? fallback;
 }
 
 // The per-zone INSERT modifier ({ depth, lean_deg, jitter_deg }) or null. Insert sinks an element's
@@ -421,9 +539,38 @@ export function zoneSeat(placementConfig, zone) {
 // never from the raw `placement_config[zone]` value — keeps the string and `{ mode, seat }` object
 // forms interchangeable. (The move path previously set neither, so moving a proud element off the
 // wall and back left it flush/buried and could leak the raw object into `placementMode`.)
-export function zoneSeatFields(placementConfig, zone) {
+// `mode` overrides the zone default — the customer picked a pose (a chooser tile, or the card's
+// Standing/Lying toggle). It is validated against what the zone actually allows rather than trusted:
+// a pose is only meaningful where the config offers it, and a stale value (say a design saved while
+// an element allowed two poses, loaded after an admin cut it back to one) must fall back rather than
+// render something the element no longer claims to do.
+/* The BOARD is stood on. Nothing else is coerced.
+ *
+ * `hug` seats a model's MIDDLE at its surface, which is right against a wall and wrong on the drum —
+ * a football with `board: "hug"` sank halfway into the board. The config says hug because the admin
+ * form offers it, not because anything on the board can be hugged.
+ *
+ * ⚠️ SCOPED TO THE BOARD ON PURPOSE. The first cut of this coerced every non-wall zone and broke a
+ * standing test: `top_surface` has a REAL hug — the hero pose that auto-sizes to the tier wall and
+ * nudges a hugMul rather than a scale. "Flat" does not imply "cannot hug"; only the board does.
+ *
+ * ⚠️ And here, in the ONE place both the add and the move path resolve a pose. Coercing at the call
+ * sites left the move path writing `hug` straight back, so dragging a decoration onto the board
+ * buried it again after the seat had been fixed.
+ *
+ * A board `hug` may one day mean something real — a decoration standing on the drum and LEANING on
+ * the cake wall is a look bakers do. That is a pose to build, not a config to honour literally while
+ * it renders as a half-buried ball.
+ */
+export function flatPose(zone, mode) {
+  return (zone === ZONES.BOARD && (mode === 'hug' || !mode)) ? 'stand' : mode;
+}
+
+export function zoneSeatFields(placementConfig, zone, mode = null) {
+  const allowed = zoneModes(placementConfig, zone, 'hug');
+  const picked  = mode && allowed.includes(mode) ? mode : (allowed[0] ?? 'hug');
   return {
-    placementMode: zoneMode(placementConfig, zone, 'hug'),
+    placementMode: flatPose(zone, picked),
     sideProud:     zoneSeat(placementConfig, zone) === 'proud',
   };
 }

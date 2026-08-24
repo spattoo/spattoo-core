@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { useCakeDesign } from '../hooks/useCakeDesign.js';
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
-import { zoneMode } from '../placement.js';
-import { ZONES, PLACEMENT_MODES } from '../constants.js';
+import { zoneSeatFields } from '../placement.js';
+import { ZONES } from '../constants.js';
 
 /* ─────────────────────────────────────────────────────────────────────────────────────────────────
  * One catalogue element, on a cake, exactly as the designer would draw it.
@@ -49,6 +49,10 @@ export default function ElementPreview({
   // A 1-tier cake previews at the widest; tier 2 of a 3-tier at the narrowest.
   tierCount = 1,
   tierIndex = 0,
+  // Which pose to seat it in, for a zone that offers a choice (`modes`). Null = the zone's default.
+  // Worth showing both while authoring: "stands up OR lies flat" is a promise to the customer, and
+  // the only way to know the second one looks right is to look at it.
+  mode: modeOverride = null,
   autoRotate = true,
   style,
 }) {
@@ -64,10 +68,12 @@ export default function ElementPreview({
     const z = zone ?? element.allowed_zones?.[0] ?? ZONES.TOP_SURFACE;
     // The per-zone mode is the element's own (`stand` | `hug` | `perch` | `verge` | …), read through
     // the same helper the designer reads it with, so a hugging element hugs here too.
-    const mode = zoneMode(element.placement_config, z, PLACEMENT_MODES.STAND);
+    // Validated against what the zone allows, never trusted — same rule as the designer's, so this
+    // screen cannot show a pose a cake could not actually be given.
+    const { placementMode: mode } = zoneSeatFields(element.placement_config, z, modeOverride);
     addSticker(element, z, Math.min(tierIndex, Math.max(0, tierCount - 1)), mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [element?.id, element?.image_url, zone, tierCount, tierIndex]);
+  }, [element?.id, element?.image_url, zone, tierCount, tierIndex, modeOverride]);
 
   return <CakePreview design={design} autoRotate={autoRotate} style={style} />;
 }

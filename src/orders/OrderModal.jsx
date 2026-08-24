@@ -11,11 +11,13 @@ import {
   visibleRequirements, unguaranteedRequirements, unguaranteedSentence,
 } from './dietary.js';
 import Chip from '../shared/Chip.jsx';
-// The SAME occasion list the storefront offers — they write the same column, and a baker
-// picking from a different set than their customer is how `other` quietly swallows half the data.
-// occasionsByRelevance only RANKS that list against the recipient; it never shortens it, so both
-// surfaces still offer every occasion.
-import { RECIPIENTS, occasionsByRelevance, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
+// The SAME occasion list the storefront offers — they write the same column, and a baker picking
+// from a different set than their customer is how `other` quietly swallows half the data.
+// occasionsByRelevance RANKS that list against the recipient, and removes exactly one group:
+// wedding / engagement / bridal shower are not offered for a child (NEVER_FOR). Both surfaces apply
+// it, because a rule about what we will not appear to take an order for cannot depend on which
+// screen somebody happens to be on.
+import { RECIPIENTS, occasionsByRelevance, occasionAllowedFor, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
 const MAX_REFERENCE_PHOTOS = 3;
@@ -1019,15 +1021,26 @@ export default function OrderModal({
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <label style={{ ...field, flex: '1 1 130px' }}>
                     <span style={lbl}>Who&rsquo;s it for</span>
-                    <select style={inp} value={recipient} onChange={e => setRecipient(e.target.value)}>
+                    {/* Changing WHO can invalidate an occasion already chosen — pick "A couple",
+                        pick Wedding, then correct it to "A child" and the wedding would stay,
+                        selected and no longer in the list. Cleared here rather than left to look
+                        chosen. */}
+                    <select style={inp} value={recipient} onChange={e => {
+                      const next = e.target.value;
+                      setRecipient(next);
+                      if (occasion && !occasionAllowedFor(next, occasion)) setOccasion('');
+                    }}>
                       <option value="">—</option>
                       {RECIPIENTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
                   </label>
                   <label style={{ ...field, flex: '1 1 130px' }}>
                     <span style={lbl}>Occasion</span>
-                    {/* Grouped, never trimmed. A baker on the phone must be able to write down
-                        whatever they are told — see occasionsByRelevance. With no recipient chosen
+                    {/* Grouped, and trimmed in ONE case: a wedding, engagement or bridal shower is
+                        never offered for a child (NEVER_FOR in cakeDraft.js). Everything else stays
+                        — a baker on the phone must be able to write down whatever they are told,
+                        and "a farewell, my daughter is moving abroad" is a farewell for a child.
+                        See occasionsByRelevance. With no recipient chosen
                         `likely` is empty and this renders as the flat list it was. */}
                     <select style={inp} value={occasion} onChange={e => setOccasion(e.target.value)}>
                       <option value="">—</option>
@@ -1045,7 +1058,14 @@ export default function OrderModal({
                   </label>
                   {(occasion === 'birthday' || occasion === 'anniversary') && (
                     <label style={{ ...field, flex: '0 1 110px' }}>
-                      <span style={lbl}>{occasion === 'birthday' ? 'Age on cake' : 'Which year'}</span>
+                      {/* "Number on cake", never "Age" — the same rule the designer's number topper
+                          follows. A 6 on a birthday cake is usually somebody's age, but the field is
+                          not asking for one and the column does not store one: `orders.cake_number`
+                          is production data the baker pipes, and 25 on an anniversary cake is years
+                          married. Labelling it "Age" made the form appear to collect a child's age,
+                          which is a materially different thing to hold under DPDP — for a word.
+                          One label for both occasions now: "Which year" said the same thing twice. */}
+                      <span style={lbl}>Number on cake</span>
                       <input style={inp} inputMode="numeric" value={cakeNumber} placeholder="e.g. 1"
                              onChange={e => setCakeNumber(e.target.value.replace(/\D/g, '').slice(0, 4))} />
                     </label>

@@ -27,15 +27,23 @@ import {
   PICKER_ORIGIN_X, PICKER_STEP_X, PICKER_ORIGIN_Z, PICKER_STEP_Z,
   CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
   FLAT_STICKER_Y_OFFSET,
+  DESIGNER_GROUND,
+  // The board's top face. constants.js names it as "the cake board surface" and the tier stack
+  // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
+  BOTTOM_BASE,
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import RainbowArch from './RainbowArch.jsx';
+import { rainbowHandleAt } from '../geometry/rainbow.js';
+import FondantCloud from './FondantCloud.jsx';
+import { cloudHandleAt } from '../geometry/cloud.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
@@ -52,6 +60,7 @@ import { frostingAllowsStyles } from '../frostings.js';
 import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { toCanvasConfig } from '../hooks/useCakeDesign.js';
+import ReelDirector from '../reel/ReelDirector.jsx';
 
 // ── Board footprint ─────────────────────────────────────────────────────────────────────────────
 // The board under a cake, sized to CONTAIN the bottom tier. A number cake sits on a RECTANGULAR board (a
@@ -59,7 +68,7 @@ import { toCanvasConfig } from '../hooks/useCakeDesign.js';
 // sized to the digit's bounding box; a sheet keeps its rounded box; every other shape gets a round drum
 // sized to boundingRadius so an outline never overhangs. ONE definition so the visible mesh, cream writing
 // and cream pen all agree where the board edge is — they each used to recompute it and could drift.
-function boardOf(bottomTier) {
+export function boardOf(bottomTier) {
   const shp = tierShape(bottomTier);
   const isGlyph = shp.kind === 'glyph';   // number/letter — a rect board sized to the glyph bbox
   const isRect = bottomTier.shape === 'rect' || isGlyph;
@@ -68,6 +77,23 @@ function boardOf(bottomTier) {
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
+// What a rainbow's falling foot lands ON, for the tier at `i`: the tier below, or — off the bottom
+// tier — THE BOARD. The board does not grow the way the studio's does. It is a real thing the baker
+// buys, sized to the cake and priced with it, so widening it silently is changing the order to fit
+// the decoration.
+//
+// A rect board is measured across its NARROW way, so the arch lands on it at any angle rather than
+// only over the corners.
+//
+// Exported because the edit card needs the same answer to say when the board, not the slider, is
+// what is capping the size — and two ways of working that out is how the picture and the panel come
+// to disagree.
+export function rainbowSupportRadius(tierData, i, board) {
+  if (i > 0) return tierData[i - 1]?.radius ?? null;
+  if (!board) return null;
+  return board.kind === 'rect' ? Math.min(board.width, board.depth) / 2 : board.radius;
 }
 
 // ── Where a board ring of grass reaches to ────────────────────────────────────
@@ -1606,8 +1632,10 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
-      {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
-      <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
+      {/* Both lean axes. X leans the pick up (+) or down (−) along the cake side; Z rolls it in the
+          PLANE of the wall, which is how a jersey ends up sitting diagonally — the one thing the wall
+          had no control for at all. One Euler, so a combined lean is a single predictable rotation. */}
+      <group rotation={[sticker.tiltAngle ?? 0, 0, sticker.rollAngle ?? 0]}>
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
@@ -1717,7 +1745,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   );
 }
 
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+/* `hole` — a shape to keep OUT of, or null. Only the board passes one: its usable area is a ring,
+ * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
+ * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
+ * grab, so the clamp pushes it back out. See boardRingClamp. */
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -1882,7 +1914,9 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           // dragging OUT over the lip while still clamping inward to the rim; see PLACEMENT_CONFIG.md.)
           const isEdgeMode = isPerch || (isVerge && !isVergeBase);
           const edgeMargin = (isStand || isEdgeMode) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
-          const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z) : topClampInset(shp, x, z, edgeMargin);
+          const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z)
+            : hole ? boardRingClamp(shp, hole, x, z, edgeMargin)
+            : topClampInset(shp, x, z, edgeMargin);
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
           const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
@@ -1958,10 +1992,15 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
     const yaw   = radialYaw + (sticker.rotation ?? 0);
     const tiltX = (isVerge || isInsert) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+    // Left/right lean. It rides INSIDE the base-pivot groups below with tiltX, deliberately: the
+    // pivot translates down by seatLift, rotates, translates back, so the element leans about the
+    // point where it touches the cake. Rolled outside that, a leaning figure swings a foot into the
+    // air. Billboarding does not interfere — it is locked to Y only, so an inner lean survives it.
+    const rollZ = sticker.rollAngle ?? 0;
     const inner = (
       <group rotation={[0, yaw, 0]}>
         <group position={[0, -seatLift, 0]}>
-          <group rotation={[tiltX, 0, 0]}>
+          <group rotation={[tiltX, 0, rollZ]}>
             <group position={[0, seatLift, 0]}>
               {innerContent(onDown)}
             </group>
@@ -2161,6 +2200,16 @@ function CreamPaintTarget({ tier, onPaint }) {
 }
 
 function CakeScene({
+  /* Non-null while the reel panel is open: the hex the baker picked as the reel's ground.
+   *
+   * It paints the SKY AND THE FLOOR THE SAME COLOUR, which is the whole point. Left as two colours
+   * the 30×30 floor plane ends inside a portrait frame and draws a hard diagonal horizon across the
+   * top of every reel — and worse, picking a dark ground gave a dark sky over a near-white floor,
+   * so the two dark swatches were unusable. One colour edge to edge is a cyclorama: no seam, and the
+   * cake's own shadow is the only thing telling you there is a floor at all.
+   *
+   * It also doubles as "we are filming", which is why the front marker keys off it. */
+  filmGround = null,
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
@@ -2186,10 +2235,12 @@ function CakeScene({
   // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
   // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
   stickerResize = null,
-  onWritingClick, onWritingMove, writingSelected = false,
+  onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2260,12 +2311,20 @@ function CakeScene({
   return (
     <>
       <SceneLights shadows />
-      <color attach="background" args={['#f4f4f5']} />
+      <color attach="background" args={[filmGround || DESIGNER_GROUND]} />
       <SceneEnv />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
-        <planeGeometry args={[30, 30]} />
+        {/* ⚠️ MUCH bigger while filming, and not for the reason it looks like.
+            Matching the floor's colour to the sky's is not enough to hide the join: the floor is a
+            lit standard material and the background is a flat clear colour, so the two render
+            differently however equal their hex. The 30×30 plane's far edge landed inside a portrait
+            frame and drew a hard diagonal across the top of every reel.
+            Pushing the edge far past the frame turns the floor into a cyclorama — it fills the shot
+            edge to edge and the only thing left telling you there is a floor at all is the cake's
+            own shadow, which is exactly what a photographer would want. Two triangles either way. */}
+        <planeGeometry args={filmGround ? [400, 400] : [30, 30]} />
         {/* Was #fce8d5 — warm, saturated, and almost exactly the same LIGHTNESS as an ivory cake, so
             a white cake had nothing to separate from and read as flat. The fix is a wider value gap,
             and the direction came from the TEMPLATE THUMBNAILS: they flatten onto white and the same
@@ -2275,12 +2334,16 @@ function CakeScene({
             anyway — the studio and the thumbnail looked like two different products.
             ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
             the first failure to show up, and a fix at one end can break the other. */}
-        <meshStandardMaterial color="#faf7f4" roughness={0.85} />
+        <meshStandardMaterial color={filmGround || '#faf7f4'} roughness={0.85} />
       </mesh>
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
-      {bottomShp && <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />}
+      {/* ⚠️ Not while filming. It is an editing aid — it tells the baker which way the cake faces
+          while they work — and it was being burned into finished reels, where it reads as a stray
+          watermark nobody can explain. */}
+      {bottomShp && !filmGround
+        && <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />}
 
       {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
           off-screen capture and the read-only previews render, so what a customer sees and what the
@@ -2302,7 +2365,7 @@ function CakeScene({
           selectedAgeId, onAgeSelect, onAgeMove,
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
-          onWritingClick, onWritingMove, writingSelected,
+          onWritingClick, onWritingMove, selectedWritingId,
           penDrawMode, penStyle, onAddStroke,
         }}
       />
@@ -2333,6 +2396,57 @@ function CakeScene({
           catcherFlag="isBlockCatcher" handleFlag="isBlockHandle"
           lift={(nameBlocks.size ?? 0.3) + 0.06}
           color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker />
+      )}
+
+      {/* A rainbow is MOVED, never dialled — the same handle machinery as dust, foil, grass clumps
+          and letter blocks, so it drags with a mouse and with a finger for free.
+
+          The handle is the arch's CENTRE standing on the surface, not the cake's middle: a leaning
+          rainbow is offset along its own plane, and a dot at the axis would be nowhere near the
+          thing it moves. rainbowHandleAt reads the EFFECTIVE position, so an arch the clearance rule
+          stepped backwards keeps its handle on it rather than in front of it.
+
+          showMarker, because an arch is a hoop with a hole in the middle and the handle sits in the
+          hole — with nothing drawn there is nothing to aim at, which reads as "it cannot be moved".
+          The dot is only present while the card is open, so it never reaches a thumbnail. */}
+      {rainbowMode && (
+        <FinishHandles
+          tierData={tierData}
+          getPoints={t => (t.rainbows?.length
+            ? t.rainbows.map(rb => ({
+                ...rainbowHandleAt(rb, { radius: t.radius, topY: t.baseY + t.height, boardY: t.baseY }),
+                r: 0.16,
+              }))
+            : null)}
+          board={board}
+          selected={rainbowSelected} onMove={onRainbowMove} onSelect={onRainbowSelect}
+          catcherFlag="isRainbowCatcher" handleFlag="isRainbowHandle"
+          lift={0.06}
+          color="#ffffff" selColor="#2C4433" dotScale={1.6} showMarker />
+      )}
+
+      {/* Clouds move the same way rainbows do, and share the machinery with dust, foil, grass and
+          letter blocks. One cloud is rarely the question — a sky has several — so the handle sits at
+          each cloud's own middle and each drags on its own.
+
+          A cloud on the BOARD is measured against the board's radius, not the tier's: it stands
+          outside the cake, which is past v = 1 on the tier's own scale, and a handle pinned at 1
+          would refuse to follow the pointer outward. */}
+      {cloudMode && (
+        <FinishHandles
+          tierData={tierData}
+          getPoints={t => (t.clouds?.length
+            ? t.clouds.map(cl => ({
+                ...cloudHandleAt(cl, { radius: t.radius, topY: t.baseY + t.height, boardY: t.baseY,
+                                       handleRadius: board?.radius ?? t.radius }),
+                r: 0.14,
+              }))
+            : null)}
+          board={board}
+          selected={cloudSelected} onMove={onCloudMove} onSelect={onCloudSelect}
+          catcherFlag="isCloudCatcher" handleFlag="isCloudHandle"
+          lift={0.05}
+          color="#ffffff" selColor="#2C4433" dotScale={1.5} showMarker />
       )}
 
       {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
@@ -2385,7 +2499,7 @@ const NOOP = () => {};
 // are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
 // its own, and it is what every board-level finish is placed against.
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writing = null, piping = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], boardGrass = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
@@ -2397,7 +2511,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedAgeId = null, onAgeSelect, onAgeMove,
     selectedStickerIds = null, onStickerSelect = NOOP, onStickerLongPress, onStickerMove = NOOP,
     onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
-    onWritingClick, onWritingMove, writingSelected = false,
+    onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penStyle, onAddStroke,
   } = edit ?? {};
 
@@ -2458,6 +2572,7 @@ function CakeContent({ config, scene, edit = null }) {
             height={tier.height}
             color={tier.color}
             gradient={tier.gradient ?? null}
+            stripes={tier.stripes ?? null}
             glaze={tier.glaze ?? null}
             yBase={tier.baseY}
             shape={tier.shape ?? 'round'}
@@ -2496,6 +2611,42 @@ function CakeContent({ config, scene, edit = null }) {
               {...tier.grass}
             />
           )}
+          {/* Fondant rainbows belonging to THIS tier. The generator asks for { radius, topY, boardY }
+              and has never cared whether that describes a whole cake or one tier of one — so tier 2's
+              rainbow is the same code given tier 2's numbers: its radius, its top, and the surface it
+              STANDS on, which is the board for the bottom tier and the tier below's top for any other.
+              Every ratio then scales to that tier.
+
+              `boardY` is the tier's own base, which for tier 0 IS the board — so this is one
+              expression rather than a branch, and a rainbow on an upper tier lands its falling foot
+              on the tier below without anything here knowing that is what it is doing. */}
+          {(tier.rainbows ?? []).map(rb => (
+            <RainbowArch
+              key={rb.id}
+              params={rb}
+              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
+                      // What a falling foot lands ON: the tier below, or — off the bottom tier —
+                      // THE BOARD. The board does not grow here the way it does in the studio. It is
+                      // a real thing the baker buys, sized to the cake and priced with it, so
+                      // widening it silently is changing the order to fit the decoration.
+                      //
+                      // A rect board is measured across its narrow way, so the arch lands on it at
+                      // any angle rather than only over the corners.
+                      supportRadius: rainbowSupportRadius(tierData, i, board) }}
+              yaw={rb.yaw ?? 0}
+            />
+          ))}
+          {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
+              the generator asks for { radius, topY, boardY } and does not care whether that is a
+              whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier
+              standing outside it, which is why there is no separate board list to keep in step. */}
+          {(tier.clouds ?? []).map(cl => (
+            <FondantCloud
+              key={cl.id}
+              params={cl}
+              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
+            />
+          ))}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
               position={[tier.radius + 0.35, tier.baseY + (selectedPiping.zone === 'top' ? tier.height + 0.1 : 0.1), 0]}
@@ -2507,10 +2658,15 @@ function CakeContent({ config, scene, edit = null }) {
         </group>
       ))}
 
-      {/* Typed cream writing. */}
-      {writing?.text?.trim() && topTier && board && (
+      {/* Typed cream writing — one per message, because `surface` belongs to the writing: a cake can
+          carry "9" on the side and a name on the board at the same time. An empty one renders
+          nothing (it is a card waiting to be typed into), which is why the text guard is per-item
+          rather than around the map. Orbit is keyed per id so dragging one message does not free the
+          camera for another. */}
+      {topTier && board && writings.map(w => w?.text?.trim() ? (
         <CreamWriting
-          writing={writing}
+          key={w.id}
+          writing={w}
           topY={stackY}
           topRadius={topTier.radius}
           shape={topTier.shape ?? 'round'}
@@ -2521,12 +2677,12 @@ function CakeContent({ config, scene, edit = null }) {
           boardRadius={board.radius}
           boardY={0.1}
           boardShp={board}
-          onClick={onWritingClick}
-          onMove={onWritingMove}
-          onOrbitEnable={orbitEnableFor('__writing__')}
-          selected={writingSelected}
+          onClick={() => onWritingClick?.(w.id)}
+          onMove={moves => onWritingMove?.(w.id, moves)}
+          onOrbitEnable={orbitEnableFor(`__writing__${w.id}`)}
+          selected={selectedWritingId === w.id}
         />
-      )}
+      ) : null)}
 
       {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
           highest tier. Each block is its own placement, so the arrangement IS the data — see
@@ -2633,15 +2789,31 @@ function CakeContent({ config, scene, edit = null }) {
             />
           );
         }
-        // top_surface
-        const topY = tier.baseY + tier.height;
+        /* BOARD — the same flat-surface renderer on a different plane.
+         *
+         * A board decoration stands on the drum beside the cake, so it wants exactly what a
+         * top-surface one wants (a height, a footprint to stay inside, a base seat) with three
+         * values swapped: the board's top instead of the tier's, the board's outline instead of the
+         * tier's, and a HOLE where the cake stands. Giving it its own renderer would have been a
+         * second copy of the drag, the seat, the hit test and the toolbar. */
+        const isBoard = sticker.zone === 'board';
+        const boardShp = isBoard && board
+          ? (board.kind === 'rect'
+              ? { kind: 'rect', halfW: board.halfW, halfD: board.halfD }
+              : { kind: 'round', radius: board.radius })
+          : null;
+
+        // top_surface (and board)
+        const topY = isBoard ? BOTTOM_BASE : tier.baseY + tier.height;
         return (
           <DraggableTopSticker
             key={sticker.id}
             sticker={sticker}
             topY={topY}
-            topRadius={tier.radius}
-            shp={tierShape(tier)}
+            topRadius={isBoard ? (board?.radius ?? tier.radius) : tier.radius}
+            shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
+            // The cake's own footprint is what a board decoration must not stand in.
+            hole={isBoard ? tierShape(bottomTier) : null}
             selected={isSelected}
             onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
             onLongPress={onStickerLongPress}
@@ -2925,11 +3097,18 @@ export default function CakeCanvas({
   isStickerMovable,
   hitTestRef,
   snapCameraRef,
+  // Filled with the reel recorder when the designer passes it — catalogue authors only, so for
+  // every other baker this is undefined and ReelDirector never mounts.
+  reelRef = null,
+  // The reel's ground while the panel is open, else null. See CakeScene.
+  filmGround = null,
   cameraPosition = CAMERA_POSITION,
-  onWritingClick, onWritingMove, writingSelected = false,
+  onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3017,7 +3196,12 @@ export default function CakeCanvas({
       <CameraCapture cameraRef={cameraRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} orbitRef={orbitRef} />
+      {/* Fills reelRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
+          camera only exists inside the Canvas, so anything that drives it has to live in here and
+          hand a function out. Renders nothing; costs nothing when reelRef is not passed. */}
+      {reelRef && <ReelDirector reelRef={reelRef} orbitRef={orbitRef} />}
       <CakeScene
+        filmGround={filmGround}
         config={config}
         selectedTier={selectedTier}
         onTierClick={i  => { if (!pointerRef.current.dragged) onTierClick(i); }}
@@ -3053,7 +3237,7 @@ export default function CakeCanvas({
         isStickerMovable={isStickerMovable}
         onWritingClick={onWritingClick}
         onWritingMove={onWritingMove}
-        writingSelected={writingSelected}
+        selectedWritingId={selectedWritingId}
         penDrawMode={penDrawMode}
         penStyle={penStyle}
         onAddStroke={onAddStroke}
@@ -3063,6 +3247,14 @@ export default function CakeCanvas({
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
         onGrassSelect={onGrassSelect}
+        cloudMode={cloudMode}
+        cloudSelected={cloudSelected}
+        onCloudMove={onCloudMove}
+        onCloudSelect={onCloudSelect}
+        rainbowMode={rainbowMode}
+        rainbowSelected={rainbowSelected}
+        onRainbowMove={onRainbowMove}
+        onRainbowSelect={onRainbowSelect}
         blocksMode={blocksMode}
         blocksSelected={blocksSelected}
         onBlockMove={onBlockMove}

@@ -124,7 +124,7 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade }) {
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore }) {
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
@@ -612,6 +612,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         logoUrl={profile?.logo_transparent_url || profile?.logo_url || null}
         onPublish={publishStorefront}
         onUnpublish={unpublishStorefront}
+        // Straight through to the host, like onReviewFlavours and onUpgrade below: the share card
+        // is the host's modal. The customiser decides WHEN to offer it (a Share button while live,
+        // and once on a first publish); it does not own the thing that opens.
+        onShareStore={onShareStore}
         // Straight through to the host: the publish review's "Review my flavours" has to open a
         // SIBLING settings screen, which neither this panel nor the customiser owns.
         onReviewFlavours={onReviewFlavours}

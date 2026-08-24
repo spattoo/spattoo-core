@@ -3,7 +3,7 @@ import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_M
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
-import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields, zoneInsert } from '../placement.js';
+import { facingOffsetRadians, edgeSeatSeed, insertSeat, deOverlapSeat, zoneSeatFields, zoneInsert, surfaceFitMax } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING, frostingAllowsStyle } from '../frostings.js';
 import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
@@ -11,9 +11,19 @@ import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
-import { pickTierFields } from '../utils/designSnapshot.js';
+import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
+import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
+
+// A design tier does not carry its own radius — the stack's widths are positional (TIER_RADII[i]) and
+// only get resolved on the way to the canvas. Anything that needs the REAL width of a tier before
+// then (seeding an edible sheet at its fit, say) has to resolve it the same way, so this is the one
+// place that knows how. Reading `t.radius ?? 0` instead would size a sheet against a cake that does
+// not exist.
+export function tierRadius(t, i) {
+  return t?.radius ?? TIER_RADII[i] ?? 0.35;
+}
 // Frosting types now live in the frostings registry; re-export so existing importers
 // (FrostingPicker, admin CreateTemplate) keep resolving them from here.
 export { FROSTING_TYPES };
@@ -33,7 +43,7 @@ const DEFAULT_DESIGN = {
   texts: [],
   ages: [],        // gold 3D balloon-number toppers standing on the cake top (see AgeNumber)
   stickers: [],
-  writing: null,   // one cream-pen message piped on the cake top (see CreamWriting)
+  writings: [],    // cream-pen messages piped on the cake (see CreamWriting) — one per placement
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
 };
 
@@ -86,7 +96,7 @@ export function toCanvasConfig(design) {
       const isRound = family === 'circle';
       const isRect  = family === 'rounded_rect';
       const isGlyph = isGlyphFamily(family);
-      const r = t.radius ?? TIER_RADII[i] ?? 0.35;
+      const r = tierRadius(t, i);
       // A glyph cake's (number/letter) footprint AND vertical thickness are DERIVED (from its typed
       // characters + its size config), not authored on the tier — so resolve them once here and every
       // downstream reader (stacking, board, camera, cream) speaks the true box. The mesh extrudes by the
@@ -108,12 +118,20 @@ export function toCanvasConfig(design) {
         height:       glyphDims ? glyphDims.height : (t.height ?? (BOTTOM_H - i * TIER_HEIGHT_STEP)),
         color:        t.color,
         gradient:     t.gradient ?? null,
+        // ⚠️ FORWARDED HERE OR IT NEVER RENDERS. The canvas reads this config, not the design — wiring
+        // CakeCanvas/CakeTier/TierBody to `tier.stripes` and stopping short of this line produces a
+        // feature that saves, reloads and reports as present while drawing nothing at all.
+        stripes:      t.stripes ?? null,
         glaze:        t.glaze ?? null,          // chocolate-glaze marble palette + pattern (frostingType 'glaze')
         frostingType: t.frostingType ?? DEFAULT_FROSTING,
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
+        // ⚠️ FORWARDED HERE OR IT NEVER RENDERS — the same line stripes needed. The canvas reads
+        // this config, not the design.
+        rainbows:     t.rainbows ?? [],          // fondant arches standing on/against THIS tier
+        clouds:       t.clouds ?? [],            // fondant clouds sitting on/against THIS tier
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
@@ -124,7 +142,7 @@ export function toCanvasConfig(design) {
     texts:    design.texts ?? [],
     ages:     design.ages ?? [],
     stickers: design.stickers ?? [],
-    writing:  design.writing ?? null,
+    writings: normalizeWritings(design),
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
@@ -155,7 +173,7 @@ function migrateTopperToSticker(templateDesign) {
     z: tp.z ?? 0,
     scale: (tp.scale ?? 1) * 5,
     baseRotation: [0, -Math.PI / 2, 0],   // legacy CakeTopper faced toppers with this offset
-    yOffset: 0, rotation: 0, radialOffset: 0, tiltAngle: 0, groupId: null,
+    yOffset: 0, rotation: 0, radialOffset: 0, tiltAngle: 0, rollAngle: 0, groupId: null,
     color: tp.color ?? null,
     // Resize is opt-in (see the main placement path). A legacy topper carries no allowed_actions, so
     // it lands non-resizable like any unconfigured element; it can still be MOVED and edited.
@@ -181,6 +199,25 @@ const DEFAULT_WRITING = {
   boardX: undefined, boardZ: undefined,   // board placement (default seeded in CreamWriting)
   sideAngle: 0, sideY: undefined,         // side placement (default = mid of bottom tier)
 };
+
+// ── One message, or several ─────────────────────────────────────────────────────────────────────
+// `writings` is a LIST because a message belongs to a surface: `surface` is part of the writing, so
+// a single object could only ever be on the top OR the side OR the board. A cake wanting "9" on the
+// side and a name on the board needs two, and there was no way to ask for the second — clicking
+// Texts again just reopened the first.
+//
+// Everything written before this carries a single nullable `writing` OBJECT, and that shape is baked
+// into saved orders and templates, which are not ours to rewrite. So it is promoted on the way IN,
+// here, and nothing downstream reads both shapes.
+const newWritingId = () => crypto.randomUUID();
+const withWritingId = (w) => (w?.id ? w : { ...w, id: newWritingId() });
+// Ids only — NOT a merge with DEFAULT_WRITING. Defaults are seeded when a message is created and
+// re-merged on every edit (as setWriting always did); folding them in on the way IN instead would
+// rewrite a saved design on load, so what came back from a template would no longer equal what was
+// saved. Reading a field a stored writing never had is the renderer's job (`w.thickness ?? 0.03`).
+function normalizeWritings(design) {
+  return writingsOf(design).map(withWritingId);
+}
 
 // Each piping carries a stable layerId so a tier can hold multiple stacked piping
 // layers per zone and every layer stays addressable across edits/renders.
@@ -266,7 +303,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     // GLB element standing on the top surface (or hugging the side). Placement is now fully
     // config-driven, so there is no separate topper slot or renderer.
     stickers: migrateTopperToSticker(templateDesign),
-    writing:  templateDesign.writing ?? null,
+    writings: normalizeWritings(templateDesign),
     piping:   templateDesign.piping ?? [],
     // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
@@ -348,6 +385,30 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, glaze: { ...GLAZE_DEFAULTS, ...(t.glaze ?? {}), ...patch } }
         : t),
+    }));
+  }
+
+  /* Tier STRIPES — several colours stacked up the wall, scraped smooth (shared/color/stripeMaterial.js).
+   *
+   * A PATCH, like setTierGlaze and unlike setTierGradient: stripes carry five fields
+   * (palette / count / weights / softness / wobble) and the UI edits them one at a time, so a
+   * positional signature would make every slider re-send the other four and drift them.
+   *
+   * Seeded from a preset on first edit, never from an empty object — a stripe set missing `softness`
+   * renders with whatever the material defaults to, which is a look the baker did not choose.
+   *
+   * ⚠️ `color` is deliberately left alone. It stays the solid fallback for every surface that does not
+   * read stripes — the saved thumbnail, an old client, the storefront card — so a striped cake never
+   * degrades to white. Passing null clears the stripes and that fallback is what shows.
+   */
+  function setTierStripes(index, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index) return t;
+        if (patch === null) { const { stripes, ...rest } = t; return rest; }
+        return { ...t, stripes: { ...STRIPE_DEFAULTS, ...(t.stripes ?? {}), ...patch } };
+      }),
     }));
   }
 
@@ -490,6 +551,54 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, grass } : t),
+    }));
+  }
+
+  // ── Fondant rainbows ────────────────────────────────────────────────────────
+  // A LIST on the tier, not one object and not a design-level field.
+  //
+  // On the tier, because a rainbow's every measurement is a ratio of the tier it belongs to — its
+  // radius, its top, and the surface it stands on. Held at design level it would need a tier INDEX
+  // beside it, and an index is a thing to keep in sync every time a tier is added or removed. On the
+  // tier, deleting the tier deletes its rainbows, which is what should happen anyway.
+  //
+  // A list, because a cake can carry several — one arching over the top and one hugging a wall — and
+  // that is the shape `writings` had to be changed INTO later, having shipped as a single object.
+  // Not stickers, though: a rainbow is one generated object with a dozen parameters, and the reason
+  // grass is not stickers (thousands of individually draggable rows) does not apply to it. What does
+  // apply is that a sticker carries artwork and this carries numbers.
+  //
+  // Absent = no rainbow, so every existing design is unchanged and the field costs nothing.
+  function setTierRainbows(index, rainbows) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, rainbows } : t),
+    }));
+  }
+
+  // `changes` may be a function of the current list — the same contract the grass setters use, and
+  // for the same reason: two quick presses both read the list as this component last rendered it, so
+  // the second rainbow lands exactly on the first.
+  function updateTierRainbows(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, rainbows: typeof changes === 'function' ? changes(t.rainbows ?? []) : changes } : t),
+    }));
+  }
+
+  // ── Fondant clouds ──────────────────────────────────────────────────────────
+  // Same shape as the rainbows above, and for the same reasons: a LIST, on the TIER. Every cloud
+  // measurement is a ratio of the tier it belongs to, and holding them at design level would need a
+  // tier index that has to be kept in sync on every add and remove.
+  //
+  // Their own field rather than a slot on the rainbow: clouds turn up without one — sky, unicorn,
+  // aeroplane — and several at a time, on the top and the sides and the board.
+  function updateTierClouds(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, clouds: typeof changes === 'function' ? changes(t.clouds ?? []) : changes } : t),
     }));
   }
 
@@ -732,7 +841,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // guard; `patternDeletable` mirrors the pattern's placement_config.parts_deletable).
   function addSticker(element, zone, tierIndex, placementMode, position = {}, extra = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
-    const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : element.placement_config?.photo?.mask ? 3.5 : 1);
+    let defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : element.placement_config?.photo?.mask ? 3.5 : 1);
+    // A sheet lands at its FIT, not at an authored default. An edible disc is bought and printed to
+    // cover the cake top — a customer who has to drag a dial to get there has been asked to do the
+    // one thing the product already knows the answer to. And there is no single authored number that
+    // would work: the right size is the cake's, and the top tier of a three-tier stack is not the
+    // width of a single.
+    const sheetCfg = element.placement_config?.sheet;
+    if (sheetCfg && zone === ZONES.TOP_SURFACE) {
+      defaultScale = null;   // resolved below, once the tier being placed on is known
+    }
     // Edge-seated modes (perch, verge) seat onto the front rim edge and carry a calibrated lean —
     // computed by the shared edgeSeatSeed helper (same seed the chooser's move path uses, so both
     // paths land identically). Verge leans about the rim tangent at render (radial-outward); perch
@@ -810,6 +928,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.TOP_SURFACE, { x: px, z: pz }, siblings));
         }
       }
+      // A sheet's default size is the CAKE's, so it can only be resolved here — inside the updater,
+      // where the tier being placed on is known. Radius is resolved through tierRadius for the same
+      // reason: a design tier carries no width of its own.
+      const seededScale = defaultScale ?? (() => {
+        const i = tierIndex ?? 0;
+        const t = prev.tiers[i] ?? prev.tiers[0];
+        const fitted = surfaceFitMax(
+          { zone, sheetShape: sheetCfg?.shape ?? null, sheetFill: sheetCfg?.fill ?? 1 },
+          t ? { ...t, radius: tierRadius(t, i) } : null,
+        );
+        return fitted ?? 1;
+      })();
       return {
         ...prev,
         stickers: [...prev.stickers, {
@@ -875,6 +1005,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           photoOverlay:   element.placement_config?.photo?.overlay ?? null,   // optional decorative border art
           photoShape:     element.placement_config?.photo?.shape ?? null,     // 'round'|'rect'|'other' — top-fit max-size rule
           photoFill:      element.placement_config?.photo?.fill ?? 1,         // shape extent as a fraction of the plane (measured) — exact fit-to-rim
+          // An EDIBLE SHEET: printed artwork the baker lays on the cake (the football disc). Same
+          // fit-to-the-boundary rule as a photo frame, different provenance — the artwork IS the
+          // picture, so there is no mask and no border ring. See placement.js surfaceFit.
+          sheetShape:     element.placement_config?.sheet?.shape ?? null,      // 'round' | 'rect'
+          sheetFill:      element.placement_config?.sheet?.fill ?? 1,          // artwork extent within its square plane
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1, rot: 0 },   // pan (UV fraction) + zoom + 2D rotation (deg); cover-fit baseline at zoom 1
@@ -892,7 +1027,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           y:             seatY,                // side: seat height on the wall
           x:             px,
           z:             pz,
-          scale:         extra.scale ?? defaultScale,   // scatter passes a small per-instance radius
+          scale:         extra.scale ?? seededScale,   // scatter passes a small per-instance radius; a sheet lands at its fit
           // The GLB's authored facing offset (e.g. toppers need [0,-90,0]° to face front).
           // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
@@ -901,6 +1036,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
           tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
+          // The OTHER lean axis: tiltAngle tips an element front/back, rollAngle tips it left/right
+          // (and on a wall, spins it in the plane of that wall — a jersey sitting diagonally). Always
+          // starts upright: no placement mode seeds a sideways lean, and a config that wanted one
+          // would seed it here beside seatTilt.
+          rollAngle:     0,
           // Insert modifier: fraction of the element's LENGTH sunk into the surface (render scales by
           // measured length), and the RENDER'S "is inserted" signal — non-null iff the zone carried an
           // insert modifier (0 is valid: buried-but-flush). null otherwise. See placement.js zoneInsert
@@ -1122,13 +1262,22 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     });
   }
 
-  // Cream-pen writing — a single message on the cake top. Merges changes onto the
-  // existing writing (seeding defaults on first edit); pass null/'' text to clear.
-  function setWriting(changes) {
-    setDesign(prev => ({ ...prev, writing: { ...DEFAULT_WRITING, ...prev.writing, ...changes } }));
+  // Cream-pen writing. Each message is its own instance with its own surface, so "Texts" ADDS
+  // rather than reopening: addWriting returns the new id, because the caller has to select the card
+  // it just created and cannot find it by content (a new message is empty, and so is any other).
+  function addWriting(changes = {}) {
+    const id = newWritingId();
+    setDesign(prev => ({ ...prev, writings: [...(prev.writings ?? []), { ...DEFAULT_WRITING, ...changes, id }] }));
+    return id;
   }
-  function clearWriting() {
-    setDesign(prev => ({ ...prev, writing: null }));
+  function updateWriting(id, changes) {
+    setDesign(prev => ({
+      ...prev,
+      writings: (prev.writings ?? []).map(w => w.id === id ? { ...DEFAULT_WRITING, ...w, ...changes } : w),
+    }));
+  }
+  function removeWriting(id) {
+    setDesign(prev => ({ ...prev, writings: (prev.writings ?? []).filter(w => w.id !== id) }));
   }
 
   // Freehand cream-pen strokes. addStroke appends a finished stroke (seeding defaults);
@@ -1182,19 +1331,20 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setTierRainbows, updateTierRainbows, updateTierClouds,
     setNameBlocks, updateNameBlocks,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,
     addText, updateText, duplicateText, removeText,
+    addWriting, updateWriting, removeWriting,
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    setWriting, clearWriting,
     addStroke, removeStroke, clearPiping,
     resetDesign,
     addStickerBatch,

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneSeat, zoneInsert, zoneSeatFields, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
-import { TIER_RADII } from './constants.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose } from './placement.js';
+import { TIER_RADII, STICKER_SIZE } from './constants.js';
+import { topContains } from './geometry/surface.js';
+import { scaledOutline } from './geometry/shapes.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
 // for the real types; if a type ever diverges, a shared assertion here breaks. Guards the exact
@@ -498,5 +500,223 @@ describe('insertSeat — buried-and-angled seat: lean±jitter, fan spin, depth (
     const lo = insertSeat({ lean_deg: 10, jitter_deg: 30 }, () => 0);
     expect(lo.tiltAngle).toBeCloseTo((10 - 30) * D2R, 6);
     expect(lo.fanYaw).toBeCloseTo(-30 * D2R, 6);
+  });
+});
+
+// ── Two poses on one surface ────────────────────────────────────────────────────────────────────
+// A jersey stands on the cake top or lies flat on it, and which is right is the customer's taste.
+// The list is ordered: the FIRST entry is what a drop gets, so a config naming one pose behaves
+// exactly as it did — that is what makes this additive rather than a migration.
+describe('zoneModes — the poses a zone allows, default first', () => {
+  it('reads the legacy string form as a one-pose zone', () => {
+    expect(zoneModes({ top_surface: 'stand' }, 'top_surface')).toEqual(['stand']);
+  });
+
+  it('reads the object form as a one-pose zone', () => {
+    expect(zoneModes({ top_surface: { mode: 'stand' } }, 'top_surface')).toEqual(['stand']);
+  });
+
+  it('reads a modes list, default first', () => {
+    expect(zoneModes({ top_surface: { modes: ['stand', 'hug'] } }, 'top_surface')).toEqual(['stand', 'hug']);
+  });
+
+  it('zoneMode still answers the DEFAULT, so every existing caller is unchanged', () => {
+    expect(zoneMode({ top_surface: { modes: ['stand', 'hug'] } }, 'top_surface')).toBe('stand');
+    expect(zoneMode({ top_surface: 'hug' }, 'top_surface')).toBe('hug');
+  });
+
+  it('only a real list is a choice — one pose grows no controls', () => {
+    expect(zoneHasChoice({ top_surface: 'stand' }, 'top_surface')).toBe(false);
+    expect(zoneHasChoice({ top_surface: { modes: ['stand'] } }, 'top_surface')).toBe(false);
+    expect(zoneHasChoice({ top_surface: { modes: ['stand', 'hug'] } }, 'top_surface')).toBe(true);
+  });
+
+  it('falls back for a zone the config never mentions', () => {
+    expect(zoneModes({}, 'top_surface', 'hug')).toEqual(['hug']);
+    expect(zoneModes({}, 'top_surface')).toEqual([]);
+  });
+});
+
+describe('zoneSeatFields — an explicitly picked pose', () => {
+  const pc = { top_surface: { modes: ['stand', 'hug'] } };
+
+  it('honours a pose the zone offers', () => {
+    expect(zoneSeatFields(pc, 'top_surface', 'hug').placementMode).toBe('hug');
+  });
+
+  it('falls back to the default for a pose the zone does NOT offer', () => {
+    // The case that matters: a design saved while the element allowed two poses, loaded after an
+    // admin cut it back to one. Trusting the stored value would render a pose the element no longer
+    // claims to do — so it is validated against the config, not carried.
+    expect(zoneSeatFields({ top_surface: 'stand' }, 'top_surface', 'hug').placementMode).toBe('stand');
+    expect(zoneSeatFields(pc, 'top_surface', 'perch').placementMode).toBe('stand');
+  });
+
+  it('with no pose asked for, answers exactly as before', () => {
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+  });
+});
+
+describe('clampLean — one limit for both lean axes', () => {
+  it('holds a lean inside the limit', () => {
+    expect(clampLean(0.4)).toBeCloseTo(0.4, 6);
+    expect(clampLean(-0.4)).toBeCloseTo(-0.4, 6);
+  });
+
+  it('clamps both directions', () => {
+    expect(clampLean(99)).toBe(LEAN_LIMIT);
+    expect(clampLean(-99)).toBe(-LEAN_LIMIT);
+  });
+
+  it('treats a missing value as upright', () => {
+    expect(clampLean(undefined)).toBe(0);
+    expect(clampLean(null)).toBe(0);
+  });
+});
+
+// ── Artwork that fits a surface ─────────────────────────────────────────────────────────────────
+// An edible sheet is printed artwork the baker lays on the cake. It must grow until it meets the rim
+// and stop — an overhanging disc is not a look, it is a sheet that will not fit the cake it was
+// bought for. A photo frame already had this rule; the sheet borrows it.
+describe('surfaceFit — where the two fit numbers come from', () => {
+  it('an ordinary decoration does not fit a surface — it is sized by taste', () => {
+    expect(surfaceFit({ scale: 2 })).toBe(null);
+  });
+
+  it('a sheet reads its own artwork', () => {
+    expect(surfaceFit({ sheetShape: 'round', sheetFill: 0.9 })).toEqual({ shape: 'round', fill: 0.9 });
+  });
+
+  it('a photo frame grows its fill by the border ring drawn around it', () => {
+    // The ring is part of what must not overhang, so the bound has to include it.
+    const fit = surfaceFit({ photoMask: 'm.png', photoShape: 'round', photoFill: 0.8, borderWidth: 0.25 });
+    expect(fit.fill).toBeCloseTo(1.0, 6);
+  });
+
+  it('a sheet wins over photo fields, so an element cannot be both', () => {
+    const fit = surfaceFit({ sheetShape: 'rect', sheetFill: 1, photoMask: 'm.png', photoFill: 0.5 });
+    expect(fit).toEqual({ shape: 'rect', fill: 1 });
+  });
+});
+
+describe('surfaceFitMax — the fit is the CAKE\'s size, not a number someone typed', () => {
+  const round = (radius) => ({ shape: 'round', radius, height: 1 });
+
+  it('a round sheet on a round top reaches the rim', () => {
+    const wide   = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 }, round(1.2));
+    const narrow = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 }, round(0.6));
+    // The SAME sheet is smaller on a narrower cake — which is the whole point, and the reason an
+    // authored default scale could never be right for every cake.
+    expect(narrow).toBeLessThan(wide);
+    expect(narrow / wide).toBeCloseTo(0.5, 6);
+  });
+
+  it('a square sheet on a round top inscribes rather than overhanging', () => {
+    const r = round(1.2);
+    const circle = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 }, r);
+    const box    = surfaceFitMax({ zone: 'top_surface', sheetShape: 'rect',  sheetFill: 1 }, r);
+    expect(box).toBeCloseTo(circle / Math.SQRT2, 6);
+  });
+
+  it('transparent margin around the artwork is taken off the bound', () => {
+    const full = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 1 },   round(1.2));
+    const half = surfaceFitMax({ zone: 'top_surface', sheetShape: 'round', sheetFill: 0.5 }, round(1.2));
+    // Artwork filling half its plane has to scale twice as far for its EDGE to reach the same rim.
+    expect(half).toBeCloseTo(full * 2, 6);
+  });
+
+  it('answers null for anything that does not fit a surface, so the authored max stands', () => {
+    expect(surfaceFitMax({ zone: 'top_surface', scale: 1 }, round(1.2))).toBe(null);
+    expect(surfaceFitMax({ zone: 'top_surface', sheetShape: 'round' }, null)).toBe(null);
+    expect(surfaceFitMax({ zone: 'board', sheetShape: 'round' }, round(1.2))).toBe(null);
+  });
+});
+
+// ── A sheet on a cake that is not round ─────────────────────────────────────────────────────────
+// Heart, hexagon, butterfly and number cakes report an OUTLINE with a bounding box. The fit used to
+// be that box, and a square filling a heart's box hangs off the shoulders and the point — a real
+// overhang, on photo frames as much as on sheets. And a heart-shaped sheet had no way to say it was
+// heart-shaped, so it inscribed a square in the middle of a heart cake instead of covering it.
+describe('frameTopMaxScale on non-round cakes', () => {
+  // The REAL heart, built the way tierShape builds it — not an approximation of one. A hand-written
+  // polygon would be testing my idea of a heart rather than the shape a customer's cake actually is.
+  const heart = {
+    kind: 'outline', family: 'heart', halfW: 1.2, halfD: 1.2,
+    outline: scaledOutline('heart', {}, 1.2, 1.2),
+  };
+
+  it('a square sheet on a heart cake stays INSIDE the heart', () => {
+    const s = frameTopMaxScale(heart, 'round', 1);
+    const e = (STICKER_SIZE / 2) * s;             // half-extent of the placed artwork
+    for (const [x, z] of [[e, e], [-e, e], [e, -e], [-e, -e]]) {
+      expect(topContains(heart, x, z), `corner ${x.toFixed(3)},${z.toFixed(3)} is off the cake`).toBe(true);
+    }
+  });
+
+  it('and is smaller than the bounding box would have allowed — the old bug', () => {
+    const box = Math.min(heart.halfW, heart.halfD) / (STICKER_SIZE / 2);
+    expect(frameTopMaxScale(heart, 'round', 1)).toBeLessThan(box);
+  });
+
+  it('a HEART sheet on a heart cake fills it instead of hiding in the middle', () => {
+    const matched = frameTopMaxScale(heart, 'heart', 1);
+    const square  = frameTopMaxScale(heart, 'round', 1);
+    expect(matched).toBeGreaterThan(square);
+    expect(matched).toBeCloseTo(Math.min(heart.halfW, heart.halfD) / (STICKER_SIZE / 2), 6);
+  });
+
+  it('a heart sheet on a ROUND cake still inscribes — a shape match is not assumed', () => {
+    const round = { kind: 'round', radius: 1.2 };
+    expect(frameTopMaxScale(round, 'heart', 1)).toBeCloseTo(frameTopMaxScale(round, 'rect', 1), 6);
+  });
+
+  it('a rect sheet on a sheet cake fills to the nearest edge', () => {
+    const sheetCake = { kind: 'rect', halfW: 1.08, halfD: 0.78 };
+    expect(frameTopMaxScale(sheetCake, 'rect', 1)).toBeCloseTo(0.78 / (STICKER_SIZE / 2), 6);
+  });
+});
+
+describe('flatPose — a flat surface is stood on, never hugged', () => {
+  it('turns a hug into a stand on the board', () => {
+    // The football's config genuinely says `board: "hug"`. Honoured literally it seats the model's
+    // middle at the surface and half the ball sinks into the drum.
+    expect(flatPose('board', 'hug')).toBe('stand');
+    expect(flatPose('board', null)).toBe('stand');
+    expect(flatPose('board', undefined)).toBe('stand');
+  });
+
+  it('leaves the WALL zones alone — hugging is what they are for', () => {
+    expect(flatPose('side', 'hug')).toBe('hug');
+    expect(flatPose('middle_tier', 'hug')).toBe('hug');
+  });
+
+  it('leaves every pose a flat surface genuinely has', () => {
+    // Config still chooses freely among the poses that mean something on a flat surface.
+    for (const m of ['stand', 'perch', 'verge', 'insert']) {
+      expect(flatPose('board', m)).toBe(m);
+      expect(flatPose('top_surface', m)).toBe(m);
+    }
+  });
+
+  it('leaves top_surface hug ALONE — that pose is real', () => {
+    // ⚠️ The first cut coerced every non-wall zone and broke a standing test. A top-surface hug is
+    // the hero pose that auto-sizes to the tier wall (hugMul, not scale). "Flat" does not imply
+    // "cannot hug"; only the board has nothing to hug.
+    expect(flatPose('top_surface', 'hug')).toBe('hug');
+  });
+});
+
+describe('zoneSeatFields writes the coerced pose', () => {
+  it('never writes hug for a board, whatever the config says', () => {
+    // ⚠️ The move path calls this, not seatOnSlot. Coercing only at the seat left dragging a
+    // decoration onto the board writing `hug` straight back and burying it again.
+    const pc = { board: 'hug', top_surface: 'stand' };
+    expect(zoneSeatFields(pc, 'board').placementMode).toBe('stand');
+    expect(zoneSeatFields(pc, 'board', 'hug').placementMode).toBe('stand');
+  });
+
+  it('still writes hug on a wall', () => {
+    const pc = { side: 'hug' };
+    expect(zoneSeatFields(pc, 'side').placementMode).toBe('hug');
   });
 });

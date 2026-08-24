@@ -9,7 +9,7 @@ describe('glaze survives the snapshot round-trip and reaches the renderer', () =
   const glaze = { colors: ['#2a1810', '#8a5a30', '#efd9b8'], flow: 2.6, warp: 1.1, contrast: 3.2, streak: 0.12, drip: 0.18 };
   const design = {
     tiers: [{ shape: 'round', color: '#ffffff', frostingType: 'glaze', glaze, topPipings: [], bottomPipings: [], creamLayers: [] }],
-    texts: [], ages: [], stickers: [], writing: null, piping: [],
+    texts: [], ages: [], stickers: [], writings: [], piping: [],
   };
 
   it('buildDesignSnapshot preserves tier.glaze', () => {
@@ -56,10 +56,22 @@ describe('a saved design comes back as the same cake', () => {
       width: 2.4, depth: 2.4, cornerR: 0.1,
       frostingType: 'buttercream', frostingStyle: 'wave', styleParams: { depth: 0.4 },
       gradient: { stops: [{ color: '#fff', at: 0 }] },
+      stripes: { palette: ['#F1EEDC', '#ABD76B'], count: 16, weights: [1, 1], softness: 0.18, wobble: 0.3 },
       glaze: { colors: ['#2a1810'], flow: 2 },
       dusting: { splashes: [{ u: 0.2, v: 0.4 }], color: '#d4af37' },
       foil: { flakes: [{ u: 0.1, v: 0.3 }], finish: 'gold' },
       grass: { color: '#4caf3d', height: 0.2, overhang: 0.5, patches: [{ u: 0.1, v: 0.5, r: 0.3 }] },
+      // Two of them, and deliberately different arrangements: a list that round-trips its first entry
+      // and drops the rest looks identical to a working one on any cake with a single rainbow.
+      rainbows: [
+        { id: 'r1', surface: 'top', footLeft: 'top', footRight: 'board', offsetX: 0.71, scale: 1,
+          bands: 6, colors: ['#F6A9C0', '#F9C9A0'] },
+        { id: 'r2', surface: 'side', footLeft: 'board', footRight: 'board', theta: -0.09, scale: 0.75 },
+      ],
+      clouds: [
+        { id: 'c1', variant: 'puff', surface: 'board', yaw: 0.8, standoff: 1.3, lobes: 3, rows: 2 },
+        { id: 'c2', variant: 'flat', surface: 'side', theta: -0.4, width: 0.55, depth: 0.08 },
+      ],
       creamLayers: [{ id: 'c1', color: '#e0479e', from: 0.1, to: 0.6 }],
       topPipings: [{ layerId: 'p1', glbUrl: 'x.glb', color: '#fff' }],
       bottomPipings: [{ layerId: 'p2', glbUrl: 'y.glb', color: '#eee' }],
@@ -67,7 +79,8 @@ describe('a saved design comes back as the same cake', () => {
     texts:    [{ id: 't1', content: 'HELLO', theta: 0, y: 0.7, fontSize: 0.2, color: '#e0479e' }],
     ages:     [{ id: 'a1', value: '30', size: 0.95, finish: 'gold' }],
     stickers: [{ id: 's1', elementId: 'e1', imageUrl: 'lion.glb', zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1 }],
-    writing:  { text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' },
+    writings: [{ id: 'w1', text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' },
+               { id: 'w2', text: 'Love, Mum',      font: 'script', surface: 'board', color: '#e0479e' }],
     piping:   [{ id: 'k1', points: [[0, 0], [1, 1]], color: '#fff' }],
     boardGrass: { color: '#3f9c33', height: 0.16, ringWidth: 0.8, patches: [{ u: 0.5, v: 0.9, r: 0.3 }] },
     nameBlocks: { zone: 'board', text: 'CAKE', size: 0.3, blockColor: '#f7f5f2',
@@ -82,15 +95,28 @@ describe('a saved design comes back as the same cake', () => {
 
   // Named individually as well as in the whole-config check above, so a failure says WHICH element
   // type was lost rather than printing two large objects and leaving you to diff them.
-  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams']) {
+  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows', 'clouds']) {
     it(`tier.${key} survives`, () => {
       expect(roundTrip(FULL).tiers[0][key]).toEqual(FULL.tiers[0][key]);
     });
   }
 
-  for (const key of ['boardGrass', 'nameBlocks', 'writing', 'texts', 'ages', 'stickers', 'piping']) {
+  for (const key of ['boardGrass', 'nameBlocks', 'writings', 'texts', 'ages', 'stickers', 'piping']) {
     it(`design.${key} survives`, () => {
       expect(roundTrip(FULL)[key]).toEqual(FULL[key]);
     });
   }
+
+  // A message became a LIST on 2026-08-22. Every template and order saved before that holds a single
+  // nullable `writing` OBJECT, and those are not ours to rewrite — a saved order is a record of what
+  // somebody bought. So the promotion is the compatibility guarantee, and it is asserted rather than
+  // assumed: drop it and every old cake silently loses its message on load, with nothing to see.
+  it('a legacy single `writing` object is promoted to the writings list', () => {
+    const legacy = { ...FULL, writing: { text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' } };
+    delete legacy.writings;
+    const out = roundTrip(legacy).writings;
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ text: 'Happy Birthday', surface: 'top', color: '#ffffff' });
+    expect(out[0].id).toBeTruthy();          // minted on promotion — the list is addressable by id
+  });
 });
