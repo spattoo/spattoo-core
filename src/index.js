@@ -90,6 +90,8 @@ export { SceneLights, SceneEnv } from './designer/canvas/CakeCanvas.jsx';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".
+export { cloudLobes, cloudPlacement, cloudBaseY, cloudFitScale, cloudGuide, CLOUD_DEFAULTS } from './designer/geometry/cloud.js';
+export { default as FondantCloud } from './designer/canvas/FondantCloud.jsx';
 export { rainbowBands, bandGeometry, bandPath, bandRadius, legFootY, archCenterX, requiredStandoff, rainbowBoardReach, rainbowFootReach, wrapToWall, fitOnTopScale, rainbowGuide, RAINBOW_DEFAULTS } from './designer/geometry/rainbow.js';
 export { default as RainbowArch } from './designer/canvas/RainbowArch.jsx';
 // Fondant letter blocks. Layout is separate from the renderer for the same reason grass's is: one
