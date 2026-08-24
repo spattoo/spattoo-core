@@ -39,6 +39,44 @@ const LOGO_SRC = LOGO_PARAM === 'none' ? null
                : LOGO_PARAM === 'wide' ? '/sample-logo-wordmark.png'
                : '/feelings-flavours-logo.png';
 
+/* ⚠️ ?catalog=1 — SEVERAL element types, which is the only way to see the picker's grouping.
+ *
+ * The football stub is one type holding one element, so the panel it produced had nothing to group
+ * and the reported screen — CREAM PIPING, FOOD FOIL ("No elements yet"), BUTTERFLY ("No elements
+ * yet"), IMAGE TOPPER — could not be reached here at all.
+ *
+ * Note WHERE the empty groups come from. `activeElementTypeIds` is built from the elements actually
+ * loaded, so a type with no elements never renders; FOOD FOIL and BUTTERFLY were on screen because
+ * they DO hold elements and the SEARCH removed them. Reproducing that needs types that are
+ * populated and non-matching, which is what these are: search "clo" and only the clothes match.
+ */
+const CAT_THUMB = c => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${c}"/></svg>`)}`;
+const CAT_TYPES = [
+  { id: 'et-topper',  slug: 'topper',       name: 'Cake Topper',  sort_order: 0 },
+  { id: 'et-foil',    slug: 'food_foil',    name: 'Food Foil',    sort_order: 1 },
+  { id: 'et-fly',     slug: 'butterfly',    name: 'Butterfly',    sort_order: 2 },
+  { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3 },
+].map(t => ({ ...t,
+  placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 4, top_tier_only: false, requires_frosting: false },
+  default_allowed_actions: { move: true, color: false, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
+}));
+const CAT_ELEMENTS = [
+  ['e1', 'Fiitball',      'et-topper', '#c9d6c4', 'football sport'],
+  ['e2', 'Crown',         'et-topper', '#e8d7a8', 'gold crown'],
+  ['e3', 'Gold Leaf',     'et-foil',   '#e6c86a', 'edible foil'],
+  ['e4', 'Blue Wing',     'et-fly',    '#a8c4e8', 'butterfly wing'],
+  ['e5', 'baby shorts',   'et-image',  '#7fc3d6', 'baby clothes'],
+  ['e6', 'baby romper',   'et-image',  '#8fd6cf', 'baby clothes'],
+  ['e7', 'fondant baby',  'et-image',  '#e8a8b8', 'baby clothes dress'],
+].map(([id, name, typeId, colour, description], i) => ({
+  id, name, description, element_type_id: typeId, category_id: 'cat-1',
+  image_url: CAT_THUMB(colour), thumbnail_url: CAT_THUMB(colour), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+  placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand' },
+  default_color: '#F0DEB8', sort_order: i,
+}));
+
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
   // the busiest case, which is the one that used to overflow.
@@ -92,14 +130,14 @@ const STUBS = {
    *
    * allowed_zones includes `board`; allowed_actions has resize TRUE and tilt FALSE. The panel showed
    * the opposite of both. Only a placed element can settle why. */
-  fetchElementTypes:   async () => (PARAMS.has('football') ? [{
+  fetchElementTypes:   async () => (PARAMS.has('catalog') ? CAT_TYPES : PARAMS.has('football') ? [{
     id: 'et-topper', slug: 'topper', name: 'Cake Topper', sort_order: 0,
     placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 1, top_tier_only: true, requires_frosting: false },
     default_allowed_actions: { move: true, color: true, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
   }] : []),
-  fetchElementCategories: async () => (PARAMS.has('football')
+  fetchElementCategories: async () => ((PARAMS.has('football') || PARAMS.has('catalog'))
     ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' }] : []),
-  fetchElements:       async () => (PARAMS.has('football') ? [{
+  fetchElements:       async () => (PARAMS.has('catalog') ? CAT_ELEMENTS : PARAMS.has('football') ? [{
     id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
     // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,

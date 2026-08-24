@@ -812,16 +812,35 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
   );
 }
 
-function ElementTypeCard({
-  elementType, design, scatteredDecorElements = [], picksElements = [], imageTopperElements = [], otherElements = [],
-  onElementTap, onDragStartSticker, cfAssetsBase,
-}) {
-  const { slug, name } = elementType;
+/* ONE grid of elements — no element_type headings, and no empty groups.
+ *
+ * The panel used to render a card per element_type: CREAM PIPING, FOOD FOIL, BUTTERFLY, IMAGE
+ * TOPPER. Those names are OUR taxonomy — they decide which placement rules an element inherits —
+ * and they mean nothing to somebody shopping for a baby-clothes topper. What a customer navigates
+ * is a CATEGORY, and under it, elements. So the headings are gone, and the groups with them.
+ *
+ * ⚠️ Dropping the groups is what fixes the reported bug, and it is the same bug. Searching "clo"
+ * listed FOOD FOIL and BUTTERFLY, each saying "No elements yet" — an answer to a question nobody
+ * asked, pushing the four real matches below the fold. A group can only be empty on screen if it
+ * has a name to be empty UNDER; with the name gone there is nothing left to draw, browsing or
+ * searching.
+ *
+ * The type still decides how a tile is DRAWN — an image topper is a picture whose edges matter, so
+ * it is fitted whole rather than cropped. That now travels per element instead of per group.
+ *
+ * ⚠️ crossOrigin is unconditional. Every caller already passed it: a tile <img> caches the asset
+ * CORS-clean and the SAME url is later loaded as a WebGL texture (placement preview, on-cake), which
+ * a non-CORS cache entry would refuse. The src must go through corsUrl for that warming to land —
+ * the texture path asks for the QUALIFIED url, so a tile fetching the raw one warms an entry nobody
+ * reads (see assetUrl.js).
+ */
+function ElementGrid({ items = [], onElementTap, onDragStartSticker }) {
+  if (!items.length) return null;
 
-  // Grid-item pointer handler shared by every decor grid, disambiguating tap vs drag. Per
-  // INVARIANTS #6 EVERY element is click-to-place: a tap calls tapPlaceElement (drops it on its
-  // default surface and opens its edit popup); drag is the alternative for precise positioning.
-  // No tappable/type/zone gate — the panel treats every element identically.
+  // Grid-item pointer handler, disambiguating tap vs drag. Per INVARIANTS #6 EVERY element is
+  // click-to-place: a tap calls tapPlaceElement (drops it on its default surface and opens its edit
+  // popup); drag is the alternative for precise positioning. No tappable/type/zone gate — the panel
+  // treats every element identically.
   const gridPointerDown = (el, e) => {
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY;
@@ -843,55 +862,25 @@ function ElementTypeCard({
     window.addEventListener('pointerup', up);
   };
 
-  // ONE draggable thumbnail grid shared by every "drag (or tap) onto the cake" element type
-  // (scattered decor, picks, image toppers, and any other generic type). Only the hint text,
-  // empty-state text, and image fit differ — passed in as options.
-  // crossOrigin defaults ON so a tile <img> caches the asset CORS-clean — the same URL is later
-  // loaded as a WebGL texture (placement preview / on-cake), and a non-CORS cache entry would
-  // poison that load. R2 serves the CORS header, so this is safe for every tile. The src must go
-  // through corsUrl for that warming to land: the texture path asks for the QUALIFIED url
-  // (useTexture(corsUrl(...))), so a tile fetching the raw one warms an entry nobody reads.
-  const renderDraggableGrid = (elements, { hint, emptyText, objectFit = 'cover', crossOrigin = true }) => (
+  return (
     <div style={{ ...s.elementCard, cursor: 'default' }}>
-      <div style={s.elementCardLabel}>{name}</div>
-      {elements.length > 0 ? (
-        <>
-          <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>{hint}</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {elements.map(el => (
-              <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}>
-                <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
-                  {thumbSrc(el) && <img src={crossOrigin ? corsUrl(thumbSrc(el)) : thumbSrc(el)} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} {...(crossOrigin ? { crossOrigin: 'anonymous' } : {})} style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
-                </div>
-                <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
-              </div>
-            ))}
+      {/* One hint for one grid. The per-type wording it replaces ("Drag onto TOP of cake to place")
+          described a rule the element enforces for itself — an image topper lands on its own zone
+          however it is placed — and it cannot be said per group when there are no groups. */}
+      <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Tap or drag onto the cake to place</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {items.map(({ el, objectFit }) => (
+          <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}>
+            <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
+              {thumbSrc(el) && <img src={corsUrl(thumbSrc(el))} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
           </div>
-        </>
-      ) : (
-        <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>{emptyText}</div>
-      )}
+        ))}
+      </div>
     </div>
   );
-
-  // ── scattered_decor — PNG stickers placeable on any zone ──────────────────
-  if (slug === ELEMENT_SLUGS.SCATTERED_DECOR) {
-    return renderDraggableGrid(scatteredDecorElements, { hint: 'Drag onto cake to place', emptyText: 'No elements yet' });
-  }
-
-  // ── picks — draggable GLB elements inserted into cake ─────────────────────
-  if (slug === ELEMENT_SLUGS.PICKS) {
-    return renderDraggableGrid(picksElements, { hint: 'Drag onto cake to place', emptyText: 'No picks yet' });
-  }
-
-  // ── image_topper — draggable 2D images placed upright on top surface ────────
-  if (slug === ELEMENT_SLUGS.IMAGE_TOPPER) {
-    return renderDraggableGrid(imageTopperElements, { hint: 'Drag onto top of cake to place', emptyText: 'No image toppers yet', objectFit: 'contain', crossOrigin: true });
-  }
-
-  // ── All other types — generic draggable grid ──────────────────────────────
-  return renderDraggableGrid(otherElements, { hint: 'Drag onto cake to place', emptyText: 'No elements yet' });
 }
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
@@ -7882,26 +7871,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {renderRingPickerCard('Cream Piping', pipingPickerEls)}
             {renderRingPickerCard(dripType?.name ?? 'Chocolate Drip', dripEls)}
 
-            {/* All other element types */}
+            {/* Every other element, in ONE grid. The element_type decides where an element can go
+                and how its tile is drawn; it is not a heading a customer should ever read, and a type
+                holding nothing is not a section — see ElementGrid. Types are still walked IN ORDER,
+                so the grid keeps the arrangement the headings used to imply. */}
             {(() => {
-              return elementTypes
+              const items = elementTypes
                 .filter(et => et.slug !== 'cream_piping' && et.slug !== 'piping_pattern' && et.slug !== 'drip' && activeElementTypeIds.has(et.id))
-                .map(et => (
-                  <ElementTypeCard
-                    key={et.id}
-                    elementType={et}
-                    design={design}
-                    scatteredDecorElements={filterEl(scatteredDecorDb)}
-                    picksElements={filterEl(picksDb)}
-                    imageTopperElements={filterEl(imageTopperDb)}
-                    // Global elements only — anything with a baker_id is the caller's OWN and lives in
-                    // the "My Decorations" section below, so it appears exactly once in the picker.
-                    otherElements={filterEl((otherElementsDb[et.id] ?? []).filter(el => !el.baker_id))}
-                    onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
-                    onElementTap={(el) => tapPlaceElement(el)}
-                    cfAssetsBase={cfAssetsBase}
-                  />
-              ));
+                .flatMap(et => {
+                  const els =
+                    et.slug === ELEMENT_SLUGS.SCATTERED_DECOR ? filterEl(scatteredDecorDb)
+                  : et.slug === ELEMENT_SLUGS.PICKS           ? filterEl(picksDb)
+                  : et.slug === ELEMENT_SLUGS.IMAGE_TOPPER    ? filterEl(imageTopperDb)
+                    // Global elements only — anything with a baker_id is the caller's OWN and lives
+                    // in "My decorations" below, so it appears exactly once in the picker.
+                  : filterEl((otherElementsDb[et.id] ?? []).filter(el => !el.baker_id));
+                  // An image topper is a picture with edges that mean something — fit it whole.
+                  // Everything else is a cut-out on transparent, and cropping to the tile reads better.
+                  const objectFit = et.slug === ELEMENT_SLUGS.IMAGE_TOPPER ? 'contain' : 'cover';
+                  return els.map(el => ({ el, objectFit }));
+                });
+              return (
+                <ElementGrid
+                  items={items}
+                  onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
+                  onElementTap={(el) => tapPlaceElement(el)}
+                />
+              );
             })()}
 
             {/* ── My Decorations ────────────────────────────────────────────────────────────────
