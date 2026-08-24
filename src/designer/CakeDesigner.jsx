@@ -30,6 +30,7 @@ import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
+import { RAINBOW_DEFAULTS } from './geometry/rainbow.js';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
@@ -1642,7 +1643,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3710,6 +3711,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'grass' });
   }
 
+  // ── Fondant rainbows ────────────────────────────────────────────────────────
+  // Which tier a new one lands on: the TOP one, same as grass. It is the tier a decoration is most
+  // often meant for, and on a single-tier cake — which is most of them — it is the only answer.
+  function rainbowTierIndex() { return Math.max(0, design.tiers.length - 1); }
+
+  // `el` is the catalogue row. It carries the parameters an admin tuned in the studio
+  // (placement_config.rainbow), which is the whole point of it being a row: "Pastel arch" and "Bold
+  // six-band" are two rows over one generator, not two presets hardcoded in a studio.
+  //
+  // Defaults first, so a row that authors only its colours still gets a whole rainbow.
+  function addRainbow(el) {
+    const i = rainbowTierIndex();
+    const tuned = el?.placement_config?.rainbow ?? {};
+    const id = `rb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // Computed inside the updater from the LIVE list, not from `design` as this component last
+    // rendered it — otherwise two quick presses both read the same list and the second rainbow lands
+    // exactly on the first. The same bug the grass patches had, fixed the same way.
+    updateTierRainbows(i, cur => [
+      ...cur,
+      { ...RAINBOW_DEFAULTS, ...tuned, id,
+        // Each one a quarter turn further round, so a second rainbow is visibly a second rainbow
+        // rather than a redraw of the first. Position along the surface stays as authored: WHERE it
+        // sits is the customer's decision once they can drag it.
+        yaw: cur.length * (Math.PI / 2) },
+    ]);
+    selectExclusive({ type: 'rainbow', tierIndex: i, id });
+  }
+
   function removeGrass() {
     design.tiers.forEach((t, i) => { if (t.grass) setTierGrass(i, null); });
     setBoardGrass(null);
@@ -3815,6 +3844,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
     letter_blocks: addNameBlocks,
+    rainbow: addRainbow,
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
