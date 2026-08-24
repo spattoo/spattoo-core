@@ -2489,6 +2489,7 @@ function CakeContent({ config, scene, edit = null }) {
             height={tier.height}
             color={tier.color}
             gradient={tier.gradient ?? null}
+            stripes={tier.stripes ?? null}
             glaze={tier.glaze ?? null}
             yBase={tier.baseY}
             shape={tier.shape ?? 'round'}

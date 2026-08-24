@@ -11,6 +11,7 @@ import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
+import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
 import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
@@ -117,6 +118,10 @@ export function toCanvasConfig(design) {
         height:       glyphDims ? glyphDims.height : (t.height ?? (BOTTOM_H - i * TIER_HEIGHT_STEP)),
         color:        t.color,
         gradient:     t.gradient ?? null,
+        // ⚠️ FORWARDED HERE OR IT NEVER RENDERS. The canvas reads this config, not the design — wiring
+        // CakeCanvas/CakeTier/TierBody to `tier.stripes` and stopping short of this line produces a
+        // feature that saves, reloads and reports as present while drawing nothing at all.
+        stripes:      t.stripes ?? null,
         glaze:        t.glaze ?? null,          // chocolate-glaze marble palette + pattern (frostingType 'glaze')
         frostingType: t.frostingType ?? DEFAULT_FROSTING,
         frostingStyle: t.frostingStyle ?? DEFAULT_STYLE,
@@ -376,6 +381,30 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, glaze: { ...GLAZE_DEFAULTS, ...(t.glaze ?? {}), ...patch } }
         : t),
+    }));
+  }
+
+  /* Tier STRIPES — several colours stacked up the wall, scraped smooth (shared/color/stripeMaterial.js).
+   *
+   * A PATCH, like setTierGlaze and unlike setTierGradient: stripes carry five fields
+   * (palette / count / weights / softness / wobble) and the UI edits them one at a time, so a
+   * positional signature would make every slider re-send the other four and drift them.
+   *
+   * Seeded from a preset on first edit, never from an empty object — a stripe set missing `softness`
+   * renders with whatever the material defaults to, which is a look the baker did not choose.
+   *
+   * ⚠️ `color` is deliberately left alone. It stays the solid fallback for every surface that does not
+   * read stripes — the saved thumbnail, an old client, the storefront card — so a striped cake never
+   * degrades to white. Passing null clears the stripes and that fallback is what shows.
+   */
+  function setTierStripes(index, patch) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => {
+        if (i !== index) return t;
+        if (patch === null) { const { stripes, ...rest } = t; return rest; }
+        return { ...t, stripes: { ...STRIPE_DEFAULTS, ...(t.stripes ?? {}), ...patch } };
+      }),
     }));
   }
 
@@ -1250,7 +1279,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,

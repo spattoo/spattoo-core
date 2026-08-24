@@ -56,6 +56,7 @@ describe('a saved design comes back as the same cake', () => {
       width: 2.4, depth: 2.4, cornerR: 0.1,
       frostingType: 'buttercream', frostingStyle: 'wave', styleParams: { depth: 0.4 },
       gradient: { stops: [{ color: '#fff', at: 0 }] },
+      stripes: { palette: ['#F1EEDC', '#ABD76B'], count: 16, weights: [1, 1], softness: 0.18, wobble: 0.3 },
       glaze: { colors: ['#2a1810'], flow: 2 },
       dusting: { splashes: [{ u: 0.2, v: 0.4 }], color: '#d4af37' },
       foil: { flakes: [{ u: 0.1, v: 0.3 }], finish: 'gold' },

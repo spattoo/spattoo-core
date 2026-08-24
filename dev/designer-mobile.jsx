@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { CakeDesigner } from '../src/index.js';
+import { STRIPE_PRESETS } from '../src/designer/stripePresets.js';
 
 /* ── The real designer, on a phone, against a stubbed API. Open /designer-mobile.html ────────────
  *
@@ -114,6 +115,23 @@ const onSaveTemplate = async t => {
   console.log('[harness] saved template', t.name, t);
 };
 
+/* ⚠️ A STRIPED cake, reachable by URL: ?stripes=stripes | pastel | unicorn | sunset | rainbow.
+ *
+ * The wall treatment is several files deep — design → toCanvasConfig → CakeCanvas → CakeTier →
+ * TierBody → the shader — and every one of those is a place it can be dropped silently. It was
+ * already dropped once, in toCanvasConfig, where it saved and reloaded perfectly while drawing
+ * nothing. One URL that renders the finished thing is the cheapest way to know the whole chain is
+ * connected. */
+const STRIPE_KEY = PARAMS.get('stripes');
+const stripedDesign = STRIPE_KEY ? {
+  tiers: [{
+    color: '#F1EEDC', radius: 1.2, height: 1.45, shape: 'round',
+    frostingType: 'buttercream', frostingStyle: 'smooth',
+    stripes: STRIPE_PRESETS[STRIPE_KEY] ?? STRIPE_PRESETS.stripes,
+  }],
+} : null;
+
 createRoot(document.getElementById('root')).render(
-  <CakeDesigner apiClient={apiClient} cfAssetsBase="" onSaveTemplate={onSaveTemplate} />,
+  <CakeDesigner apiClient={apiClient} cfAssetsBase="" onSaveTemplate={onSaveTemplate}
+                initialDesign={stripedDesign} />,
 );

@@ -4,6 +4,7 @@ import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { applyStripes, areStripesActive, stripeColors } from '../shared/color/stripeMaterial.js';
 import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { buildGlazeDrip } from '../shared/glaze/glazeDrip.js';
 import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textures/creamWaveTexture.js';
@@ -1154,7 +1155,7 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
+                    gradient, stripes = null, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
@@ -1168,15 +1169,23 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
     if (!matRef.current) return;
     let bb = null;
     const geo = meshRef.current?.geometry;
-    if ((gradient || glaze) && geo) {
+    if ((gradient || stripes || glaze) && geo) {
       if (!geo.boundingBox) geo.computeBoundingBox();
       const size = new THREE.Vector3();   geo.boundingBox.getSize(size);
       const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
       bb = { min: geo.boundingBox.min.clone(), size, center };
     }
     applyGradient(matRef.current, gradient, bb);
+    /* Stripes ride the SAME bbox and the same seam as the gradient — see shared/color/stripeMaterial.js.
+     *
+     * ⚠️ Order matters, and it is the reason these are not merged yet: both patch `onBeforeCompile` and
+     * both write `diffuseColor.rgb`, so whichever runs LAST wins the pixel. Stripes go second, so a
+     * tier carrying both renders as stripes. The UI does not let a baker set both — the mode picker is
+     * one choice — but a design saved by an older client can, and silently picking one beats a wall
+     * that flickers between them depending on which effect re-ran. */
+    applyStripes(matRef.current, stripes, bb);
     applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
-  }, [gradient, glaze, geoSig]);
+  }, [gradient, stripes, glaze, geoSig]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
@@ -1336,6 +1345,8 @@ function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensi
 export default function CakeTier({
   radius, height, color, yBase,
   gradient = null,
+  // Several colours up the wall — shared/color/stripeMaterial.js. Null = the solid colour or gradient.
+  stripes = null,
   glaze = null,
   shape = 'round', shapeFamily = null, shapeConfig = null, width, depth, cornerR,
   frostingType = 'buttercream',
@@ -1378,6 +1389,13 @@ export default function CakeTier({
   // Gradient is a cream technique only — ignore any (dormant) gradient on a finish that doesn't
   // support it (fondant/naked), so it always renders solid. The data is kept; just not rendered.
   const effGradient = frostingSupportsGradient(frostingType) ? gradient : null;
+  /* Stripes ride the SAME declared capability as the gradient — a frosting that cannot hold an ombre
+   * cannot hold stripes either (fondant is a rolled sheet, naked has barely any cream). Config-driven
+   * off the frostings registry, never a name check (INVARIANTS #1/#6).
+   * ⚠️ Worth revisiting: the sunset reference cake reads as fondant, and fondant does not declare
+   * gradient support — so that capability may be the wrong gate for stripes specifically. Following
+   * the existing one rather than inventing a second is the smaller mistake for now. */
+  const effStripes = frostingSupportsGradient(frostingType) ? stripes : null;
   // Chocolate glaze: a render:'glaze' finish paints its body with the object-space marble shader. The
   // palette lives on the instance (tier.glaze); absent → the default solid chocolate. Config-driven off
   // the finish's `render` KEY, never the literal frosting name (INVARIANTS #1/#6). The glaze base colour
@@ -1387,7 +1405,13 @@ export default function CakeTier({
   // Vertical gradient runs bottom→top, so the top lid takes the last (top-most) stop; solid colour
   // otherwise. Mirrors the shader, which maps gt=1 (the cake top) to the final stop.
   const gradColors = effGradient?.colors?.filter(Boolean) ?? [];
-  const capColor   = gradColors.length >= 2 ? gradColors[gradColors.length - 1] : color;
+  /* The top lid takes the TOP-MOST colour, whichever effect is painting the wall.
+   *
+   * This is the "top disc" question the plan left open, and the gradient already answered it: every
+   * reference photo ices the top separately in one colour, and the one that reads is the colour the
+   * wall arrives at. Stripes reuse the rule rather than inventing a stored choice nobody asked for. */
+  const stripeCap   = areStripesActive(effStripes) ? stripeColors(effStripes).slice(-1)[0] : null;
+  const capColor    = stripeCap ?? (gradColors.length >= 2 ? gradColors[gradColors.length - 1] : color);
   const shp = useMemo(() => tierShape({ shape, shapeFamily, shapeConfig, width, depth, radius, cornerR }), [shape, shapeFamily, shapeConfig, width, depth, radius, cornerR]);
   // "Not round" — an extruded footprint (the sheet's rounded rect, or any authored outline). Every
   // feature below that was gated on `!isPrism` was really gated on "this is the lathe/cylinder path":
@@ -1607,7 +1631,7 @@ export default function CakeTier({
         // separate top cap (a cap reads as a stray "board" on a non-round cake).
         <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
           grainExtent={[prismGrainU, height]}
-          gradient={effGradient} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
+          gradient={effGradient} stripes={effStripes} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
           <primitive object={prismGeo} attach="geometry" />
         </TierBody>
       ) : roundedGeo ? (
@@ -1615,7 +1639,7 @@ export default function CakeTier({
         // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.
         <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
           grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
-          gradient={effGradient} glaze={effGlaze} geoSig={roundedGeo.uuid} castShadow receiveShadow>
+          gradient={effGradient} stripes={effStripes} glaze={effGlaze} geoSig={roundedGeo.uuid} castShadow receiveShadow>
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
       ) : styledGeo ? (
@@ -1623,7 +1647,7 @@ export default function CakeTier({
         // no separate lid — the texture and gradient flow over the whole wall.
         <TierBody position={[0, centerY, 0]} color={color} surf={mat}
           grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
-          gradient={effGradient} geoSig={styledGeo.uuid} castShadow receiveShadow>
+          gradient={effGradient} stripes={effStripes} geoSig={styledGeo.uuid} castShadow receiveShadow>
           {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
               changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
           <primitive key={styledGeo.uuid} object={styledGeo} attach="geometry" />
@@ -1633,7 +1657,7 @@ export default function CakeTier({
           <TierBody position={[0, centerY, 0]} color={color} surf={mat}
             grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
             overrideNormalMap={styleNormalMap} overrideNormalScale={styleNormalScale}
-            gradient={effGradient} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
+            gradient={effGradient} stripes={effStripes} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
             <cylinderGeometry args={[radius, radius, height, 64]} />
           </TierBody>
           {/* Top lid: a thin disk that reads as the cake's flat top. Under a vertical gradient its

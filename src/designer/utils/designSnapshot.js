@@ -26,7 +26,10 @@
 // cake, never added to this list. A template saved with piped grass on its top came back bald, and
 // its THUMBNAIL still showed the grass — the picture is captured from the canvas, not from the
 // snapshot, so the two disagreed with nothing to say so. See the round-trip guard in the test.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers'];
+// `stripes` (several colours up the wall) is a wall treatment exactly like `gradient`, and it is on
+// this list from the day it shipped rather than after a baker lost one — the three notes above are
+// each a feature that reloaded plain because somebody added it to the cake and not to this line.
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {
