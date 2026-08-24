@@ -350,10 +350,13 @@ export function rainbowBands(params = {}, cake = {}) {
 
   // A FALLING foot has to land on something too.
   //
-  // Off the bottom tier it lands on the board, and the board GROWS to meet it (rainbowBoardReach) —
-  // so nothing shrinks and nothing needs to. One tier up, the surface underneath is the tier below:
-  // a fixed disc that cannot be widened. There the standing-on-top rule applies again, just measured
-  // against what is actually under the foot rather than what the arch stands on.
+  // What that something IS depends on the tier: the board off the bottom one, the tier below on any
+  // other. NEITHER grows. A board is a thing the baker buys, sized to the cake and priced with it, so
+  // widening it silently is changing the order to fit the decoration — and a tier cannot be widened
+  // at all. So the standing-on-top rule applies again, measured against what is actually under the
+  // foot rather than what the arch stands on.
+  //
+  // The caller says what is under it, through `cake.supportRadius`. Absent means nothing limits it.
   //
   // Without it the outer bands hang in the air, and that does not read as broken in a picture — the
   // arch looks whole and only a second look finds the ends stopping over nothing. At the authored
@@ -433,7 +436,7 @@ export function rainbowBands(params = {}, cake = {}) {
 /**
  * How far out the FALLING foot lands, from the cake's axis, outer edge included.
  *
- * On the bottom tier this is a question the board answers by growing (`rainbowBoardReach`). On any
+ * Kept for a caller that can afford a bigger board — the designer's own board does not grow. On any
  * tier above it there is no board — the surface underneath is the tier below, a disc of a fixed
  * radius that cannot be widened. So the same arch that stands fine on the bottom rests on NOTHING
  * one tier up, and the picture does not say so: a foot in mid-air looks exactly like a foot on a

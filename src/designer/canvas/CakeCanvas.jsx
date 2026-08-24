@@ -2572,9 +2572,18 @@ function CakeContent({ config, scene, edit = null }) {
               key={rb.id}
               params={rb}
               cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
-                      // What a falling foot lands ON. The board GROWS to catch one (rainbowBoardReach),
-                      // so it never limits the arch; a tier below cannot, so it does.
-                      supportRadius: i === 0 ? null : tierData[i - 1].radius }}
+                      // What a falling foot lands ON: the tier below, or — off the bottom tier —
+                      // THE BOARD. The board does not grow here the way it does in the studio. It is
+                      // a real thing the baker buys, sized to the cake and priced with it, so
+                      // widening it silently is changing the order to fit the decoration.
+                      //
+                      // A rect board is measured across its narrow way, so the arch lands on it at
+                      // any angle rather than only over the corners.
+                      supportRadius: i > 0 ? tierData[i - 1].radius
+                        : board ? (board.kind === 'rect'
+                            ? Math.min(board.width, board.depth) / 2
+                            : board.radius)
+                        : null }}
               yaw={rb.yaw ?? 0}
             />
           ))}

@@ -882,7 +882,38 @@ describe('a rainbow on an upper tier', () => {
       .toBeLessThanOrEqual(TIER1.r + 1e-3);
   });
 
-  it('leaves the bottom tier alone, because the board grows instead', () => {
+  it('lands the bottom tier\'s foot on the BOARD, which does not grow', () => {
+    // The studio grows its board to catch a foot. A real one does not: it is a thing the baker buys,
+    // sized to the cake and priced with it, so widening it silently is changing the order to fit the
+    // decoration. So the same rule as an upper tier applies, measured against the board.
+    const onBoard = { radius: 1.2, topY: 1.55, boardY: 0.1, supportRadius: 1.6 };
+    const p = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' };
+    expect(rainbowFootReach(p, onBoard)).toBeLessThanOrEqual(1.6 + 1e-3);
+    expect(rainbowBands(p, onBoard).supportFit).toBeLessThan(1);
+  });
+
+  it('costs about half the size at the default lean, on a standard board', () => {
+    // Worth pinning as a NUMBER, because it is the argument for a bigger board rather than a bug.
+    // The falling foot has to clear the cake (past 1.2) and land on the board (inside 1.6), and that
+    // ring is only 0.4 wide — so a full-size leaning arch does not fit a standard board at all.
+    const onBoard = { radius: 1.2, topY: 1.55, boardY: 0.1, supportRadius: 1.6 };
+    const fit = rainbowBands({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' }, onBoard).supportFit;
+    expect(fit).toBeGreaterThan(0.45);
+    expect(fit).toBeLessThan(0.65);
+  });
+
+  it('keeps the SHAPE while it shrinks — it is not thinned', () => {
+    // Thinning the ropes would also pull the foot in, and it makes a different object: the doc's own
+    // rule is that a tight hole under fat ropes is what makes an arch reach past the cake, and a wide
+    // hole with thin ropes is a shallow hoop. Scaling holds the ratio; thinning destroys it.
+    const flat = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+    const onBoard = { ...flat, supportRadius: 1.6 };
+    const p = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board' };
+    const ratio = c => { const r = rainbowBands(p, c); return r.bands[0].radius / r.thickness; };
+    expect(ratio(onBoard)).toBeCloseTo(ratio(flat), 6);
+  });
+
+  it('leaves it alone when nothing says what is underneath', () => {
     // No supportRadius means nothing limits it — rainbowBoardReach widens the board to meet the
     // foot. Shrinking here would be solving a problem the board already solves.
     const bottom = { radius: 1.2, topY: 1.55, boardY: 0.1 };
