@@ -6897,7 +6897,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // something else entirely.
     const KINDS = [
       { key: 'puff', label: 'Puffy', p: { variant: 'puff', rows: 2, taper: 0.2 } },
-      { key: 'flat', label: 'Cut-out', p: { variant: 'flat', rows: 1, taper: 0.45 } },
+      // "Flat", not "Cut-out". Cut-out is a MAKER'S word — it describes how the thing is made, and
+      // a customer has never thought about a cloud being cut. What they can see is that one is
+      // puffy and one is flat, which is the whole difference in one word each.
+      { key: 'flat', label: 'Flat', p: { variant: 'flat', rows: 1, taper: 0.45 } },
     ];
     const WHERE = [
       { key: 'top', label: 'On top', p: { surface: 'top', standoff: 0.45 } },
