@@ -57,8 +57,10 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   surface: 'top',
   // Where round the wall it sits, radians, for `surface: 'side'`. 0 is the front.
   theta: 0,
-  // How far the ropes stand off the wall, × tier radius. Small: fondant pressed onto buttercream
-  // sits on it, it does not hover.
+  // How far the ropes stand off the wall, × tier radius. FIXED, with no control — the same call as
+  // `gap`, for the same reason: it is not a decision anybody makes. Fondant pressed onto a cake is
+  // pressed onto it, and the only reason this is not zero is to stop the two surfaces flickering
+  // against each other, which is a rendering detail rather than a choice about the decoration.
   proud: 0.02,
   footLeft:  'top',
   footRight: 'board',
