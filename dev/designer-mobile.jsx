@@ -112,7 +112,13 @@ const apiClient = new Proxy(STUBS, {
  * harness. Resolves rather than rejects; `?save=fail` exercises the error branch. */
 const onSaveTemplate = async t => {
   if (PARAMS.get('save') === 'fail') throw new Error('Could not save (stubbed failure).');
-  console.log('[harness] saved template', t.name, t);
+  // ⚠️ Keep the THUMBNAIL and the SNAPSHOT where a test can read them. They come from two different
+  // places — the picture from an off-screen canvas, the data from buildDesignSnapshot — and the whole
+  // class of bug here is the two disagreeing: a saved cake that reloads plain while its thumbnail
+  // still shows the decoration (see designSnapshot.js on grass).
+  window.__lastSave = { name: t.name, designJson: t.designJson };
+  window.__lastThumb = t.thumbnailBlob;
+  console.log('[harness] saved template', t.name);
 };
 
 /* ⚠️ A STRIPED cake, reachable by URL: ?stripes=pastel | unicorn | sunset | rainbow.
@@ -122,6 +128,15 @@ const onSaveTemplate = async t => {
  * already dropped once, in toCanvasConfig, where it saved and reloaded perfectly while drawing
  * nothing. One URL that renders the finished thing is the cheapest way to know the whole chain is
  * connected. */
+/* ?reload=1 — hydrate from a SAVED SNAPSHOT in localStorage, exactly the way reopening an order does
+ * (`loadDesign(order.design_snapshot)`). Save a cake, stash its designJson, reload: whatever survives
+ * that is what a baker gets back when they edit their order. Nothing else exercises
+ * buildDesignSnapshot → normalizeDesign → toCanvasConfig → the shader end to end. */
+const RELOAD_KEY = 'spattoo-dev-design';
+const reloadDesign = PARAMS.has('reload')
+  ? (() => { try { return JSON.parse(localStorage.getItem(RELOAD_KEY) || 'null'); } catch { return null; } })()
+  : null;
+
 const STRIPE_KEY = PARAMS.get('stripes');
 const stripedDesign = STRIPE_KEY ? {
   tiers: [{
@@ -133,5 +148,5 @@ const stripedDesign = STRIPE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase="" onSaveTemplate={onSaveTemplate}
-                initialDesign={stripedDesign} />,
+                initialDesign={reloadDesign ?? stripedDesign} />,
 );
