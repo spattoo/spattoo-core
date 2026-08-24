@@ -25,6 +25,8 @@ import { ShareIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import { DESIGNER_GROUND } from './constants.js';
+import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
+import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
@@ -402,6 +404,89 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
             style={{ width: '100%', accentColor: '#1a1a1a' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#888' }}>
             <span>Primary</span><span>Secondary</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Stripe controls ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Several colours up the wall (shared/color/stripeMaterial.js). WRAPS GradientControls for the
+ * palette rather than drawing a second row of swatches — it is the same job (pick some colours, edit
+ * one at a time) and the codebase already says that editor lives in exactly one place. What is added
+ * is the three things stripes have and an ombre does not.
+ *
+ * `count` is what makes two colours into a striped cake. ⚠️ Its hint mentions the ODD trick on
+ * purpose: an odd count over an even palette puts the same colour top and bottom, which is what a
+ * baker means by "stripes" and is unreachable if you think of it as repeating the palette N times.
+ */
+function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop, onRemoveStop,
+                          count, softness, wobble, onCountChange, onSoftnessChange, onWobbleChange,
+                          presets, onPreset }) {
+  const colours = palette.length - (pending ? 1 : 0);
+  return (
+    <div>
+      {/* Starting points first: choosing six colours that work together is a colourist's job, and a
+          blank palette is where this feature turns into eight saturated colours at softness 0.8. */}
+      <div style={s.gradientBlock}>
+        <div style={s.gradientLabel}>Start from</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {Object.entries(presets).map(([key, preset]) => (
+            <button key={key} onClick={() => onPreset(key)} title={preset.note}
+              style={s.stripePreset}>
+              <span style={{ display: 'flex', flexDirection: 'column-reverse', width: 14, height: 20,
+                             borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}>
+                {stripeColors(preset).map((c, i) => (
+                  <span key={i} style={{ flex: 1, background: c }} />
+                ))}
+              </span>
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <GradientControls
+        stops={palette} activeStop={activeStop} pending={pending}
+        label="Stripe colours" maxStops={MAX_STRIPES}
+        onSelectStop={onSelectStop} onAddStop={onAddStop} onRemoveStop={onRemoveStop}
+        mode="vertical" modes={['vertical']} onModeChange={() => {}}
+      />
+
+      {colours >= 2 && (
+        <div style={s.gradientBlock}>
+          {/* ⚠️ width 100%: gradientBlock is a centred column, so a row without it shrinks to its
+              content and the label sits glued to its value — "HOW MANY STRIPES6". */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', width: '100%' }}>
+            <div style={s.gradientLabel}>How many stripes</div>
+            <span style={s.stripeValue}>{count}</span>
+          </div>
+          <input type="range" min={2} max={MAX_STRIPES} step={1} value={count}
+            onChange={e => onCountChange(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+          <div style={s.stripeHint}>
+            {count === colours
+              ? 'One stripe per colour.'
+              : `Your ${colours} colours repeat up the cake.`}
+            {' '}An odd number puts the same colour top and bottom.
+          </div>
+
+          <div style={{ ...s.gradientLabel, marginTop: 12, width: '100%' }}>Softness</div>
+          <input type="range" min={0} max={1} step={0.01} value={softness}
+            onChange={e => onSoftnessChange(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#888', width: '100%' }}>
+            <span>Crisp</span><span>Blended</span>
+          </div>
+
+          <div style={{ ...s.gradientLabel, marginTop: 12, width: '100%' }}>Hand-scraped</div>
+          <input type="range" min={0} max={1} step={0.01} value={wobble}
+            onChange={e => onWobbleChange(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+          <div style={s.stripeHint}>
+            Real joins are not spirit-levelled. A little of this reads as iced by hand.
           </div>
         </div>
       )}
@@ -1556,7 +1641,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3478,6 +3563,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (frostingDef(t?.frostingType).render === 'glaze') {
         const rest = (t?.glaze?.colors ?? GLAZE_DEFAULTS.colors).slice(1);
         setTierGlaze(selectedEl.index, { colors: [c, ...rest] });
+      /* ⚠️ A STRIPED tier's swatches edit the SELECTED STRIPE, not tier.color.
+       *
+       * Following the glaze precedent directly above: when a treatment owns the wall, the colour
+       * controls edit that treatment rather than the solid colour underneath it. Without this the
+       * whole swatch row is DEAD while stripes are on — measured, not assumed: clicking a dark green
+       * left the wall unchanged, because tier.color is not what the shader reads.
+       *
+       * A picker that visibly does nothing is the kind of thing reported as a bug months later by
+       * someone who cannot say what they expected, only that it felt broken. */
+      } else if (areStripesActive(t?.stripes)) {
+        const palette = (t.stripes.palette ?? []).slice();
+        palette[Math.min(activeStop, palette.length - 1)] = c;
+        setTierStripes(selectedEl.index, { palette });
       } else {
         setTierColor(selectedEl.index, c);
       }
@@ -4932,14 +5030,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // render KEY, never the literal frosting name (INVARIANTS #1/#6).
   const isGlazeTier = selectedEl?.type === 'tier'
     && frostingDef(selectedTierObj?.frostingType).render === 'glaze';
+  /* ── The tier's colour TREATMENT: solid | ombre | stripes ────────────────────────────────────
+   *
+   * One choice, never two: a wall is painted one of these ways. Derived from the tier rather than
+   * held in state, so it cannot disagree with what is actually saved on the design — a mode flag that
+   * drifts from the data is how a baker ends up looking at stripes with "Ombre" selected.
+   *
+   * ⚠️ Stripes ride the SAME eligibility as the gradient (a declared frosting capability), and the
+   * same stop editor: `gradStops` becomes the palette and `writeGradient` routes to setTierStripes.
+   * A second swatch editor for the same job is what this codebase spent a comment telling us not to
+   * build. */
+  const tierStripes = isTierGradient ? (selectedTierObj?.stripes ?? null) : null;
+  const stripesOn = areStripesActive(tierStripes);
+  const treatment = stripesOn ? 'stripes'
+    : ((gradTarget?.gradient?.colors?.filter(Boolean).length ?? 0) >= 2 ? 'ombre' : 'solid');
+
   const stopsEligible = gradientEligible || isGlazeTier;
-  const maxStops = isGlazeTier ? 5 : 3;                   // glaze marble takes up to 5 stops; gradient 3
+  const maxStops = isGlazeTier ? 5 : stripesOn ? MAX_STRIPES : 3;   // glaze 5 · stripes 8 · gradient 3
   // The stops to show: the glaze palette / saved gradient if any, else a single chip = the solid colour.
   const gradStops = isGlazeTier
     ? (selectedTierObj?.glaze?.colors?.length ? selectedTierObj.glaze.colors : GLAZE_DEFAULTS.colors)
-    : gradientEligible
-      ? (gradTarget.gradient?.colors?.length ? gradTarget.gradient.colors : [gradTarget.color ?? '#ffffff'])
-      : [];
+    // Stripes edit their PALETTE through the same chips — not the expanded stripe list, which would
+    // show sixteen swatches for two colours and make every one of them look separately editable.
+    : stripesOn
+      ? tierStripes.palette
+      : gradientEligible
+        ? (gradTarget.gradient?.colors?.length ? gradTarget.gradient.colors : [gradTarget.color ?? '#ffffff'])
+        : [];
   // Tiers blend vertically (ombre up the wall); elements default to swirl. A saved mode always wins.
   const gradMode = gradTarget?.gradient?.mode ?? (isTierGradient ? 'vertical' : 'swirl');
   const gradBalance = gradTarget?.gradient?.balance ?? 0.5;
@@ -4959,6 +5076,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const clean = colors.filter(Boolean);
     // Glaze marble palette lives on tier.glaze.colors (1 = solid, 2–5 = marble); route there first.
     if (isGlazeTier) { setTierGlaze(selectedEl.index, { colors: clean.length ? clean : GLAZE_DEFAULTS.colors }); return; }
+    /* Stripes: the chips are the palette. Dropping below two colours is not "stripes with one
+     * colour" — it is a solid wall, so the stripes come off entirely and the tier keeps the colour
+     * that is left. Leaving a one-colour stripe set behind would render as a solid cake that a baker
+     * cannot turn back into stripes without knowing to add a colour first. */
+    if (stripesOn) {
+      if (clean.length >= 2) setTierStripes(selectedEl.index, { palette: clean });
+      else { setTierStripes(selectedEl.index, null); handleColorChange(clean[0] ?? gradTarget.color); }
+      return;
+    }
     // Tier and sticker share the model; route to the matching setter. Both drop the gradient and
     // keep the solid colour when fewer than 2 stops remain.
     if (isTierGradient) { setTierGradient(selectedEl.index, clean, mode, balance); return; }
@@ -4968,6 +5094,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       updateSticker(selectedEl.id, { gradient: null, color: clean[0] ?? selectedSticker.color });
     }
   }
+  /* Switching treatment. Each one CLEARS the other, because they are one choice — and because both
+   * shaders write the same pixel, so a tier carrying both is a wall whose look depends on which
+   * effect happened to re-run last.
+   *
+   * ⚠️ Turning stripes ON seeds a whole PRESET, never an empty object. A stripe set missing
+   * `softness` renders at whatever the material defaults to, which is a look the baker did not
+   * choose and cannot account for. */
+  function setTreatment(next) {
+    if (!isTierGradient) return;
+    const i = selectedEl.index;
+    if (next === 'solid') {
+      setTierStripes(i, null);
+      setTierGradient(i, [gradStops[0] ?? selectedTierObj?.color ?? '#ffffff']);
+    } else if (next === 'ombre') {
+      setTierStripes(i, null);
+      const base = gradStops.filter(Boolean);
+      // Seed a second stop from the tier's own colour rather than inventing one, so the first thing
+      // a baker sees is their cake slightly blended — not a colour they never picked.
+      setTierGradient(i, base.length >= 2 ? base : [base[0] ?? '#ffffff', base[0] ?? '#f0dede']);
+    } else {
+      setTierGradient(i, []);                 // drops the gradient, keeps the solid colour
+      setTierStripes(i, STRIPE_PRESETS.pastel);
+    }
+    setGradPending(false); setGradStop(0);
+  }
+
   function handleWheelChange(c) {
     // Editing a recompose part-group is always a solid per-group colour, never a gradient.
     if (hasActiveGroup) { handleColorChange(c); return; }
@@ -7899,7 +8051,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // "Gradient", not "Blend". Blend was a width compromise from when Shape made four tabs;
               // three fit the real word, and the panel inside this tab has always called it a
               // gradient — a tab whose label disagrees with its own contents is a small lie.
-              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : 'Gradient', node: (
+              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : isTierGradient ? 'Colours' : 'Gradient', node: (
+                <>
+                {/* ⚠️ On the COLOUR axis, not under Style. Style is documented as geometry only and is
+                    single-select, so putting stripes there would make "ribbed AND striped" —
+                    a real cake — impossible to express. */}
+                {isTierGradient && !isGlazeTier && (
+                  <div style={s.gradientBlock}>
+                    <div style={s.gradientLabel}>How the colour sits</div>
+                    <div style={s.treatRow}>
+                      {[['solid', 'Solid'], ['ombre', 'Ombre'], ['stripes', 'Stripes']].map(([k, lbl]) => (
+                        <button key={k} onClick={() => setTreatment(k)}
+                          style={{ ...s.treatBtn, ...(treatment === k ? s.treatBtnOn : null) }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {stripesOn ? (
+                  <StripeControls
+                    palette={gradStopsView} activeStop={activeStop} pending={gradPending}
+                    onSelectStop={selectGradStop} onAddStop={addGradStop} onRemoveStop={removeGradStop}
+                    count={tierStripes.count ?? STRIPE_DEFAULTS.count}
+                    softness={tierStripes.softness ?? STRIPE_DEFAULTS.softness}
+                    wobble={tierStripes.wobble ?? STRIPE_DEFAULTS.wobble}
+                    onCountChange={v => setTierStripes(selectedEl.index, { count: v })}
+                    onSoftnessChange={v => setTierStripes(selectedEl.index, { softness: v })}
+                    onWobbleChange={v => setTierStripes(selectedEl.index, { wobble: v })}
+                    presets={STRIPE_PRESETS}
+                    onPreset={k => setTierStripes(selectedEl.index, STRIPE_PRESETS[k])}
+                  />
+                ) : (
                 <GradientControls
                   stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
                   label={isGlazeTier ? 'Glaze colors' : 'Gradient colors'} maxStops={maxStops}
@@ -7914,6 +8095,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   balance={isGlazeTier ? undefined : (isTierGradient ? gradBalance : undefined)}
                   onBalanceChange={b => writeGradient(gradStops, gradMode, b)}
                 />
+                )}
+                </>
               ) });
             }
 
@@ -9538,6 +9721,24 @@ const s = {
     width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
     gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e5e5',
   },
+  // ── Stripes ────────────────────────────────────────────────────────────────────────────────────
+  // A preset chip carries a tiny vertical swatch of its own stripes: the label says which cake it
+  // is, the swatch says what it looks like, and together they save a tap-to-find-out.
+  stripePreset: {
+    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px 5px 6px',
+    borderRadius: 8, border: '1.5px solid #d8d8d8', background: '#fff', cursor: 'pointer',
+    fontFamily: "'Quicksand',sans-serif", fontSize: 11.5, fontWeight: 700, color: '#4a4a4a',
+  },
+  stripeValue: { fontSize: 11, fontWeight: 700, color: '#666', fontVariantNumeric: 'tabular-nums' },
+  stripeHint:  { fontSize: 10.5, color: '#888', lineHeight: 1.45, marginTop: 4, textAlign: 'center' },
+  // The treatment picker: Solid / Ombre / Stripes. One row, because they are one choice — a wall is
+  // painted one of these ways and never two.
+  treatRow: { display: 'flex', gap: 6, width: '100%' },
+  treatBtn: {
+    flex: 1, padding: '7px 4px', borderRadius: 8, border: '1.5px solid #d8d8d8', background: '#fff',
+    cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", fontSize: 12, fontWeight: 700, color: '#666',
+  },
+  treatBtnOn: { border: '1.5px solid #1a1a1a', background: '#1a1a1a', color: '#fff' },
   gradientLabel: {
     fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
     color: '#1a1a1a', textTransform: 'uppercase',
