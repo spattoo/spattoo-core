@@ -1,19 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CLOUD_DEFAULTS, cloudLobes, cloudPlacement, cloudBaseY, cloudFitScale, cloudGuide,
+  CLOUD_DEFAULTS, cloudLobes, cloudPlacement, cloudBaseY, cloudFitScale, cloudGuide, cloudOutline,
 } from './cloud.js';
 
 const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
 
 describe('what a cloud is made of', () => {
-  it('rests every lump ON the surface, never in it', () => {
-    // The mistake this pins: sinking the lumps into the base line overlaps their sides more
-    // prettily and puts the bottom of every ball below the thing it is sitting on. On a board that
-    // is half a cloud inside the board.
+  it('rests every PUFF ball on the surface, never in it', () => {
+    // The mistake this pins: sinking the balls into the base line overlaps their sides more prettily
+    // and puts the bottom of each one below the thing it is sitting on. On a board that is half a
+    // cloud inside the board. The flat variant is the opposite case and is covered below — it dips
+    // under the line on purpose and is then CUT there, so nothing is left underneath either way.
     for (const surface of ['top', 'board', 'side']) {
-      const { lobes, baseY } = cloudPlacement({ ...CLOUD_DEFAULTS, surface }, CAKE);
+      const { lobes, baseY } = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff', surface }, CAKE);
       for (const l of lobes) expect(l.position.y - l.r).toBeGreaterThanOrEqual(baseY - 1e-9);
     }
+  });
+
+  it('spreads the puff front to back, so it is a cluster and not a row', () => {
+    // Balls at one depth light identically and the whole thing flattens into a silhouette, which is
+    // most of what "dull and lifeless" looks like.
+    const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff', surface: 'board' }, CAKE);
+    const zs = lobes.map(l => l.position.z);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(0);
   });
 
   it('is widest in the middle and smallest at the ends', () => {
@@ -45,7 +54,7 @@ describe('what a cloud is made of', () => {
     expect(right - left).toBeCloseTo(width, 6);
   });
 
-  it('reaches exactly the height it was asked for', () => {
+  it('reaches the height it was asked for when the lumps are even', () => {
     const { lobes, height } = cloudLobes({ ...CLOUD_DEFAULTS, variation: 0 }, CAKE);
     expect(Math.max(...lobes.map(l => l.y + l.r))).toBeCloseTo(height, 6);
   });
@@ -77,11 +86,13 @@ describe('where it sits', () => {
     expect(cloudBaseY('side', CAKE)).toBe(CAKE.boardY);
   });
 
-  it('hugs the wall, so every lump is the same distance from the axis', () => {
+  it('hugs the wall, so every ball sits on it rather than on a plane through it', () => {
     // What a flat plane cannot do: laid against a round cake its middle touches and its ends float.
-    const { lobes, thickness } = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'side' }, CAKE);
-    const out = lobes.map(l => Math.hypot(l.position.x, l.position.z));
-    for (const d of out) expect(d).toBeCloseTo(CAKE.radius + thickness / 2, 6);
+    // Each ball's middle stands one radius off the wall, which is what resting on it means.
+    const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff', surface: 'side', puffDepth: 0 }, CAKE);
+    for (const l of lobes) {
+      expect(Math.hypot(l.position.x, l.position.z)).toBeCloseTo(CAKE.radius + l.r, 6);
+    }
   });
 
   it('keeps the width it was drawn as when bent round the cake', () => {
@@ -90,14 +101,16 @@ describe('where it sits', () => {
     const flat = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'board' }, CAKE);
     const wall = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'side' }, CAKE);
     expect(wall.width).toBeCloseTo(flat.width, 6);
+    expect(wall.outline.length).toBe(flat.outline.length);
   });
 
-  it('turns each lump to face out of the wall', () => {
-    // Otherwise the discs are edge-on to the cake and the plaque is invisible from the front.
-    const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'side', theta: 0.5 }, CAKE);
-    for (const l of lobes) {
-      expect(l.rotationY).toBeCloseTo(Math.atan2(l.position.x, l.position.z), 6);
-    }
+  it('hands the wall bend to the renderer for a flat piece, not to per-lump turns', () => {
+    // A sheet is bent whole. Turning each lump separately is what discs needed, and discs are what
+    // made it read as paper.
+    const { sheet } = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'side', theta: 0.5 }, CAKE);
+    expect(sheet.onWall).toBe(true);
+    expect(sheet.wallR).toBe(CAKE.radius);
+    expect(sheet.theta).toBe(0.5);
   });
 });
 
@@ -133,19 +146,51 @@ describe('staying on what it sits on', () => {
 });
 
 describe('the two variants', () => {
-  it('gives the flat one a straight bottom and the puff none', () => {
-    // A row of circles has a scalloped underside. The reference plaque is cut with a knife.
-    expect(cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE).base).toBeTruthy();
-    // A puff standing on a plinth would be a cloud on a shelf.
-    expect(cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff' }, CAKE).base).toBeNull();
+  it('cuts the flat one as ONE outline, with no lump list to render', () => {
+    // Overlapping discs left a visible circle wherever two met, and the slab that gave them a
+    // straight bottom left a knife edge across the front: together, cut paper stuck on a cake.
+    const flat = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE);
+    expect(flat.outline.length).toBeGreaterThan(50);
+    expect(flat.sheet).toBeTruthy();
   });
 
-  it('builds both from the same lumps', () => {
-    // The variant decides whether they are solid or a silhouette, not what they are — which is why
-    // one generator produces both.
-    const puff = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff', surface: 'board' }, CAKE);
-    const flat = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'board' }, CAKE);
-    expect(puff.lobes.map(l => l.r)).toEqual(flat.lobes.map(l => l.r));
+  it('leaves the puff as separate balls, because the seams are the point', () => {
+    const puff = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff' }, CAKE);
+    expect(puff.outline).toBeNull();
+    expect(puff.sheet).toBeNull();
+    expect(puff.lobes).toHaveLength(CLOUD_DEFAULTS.lobes);
+  });
+
+  it('closes the outline, so it can be a shape at all', () => {
+    const o = cloudOutline({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE);
+    const gap = o[0].distanceTo(o[o.length - 1]);
+    // Within a grid cell: the loop is stitched from segments computed twice, once per neighbouring
+    // cell, so it closes to about the tracing resolution rather than exactly.
+    expect(gap).toBeLessThan(CLOUD_DEFAULTS.width * CAKE.radius * 0.05);
+  });
+
+  it('cuts the flat bottom straight along the base line', () => {
+    // Where the fondant was trimmed against the board. A row of circles alone has a scalloped
+    // underside, which the reference plainly does not.
+    const o = cloudOutline({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE);
+    const onBase = o.filter(v => Math.abs(v.y) < 1e-3);
+    expect(onBase.length).toBeGreaterThan(10);
+    // Nothing below the line: the shape stops at the cut.
+    expect(Math.min(...o.map(v => v.y))).toBeGreaterThan(-1e-3);
+  });
+
+  it('spans the full width it was asked for', () => {
+    const o = cloudOutline({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE);
+    const span = Math.max(...o.map(v => v.x)) - Math.min(...o.map(v => v.x));
+    const { width } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE);
+    expect(span).toBeCloseTo(width, 1);
+  });
+
+  it('traces the same outline every time', () => {
+    const a = cloudOutline({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE);
+    const b = cloudOutline({ ...CLOUD_DEFAULTS, variant: 'flat' }, CAKE);
+    expect(a.length).toBe(b.length);
+    expect(a[0].x).toBeCloseTo(b[0].x, 12);
   });
 });
 

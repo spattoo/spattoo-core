@@ -10,44 +10,47 @@ import * as THREE from 'three';
 // is what festoon.js bends imported strips to avoid. That is not a scale factor, so no authored
 // asset fixes it.
 //
-// TWO VARIANTS, from two references, and they are different objects rather than one at two sizes:
+// TWO VARIANTS, from two references, and they are made in genuinely different ways because a baker
+// makes them in genuinely different ways:
 //
-//   'puff' — a bunch of balls, fully three-dimensional. It SITS ON things: the cake top beside a
-//            sun, the board at the front. It reads from any angle.
-//   'flat' — one plaque with a bumpy top and a straight bottom, PRESSED ON a wall, standing on the
-//            board. A silhouette, not a solid.
+//   'puff' — balls rolled and pressed together. SEPARATE lumps, at different depths, so the cluster
+//            self-shadows and reads as a bunch. The seams between balls are the point.
+//   'flat' — ONE piece, rolled out and cut. No seams at all: a cut-out has a single bevelled edge
+//            all the way round, which is what makes it read as fondant instead of as paper.
 //
-// What they share is the description underneath: a cloud is a row of overlapping circles. The puff
-// makes them spheres; the flat one makes them discs in a plane and adds a base to sit on. That is
-// why one generator does both — the variant picks how the same lobes are built, not what they are.
+// That difference is why the flat one is not "the puff seen from the front". Overlapping discs leave
+// a visible circle where each pair meets, and a box slab underneath leaves a knife edge across the
+// front — together they read as cut paper stuck on a cake. The outline is traced round the whole
+// cluster instead and extruded once, bevelled, as a single object.
 
 export const CLOUD_DEFAULTS = {
   variant: 'puff',          // 'puff' | 'flat'
   // Every measurement below is × the TIER radius, never a world constant (INVARIANTS #8), so one
   // authored cloud suits a 6" and a 10" untouched — the same rule the rainbow follows.
   scale: 1,                 // overall size; multiplies width and height together, shape untouched
-  width: 0.62,              // how wide the cloud is, corner to corner
+  width: 0.62,              // how wide the cloud is, edge to edge
   height: 0.30,             // how tall at its highest point, above the surface it sits on
   lobes: 5,                 // how many lumps
   variation: 0.35,          // how unequal they are; 0 is a row of identical balls, which is a caterpillar
-  depth: 0.10,              // 'flat' only: how thick the plaque is
+  depth: 0.10,              // 'flat' only: how thick the rolled-out piece is
+  bevel: 0.45,              // 'flat' only: how soft the cut edge is, × half the thickness
+  puffDepth: 0.55,          // 'puff' only: how far the balls sit apart front-to-back, × the biggest ball
   surface: 'top',           // 'top' | 'board' | 'side'
   offsetX: 0,               // where it sits along the surface
   standoff: 0,              // 'top' only: how far off the centre line, toward the viewer
   theta: 0,                 // 'side' only: where round the wall, radians. 0 is the front
   color: '#FFFFFF',
-  segments: 24,
 };
 
 /**
- * Deterministic wobble for lobe `i`, in 0…1.
+ * Deterministic wobble for lump `i`, in 0…1.
  *
  * NOT Math.random. A design is saved as numbers and rendered again later — on the customer's phone,
  * in the baker's order, in the template thumbnail. A cloud that reshuffles its lumps on every render
  * is a different cloud each time it is looked at, and the thumbnail stops matching the cake.
  */
-function wobble(i) {
-  const x = Math.sin((i + 1) * 12.9898) * 43758.5453;
+function wobble(i, salt = 0) {
+  const x = Math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453;
   return x - Math.floor(x);
 }
 
@@ -55,8 +58,14 @@ function wobble(i) {
  * The lumps a cloud is made of, in the cloud's own flat space: x across, y up from the surface.
  *
  * The middle is the tallest and the ends are the smallest, which is what makes a bunch of circles
- * read as a cloud rather than a row of bubbles. Every lobe RESTS on the base line — centre one
- * radius up, nothing below it — so a cloud set on a board sits on the board rather than in it.
+ * read as a cloud rather than a row of bubbles.
+ *
+ * How far they sit into the base line depends on the variant, and it is not a cosmetic choice:
+ *   'puff' rests ON it (centre one radius up, nothing below), because a ball set on a board sits on
+ *          the board. Sinking it would put half a ball inside the board.
+ *   'flat' dips BELOW it, and the outline is then cut off at the line — which is exactly how the
+ *          cut-out is made and where its straight bottom comes from. Nothing is left underneath,
+ *          because the shape stops at the cut.
  */
 export function cloudLobes(params = {}, cake = {}) {
   const p = { ...CLOUD_DEFAULTS, ...params };
@@ -65,19 +74,17 @@ export function cloudLobes(params = {}, cake = {}) {
   const width = p.width * R * size;
   const height = p.height * R * size;
   const n = Math.max(1, Math.round(p.lobes));
+  const flat = p.variant === 'flat';
 
-  // Every lump RESTS on the base line — centre one radius up, nothing below it. Sinking them into
-  // the line would overlap their sides more prettily and put the bottom of each ball underneath the
-  // surface it is supposed to be sitting on, which on the board means half a cloud inside the board.
-  // The scalloped underside that leaves is correct for a puff: it is what a bunch of balls set down
-  // on a surface actually looks like. The flat variant gets its straight bottom from a base slab
-  // instead, which is how the cut-out is made.
-  const rMax = height / 2;
+  // Where a lump's middle sits, as a fraction of its own radius. Below 1 it dips under the line.
+  const seat = flat ? 0.70 : 1;
+  // The tallest lump has to reach `height` above the line: seat·r + r = height for the biggest one.
+  const rMax = height / (seat + 1);
 
   const half = width / 2;
   const lobes = [];
   for (let i = 0; i < n; i++) {
-    // -1 … +1 across the cloud. A single lobe sits in the middle.
+    // -1 … +1 across the cloud. A single lump sits in the middle.
     const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
     // Falls away toward the ends, then nudged unequal. Without the nudge a cloud is symmetrical,
     // and a symmetrical cloud looks like a diagram of a cloud.
@@ -85,20 +92,104 @@ export function cloudLobes(params = {}, cake = {}) {
     const nudge = 1 + (p.variation ?? 0) * (wobble(i) - 0.5);
     const r = Math.max(rMax * 0.15, rMax * taper * nudge);
     lobes.push({
-      // The outermost lobes' EDGES reach ±half, so `width` is the cloud's real width and not the
+      // The outermost lumps' EDGES reach ±half, so `width` is the cloud's real width and not the
       // distance between the middles of its end lumps.
       x: t * Math.max(0, half - r),
-      y: r,
+      y: r * seat,
+      // Front-to-back. A puff is a CLUSTER, not a row: balls at one depth light identically and the
+      // whole thing flattens into a silhouette, which is most of what "lifeless" looks like. A cut
+      // piece has no depth to vary — it is one sheet.
+      z: flat ? 0 : (wobble(i, 1) - 0.5) * (p.puffDepth ?? 0) * rMax * 2,
       r,
     });
   }
-  return {
-    lobes, width, height, thickness: p.depth * R * size,
-    // The flat cut-out's straight bottom. A row of circles has a scalloped underside, and the
-    // reference plaque plainly does not — it is a shape cut with a knife, resting flat on the board.
-    // The slab fills the scallops and leaves the bumpy top, which is the silhouette.
-    baseHeight: height * 0.30,
+  return { lobes, width, height, thickness: p.depth * R * size };
+}
+
+/**
+ * The outline of the whole cluster, as one closed loop — the 'flat' variant's actual shape.
+ *
+ * Traced with marching squares over a field that is positive inside any lump and negative below the
+ * base line. That does two things at once: it UNIONS the lumps, so no seam is left where two of them
+ * meet, and it CUTS the bottom straight where the fondant was trimmed against the board.
+ *
+ * Overlapping discs were the alternative and they read as cut paper: every pair leaves a visible
+ * circle, and the slab that gave them a straight bottom left a knife edge across the front. A cut-out
+ * has ONE edge, all the way round.
+ */
+export function cloudOutline(params = {}, cake = {}, { cells = 110 } = {}) {
+  const { lobes, width, height } = cloudLobes({ ...params, variant: 'flat' }, cake);
+  const pad = width * 0.03;
+  const x0 = -width / 2 - pad, x1 = width / 2 + pad;
+  const y0 = -pad, y1 = height + pad;
+
+  const nx = Math.max(8, Math.round(cells));
+  const ny = Math.max(8, Math.round(cells * ((y1 - y0) / (x1 - x0))));
+  const dx = (x1 - x0) / nx, dy = (y1 - y0) / ny;
+
+  // Positive inside. Below the base line it falls away, so the contour runs straight along the cut.
+  const field = (x, y) => {
+    if (y <= 0) return y - 1e-9;
+    let best = -Infinity;
+    for (const l of lobes) best = Math.max(best, l.r - Math.hypot(x - l.x, y - l.y));
+    return best;
   };
+
+  const F = new Float64Array((nx + 1) * (ny + 1));
+  for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
+    F[j * (nx + 1) + i] = field(x0 + i * dx, y0 + j * dy);
+  }
+  const at = (i, j) => F[j * (nx + 1) + i];
+  // Where the contour crosses an edge, by linear interpolation between the two corner values —
+  // straight midpoints would leave the outline faceted at grid resolution.
+  const lerp = (a, b, va, vb) => a + (b - a) * (va / (va - vb));
+
+  const segs = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const xa = x0 + i * dx, xb = xa + dx, ya = y0 + j * dy, yb = ya + dy;
+    const v00 = at(i, j), v10 = at(i + 1, j), v11 = at(i + 1, j + 1), v01 = at(i, j + 1);
+    const code = (v00 > 0 ? 1 : 0) | (v10 > 0 ? 2 : 0) | (v11 > 0 ? 4 : 0) | (v01 > 0 ? 8 : 0);
+    if (code === 0 || code === 15) continue;
+    const B = () => [lerp(xa, xb, v00, v10), ya];
+    const Rt = () => [xb, lerp(ya, yb, v10, v11)];
+    const T = () => [lerp(xa, xb, v01, v11), yb];
+    const L = () => [xa, lerp(ya, yb, v00, v01)];
+    // Wound anticlockwise round the inside, so following "where this segment ends" walks the loop.
+    // The two saddle cases are split the same way every time, which is enough here: a cloud is not
+    // thin enough anywhere to pinch into two pieces.
+    const table = {
+      1: [[L, B]], 2: [[B, Rt]], 3: [[L, Rt]], 4: [[Rt, T]], 5: [[L, T], [B, Rt]],
+      6: [[B, T]], 7: [[L, T]], 8: [[T, L]], 9: [[T, B]], 10: [[T, Rt], [B, L]],
+      11: [[T, Rt]], 12: [[Rt, L]], 13: [[Rt, B]], 14: [[B, L]],
+    };
+    for (const [a, b] of table[code]) segs.push([a(), b()]);
+  }
+  if (!segs.length) return [];
+
+  // Stitch the segments into a loop. Keyed on rounded coordinates because the same crossing point is
+  // computed twice, once from each cell that shares the edge, and the two answers differ in the last
+  // bits — an exact-match join would leave the loop in pieces.
+  const q = v => `${Math.round(v[0] / (dx * 1e-3))}:${Math.round(v[1] / (dy * 1e-3))}`;
+  const from = new Map();
+  for (const [a, b] of segs) if (!from.has(q(a))) from.set(q(a), { a, b });
+
+  let best = [];
+  const used = new Set();
+  for (const [startKey] of from) {
+    if (used.has(startKey)) continue;
+    const loop = [];
+    let key = startKey;
+    for (let guard = 0; guard < segs.length + 2; guard++) {
+      const seg = from.get(key);
+      if (!seg || used.has(key)) break;
+      used.add(key);
+      loop.push(seg.a);
+      key = q(seg.b);
+      if (key === startKey) break;
+    }
+    if (loop.length > best.length) best = loop;
+  }
+  return best.map(([x, y]) => new THREE.Vector2(x, y));
 }
 
 /**
@@ -131,15 +222,15 @@ export function cloudFitScale({ centerX, standoff, width, cakeRadius }) {
 }
 
 /**
- * The cloud placed in the world: one entry per lump, ready to render.
+ * The cloud placed in the world.
  *
  * `surface` decides the whole placement, not just a height:
  *   'top'   — sits on the cake top, facing the viewer, kept inside the rim.
  *   'board' — sits on the board, in front of the cake, so nothing has to fit anywhere.
- *   'side'  — pressed onto the wall. Each lump goes to its OWN angle round the tier, which is what
- *             hugging means: `x` is a distance ALONG the wall and becomes an angle by dividing by
- *             the radius, the same conversion wrapToWall makes for a rope. Laying the lumps in a
- *             flat plane instead would touch in the middle and float at the ends.
+ *   'side'  — pressed onto the wall. `x` becomes an ANGLE by dividing by the radius, so the cloud
+ *             keeps the width it was drawn as: a plaque bent round a cake must not turn into a
+ *             different amount of fondant to roll. For the puff that is done per ball here; the flat
+ *             sheet is bent whole, which the renderer does to its vertices.
  */
 export function cloudPlacement(params = {}, cake = {}) {
   const p = { ...CLOUD_DEFAULTS, ...params };
@@ -147,58 +238,46 @@ export function cloudPlacement(params = {}, cake = {}) {
   const baseY = cloudBaseY(p.surface, cake);
   const onWall = p.surface === 'side';
   const onTop = p.surface === 'top';
+  const flat = p.variant === 'flat';
 
-  let { lobes, width, height, thickness, baseHeight } = cloudLobes(p, cake);
+  const { lobes, width: w0, height: h0, thickness: t0 } = cloudLobes(p, cake);
   const centerX = (p.offsetX ?? 0) * R;
   const standoff = (p.standoff ?? 0) * R;
 
   // Only a cloud ON the cake has an edge to fall off. One on the board or the wall has the whole
   // board under it, and shrinking it there would be answering a question nobody asked.
   let fit = 1;
-  if (onTop) {
-    fit = cloudFitScale({ centerX, standoff, width, cakeRadius: R });
-    if (fit < 1) {
-      lobes = lobes.map(l => ({ x: l.x * fit, y: l.y * fit, r: l.r * fit }));
-      width *= fit; height *= fit; baseHeight *= fit;
-    }
-  }
+  if (onTop) fit = cloudFitScale({ centerX, standoff, width: w0, cakeRadius: R });
+  const width = w0 * fit, height = h0 * fit, thickness = t0 * fit;
+
+  const zFlatSurface = onTop ? standoff : R + width * 0.35;
 
   const placed = lobes.map(l => {
+    const x = l.x * fit, y = l.y * fit, z = l.z * fit, r = l.r * fit;
     if (onWall) {
-      // Divided by the radius the lump's own middle sits at, so the cloud keeps the width it was
-      // drawn as. A plaque bent round a cake must not become a different amount of fondant to roll.
-      const rw = R + thickness / 2;
-      const th = (p.theta ?? 0) + (centerX + l.x) / rw;
-      return {
-        r: l.r,
-        position: new THREE.Vector3(Math.sin(th) * rw, baseY + l.y, Math.cos(th) * rw),
-        // Facing out of the wall, so a disc lies ON it rather than edge-on to it.
-        rotationY: th,
-      };
+      // Divided by the radius the ball's own middle sits at, so a row of balls bent round the cake
+      // spans the same length of wall it spanned flat.
+      const rw = R + r;
+      const th = (p.theta ?? 0) + (centerX + x) / rw;
+      const out = rw + z;
+      return { r, position: new THREE.Vector3(Math.sin(th) * out, baseY + y, Math.cos(th) * out), rotationY: th };
     }
-    // On the top or the board it is a flat object facing the viewer, so every lump shares one plane.
-    const z = onTop ? standoff : R + width * 0.35;
-    return { r: l.r, position: new THREE.Vector3(centerX + l.x, baseY + l.y, z), rotationY: 0 };
+    return { r, position: new THREE.Vector3(centerX + x, baseY + y, zFlatSurface + z), rotationY: 0 };
   });
 
-  // The slab, in the same world space as the lumps. Only the flat variant has one: a puff standing
-  // on a plinth would be a cloud on a shelf.
-  const base = p.variant === 'flat'
-    ? (() => {
-        if (onWall) {
-          const rw = R + thickness / 2;
-          const th = (p.theta ?? 0) + centerX / rw;
-          return { width, height: baseHeight, thickness,
-                   position: new THREE.Vector3(Math.sin(th) * rw, baseY + baseHeight / 2, Math.cos(th) * rw),
-                   rotationY: th };
-        }
-        const z = onTop ? standoff : R + width * 0.35;
-        return { width, height: baseHeight, thickness,
-                 position: new THREE.Vector3(centerX, baseY + baseHeight / 2, z), rotationY: 0 };
-      })()
-    : null;
-
-  return { lobes: placed, base, width, height, thickness, baseY, fit, variant: p.variant };
+  return {
+    variant: p.variant,
+    lobes: placed,
+    // The flat variant's shape is ONE outline, not a list of lumps — traced at the size that fits,
+    // so the piece that gets cut is the piece that goes on.
+    outline: flat ? cloudOutline({ ...p, scale: (p.scale ?? 1) * fit }, cake) : null,
+    // How that sheet meets the cake. The renderer bends it for a wall; elsewhere it is a translate.
+    sheet: flat
+      ? { onWall, wallR: R, theta: p.theta ?? 0, centerX, baseY, z: onWall ? 0 : zFlatSurface,
+          thickness, bevel: Math.max(0, Math.min(0.9, p.bevel ?? 0)) }
+      : null,
+    width, height, thickness, baseY, fit,
+  };
 }
 
 /**
@@ -209,9 +288,10 @@ export function cloudPlacement(params = {}, cake = {}) {
  * and is how the work is actually done: roll, offer up, trim.
  */
 export function cloudGuide(params = {}, cake = {}) {
-  const { lobes, width } = cloudPlacement(params, cake);
+  const { lobes, width, variant } = cloudPlacement(params, cake);
   const cakeWidth = (cake.radius ?? 1) * 2;
   return {
+    variant,
     balls: lobes.length,
     widthOfCakeWidth: +(width / cakeWidth).toFixed(2),
     // Biggest first: it is the one a baker rolls to size and matches the rest against.
