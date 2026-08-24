@@ -428,21 +428,26 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
   const colours = palette.length - (pending ? 1 : 0);
   return (
     <div>
-      {/* Starting points first: choosing six colours that work together is a colourist's job, and a
-          blank palette is where this feature turns into eight saturated colours at softness 0.8. */}
+      {/* Starting points: choosing six colours that work together is a colourist's job, and a blank
+          palette is where this feature turns into eight saturated colours at softness 0.8.
+
+          ⚠️ SWATCH-FIRST and wrapped, not a stacked list of labelled buttons. Five full-width rows
+          cost ~250px, and on desktop every section of this panel is stacked in ONE scrolling column —
+          which pushed the colour wheel so far above the stripe chips that changing a stripe's colour
+          meant scrolling up to a control you could no longer see. The swatch is the useful part
+          anyway: it shows the cake, where the name only names it. */}
       <div style={s.gradientBlock}>
         <div style={s.gradientLabel}>Start from</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
           {Object.entries(presets).map(([key, preset]) => (
-            <button key={key} onClick={() => onPreset(key)} title={preset.note}
-              style={s.stripePreset}>
-              <span style={{ display: 'flex', flexDirection: 'column-reverse', width: 14, height: 20,
-                             borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}>
+            <button key={key} onClick={() => onPreset(key)} title={`${preset.label} — ${preset.note}`}
+              aria-label={preset.label} style={s.stripePreset}>
+              <span style={{ display: 'flex', flexDirection: 'column-reverse', width: 26, height: 30,
+                             borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
                 {stripeColors(preset).map((c, i) => (
                   <span key={i} style={{ flex: 1, background: c }} />
                 ))}
               </span>
-              {preset.label}
             </button>
           ))}
         </div>
@@ -467,10 +472,8 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
             onChange={e => onCountChange(Number(e.target.value))}
             style={{ width: '100%', accentColor: '#1a1a1a' }} />
           <div style={s.stripeHint}>
-            {count === colours
-              ? 'One stripe per colour.'
-              : `Your ${colours} colours repeat up the cake.`}
-            {' '}An odd number puts the same colour top and bottom.
+            {count === colours ? 'One stripe per colour.' : `Your ${colours} colours repeat.`}
+            {' '}An odd number matches top and bottom.
           </div>
 
           <div style={{ ...s.gradientLabel, marginTop: 12, width: '100%' }}>Softness</div>
@@ -485,9 +488,7 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
           <input type="range" min={0} max={1} step={0.01} value={wobble}
             onChange={e => onWobbleChange(Number(e.target.value))}
             style={{ width: '100%', accentColor: '#1a1a1a' }} />
-          <div style={s.stripeHint}>
-            Real joins are not spirit-levelled. A little of this reads as iced by hand.
-          </div>
+          <div style={s.stripeHint}>A little of this reads as iced by hand.</div>
         </div>
       )}
     </div>
@@ -9724,10 +9725,10 @@ const s = {
   // ── Stripes ────────────────────────────────────────────────────────────────────────────────────
   // A preset chip carries a tiny vertical swatch of its own stripes: the label says which cake it
   // is, the swatch says what it looks like, and together they save a tap-to-find-out.
+  // Swatch only — the name lives in the tooltip and the aria-label. See the note at its use.
   stripePreset: {
-    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px 5px 6px',
-    borderRadius: 8, border: '1.5px solid #d8d8d8', background: '#fff', cursor: 'pointer',
-    fontFamily: "'Quicksand',sans-serif", fontSize: 11.5, fontWeight: 700, color: '#4a4a4a',
+    display: 'flex', alignItems: 'center', padding: 4, lineHeight: 0,
+    borderRadius: 7, border: '1.5px solid #d8d8d8', background: '#fff', cursor: 'pointer',
   },
   stripeValue: { fontSize: 11, fontWeight: 700, color: '#666', fontVariantNumeric: 'tabular-nums' },
   stripeHint:  { fontSize: 10.5, color: '#888', lineHeight: 1.45, marginTop: 4, textAlign: 'center' },

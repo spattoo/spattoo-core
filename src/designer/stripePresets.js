@@ -18,10 +18,15 @@
  * They are STARTING POINTS: the palette lands in the editor immediately editable. If a preset is
  * hard to change, every cake made with this feature looks like one of four cakes.
  *
- * ⚠️ PROVENANCE. Only `stripes` (the football cake) has colours MEASURED off its photo. The other
- * three were picked by eye, and measuring the one exposed a systematic bias in that method — the eye
- * chose #FFFFFF where the real icing is a warm off-white. Assume the same bias in the others until
- * they are sampled too.
+ * ⚠️ PROVENANCE. These colours were picked BY EYE from the reference photos. That method has a known
+ * bias: when the football cake's stripes were later sampled properly, the eye had chosen #FFFFFF
+ * where the real icing is a warm, faintly green off-white. Assume the same bias here until each is
+ * sampled.
+ *
+ * ⚠️ There is deliberately NO football-stripes preset. Its photo was sent to show that two colours
+ * must be able to REPEAT — which is why `count` exists — not to ask for that cake as a starting
+ * point. It was added on a misreading and removed on request; the two-colour repeat it demonstrated
+ * is reachable from any preset by dropping to two colours and raising the count.
  */
 
 /* The reference photos, as configs. Listed BASE → TOP, which is the direction the shader reads and the
@@ -54,21 +59,6 @@ export const STRIPE_PRESETS = {
     note: 'Three colours, fully blended — the classic ombre, and the far end of the slider. Proves the existing vertical gradient is just this with count 3 and softness 1, which is the case for merging the two rather than shipping both.',
     palette: ['#F7DE8E', '#F4A98C', '#EE9BB0'], count: 3,
     softness: 1, wobble: 0.15, weights: [1, 1, 1],
-  },
-  stripes: {
-    label: 'Football stripes (2)',
-    /* The case that broke the original model. Two colours and sixteen stripes — a "repeat" multiplier
-     * could reach 16, but not 15 or 17, and an ODD count is what puts the same colour top and bottom
-     * on a striped cake. The palette cycles into a count instead. */
-    /* ⚠️ SAMPLED from the reference photo, not picked by eye — and the eye had it wrong.
-     * The green was close (#A8D96B guessed, #ABD76B measured). The "white" was not: it measures as a
-     * warm, faintly green off-white (#E2E5BE–#E7E5C3 in shadow), never anything near #FFFFFF. Pure
-     * white against a green stripe reads as printed vinyl; real buttercream white is warm.
-     * The value here is lifted for the unshadowed icing colour, since the sample includes the drip's
-     * shadow. */
-    note: 'Two colours, sixteen thin stripes — sampled from the reference photo. Note the white is a warm off-white, not #FFF; pure white against green reads as vinyl rather than buttercream. Try an odd count (15 or 17) for the same colour top and bottom, which a repeat multiplier cannot express.',
-    palette: ['#F1EEDC', '#ABD76B'], count: 16,
-    softness: 0.18, wobble: 0.3, weights: [1, 1],
   },
   rainbow: {
     label: 'Rainbow (hard edges)',
