@@ -31,6 +31,7 @@ import {
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import RainbowArch from './RainbowArch.jsx';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
@@ -2528,6 +2529,26 @@ function CakeContent({ config, scene, edit = null }) {
               {...tier.grass}
             />
           )}
+          {/* Fondant rainbows belonging to THIS tier. The generator asks for { radius, topY, boardY }
+              and has never cared whether that describes a whole cake or one tier of one — so tier 2's
+              rainbow is the same code given tier 2's numbers: its radius, its top, and the surface it
+              STANDS on, which is the board for the bottom tier and the tier below's top for any other.
+              Every ratio then scales to that tier.
+
+              `boardY` is the tier's own base, which for tier 0 IS the board — so this is one
+              expression rather than a branch, and a rainbow on an upper tier lands its falling foot
+              on the tier below without anything here knowing that is what it is doing. */}
+          {(tier.rainbows ?? []).map(rb => (
+            <RainbowArch
+              key={rb.id}
+              params={rb}
+              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
+                      // What a falling foot lands ON. The board GROWS to catch one (rainbowBoardReach),
+                      // so it never limits the arch; a tier below cannot, so it does.
+                      supportRadius: i === 0 ? null : tierData[i - 1].radius }}
+              yaw={rb.yaw ?? 0}
+            />
+          ))}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
               position={[tier.radius + 0.35, tier.baseY + (selectedPiping.zone === 'top' ? tier.height + 0.1 : 0.1), 0]}

@@ -128,6 +128,9 @@ export function toCanvasConfig(design) {
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
+        // ⚠️ FORWARDED HERE OR IT NEVER RENDERS — the same line stripes needed. The canvas reads
+        // this config, not the design.
+        rainbows:     t.rainbows ?? [],          // fondant arches standing on/against THIS tier
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
@@ -547,6 +550,39 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, grass } : t),
+    }));
+  }
+
+  // ── Fondant rainbows ────────────────────────────────────────────────────────
+  // A LIST on the tier, not one object and not a design-level field.
+  //
+  // On the tier, because a rainbow's every measurement is a ratio of the tier it belongs to — its
+  // radius, its top, and the surface it stands on. Held at design level it would need a tier INDEX
+  // beside it, and an index is a thing to keep in sync every time a tier is added or removed. On the
+  // tier, deleting the tier deletes its rainbows, which is what should happen anyway.
+  //
+  // A list, because a cake can carry several — one arching over the top and one hugging a wall — and
+  // that is the shape `writings` had to be changed INTO later, having shipped as a single object.
+  // Not stickers, though: a rainbow is one generated object with a dozen parameters, and the reason
+  // grass is not stickers (thousands of individually draggable rows) does not apply to it. What does
+  // apply is that a sticker carries artwork and this carries numbers.
+  //
+  // Absent = no rainbow, so every existing design is unchanged and the field costs nothing.
+  function setTierRainbows(index, rainbows) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, rainbows } : t),
+    }));
+  }
+
+  // `changes` may be a function of the current list — the same contract the grass setters use, and
+  // for the same reason: two quick presses both read the list as this component last rendered it, so
+  // the second rainbow lands exactly on the first.
+  function updateTierRainbows(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, rainbows: typeof changes === 'function' ? changes(t.rainbows ?? []) : changes } : t),
     }));
   }
 
@@ -1284,6 +1320,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setTierRainbows, updateTierRainbows,
     setNameBlocks, updateNameBlocks,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,

@@ -61,6 +61,13 @@ describe('a saved design comes back as the same cake', () => {
       dusting: { splashes: [{ u: 0.2, v: 0.4 }], color: '#d4af37' },
       foil: { flakes: [{ u: 0.1, v: 0.3 }], finish: 'gold' },
       grass: { color: '#4caf3d', height: 0.2, overhang: 0.5, patches: [{ u: 0.1, v: 0.5, r: 0.3 }] },
+      // Two of them, and deliberately different arrangements: a list that round-trips its first entry
+      // and drops the rest looks identical to a working one on any cake with a single rainbow.
+      rainbows: [
+        { id: 'r1', surface: 'top', footLeft: 'top', footRight: 'board', offsetX: 0.71, scale: 1,
+          bands: 6, colors: ['#F6A9C0', '#F9C9A0'] },
+        { id: 'r2', surface: 'side', footLeft: 'board', footRight: 'board', theta: -0.09, scale: 0.75 },
+      ],
       creamLayers: [{ id: 'c1', color: '#e0479e', from: 0.1, to: 0.6 }],
       topPipings: [{ layerId: 'p1', glbUrl: 'x.glb', color: '#fff' }],
       bottomPipings: [{ layerId: 'p2', glbUrl: 'y.glb', color: '#eee' }],
@@ -84,7 +91,7 @@ describe('a saved design comes back as the same cake', () => {
 
   // Named individually as well as in the whole-config check above, so a failure says WHICH element
   // type was lost rather than printing two large objects and leaving you to diff them.
-  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams']) {
+  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows']) {
     it(`tier.${key} survives`, () => {
       expect(roundTrip(FULL).tiers[0][key]).toEqual(FULL.tiers[0][key]);
     });
