@@ -105,7 +105,9 @@ const STUBS = {
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,
     element_type_id: 'et-topper', category_id: 'cat-1',
     allowed_zones: ['top_surface', 'board'],
-    allowed_actions: { move: true, tilt: false, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+    // ?colour=1 flips `color` on, which is the state five real elements are in and the only
+    // way to reach the colour control this card used to lack.
+    allowed_actions: { move: true, tilt: false, color: PARAMS.has('colour'), delete: true, resize: true, gradient: false, duplicate: false },
     placement_config: { r: 1, board: 'hug', scale: { max: 6, min: 1, step: 0.5 },
                         metalness: 0.0018626748, roughness: 0.28121553,
                         top_surface: 'stand', single_per_slot: true },

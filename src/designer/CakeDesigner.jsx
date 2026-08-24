@@ -5891,7 +5891,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               const on = all.some(s => scatterGroupOf(s) === su.group);
               return (
                 <PreviewTile key={su.zone} checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={96}
-                  locked={!(caps?.delete ?? true)}>
+                  locked={false}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
                   <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
                 </PreviewTile>
@@ -5942,7 +5942,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           </div>
         )}
-        {(caps?.delete ?? true) && (
+        {/* Always offered. See the note on `delete` in the toolbar's actions below: a decoration a
+            customer cannot take off their own cake is not a capability, it is a trap. */}
+        {true && (
           <button onClick={() => { all.forEach(s => removeSticker(s.id)); clearAllSelections(); }}
             style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove all</button>
         )}
@@ -6105,7 +6107,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     };
     return (
       <PlacementChooser key="place" previewUrl={srcEl.image_url} tiers={canvasConfig.tiers}
-        baseRotation={facingOffsetRadians(pc)} slots={slots} locked={!(srcEl.allowed_actions?.delete ?? true)}
+        baseRotation={facingOffsetRadians(pc)} slots={slots} locked={false}
         // Read from the ELEMENT, so an admin change reaches decorations already on cakes — the rule
         // isStickerMovable already follows for `move`, rather than a snapshot taken at placement.
         // resize is OPT-IN (absent ⇒ off); tilt defaults ON, matching the placement path's defaults.
@@ -6210,6 +6212,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       groups.push({ key: 'place', divider: true, controls: [
         elementPlacementChooser(elementById.get(elId)),
       ] });
+      /* ⚠️ Colour, which this card simply never offered.
+       *
+       * allowed_actions.color was honoured on the scatter card and nowhere here, so a single-per-slot
+       * element with `color: true` had no way to be recoloured at all — five real elements today
+       * (both unicorn eyes, the unicorn horn, two chocolate bars), each one something a baker would
+       * obviously want to change. Not a missed gate: the control did not exist on this path.
+       *
+       * The wheel already understands a decorEl selection — wheelColorOf and handleColorChange both
+       * have a branch for it — so this is the button that was missing, not a new colour path. */
+      if (elementById.get(elId)?.allowed_actions?.color === true) {
+        groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
+          <button key="col"
+            style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
+                     border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
+            onClick={() => {
+              const opening = !colorOpen;
+              closeAllPopups();
+              setSelectedEl({ type: 'decorEl', elementId: elId });
+              if (opening) setColorOpen(true);
+            }}>
+            <div style={{ width: '100%', height: '100%', borderRadius: '50%',
+                          background: design.stickers.find(st => st.elementId === elId)?.color ?? '#ffffff' }} />
+          </button>,
+        ] });
+      }
       groups.push({ key: 'actions', divider: false, footer: true, controls: [
         <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }}
           onClick={() => { design.stickers.filter(s => s.elementId === elId).forEach(s => removeSticker(s.id)); clearAllSelections(); }}>
@@ -6486,7 +6513,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // A grouped member can't be deleted on its own — the group is a lock. Ungroup (on the group
     // card) to delete a single piece; the group card's own "Remove group" deletes them all.
     const groupedMember = el.type === 'sticker' && !!design.stickers.find(s => s.id === el.id)?.groupId;
-    if (c.delete && !groupedMember) {
+    /* ⚠️ NOT gated on `delete`. Every decoration comes off the cake.
+     *
+     * allowed_actions.delete used to pin an element: no Remove in the toolbar, no "Remove all" on the
+     * card, and a locked tile in the chooser. Three of those four agreed; the single-per-slot card's
+     * own Remove button never checked it, so a "non-deletable" element was removable there anyway —
+     * which is how the inconsistency surfaced.
+     *
+     * The rule is the simpler one: a baker can always take a decoration off their own cake. An
+     * element that cannot be removed is not a protected element, it is a cake nobody can fix — and
+     * the half-honoured version was worse still, since whether it held depended on which panel you
+     * happened to use.
+     *
+     * The flag is now inert everywhere. It should come off the admin form too, or it is dead config
+     * that reads as a promise. */
+    /* ⚠️ …and not for a decorEl card, which pushes its OWN Remove a few dozen lines up.
+     *
+     * This was masked before: caps for a decorEl selection carry no `delete`, so the old
+     * `c.delete && …` was falsy here and the duplicate never appeared. Dropping the capability check
+     * without this exclusion put TWO Remove buttons on the single-per-slot card — a real regression,
+     * caught by looking at the panel rather than by the build or the suite. */
+    if (!groupedMember && el.type !== 'decorEl') {
       const label = selectedStickerIds.size > 1 ? 'Remove all' : 'Remove';
       actions.push(
         <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>{label}</button>
@@ -8671,9 +8718,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               //    a tier's wall, so we offer it on EVERY tier's side. Non-adjustable board styles
               //    are plate rings, valid on the bottom tier only.
               const yAdjustable = !!pipingPopupEl.placement_config?.bottom_y_adjustable;
-              // Deletability is CONFIG — the element's allowed_actions.delete, exactly like gradient below.
-              // Default true, so an element that never set the flag behaves as it always has.
-              const pipingDeletable = pipingPopupEl.allowed_actions?.delete ?? true;
+              // ⚠️ Always deletable, like every other decoration — see the note on `delete` in the
+              // toolbar actions. This read the element's allowed_actions.delete; a piped ring a baker
+              // could not remove is the same trap as a topper they could not remove, and leaving this
+              // one gated while the others opened would put the inconsistency back in a new place.
+              const pipingDeletable = true;
               const allowsBoard = allowed.includes('board');
               let rimFull = false;
               const candidates = [];
