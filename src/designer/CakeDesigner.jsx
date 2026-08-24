@@ -749,7 +749,17 @@ function BuryRow({ insertDepth, onChange }) {
 // `locked` (allowed_actions.delete === false) → a slot may be ADDED but not un-ticked. Unticking a placed
 // slot removes the instance, so the lock has to reach the tile as well as the Remove button — otherwise a
 // "non-deletable" element is still removable here and the flag means nothing.
-function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], locked = false, onToggle, onUpdate }) {
+/* ⚠️ `canResize` / `canTilt` — the element's allowed_actions, which this used to ignore entirely.
+ *
+ * It took only `locked` (delete), and rendered Size AND Tilt for every placed slot regardless of
+ * config. Two consequences, both reported: a topper with `tilt: false` in admin showed a Tilt row
+ * anyway, and — because Size + Tilt together measure wider than the ~184px card — the row overflowed
+ * and the LEFT-most control was painted outside it. `resize: true` looked like a missing Size dial.
+ *
+ * The scatter path gated both of these on the capability from the start; this path never did. Same
+ * flags, same meaning, one place fewer for them to be inert. */
+function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], locked = false,
+                            canResize = true, canTilt = true, onToggle, onUpdate }) {
   const cap = { fontSize: 8.5, fontWeight: 700, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 };
   return (
     <div style={{ width: '100%' }}>
@@ -770,6 +780,7 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
                  which is exactly what it looked like. */
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
                             flexWrap: 'wrap', gap: '8px 14px', marginTop: 8 }}>
+                {canResize && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                   {/* Hero hug auto-sizes to the tier wall; the dial nudges a multiplier (hugMul,
                       default 1×) rather than an absolute scale. Stand uses absolute scale (r). */}
@@ -778,10 +789,13 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
                     : <SizeDial size={slot.sticker.scale ?? 1} min={slot.scaleRange?.min ?? 0.5} max={slot.scaleRange?.max ?? 8} step={slot.scaleRange?.step ?? 0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />}
                   <span style={cap}>Size</span>
                 </div>
+                )}
+                {canTilt && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
                   <TiltRow tiltAngle={slot.sticker.tiltAngle} rollAngle={slot.sticker.rollAngle}
                            onChange={patch => onUpdate(slot.sticker.id, patch)} />
                 </div>
+                )}
                 {/* Bury — only for an inserted instance (insertDepth != null), same signal as the renderer. */}
                 {slot.sticker.insertDepth != null && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
@@ -6092,6 +6106,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return (
       <PlacementChooser key="place" previewUrl={srcEl.image_url} tiers={canvasConfig.tiers}
         baseRotation={facingOffsetRadians(pc)} slots={slots} locked={!(srcEl.allowed_actions?.delete ?? true)}
+        // Read from the ELEMENT, so an admin change reaches decorations already on cakes — the rule
+        // isStickerMovable already follows for `move`, rather than a snapshot taken at placement.
+        // resize is OPT-IN (absent ⇒ off); tilt defaults ON, matching the placement path's defaults.
+        canResize={srcEl.allowed_actions?.resize === true}
+        canTilt={srcEl.allowed_actions?.tilt !== false}
         onToggle={onToggle} onUpdate={updateSticker} />
     );
   }
