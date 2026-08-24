@@ -6712,7 +6712,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // arrangement and its own place on the cake, so a single shared card could only ever edit one of
   // them and would silently be the wrong one.
   //
-  // A customer gets the ARRANGEMENT and the SIZE. Not the studio's ten: bands, inner radius,
+  // A customer gets WHERE IT GOES and the SIZE. Not the studio's ten: bands, inner radius,
   // thickness, spring and flatten are what make a shape read as a rainbow at all, and they were
   // tuned once against the references. Nor a position control — where it stands is dragged, which is
   // the whole reason the handle exists.
@@ -6730,8 +6730,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
 
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Arrangement</div>
-          {/* Each tile carries its WHOLE shape, not one flag — picking one that changed only the feet
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Where it goes</div>
+          {/* "Where it goes", not "Arrangement" — that was the studio's word for it, carried into the
+              customer's card without being questioned. A customer is not arranging anything; they are
+              picking where the rainbow goes.
+
+              Each tile carries its WHOLE shape, not one flag — picking one that changed only the feet
               left the arch in the middle and the choice looked broken. `scale` is deliberately NOT
               applied: it is the one thing on a tile the customer has already chosen for themselves
               below, and re-imposing it would undo their size every time they tried another shape. */}
