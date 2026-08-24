@@ -115,7 +115,7 @@ const onSaveTemplate = async t => {
   console.log('[harness] saved template', t.name, t);
 };
 
-/* ⚠️ A STRIPED cake, reachable by URL: ?stripes=stripes | pastel | unicorn | sunset | rainbow.
+/* ⚠️ A STRIPED cake, reachable by URL: ?stripes=pastel | unicorn | sunset | rainbow.
  *
  * The wall treatment is several files deep — design → toCanvasConfig → CakeCanvas → CakeTier →
  * TierBody → the shader — and every one of those is a place it can be dropped silently. It was
@@ -127,7 +127,7 @@ const stripedDesign = STRIPE_KEY ? {
   tiers: [{
     color: '#F1EEDC', radius: 1.2, height: 1.45, shape: 'round',
     frostingType: 'buttercream', frostingStyle: 'smooth',
-    stripes: STRIPE_PRESETS[STRIPE_KEY] ?? STRIPE_PRESETS.stripes,
+    stripes: STRIPE_PRESETS[STRIPE_KEY] ?? STRIPE_PRESETS.pastel,
   }],
 } : null;
 

@@ -5146,6 +5146,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     writeGradient(next);
   }
   function addGradStop() {
+    revealColourPicker();
     if (gradStops.length >= maxStops || gradPending) return;
     // Show an empty placeholder stop and wait for the user to pick its colour (handleWheelChange) —
     // don't duplicate the last colour, which looked like "nothing happened".
@@ -5153,9 +5154,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setGradStop(gradStops.length);
   }
   // Select a chip: picking a real stop cancels a pending placeholder; the placeholder itself keeps it.
+  const colourWheelRef = useRef(null);
+  /* Picking a stop must BRING YOU TO THE PICKER, on whichever layout you are on.
+   *
+   * ⚠️ Reported twice as "the colour picker does not appear". Tapping a stripe chip did select it —
+   * the ring moved — but the wheel that changes it was somewhere the baker could not see, so the tap
+   * looked like it did nothing. Nothing was broken; the control and its effect were just far apart.
+   *
+   *   desktop — every section is stacked in one scrolling column, so the wheel is above and often
+   *             scrolled out. `block: 'nearest'` scrolls only when it actually is.
+   *   phone   — the sections are TABS and the wheel lives in a different one, so no amount of
+   *             scrolling would ever reveal it. Switch tabs instead.
+   *
+   * The same was already true of a glaze tier's marble stops; this fixes that too. */
+  function revealColourPicker() {
+    if (isMobile) setEditTab('colour');
+    else colourWheelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
   function selectGradStop(i) {
     if (gradPending && i < gradStops.length) setGradPending(false);
     setGradStop(i);
+    revealColourPicker();
   }
   function removeGradStop(i) {
     setGradPending(false);
@@ -8029,7 +8048,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               const pool = selectedEl?.type === 'tier' ? collectTierColors(design) : collectElementColors(design);
               const cakeColors = [...new Set(pool)].filter(c => c.toLowerCase() !== currentColor.toLowerCase());
               sections.push({ id: 'colour', label: 'Colour', node: (
-                <>
+                <div ref={colourWheelRef}>
                   <ColorWheel
                     key={`${selectedEl.type}-${selectedEl.index ?? selectedEl.tierIndex ?? selectedEl.id ?? 'x'}-${selectedEl.zone ?? ''}`}
                     color={wheelColor}
@@ -8037,7 +8056,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     cakeColors={cakeColors}
                     compact={isMobile}
                   />
-                </>
+                </div>
               ) });
             }
 
@@ -9882,6 +9901,20 @@ const s = {
     padding:'14px 16px 16px',
     boxShadow:'0 4px 24px rgba(107,45,66,0.14)',
     zIndex:20, width:248,
+    /* ⚠️ WITHOUT THESE THE PANEL CLIPS ITS OWN CONTENT AND NOTHING SCROLLS.
+     *
+     * It is absolutely positioned and vertically centred with no height limit, so a tall selection
+     * simply extends past the top and bottom of the window. The app shell around it is
+     * overflow:hidden, so the overflow is not scrolled — it is CUT, with no scrollbar and no hint
+     * that anything is missing.
+     *
+     * Measured on an 780px window with a striped tier: 918px of content in a 780px view, and the
+     * colour wheel — the control that edits the stripe you just selected — was among the 138px
+     * removed. Reported twice, reasonably, as "the colour picker does not appear".
+     *
+     * This is not a stripes bug. A glaze tier's five marble stops, or any future section, hits the
+     * same wall on a short window; stripes were just the first thing tall enough to prove it. */
+    maxHeight: 'calc(100vh - 28px)', overflowY: 'auto', overscrollBehavior: 'contain',
   },
   wheelHeader: {
     display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14,
