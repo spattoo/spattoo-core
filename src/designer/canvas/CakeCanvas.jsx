@@ -32,6 +32,7 @@ import {
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
+import { rainbowHandleAt } from '../geometry/rainbow.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
@@ -2210,6 +2211,7 @@ function CakeScene({
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2365,6 +2367,33 @@ function CakeScene({
           catcherFlag="isBlockCatcher" handleFlag="isBlockHandle"
           lift={(nameBlocks.size ?? 0.3) + 0.06}
           color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker />
+      )}
+
+      {/* A rainbow is MOVED, never dialled — the same handle machinery as dust, foil, grass clumps
+          and letter blocks, so it drags with a mouse and with a finger for free.
+
+          The handle is the arch's CENTRE standing on the surface, not the cake's middle: a leaning
+          rainbow is offset along its own plane, and a dot at the axis would be nowhere near the
+          thing it moves. rainbowHandleAt reads the EFFECTIVE position, so an arch the clearance rule
+          stepped backwards keeps its handle on it rather than in front of it.
+
+          showMarker, because an arch is a hoop with a hole in the middle and the handle sits in the
+          hole — with nothing drawn there is nothing to aim at, which reads as "it cannot be moved".
+          The dot is only present while the card is open, so it never reaches a thumbnail. */}
+      {rainbowMode && (
+        <FinishHandles
+          tierData={tierData}
+          getPoints={t => (t.rainbows?.length
+            ? t.rainbows.map(rb => ({
+                ...rainbowHandleAt(rb, { radius: t.radius, topY: t.baseY + t.height, boardY: t.baseY }),
+                r: 0.16,
+              }))
+            : null)}
+          board={board}
+          selected={rainbowSelected} onMove={onRainbowMove} onSelect={onRainbowSelect}
+          catcherFlag="isRainbowCatcher" handleFlag="isRainbowHandle"
+          lift={0.06}
+          color="#ffffff" selColor="#2C4433" dotScale={1.6} showMarker />
       )}
 
       {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
@@ -2993,6 +3022,7 @@ export default function CakeCanvas({
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3131,6 +3161,10 @@ export default function CakeCanvas({
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
         onGrassSelect={onGrassSelect}
+        rainbowMode={rainbowMode}
+        rainbowSelected={rainbowSelected}
+        onRainbowMove={onRainbowMove}
+        onRainbowSelect={onRainbowSelect}
         blocksMode={blocksMode}
         blocksSelected={blocksSelected}
         onBlockMove={onBlockMove}

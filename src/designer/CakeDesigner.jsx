@@ -30,7 +30,7 @@ import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
-import { RAINBOW_DEFAULTS } from './geometry/rainbow.js';
+import { RAINBOW_DEFAULTS, rainbowDragTo } from './geometry/rainbow.js';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
@@ -3881,6 +3881,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // dust splash — polar (u, v) against the surface, moved by a handle on the cake — so this reuses
   // FinishHandles rather than inventing a third way to drag something.
   const [grassSelected, setGrassSelected] = useState(null);   // { tier, idx } — BOARD_TIER for the board
+  const [rainbowSelected, setRainbowSelected] = useState(null);   // { tier, idx } — which arch is being moved
   const GRASS_PATCH_R = 0.42;
 
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
@@ -3917,6 +3918,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   // Dragged on the cake. The handle reports (u, v) on whichever surface it was grabbed from.
+  // A rainbow is MOVED, never dialled. The handle machinery hands back (u, v) on the surface — an
+  // angle round the cake and a fraction out from its middle — and rainbowDragTo turns that into the
+  // rainbow's own words: `yaw` and `standoff` over the cake, `theta` and `spring` on the wall.
+  //
+  // The lean is held. `offsetX` is the arch's SHAPE, not its position, so a drag moves where the
+  // rainbow stands without quietly turning "over, falling right" into something else.
+  function handleRainbowMove(tier, idx, u, v) {
+    const t = design.tiers[tier];
+    const rb = t?.rainbows?.[idx];
+    if (!rb) return;
+    // The RESOLVED radius the canvas renders, not one re-derived here — a drag computed against a
+    // different number than the picture would put the handle where the arch is not. topY/boardY are
+    // unused by the drag map (it only needs the footprint), so they are not looked up.
+    const cake = { radius: canvasConfig.tiers?.[tier]?.radius ?? 1, topY: 0, boardY: 0 };
+    updateTierRainbows(tier, cur => cur.map((r, k) =>
+      k === idx ? { ...r, ...rainbowDragTo(r, cake, u, v) } : r));
+  }
+
   function handleGrassMove(tier, idx, u, v) {
     if (tier === BOARD_TIER) {
       updateBoardGrass({ patches: (design.boardGrass?.patches ?? []).map((p, k) => k === idx ? { ...p, u, v } : p) });
@@ -7855,6 +7874,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
               onPipingInstanceMove={handlePipingInstanceMove}
               isPipingMovable={isPipingMovable}
+              rainbowMode={selectedEl?.type === 'rainbow'}
+              rainbowSelected={rainbowSelected}
+              onRainbowMove={handleRainbowMove}
+              onRainbowSelect={(tier, idx) => setRainbowSelected({ tier, idx })}
               grassMode={selectedEl?.type === 'grass'}
               grassSelected={grassSelected}
               onGrassMove={handleGrassMove}

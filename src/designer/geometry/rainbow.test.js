@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale, wrapToWall,
   rainbowFootReach,
+  rainbowHandleAt, rainbowDragTo,
 } from './rainbow.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
@@ -913,5 +914,81 @@ describe('a rainbow on an upper tier', () => {
     const reach = rainbowFootReach(
       { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'top', offsetX: 0 }, tier2);
     expect(reach).toBeLessThan(tier2.radius);
+  });
+});
+
+// ── Moving one ──────────────────────────────────────────────────────────────
+// A rainbow is DRAGGED, never dialled — so the handle's position and the drag's effect are two
+// halves of one map, and the thing that matters is that they are exact inverses. A handle that
+// lands a little off the arch is a dot the customer grabs that is not on the thing it moves.
+describe('dragging a rainbow', () => {
+  const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+  const OVER = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', yaw: 0 };
+  const WALL = { ...RAINBOW_DEFAULTS, surface: 'side', footLeft: 'board', spring: 0.18, theta: -0.09 };
+
+  it('puts the handle back where a drag asked for it', () => {
+    for (const u of [0, 0.1, 0.25, 0.5, 0.9]) {
+      const moved = { ...OVER, ...rainbowDragTo(OVER, CAKE, u, 0.8) };
+      const back = rainbowHandleAt(moved, CAKE);
+      expect(back.u).toBeCloseTo(u, 6);
+      expect(back.v).toBeCloseTo(0.8, 6);
+    }
+  });
+
+  it('does the same on the wall, in the wall\'s own words', () => {
+    for (const [u, v] of [[0.1, 0.2], [0.5, 0.6], [0.95, 0.9]]) {
+      const moved = { ...WALL, ...rainbowDragTo(WALL, CAKE, u, v) };
+      const back = rainbowHandleAt(moved, CAKE);
+      expect(back.u).toBeCloseTo(u, 6);
+      expect(back.v).toBeCloseTo(v, 6);
+    }
+  });
+
+  it('holds the lean — a drag moves it, it does not reshape it', () => {
+    // offsetX is the arch's SHAPE. A drag that flattened it would be moving a different rainbow to
+    // where you pointed.
+    const moved = { ...OVER, ...rainbowDragTo(OVER, CAKE, 0.4, 0.9) };
+    expect(moved.offsetX).toBe(OVER.offsetX);
+    expect(moved.footLeft).toBe(OVER.footLeft);
+    expect(moved.footRight).toBe(OVER.footRight);
+  });
+
+  it('hands the handle to the surface the rainbow is actually on', () => {
+    expect(rainbowHandleAt(OVER, CAKE).surface).toBe('top_surface');
+    expect(rainbowHandleAt(WALL, CAKE).surface).toBe('side');
+  });
+
+  it('sits the handle on the ARCH, not on the cake\'s middle', () => {
+    // The default leans, so its centre stands 0.71 of the radius off the axis. A handle at the axis
+    // would be a dot nowhere near the thing it moves.
+    expect(rainbowHandleAt(OVER, CAKE).v).toBeCloseTo(0.71, 3);
+  });
+
+  it('follows the arch when the clearance rule steps it back', () => {
+    // The handle is drawn from the EFFECTIVE position. Drawn from what was ASKED for, it would float
+    // in front of an arch that had been pushed behind the cake.
+    const asked = { ...RAINBOW_DEFAULTS, footLeft: 'board', footRight: 'board', offsetX: 0, standoff: 0 };
+    const { standoff } = rainbowBands(asked, CAKE);
+    expect(standoff).toBeGreaterThan(0);                       // it really was pushed
+    expect(rainbowHandleAt(asked, CAKE).v).toBeCloseTo(standoff / CAKE.radius, 6);
+  });
+
+  it('carries on round the back rather than sticking there', () => {
+    // Handles speak u in 0…1 and the geometry speaks radians. Clamping would stop a drag dead at the
+    // seam behind the cake, which feels like the rainbow hitting a wall that is not there.
+    const a = rainbowDragTo(OVER, CAKE, 0.99, 0.8);
+    const b = rainbowDragTo(OVER, CAKE, 0.01, 0.8);
+    for (const y of [a.yaw, b.yaw]) {
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y).toBeLessThan(Math.PI * 2);
+    }
+  });
+
+  it('stops at the lean rather than going imaginary', () => {
+    // The centre cannot come closer to the axis than the arch's own offset. An honest limit: the
+    // arch simply will not come any further in.
+    const moved = rainbowDragTo(OVER, CAKE, 0.25, 0.1);
+    expect(Number.isFinite(moved.standoff)).toBe(true);
+    expect(moved.standoff).toBe(0);
   });
 });

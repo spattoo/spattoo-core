@@ -503,6 +503,70 @@ export function bandGeometry(band, { flatten = 0, tubeSegments = RAINBOW_DEFAULT
   return geo;
 }
 
+// Handles speak u in 0…1 and the geometry speaks radians, so both directions WRAP rather than clamp:
+// dragging past the back of the cake carries on round it, it does not stick there.
+const TAU = Math.PI * 2;
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const wrapU = x => ((x % 1) + 1) % 1;
+const wrapAngle = a => ((a % TAU) + TAU) % TAU;
+
+/**
+ * Where a rainbow's drag handle sits — the arch's CENTRE standing on the surface.
+ *
+ * Not the cake's middle. A leaning rainbow is offset along its own plane, so a handle at the axis
+ * would be a dot the customer grabs that is nowhere near the thing it moves.
+ *
+ * The two surfaces have different words for the same two freedoms, and both maps are exact rather
+ * than approximate, because the geometry already thinks in the handle machinery's terms:
+ *   over the cake — round is `yaw`, out is `standoff`. A point (0, y, standoff) turned by yaw lands
+ *                   at (standoff·sin yaw, y, standoff·cos yaw), which is precisely where a
+ *                   top-surface handle is drawn from (angle, radial fraction). Same formula, so the
+ *                   handle and the arch cannot drift apart.
+ *   on the wall   — round is `theta`, up is `spring`. Those ARE the wall rainbow's two position
+ *                   numbers; nothing had to be invented for it.
+ */
+export function rainbowHandleAt(params = {}, cake = {}) {
+  const p = { ...RAINBOW_DEFAULTS, ...params };
+  const R = cake.radius ?? 1;
+  if (p.surface === 'side') {
+    return { surface: 'side', u: wrapU((p.theta ?? 0) / TAU), v: clamp01(p.spring ?? 1) };
+  }
+  // The EFFECTIVE numbers, not the authored ones. The clearance rule can push an arch further back
+  // than it was asked to stand, and a handle drawn from the request would float in front of it.
+  const { centerX, standoff } = rainbowBands(p, cake);
+  return {
+    surface: 'top_surface',
+    u: wrapU(((p.yaw ?? 0) + Math.atan2(centerX, standoff)) / TAU),
+    v: R > 0 ? Math.min(1, Math.hypot(centerX, standoff) / R) : 0,
+  };
+}
+
+/**
+ * The parameters after a drag to (u, v) — the inverse of the above.
+ *
+ * Holds the lean. `offsetX` is the arch's SHAPE, not its position: how far it straddles along its
+ * own plane is what makes it "over, falling right" rather than "sitting on top", and a drag that
+ * quietly flattened it would be moving a different rainbow to where you pointed.
+ *
+ * Which means the centre cannot come closer to the axis than the lean itself, and the drag stops
+ * there rather than going imaginary. An honest limit, and a visible one: the arch simply will not
+ * come any further in.
+ */
+export function rainbowDragTo(params = {}, cake = {}, u = 0, v = 0) {
+  const p = { ...RAINBOW_DEFAULTS, ...params };
+  if (p.surface === 'side') return { theta: wrapAngle(u * TAU), spring: clamp01(v) };
+
+  const R = cake.radius ?? 1;
+  const { centerX } = rainbowBands(p, cake);
+  const want = clamp01(v) * R;
+  // hypot(centerX, standoff) = want. Below the lean there is no solution, so it rests at zero.
+  const standoff = Math.sqrt(Math.max(0, want * want - centerX * centerX));
+  return {
+    yaw: wrapAngle(u * TAU - Math.atan2(centerX, standoff)),
+    standoff: R > 0 ? standoff / R : 0,
+  };
+}
+
 /**
  * What a baker needs, in the only terms that survive them baking a different size.
  *
