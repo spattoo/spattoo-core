@@ -31,6 +31,7 @@ import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { RAINBOW_DEFAULTS, rainbowDragTo } from './geometry/rainbow.js';
+import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf } from './decorations/RainbowArrangements.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
@@ -3739,6 +3740,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'rainbow', tierIndex: i, id });
   }
 
+  function removeRainbow(tierIndex, id) {
+    updateTierRainbows(tierIndex, cur => cur.filter(r => r.id !== id));
+    setRainbowSelected(null);
+    clearAllSelections();
+  }
+
   function removeGrass() {
     design.tiers.forEach((t, i) => { if (t.grass) setTierGrass(i, null); });
     setBoardGrass(null);
@@ -5349,6 +5356,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.tiers.some(t => t.grass) || design.boardGrass) {
     decorationCards.unshift({ key: 'grass', type: 'grass', name: 'Grass', thumb: null });
   }
+  // ONE CARD PER RAINBOW, like the writing cards and for the same reason: each carries its own
+  // arrangement and its own place on the cake, so a single shared card could only ever edit one of
+  // them and would silently be the wrong one. Numbered only when there is more than one, because
+  // "Rainbow 1" on a cake with one rainbow is a label answering a question nobody asked.
+  design.tiers.forEach((t, tierIndex) => (t.rainbows ?? []).forEach((rb, n) => {
+    decorationCards.unshift({
+      key: `rainbow-${rb.id}`, type: 'rainbow', id: rb.id, tierIndex,
+      name: (t.rainbows.length > 1 ? `Rainbow ${n + 1}` : 'Rainbow'), thumb: null,
+    });
+  }));
   if (design.nameBlocks?.blocks?.length) {
     decorationCards.unshift({ key: 'blocks', type: 'blocks', name: 'Letter Blocks', thumb: null, glyph: 'A' });
   }
@@ -5447,6 +5464,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cluster-place' ? { type: 'cluster-place', elementId: card.elementId }
       : card.type === 'foil'          ? { type: 'foil', elementId: card.elementId }
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
+      : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
       : card.type === 'blocks'        ? { type: 'blocks' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
@@ -5454,6 +5472,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'group'         ? { type: 'group', groupId: card.groupId }
       : card.type === 'text'          ? { type: 'text', id: card.id }
       : null;
+    if (el?.type === 'rainbow') {
+      // Which handle is lit follows which card is open. Without this, opening a card on a cake with
+      // two rainbows leaves the previous one's dot highlighted, and the highlight is the only thing
+      // saying which of two identical dots belongs to the panel you are looking at.
+      const idx = (design.tiers[el.tierIndex]?.rainbows ?? []).findIndex(r => r.id === el.id);
+      setRainbowSelected(idx >= 0 ? { tier: el.tierIndex, idx } : null);
+    }
     if (el) selectExclusive(el, stickerIds);
   }
 
@@ -6681,6 +6706,83 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  // Rainbow editor body — the inline expanded body of ONE rainbow's stack card.
+  //
+  // One card per rainbow, like the writing cards and for the same reason: each carries its own
+  // arrangement and its own place on the cake, so a single shared card could only ever edit one of
+  // them and would silently be the wrong one.
+  //
+  // A customer gets the ARRANGEMENT and the SIZE. Not the studio's ten: bands, inner radius,
+  // thickness, spring and flatten are what make a shape read as a rainbow at all, and they were
+  // tuned once against the references. Nor a position control — where it stands is dragged, which is
+  // the whole reason the handle exists.
+  function renderRainbowBody(card) {
+    const rb = design.tiers[card.tierIndex]?.rainbows?.find(r => r.id === card.id);
+    if (!rb) return null;
+    const current = arrangementOf(rb);
+    const set = changes => updateTierRainbows(card.tierIndex, cur =>
+      cur.map(r => (r.id === rb.id ? { ...r, ...changes } : r)));
+
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Drag it on the cake to move it round.
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Arrangement</div>
+          {/* Each tile carries its WHOLE shape, not one flag — picking one that changed only the feet
+              left the arch in the middle and the choice looked broken. `scale` is deliberately NOT
+              applied: it is the one thing on a tile the customer has already chosen for themselves
+              below, and re-imposing it would undo their size every time they tried another shape. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {RAINBOW_ARRANGEMENTS.map(a => (
+              <ArrangementTile key={a.key} item={a} on={current?.key === a.key}
+                tiers={design.tiers.length} tierIndex={card.tierIndex} size={40}
+                onPick={() => {
+                  const { scale, ...shape } = a.params;
+                  set({ surface: a.surface, ...shape });
+                }} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Size</div>
+          <input type="range" min={0.4} max={1.8} step={0.05} value={rb.scale ?? 1}
+            onChange={e => set({ scale: parseFloat(e.target.value) })}
+            style={{ width: '100%' }} />
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Colours</div>
+          {/* One swatch per rope. Six colour pickers is a lot of controls, but they are the whole
+              point of a rainbow — a pastel one and a bold one are the same geometry and a different
+              cake, and no other control here changes what it IS. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {(rb.colors ?? RAINBOW_DEFAULTS.colors).slice(0, rb.bands ?? RAINBOW_DEFAULTS.bands).map((c, i) => (
+              <input key={i} type="color" value={c} aria-label={`Rope ${i + 1}`}
+                onChange={e => {
+                  const next = [...(rb.colors ?? RAINBOW_DEFAULTS.colors)];
+                  next[i] = e.target.value;
+                  set({ colors: next });
+                }}
+                style={{ width: 28, height: 26, border: '1px solid #D9D5CE', borderRadius: 6, padding: 0, cursor: 'pointer' }} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+          <button onClick={() => removeRainbow(card.tierIndex, rb.id)}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
+              background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
+            Remove
+          </button>
+        </div>
+      </>
+    );
+  }
+
   // Grass editor body — inline expanded body of its stack card.
   //
   // A baker gets THREE controls, not the studio's ten. Splay, droop, strand count, thickness, length
@@ -7896,7 +7998,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               rainbowMode={selectedEl?.type === 'rainbow'}
               rainbowSelected={rainbowSelected}
               onRainbowMove={handleRainbowMove}
-              onRainbowSelect={(tier, idx) => setRainbowSelected({ tier, idx })}
+              onRainbowSelect={(tier, idx) => {
+                setRainbowSelected({ tier, idx });
+                const rb = design.tiers[tier]?.rainbows?.[idx];
+                if (rb) selectExclusive({ type: 'rainbow', tierIndex: tier, id: rb.id });
+              }}
               grassMode={selectedEl?.type === 'grass'}
               grassSelected={grassSelected}
               onGrassMove={handleGrassMove}
@@ -8362,6 +8468,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'cluster' ? renderClusterBody(card)
                            : card.type === 'foil' ? renderFoilBody(card)
                            : card.type === 'cream' ? renderCreamBody()
+                           : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()
                            : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
