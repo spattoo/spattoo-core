@@ -13,7 +13,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
@@ -5977,6 +5977,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const isSideZone = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
     const sameSurface = (sk, slot) =>
       slot.zone === ZONES.TOP_SURFACE ? sk.zone === ZONES.TOP_SURFACE
+      // ⚠️ No tierIndex: there is ONE board. Without this branch a board slot fell through to the
+      // side test below, isSideZone('board') is false, and the tile never recognised its own
+      // instance — so it never ticked, and every click took the ADD path instead of the remove one.
+      // Clicking three times put three footballs on the board.
+      : slot.zone === ZONES.BOARD     ? sk.zone === ZONES.BOARD
       : slot.zone === ZONES.RIM       ? sk.zone === ZONES.RIM && sk.tierIndex === slot.tierIndex
       : isSideZone(sk.zone) && sk.tierIndex === slot.tierIndex;
     // A zone that offers two poses gets a tile EACH, so the tick has to say which pose is on — the
@@ -5994,7 +5999,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Mode via zoneMode (never the raw value) so the { mode, seat } object form doesn't leak into
       // placementMode / edgeSeatSeed — INVARIANTS #1.
       // The TILE's pose, not the zone default — picking "Top hugging" has to seat it hugging.
-      const mode = slot.mode ?? zoneMode(pc, slot.zone, 'hug');
+      // Flat surfaces are stood on, never hugged — see flatPose.
+      const mode = flatPose(slot.zone, slot.mode ?? zoneMode(pc, slot.zone, 'hug'));
       // Rim: seed the front-edge seat + lean via the SAME helper addSticker uses, so the move path
       // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
       let pos;
@@ -6082,6 +6088,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // left it flush/buried; without the reset, a verge lean/height-nudge stuck to the side seat.
         // `pos` re-seeds only the fields the new zone needs.
         updateSticker(instance.id, {
+          zone: slot.zone, tierIndex: slot.tierIndex,
+          ...zoneSeatFields(pc, slot.zone, slot.mode),
+          x: 0, z: 0, tiltAngle: 0, rollAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0, insertDepth: null,
+          ...pos,
+        });
+        return;
+      }
+      /* ⚠️ ONE INSTANCE, ONE ZONE.
+       *
+       * This card used to treat every slot independently: ticking Top and then Board gave you TWO
+       * footballs, one on each. That reads as a bug even when the tick state is right — the card is
+       * headed by a single element with a single Size, a single colour and one Remove, so a baker
+       * ticking a second zone means "put it there instead", not "give me another one".
+       *
+       * Wanting a ball on the top AND the board is two decorations, and is expressed by adding the
+       * element twice. Same rule the scatter path above already follows for a selected instance.
+       *
+       * MOVE rather than remove-and-re-add: re-adding would seat the replacement back at the centre
+       * of the new surface and throw away the position the customer dragged it to. */
+      const elsewhere = !slot.checked
+        && design.stickers.find(s => s.elementId === elId && !onSlot(s, slot));
+      if (elsewhere) {
+        const { pos } = seatOnSlot(slot);
+        updateSticker(elsewhere.id, {
           zone: slot.zone, tierIndex: slot.tierIndex,
           ...zoneSeatFields(pc, slot.zone, slot.mode),
           x: 0, z: 0, tiltAngle: 0, rollAngle: 0, yOffset: 0, radialOffset: 0, rotation: 0, insertDepth: null,

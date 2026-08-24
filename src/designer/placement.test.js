@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose } from './placement.js';
 import { TIER_RADII, STICKER_SIZE } from './constants.js';
 import { topContains } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -673,5 +673,50 @@ describe('frameTopMaxScale on non-round cakes', () => {
   it('a rect sheet on a sheet cake fills to the nearest edge', () => {
     const sheetCake = { kind: 'rect', halfW: 1.08, halfD: 0.78 };
     expect(frameTopMaxScale(sheetCake, 'rect', 1)).toBeCloseTo(0.78 / (STICKER_SIZE / 2), 6);
+  });
+});
+
+describe('flatPose — a flat surface is stood on, never hugged', () => {
+  it('turns a hug into a stand on the board', () => {
+    // The football's config genuinely says `board: "hug"`. Honoured literally it seats the model's
+    // middle at the surface and half the ball sinks into the drum.
+    expect(flatPose('board', 'hug')).toBe('stand');
+    expect(flatPose('board', null)).toBe('stand');
+    expect(flatPose('board', undefined)).toBe('stand');
+  });
+
+  it('leaves the WALL zones alone — hugging is what they are for', () => {
+    expect(flatPose('side', 'hug')).toBe('hug');
+    expect(flatPose('middle_tier', 'hug')).toBe('hug');
+  });
+
+  it('leaves every pose a flat surface genuinely has', () => {
+    // Config still chooses freely among the poses that mean something on a flat surface.
+    for (const m of ['stand', 'perch', 'verge', 'insert']) {
+      expect(flatPose('board', m)).toBe(m);
+      expect(flatPose('top_surface', m)).toBe(m);
+    }
+  });
+
+  it('leaves top_surface hug ALONE — that pose is real', () => {
+    // ⚠️ The first cut coerced every non-wall zone and broke a standing test. A top-surface hug is
+    // the hero pose that auto-sizes to the tier wall (hugMul, not scale). "Flat" does not imply
+    // "cannot hug"; only the board has nothing to hug.
+    expect(flatPose('top_surface', 'hug')).toBe('hug');
+  });
+});
+
+describe('zoneSeatFields writes the coerced pose', () => {
+  it('never writes hug for a board, whatever the config says', () => {
+    // ⚠️ The move path calls this, not seatOnSlot. Coercing only at the seat left dragging a
+    // decoration onto the board writing `hug` straight back and burying it again.
+    const pc = { board: 'hug', top_surface: 'stand' };
+    expect(zoneSeatFields(pc, 'board').placementMode).toBe('stand');
+    expect(zoneSeatFields(pc, 'board', 'hug').placementMode).toBe('stand');
+  });
+
+  it('still writes hug on a wall', () => {
+    const pc = { side: 'hug' };
+    expect(zoneSeatFields(pc, 'side').placementMode).toBe('hug');
   });
 });

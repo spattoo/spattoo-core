@@ -544,11 +544,33 @@ export function zoneSeat(placementConfig, zone) {
 // a pose is only meaningful where the config offers it, and a stale value (say a design saved while
 // an element allowed two poses, loaded after an admin cut it back to one) must fall back rather than
 // render something the element no longer claims to do.
+/* The BOARD is stood on. Nothing else is coerced.
+ *
+ * `hug` seats a model's MIDDLE at its surface, which is right against a wall and wrong on the drum —
+ * a football with `board: "hug"` sank halfway into the board. The config says hug because the admin
+ * form offers it, not because anything on the board can be hugged.
+ *
+ * ⚠️ SCOPED TO THE BOARD ON PURPOSE. The first cut of this coerced every non-wall zone and broke a
+ * standing test: `top_surface` has a REAL hug — the hero pose that auto-sizes to the tier wall and
+ * nudges a hugMul rather than a scale. "Flat" does not imply "cannot hug"; only the board does.
+ *
+ * ⚠️ And here, in the ONE place both the add and the move path resolve a pose. Coercing at the call
+ * sites left the move path writing `hug` straight back, so dragging a decoration onto the board
+ * buried it again after the seat had been fixed.
+ *
+ * A board `hug` may one day mean something real — a decoration standing on the drum and LEANING on
+ * the cake wall is a look bakers do. That is a pose to build, not a config to honour literally while
+ * it renders as a half-buried ball.
+ */
+export function flatPose(zone, mode) {
+  return (zone === ZONES.BOARD && (mode === 'hug' || !mode)) ? 'stand' : mode;
+}
+
 export function zoneSeatFields(placementConfig, zone, mode = null) {
   const allowed = zoneModes(placementConfig, zone, 'hug');
   const picked  = mode && allowed.includes(mode) ? mode : (allowed[0] ?? 'hug');
   return {
-    placementMode: picked,
+    placementMode: flatPose(zone, picked),
     sideProud:     zoneSeat(placementConfig, zone) === 'proud',
   };
 }
