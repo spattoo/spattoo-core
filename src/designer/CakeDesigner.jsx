@@ -6,7 +6,7 @@ import { splitMobileNav, strandedMenus } from './mobileNav.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
-import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap } from './canvas/CakeCanvas';
+import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius } from './canvas/CakeCanvas';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
 import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
@@ -30,7 +30,7 @@ import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
-import { RAINBOW_DEFAULTS, rainbowDragTo } from './geometry/rainbow.js';
+import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf } from './decorations/RainbowArrangements.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
@@ -6712,16 +6712,49 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // arrangement and its own place on the cake, so a single shared card could only ever edit one of
   // them and would silently be the wrong one.
   //
-  // A customer gets WHERE IT GOES and the SIZE. Not the studio's ten: bands, inner radius,
-  // thickness, spring and flatten are what make a shape read as a rainbow at all, and they were
-  // tuned once against the references. Nor a position control — where it stands is dragged, which is
-  // the whole reason the handle exists.
+  // WHAT A CUSTOMER GETS, and what they do not.
+  //
+  // Where it goes, size, how many ropes, how fat, how flat, and the colours. Those are the things a
+  // cake legitimately differs BY — a six-rope pastel arch and a three-rope bold one are the same
+  // geometry and a different cake.
+  //
+  // `innerRadius` is held back: the hole under the arch is the one number that decides whether the
+  // thing reads as a rainbow at all. A tight hole under fat ropes is what makes the stack reach past
+  // the cake; widen it and you get a shallow hoop that can only clear the cake by standing back.
+  // That was tuned once against the references and is not a per-cake choice.
+  //
+  // `spring` is on the WALL only. A foot resting on the cake pins the springing point, so in the
+  // three over-the-cake arrangements the slider provably does nothing — measured, not assumed:
+  // archY is identical at 0.2 and 1.0 in all three. On the wall it is the control that matters, and
+  // it is the only place it is live. A slider that does nothing is worse than an absent one.
+  //
+  // And no position control: where it stands is dragged, which is the whole reason the handle
+  // exists.
   function renderRainbowBody(card) {
     const rb = design.tiers[card.tierIndex]?.rainbows?.find(r => r.id === card.id);
     if (!rb) return null;
     const current = arrangementOf(rb);
     const set = changes => updateTierRainbows(card.tierIndex, cur =>
       cur.map(r => (r.id === rb.id ? { ...r, ...changes } : r)));
+
+    // Is the BOARD what is capping the size, rather than the slider? On a standard board a leaning
+    // arch has to shrink to about half to land its falling foot on it, and past that point dragging
+    // Size further does nothing at all — 1.0 and 1.8 come out the same size. A slider that stops
+    // responding with no explanation is the thing to avoid, so this says so in one line.
+    //
+    // Absolute heights are not needed: the geometry works from the tier's HEIGHT and RADIUS, so a
+    // cake pinned at boardY 0 gives the same answer without re-deriving where the tier sits — which
+    // would be a second definition of something CakeCanvas already knows.
+    const ct = canvasConfig.tiers ?? [];
+    const tierCfg = ct[card.tierIndex];
+    const boardCapped = (() => {
+      if (!tierCfg) return false;
+      const support = rainbowSupportRadius(ct, card.tierIndex, ct[0] ? boardOf(ct[0]) : null);
+      const fit = rainbowBands(rb, {
+        radius: tierCfg.radius, topY: tierCfg.height, boardY: 0, supportRadius: support,
+      }).supportFit;
+      return fit < 0.999;
+    })();
 
     return (
       <>
@@ -6751,28 +6784,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </div>
 
-        <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Size</div>
-          <input type="range" min={0.4} max={1.8} step={0.05} value={rb.scale ?? 1}
-            onChange={e => set({ scale: parseFloat(e.target.value) })}
-            style={{ width: '100%' }} />
-        </div>
+        {[
+          ['Size',       'scale',     0.4,  1.8,  0.05, true],
+          ['Ropes',      'bands',     3,    9,    1,    true],
+          ['Thickness',  'thickness', 0.04, 0.18, 0.005, true],
+          ['Press flat', 'flatten',   0,    0.9,  0.05, true],
+          ['Up the wall', 'spring',   0,    1,    0.02, (rb.surface ?? 'top') === 'side'],
+        ].filter(([, , , , , show]) => show).map(([label, key, min, max, step]) => (
+          <div key={key} style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
+            <input type="range" min={min} max={max} step={step}
+              value={rb[key] ?? RAINBOW_DEFAULTS[key]}
+              onChange={e => set({ [key]: parseFloat(e.target.value) })}
+              style={{ width: '100%' }} />
+            {key === 'scale' && boardCapped && (
+              <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>
+                As big as the board allows — its foot has to land on the board.
+              </div>
+            )}
+          </div>
+        ))}
 
         <div style={{ marginTop: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Colours</div>
-          {/* One swatch per rope. Six colour pickers is a lot of controls, but they are the whole
-              point of a rainbow — a pastel one and a bold one are the same geometry and a different
-              cake, and no other control here changes what it IS. */}
+          {/* One swatch per ROPE, not per stored colour. The generator wraps a short palette round a
+              longer stack (`colors[i % colors.length]`), so a 9-rope rainbow drawn from 6 colours has
+              three ropes whose colour is not in the list — and a row of six swatches would leave
+              them unreachable. Reading through the same wrap shows what is actually on the cake, and
+              writing back materialises the wrap so the one you touched is the one that changes. */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {(rb.colors ?? RAINBOW_DEFAULTS.colors).slice(0, rb.bands ?? RAINBOW_DEFAULTS.bands).map((c, i) => (
-              <input key={i} type="color" value={c} aria-label={`Rope ${i + 1}`}
-                onChange={e => {
-                  const next = [...(rb.colors ?? RAINBOW_DEFAULTS.colors)];
-                  next[i] = e.target.value;
-                  set({ colors: next });
-                }}
-                style={{ width: 28, height: 26, border: '1px solid #D9D5CE', borderRadius: 6, padding: 0, cursor: 'pointer' }} />
-            ))}
+            {Array.from({ length: rb.bands ?? RAINBOW_DEFAULTS.bands }, (_, i) => {
+              const palette = rb.colors ?? RAINBOW_DEFAULTS.colors;
+              return (
+                <input key={i} type="color" value={palette[i % palette.length]} aria-label={`Rope ${i + 1}`}
+                  onChange={e => {
+                    const n = rb.bands ?? RAINBOW_DEFAULTS.bands;
+                    const next = Array.from({ length: n }, (_, k) => palette[k % palette.length]);
+                    next[i] = e.target.value;
+                    set({ colors: next });
+                  }}
+                  style={{ width: 28, height: 26, border: '1px solid #D9D5CE', borderRadius: 6, padding: 0, cursor: 'pointer' }} />
+              );
+            })}
           </div>
         </div>
 

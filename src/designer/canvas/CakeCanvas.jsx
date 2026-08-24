@@ -63,7 +63,7 @@ import ReelDirector from '../reel/ReelDirector.jsx';
 // sized to the digit's bounding box; a sheet keeps its rounded box; every other shape gets a round drum
 // sized to boundingRadius so an outline never overhangs. ONE definition so the visible mesh, cream writing
 // and cream pen all agree where the board edge is — they each used to recompute it and could drift.
-function boardOf(bottomTier) {
+export function boardOf(bottomTier) {
   const shp = tierShape(bottomTier);
   const isGlyph = shp.kind === 'glyph';   // number/letter — a rect board sized to the glyph bbox
   const isRect = bottomTier.shape === 'rect' || isGlyph;
@@ -72,6 +72,23 @@ function boardOf(bottomTier) {
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
+// What a rainbow's falling foot lands ON, for the tier at `i`: the tier below, or — off the bottom
+// tier — THE BOARD. The board does not grow the way the studio's does. It is a real thing the baker
+// buys, sized to the cake and priced with it, so widening it silently is changing the order to fit
+// the decoration.
+//
+// A rect board is measured across its NARROW way, so the arch lands on it at any angle rather than
+// only over the corners.
+//
+// Exported because the edit card needs the same answer to say when the board, not the slider, is
+// what is capping the size — and two ways of working that out is how the picture and the panel come
+// to disagree.
+export function rainbowSupportRadius(tierData, i, board) {
+  if (i > 0) return tierData[i - 1]?.radius ?? null;
+  if (!board) return null;
+  return board.kind === 'rect' ? Math.min(board.width, board.depth) / 2 : board.radius;
 }
 
 // ── Where a board ring of grass reaches to ────────────────────────────────────
@@ -2579,11 +2596,7 @@ function CakeContent({ config, scene, edit = null }) {
                       //
                       // A rect board is measured across its narrow way, so the arch lands on it at
                       // any angle rather than only over the corners.
-                      supportRadius: i > 0 ? tierData[i - 1].radius
-                        : board ? (board.kind === 'rect'
-                            ? Math.min(board.width, board.depth) / 2
-                            : board.radius)
-                        : null }}
+                      supportRadius: rainbowSupportRadius(tierData, i, board) }}
               yaw={rb.yaw ?? 0}
             />
           ))}
