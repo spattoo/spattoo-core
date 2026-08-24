@@ -28,10 +28,14 @@ export const CLOUD_DEFAULTS = {
   // Every measurement below is × the TIER radius, never a world constant (INVARIANTS #8), so one
   // authored cloud suits a 6" and a 10" untouched — the same rule the rainbow follows.
   scale: 1,                 // overall size; multiplies width and height together, shape untouched
-  width: 0.62,              // how wide the cloud is, edge to edge
+  // Chunky rather than long. The references are close to as tall as they are wide — a 0.5 ratio
+  // reads as a bank of cloud, not a bunch of balls.
+  width: 0.46,              // how wide the cloud is, edge to edge
   height: 0.30,             // how tall at its highest point, above the surface it sits on
-  lobes: 5,                 // how many lumps
-  variation: 0.35,          // how unequal they are; 0 is a row of identical balls, which is a caterpillar
+  lobes: 4,                 // how many lumps ACROSS the bottom row
+  rows: 2,                  // how many rows of them; the upper ones nestle into the gaps below
+  variation: 0.22,          // how unequal they are; 0 is a row of identical balls, which is a caterpillar
+  taper: 0.2,               // how much smaller the end balls are than the middle one
   depth: 0.10,              // 'flat' only: how thick the rolled-out piece is
   bevel: 0.45,              // 'flat' only: how soft the cut edge is, × half the thickness
   puffDepth: 0.55,          // 'puff' only: how far the balls sit apart front-to-back, × the biggest ball
@@ -57,8 +61,14 @@ function wobble(i, salt = 0) {
 /**
  * The lumps a cloud is made of, in the cloud's own flat space: x across, y up from the surface.
  *
- * The middle is the tallest and the ends are the smallest, which is what makes a bunch of circles
- * read as a cloud rather than a row of bubbles.
+ * A CLUSTER, not a row. Balls laid in one line make an arch — a caterpillar with a curved back —
+ * and the references are plainly not that: three or four along the bottom with two or three nestled
+ * into the gaps on top, chunky, nearly as tall as they are wide, and the balls close to equal in
+ * size. That is also how the thing is made: you roll a few balls and press them together, and the
+ * upper ones sit in the dips between the lower ones because that is where they stay put.
+ *
+ * `lobes` is therefore the count ACROSS the bottom row, not the total. Each row above has one fewer
+ * and is offset half a step, which is what nestling means.
  *
  * How far they sit into the base line depends on the variant, and it is not a cosmetic choice:
  *   'puff' rests ON it (centre one radius up, nothing below), because a ball set on a board sits on
@@ -75,33 +85,47 @@ export function cloudLobes(params = {}, cake = {}) {
   const height = p.height * R * size;
   const n = Math.max(1, Math.round(p.lobes));
   const flat = p.variant === 'flat';
+  // A cut piece is rolled out flat and cut — one thickness of fondant, so one row. Stacking it would
+  // be describing a different object.
+  const rows = flat ? 1 : Math.max(1, Math.round(p.rows ?? 1));
 
   // Where a lump's middle sits, as a fraction of its own radius. Below 1 it dips under the line.
   const seat = flat ? 0.70 : 1;
-  // The tallest lump has to reach `height` above the line: seat·r + r = height for the biggest one.
-  const rMax = height / (seat + 1);
+  // How far each row sits above the one below, × the ball radius. Less than 1, so an upper ball
+  // drops into the dip between two lower ones instead of balancing on top of one.
+  const NESTLE = 0.78;
+  // The top of the highest row has to reach `height`: seat·r + (rows-1)·NESTLE·r + r = height.
+  const rMax = height / (seat + 1 + (rows - 1) * NESTLE);
 
   const half = width / 2;
   const lobes = [];
-  for (let i = 0; i < n; i++) {
-    // -1 … +1 across the cloud. A single lump sits in the middle.
-    const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
-    // Falls away toward the ends, then nudged unequal. Without the nudge a cloud is symmetrical,
-    // and a symmetrical cloud looks like a diagram of a cloud.
-    const taper = 1 - 0.45 * t * t;
-    const nudge = 1 + (p.variation ?? 0) * (wobble(i) - 0.5);
-    const r = Math.max(rMax * 0.15, rMax * taper * nudge);
-    lobes.push({
-      // The outermost lumps' EDGES reach ±half, so `width` is the cloud's real width and not the
-      // distance between the middles of its end lumps.
-      x: t * Math.max(0, half - r),
-      y: r * seat,
-      // Front-to-back. A puff is a CLUSTER, not a row: balls at one depth light identically and the
-      // whole thing flattens into a silhouette, which is most of what "lifeless" looks like. A cut
-      // piece has no depth to vary — it is one sheet.
-      z: flat ? 0 : (wobble(i, 1) - 0.5) * (p.puffDepth ?? 0) * rMax * 2,
-      r,
-    });
+  let k = 0;
+  for (let row = 0; row < rows; row++) {
+    // One fewer each row up, so the cloud comes to a rounded top rather than a flat ceiling.
+    const m = Math.max(1, n - row);
+    for (let i = 0; i < m; i++) {
+      // -1 … +1 across the row. A single lump sits in the middle.
+      const t = m === 1 ? 0 : (i / (m - 1)) * 2 - 1;
+      // Barely falls away toward the ends — the reference balls are close to equal, and a strong
+      // taper is what turns a bunch into an arch. Then nudged unequal, because a symmetrical cloud
+      // looks like a diagram of a cloud.
+      const shape = 1 - (p.taper ?? 0) * t * t;
+      const nudge = 1 + (p.variation ?? 0) * (wobble(k) - 0.5);
+      const r = Math.max(rMax * 0.15, rMax * shape * nudge);
+      // Upper rows are inset by half a step, which puts each ball over a gap in the row below.
+      const span = Math.max(0, half - r) * (rows === 1 ? 1 : 1 - row * 0.22);
+      lobes.push({
+        // The bottom row's outermost EDGES reach ±half, so `width` is the cloud's real width and not
+        // the distance between the middles of its end balls.
+        x: t * span,
+        y: r * seat + row * NESTLE * rMax,
+        // Front-to-back. Balls at one depth light identically and the whole thing flattens into a
+        // silhouette, which is most of what "lifeless" looks like. A cut piece has no depth to vary.
+        z: flat ? 0 : (wobble(k, 1) - 0.5) * (p.puffDepth ?? 0) * rMax * 2,
+        r,
+      });
+      k++;
+    }
   }
   return { lobes, width, height, thickness: p.depth * R * size };
 }

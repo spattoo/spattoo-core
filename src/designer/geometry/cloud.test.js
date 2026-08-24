@@ -17,7 +17,35 @@ describe('what a cloud is made of', () => {
     }
   });
 
-  it('spreads the puff front to back, so it is a cluster and not a row', () => {
+  it('stacks the puff into rows, nestled into the gaps below', () => {
+    // Balls in ONE line make an arch — a caterpillar with a curved back — and the reference is
+    // plainly a bunch: three or four along the bottom with two or three sitting in the dips on top.
+    const { lobes } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'puff', lobes: 4, rows: 2 }, CAKE);
+    expect(lobes).toHaveLength(7);
+    const levels = new Set(lobes.map(l => Math.round(l.y * 1000) - Math.round(l.r * 1000)));
+    expect(levels.size).toBeGreaterThan(1);          // more than one row off the base
+    // Each upper ball sits over a GAP between two lower ones, not on top of one.
+    const bottom = lobes.slice(0, 4).map(l => l.x);
+    for (const up of lobes.slice(4)) {
+      const nearest = Math.min(...bottom.map(x => Math.abs(x - up.x)));
+      expect(nearest).toBeGreaterThan(0.01);
+    }
+  });
+
+  it('keeps the balls near enough the same size to read as a bunch', () => {
+    // A strong taper turns a cluster back into an arch. The reference balls are close to equal.
+    const { lobes } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'puff', variation: 0 }, CAKE);
+    const rs = lobes.map(l => l.r);
+    expect(Math.min(...rs) / Math.max(...rs)).toBeGreaterThan(0.7);
+  });
+
+  it('is chunky rather than long', () => {
+    // A ratio near 0.5 reads as a bank of cloud; the references are close to as tall as wide.
+    const { width, height } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'puff' }, CAKE);
+    expect(height / width).toBeGreaterThan(0.55);
+  });
+
+  it('spreads the puff front to back as well as up', () => {
     // Balls at one depth light identically and the whole thing flattens into a silhouette, which is
     // most of what "dull and lifeless" looks like.
     const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff', surface: 'board' }, CAKE);
@@ -25,9 +53,8 @@ describe('what a cloud is made of', () => {
     expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(0);
   });
 
-  it('is widest in the middle and smallest at the ends', () => {
-    // A row of equal circles is a caterpillar. The taper is what makes it read as a cloud.
-    const { lobes } = cloudLobes({ ...CLOUD_DEFAULTS, lobes: 5, variation: 0 }, CAKE);
+  it('is widest in the middle of a row and smallest at its ends', () => {
+    const { lobes } = cloudLobes({ ...CLOUD_DEFAULTS, lobes: 5, rows: 1, variation: 0 }, CAKE);
     const mid = lobes[2].r;
     expect(mid).toBeGreaterThan(lobes[0].r);
     expect(mid).toBeGreaterThan(lobes[4].r);
@@ -35,7 +62,7 @@ describe('what a cloud is made of', () => {
 
   it('is not symmetrical once variation is on', () => {
     // A symmetrical cloud looks like a diagram of a cloud.
-    const { lobes } = cloudLobes({ ...CLOUD_DEFAULTS, lobes: 5, variation: 0.35 }, CAKE);
+    const { lobes } = cloudLobes({ ...CLOUD_DEFAULTS, lobes: 5, rows: 1, variation: 0.35 }, CAKE);
     expect(lobes[0].r).not.toBeCloseTo(lobes[4].r, 4);
   });
 
@@ -55,7 +82,7 @@ describe('what a cloud is made of', () => {
   });
 
   it('reaches the height it was asked for when the lumps are even', () => {
-    const { lobes, height } = cloudLobes({ ...CLOUD_DEFAULTS, variation: 0 }, CAKE);
+    const { lobes, height } = cloudLobes({ ...CLOUD_DEFAULTS, variation: 0, taper: 0 }, CAKE);
     expect(Math.max(...lobes.map(l => l.y + l.r))).toBeCloseTo(height, 6);
   });
 });
@@ -158,7 +185,9 @@ describe('the two variants', () => {
     const puff = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'puff' }, CAKE);
     expect(puff.outline).toBeNull();
     expect(puff.sheet).toBeNull();
-    expect(puff.lobes).toHaveLength(CLOUD_DEFAULTS.lobes);
+    // `lobes` counts the BOTTOM ROW; each row above has one fewer, so a 4-across, 2-row cloud is
+    // seven balls.
+    expect(puff.lobes).toHaveLength(CLOUD_DEFAULTS.lobes * 2 - 1);
   });
 
   it('closes the outline, so it can be a shape at all', () => {
@@ -200,7 +229,7 @@ describe('what the baker rolls', () => {
     const g = cloudGuide(CLOUD_DEFAULTS, CAKE);
     expect(g.widthOfCakeWidth).toBeGreaterThan(0);
     expect(g.widthOfCakeWidth).toBeLessThan(1);
-    expect(g.balls).toBe(CLOUD_DEFAULTS.lobes);
+    expect(g.balls).toBe(CLOUD_DEFAULTS.lobes * 2 - 1);
   });
 
   it('says the same thing about a 6 inch and a 10 inch cake', () => {
