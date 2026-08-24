@@ -224,6 +224,67 @@ export function topClampInset(shape, x, z, margin = 0) {
   return r > maxR ? { x: (x * maxR) / r, z: (z * maxR) / r } : { x, z };
 }
 
+/* ── The BOARD ring: inside the board, outside the cake ──────────────────────────────────────────
+ *
+ * A decoration standing on the board has a usable area shaped like a washer: the board's own
+ * footprint with the cake's footprint punched out of it. Everything else on a flat surface clamps to
+ * a solid shape (topClamp / topClampInset), which is why a board decoration had nowhere to be — drag
+ * it toward the middle and it walks under the cake, which is opaque, and the decoration simply
+ * disappears.
+ *
+ * Two constraints, applied in that order:
+ *   1. keep it ON the board  — clamped inward by `margin` so a footprint does not overhang the edge
+ *   2. push it OFF the cake  — moved radially outward until its footprint clears the cake's outline
+ *
+ * ⚠️ Order matters and step 2 wins. On a board barely wider than its cake the ring can be thinner
+ * than the decoration, and there is no position satisfying both. Standing slightly proud of the
+ * board edge is recoverable — the baker sees it and drags it — where standing inside an opaque cake
+ * is not, because there is nothing left to grab.
+ *
+ * `hole` is the CAKE's shape (tierShape of the bottom tier), not a radius: a heart cake has a heart
+ * footprint, and clearing an inscribed circle would strand a decoration inside the lobes.
+ */
+export function boardRingClamp(board, hole, x, z, margin = 0) {
+  // 1 — on the board.
+  const onBoard = topClampInset(board, x, z, margin);
+  if (!hole) return onBoard;
+
+  // 2 — off the cake. Work in the direction away from the cake's centre, which is the board's centre.
+  const r = Math.hypot(onBoard.x, onBoard.z);
+  // Dead centre has no outward direction; nudge along +z (toward the FRONT of the cake, where a
+  // decoration is most likely wanted and always visible) rather than picking an arbitrary axis.
+  const dir = r < 1e-6 ? { x: 0, z: 1 } : { x: onBoard.x / r, z: onBoard.z / r };
+
+  // How far the cake's outline reaches in this direction — plus the decoration's own half-width, so
+  // it clears rather than touches.
+  const reach = shapeReach(hole, dir) + margin;
+  if (r >= reach) return onBoard;
+  return { x: dir.x * reach, z: dir.z * reach };
+}
+
+/* How far a shape's outline extends from its centre along a unit direction.
+ *
+ * Round → the radius. Rect → the box edge in that direction. Outline → the furthest vertex within a
+ * narrow cone about the direction, which is cheap and slightly conservative: on a heart it can push a
+ * decoration a little further out than strictly needed, and erring outward is the safe direction
+ * (see the note on boardRingClamp — outward is recoverable, inward is not).
+ */
+export function shapeReach(shape, dir) {
+  if (shape.outline) {
+    let best = 0;
+    for (const p of shape.outline) {
+      const d = p.x * dir.x + p.z * dir.z;          // projection onto the direction
+      if (d > best) best = d;
+    }
+    return best;
+  }
+  if (shape.kind === 'rect') {
+    // The box's own extent along dir: |dx|·halfW + |dz|·halfD is the support function of a rectangle.
+    return Math.abs(dir.x) * shape.halfW + Math.abs(dir.z) * shape.halfD;
+  }
+  return shape.radius ?? 0;
+}
+
 // Snap a point (x,z) ONTO the rim perimeter (nearest edge point). Edge-seated modes (perch, verge)
 // live on the rim, so dragging moves them AROUND the rim rather than inward onto the top surface
 // (where a centre-seated element would bury its lower half in the cake). Round → project to the

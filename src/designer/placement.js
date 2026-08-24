@@ -394,6 +394,16 @@ export function placementSlots(element, tierCount) {
       slots.push({ key: `rim-${i}`, placement: 'top', zone: ZONES.RIM, tierIndex: i });
     }
   }
+  if (zones.includes(ZONES.BOARD)) {
+    /* The board is ONE slot for the whole cake, not one per tier — there is only one board, and it
+     * belongs to the cake rather than to any tier. tierIndex 0 so every "which tier does this sit
+     * against" reader downstream resolves the bottom tier, which is the one the board is sized to.
+     *
+     * `placement: 'top'` because a board decoration STANDS on a flat surface, exactly like a
+     * top-surface one — same seat, same drag, same renderer, a different plane. Calling it its own
+     * placement would have meant a second copy of all of that. */
+    slots.push({ key: 'board', placement: 'top', zone: ZONES.BOARD, tierIndex: 0 });
+  }
   if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) {
     for (let i = n - 1; i >= 0; i--) {
       slots.push({ key: `side-${i}`, placement: 'side', zone: ZONES.SIDE, tierIndex: i });

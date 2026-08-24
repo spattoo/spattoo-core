@@ -27,7 +27,7 @@ import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import { DESIGNER_GROUND } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
-import { tierShape, topClampInset } from './geometry/surface.js';
+import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
@@ -5990,6 +5990,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           : { x: 0, z: (shp.kind === 'rect' ? shp.halfD : shp.radius) };
       } else if (slot.zone === ZONES.TOP_SURFACE) {
         pos = { x: 0, z: 0 };
+      } else if (slot.zone === ZONES.BOARD) {
+        /* Board: seat it on the drum, in FRONT of the cake.
+         *
+         * ⚠️ Without this branch a board slot fell through to the `else` below and got a SIDE seat
+         * (theta + a mid-wall height) — a decoration meant to stand on the board, hung on the wall.
+         *
+         * (0,0) is the cake's centre and boardRingClamp answers exactly this question: it has no
+         * outward direction to push, so it sends the point to the front of the ring, which is where
+         * a board decoration is always visible and most likely wanted. The same call the drag uses,
+         * so the seat and every later move agree by construction. */
+        const bt = canvasConfig.tiers[0];
+        const board = bt ? boardOf(bt) : null;
+        const boardShp = board && (board.kind === 'rect'
+          ? { kind: 'rect', halfW: board.halfW, halfD: board.halfD }
+          : { kind: 'round', radius: board.radius });
+        const seat = boardShp
+          ? boardRingClamp(boardShp, tierShape(design.tiers[0] ?? {}), 0, 0)
+          : { x: 0, z: 0 };
+        pos = { x: seat.x, z: seat.z };
       } else {
         pos = { theta: 0, y: baseY + tierH * 0.45 };
       }
@@ -6013,6 +6032,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }).map(slot => {
       const label = slot.zone === ZONES.RIM
           ? (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} edge` : 'Edge')
+        // ⚠️ Before `placement`, not after. A board slot carries placement 'top' ON PURPOSE — it
+        // stands on a flat surface and reuses the whole top-surface seat/drag/renderer — so a label
+        // read off `placement` called it "Top" and the panel showed two tiles both named Top.
+        // Zone is what the baker is choosing; placement is how it is drawn.
+        : slot.zone === ZONES.BOARD ? 'Board'
         : slot.placement === 'top' ? 'Top'
         : (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} side` : 'Side');
       const checked = instance

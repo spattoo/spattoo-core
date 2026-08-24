@@ -28,6 +28,9 @@ import {
   CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
   FLAT_STICKER_Y_OFFSET,
   DESIGNER_GROUND,
+  // The board's top face. constants.js names it as "the cake board surface" and the tier stack
+  // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
+  BOTTOM_BASE,
 } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
@@ -38,7 +41,7 @@ import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { textStyleOf } from '../textStyles.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall } from '../geometry/surface.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
@@ -1740,7 +1743,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   );
 }
 
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+/* `hole` — a shape to keep OUT of, or null. Only the board passes one: its usable area is a ring,
+ * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
+ * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
+ * grab, so the clamp pushes it back out. See boardRingClamp. */
+function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -1905,7 +1912,9 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           // dragging OUT over the lip while still clamping inward to the rim; see PLACEMENT_CONFIG.md.)
           const isEdgeMode = isPerch || (isVerge && !isVergeBase);
           const edgeMargin = (isStand || isEdgeMode) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
-          const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z) : topClampInset(shp, x, z, edgeMargin);
+          const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z)
+            : hole ? boardRingClamp(shp, hole, x, z, edgeMargin)
+            : topClampInset(shp, x, z, edgeMargin);
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
           const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
@@ -2742,15 +2751,31 @@ function CakeContent({ config, scene, edit = null }) {
             />
           );
         }
-        // top_surface
-        const topY = tier.baseY + tier.height;
+        /* BOARD — the same flat-surface renderer on a different plane.
+         *
+         * A board decoration stands on the drum beside the cake, so it wants exactly what a
+         * top-surface one wants (a height, a footprint to stay inside, a base seat) with three
+         * values swapped: the board's top instead of the tier's, the board's outline instead of the
+         * tier's, and a HOLE where the cake stands. Giving it its own renderer would have been a
+         * second copy of the drag, the seat, the hit test and the toolbar. */
+        const isBoard = sticker.zone === 'board';
+        const boardShp = isBoard && board
+          ? (board.kind === 'rect'
+              ? { kind: 'rect', halfW: board.halfW, halfD: board.halfD }
+              : { kind: 'round', radius: board.radius })
+          : null;
+
+        // top_surface (and board)
+        const topY = isBoard ? BOTTOM_BASE : tier.baseY + tier.height;
         return (
           <DraggableTopSticker
             key={sticker.id}
             sticker={sticker}
             topY={topY}
-            topRadius={tier.radius}
-            shp={tierShape(tier)}
+            topRadius={isBoard ? (board?.radius ?? tier.radius) : tier.radius}
+            shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
+            // The cake's own footprint is what a board decoration must not stand in.
+            hole={isBoard ? tierShape(bottomTier) : null}
             selected={isSelected}
             onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
             onLongPress={onStickerLongPress}
