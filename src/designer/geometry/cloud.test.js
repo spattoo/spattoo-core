@@ -39,10 +39,37 @@ describe('what a cloud is made of', () => {
     expect(Math.min(...rs) / Math.max(...rs)).toBeGreaterThan(0.7);
   });
 
-  it('is chunky rather than long', () => {
-    // A ratio near 0.5 reads as a bank of cloud; the references are close to as tall as wide.
+  it('is about 1.7 times as wide as it is tall', () => {
+    // Measured off the reference, after guessing it twice: 2.5:1 is a bank of cloud and 1:1 is a
+    // ball, and a pressed bunch is neither.
     const { width, height } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'puff' }, CAKE);
-    expect(height / width).toBeGreaterThan(0.55);
+    expect(width / height).toBeGreaterThan(1.4);
+    expect(width / height).toBeLessThan(2.1);
+  });
+
+  it('is about as deep as it is tall, not a wall of balls', () => {
+    // The thing the flat-plane version could not do. In the reference you can see the balls behind
+    // the front ones catching less light; rows in one plane are a wall seen face-on, however much
+    // they are jittered.
+    const { lobes, height } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'puff' }, CAKE);
+    const depth = Math.max(...lobes.map(l => l.z + l.r)) - Math.min(...lobes.map(l => l.z - l.r));
+    expect(depth / height).toBeGreaterThan(0.7);
+  });
+
+  it('alternates the balls front and back, so the bunch closes up', () => {
+    // Behind the GAP between its neighbours, the same interlock the rows use going up. Random
+    // depths leave daylight through it.
+    const { lobes } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'puff', lobes: 4, rows: 1 }, CAKE);
+    for (let i = 1; i < lobes.length; i++) {
+      expect(Math.sign(lobes[i].z)).not.toBe(Math.sign(lobes[i - 1].z));
+    }
+  });
+
+  it('rolls balls big enough to read as balls', () => {
+    // A third of the cloud's width each. Seven small ones read as a texture rather than as the
+    // lumps a baker rolled and pressed together.
+    const { lobes, width } = cloudLobes({ ...CLOUD_DEFAULTS, variant: 'puff' }, CAKE);
+    expect((2 * Math.max(...lobes.map(l => l.r))) / width).toBeGreaterThan(0.3);
   });
 
   it('spreads the puff front to back as well as up', () => {

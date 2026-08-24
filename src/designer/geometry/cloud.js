@@ -30,15 +30,19 @@ export const CLOUD_DEFAULTS = {
   scale: 1,                 // overall size; multiplies width and height together, shape untouched
   // Chunky rather than long. The references are close to as tall as they are wide — a 0.5 ratio
   // reads as a bank of cloud, not a bunch of balls.
-  width: 0.46,              // how wide the cloud is, edge to edge
-  height: 0.30,             // how tall at its highest point, above the surface it sits on
-  lobes: 4,                 // how many lumps ACROSS the bottom row
+  // Wider than tall, about 1.7 to 1. Measured off the reference rather than guessed twice: a bank
+  // of cloud is 2.5:1 and a ball is 1:1, and neither is what a pressed bunch looks like.
+  width: 0.46,
+  height: 0.27,             // how tall at its highest point, above the surface it sits on
+  // Three across and two on top is FIVE balls, which is what the reference has. Seven made each one
+  // small, and small balls read as a texture rather than as the lumps a baker rolled.
+  lobes: 3,                 // how many lumps ACROSS the bottom row
   rows: 2,                  // how many rows of them; the upper ones nestle into the gaps below
   variation: 0.22,          // how unequal they are; 0 is a row of identical balls, which is a caterpillar
   taper: 0.2,               // how much smaller the end balls are than the middle one
   depth: 0.10,              // 'flat' only: how thick the rolled-out piece is
   bevel: 0.45,              // 'flat' only: how soft the cut edge is, × half the thickness
-  puffDepth: 0.55,          // 'puff' only: how far the balls sit apart front-to-back, × the biggest ball
+  puffDepth: 0.28,          // 'puff' only: how DEEP the bunch is, front to back, × tier radius
   surface: 'top',           // 'top' | 'board' | 'side'
   offsetX: 0,               // where it sits along the surface
   standoff: 0,              // 'top' only: how far off the centre line, toward the viewer
@@ -83,6 +87,7 @@ export function cloudLobes(params = {}, cake = {}) {
   const size = p.scale ?? 1;
   const width = p.width * R * size;
   const height = p.height * R * size;
+  const depth = (p.puffDepth ?? 0) * R * size;
   const n = Math.max(1, Math.round(p.lobes));
   const flat = p.variant === 'flat';
   // A cut piece is rolled out flat and cut — one thickness of fondant, so one row. Stacking it would
@@ -114,14 +119,21 @@ export function cloudLobes(params = {}, cake = {}) {
       const r = Math.max(rMax * 0.15, rMax * shape * nudge);
       // Upper rows are inset by half a step, which puts each ball over a gap in the row below.
       const span = Math.max(0, half - r) * (rows === 1 ? 1 : 1 - row * 0.22);
+      // FRONT TO BACK, alternating. A bunch of pressed balls has depth in every direction — you can
+      // see the ones behind catching less light — and rows in a single plane are a WALL of balls
+      // seen face-on however much you jitter them. Alternating puts each ball behind the gap between
+      // its neighbours, the same interlock the rows use going up, so the bunch closes rather than
+      // showing daylight through it. The rows above alternate the other way, or every ball would sit
+      // directly over the one below.
+      const zSpread = Math.max(0, (depth / 2) - r);
+      const side = ((i + row) % 2) * 2 - 1;
       lobes.push({
         // The bottom row's outermost EDGES reach ±half, so `width` is the cloud's real width and not
         // the distance between the middles of its end balls.
         x: t * span,
         y: r * seat + row * NESTLE * rMax,
-        // Front-to-back. Balls at one depth light identically and the whole thing flattens into a
-        // silhouette, which is most of what "lifeless" looks like. A cut piece has no depth to vary.
-        z: flat ? 0 : (wobble(k, 1) - 0.5) * (p.puffDepth ?? 0) * rMax * 2,
+        // A cut piece is one sheet: it has no depth to arrange.
+        z: flat ? 0 : side * zSpread * (0.7 + 0.3 * wobble(k, 1)),
         r,
       });
       k++;
