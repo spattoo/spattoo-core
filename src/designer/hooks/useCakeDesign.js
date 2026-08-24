@@ -131,6 +131,7 @@ export function toCanvasConfig(design) {
         // ⚠️ FORWARDED HERE OR IT NEVER RENDERS — the same line stripes needed. The canvas reads
         // this config, not the design.
         rainbows:     t.rainbows ?? [],          // fondant arches standing on/against THIS tier
+        clouds:       t.clouds ?? [],            // fondant clouds sitting on/against THIS tier
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
@@ -583,6 +584,21 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) =>
         i === index ? { ...t, rainbows: typeof changes === 'function' ? changes(t.rainbows ?? []) : changes } : t),
+    }));
+  }
+
+  // ── Fondant clouds ──────────────────────────────────────────────────────────
+  // Same shape as the rainbows above, and for the same reasons: a LIST, on the TIER. Every cloud
+  // measurement is a ratio of the tier it belongs to, and holding them at design level would need a
+  // tier index that has to be kept in sync on every add and remove.
+  //
+  // Their own field rather than a slot on the rainbow: clouds turn up without one — sky, unicorn,
+  // aeroplane — and several at a time, on the top and the sides and the board.
+  function updateTierClouds(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, clouds: typeof changes === 'function' ? changes(t.clouds ?? []) : changes } : t),
     }));
   }
 
@@ -1320,7 +1336,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
-    setTierRainbows, updateTierRainbows,
+    setTierRainbows, updateTierRainbows, updateTierClouds,
     setNameBlocks, updateNameBlocks,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,

@@ -36,6 +36,8 @@ import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '.
 import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt } from '../geometry/rainbow.js';
+import FondantCloud from './FondantCloud.jsx';
+import { cloudHandleAt } from '../geometry/cloud.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
@@ -2238,6 +2240,7 @@ function CakeScene({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2420,6 +2423,30 @@ function CakeScene({
           catcherFlag="isRainbowCatcher" handleFlag="isRainbowHandle"
           lift={0.06}
           color="#ffffff" selColor="#2C4433" dotScale={1.6} showMarker />
+      )}
+
+      {/* Clouds move the same way rainbows do, and share the machinery with dust, foil, grass and
+          letter blocks. One cloud is rarely the question — a sky has several — so the handle sits at
+          each cloud's own middle and each drags on its own.
+
+          A cloud on the BOARD is measured against the board's radius, not the tier's: it stands
+          outside the cake, which is past v = 1 on the tier's own scale, and a handle pinned at 1
+          would refuse to follow the pointer outward. */}
+      {cloudMode && (
+        <FinishHandles
+          tierData={tierData}
+          getPoints={t => (t.clouds?.length
+            ? t.clouds.map(cl => ({
+                ...cloudHandleAt(cl, { radius: t.radius, topY: t.baseY + t.height, boardY: t.baseY,
+                                       handleRadius: board?.radius ?? t.radius }),
+                r: 0.14,
+              }))
+            : null)}
+          board={board}
+          selected={cloudSelected} onMove={onCloudMove} onSelect={onCloudSelect}
+          catcherFlag="isCloudCatcher" handleFlag="isCloudHandle"
+          lift={0.05}
+          color="#ffffff" selColor="#2C4433" dotScale={1.5} showMarker />
       )}
 
       {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
@@ -2607,6 +2634,17 @@ function CakeContent({ config, scene, edit = null }) {
                       // any angle rather than only over the corners.
                       supportRadius: rainbowSupportRadius(tierData, i, board) }}
               yaw={rb.yaw ?? 0}
+            />
+          ))}
+          {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
+              the generator asks for { radius, topY, boardY } and does not care whether that is a
+              whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier
+              standing outside it, which is why there is no separate board list to keep in step. */}
+          {(tier.clouds ?? []).map(cl => (
+            <FondantCloud
+              key={cl.id}
+              params={cl}
+              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
             />
           ))}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
@@ -3070,6 +3108,7 @@ export default function CakeCanvas({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3208,6 +3247,10 @@ export default function CakeCanvas({
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
         onGrassSelect={onGrassSelect}
+        cloudMode={cloudMode}
+        cloudSelected={cloudSelected}
+        onCloudMove={onCloudMove}
+        onCloudSelect={onCloudSelect}
         rainbowMode={rainbowMode}
         rainbowSelected={rainbowSelected}
         onRainbowMove={onRainbowMove}

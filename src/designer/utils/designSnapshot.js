@@ -31,8 +31,8 @@
 // each a feature that reloaded plain because somebody added it to the cake and not to this line.
 // `rainbows` is on it from the same day, for the same reason. Note the shape: an ARRAY, so `pickTierFields`
 // keeps it when present — an empty one is dropped, which is right, since no rainbows and no field
-// are the same cake.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows'];
+// are the same cake. `clouds` is the same shape for the same reasons.
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {

@@ -45,7 +45,11 @@ export const CLOUD_DEFAULTS = {
   puffDepth: 0.28,          // 'puff' only: how DEEP the bunch is, front to back, × tier radius
   surface: 'top',           // 'top' | 'board' | 'side'
   offsetX: 0,               // where it sits along the surface
-  standoff: 0,              // 'top' only: how far off the centre line, toward the viewer
+  // WHERE IT SITS, in two numbers that mean the same thing on the top and on the board: how far
+  // ROUND the cake, and how far OUT from its middle. A cloud on the board used to sit at a distance
+  // baked into the renderer (`R + width * 0.35`), which is a position nobody could move.
+  yaw: 0,                   // 'top' and 'board': where round the cake, radians. 0 is the front
+  standoff: 0,              // 'top' and 'board': how far out from the axis, × tier radius
   theta: 0,                 // 'side' only: where round the wall, radians. 0 is the front
   color: '#FFFFFF',
 };
@@ -286,7 +290,12 @@ export function cloudPlacement(params = {}, cake = {}) {
   if (onTop) fit = cloudFitScale({ centerX, standoff, width: w0, cakeRadius: R });
   const width = w0 * fit, height = h0 * fit, thickness = t0 * fit;
 
-  const zFlatSurface = onTop ? standoff : R + width * 0.35;
+  // On the board a cloud stands OUTSIDE the cake by default rather than under it, which is where the
+  // hardcoded distance used to put it — but as a number that can be dragged.
+  const outward = onTop ? standoff : (p.standoff ? standoff : R + width * 0.35);
+  const yaw = p.yaw ?? 0;
+  const spin = (x, z) => new THREE.Vector3(
+    Math.cos(yaw) * x + Math.sin(yaw) * z, 0, -Math.sin(yaw) * x + Math.cos(yaw) * z);
 
   const placed = lobes.map(l => {
     const x = l.x * fit, y = l.y * fit, z = l.z * fit, r = l.r * fit;
@@ -298,7 +307,10 @@ export function cloudPlacement(params = {}, cake = {}) {
       const out = rw + z;
       return { r, position: new THREE.Vector3(Math.sin(th) * out, baseY + y, Math.cos(th) * out), rotationY: th };
     }
-    return { r, position: new THREE.Vector3(centerX + x, baseY + y, zFlatSurface + z), rotationY: 0 };
+    // Turned round the cake as a whole, so a cloud can stand anywhere on the board rather than only
+    // in front. The lumps keep their arrangement — this rotates where the cloud IS, not what it is.
+    const flat = spin(centerX + x, outward + z);
+    return { r, position: new THREE.Vector3(flat.x, baseY + y, flat.z), rotationY: yaw };
   });
 
   return {
@@ -309,10 +321,70 @@ export function cloudPlacement(params = {}, cake = {}) {
     outline: flat ? cloudOutline({ ...p, scale: (p.scale ?? 1) * fit }, cake) : null,
     // How that sheet meets the cake. The renderer bends it for a wall; elsewhere it is a translate.
     sheet: flat
-      ? { onWall, wallR: R, theta: p.theta ?? 0, centerX, baseY, z: onWall ? 0 : zFlatSurface,
+      ? { onWall, wallR: R, theta: p.theta ?? 0, centerX, baseY, yaw,
+          z: onWall ? 0 : outward,
           thickness, bevel: Math.max(0, Math.min(0.9, p.bevel ?? 0)) }
       : null,
     width, height, thickness, baseY, fit,
+  };
+}
+
+// Handles speak u in 0…1 and the geometry speaks radians, so both directions WRAP rather than clamp:
+// dragging past the back of the cake carries on round it, it does not stick there.
+const TAU = Math.PI * 2;
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const wrapU = x => ((x % 1) + 1) % 1;
+const wrapAngle = a => ((a % TAU) + TAU) % TAU;
+
+/**
+ * Where a cloud's drag handle sits — the cloud's own middle, standing on the surface.
+ *
+ * The same map the rainbow uses, and for the same reason: a point (0, y, standoff) turned by yaw
+ * lands exactly where the handle machinery draws a top-surface point from (angle, radial fraction),
+ * so the handle and the cloud cannot drift apart.
+ *
+ * On the WALL there is one freedom, not two. A wall cloud stands on the board — it does not float
+ * partway up — so `theta` is the whole of its position and `v` is pinned at the board.
+ */
+export function cloudHandleAt(params = {}, cake = {}) {
+  const p = { ...CLOUD_DEFAULTS, ...params };
+  const R = cake.radius ?? 1;
+  if (p.surface === 'side') return { surface: 'side', u: wrapU((p.theta ?? 0) / TAU), v: 0 };
+
+  const { width } = cloudLobes(p, cake);
+  const centerX = (p.offsetX ?? 0) * R;
+  const out = p.surface === 'top'
+    ? (p.standoff ?? 0) * R
+    : (p.standoff ? p.standoff * R : R + width * 0.35);
+  // The board is wider than the tier, so a cloud standing beside the cake is past v = 1 on the
+  // tier's own scale. The caller passes the radius the handle is measured against.
+  const scale = cake.handleRadius ?? R;
+  return {
+    surface: p.surface === 'top' ? 'top_surface' : 'board',
+    u: wrapU(((p.yaw ?? 0) + Math.atan2(centerX, out)) / TAU),
+    v: scale > 0 ? Math.min(1, Math.hypot(centerX, out) / scale) : 0,
+  };
+}
+
+/**
+ * The parameters after a drag to (u, v) — the inverse of the above.
+ *
+ * `offsetX` is held, exactly as the rainbow holds its lean: it is part of how a cloud was authored,
+ * and a drag should move the thing rather than reshape it. Which means the middle cannot come closer
+ * to the axis than that offset, and the drag rests there instead of going imaginary.
+ */
+export function cloudDragTo(params = {}, cake = {}, u = 0, v = 0) {
+  const p = { ...CLOUD_DEFAULTS, ...params };
+  if (p.surface === 'side') return { theta: wrapAngle(u * TAU) };
+
+  const R = cake.radius ?? 1;
+  const scale = cake.handleRadius ?? R;
+  const centerX = (p.offsetX ?? 0) * R;
+  const want = clamp01(v) * scale;
+  const out = Math.sqrt(Math.max(0, want * want - centerX * centerX));
+  return {
+    yaw: wrapAngle(u * TAU - Math.atan2(centerX, out)),
+    standoff: R > 0 ? out / R : 0,
   };
 }
 

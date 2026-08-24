@@ -68,6 +68,10 @@ describe('a saved design comes back as the same cake', () => {
           bands: 6, colors: ['#F6A9C0', '#F9C9A0'] },
         { id: 'r2', surface: 'side', footLeft: 'board', footRight: 'board', theta: -0.09, scale: 0.75 },
       ],
+      clouds: [
+        { id: 'c1', variant: 'puff', surface: 'board', yaw: 0.8, standoff: 1.3, lobes: 3, rows: 2 },
+        { id: 'c2', variant: 'flat', surface: 'side', theta: -0.4, width: 0.55, depth: 0.08 },
+      ],
       creamLayers: [{ id: 'c1', color: '#e0479e', from: 0.1, to: 0.6 }],
       topPipings: [{ layerId: 'p1', glbUrl: 'x.glb', color: '#fff' }],
       bottomPipings: [{ layerId: 'p2', glbUrl: 'y.glb', color: '#eee' }],
@@ -91,7 +95,7 @@ describe('a saved design comes back as the same cake', () => {
 
   // Named individually as well as in the whole-config check above, so a failure says WHICH element
   // type was lost rather than printing two large objects and leaving you to diff them.
-  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows']) {
+  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows', 'clouds']) {
     it(`tier.${key} survives`, () => {
       expect(roundTrip(FULL).tiers[0][key]).toEqual(FULL.tiers[0][key]);
     });

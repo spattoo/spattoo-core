@@ -31,6 +31,7 @@ import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js'
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
+import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf } from './decorations/RainbowArrangements.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
@@ -1669,7 +1670,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3771,6 +3772,44 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     clearAllSelections();
   }
 
+  // ── Fondant clouds ──────────────────────────────────────────────────────────
+  // Its own element, never a checkbox on the rainbow: clouds turn up without one, several at a time,
+  // on the top and the sides and the board. The pair arrives together as a decor_pattern instead.
+  function addCloud(el) {
+    const i = Math.max(0, design.tiers.length - 1);
+    const tuned = el?.placement_config?.cloud ?? {};
+    const id = `cl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    updateTierClouds(i, cur => [
+      ...cur,
+      { ...CLOUD_DEFAULTS, ...tuned, id,
+        // Each one further round than the last, so a second cloud is visibly a second cloud rather
+        // than a redraw of the first. Read from the LIVE list inside the updater, or two quick
+        // presses both see the same list and the second lands exactly on the first.
+        yaw: cur.length * 0.9 },
+    ]);
+    selectExclusive({ type: 'cloud', tierIndex: i, id });
+  }
+
+  function removeCloud(tierIndex, id) {
+    updateTierClouds(tierIndex, cur => cur.filter(c => c.id !== id));
+    setCloudSelected(null);
+    clearAllSelections();
+  }
+
+  // The handle machinery hands back (u, v) on the surface; cloudDragTo turns that into the cloud's
+  // own words. A board cloud is measured against the BOARD's radius, because it stands outside the
+  // cake and the tier's own scale would cap it at the cake's edge.
+  function handleCloudMove(tier, idx, u, v) {
+    const t = design.tiers[tier];
+    if (!t?.clouds?.[idx]) return;
+    const ct = canvasConfig.tiers ?? [];
+    const radius = ct[tier]?.radius ?? 1;
+    const cake = { radius, topY: 0, boardY: 0,
+                   handleRadius: ct[0] ? boardOf(ct[0]).radius : radius };
+    updateTierClouds(tier, cur => cur.map((c, k) =>
+      k === idx ? { ...c, ...cloudDragTo(c, cake, u, v) } : c));
+  }
+
   function removeGrass() {
     design.tiers.forEach((t, i) => { if (t.grass) setTierGrass(i, null); });
     setBoardGrass(null);
@@ -3877,6 +3916,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     grass: addGrass,
     letter_blocks: addNameBlocks,
     rainbow: addRainbow,
+    cloud: addCloud,
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -3914,6 +3954,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // FinishHandles rather than inventing a third way to drag something.
   const [grassSelected, setGrassSelected] = useState(null);   // { tier, idx } — BOARD_TIER for the board
   const [rainbowSelected, setRainbowSelected] = useState(null);   // { tier, idx } — which arch is being moved
+  const [cloudSelected, setCloudSelected] = useState(null);       // { tier, idx } — which cloud is being moved
   const GRASS_PATCH_R = 0.42;
 
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
@@ -5385,6 +5426,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // arrangement and its own place on the cake, so a single shared card could only ever edit one of
   // them and would silently be the wrong one. Numbered only when there is more than one, because
   // "Rainbow 1" on a cake with one rainbow is a label answering a question nobody asked.
+  // One card per cloud, same rule as the rainbows: each carries its own kind and its own place.
+  design.tiers.forEach((t, tierIndex) => (t.clouds ?? []).forEach((cl, n) => {
+    decorationCards.unshift({
+      key: `cloud-${cl.id}`, type: 'cloud', id: cl.id, tierIndex,
+      name: (t.clouds.length > 1 ? `Cloud ${n + 1}` : 'Cloud'), thumb: null,
+    });
+  }));
   design.tiers.forEach((t, tierIndex) => (t.rainbows ?? []).forEach((rb, n) => {
     decorationCards.unshift({
       key: `rainbow-${rb.id}`, type: 'rainbow', id: rb.id, tierIndex,
@@ -5489,6 +5537,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cluster-place' ? { type: 'cluster-place', elementId: card.elementId }
       : card.type === 'foil'          ? { type: 'foil', elementId: card.elementId }
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
+      : card.type === 'cloud'         ? { type: 'cloud', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
       : card.type === 'blocks'        ? { type: 'blocks' }
@@ -5497,6 +5546,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'group'         ? { type: 'group', groupId: card.groupId }
       : card.type === 'text'          ? { type: 'text', id: card.id }
       : null;
+    if (el?.type === 'cloud') {
+      const idx = (design.tiers[el.tierIndex]?.clouds ?? []).findIndex(c => c.id === el.id);
+      setCloudSelected(idx >= 0 ? { tier: el.tierIndex, idx } : null);
+    }
     if (el?.type === 'rainbow') {
       // Which handle is lit follows which card is open. Without this, opening a card on a cake with
       // two rainbows leaves the previous one's dot highlighted, and the highlight is the only thing
@@ -6828,6 +6881,95 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Line them up
           </button>
           <button onClick={removeNameBlocks}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
+              background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
+            Remove
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // Cloud editor body — the inline expanded body of ONE cloud's stack card.
+  //
+  // A customer gets the KIND, the size, how many balls, and the colour. Not the studio's ten: the
+  // taper, the variation, the nestle and the bevel are what make a bunch of balls read as fondant at
+  // all, and they were tuned once against the references. And no position control — clouds are
+  // dragged, several to a cake.
+  function renderCloudBody(card) {
+    const cl = design.tiers[card.tierIndex]?.clouds?.find(c => c.id === card.id);
+    if (!cl) return null;
+    const set = changes => updateTierClouds(card.tierIndex, cur =>
+      cur.map(c => (c.id === cl.id ? { ...c, ...changes } : c)));
+
+    // The two kinds are different OBJECTS, not one at two sizes — balls pressed together against a
+    // single piece cut with a knife — so each tile carries its whole shape, the way the rainbow's
+    // tiles do. Rows come with it: a cut piece is rolled out flat, so stacking it would describe
+    // something else entirely.
+    const KINDS = [
+      { key: 'puff', label: 'Puffy', p: { variant: 'puff', rows: 2, taper: 0.2 } },
+      { key: 'flat', label: 'Cut-out', p: { variant: 'flat', rows: 1, taper: 0.45 } },
+    ];
+    const WHERE = [
+      { key: 'top', label: 'On top', p: { surface: 'top', standoff: 0.45 } },
+      { key: 'board', label: 'On the board', p: { surface: 'board' } },
+      { key: 'side', label: 'On the wall', p: { surface: 'side', variant: 'flat', rows: 1 } },
+    ];
+
+    const group = (title, items, isOn, onPick) => (
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{title}</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {items.map(it => (
+            <button key={it.key} onClick={() => onPick(it)}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
+                border: '1.5px solid #999999', background: isOn(it) ? '#1a1a1a' : '#fff',
+                color: isOn(it) ? '#fff' : '#1a1a1a' }}>
+              {it.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Drag it on the cake to move it round.
+        </div>
+
+        {group('Kind', KINDS, it => (cl.variant ?? 'puff') === it.key, it => set(it.p))}
+        {/* A cloud pressed on a wall is a cut piece — a bunch of balls does not press flat — so
+            picking the wall picks the kind with it rather than leaving an impossible pair. */}
+        {group('Where it goes', WHERE, it => (cl.surface ?? 'top') === it.key, it => set(it.p))}
+
+        {[
+          ['Size',         'scale',  0.4, 2.0, 0.05, true],
+          ['Balls across', 'lobes',  2,   6,   1,    true],
+          ['Width',        'width',  0.2, 0.9, 0.02, true],
+          ['Height',       'height', 0.1, 0.5, 0.02, true],
+        ].map(([label, key, min, max, step]) => (
+          <div key={key} style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
+            <input type="range" min={min} max={max} step={step}
+              value={cl[key] ?? CLOUD_DEFAULTS[key]}
+              onChange={e => set({ [key]: parseFloat(e.target.value) })}
+              style={{ width: '100%' }} />
+          </div>
+        ))}
+
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Colour</div>
+          {/* One colour, not one per ball. A cloud is one piece of fondant however many balls went
+              into it — the rainbow's row of swatches is right because its ropes ARE different
+              colours, and copying that here would offer a choice nobody makes. */}
+          <input type="color" value={cl.color ?? CLOUD_DEFAULTS.color}
+            onChange={e => set({ color: e.target.value })}
+            style={{ width: 40, height: 28, border: '1px solid #D9D5CE', borderRadius: 6, padding: 0, cursor: 'pointer' }} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+          <button onClick={() => removeCloud(card.tierIndex, cl.id)}
             style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
               background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
             Remove
@@ -8183,6 +8325,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
               onPipingInstanceMove={handlePipingInstanceMove}
               isPipingMovable={isPipingMovable}
+              cloudMode={selectedEl?.type === 'cloud'}
+              cloudSelected={cloudSelected}
+              onCloudMove={handleCloudMove}
+              onCloudSelect={(tier, idx) => {
+                setCloudSelected({ tier, idx });
+                const cl = design.tiers[tier]?.clouds?.[idx];
+                if (cl) selectExclusive({ type: 'cloud', tierIndex: tier, id: cl.id });
+              }}
               rainbowMode={selectedEl?.type === 'rainbow'}
               rainbowSelected={rainbowSelected}
               onRainbowMove={handleRainbowMove}
@@ -8656,6 +8806,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'cluster' ? renderClusterBody(card)
                            : card.type === 'foil' ? renderFoilBody(card)
                            : card.type === 'cream' ? renderCreamBody()
+                           : card.type === 'cloud' ? renderCloudBody(card)
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()
