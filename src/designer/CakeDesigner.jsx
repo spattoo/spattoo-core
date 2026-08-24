@@ -713,7 +713,10 @@ const leanDeg  = (v) => `${Math.round((v ?? 0) * 180 / Math.PI)}°`;
 function TiltRow({ tiltAngle, rollAngle, onChange }) {
   const ta = tiltAngle ?? 0, ra = rollAngle ?? 0;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    // Wraps and centres: label + four arrows + the readout is wider than the ~180px element card,
+    // and a nowrap row inside a clipping panel loses whichever end falls off — which is how the SIZE
+    // dial beside this one came to be invisible.
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 4 }}>
       <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tilt</span>
       <button style={s.tbIconBtn} title="Lean back"  onClick={() => onChange({ tiltAngle: leanStep(ta, -0.1) })}>↑</button>
       <button style={s.tbIconBtn} title="Lean forward" onClick={() => onChange({ tiltAngle: leanStep(ta,  0.1) })}>↓</button>
@@ -758,7 +761,15 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
               <TopperPreview glbUrl={previewUrl} placement={slot.placement} mode={slot.mode} tiers={tiers} tierIndex={slot.tierIndex} baseRotation={baseRotation} />
             </PreviewTile>
             {slot.sticker && (
-              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
+              /* ⚠️ WRAPS, and the gap is small enough that Size + Tilt fit side by side.
+                 Without this the row is a nowrap centred flex line inside a 200px panel that clips:
+                 Size + Tilt + Bury measured wider than the card, and centring split the overflow BOTH
+                 ways, so the left-most control — the Size dial — was laid out at x 1056 against a card
+                 starting at 1090 and simply painted outside it. It was in the DOM, opaque, the right
+                 colour, and invisible. Reported as "resizable is on and the size control is missing",
+                 which is exactly what it looked like. */
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                            flexWrap: 'wrap', gap: '8px 14px', marginTop: 8 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                   {/* Hero hug auto-sizes to the tier wall; the dial nudges a multiplier (hugMul,
                       default 1×) rather than an absolute scale. Stand uses absolute scale (r). */}

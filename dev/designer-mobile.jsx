@@ -84,8 +84,33 @@ const STUBS = {
     reel_capture:  PARAMS.get('capture') === 'yes',
     reel_branding: PARAMS.get('branding') !== 'no',
   } }),
-  fetchElementTypes:   async () => ([]),
-  fetchElements:       async () => ([]),
+  /* ⚠️ THE REAL "Fiitball" ROW, copied from the dev database.
+   *
+   * Its two reported faults could not be reproduced here at all, because this harness stubs the
+   * catalogue empty — so there was no element to place and every diagnosis had to be read out of the
+   * source, which produced three wrong answers in a row.
+   *
+   * allowed_zones includes `board`; allowed_actions has resize TRUE and tilt FALSE. The panel showed
+   * the opposite of both. Only a placed element can settle why. */
+  fetchElementTypes:   async () => (PARAMS.has('football') ? [{
+    id: 'et-topper', slug: 'topper', name: 'Cake Topper', sort_order: 0,
+    placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 1, top_tier_only: true, requires_frosting: false },
+    default_allowed_actions: { move: true, color: true, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
+  }] : []),
+  fetchElementCategories: async () => (PARAMS.has('football')
+    ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' }] : []),
+  fetchElements:       async () => (PARAMS.has('football') ? [{
+    id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
+    // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
+    image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    allowed_zones: ['top_surface', 'board'],
+    allowed_actions: { move: true, tilt: false, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+    placement_config: { r: 1, board: 'hug', scale: { max: 6, min: 1, step: 0.5 },
+                        metalness: 0.0018626748, roughness: 0.28121553,
+                        top_surface: 'stand', single_per_slot: true },
+    default_color: '#F0DEB8', sort_order: 0,
+  }] : []),
   fetchTemplates:      async () => ([]),
   fetchCakeShapes:     async () => ([]),
   fetchMaterials:      async () => ([]),
