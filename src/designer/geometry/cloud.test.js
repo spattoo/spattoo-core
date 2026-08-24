@@ -190,12 +190,32 @@ describe('staying on what it sits on', () => {
     }
   });
 
-  it('counts the standoff against the room across', () => {
-    // The footprint is a circle: standing a cloud back leaves it less width, not the same width
-    // further away.
-    const flat = cloudFitScale({ centerX: 0.6, standoff: 0, width: 1.2, cakeRadius: 1.2 });
-    const back = cloudFitScale({ centerX: 0.6, standoff: 0.8, width: 1.2, cakeRadius: 1.2 });
-    expect(back).toBeLessThan(flat);
+  it('measures the fit from the LUMPS, not from a width', () => {
+    // The bug this replaces: a width-based fit ignored the bunch's depth and every ball's own
+    // radius, so a puffy cloud near the rim reached 1.30 on a 1.20 cake and reported a fit of 1.00.
+    const CAKE_R = 1.2;
+    const near = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff: 0.9 }, CAKE);
+    const reach = Math.max(...near.lobes.map(l => Math.hypot(l.position.x, l.position.z) + l.r));
+    expect(reach).toBeLessThanOrEqual(CAKE_R + 1e-3);
+    expect(near.fit).toBeLessThan(1);
+  });
+
+  it('leaves a cloud alone until it actually reaches the rim', () => {
+    // Shrinking one that already fits would be answering a question nobody asked.
+    for (const standoff of [0, 0.45, 0.75]) {
+      expect(cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff }, CAKE).fit).toBe(1);
+    }
+  });
+
+  it('never lets a drag to the rim delete it', () => {
+    // Its middle placed ON the rim leaves nothing to stand on, and the fit solves to ZERO there —
+    // the cloud disappears. So the position is capped, and this is the one case where where-it-sits
+    // is not purely the author's.
+    for (const standoff of [1, 1.5, 4]) {
+      const r = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff }, CAKE);
+      expect(r.fit).toBeGreaterThan(0.3);
+      expect(r.lobes.length).toBeGreaterThan(0);
+    }
   });
 });
 
