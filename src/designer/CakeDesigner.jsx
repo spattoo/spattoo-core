@@ -5213,9 +5213,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // ONE renderer so the two groups never drift. `label` is the group heading.
   function renderRingPickerCard(label, els) {
     if (!els.length) return null;
-    const q = elemSearch.trim().toLowerCase();
-    const visible = q ? els.filter(el => `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q)) : els;
-    if (q && visible.length === 0) return null;
+    // `filterEl`, not a filter of its own. This card used to match on the search text alone, and the
+    // element stores accumulate across every category opened this session — so once Piping had been
+    // visited its card stayed on screen inside Animals, inside Sky, inside everything. Two
+    // categories looked open at once because two categories WERE on screen at once.
+    //
+    // The main grid had the rule already. Having a second, narrower copy of the same filtering here
+    // is what let them drift apart.
+    const visible = filterEl(els);
+    if (!visible.length) return null;
     return (
       <div style={{ ...s.elementCard, cursor: 'default' }}>
         <div style={s.elementCardLabel}>{label}</div>
@@ -7955,7 +7961,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {activeCategory.name}
                 </button>
               ) : (
-                <span style={s.flyoutTitle}>Elements</span>
+                /* "Decorations" — never "Elements". `element` is our word for a row in a table;
+                   the customer is looking for a decoration to put on a cake, and the rail beside
+                   this panel has always called it that. */
+                <span style={s.flyoutTitle}>Decorations</span>
               )}
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
             </div>
@@ -7964,7 +7973,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <input
               value={elemSearch}
               onChange={e => setElemSearch(e.target.value)}
-              placeholder="Search elements…"
+              placeholder="Search decorations…"
               style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff', flexShrink: 0 }}
             />
 
