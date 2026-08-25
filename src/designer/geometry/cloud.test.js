@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CLOUD_DEFAULTS, cloudLobes, cloudPlacement, cloudBaseY, cloudFitScale, cloudGuide, cloudOutline,
+  CLOUD_DEFAULTS, cloudLobes, cloudPlacement, cloudBaseY, cloudGuide, cloudOutline,
 } from './cloud.js';
 
 const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
@@ -168,54 +168,49 @@ describe('where it sits', () => {
   });
 });
 
-describe('staying on what it sits on', () => {
-  it('shrinks a cloud placed near the rim rather than moving it', () => {
-    // Where it sits is the author's decision; its size is not. Same trade the rainbow's standing
-    // arch makes.
-    const near = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', offsetX: 0.9 }, CAKE);
-    expect(near.fit).toBeLessThan(1);
-    const right = Math.max(...near.lobes.map(l => l.position.x + l.r));
-    expect(right).toBeLessThanOrEqual(CAKE.radius + 1e-6);
-  });
-
-  it('leaves a centred cloud alone', () => {
-    expect(cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', offsetX: 0 }, CAKE).fit).toBe(1);
-  });
-
-  it('does not shrink one on the board or the wall', () => {
-    // There is no edge to fall off — the whole board is under it. Shrinking there would be
-    // answering a question nobody asked.
-    for (const surface of ['board', 'side']) {
-      expect(cloudPlacement({ ...CLOUD_DEFAULTS, surface, offsetX: 0.9 }, CAKE).fit).toBe(1);
+// ── Size is the author's, position is the author's, and neither moves the other ─────────────────
+// A cloud used to SHRINK as it was dragged toward the rim, on a fit solved so nothing overhung.
+// Nobody asked for that: there is a size control, which is what a size control is for, and a real
+// fondant cloud hangs over the edge — the reference photo shows one doing it. The fit also dragged
+// a position cap in behind it, because at the rim it solved to zero and deleted the cloud.
+//
+// Both are gone, and these pin them staying gone.
+describe('dragging a cloud does not resize it', () => {
+  it('is the same size wherever it is put', () => {
+    const at = extra => cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', ...extra }, CAKE);
+    const middle = at({ standoff: 0 });
+    for (const extra of [{ standoff: 0.5 }, { standoff: 0.95 }, { standoff: 1.4 },
+                         { offsetX: 0.9 }, { yaw: Math.PI / 2, standoff: 0.9 }]) {
+      const there = at(extra);
+      expect(there.width).toBeCloseTo(middle.width, 9);
+      expect(there.height).toBeCloseTo(middle.height, 9);
+      expect(there.thickness).toBeCloseTo(middle.thickness, 9);
     }
   });
 
-  it('measures the fit from the LUMPS, not from a width', () => {
-    // The bug this replaces: a width-based fit ignored the bunch's depth and every ball's own
-    // radius, so a puffy cloud near the rim reached 1.30 on a 1.20 cake and reported a fit of 1.00.
-    const CAKE_R = 1.2;
-    const near = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff: 0.9 }, CAKE);
-    const reach = Math.max(...near.lobes.map(l => Math.hypot(l.position.x, l.position.z) + l.r));
-    expect(reach).toBeLessThanOrEqual(CAKE_R + 1e-3);
-    expect(near.fit).toBeLessThan(1);
+  it('lets a cloud at the rim hang over it, like fondant does', () => {
+    // The behaviour the shrink existed to prevent. It is not a bug — it is what the reference looks
+    // like, and the baker moves or resizes it if they disagree.
+    const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff: 1 }, CAKE);
+    const reach = Math.max(...lobes.map(l => Math.hypot(l.position.x, l.position.z) + l.r));
+    expect(reach).toBeGreaterThan(CAKE.radius);
   });
 
-  it('leaves a cloud alone until it actually reaches the rim', () => {
-    // Shrinking one that already fits would be answering a question nobody asked.
-    for (const standoff of [0, 0.45, 0.75]) {
-      expect(cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff }, CAKE).fit).toBe(1);
-    }
+  it('does not cap how far out it can be dragged', () => {
+    // The cap only existed to stop the fit solving to zero. With no fit it has nothing to protect,
+    // and a drag that silently stops short of where the pointer went is its own bug.
+    const out = s => {
+      const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff: s }, CAKE);
+      return lobes.reduce((a, l) => a + l.position.z, 0) / lobes.length;
+    };
+    expect(out(1.3)).toBeGreaterThan(out(1.0));
+    expect(out(1.0)).toBeGreaterThan(out(0.7));
   });
 
-  it('never lets a drag to the rim delete it', () => {
-    // Its middle placed ON the rim leaves nothing to stand on, and the fit solves to ZERO there —
-    // the cloud disappears. So the position is capped, and this is the one case where where-it-sits
-    // is not purely the author's.
-    for (const standoff of [1, 1.5, 4]) {
-      const r = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff }, CAKE);
-      expect(r.fit).toBeGreaterThan(0.3);
-      expect(r.lobes.length).toBeGreaterThan(0);
-    }
+  it('still scales when the SIZE is changed, which is the control that does it', () => {
+    const one = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', scale: 1 }, CAKE);
+    const two = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', scale: 2 }, CAKE);
+    expect(two.width / one.width).toBeCloseTo(2, 6);
   });
 });
 
@@ -369,27 +364,4 @@ describe('a flat cloud faces the front wherever it is dragged', () => {
     }
   });
 
-  // ── The fit has to answer for every yaw at once ────────────────────────────────────────────────
-  // A sheet that does not turn reaches along the WORLD axes, so how far it stands from the cake's
-  // axis depends on where round the cake it is — and the fitter measures it once. Measured unturned
-  // it read 0.65R at the front and 0.73R at the side, so a sheet called flush with the rim hung 8%
-  // past it a quarter turn later.
-  it('stays on the cake at every yaw, not only at the front', () => {
-    for (const standoff of [0.5, 0.7, 0.85, 0.95]) {
-      for (const yaw of YAWS) {
-        const { lobes } = place('flat', yaw, standoff);
-        const reach = Math.max(...lobes.map(l => Math.hypot(l.position.x, l.position.z) + l.r));
-        expect(reach).toBeLessThanOrEqual(CAKE_T.radius * 1.001);
-      }
-    }
-  });
-
-  it('does not grow and shrink while you drag it round', () => {
-    // The other way to satisfy the test above would be to fit per-yaw, which is correct at every
-    // instant and horrible to watch: the cloud would swell and shrink under the cursor.
-    for (const standoff of [0.5, 0.85, 0.95]) {
-      const sizes = YAWS.map(yaw => place('flat', yaw, standoff).width);
-      for (const w of sizes) expect(w).toBeCloseTo(sizes[0], 9);
-    }
-  });
 });

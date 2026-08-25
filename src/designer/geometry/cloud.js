@@ -243,58 +243,6 @@ export function cloudBaseY(surface, { topY = 0, boardY = 0 } = {}) {
 }
 
 /**
- * How much a cloud must shrink to stay on what it is sitting on.
- *
- * Measured from the LUMPS, not from a width. The first version took half the cloud's width and asked
- * whether that fitted across the cake — right when a cloud was a flat row facing the viewer, and
- * wrong the moment it became a bunch with depth standing anywhere round the cake. A puffy cloud near
- * the rim reached 1.30 on a 1.20 cake with the fit reporting 1.00: the balls behind the front row,
- * and every ball's own radius, were simply not in the sum.
- *
- * So it asks the real question — is every ball, edge included, inside the rim — and answers it by
- * bisection, because `reach` climbs with the scale but not in any form worth inverting.
- *
- * `outward` is a POSITION and does not shrink; the cloud does. Same trade as everywhere else here:
- * where it sits is the author's decision, its size is not.
- */
-export function cloudFitScale({ lobes = [], centerX = 0, outward = 0, cakeRadius = 1, rigid = false }) {
-  if (!lobes.length || !(cakeRadius > 0)) return 1;
-
-  // The furthest any part of the cloud reaches from the cake's axis, at a given scale.
-  //
-  // Which depends on whether the cloud TURNS as it is carried round. A puff does, so its lumps keep
-  // the same radial arrangement at every yaw and measuring them once, unturned, is exact.
-  //
-  // A flat sheet does not turn — it is set down still facing the front. So its lumps are offset
-  // along the WORLD axes, and how far that reaches from the axis depends on where round the cake it
-  // is: measured unturned it read 0.65R at the front and 0.73R at the side, and a sheet the fitter
-  // called flush with the rim hung 8% past it a quarter turn later.
-  //
-  // The bound is the worst case over every yaw — the middle's own distance out, plus the cloud's
-  // half-extent — which is reached when its widest lump happens to point straight outward. It has to
-  // be yaw-independent rather than merely correct per-yaw: a fit that changed as you dragged would
-  // grow and shrink the cloud while you moved it, which is a worse thing to watch than a little
-  // spare room at the front.
-  const middleOut = Math.hypot(centerX, outward);
-  const reach = rigid
-    ? f => middleOut + f * Math.max(...lobes.map(l => Math.hypot(l.x, l.z) + l.r))
-    : f => Math.max(...lobes.map(l => Math.hypot(centerX + f * l.x, outward + f * l.z) + f * l.r));
-
-  if (reach(1) <= cakeRadius) return 1;
-  // The POSITION is already off the cake, and no size fixes that. As small as is drawable rather
-  // than zero, so the picture shows the problem instead of hiding it.
-  if (reach(0) > cakeRadius) return 0.05;
-
-  let lo = 0, hi = 1;
-  for (let i = 0; i < 24; i++) {
-    const mid = (lo + hi) / 2;
-    if (reach(mid) <= cakeRadius) lo = mid; else hi = mid;
-  }
-  return lo;
-}
-
-
-/**
  * The cloud placed in the world.
  *
  * `surface` decides the whole placement, not just a height:
@@ -317,25 +265,20 @@ export function cloudPlacement(params = {}, cake = {}) {
   const centerX = (p.offsetX ?? 0) * R;
   const standoff = (p.standoff ?? 0) * R;
 
-  // Only a cloud ON the cake has an edge to fall off. One on the board or the wall has the whole
-  // board under it, and shrinking it there would be answering a question nobody asked.
-  // Where it stands, before anything shrinks — a position, not a size.
+  // ── Size is the author's, and so is position. Neither one moves the other ─────────────────────
+  // A cloud dragged toward the rim used to SHRINK, on a fit solved so nothing overhung. Nobody
+  // asked for that. There is a size control, which is what a size control is for, and a fondant
+  // cloud on a real cake overhangs the edge — the reference photo shows exactly that.
   //
-  // Capped on the TOP, and this is the one case where position is not purely the author's. Its own
-  // middle placed ON the rim leaves nothing to stand on, and no amount of shrinking fixes that: at
-  // exactly the rim the fit solves to zero and the cloud disappears. A drag to the edge would delete
-  // it. So the middle keeps a tenth of the cake in reserve — far enough out that the cloud still
-  // overhangs the rim the way the reference does, near enough in that it is still a cloud.
+  // It cost twice over. The shrink itself was never wanted, and it dragged a position cap in behind
+  // it: at exactly the rim the fit solved to zero, so the middle had to be held a tenth of the cake
+  // short of the edge to stop a drag deleting the cloud. Take the fit away and the cap has nothing
+  // to protect, so both are gone. Drag it to the rim and it hangs off the rim.
   //
-  // Same rule the rainbow's standing arch follows, for the same reason and in the same place.
-  const outwardRaw = onTop ? Math.min(standoff, R * 0.9) : (p.standoff ? standoff : R + w0 * 0.35);
-  let fit = 1;
-  if (onTop) fit = cloudFitScale({ lobes, centerX, outward: outwardRaw, cakeRadius: R, rigid: flat });
-  const width = w0 * fit, height = h0 * fit, thickness = t0 * fit;
-
   // On the board a cloud stands OUTSIDE the cake by default rather than under it, which is where the
   // hardcoded distance used to put it — but as a number that can be dragged.
-  const outward = outwardRaw;
+  const outward = onTop ? standoff : (p.standoff ? standoff : R + w0 * 0.35);
+  const width = w0, height = h0, thickness = t0;
   const yaw = p.yaw ?? 0;
   const spin = (x, z) => new THREE.Vector3(
     Math.cos(yaw) * x + Math.sin(yaw) * z, 0, -Math.sin(yaw) * x + Math.cos(yaw) * z);
@@ -345,7 +288,7 @@ export function cloudPlacement(params = {}, cake = {}) {
   const middle = spin(centerX, outward);
 
   const placed = lobes.map(l => {
-    const x = l.x * fit, y = l.y * fit, z = l.z * fit, r = l.r * fit;
+    const { x, y, z, r } = l;
     if (onWall) {
       // Divided by the radius the ball's own middle sits at, so a row of balls bent round the cake
       // spans the same length of wall it spanned flat.
@@ -370,9 +313,9 @@ export function cloudPlacement(params = {}, cake = {}) {
   return {
     variant: p.variant,
     lobes: placed,
-    // The flat variant's shape is ONE outline, not a list of lumps — traced at the size that fits,
-    // so the piece that gets cut is the piece that goes on.
-    outline: flat ? cloudOutline({ ...p, scale: (p.scale ?? 1) * fit }, cake) : null,
+    // The flat variant's shape is ONE outline, not a list of lumps, so the piece that gets cut is
+    // the piece that goes on.
+    outline: flat ? cloudOutline(p, cake) : null,
     // How that sheet meets the cake. The renderer bends it for a wall; elsewhere it is a translate.
     // Already carried round the cake, and NOT turned — so the renderer has a translate and nothing
     // else. `centerX` and `theta` are still here for the wall, where the sheet is bent rather than
@@ -383,7 +326,7 @@ export function cloudPlacement(params = {}, cake = {}) {
           z: onWall ? 0 : middle.z,
           thickness, bevel: Math.max(0, Math.min(0.9, p.bevel ?? 0)) }
       : null,
-    width, height, thickness, baseY, fit,
+    width, height, thickness, baseY,
   };
 }
 
