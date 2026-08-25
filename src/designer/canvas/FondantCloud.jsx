@@ -94,8 +94,17 @@ export default function FondantCloud({
     const geo = sheetGeometry(outline, sheet);
     return sheet.onWall
       ? bendToWall(geo, sheet)
-      // Flat surfaces need no bending, only putting where it sits.
-      : (geo.translate(sheet.centerX, sheet.baseY, sheet.z), geo);
+      // Flat surfaces need no bending, only putting where it sits — and TURNING to where it sits.
+      //
+      // The yaw was dropped here, and only here. The puff's balls go through `spin()` and travel
+      // round the cake; the sheet was translated and never turned, so a flat cloud could only move
+      // front-to-back however you dragged it. The selection box comes off the lobes, which DO spin,
+      // which is why box and cloud drifted apart on screen — the box was right.
+      //
+      // Rotating about Y AFTER the translate is the same transform `spin()` applies, so the two
+      // variants now land in the same place from the same numbers.
+      : (geo.translate(sheet.centerX, sheet.baseY, sheet.z),
+         geo.rotateY(sheet.yaw ?? 0), geo);
   }, [outline, sheet]);
 
   // A geometry per drag of a slider, and nothing else frees them.

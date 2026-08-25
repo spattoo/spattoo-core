@@ -292,3 +292,40 @@ describe('what the baker rolls', () => {
     expect(ballsOfCakeWidth).toEqual(sorted);
   });
 });
+
+// ── The two variants must land in the SAME place from the same numbers ──────────────────────────
+// They do not share a placement path: the puff spins its balls round the cake, the flat one is a
+// single extruded sheet the renderer positions. So a number that reaches one and not the other is
+// invisible in the geometry and obvious on screen — `yaw` was dropped from the sheet, and a flat
+// cloud could only move front-to-back however it was dragged, while its selection box (computed
+// from the lobes) travelled correctly and drifted away from it.
+describe('a flat cloud goes where a puffy one goes', () => {
+  const CAKE_T = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+
+  // Where the renderer puts the sheet: translate, then turn about the cake's axis.
+  const sheetCentre = sheet => {
+    const c = Math.cos(sheet.yaw ?? 0), s = Math.sin(sheet.yaw ?? 0);
+    return { x: c * sheet.centerX + s * sheet.z, z: -s * sheet.centerX + c * sheet.z };
+  };
+  const lobesCentre = lobes => ({
+    x: (Math.min(...lobes.map(l => l.position.x)) + Math.max(...lobes.map(l => l.position.x))) / 2,
+    z: (Math.min(...lobes.map(l => l.position.z)) + Math.max(...lobes.map(l => l.position.z))) / 2,
+  });
+
+  it('carries the yaw to the sheet, not only to the balls', () => {
+    for (const yaw of [0, 0.7, Math.PI, 4.5]) {
+      const pl = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'top', yaw, standoff: 0.6 }, CAKE_T);
+      const a = sheetCentre(pl.sheet), b = lobesCentre(pl.lobes);
+      // Within a hundredth, not exactly: the lumps are deliberately unequal, so their bounding
+      // centre sits a hair off the sheet's origin. What matters is that both TURN.
+      expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(0.05);
+    }
+  });
+
+  it('moves on BOTH axes, not just front to back', () => {
+    // The symptom, stated as a number: turning the yaw must change x, or the cloud is on a rail.
+    const at = yaw => sheetCentre(cloudPlacement(
+      { ...CLOUD_DEFAULTS, variant: 'flat', surface: 'top', yaw, standoff: 0.6 }, CAKE_T).sheet);
+    expect(Math.abs(at(Math.PI / 2).x - at(0).x)).toBeGreaterThan(0.5);
+  });
+});
