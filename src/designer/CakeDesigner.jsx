@@ -755,9 +755,11 @@ function BuryRow({ insertDepth, onChange }) {
 // an INDEPENDENT add/remove checkbox (check = place, uncheck = remove). A placed slot gets its own
 // Size dial + Tilt — the SAME SizeDial the cream-piping popup uses (no clamp; sizes freely).
 // `slots` = [{ key, placement, tierIndex, label, checked, sticker }]; `onUpdate(id, changes)` edits.
-// `locked` (allowed_actions.delete === false) → a slot may be ADDED but not un-ticked. Unticking a placed
-// slot removes the instance, so the lock has to reach the tile as well as the Remove button — otherwise a
-// "non-deletable" element is still removable here and the flag means nothing.
+// ⚠️ `locked` is now always FALSE from every caller, and the prop survives only because the piping
+// path still uses it for a different reason. It used to carry allowed_actions.delete === false —
+// "this may be ADDED but not un-ticked" — and that rule is gone: a customer cannot be made to keep
+// something on their own cake, so EVERY element is deletable. The field is still on the row and the
+// admin form still shows it, ticked and locked, so the rule is visible rather than merely absent.
 /* ⚠️ `canResize` / `canTilt` — the element's allowed_actions, which this used to ignore entirely.
  *
  * It took only `locked` (delete), and rendered Size AND Tilt for every placed slot regardless of

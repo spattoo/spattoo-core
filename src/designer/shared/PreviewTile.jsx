@@ -4,9 +4,12 @@
 // upload studio uses it to ask "where can this go?" — showing the user's own artwork rendered on the
 // cake in each candidate zone, because the honest answer to "what is a zone" is to show them one.
 //
-// `locked` = this tile may be ADDED but not REMOVED (allowed_actions.delete === false). The checkbox is
-// the remove control on this path, so a lock has to reach it — otherwise "non-deletable" would still be
-// removable by unticking, and the flag would mean nothing. Config-gated by the caller; never a type branch.
+// `locked` = this tile may be ADDED but not REMOVED. The checkbox is the remove control on this path,
+// so a lock has to reach it or unticking would remove what the caller said could not be removed.
+//
+// ⚠️ It no longer comes from allowed_actions.delete. Every ELEMENT is deletable — a customer cannot
+// be made to keep something on their own cake — so all element callers pass false. The one live user
+// is piping, which locks a ring for its own reasons. Config-gated by the caller; never a type branch.
 export default function PreviewTile({ checked, onToggle, label, height = 104, locked = false, children }) {
   const frozen = checked && locked;
   return (
