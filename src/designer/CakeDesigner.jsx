@@ -4039,11 +4039,45 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   // Adding a generator is one entry. Adding another GRASS is not a code change at all — it is a
   // catalogue row with different parameters, which is the entire reason for doing this.
+  // ── Texts and Number toppers, from a ROW or from the Tools menu ─────────────────────────────
+  // Both are generated objects that happen to be reachable from a hardcoded button, which is the
+  // whole subject of plans/tools-into-the-catalogue.md: a thing that is not a `cake_elements` row
+  // cannot be categorised, searched, priced, promoted to production, or retuned without a deploy.
+  //
+  // These two make them reachable from a row as well. `el` is the catalogue row when picked from
+  // Decorations and absent when picked from Tools — the same optional-row contract addGrass has had
+  // since the registry was written, so both paths run one function and cannot drift.
+  function addWritingFromRow(el) {
+    const tuned = el?.placement_config?.writing ?? {};
+    const id = addWriting({ font: DEFAULT_CREAM_FONT, ...tuned });
+    focusEditor('decoration');
+    selectExclusive({ type: 'writing', id });
+  }
+
+  function addAgeFromRow(el) {
+    addAge(el?.placement_config?.number_topper ?? {});
+    focusEditor('decoration');
+    // `pending`, because the id is minted inside the setState and is not readable here — an effect
+    // below resolves it to the real one. The same dance the Tools button has always done.
+    selectExclusive({ type: 'age', pending: true });
+  }
+
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
     letter_blocks: addNameBlocks,
     rainbow: addRainbow,
     cloud: addCloud,
+    writing: addWritingFromRow,
+    // `number_topper`, never `age`. This key is DATA — it sits in placement_config on the row and an
+    // admin reads it on screen, so it is not the internal name it looks like. The same reasoning
+    // that named the button "Number topper": a 5 on a cake is usually somebody's age, and naming the
+    // thing after that makes the product look like it is asking for one. It is not, and it stores
+    // nothing of the kind.
+    //
+    // `design.ages[]` and addAge keep their names, because those ARE internal and are written into
+    // every saved snapshot — renaming them is a data migration for a word nobody sees. This key has
+    // no rows yet, so it costs nothing to get right now.
+    number_topper: addAgeFromRow,
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -8128,7 +8162,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
-                  onClick={() => { const id = addWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addWritingFromRow(); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
                     <TextIcon size={22} />
@@ -8140,9 +8174,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
                 <button
                   onClick={() => {
-                    addAge();
                     setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false);
-                    selectExclusive({ type: 'age', pending: true });   // resolved to the new id by the effect below
+                    addAgeFromRow();   // no row: the Tools path takes the defaults
                   }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FBF1D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b8860b', flexShrink: 0, fontWeight: 800, fontSize: 20 }}>
