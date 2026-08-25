@@ -24,6 +24,8 @@ import { Panel, Z } from '../shared/Panel.jsx';
 import { ShareIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
+import PhotoOptions from './photo/PhotoOptions.jsx';
+import { shapeByKey, photoFilename } from './photo/photoShapes.js';
 import { DESIGNER_GROUND } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
@@ -136,6 +138,12 @@ const TIER_CAPS   = { color: true, gradient: true, resize: false, style: false, 
 // pre-baked WebP (thumb_key), fall back to the raw thumbnail_url. Served DIRECT
 // from R2 — the old Cloudflare /cdn-cgi/image transform 404'd on the r2.dev
 // endpoint (no zone) and was removed.
+/* The reel's shape, as a NUMBER — the frame box takes `aspectRatio`, which accepts one, and the
+ * photo swaps it for whatever shape the baker picked. It was a bare literal in two style branches;
+ * a third copy for the photo would have been the point where the phone and the desktop preview
+ * could start disagreeing about the frame. */
+const REEL_ASPECT = 9 / 16;
+
 const thumbSrc = (item) => item?.thumb_key ?? item?.thumbnail_url ?? null;
 // Hide a thumbnail that fails to load so the card shows its neutral background
 // instead of the browser's broken-image icon.
@@ -747,9 +755,11 @@ function BuryRow({ insertDepth, onChange }) {
 // an INDEPENDENT add/remove checkbox (check = place, uncheck = remove). A placed slot gets its own
 // Size dial + Tilt — the SAME SizeDial the cream-piping popup uses (no clamp; sizes freely).
 // `slots` = [{ key, placement, tierIndex, label, checked, sticker }]; `onUpdate(id, changes)` edits.
-// `locked` (allowed_actions.delete === false) → a slot may be ADDED but not un-ticked. Unticking a placed
-// slot removes the instance, so the lock has to reach the tile as well as the Remove button — otherwise a
-// "non-deletable" element is still removable here and the flag means nothing.
+// ⚠️ `locked` is now always FALSE from every caller, and the prop survives only because the piping
+// path still uses it for a different reason. It used to carry allowed_actions.delete === false —
+// "this may be ADDED but not un-ticked" — and that rule is gone: a customer cannot be made to keep
+// something on their own cake, so EVERY element is deletable. The field is still on the row and the
+// admin form still shows it, ticked and locked, so the rule is visible rather than merely absent.
 /* ⚠️ `canResize` / `canTilt` — the element's allowed_actions, which this used to ignore entirely.
  *
  * It took only `locked` (delete), and rendered Size AND Tilt for every placed slot regardless of
@@ -1054,6 +1064,28 @@ function MoreIcon({ size = 20 }) {
       <circle cx="12" cy="5" r="1.7" />
       <circle cx="12" cy="12" r="1.7" />
       <circle cx="12" cy="19" r="1.7" />
+    </svg>
+  );
+}
+
+/* The two takes. Same 24-grid, same 1.8 stroke, currentColor — so each takes the colour of whatever
+ * it sits in, whether that is a dark button or a white menu row. */
+function CameraIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* The raised hump over the lens is what reads as "camera" at 15px; a plain rectangle with a
+          circle in it reads as nothing at all. */}
+      <path d="M3 8.5a2 2 0 012-2h1.9a1.5 1.5 0 001.28-.72l.64-1.06A1.5 1.5 0 0110.1 4h3.8a1.5 1.5 0 011.28.72l.64 1.06a1.5 1.5 0 001.28.72H19a2 2 0 012 2v8.5a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+      <circle cx="12" cy="12.75" r="3.25" />
+    </svg>
+  );
+}
+
+function ReelIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M3 9.5h18M8 5l-2 4.5M14 5l-2 4.5M20 5l-2 4.5" />
     </svg>
   );
 }
@@ -2006,6 +2038,27 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // — see spattoo-docs/plans/reel-for-bakers.md §2e.
   const [reelCapture,  setReelCapture]  = useState(false);   // may record at all
   const [reelBranding, setReelBranding] = useState(false);   // their own name, vs "made with Spattoo"
+  /* Whether this take carries their name at all — the record panel's tick, held HERE because the
+   * 9:16 preview overlay and the recorder both read the composed caption. Reset per panel open would
+   * be a nicety; it is deliberately sticky for the session instead, since somebody filming a batch of
+   * unbranded reels is doing it repeatedly and would otherwise untick it for every cake. */
+  const [reelIncludeName, setReelIncludeName] = useState(true);
+
+  /* ── The photo take ───────────────────────────────────────────────────────────────────────────
+   * Shares the reel's framing, ground, caption and director; everything below is what differs.
+   *
+   * ⚠️ `frameAspect` is why the framing state lost its `reel` prefix. The preview box, the drawing
+   * buffer and the captured file all come from this ONE number — R3F sizes the buffer from the
+   * container, so constraining the box IS constraining the render. A second constant for the CSS
+   * would be a preview that is a different shape from the photograph it promises. */
+  const [photoOptsOpen, setPhotoOptsOpen] = useState(false);
+  const [photoBusy, setPhotoBusy]         = useState(false);
+  const [photoCutout, setPhotoCutout]     = useState(false);
+  // True from opening the photo panel until it closes — the panel itself shuts for the capture, so
+  // photoOptsOpen cannot answer "is this a photo take" at the moment the shutter goes.
+  const [photoFraming, setPhotoFraming]   = useState(false);
+  const [photoAngle, setPhotoAngle]       = useState(null);
+  const [frameAspect, setFrameAspect]     = useState(REEL_ASPECT);
   // ── Has the baker ever curated their flavour list? ────────────────────────────────────────────
   // false = never opened the screen, which is not "no preference": a global flavour with no
   // settings row is OFFERED (spattoo-api lib/flavourList.js), so this baker's storefront would
@@ -2036,6 +2089,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // { designSnapshot, designThumbnailKey }. Null = a plain invite (blank start).
   const [shareDraftDesign,    setShareDraftDesign]    = useState(null);
   const [actionsMenuOpen,     setActionsMenuOpen]     = useState(false);   // mobile baker/staff ⋮ actions menu
+  const [captureMenuOpen,    setCaptureMenuOpen]    = useState(false);   // desktop "Capture ⋯" → photo / reel
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
@@ -2111,13 +2165,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const navMenuRef       = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
-  // Filled by ReelDirector when the baker is a catalogue author. Null otherwise — and the canvas
+  // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
-  const reelRef          = useRef(null);
+  const takeRef          = useRef(null);
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
   // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
-  const [reelFraming, setReelFraming]   = useState(false);
+  const [framing, setFraming]   = useState(false);
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -2152,10 +2206,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * A catalogue author is not automatically branded — `is_catalog_author` says WHO writes the public
    * templates, `reel_branding` says whose name is on a video. Spattoo's own catalogue account happens
    * to be on a plan that carries both, which is why they look the same from in here. */
-  const reelCaptionText = captionText({ bakeryName: bakerData?.name, ownBranding: reelBranding });
+  const reelCaptionText = captionText({ bakeryName: bakerData?.name, ownBranding: reelBranding,
+                                        includeName: reelIncludeName });
+  // A cutout has nothing for a caption to sit on — see PhotoOptions, which also hides the tick.
+  const captionOnFrame = photoCutout ? '' : reelCaptionText;
   // Which ground the preview is showing, so the overlay can pick its contrast the same way the
   // recorder does. Mirrors what was handed to setGround; the scene holds a THREE.Color, not a hex.
-  const [reelGround, setReelGround] = useState(DESIGNER_GROUND);
+  const [takeGround, setTakeGround] = useState(DESIGNER_GROUND);
   // True while any decoration is still resolving. The same registry the canvas spinner reads —
   // deliberately not a second notion of "is it ready", which would drift from the visible one.
   const decorLoading = useAnyLoading();
@@ -2175,17 +2232,29 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }, [reelMsg]);
   // Measured rather than assumed: the caption's size is a fraction of the FRAME's height, and the
   // frame is sized by CSS (min() against the viewport). Nothing in JS knows how tall it came out.
-  const reelFrameRef = useRef(null);
-  const [reelFrameH, setReelFrameH] = useState(0);
+  const frameRef = useRef(null);
+  const [frameH, setFrameH] = useState(0);
+  /* Where the frame ENDS on screen, so the bottom sheet can stop above it.
+   *
+   * ⚠️ Measured, not calculated. The frame is `top: 8px; height: 46%` of the canvas container, and
+   * the container's own top depends on the header, the rail and whatever else the phone is showing —
+   * so the only honest way to say "the sheet must not reach this" is to ask the box where it is.
+   * Recomputed by the same ResizeObserver that already measures the height for the caption. */
+  const [frameBottom, setFrameBottom] = useState(0);
   useLayoutEffect(() => {
-    const el = reelFrameRef.current;
-    if (!reelFraming || !el) { setReelFrameH(0); return; }
-    const measure = () => setReelFrameH(el.getBoundingClientRect().height);
+    const el = frameRef.current;
+    if (!framing || !el) { setFrameH(0); setFrameBottom(0); return; }
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setFrameH(r.height);
+      setFrameBottom(r.bottom);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [reelFraming]);
+  }, [framing]);
+
 
   /* Everything the reel panel changed, put back — the framing, the scrim, the ground, the camera.
    *
@@ -2198,9 +2267,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * the designer is the same bug with worse timing. */
   function closeReelPanel() {
     setReelOptsOpen(false);
-    setReelFraming(false);
-    setReelGround(DESIGNER_GROUND);
-    reelRef.current?.endPreview?.();
+    setFraming(false);
+    setTakeGround(DESIGNER_GROUND);
+    takeRef.current?.endPreview?.();
   }
 
   function openReelPanel() {
@@ -2209,15 +2278,72 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // filmed along with the cake.
     handleDeselect();
     setReelOptsOpen(true);
-    setReelFraming(true);
-    setReelGround(DESIGNER_GROUND);            // the panel opens on Studio, which IS the designer's
+    setFraming(true);
+    setTakeGround(DESIGNER_GROUND);            // the panel opens on Studio, which IS the designer's
 
     // Portrait camera + the chosen ground, applied now so the panel's preview is the real frame.
-    reelRef.current?.beginPreview?.();
+    takeRef.current?.beginPreview?.();
+  }
+
+  /* The photo's own bracket. It reuses openReelPanel's teardown of the SELECTION for the same
+   * reason — handles and grips render in the scene and would be photographed along with the cake —
+   * and everything else it sets is the framing the reel already knows how to draw. */
+  function openPhotoPanel() {
+    handleDeselect();
+    setPhotoOptsOpen(true);
+    setFraming(true);
+    setPhotoFraming(true);
+    setTakeGround(DESIGNER_GROUND);
+    setPhotoCutout(false);
+    takeRef.current?.beginPreview?.();
+  }
+
+  function closePhotoPanel() {
+    setPhotoOptsOpen(false);
+    setFraming(false);
+    setPhotoFraming(false);
+    setTakeGround(DESIGNER_GROUND);
+    setPhotoCutout(false);
+    setFrameAspect(REEL_ASPECT);
+    setPhotoAngle(null);
+    takeRef.current?.endPreview?.();
+  }
+
+  async function runPhoto({ shape, ground, cutout } = {}) {
+    if (!takeRef.current) { setReelMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
+    // ⚠️ A decoration that resolves a moment after the shutter is simply MISSING from the picture,
+    // and nothing about the downloaded file says so. Milder than the reel's version of this — a
+    // topper popping in mid-take — but harder to notice, which is its own problem.
+    if (decorLoading) {
+      setReelMsg({ ok: false, text: 'Still loading the decorations — give it a moment so they are all in shot.' });
+      return;
+    }
+    // The panel closes for the shot: it sits over the canvas, and the canvas is what is being
+    // photographed. The framing stays up, so the frame on screen is still the frame being saved.
+    setPhotoOptsOpen(false);
+    setPhotoBusy(true);
+    try {
+      const { clamped, width, height } = await takeRef.current.capture({
+        aspect: shapeByKey(shape).aspect,
+        filename: photoFilename(design?.name, shape),
+        caption: cutout ? '' : reelCaptionText,
+        ground, transparent: !!cutout,
+      });
+      // Say when it came out smaller than asked. Silence means a baker eventually notices one photo
+      // is softer than the rest with nothing to attribute it to.
+      setReelMsg({ ok: true, text: clamped
+        ? `Photo saved at ${width}×${height} — this device could not hold full size.`
+        : `Photo saved${cutout ? ' with a see-through background' : ''} — ${width}×${height}.` });
+    } catch (e) {
+      setReelMsg({ ok: false, text: `Couldn't save the photo: ${e.message}` });
+    } finally {
+      setPhotoBusy(false);
+      closePhotoPanel();
+    }
   }
 
   async function runReel(opts = {}) {
-    if (!reelRef.current) { setReelMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
+    if (!takeRef.current) { setReelMsg({ ok: false, text: 'The 3D view is still loading.' }); return; }
     // ⚠️ A decoration that arrives mid-take POPS INTO the reel — and a reel is the one artefact here
     // that leaves the app and cannot be quietly re-rendered afterwards. The Record button is disabled
     // while anything is in flight; this is the second line of defence, for the case where the last
@@ -2235,9 +2361,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setReelMsg({ ok: true, text: `Recording… hold still for ${secs} seconds.` });
     try {
       const safe = (design?.name || 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const { instagramReady, mimeType, resolution, demoted } = await reelRef.current.record({
+      const { instagramReady, mimeType, resolution, demoted } = await takeRef.current.record({
         ...opts, filename: `${safe || 'cake'}-reel`,
-        caption: reelCaptionText, ground: reelGround,
+        caption: reelCaptionText, ground: takeGround,
       });
       // ⚠️ Say when it is NOT an MP4. Instagram rejects WebM, and a baker who is only told
       // "downloaded" finds that out at the moment they try to post — by which time the cake may not
@@ -2274,6 +2400,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
     : '?';
   const isMobile = windowWidth <= 640;
+  /* The ceiling handed to both take panels: stop the bottom sheet 10px short of the frame's own
+   * bottom edge, so the shot stays visible while it is being described.
+   *
+   * ⚠️ DECLARED HERE, next to isMobile, and not beside the measurement it uses. Placed with the
+   * frame effect above it read isMobile before its `const` — "Cannot access 'isMobile' before
+   * initialization", which the build and the whole suite passed and the first page load threw.
+   *
+   * Only while FRAMING and only on a phone: on desktop the panel is centred and the frame is parked
+   * beside it, so there is nothing to get out of the way of. */
+  const takeSheetMaxH = (isMobile && framing && frameBottom > 0)
+    ? `calc(100vh - ${Math.round(frameBottom) + 10}px)`
+    : undefined;
   // Capability gate for nav/chrome. Unknown caps (not loaded / no /me) → show all,
   // preserving existing baker apps. '*' = super admin. Enforcement is server-side;
   // this only hides controls a principal can't use.
@@ -3901,11 +4039,45 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   // Adding a generator is one entry. Adding another GRASS is not a code change at all — it is a
   // catalogue row with different parameters, which is the entire reason for doing this.
+  // ── Texts and Number toppers, from a ROW or from the Tools menu ─────────────────────────────
+  // Both are generated objects that happen to be reachable from a hardcoded button, which is the
+  // whole subject of plans/tools-into-the-catalogue.md: a thing that is not a `cake_elements` row
+  // cannot be categorised, searched, priced, promoted to production, or retuned without a deploy.
+  //
+  // These two make them reachable from a row as well. `el` is the catalogue row when picked from
+  // Decorations and absent when picked from Tools — the same optional-row contract addGrass has had
+  // since the registry was written, so both paths run one function and cannot drift.
+  function addWritingFromRow(el) {
+    const tuned = el?.placement_config?.writing ?? {};
+    const id = addWriting({ font: DEFAULT_CREAM_FONT, ...tuned });
+    focusEditor('decoration');
+    selectExclusive({ type: 'writing', id });
+  }
+
+  function addAgeFromRow(el) {
+    addAge(el?.placement_config?.number_topper ?? {});
+    focusEditor('decoration');
+    // `pending`, because the id is minted inside the setState and is not readable here — an effect
+    // below resolves it to the real one. The same dance the Tools button has always done.
+    selectExclusive({ type: 'age', pending: true });
+  }
+
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
     letter_blocks: addNameBlocks,
     rainbow: addRainbow,
     cloud: addCloud,
+    writing: addWritingFromRow,
+    // `number_topper`, never `age`. This key is DATA — it sits in placement_config on the row and an
+    // admin reads it on screen, so it is not the internal name it looks like. The same reasoning
+    // that named the button "Number topper": a 5 on a cake is usually somebody's age, and naming the
+    // thing after that makes the product look like it is asking for one. It is not, and it stores
+    // nothing of the kind.
+    //
+    // `design.ages[]` and addAge keep their names, because those ARE internal and are written into
+    // every saved snapshot — renaming them is a data migration for a word nobody sees. This key has
+    // no rows yet, so it costs nothing to get right now.
+    number_topper: addAgeFromRow,
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -7990,7 +8162,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </button>
                 <button
-                  onClick={() => { const id = addWriting({ font: DEFAULT_CREAM_FONT }); setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addWritingFromRow(); setElementsOpen(false); }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
                     <TextIcon size={22} />
@@ -8002,9 +8174,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </button>
                 <button
                   onClick={() => {
-                    addAge();
                     setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false);
-                    selectExclusive({ type: 'age', pending: true });   // resolved to the new id by the effect below
+                    addAgeFromRow();   // no row: the Tools path takes the defaults
                   }}
                   style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FBF1D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b8860b', flexShrink: 0, fontWeight: 800, fontSize: 20 }}>
@@ -8266,7 +8437,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           }}>
           {/* Darkens everything outside the 9:16 crop so the frame you are about to record is
               obvious without a word of explanation. Behind the canvas box, never over it. */}
-          {reelFraming && <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,26,22,0.55)',
+          {framing && <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,26,22,0.55)',
                                         pointerEvents: 'none' }} />}
           {/* ⚠️ ALWAYS RENDERED, style toggled — never wrapped conditionally. Giving <CakeCanvas> a
               new parent remounts the R3F root, which throws the scene away and re-downloads every
@@ -8276,14 +8447,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               buffer and camera.aspect follow by themselves — no gl.setSize, and what is on screen IS
               what records. The wrapper above already relies on the same behaviour for the edit
               sheet. */}
-          <div style={reelFraming
+          <div style={framing
             // ⚠️ The frame has to sit where the PANEL IS NOT. A truthful preview you cannot see is
             // worthless, and the first cut of this put a centred modal straight on top of it.
             //   phone   — the panel is a bottom sheet, so the frame takes the upper half
             //   desktop — the panel is centred, so the frame moves into the free space at the left
             ? (isMobile
                 ? { position: 'absolute', top: 8, bottom: 'auto', left: '50%', right: 'auto',
-                    transform: 'translateX(-50%)', height: '46%', aspectRatio: '9 / 16',
+                    transform: 'translateX(-50%)', height: '46%', aspectRatio: frameAspect,
                     boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' }
                 // Parked immediately left of the panel, which is ~424px wide and centred in the
                 // VIEWPORT. Hence vw and not %: this box is positioned inside the canvas container,
@@ -8297,15 +8468,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 : { position: 'absolute', top: '50%', transform: 'translateY(-50%)',
                     right: 'calc(50vw + 212px)', left: 'auto', bottom: 'auto',
                     width: 'max(160px, min(calc(50vw - 320px), 46vh))',
-                    height: 'auto', aspectRatio: '9 / 16',
+                    height: 'auto', aspectRatio: frameAspect,
                     boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' })
             : { position: 'absolute', inset: 0 }}
-            ref={reelFrameRef}>
+            ref={frameRef}>
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
               // Non-null only while the reel panel is open. Paints the scene's sky and floor one
               // colour and puts the editing furniture away — see CakeScene's filmGround.
-              filmGround={reelFraming ? reelGround : null}
+              filmGround={framing ? takeGround : null}
+              // No sky and no floor — the cake on nothing. Only ever true for a photo.
+              filmCutout={framing && photoCutout}
+              // A photograph frames the cake that is there; the editor's topper headroom is dead
+              // space in it. Reel excluded on purpose — see FitCakeToView.
+              filmTight={photoFraming}
               config={canvasConfig}
               autoRotate={creamAutoRotate}
               creamPaint={creamPaint}
@@ -8324,6 +8500,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
               onPipingInstanceMove={handlePipingInstanceMove}
               isPipingMovable={isPipingMovable}
+              selectedGenerated={
+                selectedEl?.type === 'cloud' || selectedEl?.type === 'rainbow'
+                  ? { kind: selectedEl.type, id: selectedEl.id }
+                  : null}
+              /* Clicking the cloud itself selects it — the card opens and its handle appears. Until
+                 this, the only way in was the card, and the only way to the card was the stack: you
+                 had to find the thing you were already looking at. */
+              onCloudClick={(tier, id) => {
+                const idx = (design.tiers[tier]?.clouds ?? []).findIndex(c => c.id === id);
+                setCloudSelected(idx >= 0 ? { tier, idx } : null);
+                selectExclusive({ type: 'cloud', tierIndex: tier, id });
+              }}
+              onRainbowClick={(tier, id) => {
+                const idx = (design.tiers[tier]?.rainbows ?? []).findIndex(r => r.id === id);
+                setRainbowSelected(idx >= 0 ? { tier, idx } : null);
+                selectExclusive({ type: 'rainbow', tierIndex: tier, id });
+              }}
               cloudMode={selectedEl?.type === 'cloud'}
               cloudSelected={cloudSelected}
               onCloudMove={handleCloudMove}
@@ -8381,7 +8574,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               isStickerMovable={isStickerMovable}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
-              reelRef={canRecordReel ? reelRef : null}
+              takeRef={canRecordReel ? takeRef : null}
+              onAngleChange={setPhotoAngle}
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
             />
           </Suspense>
@@ -8395,7 +8589,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
               ⚠️ pointerEvents none. This sits over the canvas, and the baker is still dragging to
               frame the cake underneath it. */}
-          {reelFraming && reelFrameH > 0 && (
+          {framing && frameH > 0 && (
             <div style={{
               position: 'absolute', left: 0, right: 0,
               // CAPTION.bottomFrac is to the text's BASELINE, so the box is bottom-aligned there and
@@ -8404,12 +8598,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               textAlign: 'center', pointerEvents: 'none',
               fontFamily: CAPTION.family,
               fontWeight: CAPTION.weight,
-              fontSize: reelFrameH * CAPTION.sizeFrac,
-              letterSpacing: reelFrameH * CAPTION.sizeFrac * CAPTION.trackingFrac,
+              fontSize: frameH * CAPTION.sizeFrac,
+              letterSpacing: frameH * CAPTION.sizeFrac * CAPTION.trackingFrac,
               lineHeight: 1,
-              color: captionColours(reelGround).fill,
-              textShadow: `0 0 ${reelFrameH * CAPTION.sizeFrac * 0.5}px ${captionColours(reelGround).halo}`,
-            }}>{reelCaptionText}</div>
+              color: captionColours(takeGround).fill,
+              textShadow: `0 0 ${frameH * CAPTION.sizeFrac * 0.5}px ${captionColours(takeGround).halo}`,
+            }}>{captionOnFrame}</div>
           )}
           </div>
           </div>
@@ -9274,8 +9468,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {/* Beside the other things you do to a FINISHED cake, not in a tools or settings
                     menu — those hold things you configure or things that help you make a cake, and
                     this is neither. See spattoo-docs/plans/reel-for-bakers.md §1b. */}
-                {canRecordReel && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); openReelPanel(); }}>
+                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                        onClick={() => { setActionsMenuOpen(false); openReelPanel(); }}>
+                  <ReelIcon size={17} />
                   Record a reel
+                </button>}
+                {/* Above the reel, not below it, and gated the same way. A photo is the thing most
+                    bakers actually need most days — a reply to "can I see it?" on WhatsApp — where a
+                    reel is what they make when they are posting deliberately. Same panel shape, same
+                    framing, same name-on-the-frame rule. */}
+                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                        onClick={() => { setActionsMenuOpen(false); openPhotoPanel(); }}>
+                  <CameraIcon size={17} />
+                  Take a photo
                 </button>}
               </ActionSheet>
             </div>
@@ -9299,15 +9504,50 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onClick={handleShareDraft}>
               Share the draft
             </button>}
-            {/* The quietest button in the row, deliberately: every other action here leads to money
+            {/* ── ONE "Capture", opening onto the two takes ────────────────────────────────────
+                The quietest button in the row, deliberately: every other action here leads to money
                 — an order, a customer, a saved template — and this one leads to a file. It earns its
                 place next to them because it is the same KIND of act (something you do with a
-                finished cake), not because it is as important. */}
-            {canRecordReel && <button
-              style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.6, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
-              onClick={openReelPanel}>
-              Record a reel
-            </button>}
+                finished cake), not because it is as important.
+
+                ⚠️ Which is exactly why it is ONE button and not two. Photo and reel arrived as
+                siblings in this row and immediately took two of its five slots, so the quiet corner
+                of the bar became its widest thing — "Record a reel" and "Take a photo" side by side
+                shouted louder than "Order This Cake". They are the same act at two lengths, so they
+                collapse into one name and the choice moves one tap in.
+
+                Reuses ActionSheet, the popover the phone's ⋮ menu already uses — its item styling and
+                its click-away overlay live in one place, and a second desktop-only dropdown would be
+                the same widget written twice. It opens UPWARD, which is right: this row sits at the
+                bottom of the window. */}
+            {canRecordReel && (
+              <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
+                <button
+                  style={{ ...s.orderBtn, ...brandBtn, width: '100%', whiteSpace: 'nowrap', opacity: 0.6,
+                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                           ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+                  aria-haspopup="menu" aria-expanded={captureMenuOpen}
+                  onClick={() => setCaptureMenuOpen(o => !o)}>
+                  <CameraIcon size={15} />
+                  Capture
+                  {/* The dots say "there is more behind this" without naming either take — a caret
+                      would promise a list, and this is a list of two. */}
+                  <span aria-hidden style={{ letterSpacing: 1, opacity: 0.75, fontSize: 15, lineHeight: 1 }}>⋯</span>
+                </button>
+                <ActionSheet open={captureMenuOpen} onClose={() => setCaptureMenuOpen(false)} align="center">
+                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                          onClick={() => { setCaptureMenuOpen(false); openPhotoPanel(); }}>
+                    <CameraIcon size={17} />
+                    Take a photo
+                  </button>
+                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                          onClick={() => { setCaptureMenuOpen(false); openReelPanel(); }}>
+                    <ReelIcon size={17} />
+                    Record a reel
+                  </button>
+                </ActionSheet>
+              </div>
+            )}
           </div>
         )
       )}
@@ -9662,10 +9902,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           // The ground is applied LIVE while the panel is open — it flows straight back down as
           // `filmGround`, which paints the scene's sky AND its floor, so the swatch you pick is the
           // colour that records rather than a separate thing we hope agrees.
-          onGround={g => setReelGround(g || DESIGNER_GROUND)}
+          onGround={g => setTakeGround(g || DESIGNER_GROUND)}
           brandPrimary={bakerData?.primary_color || null}
+          // The tick is offered only to a plan that carries `reel_branding` — for everybody else the
+          // line is our mark and there is nothing to choose. See captionText, which enforces the same
+          // rule independently of this panel.
+          canChooseName={reelBranding}
+          bakeryName={bakerData?.name || ''}
+          onIncludeName={setReelIncludeName}
           onClose={closeReelPanel}
+          maxHeightMobile={takeSheetMaxH}
           onRecord={runReel} />
+      )}
+
+      {canRecordReel && (
+        <PhotoOptions
+          open={photoOptsOpen} busy={photoBusy} isMobile={isMobile}
+          loading={decorLoading}
+          // Shape drives the preview box, the drawing buffer and the file — see frameAspect.
+          onShape={setFrameAspect}
+          onGround={g => setTakeGround(g || DESIGNER_GROUND)}
+          onCutout={setPhotoCutout}
+          onAngle={key => takeRef.current?.setAngle?.(key)}
+          onIncludeName={setReelIncludeName}
+          // Which preset the camera is ACTUALLY at, so a preset stops being highlighted once the
+          // baker drags off it. Reported by the director on every camera move, because the panel
+          // cannot see the camera and guessing would make the highlight a claim rather than a fact.
+          activeAngle={photoAngle}
+          brandPrimary={bakerData?.primary_color || null}
+          canChooseName={reelBranding}
+          bakeryName={bakerData?.name || ''}
+          onClose={closePhotoPanel}
+          maxHeightMobile={takeSheetMaxH}
+          onCapture={runPhoto} />
       )}
 
       {/* ── Templates panel (hide/show Spattoo's global templates) ── */}

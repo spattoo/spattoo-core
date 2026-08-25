@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelBlock } from '../../shared/Panel.jsx';
-import { DESIGNER_GROUND } from '../constants.js';
+import { TAKE_GROUNDS } from '../constants.js';
+import { takeRow as row, takeLabel as label, takePick as pick,
+         groundsFor, GroundSwatches, NameOnFrame, TakeButton } from '../capture/takeUi.jsx';
 import { pickMimeType, isInstagramReady, recordButtonState } from './recordReel.js';
 
 /* ── The shot, chosen before it is taken ─────────────────────────────────────────────────────────
@@ -14,44 +16,59 @@ import { pickMimeType, isInstagramReady, recordButtonState } from './recordReel.
  * anything that does not belongs in the code, not in front of the person filming.
  */
 
-/* ── The grounds ─────────────────────────────────────────────────────────────────────────────────
- * A CURATED LIST, not a colour picker — the same call the storefront themes made for exactly this
- * problem (templates.js `grounds`). A free picker means somebody records a cake on neon pink at the
- * moment they are trying to post something, and the bakers who would not need the freedom anyway.
- *
- * The baker's own primary is offered FIRST but is not the default, because a dark green brand behind
- * a dark green cake is mush and no rule we could write would predict that. They look and choose.
+/* The grounds live in constants.js — the photo panel offers the same five, and two copies of a
+ * swatch list is two places for "Slate" to become two different greys. The baker's own primary is
+ * prepended below rather than living in the list, since it is theirs and not ours.
  */
-const GROUNDS = [
-  // Literally the designer's own ground, imported rather than retyped: picking Studio — or opening
-  // the panel, which selects it — must leave the scene exactly as the baker had it.
-  { key: 'studio', label: 'Studio', value: DESIGNER_GROUND },
-  { key: 'cream',  label: 'Cream',  value: '#FBF3E7' },
-  { key: 'blush',  label: 'Blush',  value: '#FBEFEF' },
-  { key: 'slate',  label: 'Slate',  value: '#2E3A36' },
-  { key: 'ink',    label: 'Ink',    value: '#14181A' },
-];
 
 const LENGTHS = [2.5, 3.5, 4.5, 6];
 const SWEEPS  = [90, 120, 150, 180];
 
-export default function ReelOptions({ open, onClose, onRecord, busy, onGround, brandPrimary, isMobile = false, loading = false }) {
+export default function ReelOptions({ open, onClose, onRecord, busy, onGround, onIncludeName,
+                                      brandPrimary, bakeryName = '', canChooseName = false,
+                                      isMobile = false, loading = false, maxHeightMobile }) {
   const [pingPong, setPingPong] = useState(true);
   // +1 turns one way, -1 the other. The camera code takes a signed arc, so this is a multiplier
   // rather than a branch.
   const [dir, setDir]           = useState(1);
   const [seconds, setSeconds]   = useState(4.5);
   const [arcDeg, setArcDeg]     = useState(120);
-  const [ground, setGround]     = useState(GROUNDS[0].value);
+  const [ground, setGround]     = useState(TAKE_GROUNDS[0].value);
+  // Their own name on the frame. On by default — the whole point of the entitlement is that the reel
+  // markets the bakery, and somebody who wants that never has to find this control.
+  const [includeName, setIncludeName] = useState(true);
 
-  // Brand colour first, if they have one and it is not already in the list.
-  const grounds = brandPrimary && !GROUNDS.some(g => g.value.toLowerCase() === brandPrimary.toLowerCase())
-    ? [{ key: 'brand', label: 'Your colour', value: brandPrimary }, ...GROUNDS]
-    : GROUNDS;
+  const grounds = groundsFor(brandPrimary);
 
   // Push the choice into the scene, including on open — the preview is only truthful if the ground
   // on screen is the one that will record.
   useEffect(() => { if (open) onGround?.(ground); }, [open, ground, onGround]);
+
+  /* ⚠️ The name goes up the SAME way, and for the same reason.
+   *
+   * The caption is composed one level up, because the 9:16 preview overlay and the recorder both
+   * read it — that is what makes "the frame above is exactly what records" true. Keeping the tick
+   * local and passing it only at onRecord would mean the preview kept showing a name the take was
+   * about to leave out, which is the one promise this panel makes. */
+  useEffect(() => { if (open) onIncludeName?.(includeName); }, [open, includeName, onIncludeName]);
+  /* ── Per-take choices are CLEARED every time the panel opens ─────────────────────────────────
+   *
+   * ⚠️ Reported: after one take with the name off, "I don't see that entire field at all" and no way
+   * back to one carrying the bakery name. Both halves were real. The tick stayed off because the
+   * panel is never unmounted, and in the photo panel the cutout hid the block outright. This
+   * panel has no cutout, but the sticky tick is the same fault and takes the same fix.
+   *
+   * The first version kept these for the session, reasoning that somebody producing a batch of
+   * unbranded takes should not re-untick for every cake. That trade is backwards. The cost of
+   * stickiness is a customer's cake going out with no bakery name on it, silently, because of a
+   * choice made for a different cake ten minutes ago; the cost of resetting is one tap. A take is
+   * about ONE picture, so the answer applies to one picture.
+   *
+   * Deliberately NOT reset: ground, length, sweep and direction. Those are framing preferences somebody working through a
+   * batch genuinely repeats, and getting them back is a visible tap on a control that is still on
+   * screen — the failure this fixes is a control that was not.
+   */
+  useEffect(() => { if (open) setIncludeName(true); }, [open]);
 
   /* ⚠️ Asked when the panel OPENS, not after the take.
    *
@@ -70,19 +87,14 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
 
   if (!open) return null;
 
-  const pick = (on) => ({
-    padding: '7px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700,
-    border: `1.5px solid ${on ? '#2C4433' : '#D8E0DA'}`,
-    background: on ? '#2C4433' : '#fff', color: on ? '#fff' : '#3D5A44',
-  });
-  const row = { display: 'flex', gap: 6, flexWrap: 'wrap' };
-  const label = { fontSize: 11, fontWeight: 700, color: '#6E8577', letterSpacing: '0.04em',
-                  textTransform: 'uppercase', marginBottom: 6 };
 
   return (
     // isMobile makes Panel a bottom sheet, which is what leaves the top of the screen free for the
     // 9:16 preview. On desktop it stays centred and the preview moves to the left instead.
-    <Panel onClose={onClose} title="Record a reel" width={400} isMobile={isMobile}
+    // Footer, not the tail of the body, and no scrim — see PhotoOptions for both.
+    <Panel onClose={onClose} title="Record a reel" width={400} isMobile={isMobile} maxHeightMobile={maxHeightMobile} scrim={false}
+           footer={<TakeButton disabled={btn.disabled} label={btn.label}
+                               onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })} />}
            subtitle="Films the cake and downloads it at 1080×1920.">
       <PanelBlock>
         <div>
@@ -117,15 +129,7 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
       <PanelBlock>
         <div>
           <div style={label}>Background</div>
-          <div style={row}>
-            {grounds.map(g => (
-              <button key={g.key} onClick={() => setGround(g.value)} title={g.label}
-                      aria-label={g.label} aria-pressed={ground === g.value}
-                      style={{ width: 34, height: 34, borderRadius: 8, cursor: 'pointer', padding: 0,
-                               background: g.value,
-                               border: ground === g.value ? '3px solid #2C4433' : '1.5px solid #D8E0DA' }} />
-            ))}
-          </div>
+          <GroundSwatches grounds={grounds} value={ground} onPick={setGround} />
           <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
             Changes the cake behind you as you pick, so what you see is what records. A dark cake
             wants a light ground and the other way round.
@@ -158,6 +162,22 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
         </div>
       </PanelBlock>
 
+      {/* ── The name on the frame ────────────────────────────────────────────────────────────────
+          Only for a baker whose plan carries `reel_branding`. Everybody else gets "made with
+          Spattoo" and no switch, which is what they are on: the entitlement IS control of this line.
+
+          ⚠️ Off means BLANK, not our mark. Somebody reaches for this because the reel is going
+          where their name should not be — a client's own account, a collaboration, a piece of
+          Spattoo marketing filmed from a real bakery's login — and every one of those wants no name
+          rather than a different one. The copy says so, because a checkbox called "Bakery name"
+          otherwise reads as a choice between two names. */}
+      {canChooseName && (
+        <PanelBlock>
+          <NameOnFrame subject="reel" bakeryName={bakeryName}
+                       checked={includeName} onChange={setIncludeName} />
+        </PanelBlock>
+      )}
+
       {/* Before the take, not after it — see willBeWebM above. */}
       {willBeWebM && (
         <div style={{ fontSize: 12, lineHeight: 1.55, color: '#8A5A1E', background: '#FDF3E3',
@@ -167,17 +187,6 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
             : 'This browser cannot record video at all. Open Spattoo in Chrome or Safari.'}
         </div>
       )}
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-        <button disabled={btn.disabled}
-                onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })}
-                style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
-                         background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
-                         cursor: btn.disabled ? 'default' : 'pointer',
-                         opacity: btn.disabled ? 0.5 : 1 }}>
-          {btn.label}
-        </button>
-      </div>
 
       {/* ⚠️ Disabled while ANY decoration is still resolving. A topper that finishes mid-take pops
           into the middle of the reel, and a reel is the one thing here that leaves the app — it

@@ -32,6 +32,37 @@ describe('captionText', () => {
     expect(captionText({ bakeryName: '   ', ownBranding: true })).toBe(SPATTOO_MARK);
     expect(captionText({ bakeryName: undefined, ownBranding: true })).toBe(SPATTOO_MARK);
   });
+
+  it('leaves the frame BLANK when an entitled baker turns the name off', () => {
+    // Not "made with Spattoo". What the plan sells is the frame, and a switch whose off position
+    // advertises us is not a choice anybody wants. The reason to reach for it is that the reel is
+    // going somewhere no bakery name belongs.
+    expect(captionText({ bakeryName: 'Feelings & Flavours', ownBranding: true, includeName: false }))
+      .toBe('');
+  });
+
+  it('⚠️ will NOT clear our mark for a baker who has not paid to remove it', () => {
+    // The panel does not offer them the switch — but a UI is not an entitlement check, and this is
+    // the function both the recorder and the preview go through.
+    expect(captionText({ bakeryName: 'Feelings & Flavours', ownBranding: false, includeName: false }))
+      .toBe(SPATTOO_MARK);
+    expect(captionText({ bakeryName: '', ownBranding: false, includeName: false })).toBe(SPATTOO_MARK);
+  });
+
+  it('defaults to including the name, so every existing caller is unchanged', () => {
+    expect(captionText({ bakeryName: 'Bloom', ownBranding: true })).toBe('Bloom');
+    expect(captionText({ bakeryName: 'Bloom', ownBranding: true, includeName: true })).toBe('Bloom');
+  });
+});
+
+describe('drawCaption with the name turned off', () => {
+  it('draws NOTHING for an empty caption rather than an empty box', () => {
+    // The blank case reaches the same drawing path as every other take; it must simply not paint.
+    const ctx = fakeCtx();
+    drawCaption(ctx, { text: captionText({ bakeryName: 'Bloom', ownBranding: true, includeName: false }),
+                       width: 1080, height: 1920, ground: '#f4f4f5' });
+    expect(ctx.calls).toEqual([]);
+  });
 });
 
 describe('captionColours', () => {

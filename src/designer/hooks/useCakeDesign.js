@@ -799,7 +799,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // single-stroke digit reads as a metallic number candle. `value` is a digit string ('5','25');
   // size = standing height (world units), thickness = tube radius (balloon chunkiness), font picks
   // the digit shape, offsetX/offsetZ place it on the top plane (drag), yaw rotates it.
-  function addAge() {
+  // `changes` so a CATALOGUE ROW can author one — the same contract addWriting has, and the reason
+  // is the same: a number topper reached from the Tools menu wants the defaults, and one reached
+  // from a row wants what an admin tuned into `placement_config.age`. One function, both callers.
+  function addAge(changes = {}) {
     setDesign(prev => ({
       ...prev,
       ages: [...prev.ages, {
@@ -812,6 +815,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         offsetX:   0,
         offsetZ:   0,
         yaw:       0,
+        ...changes,
       }],
     }));
   }

@@ -1,7 +1,8 @@
 /* ── The name on the reel ────────────────────────────────────────────────────────────────────────
  *
  * Every take carries one line of text: the bakery's own name if their plan includes `reel_branding`,
- * otherwise a quiet "made with Spattoo". See spattoo-docs/plans/reel-for-bakers.md.
+ * otherwise a quiet "made with Spattoo". A baker who HAS that entitlement can also turn the line off
+ * entirely for a take — see captionText. See spattoo-docs/plans/reel-for-bakers.md.
  *
  * ── WHY IT IS BURNED INTO THE FRAMES AND NOT LEFT TO THE BAKER ───────────────────────────────────
  * The alternative was "download the video, add your name in Canva". Nobody does the second step at
@@ -54,13 +55,30 @@ export const SPATTOO_MARK = 'made with Spattoo';
 
 /* What the line says.
  *
- * `ownBranding` is the resolved `reel_branding` entitlement. A baker on Blaze with a blank bakery
- * name falls back to the mark rather than to an empty string — a reel with nothing on it is worse
- * than one carrying ours, and it is the case that actually happens (the field is optional at signup).
+ * `ownBranding` is the resolved `reel_branding` entitlement. `includeName` is the baker's own choice
+ * in the record panel, and it only means anything to somebody who has that entitlement.
+ *
+ * ── WHY UNTICKING LEAVES THE FRAME BLANK RATHER THAN FALLING BACK TO OUR MARK ────────────────────
+ * The obvious reading of "don't put my name on it" is "put the other thing on it", and it is wrong.
+ * What the plan sells is the frame: a baker who has paid to keep our mark off does not want a switch
+ * whose off position advertises us. And the reason anyone reaches for this is that the reel is going
+ * somewhere their name should not be — a client's own account, a collaboration, a piece of Spattoo
+ * marketing filmed from a real bakery's login. Every one of those wants NO name, not a different one.
+ *
+ * ⚠️ ORDER MATTERS, AND ENTITLEMENT IS CHECKED FIRST. Read the other way round, `includeName: false`
+ * would clear "made with Spattoo" for a baker who never paid to remove it — the panel does not offer
+ * them the control, but this function must not be the place where that is enforced. A UI is not an
+ * entitlement check.
+ *
+ * A baker WITH the entitlement, WITH the box ticked, and with a blank bakery name still falls back to
+ * the mark: a reel with nothing on it is worse than one carrying ours, and it is the case that
+ * actually happens (the field is optional at signup). That is a fallback from an empty field, not a
+ * choice anyone made — which is exactly why unticking has to mean something different from it.
  */
-export function captionText({ bakeryName, ownBranding }) {
-  const name = (bakeryName ?? '').trim();
-  return ownBranding && name ? name : SPATTOO_MARK;
+export function captionText({ bakeryName, ownBranding, includeName = true }) {
+  if (!ownBranding) return SPATTOO_MARK;
+  if (!includeName) return '';
+  return (bakeryName ?? '').trim() || SPATTOO_MARK;
 }
 
 /* Perceived lightness of a hex colour, 0..1. sRGB luma coefficients: green dominates because eyes

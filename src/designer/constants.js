@@ -8,6 +8,28 @@
  * not asked to change — a silent edit in the one feature that must not have any. */
 export const DESIGNER_GROUND = '#f4f4f5';
 
+/* ── The grounds a take can be shot against ──────────────────────────────────────────────────────
+ * A CURATED LIST, not a colour picker — the same call the storefront themes made for exactly this
+ * problem (templates.js `grounds`). A free picker means somebody records a cake on neon pink at the
+ * moment they are trying to post something, and the bakers who would use the freedom well would not
+ * need it.
+ *
+ * ⚠️ HERE, not in the reel panel, because the PHOTO panel offers the same five. Two copies of a
+ * swatch list is two places for "Slate" to become two different greys — and both panels promise that
+ * what is on screen is what is exported, which stops being true the moment a preview reads one
+ * literal and a take reads the other. That exact bug has already been paid for once on this list:
+ * see DESIGNER_GROUND above.
+ */
+export const TAKE_GROUNDS = [
+  // Literally the designer's own ground: picking Studio — or opening a panel, which selects it —
+  // must leave the scene exactly as the baker had it.
+  { key: 'studio', label: 'Studio', value: DESIGNER_GROUND },
+  { key: 'cream',  label: 'Cream',  value: '#FBF3E7' },
+  { key: 'blush',  label: 'Blush',  value: '#FBEFEF' },
+  { key: 'slate',  label: 'Slate',  value: '#2E3A36' },
+  { key: 'ink',    label: 'Ink',    value: '#14181A' },
+];
+
 export const TIER_RADII = [1.2, 0.9, 0.65, 0.45];
 
 // Y-coordinate of the cake board surface and the default tier height.

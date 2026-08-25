@@ -65,3 +65,58 @@ describe('every field of a design reaches the renderer', () => {
     });
   }
 });
+
+// ── The edit bag has TWO ends, and they must name the same things ────────────────────────────────
+// CakeScene builds `edit={{ … }}` and CakeContent destructures it. Nothing connects the two lists,
+// so adding a key to one and not the other is a silent mistake — silent because it survives every
+// check that exists: the file parses, the bundle builds, and `foo?.()` looks defensive while being
+// a ReferenceError on an unbound name.
+//
+// That has now happened twice. The second time it shipped: a selection box was added to the shared
+// renderer with its prop declared on the wrong component, and every template carrying a rainbow or a
+// cloud crashed with "selectedGenerated is not defined". A build cannot catch it, because both ends
+// are valid JavaScript on their own — only their DISAGREEMENT is the bug.
+describe('the edit bag agrees at both ends', () => {
+  // The `edit={{ … }}` literal CakeScene passes down.
+  const passed = (() => {
+    const at = SOURCE.indexOf('edit={{');
+    const body = SOURCE.slice(at + 7, SOURCE.indexOf('}}', at));
+    return new Set(body
+      .split(/[,\n]/)
+      .map(line => line.replace(/\/\/.*/, '').trim())
+      .filter(Boolean)
+      // `a: b` passes b under the name a; the NAME is what the other end destructures.
+      .map(entry => entry.split(':')[0].trim())
+      .filter(name => /^[A-Za-z_$][\w$]*$/.test(name)));
+  })();
+
+  // What CakeContent pulls back out of it.
+  const taken = (() => {
+    const body = bodyOf('CakeContent');
+    // Anchored on the destructure that ENDS in `= edit` — CakeContent also unpacks `config` and
+    // `scene`, and the first `const {` in the body is one of those.
+    const end = body.indexOf('} = edit');
+    const chunk = body.slice(body.lastIndexOf('const {', end), end);
+    return new Set(chunk
+      .split(/[,\n]/)
+      .map(line => line.replace(/\/\/.*/, '').trim())
+      .filter(Boolean)
+      // `a: b` renames on the way out — `a` is the key, and that is what must have been passed.
+      .map(entry => entry.split(/[:=]/)[0].replace('const {', '').trim())
+      .filter(name => /^[A-Za-z_$][\w$]*$/.test(name)));
+  })();
+
+  it('passes something for everything it takes', () => {
+    const missing = [...taken].filter(k => !passed.has(k));
+    expect(missing, `CakeContent destructures ${missing.join(', ')} from edit, but CakeScene never puts it there — `
+      + 'a ReferenceError the moment that branch renders').toEqual([]);
+  });
+
+  it('takes everything it passes', () => {
+    // The other direction is a weaker fault — a prop nobody reads is dead weight, not a crash — but
+    // it is the same drift, and it is how one end quietly stops matching the other.
+    const unread = [...passed].filter(k => !taken.has(k));
+    expect(unread, `CakeScene passes ${unread.join(', ')} in edit, but CakeContent never reads it`)
+      .toEqual([]);
+  });
+});

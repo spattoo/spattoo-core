@@ -6,11 +6,20 @@ import { snapshotScene } from './sceneSnapshot.js';
 import { drawCaption, ensureCaptionFont, CAPTION } from './reelCaption.js';
 import { planTake, medianOf, progressAt } from './takePlan.js';
 import { CAMERA_POSITION_MOBILE, DESIGNER_GROUND } from '../constants.js';
+import { photoSize, clampToDevice } from '../photo/photoShapes.js';
+import { anglePosition, angleByKey, angleAt } from '../photo/photoAngles.js';
 
-/* ── The reel shot: a slow arc with a push in ────────────────────────────────────────────────────
+/* ── Takes: the reel's slow arc, and the photo's single frame ────────────────────────────────────
  *
  * Lives INSIDE the <Canvas> because it needs the camera, and fills a ref so the designer outside can
  * start it — the same idiom as CameraSnapper, which is how the parent already reaches the camera.
+ *
+ * ⚠️ ONE DIRECTOR FOR BOTH, and not for tidiness. Both mutate the live scene — buffer size, camera
+ * aspect, orbit controls — and both have to put it back. Two components doing that would each hold
+ * their own snapshot, and the moment their brackets overlapped (open the photo panel during a reel
+ * preview) one would restore the other's starting state on top of the baker's. The preview bracket
+ * below is already the wider of the two for exactly this reason. Was ReelDirector until the photo
+ * arrived; a "reel" director that also takes photographs is a name that misleads the next reader.
  * Catalogue authors only; see spattoo-docs/features/reel-capture.md.
  *
  * ── WHY THIS CAN DO WHAT THE SCRIPT COULD NOT ───────────────────────────────────────────────────
@@ -62,7 +71,7 @@ const outAndBack = t => t <= OUT_FRACTION
   ? smootherstep(t / OUT_FRACTION)
   : smootherstep(1 - (t - OUT_FRACTION) / (1 - OUT_FRACTION));
 
-export default function ReelDirector({ reelRef, orbitRef }) {
+export default function TakeDirector({ takeRef, orbitRef, onAngleChange = null }) {
   // ⚠️ NO `size` HERE, and none in the effect's deps below. It is tempting — the recorder does
   // resize the buffer — but subscribing to it made the preview undo itself: cropping the container to
   // 9:16 resizes the canvas, `size` changes, the effect tears down, and its cleanup restores the
@@ -77,8 +86,47 @@ export default function ReelDirector({ reelRef, orbitRef }) {
   // be separate objects or the take's restore would undo the preview the baker is still looking at.
   const previewSnap = useRef(null);
 
+  /* ── Telling the panel where the camera actually is ───────────────────────────────────────────
+   *
+   * ⚠️ REPORTED, not remembered. The photo panel highlights the angle preset the camera is at, and
+   * the obvious implementation — remember the last preset that was tapped — is a claim rather than a
+   * fact: the baker drags the cake immediately afterwards (that is the whole design) and the
+   * highlight would go on naming a shot that is no longer on screen.
+   *
+   * ⚠️ Waits for the controls to exist. OrbitControls is created by drei and its ref fills AFTER this
+   * effect first runs, so subscribing once on mount silently attaches to nothing — the highlight
+   * would work in whichever render order happened to win and not in the other.
+   *
+   * Fires on every frame of a drag; only a CHANGE of preset reaches React, so a drag across the
+   * whole cake produces two state updates rather than two hundred.
+   */
   useEffect(() => {
-    if (!reelRef) return;
+    if (!onAngleChange) return;
+    let raf = 0;
+    let controls = null;
+    let last;
+    const report = () => {
+      const t = controls?.target;
+      if (!t) return;
+      const key = angleAt({ x: t.x, y: t.y, z: t.z },
+                          { x: camera.position.x, y: camera.position.y, z: camera.position.z });
+      if (key !== last) { last = key; onAngleChange(key); }
+    };
+    const attach = () => {
+      controls = orbitRef?.current;
+      if (!controls) { raf = requestAnimationFrame(attach); return; }
+      controls.addEventListener('change', report);
+      report();
+    };
+    attach();
+    return () => {
+      cancelAnimationFrame(raf);
+      controls?.removeEventListener('change', report);
+    };
+  }, [orbitRef, camera, onAngleChange]);
+
+  useEffect(() => {
+    if (!takeRef) return;
 
     const record = async ({
       // 4.5s for the out-and-back: the return leg is the one people actually watch, and a rushed
@@ -267,6 +315,126 @@ export default function ReelDirector({ reelRef, orbitRef }) {
         busy.current = false;
       }
     };
+    /* ── the photo: one frame, at a size a video could never be ──────────────────────────────────
+     *
+     * Shares the reel's bracket (snapshot → mutate → restore) and its caption, and almost nothing
+     * else. There is no encoder, no clock and no probe: a reel is capped by what a phone can encode
+     * thirty times a second, a photo is a single render, so the only ceiling that matters is what
+     * the GPU will allocate — asked for below rather than guessed at from a device class.
+     */
+    const capture = async ({
+      aspect = 4 / 5,
+      filename = 'cake-photo',
+      caption = '',
+      ground = DESIGNER_GROUND,
+      // No ground at all: the cake cut out on nothing, for a baker dropping it into their own
+      // poster. The designer hides the floor for this — see `filmCutout` on CakeCanvas — and all
+      // that is left here is to stop painting the sky.
+      transparent = false,
+    } = {}) => {
+      if (busy.current) throw new Error('already recording');
+      busy.current = true;
+
+      const controls = orbitRef?.current;
+      // ⚠️ The camera is NOT moved. The baker framed this shot by dragging, and the preview they
+      // approved is the current camera — a photo that re-composes itself at the last moment is the
+      // one thing this feature cannot do. The reel drives the camera because a reel is a movement;
+      // a photo is where you are standing.
+      const snap = snapshotScene({ camera, gl, scene, controls });
+
+      // Same trap as the reel's: WebGL does not throw when the context goes away. gl.render() does
+      // nothing, drawImage yields blank, and a photo of nothing downloads looking like it worked.
+      let contextLost = false;
+      const onContextLost = () => { contextLost = true; };
+      gl.domElement.addEventListener('webglcontextlost', onContextLost);
+
+      try {
+        /* ⚠️ Ask the driver what it can hold. Past MAX_RENDERBUFFER_SIZE a resize does not raise —
+         * it is refused, or the context is lost, and what comes back is blank or half-height. Older
+         * mobile GPUs sit at 4096 and a few at 2048, which is not comfortably clear of the 2048 long
+         * edge this asks for. */
+        const ctxGl = gl.getContext?.();
+        const maxDim = Math.min(
+          ctxGl?.getParameter?.(ctxGl.MAX_RENDERBUFFER_SIZE) || Infinity,
+          gl.capabilities?.maxTextureSize || Infinity,
+        );
+        const wanted = photoSize(aspect);
+        const { width, height, clamped } = clampToDevice(wanted, maxDim);
+
+        gl.setPixelRatio(1);
+        gl.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+
+        // Transparency is a property of the CLEAR, not of the scene: React owns scene.background
+        // (see filmGround), so the sky is already absent for a cutout and this only has to stop the
+        // renderer filling the alpha channel back in.
+        if (transparent) gl.setClearAlpha(0);
+
+        // Before drawing, not during: canvas silently substitutes a default face if Quicksand is not
+        // resident, and nobody notices until the photo is posted.
+        if (caption) await ensureCaptionFont(height * CAPTION.sizeFrac);
+
+        gl.render(scene, camera);
+        if (contextLost) {
+          throw new Error('the 3D view was reset — the device may be low on memory. Close some tabs '
+            + 'and try again.');
+        }
+
+        /* The same blit the reel does, and for the same reason: WebGL cannot draw text, and putting
+         * the name in the scene would make it swim with the camera.
+         *
+         * ⚠️ Reading pixels out of the WebGL canvas at all works only because the designer creates
+         * its context with preserveDrawingBuffer: true. Without it this composites a caption onto a
+         * blank rectangle. */
+        const composite = document.createElement('canvas');
+        composite.width = width;
+        composite.height = height;
+        const ctx = composite.getContext('2d');
+        ctx.drawImage(gl.domElement, 0, 0, width, height);
+        drawCaption(ctx, { text: caption, width, height, ground });
+
+        /* ⚠️ PNG, NEVER JPEG — and this is the format decision, not a default nobody thought about.
+         * A cake is smooth frosting under soft light, which is the exact content JPEG is worst at:
+         * gentle gradients come back BANDED, and the banding lands on the icing where a baker will
+         * read it as a fault in the render. It also rules out a transparent cutout entirely. The
+         * file is larger; the picture is the product. */
+        const blob = await new Promise((resolve, reject) => {
+          composite.toBlob(b => (b ? resolve(b) : reject(new Error('the browser could not make the image'))), 'image/png');
+        });
+
+        downloadBlob(blob, `${filename}.png`);
+        return { width, height, clamped, size: blob.size, transparent };
+      } finally {
+        gl.domElement.removeEventListener('webglcontextlost', onContextLost);
+        // Put the clear alpha back BEFORE the snapshot restore recomputes anything — it is not one
+        // of the snapshot's aspects, because only the photo touches it.
+        gl.setClearAlpha(1);
+        snap.restore();
+        busy.current = false;
+      }
+    };
+
+    /* ── standing somewhere else ──────────────────────────────────────────────────────────────────
+     * A one-tap shortcut, not a fixed shot: it moves the camera and hands straight back to
+     * OrbitControls, so the baker drags on from wherever it put them.
+     *
+     * ⚠️ Through controls.target and controls.update(), NOT camera.lookAt. OrbitControls derives its
+     * own spherical state from the camera each update — a lookAt it did not perform is discarded on
+     * the very next drag, and the view would snap somewhere else the instant the baker touched it.
+     */
+    const setAngle = (key) => {
+      const a = angleByKey(key);
+      const controls = orbitRef?.current;
+      const target = controls?.target ?? new THREE.Vector3(0, 1.55, 0);
+      // Distance is preserved — see photoAngles: a preset walks around the cake, it does not re-zoom.
+      const radius = camera.position.distanceTo(target);
+      const p = anglePosition(target, radius, a.theta, a.phi);
+      camera.position.set(p.x, p.y, p.z);
+      controls?.update?.();
+      camera.updateProjectionMatrix();
+    };
+
     // ── the preview ────────────────────────────────────────────────────────────────────────────
     // Applied while the panel is open so what the baker sees IS what records. The 9:16 crop is done
     // in the DOM by the designer (constraining the canvas container, which R3F follows); what
@@ -298,14 +466,14 @@ export default function ReelDirector({ reelRef, orbitRef }) {
      * It is now a prop — `filmGround` on CakeCanvas — so the floor and the sky take the same colour
      * from the same value, and the preview and the take cannot disagree about it because there is
      * only one of it. React owns the scene; this file owns the camera. */
-    reelRef.current = { record, beginPreview, endPreview };
+    takeRef.current = { record, capture, setAngle, beginPreview, endPreview };
     return () => {
       // Leaving the designer mid-preview must not strand it on a recording ground.
       previewSnap.current?.restore();
       previewSnap.current = null;
-      if (reelRef) reelRef.current = null;
+      if (takeRef) takeRef.current = null;
     };
-  }, [reelRef, orbitRef, camera, gl, scene]);
+  }, [takeRef, orbitRef, camera, gl, scene]);
 
   return null;
 }

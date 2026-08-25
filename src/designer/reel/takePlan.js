@@ -7,7 +7,7 @@
  * So the take is measured before it is committed to. A handful of frames are rendered at the size
  * being asked for, and if the device cannot keep up, the take is made cheaper rather than worse.
  *
- * Pure arithmetic, no renderer, no DOM: the rendering half lives in ReelDirector where the camera
+ * Pure arithmetic, no renderer, no DOM: the rendering half lives in TakeDirector where the camera
  * is, and everything decided from it is here where it can be tested.
  */
 

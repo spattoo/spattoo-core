@@ -243,23 +243,40 @@ export function cloudBaseY(surface, { topY = 0, boardY = 0 } = {}) {
 }
 
 /**
- * A cloud never hangs off the edge of what it sits on.
+ * How much a cloud must shrink to stay on what it is sitting on.
  *
- * The same rule the rainbow's standing arch follows, and for the same reason: half a cloud over the
- * rim rests on nothing. It shrinks rather than moving, because where it sits is the author's
- * decision and its size is not.
+ * Measured from the LUMPS, not from a width. The first version took half the cloud's width and asked
+ * whether that fitted across the cake — right when a cloud was a flat row facing the viewer, and
+ * wrong the moment it became a bunch with depth standing anywhere round the cake. A puffy cloud near
+ * the rim reached 1.30 on a 1.20 cake with the fit reporting 1.00: the balls behind the front row,
+ * and every ball's own radius, were simply not in the sum.
  *
- * Returns the factor to multiply width and height by; 1 when it already fits.
+ * So it asks the real question — is every ball, edge included, inside the rim — and answers it by
+ * bisection, because `reach` climbs with the scale but not in any form worth inverting.
+ *
+ * `outward` is a POSITION and does not shrink; the cloud does. Same trade as everywhere else here:
+ * where it sits is the author's decision, its size is not.
  */
-export function cloudFitScale({ centerX, standoff, width, cakeRadius }) {
-  if (!(width > 0)) return 1;
-  // The footprint is a circle, so standing a cloud back leaves it LESS width, not the same width
-  // further away — the same correction fitOnTopScale makes for the rainbow.
-  const across = Math.sqrt(Math.max(0, cakeRadius * cakeRadius - standoff * standoff));
-  const room = across - Math.abs(centerX);
-  if (room <= 0) return 0.05;
-  return Math.min(1, room / (width / 2));
+export function cloudFitScale({ lobes = [], centerX = 0, outward = 0, cakeRadius = 1 }) {
+  if (!lobes.length || !(cakeRadius > 0)) return 1;
+
+  // The furthest any part of the cloud reaches from the cake's axis, at a given scale.
+  const reach = f => Math.max(...lobes.map(l =>
+    Math.hypot(centerX + f * l.x, outward + f * l.z) + f * l.r));
+
+  if (reach(1) <= cakeRadius) return 1;
+  // The POSITION is already off the cake, and no size fixes that. As small as is drawable rather
+  // than zero, so the picture shows the problem instead of hiding it.
+  if (reach(0) > cakeRadius) return 0.05;
+
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (reach(mid) <= cakeRadius) lo = mid; else hi = mid;
+  }
+  return lo;
 }
+
 
 /**
  * The cloud placed in the world.
@@ -286,13 +303,23 @@ export function cloudPlacement(params = {}, cake = {}) {
 
   // Only a cloud ON the cake has an edge to fall off. One on the board or the wall has the whole
   // board under it, and shrinking it there would be answering a question nobody asked.
+  // Where it stands, before anything shrinks — a position, not a size.
+  //
+  // Capped on the TOP, and this is the one case where position is not purely the author's. Its own
+  // middle placed ON the rim leaves nothing to stand on, and no amount of shrinking fixes that: at
+  // exactly the rim the fit solves to zero and the cloud disappears. A drag to the edge would delete
+  // it. So the middle keeps a tenth of the cake in reserve — far enough out that the cloud still
+  // overhangs the rim the way the reference does, near enough in that it is still a cloud.
+  //
+  // Same rule the rainbow's standing arch follows, for the same reason and in the same place.
+  const outwardRaw = onTop ? Math.min(standoff, R * 0.9) : (p.standoff ? standoff : R + w0 * 0.35);
   let fit = 1;
-  if (onTop) fit = cloudFitScale({ centerX, standoff, width: w0, cakeRadius: R });
+  if (onTop) fit = cloudFitScale({ lobes, centerX, outward: outwardRaw, cakeRadius: R });
   const width = w0 * fit, height = h0 * fit, thickness = t0 * fit;
 
   // On the board a cloud stands OUTSIDE the cake by default rather than under it, which is where the
   // hardcoded distance used to put it — but as a number that can be dragged.
-  const outward = onTop ? standoff : (p.standoff ? standoff : R + width * 0.35);
+  const outward = outwardRaw;
   const yaw = p.yaw ?? 0;
   const spin = (x, z) => new THREE.Vector3(
     Math.cos(yaw) * x + Math.sin(yaw) * z, 0, -Math.sin(yaw) * x + Math.cos(yaw) * z);

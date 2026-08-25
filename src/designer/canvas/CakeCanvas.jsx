@@ -37,7 +37,8 @@ import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt } from '../geometry/rainbow.js';
 import FondantCloud from './FondantCloud.jsx';
-import { cloudHandleAt } from '../geometry/cloud.js';
+import { cloudHandleAt, cloudPlacement } from '../geometry/cloud.js';
+import { rainbowBands } from '../geometry/rainbow.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
@@ -60,7 +61,7 @@ import { frostingAllowsStyles } from '../frostings.js';
 import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { toCanvasConfig } from '../hooks/useCakeDesign.js';
-import ReelDirector from '../reel/ReelDirector.jsx';
+import TakeDirector from '../reel/TakeDirector.jsx';
 
 // ── Board footprint ─────────────────────────────────────────────────────────────────────────────
 // The board under a cake, sized to CONTAIN the bottom tier. A number cake sits on a RECTANGULAR board (a
@@ -77,6 +78,30 @@ export function boardOf(bottomTier) {
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
+// The selection cue for a GENERATED decoration, from the points it is actually made of.
+//
+// A sticker's box traces its hit PLANE, because that plane is what receives the pointer and what
+// steals a click from a neighbour — the border shows the truth rather than a flattering outline.
+// These have no hit plane: the mesh itself takes the click, so the truth here IS the mesh's bounds.
+//
+// Returned in WORLD space and drawn by a sibling group at the origin, because a rainbow's geometry
+// already carries its own position — there is no local frame to inherit.
+function generatedBounds(points, pad = 0) {
+  if (!points?.length) return null;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const p of points) {
+    lo[0] = Math.min(lo[0], p.x); hi[0] = Math.max(hi[0], p.x);
+    lo[1] = Math.min(lo[1], p.y); hi[1] = Math.max(hi[1], p.y);
+    lo[2] = Math.min(lo[2], p.z); hi[2] = Math.max(hi[2], p.z);
+  }
+  return {
+    width:  hi[0] - lo[0] + pad * 2,
+    height: hi[1] - lo[1] + pad * 2,
+    depth:  Math.max(hi[2] - lo[2] + pad * 2, 0.02),
+    centre: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2],
+  };
 }
 
 // What a rainbow's falling foot lands ON, for the tier at `i`: the tier below, or — off the bottom
@@ -2210,6 +2235,10 @@ function CakeScene({
    *
    * It also doubles as "we are filming", which is why the front marker keys off it. */
   filmGround = null,
+  // Photo only: no sky, no floor — the cake on nothing. See the two uses below.
+  filmCutout = false,
+  // Photo only: frame the cake that is there, not the headroom a topper might want.
+  filmTight = false,
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
@@ -2239,8 +2268,9 @@ function CakeScene({
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
-  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
-  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect, onRainbowClick,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect, onCloudClick,
+  selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2311,10 +2341,20 @@ function CakeScene({
   return (
     <>
       <SceneLights shadows />
-      <color attach="background" args={[filmGround || DESIGNER_GROUND]} />
+      {/* ⚠️ NOT `{!filmCutout && <color attach="background" …/>}`. That was the first version and it
+          does not work: R3F's attach does NOT put the old value back when the element unmounts, so
+          the scene kept the last ground it was given and a "cutout" rendered a solid grey rectangle
+          with every pixel at alpha 255. The build was clean, the prop arrived as `true`, and the
+          only way to see it was to read scene.background out of a running page.
+          Absence has to be a VALUE somebody sets, so one component owns the background outright. */}
+      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_GROUND)} />
       <SceneEnv />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
+      {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
+          a grey slab on a transparent background, which is not a cutout — it is a worse photo than
+          the one with a proper ground. The contact shadow goes too, and that is the honest cost:
+          nothing for it to fall on. */}
+      {!filmCutout && <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
         {/* ⚠️ MUCH bigger while filming, and not for the reason it looks like.
             Matching the floor's colour to the sky's is not enough to hide the join: the floor is a
@@ -2334,8 +2374,21 @@ function CakeScene({
             anyway — the studio and the thumbnail looked like two different products.
             ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
             the first failure to show up, and a fix at one end can break the other. */}
-        <meshStandardMaterial color={filmGround || '#faf7f4'} roughness={0.85} />
-      </mesh>
+        {/* ⚠️ A SHADOW CATCHER WHILE FILMING, not a painted floor.
+            A lit plane and a flat sky never match, however carefully their hex values agree — the
+            plane is shaded and the background is not — so every take had a faint horizon across it.
+            The reel's 9:16 crop usually kept it out of shot; a 4:3 photo cannot. shadowMaterial
+            renders NOTHING except where a shadow falls, so floor and sky are literally the same
+            pixels and there is no join to see, while the cake keeps the contact shadow that stops it
+            floating. Off-camera the floor is still a real surface — it is what a click lands on to
+            deselect, and it is not trying to disappear. */}
+        {filmGround
+          /* 0.30. At 0.16 the shadow was invisible and I nearly concluded nothing was casting one
+             — the probe had been sampling BELOW the board, and the key light sits at [6,14,8] so the
+             shadow falls to its LEFT. Measure where the light puts it, not where you expect it. */
+          ? <shadowMaterial opacity={0.30} />
+          : <meshStandardMaterial color="#faf7f4" roughness={0.85} />}
+      </mesh>}
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
@@ -2367,10 +2420,14 @@ function CakeScene({
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
           penDrawMode, penStyle, onAddStroke,
+          // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
+          // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
+          // must never reach a captured picture. `edit` is null on that path, so it cannot.
+          selectedGenerated, onCloudClick, onRainbowClick,
         }}
       />
       </group>
-      <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} />
+      <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight} />
 
       {creamPaint && tierData[creamPaint.tierIndex] && (
         <CreamPaintTarget
@@ -2513,6 +2570,7 @@ function CakeContent({ config, scene, edit = null }) {
     onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
     onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penStyle, onAddStroke,
+    selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -2620,7 +2678,25 @@ function CakeContent({ config, scene, edit = null }) {
               `boardY` is the tier's own base, which for tier 0 IS the board — so this is one
               expression rather than a branch, and a rainbow on an upper tier lands its falling foot
               on the tier below without anything here knowing that is what it is doing. */}
+          {/* CLICK THE THING ITSELF. A rainbow and a cloud are OBJECTS, not finishes: the handle-dot
+              mechanism they borrowed from grass, dust and foil only shows its dot once the card is
+              already open, and the mesh carried no pointer handlers at all — so there was nothing to
+              click, and a click fell through to the cake behind. Which reads as "it cannot be moved".
+              stopPropagation, or the tier underneath also takes the click and selects itself. */}
           {(tier.rainbows ?? []).map(rb => (
+            <group key={`rb-hit-${rb.id}`}
+              onClick={e => { e.stopPropagation(); onRainbowClickEdit?.(i, rb.id); }}>
+            {selectedGenerated?.kind === 'rainbow' && selectedGenerated.id === rb.id && (() => {
+              const b = generatedBounds(
+                rainbowBands(rb, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
+                                   supportRadius: rainbowSupportRadius(tierData, i, board) })
+                  .bands.flatMap(x => x.path), 0.04);
+              return b && (
+                <group position={b.centre} rotation={[0, rb.yaw ?? 0, 0]}>
+                  <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                </group>
+              );
+            })()}
             <RainbowArch
               key={rb.id}
               params={rb}
@@ -2635,17 +2711,34 @@ function CakeContent({ config, scene, edit = null }) {
                       supportRadius: rainbowSupportRadius(tierData, i, board) }}
               yaw={rb.yaw ?? 0}
             />
+            </group>
           ))}
           {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
               the generator asks for { radius, topY, boardY } and does not care whether that is a
               whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier
               standing outside it, which is why there is no separate board list to keep in step. */}
           {(tier.clouds ?? []).map(cl => (
-            <FondantCloud
-              key={cl.id}
-              params={cl}
-              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
-            />
+            <group key={`cl-hit-${cl.id}`}
+              onClick={e => { e.stopPropagation(); onCloudClickEdit?.(i, cl.id); }}>
+              {selectedGenerated?.kind === 'cloud' && selectedGenerated.id === cl.id && (() => {
+                const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
+                const pts = pl.lobes.flatMap(l => [
+                  { x: l.position.x - l.r, y: l.position.y - l.r, z: l.position.z - l.r },
+                  { x: l.position.x + l.r, y: l.position.y + l.r, z: l.position.z + l.r },
+                ]);
+                const b = generatedBounds(pts, 0.03);
+                return b && (
+                  <group position={b.centre}>
+                    <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                  </group>
+                );
+              })()}
+              <FondantCloud
+                key={cl.id}
+                params={cl}
+                cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
+              />
+            </group>
           ))}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
@@ -2855,6 +2948,32 @@ function CakeThumbnailScene({ config }) {
   );
 }
 
+/* ── What is behind the cake — including nothing ─────────────────────────────────────────────────
+ *
+ * ONE owner for the scene's background, because "no background" has to be something a caller can
+ * ASK for. The declarative `<color attach="background">` cannot say it: null is not a colour, and
+ * unmounting the element does not clear the value R3F already wrote.
+ *
+ * ⚠️ TWO THINGS MAKE A FRAME SEE-THROUGH AND BOTH ARE HERE. With scene.background null, three.js
+ * falls through to the RENDERER's clear — whose alpha is 1 by default. Clearing the background
+ * alone produced a cutout that was still a solid grey rectangle, and clearing the alpha alone did
+ * nothing at all because the background painted over it.
+ *
+ * ⚠️ And in React rather than inside the capture. The PREVIEW has to be see-through too, or the
+ * panel shows a frame with a ground in it while promising a file without one — and this feature's
+ * whole claim is that the frame on screen is the file. Done at capture time it would have produced
+ * a correct download that nobody could have predicted from the screen.
+ */
+function SceneBackground({ colour }) {
+  const { gl, scene } = useThree();
+  useEffect(() => {
+    scene.background = colour ? new THREE.Color(colour) : null;
+    gl.setClearAlpha(colour ? 1 : 0);
+    return () => { gl.setClearAlpha(1); };
+  }, [gl, scene, colour]);
+  return null;
+}
+
 // Reusable temps for the per-frame bbox fit (avoid per-frame allocation).
 const _fitBox = new THREE.Box3();
 const _fitSphere = new THREE.Sphere();
@@ -2888,7 +3007,7 @@ const _fitDir = new THREE.Vector3();
 //   means the view holds still during a drag.
 const FIT_STRIDE = 12;          // frames between measurements — 5/sec at 60fps, invisible for an edit
 const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
-function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
+function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
   // when the controls are actually ready. The ref alone is a timing bug — on the frames before it is
@@ -2920,7 +3039,17 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
     const halfW = Math.max(_fitBox.max.x - _fitBox.min.x, _fitBox.max.z - _fitBox.min.z) / 2;
     // Height INCLUDING the headroom a topper will want, so a bare cake is framed like a finished one
     // and standing the first topper on it does not lurch the camera (see framedHeight).
-    const { halfH, centerY: cy } = framedHeight(_fitBox.min.y, _fitBox.max.y);
+    /* ⚠️ The reserve is right for the EDITOR and wrong for a photograph.
+     * framedHeight keeps a topper's worth of height (MIN_FRAMED_TOP) above a bare cake so that
+     * standing the first one on it does not lurch the camera. In the designer that is exactly right.
+     * In a photo of a cake that has no topper it is dead space: the bare one-tier came out occupying
+     * the bottom half of a 4:5 with the top half empty, which reads as a badly taken picture rather
+     * than as a deliberate composition.
+     *
+     * Photo only. The reel dollies in to 0.78 of its starting distance, and the fit's 25% margin is
+     * most of what keeps the cake inside the frame at the closest point — taking the reserve away
+     * there would tighten the whole take, which is a look to judge by eye rather than a bug to fix. */
+    const { halfH, centerY: cy } = framedHeight(_fitBox.min.y, _fitBox.max.y, reserveTop ? undefined : 0);
     const aspect = size.width / Math.max(size.height, 1);
     const prev = applied.current;
     // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
@@ -3098,17 +3227,21 @@ export default function CakeCanvas({
   hitTestRef,
   snapCameraRef,
   // Filled with the reel recorder when the designer passes it — catalogue authors only, so for
-  // every other baker this is undefined and ReelDirector never mounts.
-  reelRef = null,
+  // every other baker this is undefined and TakeDirector never mounts.
+  takeRef = null,
+  onAngleChange = null,
   // The reel's ground while the panel is open, else null. See CakeScene.
   filmGround = null,
+  filmCutout = false,
+  filmTight = false,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
-  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
-  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect, onRainbowClick,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect, onCloudClick,
+  selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3184,7 +3317,16 @@ export default function CakeCanvas({
       shadows
       camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
       style={{ position: 'absolute', inset: 0 }}
-      gl={{ preserveDrawingBuffer: true }}
+      /* ⚠️ alpha, so a photo can be captured as a CUTOUT.
+       *
+       * Transparency is decided when the context is CREATED and can never be turned on afterwards:
+       * without this the drawing buffer has no alpha channel, setClearAlpha(0) is quietly ignored,
+       * and a "transparent" photo downloads with a black rectangle behind the cake. Costs nothing
+       * the rest of the time — a background colour is painted over it on every ordinary frame, which
+       * is why the two off-screen capture canvases have always asked for it.
+       *
+       * preserveDrawingBuffer is what lets the reel and the photo read pixels back out at all. */
+      gl={{ preserveDrawingBuffer: true, alpha: true }}
       onCreated={({ gl }) => { glRef.current = gl; gl.localClippingEnabled = true; }}
       onPointerDown={e => { pointerRef.current = { x: e.clientX, y: e.clientY, dragged: false }; }}
       onPointerMove={e => {
@@ -3196,12 +3338,14 @@ export default function CakeCanvas({
       <CameraCapture cameraRef={cameraRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} orbitRef={orbitRef} />
-      {/* Fills reelRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
+      {/* Fills takeRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
           camera only exists inside the Canvas, so anything that drives it has to live in here and
-          hand a function out. Renders nothing; costs nothing when reelRef is not passed. */}
-      {reelRef && <ReelDirector reelRef={reelRef} orbitRef={orbitRef} />}
+          hand a function out. Renders nothing; costs nothing when takeRef is not passed. */}
+      {takeRef && <TakeDirector takeRef={takeRef} orbitRef={orbitRef} onAngleChange={onAngleChange} />}
       <CakeScene
         filmGround={filmGround}
+        filmCutout={filmCutout}
+        filmTight={filmTight}
         config={config}
         selectedTier={selectedTier}
         onTierClick={i  => { if (!pointerRef.current.dragged) onTierClick(i); }}
@@ -3247,6 +3391,9 @@ export default function CakeCanvas({
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
         onGrassSelect={onGrassSelect}
+        selectedGenerated={selectedGenerated}
+        onCloudClick={onCloudClick}
+        onRainbowClick={onRainbowClick}
         cloudMode={cloudMode}
         cloudSelected={cloudSelected}
         onCloudMove={onCloudMove}
