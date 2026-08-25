@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelBlock } from '../../shared/Panel.jsx';
 import { TAKE_GROUNDS } from '../constants.js';
+import { takeRow as row, takeLabel as label, takeNote as note, takePick as pick,
+         groundsFor, GroundSwatches, NameOnFrame, TakeButton } from '../capture/takeUi.jsx';
 import { PHOTO_SHAPES, DEFAULT_SHAPE, shapeByKey } from './photoShapes.js';
 import { PHOTO_ANGLES, DEFAULT_ANGLE } from './photoAngles.js';
 
@@ -36,9 +38,7 @@ export default function PhotoOptions({
   const [cutout, setCutout]   = useState(false);
   const [includeName, setIncludeName] = useState(true);
 
-  const grounds = brandPrimary && !TAKE_GROUNDS.some(g => g.value.toLowerCase() === brandPrimary.toLowerCase())
-    ? [{ key: 'brand', label: 'Your colour', value: brandPrimary }, ...TAKE_GROUNDS]
-    : TAKE_GROUNDS;
+  const grounds = groundsFor(brandPrimary);
 
   /* Everything is pushed UP while the panel is open, never held here until the button is pressed.
    * The preview is the product: the frame on screen is cropped to this shape, painted this ground
@@ -81,15 +81,6 @@ export default function PhotoOptions({
 
   if (!open) return null;
 
-  const pick = (on) => ({
-    padding: '7px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700,
-    border: `1.5px solid ${on ? '#2C4433' : '#D8E0DA'}`,
-    background: on ? '#2C4433' : '#fff', color: on ? '#fff' : '#3D5A44',
-  });
-  const row   = { display: 'flex', gap: 6, flexWrap: 'wrap' };
-  const label = { fontSize: 11, fontWeight: 700, color: '#6E8577', letterSpacing: '0.04em',
-                  textTransform: 'uppercase', marginBottom: 6 };
-  const note  = { fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 };
 
   const disabled = busy || loading;
 
@@ -102,13 +93,8 @@ export default function PhotoOptions({
    * than covered. The designer already dims everything outside the crop. */
   return (
     <Panel onClose={onClose} title="Take a photo" width={400} isMobile={isMobile} maxHeightMobile={maxHeightMobile} scrim={false}
-           footer={<button disabled={disabled}
-                onClick={() => onCapture({ shape, ground, cutout })}
-                style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
-                         background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
-                         cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
-          {busy ? 'Saving…' : loading ? 'Loading decorations…' : 'Take the photo'}
-        </button>}
+           footer={<TakeButton disabled={disabled} onClick={() => onCapture({ shape, ground, cutout })}
+                               label={busy ? 'Saving…' : loading ? 'Loading decorations…' : 'Take the photo'} />}
            subtitle="Downloads a single picture, larger than a reel frame.">
       <PanelBlock>
         <div>
@@ -141,21 +127,16 @@ export default function PhotoOptions({
       <PanelBlock>
         <div>
           <div style={label}>Background</div>
-          <div style={row}>
-            {grounds.map(g => (
-              <button key={g.key} onClick={() => { setGround(g.value); setCutout(false); }} title={g.label}
-                      aria-label={g.label} aria-pressed={!cutout && ground === g.value}
-                      style={{ width: 34, height: 34, borderRadius: 8, cursor: 'pointer', padding: 0,
-                               background: g.value,
-                               border: !cutout && ground === g.value ? '3px solid #2C4433' : '1.5px solid #D8E0DA' }} />
-            ))}
-            {/* The one thing a photo can do that a reel never can. */}
-            <button onClick={() => setCutout(true)} title="No background" aria-label="No background"
+          <GroundSwatches grounds={grounds} value={ground} selected={!cutout}
+                          onPick={v => { setGround(v); setCutout(false); }}
+                          extra={<>
+                            {/* The one thing a photo can do that a reel never can. */}
+                            <button onClick={() => setCutout(true)} title="No background" aria-label="No background"
                     aria-pressed={cutout}
                     style={{ width: 34, height: 34, borderRadius: 8, cursor: 'pointer', padding: 0,
                              background: CHECKER,
                              border: cutout ? '3px solid #2C4433' : '1.5px solid #D8E0DA' }} />
-          </div>
+                          </>} />
           <div style={note}>
             {cutout
               /* Both costs stated. Neither is recoverable after the fact, and a baker who meets them
@@ -171,21 +152,8 @@ export default function PhotoOptions({
           for a caption to sit on, and a control that cannot do anything is worse than no control. */}
       {canChooseName && !cutout && (
         <PanelBlock>
-          <div>
-            <div style={label}>Name on the photo</div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-              <input type="checkbox" checked={includeName} onChange={e => setIncludeName(e.target.checked)}
-                     style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>
-                {bakeryName.trim() ? `Show “${bakeryName.trim()}”` : 'Show my bakery name'}
-              </span>
-            </label>
-            <div style={note}>
-              {includeName
-                ? 'Burned into the picture, so it still carries your name wherever it gets reposted.'
-                : 'This photo saves with nothing written on it.'}
-            </div>
-          </div>
+          <NameOnFrame subject="photo" bakeryName={bakeryName}
+                       checked={includeName} onChange={setIncludeName} />
         </PanelBlock>
       )}
 

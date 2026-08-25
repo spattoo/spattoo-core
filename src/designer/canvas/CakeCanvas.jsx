@@ -2237,6 +2237,8 @@ function CakeScene({
   filmGround = null,
   // Photo only: no sky, no floor — the cake on nothing. See the two uses below.
   filmCutout = false,
+  // Photo only: frame the cake that is there, not the headroom a topper might want.
+  filmTight = false,
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
@@ -2372,7 +2374,20 @@ function CakeScene({
             anyway — the studio and the thumbnail looked like two different products.
             ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
             the first failure to show up, and a fix at one end can break the other. */}
-        <meshStandardMaterial color={filmGround || '#faf7f4'} roughness={0.85} />
+        {/* ⚠️ A SHADOW CATCHER WHILE FILMING, not a painted floor.
+            A lit plane and a flat sky never match, however carefully their hex values agree — the
+            plane is shaded and the background is not — so every take had a faint horizon across it.
+            The reel's 9:16 crop usually kept it out of shot; a 4:3 photo cannot. shadowMaterial
+            renders NOTHING except where a shadow falls, so floor and sky are literally the same
+            pixels and there is no join to see, while the cake keeps the contact shadow that stops it
+            floating. Off-camera the floor is still a real surface — it is what a click lands on to
+            deselect, and it is not trying to disappear. */}
+        {filmGround
+          /* 0.30. At 0.16 the shadow was invisible and I nearly concluded nothing was casting one
+             — the probe had been sampling BELOW the board, and the key light sits at [6,14,8] so the
+             shadow falls to its LEFT. Measure where the light puts it, not where you expect it. */
+          ? <shadowMaterial opacity={0.30} />
+          : <meshStandardMaterial color="#faf7f4" roughness={0.85} />}
       </mesh>}
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
@@ -2412,7 +2427,7 @@ function CakeScene({
         }}
       />
       </group>
-      <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} />
+      <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight} />
 
       {creamPaint && tierData[creamPaint.tierIndex] && (
         <CreamPaintTarget
@@ -2992,7 +3007,7 @@ const _fitDir = new THREE.Vector3();
 //   means the view holds still during a drag.
 const FIT_STRIDE = 12;          // frames between measurements — 5/sec at 60fps, invisible for an edit
 const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
-function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
+function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
   // when the controls are actually ready. The ref alone is a timing bug — on the frames before it is
@@ -3024,7 +3039,17 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true }) {
     const halfW = Math.max(_fitBox.max.x - _fitBox.min.x, _fitBox.max.z - _fitBox.min.z) / 2;
     // Height INCLUDING the headroom a topper will want, so a bare cake is framed like a finished one
     // and standing the first topper on it does not lurch the camera (see framedHeight).
-    const { halfH, centerY: cy } = framedHeight(_fitBox.min.y, _fitBox.max.y);
+    /* ⚠️ The reserve is right for the EDITOR and wrong for a photograph.
+     * framedHeight keeps a topper's worth of height (MIN_FRAMED_TOP) above a bare cake so that
+     * standing the first one on it does not lurch the camera. In the designer that is exactly right.
+     * In a photo of a cake that has no topper it is dead space: the bare one-tier came out occupying
+     * the bottom half of a 4:5 with the top half empty, which reads as a badly taken picture rather
+     * than as a deliberate composition.
+     *
+     * Photo only. The reel dollies in to 0.78 of its starting distance, and the fit's 25% margin is
+     * most of what keeps the cake inside the frame at the closest point — taking the reserve away
+     * there would tighten the whole take, which is a look to judge by eye rather than a bug to fix. */
+    const { halfH, centerY: cy } = framedHeight(_fitBox.min.y, _fitBox.max.y, reserveTop ? undefined : 0);
     const aspect = size.width / Math.max(size.height, 1);
     const prev = applied.current;
     // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
@@ -3208,6 +3233,7 @@ export default function CakeCanvas({
   // The reel's ground while the panel is open, else null. See CakeScene.
   filmGround = null,
   filmCutout = false,
+  filmTight = false,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
@@ -3319,6 +3345,7 @@ export default function CakeCanvas({
       <CakeScene
         filmGround={filmGround}
         filmCutout={filmCutout}
+        filmTight={filmTight}
         config={config}
         selectedTier={selectedTier}
         onTierClick={i  => { if (!pointerRef.current.dragged) onTierClick(i); }}

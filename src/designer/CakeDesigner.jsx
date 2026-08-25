@@ -2052,6 +2052,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [photoOptsOpen, setPhotoOptsOpen] = useState(false);
   const [photoBusy, setPhotoBusy]         = useState(false);
   const [photoCutout, setPhotoCutout]     = useState(false);
+  // True from opening the photo panel until it closes — the panel itself shuts for the capture, so
+  // photoOptsOpen cannot answer "is this a photo take" at the moment the shutter goes.
+  const [photoFraming, setPhotoFraming]   = useState(false);
   const [photoAngle, setPhotoAngle]       = useState(null);
   const [frameAspect, setFrameAspect]     = useState(REEL_ASPECT);
   // ── Has the baker ever curated their flavour list? ────────────────────────────────────────────
@@ -2287,6 +2290,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     handleDeselect();
     setPhotoOptsOpen(true);
     setFraming(true);
+    setPhotoFraming(true);
     setTakeGround(DESIGNER_GROUND);
     setPhotoCutout(false);
     takeRef.current?.beginPreview?.();
@@ -2295,6 +2299,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   function closePhotoPanel() {
     setPhotoOptsOpen(false);
     setFraming(false);
+    setPhotoFraming(false);
     setTakeGround(DESIGNER_GROUND);
     setPhotoCutout(false);
     setFrameAspect(REEL_ASPECT);
@@ -8439,6 +8444,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               filmGround={framing ? takeGround : null}
               // No sky and no floor — the cake on nothing. Only ever true for a photo.
               filmCutout={framing && photoCutout}
+              // A photograph frames the cake that is there; the editor's topper headroom is dead
+              // space in it. Reel excluded on purpose — see FitCakeToView.
+              filmTight={photoFraming}
               config={canvasConfig}
               autoRotate={creamAutoRotate}
               creamPaint={creamPaint}

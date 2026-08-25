@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelBlock } from '../../shared/Panel.jsx';
 import { TAKE_GROUNDS } from '../constants.js';
+import { takeRow as row, takeLabel as label, takePick as pick,
+         groundsFor, GroundSwatches, NameOnFrame, TakeButton } from '../capture/takeUi.jsx';
 import { pickMimeType, isInstagramReady, recordButtonState } from './recordReel.js';
 
 /* ── The shot, chosen before it is taken ─────────────────────────────────────────────────────────
@@ -36,10 +38,7 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
   // markets the bakery, and somebody who wants that never has to find this control.
   const [includeName, setIncludeName] = useState(true);
 
-  // Brand colour first, if they have one and it is not already in the list.
-  const grounds = brandPrimary && !TAKE_GROUNDS.some(g => g.value.toLowerCase() === brandPrimary.toLowerCase())
-    ? [{ key: 'brand', label: 'Your colour', value: brandPrimary }, ...TAKE_GROUNDS]
-    : TAKE_GROUNDS;
+  const grounds = groundsFor(brandPrimary);
 
   // Push the choice into the scene, including on open — the preview is only truthful if the ground
   // on screen is the one that will record.
@@ -88,28 +87,14 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
 
   if (!open) return null;
 
-  const pick = (on) => ({
-    padding: '7px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700,
-    border: `1.5px solid ${on ? '#2C4433' : '#D8E0DA'}`,
-    background: on ? '#2C4433' : '#fff', color: on ? '#fff' : '#3D5A44',
-  });
-  const row = { display: 'flex', gap: 6, flexWrap: 'wrap' };
-  const label = { fontSize: 11, fontWeight: 700, color: '#6E8577', letterSpacing: '0.04em',
-                  textTransform: 'uppercase', marginBottom: 6 };
 
   return (
     // isMobile makes Panel a bottom sheet, which is what leaves the top of the screen free for the
     // 9:16 preview. On desktop it stays centred and the preview moves to the left instead.
     // Footer, not the tail of the body, and no scrim — see PhotoOptions for both.
     <Panel onClose={onClose} title="Record a reel" width={400} isMobile={isMobile} maxHeightMobile={maxHeightMobile} scrim={false}
-           footer={<button disabled={btn.disabled}
-                onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })}
-                style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
-                         background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
-                         cursor: btn.disabled ? 'default' : 'pointer',
-                         opacity: btn.disabled ? 0.5 : 1 }}>
-          {btn.label}
-        </button>}
+           footer={<TakeButton disabled={btn.disabled} label={btn.label}
+                               onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })} />}
            subtitle="Films the cake and downloads it at 1080×1920.">
       <PanelBlock>
         <div>
@@ -144,15 +129,7 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
       <PanelBlock>
         <div>
           <div style={label}>Background</div>
-          <div style={row}>
-            {grounds.map(g => (
-              <button key={g.key} onClick={() => setGround(g.value)} title={g.label}
-                      aria-label={g.label} aria-pressed={ground === g.value}
-                      style={{ width: 34, height: 34, borderRadius: 8, cursor: 'pointer', padding: 0,
-                               background: g.value,
-                               border: ground === g.value ? '3px solid #2C4433' : '1.5px solid #D8E0DA' }} />
-            ))}
-          </div>
+          <GroundSwatches grounds={grounds} value={ground} onPick={setGround} />
           <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
             Changes the cake behind you as you pick, so what you see is what records. A dark cake
             wants a light ground and the other way round.
@@ -196,21 +173,8 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
           otherwise reads as a choice between two names. */}
       {canChooseName && (
         <PanelBlock>
-          <div>
-            <div style={label}>Name on the reel</div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-              <input type="checkbox" checked={includeName} onChange={e => setIncludeName(e.target.checked)}
-                     style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>
-                {bakeryName.trim() ? `Show “${bakeryName.trim()}”` : 'Show my bakery name'}
-              </span>
-            </label>
-            <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
-              {includeName
-                ? 'Burned into every frame, so the reel still carries your name wherever it gets reposted.'
-                : 'This take records with nothing written on it — for a reel going out under somebody else’s name.'}
-            </div>
-          </div>
+          <NameOnFrame subject="reel" bakeryName={bakeryName}
+                       checked={includeName} onChange={setIncludeName} />
         </PanelBlock>
       )}
 
