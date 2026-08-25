@@ -2405,6 +2405,10 @@ function CakeScene({
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
           penDrawMode, penStyle, onAddStroke,
+          // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
+          // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
+          // must never reach a captured picture. `edit` is null on that path, so it cannot.
+          selectedGenerated, onCloudClick, onRainbowClick,
         }}
       />
       </group>
@@ -2551,6 +2555,7 @@ function CakeContent({ config, scene, edit = null }) {
     onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
     onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penStyle, onAddStroke,
+    selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -2665,7 +2670,7 @@ function CakeContent({ config, scene, edit = null }) {
               stopPropagation, or the tier underneath also takes the click and selects itself. */}
           {(tier.rainbows ?? []).map(rb => (
             <group key={`rb-hit-${rb.id}`}
-              onClick={e => { e.stopPropagation(); onRainbowClick?.(i, rb.id); }}>
+              onClick={e => { e.stopPropagation(); onRainbowClickEdit?.(i, rb.id); }}>
             {selectedGenerated?.kind === 'rainbow' && selectedGenerated.id === rb.id && (() => {
               const b = generatedBounds(
                 rainbowBands(rb, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
@@ -2699,7 +2704,7 @@ function CakeContent({ config, scene, edit = null }) {
               standing outside it, which is why there is no separate board list to keep in step. */}
           {(tier.clouds ?? []).map(cl => (
             <group key={`cl-hit-${cl.id}`}
-              onClick={e => { e.stopPropagation(); onCloudClick?.(i, cl.id); }}>
+              onClick={e => { e.stopPropagation(); onCloudClickEdit?.(i, cl.id); }}>
               {selectedGenerated?.kind === 'cloud' && selectedGenerated.id === cl.id && (() => {
                 const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
                 const pts = pl.lobes.flatMap(l => [
