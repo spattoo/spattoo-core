@@ -302,17 +302,15 @@ describe('what the baker rolls', () => {
 describe('a flat cloud goes where a puffy one goes', () => {
   const CAKE_T = { radius: 1.2, topY: 1.55, boardY: 0.1 };
 
-  // Where the renderer puts the sheet: translate, then turn about the cake's axis.
-  const sheetCentre = sheet => {
-    const c = Math.cos(sheet.yaw ?? 0), s = Math.sin(sheet.yaw ?? 0);
-    return { x: c * sheet.centerX + s * sheet.z, z: -s * sheet.centerX + c * sheet.z };
-  };
+  // Where the renderer puts the sheet: a translate, and nothing else. The carrying-round-the-cake is
+  // done in the geometry now, so `sheet.x`/`sheet.z` are already the final place.
+  const sheetCentre = sheet => ({ x: sheet.x, z: sheet.z });
   const lobesCentre = lobes => ({
     x: (Math.min(...lobes.map(l => l.position.x)) + Math.max(...lobes.map(l => l.position.x))) / 2,
     z: (Math.min(...lobes.map(l => l.position.z)) + Math.max(...lobes.map(l => l.position.z))) / 2,
   });
 
-  it('carries the yaw to the sheet, not only to the balls', () => {
+  it('carries the sheet round the cake, not only the balls', () => {
     for (const yaw of [0, 0.7, Math.PI, 4.5]) {
       const pl = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'top', yaw, standoff: 0.6 }, CAKE_T);
       const a = sheetCentre(pl.sheet), b = lobesCentre(pl.lobes);
@@ -327,5 +325,71 @@ describe('a flat cloud goes where a puffy one goes', () => {
     const at = yaw => sheetCentre(cloudPlacement(
       { ...CLOUD_DEFAULTS, variant: 'flat', surface: 'top', yaw, standoff: 0.6 }, CAKE_T).sheet);
     expect(Math.abs(at(Math.PI / 2).x - at(0).x)).toBeGreaterThan(0.5);
+  });
+});
+
+// ── A flat cloud is a sticker: it slides, it does not turn ──────────────────────────────────────
+// The two variants are different objects and only one of them has a front. A puff is a bunch of
+// balls — turn it and it reads the same, and it MUST turn, or the side that bulges toward you goes
+// on pointing at the front while the cloud sits round the back. A flat one is a cut sheet: a quarter
+// turn shows you its thin edge, a half turn shows you its back, and neither is ever wanted.
+describe('a flat cloud faces the front wherever it is dragged', () => {
+  const CAKE_T = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+  const YAWS = [0, 0.7, Math.PI / 2, Math.PI, 4.5, 6.0];
+  const place = (variant, yaw, standoff = 0.6) =>
+    cloudPlacement({ ...CLOUD_DEFAULTS, variant, surface: 'top', yaw, standoff }, CAKE_T);
+
+  it('never turns the sheet, however far round it goes', () => {
+    for (const yaw of YAWS) {
+      for (const l of place('flat', yaw).lobes) expect(l.rotationY).toBe(0);
+    }
+  });
+
+  it('does turn a puffy one, which has no front to keep', () => {
+    for (const yaw of YAWS) {
+      for (const l of place('puff', yaw).lobes) expect(l.rotationY).toBeCloseTo(yaw, 6);
+    }
+  });
+
+  it('keeps its shape while it travels — the lumps hold their arrangement', () => {
+    // A rigid move, not a reshape: every lump's offset from the cloud's middle is the same at every
+    // yaw. Without this, "does not turn" could be satisfied by flattening it.
+    const offsets = yaw => {
+      const { lobes } = place('flat', yaw);
+      const mx = lobes.reduce((a, l) => a + l.position.x, 0) / lobes.length;
+      const mz = lobes.reduce((a, l) => a + l.position.z, 0) / lobes.length;
+      return lobes.map(l => [l.position.x - mx, l.position.z - mz]);
+    };
+    const first = offsets(0);
+    for (const yaw of YAWS) {
+      offsets(yaw).forEach(([x, z], i) => {
+        expect(x).toBeCloseTo(first[i][0], 6);
+        expect(z).toBeCloseTo(first[i][1], 6);
+      });
+    }
+  });
+
+  // ── The fit has to answer for every yaw at once ────────────────────────────────────────────────
+  // A sheet that does not turn reaches along the WORLD axes, so how far it stands from the cake's
+  // axis depends on where round the cake it is — and the fitter measures it once. Measured unturned
+  // it read 0.65R at the front and 0.73R at the side, so a sheet called flush with the rim hung 8%
+  // past it a quarter turn later.
+  it('stays on the cake at every yaw, not only at the front', () => {
+    for (const standoff of [0.5, 0.7, 0.85, 0.95]) {
+      for (const yaw of YAWS) {
+        const { lobes } = place('flat', yaw, standoff);
+        const reach = Math.max(...lobes.map(l => Math.hypot(l.position.x, l.position.z) + l.r));
+        expect(reach).toBeLessThanOrEqual(CAKE_T.radius * 1.001);
+      }
+    }
+  });
+
+  it('does not grow and shrink while you drag it round', () => {
+    // The other way to satisfy the test above would be to fit per-yaw, which is correct at every
+    // instant and horrible to watch: the cloud would swell and shrink under the cursor.
+    for (const standoff of [0.5, 0.85, 0.95]) {
+      const sizes = YAWS.map(yaw => place('flat', yaw, standoff).width);
+      for (const w of sizes) expect(w).toBeCloseTo(sizes[0], 9);
+    }
   });
 });

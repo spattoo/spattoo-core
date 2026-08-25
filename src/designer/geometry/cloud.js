@@ -257,12 +257,28 @@ export function cloudBaseY(surface, { topY = 0, boardY = 0 } = {}) {
  * `outward` is a POSITION and does not shrink; the cloud does. Same trade as everywhere else here:
  * where it sits is the author's decision, its size is not.
  */
-export function cloudFitScale({ lobes = [], centerX = 0, outward = 0, cakeRadius = 1 }) {
+export function cloudFitScale({ lobes = [], centerX = 0, outward = 0, cakeRadius = 1, rigid = false }) {
   if (!lobes.length || !(cakeRadius > 0)) return 1;
 
   // The furthest any part of the cloud reaches from the cake's axis, at a given scale.
-  const reach = f => Math.max(...lobes.map(l =>
-    Math.hypot(centerX + f * l.x, outward + f * l.z) + f * l.r));
+  //
+  // Which depends on whether the cloud TURNS as it is carried round. A puff does, so its lumps keep
+  // the same radial arrangement at every yaw and measuring them once, unturned, is exact.
+  //
+  // A flat sheet does not turn — it is set down still facing the front. So its lumps are offset
+  // along the WORLD axes, and how far that reaches from the axis depends on where round the cake it
+  // is: measured unturned it read 0.65R at the front and 0.73R at the side, and a sheet the fitter
+  // called flush with the rim hung 8% past it a quarter turn later.
+  //
+  // The bound is the worst case over every yaw — the middle's own distance out, plus the cloud's
+  // half-extent — which is reached when its widest lump happens to point straight outward. It has to
+  // be yaw-independent rather than merely correct per-yaw: a fit that changed as you dragged would
+  // grow and shrink the cloud while you moved it, which is a worse thing to watch than a little
+  // spare room at the front.
+  const middleOut = Math.hypot(centerX, outward);
+  const reach = rigid
+    ? f => middleOut + f * Math.max(...lobes.map(l => Math.hypot(l.x, l.z) + l.r))
+    : f => Math.max(...lobes.map(l => Math.hypot(centerX + f * l.x, outward + f * l.z) + f * l.r));
 
   if (reach(1) <= cakeRadius) return 1;
   // The POSITION is already off the cake, and no size fixes that. As small as is drawable rather
@@ -314,7 +330,7 @@ export function cloudPlacement(params = {}, cake = {}) {
   // Same rule the rainbow's standing arch follows, for the same reason and in the same place.
   const outwardRaw = onTop ? Math.min(standoff, R * 0.9) : (p.standoff ? standoff : R + w0 * 0.35);
   let fit = 1;
-  if (onTop) fit = cloudFitScale({ lobes, centerX, outward: outwardRaw, cakeRadius: R });
+  if (onTop) fit = cloudFitScale({ lobes, centerX, outward: outwardRaw, cakeRadius: R, rigid: flat });
   const width = w0 * fit, height = h0 * fit, thickness = t0 * fit;
 
   // On the board a cloud stands OUTSIDE the cake by default rather than under it, which is where the
@@ -323,6 +339,10 @@ export function cloudPlacement(params = {}, cake = {}) {
   const yaw = p.yaw ?? 0;
   const spin = (x, z) => new THREE.Vector3(
     Math.cos(yaw) * x + Math.sin(yaw) * z, 0, -Math.sin(yaw) * x + Math.cos(yaw) * z);
+
+  // Where the cloud's own middle ends up once it has been carried round the cake. Both variants use
+  // it; they differ only in whether the shape is TURNED on arrival.
+  const middle = spin(centerX, outward);
 
   const placed = lobes.map(l => {
     const x = l.x * fit, y = l.y * fit, z = l.z * fit, r = l.r * fit;
@@ -334,10 +354,17 @@ export function cloudPlacement(params = {}, cake = {}) {
       const out = rw + z;
       return { r, position: new THREE.Vector3(Math.sin(th) * out, baseY + y, Math.cos(th) * out), rotationY: th };
     }
-    // Turned round the cake as a whole, so a cloud can stand anywhere on the board rather than only
-    // in front. The lumps keep their arrangement — this rotates where the cloud IS, not what it is.
-    const flat = spin(centerX + x, outward + z);
-    return { r, position: new THREE.Vector3(flat.x, baseY + y, flat.z), rotationY: yaw };
+    // Carried round the cake as a whole, so a cloud can stand anywhere rather than only in front.
+    //
+    // Whether it also TURNS depends on which cloud it is, and the two are genuinely different
+    // objects. A PUFF is a bunch of balls with no front — turn it and it reads the same, and it must
+    // turn, or the side that bulges toward you would stay pointing at the front while the cloud is
+    // round the back. A FLAT one is a cut sheet with a face and a thin edge: at a quarter turn you
+    // are looking at the edge, at a half turn at its back, and there is no reason to show either.
+    // So it does not turn. It is carried to the same place and set down still facing the front,
+    // which is how a sticker moves.
+    const pos = flat ? { x: middle.x + x, z: middle.z + z } : spin(centerX + x, outward + z);
+    return { r, position: new THREE.Vector3(pos.x, baseY + y, pos.z), rotationY: flat ? 0 : yaw };
   });
 
   return {
@@ -347,9 +374,13 @@ export function cloudPlacement(params = {}, cake = {}) {
     // so the piece that gets cut is the piece that goes on.
     outline: flat ? cloudOutline({ ...p, scale: (p.scale ?? 1) * fit }, cake) : null,
     // How that sheet meets the cake. The renderer bends it for a wall; elsewhere it is a translate.
+    // Already carried round the cake, and NOT turned — so the renderer has a translate and nothing
+    // else. `centerX` and `theta` are still here for the wall, where the sheet is bent rather than
+    // placed and the bend needs to know where along the wall it starts.
     sheet: flat
-      ? { onWall, wallR: R, theta: p.theta ?? 0, centerX, baseY, yaw,
-          z: onWall ? 0 : outward,
+      ? { onWall, wallR: R, theta: p.theta ?? 0, centerX, baseY,
+          x: onWall ? 0 : middle.x,
+          z: onWall ? 0 : middle.z,
           thickness, bevel: Math.max(0, Math.min(0.9, p.bevel ?? 0)) }
       : null,
     width, height, thickness, baseY, fit,
