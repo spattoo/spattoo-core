@@ -35,7 +35,9 @@ const GROUNDS = [
 const LENGTHS = [2.5, 3.5, 4.5, 6];
 const SWEEPS  = [90, 120, 150, 180];
 
-export default function ReelOptions({ open, onClose, onRecord, busy, onGround, brandPrimary, isMobile = false, loading = false }) {
+export default function ReelOptions({ open, onClose, onRecord, busy, onGround, onIncludeName,
+                                      brandPrimary, bakeryName = '', canChooseName = false,
+                                      isMobile = false, loading = false }) {
   const [pingPong, setPingPong] = useState(true);
   // +1 turns one way, -1 the other. The camera code takes a signed arc, so this is a multiplier
   // rather than a branch.
@@ -43,6 +45,9 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
   const [seconds, setSeconds]   = useState(4.5);
   const [arcDeg, setArcDeg]     = useState(120);
   const [ground, setGround]     = useState(GROUNDS[0].value);
+  // Their own name on the frame. On by default — the whole point of the entitlement is that the reel
+  // markets the bakery, and somebody who wants that never has to find this control.
+  const [includeName, setIncludeName] = useState(true);
 
   // Brand colour first, if they have one and it is not already in the list.
   const grounds = brandPrimary && !GROUNDS.some(g => g.value.toLowerCase() === brandPrimary.toLowerCase())
@@ -52,6 +57,14 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
   // Push the choice into the scene, including on open — the preview is only truthful if the ground
   // on screen is the one that will record.
   useEffect(() => { if (open) onGround?.(ground); }, [open, ground, onGround]);
+
+  /* ⚠️ The name goes up the SAME way, and for the same reason.
+   *
+   * The caption is composed one level up, because the 9:16 preview overlay and the recorder both
+   * read it — that is what makes "the frame above is exactly what records" true. Keeping the tick
+   * local and passing it only at onRecord would mean the preview kept showing a name the take was
+   * about to leave out, which is the one promise this panel makes. */
+  useEffect(() => { if (open) onIncludeName?.(includeName); }, [open, includeName, onIncludeName]);
 
   /* ⚠️ Asked when the panel OPENS, not after the take.
    *
@@ -157,6 +170,35 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, b
           </div>
         </div>
       </PanelBlock>
+
+      {/* ── The name on the frame ────────────────────────────────────────────────────────────────
+          Only for a baker whose plan carries `reel_branding`. Everybody else gets "made with
+          Spattoo" and no switch, which is what they are on: the entitlement IS control of this line.
+
+          ⚠️ Off means BLANK, not our mark. Somebody reaches for this because the reel is going
+          where their name should not be — a client's own account, a collaboration, a piece of
+          Spattoo marketing filmed from a real bakery's login — and every one of those wants no name
+          rather than a different one. The copy says so, because a checkbox called "Bakery name"
+          otherwise reads as a choice between two names. */}
+      {canChooseName && (
+        <PanelBlock>
+          <div>
+            <div style={label}>Name on the reel</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+              <input type="checkbox" checked={includeName} onChange={e => setIncludeName(e.target.checked)}
+                     style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>
+                {bakeryName.trim() ? `Show “${bakeryName.trim()}”` : 'Show my bakery name'}
+              </span>
+            </label>
+            <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
+              {includeName
+                ? 'Burned into every frame, so the reel still carries your name wherever it gets reposted.'
+                : 'This take records with nothing written on it — for a reel going out under somebody else’s name.'}
+            </div>
+          </div>
+        </PanelBlock>
+      )}
 
       {/* Before the take, not after it — see willBeWebM above. */}
       {willBeWebM && (

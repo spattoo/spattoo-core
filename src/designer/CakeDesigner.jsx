@@ -2006,6 +2006,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // — see spattoo-docs/plans/reel-for-bakers.md §2e.
   const [reelCapture,  setReelCapture]  = useState(false);   // may record at all
   const [reelBranding, setReelBranding] = useState(false);   // their own name, vs "made with Spattoo"
+  /* Whether this take carries their name at all — the record panel's tick, held HERE because the
+   * 9:16 preview overlay and the recorder both read the composed caption. Reset per panel open would
+   * be a nicety; it is deliberately sticky for the session instead, since somebody filming a batch of
+   * unbranded reels is doing it repeatedly and would otherwise untick it for every cake. */
+  const [reelIncludeName, setReelIncludeName] = useState(true);
   // ── Has the baker ever curated their flavour list? ────────────────────────────────────────────
   // false = never opened the screen, which is not "no preference": a global flavour with no
   // settings row is OFFERED (spattoo-api lib/flavourList.js), so this baker's storefront would
@@ -2152,7 +2157,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * A catalogue author is not automatically branded — `is_catalog_author` says WHO writes the public
    * templates, `reel_branding` says whose name is on a video. Spattoo's own catalogue account happens
    * to be on a plan that carries both, which is why they look the same from in here. */
-  const reelCaptionText = captionText({ bakeryName: bakerData?.name, ownBranding: reelBranding });
+  const reelCaptionText = captionText({ bakeryName: bakerData?.name, ownBranding: reelBranding,
+                                        includeName: reelIncludeName });
   // Which ground the preview is showing, so the overlay can pick its contrast the same way the
   // recorder does. Mirrors what was handed to setGround; the scene holds a THREE.Color, not a hex.
   const [reelGround, setReelGround] = useState(DESIGNER_GROUND);
@@ -9681,6 +9687,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           // colour that records rather than a separate thing we hope agrees.
           onGround={g => setReelGround(g || DESIGNER_GROUND)}
           brandPrimary={bakerData?.primary_color || null}
+          // The tick is offered only to a plan that carries `reel_branding` — for everybody else the
+          // line is our mark and there is nothing to choose. See captionText, which enforces the same
+          // rule independently of this panel.
+          canChooseName={reelBranding}
+          bakeryName={bakerData?.name || ''}
+          onIncludeName={setReelIncludeName}
           onClose={closeReelPanel}
           onRecord={runReel} />
       )}
