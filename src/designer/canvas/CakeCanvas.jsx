@@ -2292,6 +2292,10 @@ function CakeScene({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
+  // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
+  // component cannot pass on what it was never given — deleting these from the signature while
+  // leaving them in the edit literal is what threw "onCloudClick is not defined".
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3244,6 +3248,7 @@ export default function CakeCanvas({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3396,6 +3401,8 @@ export default function CakeCanvas({
         selectedGenerated={selectedGenerated}
         onCloudClick={onCloudClick}
         onRainbowClick={onRainbowClick}
+        onCloudMove={onCloudMove}
+        onRainbowMove={onRainbowMove}
         blocksMode={blocksMode}
         blocksSelected={blocksSelected}
         onBlockMove={onBlockMove}

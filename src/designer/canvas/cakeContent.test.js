@@ -112,6 +112,32 @@ describe('the edit bag agrees at both ends', () => {
       + 'a ReferenceError the moment that branch renders').toEqual([]);
   });
 
+  it('is GIVEN everything it passes', () => {
+    // The third way this can break, and the one that shipped a crash: CakeScene puts a name into
+    // `edit` that CakeScene itself was never given. Both ends of the bag agree, so the test above is
+    // happy — and the reference throws the moment the scene renders.
+    //
+    // A whole-file check cannot see this either: the name IS declared in the file, on a different
+    // component. Only the signature can say.
+    const sig = (() => {
+      const at = SOURCE.indexOf('function CakeScene({');
+      return SOURCE.slice(at, SOURCE.indexOf('}) {', at));
+    })();
+    const given = new Set(sig
+      .split(/[,\n]/)
+      .map(l => l.replace(/\/\/.*/, '').split(/[=:]/)[0].replace('function CakeScene({', '').trim())
+      .filter(n => /^[A-Za-z_$][\w$]*$/.test(n)));
+
+    // A name can also be MADE inside the scene rather than handed to it — `gestureOnStickerRef` is a
+    // useRef in the body. Either counts; the fault is a name that exists in neither.
+    const body = bodyOf('CakeScene');
+    for (const m of body.matchAll(/(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/g)) given.add(m[1]);
+
+    const missing = [...passed].filter(k => !given.has(k));
+    expect(missing, `CakeScene passes ${missing.join(', ')} into edit, but its own signature does not `
+      + 'declare them — a ReferenceError as soon as the scene renders').toEqual([]);
+  });
+
   it('takes everything it passes', () => {
     // The other direction is a weaker fault — a prop nobody reads is dead weight, not a crash — but
     // it is the same drift, and it is how one end quietly stops matching the other.
