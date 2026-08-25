@@ -8324,6 +8324,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
               onPipingInstanceMove={handlePipingInstanceMove}
               isPipingMovable={isPipingMovable}
+              selectedGenerated={
+                selectedEl?.type === 'cloud' || selectedEl?.type === 'rainbow'
+                  ? { kind: selectedEl.type, id: selectedEl.id }
+                  : null}
+              /* Clicking the cloud itself selects it — the card opens and its handle appears. Until
+                 this, the only way in was the card, and the only way to the card was the stack: you
+                 had to find the thing you were already looking at. */
+              onCloudClick={(tier, id) => {
+                const idx = (design.tiers[tier]?.clouds ?? []).findIndex(c => c.id === id);
+                setCloudSelected(idx >= 0 ? { tier, idx } : null);
+                selectExclusive({ type: 'cloud', tierIndex: tier, id });
+              }}
+              onRainbowClick={(tier, id) => {
+                const idx = (design.tiers[tier]?.rainbows ?? []).findIndex(r => r.id === id);
+                setRainbowSelected(idx >= 0 ? { tier, idx } : null);
+                selectExclusive({ type: 'rainbow', tierIndex: tier, id });
+              }}
               cloudMode={selectedEl?.type === 'cloud'}
               cloudSelected={cloudSelected}
               onCloudMove={handleCloudMove}

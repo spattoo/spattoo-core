@@ -37,7 +37,8 @@ import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt } from '../geometry/rainbow.js';
 import FondantCloud from './FondantCloud.jsx';
-import { cloudHandleAt } from '../geometry/cloud.js';
+import { cloudHandleAt, cloudPlacement } from '../geometry/cloud.js';
+import { rainbowBands } from '../geometry/rainbow.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
@@ -77,6 +78,30 @@ export function boardOf(bottomTier) {
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
+// The selection cue for a GENERATED decoration, from the points it is actually made of.
+//
+// A sticker's box traces its hit PLANE, because that plane is what receives the pointer and what
+// steals a click from a neighbour — the border shows the truth rather than a flattering outline.
+// These have no hit plane: the mesh itself takes the click, so the truth here IS the mesh's bounds.
+//
+// Returned in WORLD space and drawn by a sibling group at the origin, because a rainbow's geometry
+// already carries its own position — there is no local frame to inherit.
+function generatedBounds(points, pad = 0) {
+  if (!points?.length) return null;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const p of points) {
+    lo[0] = Math.min(lo[0], p.x); hi[0] = Math.max(hi[0], p.x);
+    lo[1] = Math.min(lo[1], p.y); hi[1] = Math.max(hi[1], p.y);
+    lo[2] = Math.min(lo[2], p.z); hi[2] = Math.max(hi[2], p.z);
+  }
+  return {
+    width:  hi[0] - lo[0] + pad * 2,
+    height: hi[1] - lo[1] + pad * 2,
+    depth:  Math.max(hi[2] - lo[2] + pad * 2, 0.02),
+    centre: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2],
+  };
 }
 
 // What a rainbow's falling foot lands ON, for the tier at `i`: the tier below, or — off the bottom
@@ -2239,8 +2264,9 @@ function CakeScene({
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
-  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
-  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect, onRainbowClick,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect, onCloudClick,
+  selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -2620,7 +2646,25 @@ function CakeContent({ config, scene, edit = null }) {
               `boardY` is the tier's own base, which for tier 0 IS the board — so this is one
               expression rather than a branch, and a rainbow on an upper tier lands its falling foot
               on the tier below without anything here knowing that is what it is doing. */}
+          {/* CLICK THE THING ITSELF. A rainbow and a cloud are OBJECTS, not finishes: the handle-dot
+              mechanism they borrowed from grass, dust and foil only shows its dot once the card is
+              already open, and the mesh carried no pointer handlers at all — so there was nothing to
+              click, and a click fell through to the cake behind. Which reads as "it cannot be moved".
+              stopPropagation, or the tier underneath also takes the click and selects itself. */}
           {(tier.rainbows ?? []).map(rb => (
+            <group key={`rb-hit-${rb.id}`}
+              onClick={e => { e.stopPropagation(); onRainbowClick?.(i, rb.id); }}>
+            {selectedGenerated?.kind === 'rainbow' && selectedGenerated.id === rb.id && (() => {
+              const b = generatedBounds(
+                rainbowBands(rb, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
+                                   supportRadius: rainbowSupportRadius(tierData, i, board) })
+                  .bands.flatMap(x => x.path), 0.04);
+              return b && (
+                <group position={b.centre} rotation={[0, rb.yaw ?? 0, 0]}>
+                  <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                </group>
+              );
+            })()}
             <RainbowArch
               key={rb.id}
               params={rb}
@@ -2635,17 +2679,34 @@ function CakeContent({ config, scene, edit = null }) {
                       supportRadius: rainbowSupportRadius(tierData, i, board) }}
               yaw={rb.yaw ?? 0}
             />
+            </group>
           ))}
           {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
               the generator asks for { radius, topY, boardY } and does not care whether that is a
               whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier
               standing outside it, which is why there is no separate board list to keep in step. */}
           {(tier.clouds ?? []).map(cl => (
-            <FondantCloud
-              key={cl.id}
-              params={cl}
-              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
-            />
+            <group key={`cl-hit-${cl.id}`}
+              onClick={e => { e.stopPropagation(); onCloudClick?.(i, cl.id); }}>
+              {selectedGenerated?.kind === 'cloud' && selectedGenerated.id === cl.id && (() => {
+                const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
+                const pts = pl.lobes.flatMap(l => [
+                  { x: l.position.x - l.r, y: l.position.y - l.r, z: l.position.z - l.r },
+                  { x: l.position.x + l.r, y: l.position.y + l.r, z: l.position.z + l.r },
+                ]);
+                const b = generatedBounds(pts, 0.03);
+                return b && (
+                  <group position={b.centre}>
+                    <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                  </group>
+                );
+              })()}
+              <FondantCloud
+                key={cl.id}
+                params={cl}
+                cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
+              />
+            </group>
           ))}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
@@ -3107,8 +3168,9 @@ export default function CakeCanvas({
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
-  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect,
-  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect,
+  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect, onRainbowClick,
+  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect, onCloudClick,
+  selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3247,6 +3309,9 @@ export default function CakeCanvas({
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
         onGrassSelect={onGrassSelect}
+        selectedGenerated={selectedGenerated}
+        onCloudClick={onCloudClick}
+        onRainbowClick={onRainbowClick}
         cloudMode={cloudMode}
         cloudSelected={cloudSelected}
         onCloudMove={onCloudMove}
