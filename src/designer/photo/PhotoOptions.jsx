@@ -29,7 +29,7 @@ const CHECKER = 'repeating-conic-gradient(#c9cfcb 0% 25%, #ffffff 0% 50%) 50% / 
 export default function PhotoOptions({
   open, onClose, onCapture, busy, loading = false, isMobile = false,
   onShape, onGround, onCutout, onAngle, onIncludeName,
-  activeAngle = null, brandPrimary, bakeryName = '', canChooseName = false,
+  activeAngle = null, brandPrimary, bakeryName = '', canChooseName = false, maxHeightMobile,
 }) {
   const [shape, setShape]     = useState(DEFAULT_SHAPE);
   const [ground, setGround]   = useState(TAKE_GROUNDS[0].value);
@@ -93,8 +93,22 @@ export default function PhotoOptions({
 
   const disabled = busy || loading;
 
+  /* ⚠️ The action button is the FOOTER, not the last thing in the body. Capping the sheet so the
+   * frame shows above it means the body scrolls — and the primary action was landing below the fold,
+   * on a panel whose one job is to take the picture. Panel's footer sits outside the scroll area.
+   *
+   * ⚠️ And scrim={false}: the frame above the sheet is the whole point of that layout, and the
+   * panel's own 4px backdrop blur was landing on it. Uncovered but out of focus is no more honest
+   * than covered. The designer already dims everything outside the crop. */
   return (
-    <Panel onClose={onClose} title="Take a photo" width={400} isMobile={isMobile}
+    <Panel onClose={onClose} title="Take a photo" width={400} isMobile={isMobile} maxHeightMobile={maxHeightMobile} scrim={false}
+           footer={<button disabled={disabled}
+                onClick={() => onCapture({ shape, ground, cutout })}
+                style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
+                         background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
+                         cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
+          {busy ? 'Saving…' : loading ? 'Loading decorations…' : 'Take the photo'}
+        </button>}
            subtitle="Downloads a single picture, larger than a reel frame.">
       <PanelBlock>
         <div>
@@ -174,16 +188,6 @@ export default function PhotoOptions({
           </div>
         </PanelBlock>
       )}
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-        <button disabled={disabled}
-                onClick={() => onCapture({ shape, ground, cutout })}
-                style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
-                         background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
-                         cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
-          {busy ? 'Saving…' : loading ? 'Loading decorations…' : 'Take the photo'}
-        </button>
-      </div>
 
       {/* ⚠️ The same gate the reel has, for a milder version of the same reason: a decoration that
           resolves a moment after the shutter is simply missing from the picture, and nothing about

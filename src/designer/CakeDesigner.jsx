@@ -1066,6 +1066,28 @@ function MoreIcon({ size = 20 }) {
   );
 }
 
+/* The two takes. Same 24-grid, same 1.8 stroke, currentColor — so each takes the colour of whatever
+ * it sits in, whether that is a dark button or a white menu row. */
+function CameraIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* The raised hump over the lens is what reads as "camera" at 15px; a plain rectangle with a
+          circle in it reads as nothing at all. */}
+      <path d="M3 8.5a2 2 0 012-2h1.9a1.5 1.5 0 001.28-.72l.64-1.06A1.5 1.5 0 0110.1 4h3.8a1.5 1.5 0 011.28.72l.64 1.06a1.5 1.5 0 001.28.72H19a2 2 0 012 2v8.5a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+      <circle cx="12" cy="12.75" r="3.25" />
+    </svg>
+  );
+}
+
+function ReelIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M3 9.5h18M8 5l-2 4.5M14 5l-2 4.5M20 5l-2 4.5" />
+    </svg>
+  );
+}
+
 // One shared upward popover for the mobile baker action bar (so the item styling / overlay live in ONE
 // place). align 'left' | 'right' | 'center' positions it against its anchor and keeps it on-screen.
 const SHEET_ITEM = { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '12px', fontSize: 14, color: '#1a1a1a', cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap' };
@@ -2062,6 +2084,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // { designSnapshot, designThumbnailKey }. Null = a plain invite (blank start).
   const [shareDraftDesign,    setShareDraftDesign]    = useState(null);
   const [actionsMenuOpen,     setActionsMenuOpen]     = useState(false);   // mobile baker/staff ⋮ actions menu
+  const [captureMenuOpen,    setCaptureMenuOpen]    = useState(false);   // desktop "Capture ⋯" → photo / reel
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
@@ -2206,15 +2229,27 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // frame is sized by CSS (min() against the viewport). Nothing in JS knows how tall it came out.
   const frameRef = useRef(null);
   const [frameH, setFrameH] = useState(0);
+  /* Where the frame ENDS on screen, so the bottom sheet can stop above it.
+   *
+   * ⚠️ Measured, not calculated. The frame is `top: 8px; height: 46%` of the canvas container, and
+   * the container's own top depends on the header, the rail and whatever else the phone is showing —
+   * so the only honest way to say "the sheet must not reach this" is to ask the box where it is.
+   * Recomputed by the same ResizeObserver that already measures the height for the caption. */
+  const [frameBottom, setFrameBottom] = useState(0);
   useLayoutEffect(() => {
     const el = frameRef.current;
-    if (!framing || !el) { setFrameH(0); return; }
-    const measure = () => setFrameH(el.getBoundingClientRect().height);
+    if (!framing || !el) { setFrameH(0); setFrameBottom(0); return; }
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setFrameH(r.height);
+      setFrameBottom(r.bottom);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [framing]);
+
 
   /* Everything the reel panel changed, put back — the framing, the scrim, the ground, the camera.
    *
@@ -2358,6 +2393,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
     : '?';
   const isMobile = windowWidth <= 640;
+  /* The ceiling handed to both take panels: stop the bottom sheet 10px short of the frame's own
+   * bottom edge, so the shot stays visible while it is being described.
+   *
+   * ⚠️ DECLARED HERE, next to isMobile, and not beside the measurement it uses. Placed with the
+   * frame effect above it read isMobile before its `const` — "Cannot access 'isMobile' before
+   * initialization", which the build and the whole suite passed and the first page load threw.
+   *
+   * Only while FRAMING and only on a phone: on desktop the panel is centred and the frame is parked
+   * beside it, so there is nothing to get out of the way of. */
+  const takeSheetMaxH = (isMobile && framing && frameBottom > 0)
+    ? `calc(100vh - ${Math.round(frameBottom) + 10}px)`
+    : undefined;
   // Capability gate for nav/chrome. Unknown caps (not loaded / no /me) → show all,
   // preserving existing baker apps. '*' = super admin. Enforcement is server-side;
   // this only hides controls a principal can't use.
@@ -9378,14 +9425,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {/* Beside the other things you do to a FINISHED cake, not in a tools or settings
                     menu — those hold things you configure or things that help you make a cake, and
                     this is neither. See spattoo-docs/plans/reel-for-bakers.md §1b. */}
-                {canRecordReel && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); openReelPanel(); }}>
+                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                        onClick={() => { setActionsMenuOpen(false); openReelPanel(); }}>
+                  <ReelIcon size={17} />
                   Record a reel
                 </button>}
                 {/* Above the reel, not below it, and gated the same way. A photo is the thing most
                     bakers actually need most days — a reply to "can I see it?" on WhatsApp — where a
                     reel is what they make when they are posting deliberately. Same panel shape, same
                     framing, same name-on-the-frame rule. */}
-                {canRecordReel && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); openPhotoPanel(); }}>
+                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                        onClick={() => { setActionsMenuOpen(false); openPhotoPanel(); }}>
+                  <CameraIcon size={17} />
                   Take a photo
                 </button>}
               </ActionSheet>
@@ -9410,20 +9461,50 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onClick={handleShareDraft}>
               Share the draft
             </button>}
-            {/* The quietest button in the row, deliberately: every other action here leads to money
+            {/* ── ONE "Capture", opening onto the two takes ────────────────────────────────────
+                The quietest button in the row, deliberately: every other action here leads to money
                 — an order, a customer, a saved template — and this one leads to a file. It earns its
                 place next to them because it is the same KIND of act (something you do with a
-                finished cake), not because it is as important. */}
-            {canRecordReel && <button
-              style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.6, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
-              onClick={openReelPanel}>
-              Record a reel
-            </button>}
-            {canRecordReel && <button
-              style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.6, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
-              onClick={openPhotoPanel}>
-              Take a photo
-            </button>}
+                finished cake), not because it is as important.
+
+                ⚠️ Which is exactly why it is ONE button and not two. Photo and reel arrived as
+                siblings in this row and immediately took two of its five slots, so the quiet corner
+                of the bar became its widest thing — "Record a reel" and "Take a photo" side by side
+                shouted louder than "Order This Cake". They are the same act at two lengths, so they
+                collapse into one name and the choice moves one tap in.
+
+                Reuses ActionSheet, the popover the phone's ⋮ menu already uses — its item styling and
+                its click-away overlay live in one place, and a second desktop-only dropdown would be
+                the same widget written twice. It opens UPWARD, which is right: this row sits at the
+                bottom of the window. */}
+            {canRecordReel && (
+              <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
+                <button
+                  style={{ ...s.orderBtn, ...brandBtn, width: '100%', whiteSpace: 'nowrap', opacity: 0.6,
+                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                           ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
+                  aria-haspopup="menu" aria-expanded={captureMenuOpen}
+                  onClick={() => setCaptureMenuOpen(o => !o)}>
+                  <CameraIcon size={15} />
+                  Capture
+                  {/* The dots say "there is more behind this" without naming either take — a caret
+                      would promise a list, and this is a list of two. */}
+                  <span aria-hidden style={{ letterSpacing: 1, opacity: 0.75, fontSize: 15, lineHeight: 1 }}>⋯</span>
+                </button>
+                <ActionSheet open={captureMenuOpen} onClose={() => setCaptureMenuOpen(false)} align="center">
+                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                          onClick={() => { setCaptureMenuOpen(false); openPhotoPanel(); }}>
+                    <CameraIcon size={17} />
+                    Take a photo
+                  </button>
+                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                          onClick={() => { setCaptureMenuOpen(false); openReelPanel(); }}>
+                    <ReelIcon size={17} />
+                    Record a reel
+                  </button>
+                </ActionSheet>
+              </div>
+            )}
           </div>
         )
       )}
@@ -9787,6 +9868,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           bakeryName={bakerData?.name || ''}
           onIncludeName={setReelIncludeName}
           onClose={closeReelPanel}
+          maxHeightMobile={takeSheetMaxH}
           onRecord={runReel} />
       )}
 
@@ -9808,6 +9890,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           canChooseName={reelBranding}
           bakeryName={bakerData?.name || ''}
           onClose={closePhotoPanel}
+          maxHeightMobile={takeSheetMaxH}
           onCapture={runPhoto} />
       )}
 

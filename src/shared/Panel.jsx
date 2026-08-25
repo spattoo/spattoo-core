@@ -54,23 +54,32 @@ const PANEL_CSS = `
     border: 3px solid ${PANEL.surface}; }
 `;
 
-const overlayStyle = (isMobile, zIndex = Z.panel) => ({
+const overlayStyle = (isMobile, zIndex = Z.panel, scrim = true) => ({
   position: 'fixed', inset: 0, zIndex,
-  background: PANEL.scrim,
-  backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+  /* ⚠️ A panel that LEAVES ROOM to show something must not then blur it. The take panels frame the
+     shot in the space above the sheet, and the scrim's 4px blur was landing squarely on it — the
+     preview went from hidden behind the sheet to visible and out of focus, which is no more honest.
+     Those panels darken their own surroundings anyway (the designer dims everything outside the
+     crop), so there is nothing for this to add. */
+  ...(scrim
+    ? { background: PANEL.scrim, backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }
+    : { background: 'transparent' }),
   display: 'flex', justifyContent: 'center',
   alignItems: isMobile ? 'flex-end' : 'center',
   padding: isMobile ? 0 : 16,
   fontFamily: PANEL.font,
 });
 
-const sheetStyle = (isMobile, width) => ({
+const sheetStyle = (isMobile, width, maxHeight) => ({
   background: PANEL.surface,
   fontFamily: PANEL.font,
   display: 'flex', flexDirection: 'column',
   overflow: 'hidden',                       // so the header band's corners are clipped, not squared
   ...(isMobile
-    ? { width: '100%', maxHeight: '92vh', borderRadius: `${PANEL.radius}px ${PANEL.radius}px 0 0`,
+    /* ⚠️ 92vh is the DEFAULT, not the rule. A panel that has something to show BEHIND it — the
+       reel and photo panels both frame the shot in the space above — passes its own ceiling, or the
+       sheet grows to fill the phone and covers the very thing it is describing. */
+    ? { width: '100%', maxHeight: maxHeight || '92vh', borderRadius: `${PANEL.radius}px ${PANEL.radius}px 0 0`,
         boxShadow: '0 -4px 40px rgba(20,24,21,0.20)',
         animation: 'spattooPanelUp 0.28s cubic-bezier(0.32,0.72,0,1)', paddingTop: 8 }
     : { width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 32px)',
@@ -156,6 +165,13 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
                         // pass Z.overStudio from inside a full-screen tool. Left alone everywhere
                         // else: the default is what keeps one scale meaningful.
                         zIndex = Z.panel,
+                        // Caps the mobile sheet so something behind it stays visible. Any CSS
+                        // length; ignored on desktop, where the panel is centred and nothing is
+                        // underneath it.
+                        maxHeightMobile,
+                        // Whether to dim and blur everything behind the panel. Off for a panel whose
+                        // whole point is what is visible behind it.
+                        scrim = true,
                         onBack, backLabel = 'Back', children }) {
   // A backdrop click closes only if the press STARTED on the backdrop. Without this, dragging a
   // slider or a colour swatch and releasing past the panel's edge dispatches a click on the nearest
@@ -175,7 +191,7 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
 
   return (
     <div
-      style={overlayStyle(isMobile, zIndex)}
+      style={overlayStyle(isMobile, zIndex, scrim)}
       onPointerDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
       onClick={(e) => {
         if (onClose && pressedBackdrop.current && e.target === e.currentTarget) onClose();
@@ -187,7 +203,7 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
         role="dialog"
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
-        style={sheetStyle(isMobile, width)}
+        style={sheetStyle(isMobile, width, maxHeightMobile)}
       >
         {isMobile && <div style={grab} />}
         {(title || (onClose && showClose)) && (

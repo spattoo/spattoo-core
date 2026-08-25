@@ -24,7 +24,7 @@ const SWEEPS  = [90, 120, 150, 180];
 
 export default function ReelOptions({ open, onClose, onRecord, busy, onGround, onIncludeName,
                                       brandPrimary, bakeryName = '', canChooseName = false,
-                                      isMobile = false, loading = false }) {
+                                      isMobile = false, loading = false, maxHeightMobile }) {
   const [pingPong, setPingPong] = useState(true);
   // +1 turns one way, -1 the other. The camera code takes a signed arc, so this is a multiplier
   // rather than a branch.
@@ -100,7 +100,16 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
   return (
     // isMobile makes Panel a bottom sheet, which is what leaves the top of the screen free for the
     // 9:16 preview. On desktop it stays centred and the preview moves to the left instead.
-    <Panel onClose={onClose} title="Record a reel" width={400} isMobile={isMobile}
+    // Footer, not the tail of the body, and no scrim — see PhotoOptions for both.
+    <Panel onClose={onClose} title="Record a reel" width={400} isMobile={isMobile} maxHeightMobile={maxHeightMobile} scrim={false}
+           footer={<button disabled={btn.disabled}
+                onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })}
+                style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
+                         background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
+                         cursor: btn.disabled ? 'default' : 'pointer',
+                         opacity: btn.disabled ? 0.5 : 1 }}>
+          {btn.label}
+        </button>}
            subtitle="Films the cake and downloads it at 1080×1920.">
       <PanelBlock>
         <div>
@@ -214,17 +223,6 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
             : 'This browser cannot record video at all. Open Spattoo in Chrome or Safari.'}
         </div>
       )}
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-        <button disabled={btn.disabled}
-                onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })}
-                style={{ flex: 1, padding: '11px 16px', borderRadius: 9, border: 'none',
-                         background: '#2C4433', color: '#fff', fontWeight: 700, fontSize: 14,
-                         cursor: btn.disabled ? 'default' : 'pointer',
-                         opacity: btn.disabled ? 0.5 : 1 }}>
-          {btn.label}
-        </button>
-      </div>
 
       {/* ⚠️ Disabled while ANY decoration is still resolving. A topper that finishes mid-take pops
           into the middle of the reel, and a reel is the one thing here that leaves the app — it
