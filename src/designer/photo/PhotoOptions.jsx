@@ -55,6 +55,29 @@ export default function PhotoOptions({
   // Frame it the way the panel opens, so the first thing the baker sees is a composed shot rather
   // than whatever angle the last edit left behind. Once only — after this the camera is theirs.
   useEffect(() => { if (open) onAngle?.(DEFAULT_ANGLE); }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
+  /* ── Per-take choices are CLEARED every time the panel opens ─────────────────────────────────
+   *
+   * ⚠️ Reported: after one take with the name off, "I don't see that entire field at all" and no way
+   * back to one carrying the bakery name. Both halves were real. The tick stayed off because the
+   * panel is never unmounted, and picking the cutout HIDES the name block
+   * entirely — so a baker who had used one reopened to find the control simply absent, recoverable
+   * only by guessing that a ground swatch brings it back.
+   *
+   * The first version kept these for the session, reasoning that somebody producing a batch of
+   * unbranded takes should not re-untick for every cake. That trade is backwards. The cost of
+   * stickiness is a customer's cake going out with no bakery name on it, silently, because of a
+   * choice made for a different cake ten minutes ago; the cost of resetting is one tap. A take is
+   * about ONE picture, so the answer applies to one picture.
+   *
+   * Deliberately NOT reset: shape, ground and angle. Those are framing preferences somebody working through a
+   * batch genuinely repeats, and getting them back is a visible tap on a control that is still on
+   * screen — the failure this fixes is a control that was not.
+   */
+  useEffect(() => {
+    if (!open) return;
+    setIncludeName(true);
+    setCutout(false);
+  }, [open]);
 
   if (!open) return null;
 

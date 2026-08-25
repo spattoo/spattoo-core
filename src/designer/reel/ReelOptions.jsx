@@ -52,6 +52,24 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
    * local and passing it only at onRecord would mean the preview kept showing a name the take was
    * about to leave out, which is the one promise this panel makes. */
   useEffect(() => { if (open) onIncludeName?.(includeName); }, [open, includeName, onIncludeName]);
+  /* ── Per-take choices are CLEARED every time the panel opens ─────────────────────────────────
+   *
+   * ⚠️ Reported: after one take with the name off, "I don't see that entire field at all" and no way
+   * back to one carrying the bakery name. Both halves were real. The tick stayed off because the
+   * panel is never unmounted, and in the photo panel the cutout hid the block outright. This
+   * panel has no cutout, but the sticky tick is the same fault and takes the same fix.
+   *
+   * The first version kept these for the session, reasoning that somebody producing a batch of
+   * unbranded takes should not re-untick for every cake. That trade is backwards. The cost of
+   * stickiness is a customer's cake going out with no bakery name on it, silently, because of a
+   * choice made for a different cake ten minutes ago; the cost of resetting is one tap. A take is
+   * about ONE picture, so the answer applies to one picture.
+   *
+   * Deliberately NOT reset: ground, length, sweep and direction. Those are framing preferences somebody working through a
+   * batch genuinely repeats, and getting them back is a visible tap on a control that is still on
+   * screen — the failure this fixes is a control that was not.
+   */
+  useEffect(() => { if (open) setIncludeName(true); }, [open]);
 
   /* ⚠️ Asked when the panel OPENS, not after the take.
    *
