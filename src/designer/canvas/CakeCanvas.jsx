@@ -37,7 +37,9 @@ import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt } from '../geometry/rainbow.js';
 import FondantCloud from './FondantCloud.jsx';
-import { cloudHandleAt, cloudPlacement } from '../geometry/cloud.js';
+import { cloudHandleAt, cloudDragTo, cloudPlacement } from '../geometry/cloud.js';
+import { rainbowDragTo } from '../geometry/rainbow.js';
+import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { rainbowBands } from '../geometry/rainbow.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
@@ -78,6 +80,27 @@ export function boardOf(bottomTier) {
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
+// ── Dragging a generated decoration by the THING, not by a dot ──────────────────────────────────
+// Rainbows and clouds borrowed the handle-dot mechanism from grass, dust and foil. Two problems with
+// that here, and the second is the real one:
+//
+//   • The dot is white, and so is a cloud. It was there and could not be seen.
+//   • Even found, it is a dot to hunt. Every other OBJECT on the cake — a number topper, a message,
+//     a sticker — is dragged by grabbing the thing itself, and orbit takes the gesture instead.
+//
+// So the mesh takes the drag, through the same `useDragPlacement` the number topper and the cream
+// writing use: press suspends orbit and captures the pointer, movement past a threshold becomes a
+// drag, and a press that never moved is a tap. The ONLY thing that varies is `resolve` — which
+// surface the ray meets and what it writes — which is exactly the contract that hook was written to.
+//
+// A hook cannot live inside a .map(), so this is a component rather than a few lines at the call
+// site.
+function DraggableGenerated({ resolve, onMove, onClick, onOrbitEnable, children }) {
+  const { camera, gl } = useThree();
+  const { grabProps } = useDragPlacement({ camera, gl, onMove, onClick, onOrbitEnable, resolve });
+  return <group {...grabProps}>{children}</group>;
 }
 
 // The selection cue for a GENERATED decoration, from the points it is actually made of.
@@ -2268,8 +2291,6 @@ function CakeScene({
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
-  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect, onRainbowClick,
-  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect, onCloudClick,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
@@ -2423,7 +2444,7 @@ function CakeScene({
           // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
-          selectedGenerated, onCloudClick, onRainbowClick,
+          selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
         }}
       />
       </group>
@@ -2455,56 +2476,7 @@ function CakeScene({
           color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker />
       )}
 
-      {/* A rainbow is MOVED, never dialled — the same handle machinery as dust, foil, grass clumps
-          and letter blocks, so it drags with a mouse and with a finger for free.
 
-          The handle is the arch's CENTRE standing on the surface, not the cake's middle: a leaning
-          rainbow is offset along its own plane, and a dot at the axis would be nowhere near the
-          thing it moves. rainbowHandleAt reads the EFFECTIVE position, so an arch the clearance rule
-          stepped backwards keeps its handle on it rather than in front of it.
-
-          showMarker, because an arch is a hoop with a hole in the middle and the handle sits in the
-          hole — with nothing drawn there is nothing to aim at, which reads as "it cannot be moved".
-          The dot is only present while the card is open, so it never reaches a thumbnail. */}
-      {rainbowMode && (
-        <FinishHandles
-          tierData={tierData}
-          getPoints={t => (t.rainbows?.length
-            ? t.rainbows.map(rb => ({
-                ...rainbowHandleAt(rb, { radius: t.radius, topY: t.baseY + t.height, boardY: t.baseY }),
-                r: 0.16,
-              }))
-            : null)}
-          board={board}
-          selected={rainbowSelected} onMove={onRainbowMove} onSelect={onRainbowSelect}
-          catcherFlag="isRainbowCatcher" handleFlag="isRainbowHandle"
-          lift={0.06}
-          color="#ffffff" selColor="#2C4433" dotScale={1.6} showMarker />
-      )}
-
-      {/* Clouds move the same way rainbows do, and share the machinery with dust, foil, grass and
-          letter blocks. One cloud is rarely the question — a sky has several — so the handle sits at
-          each cloud's own middle and each drags on its own.
-
-          A cloud on the BOARD is measured against the board's radius, not the tier's: it stands
-          outside the cake, which is past v = 1 on the tier's own scale, and a handle pinned at 1
-          would refuse to follow the pointer outward. */}
-      {cloudMode && (
-        <FinishHandles
-          tierData={tierData}
-          getPoints={t => (t.clouds?.length
-            ? t.clouds.map(cl => ({
-                ...cloudHandleAt(cl, { radius: t.radius, topY: t.baseY + t.height, boardY: t.baseY,
-                                       handleRadius: board?.radius ?? t.radius }),
-                r: 0.14,
-              }))
-            : null)}
-          board={board}
-          selected={cloudSelected} onMove={onCloudMove} onSelect={onCloudSelect}
-          catcherFlag="isCloudCatcher" handleFlag="isCloudHandle"
-          lift={0.05}
-          color="#ffffff" selColor="#2C4433" dotScale={1.5} showMarker />
-      )}
 
       {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
           surface, moved by its handle. showMarker is on because a clump the size of a thumbnail is
@@ -2571,6 +2543,7 @@ function CakeContent({ config, scene, edit = null }) {
     onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penStyle, onAddStroke,
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit,
+    onCloudMove, onRainbowMove,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -2684,8 +2657,22 @@ function CakeContent({ config, scene, edit = null }) {
               click, and a click fell through to the cake behind. Which reads as "it cannot be moved".
               stopPropagation, or the tier underneath also takes the click and selects itself. */}
           {(tier.rainbows ?? []).map(rb => (
-            <group key={`rb-hit-${rb.id}`}
-              onClick={e => { e.stopPropagation(); onRainbowClickEdit?.(i, rb.id); }}>
+            <DraggableGenerated
+              key={`rb-hit-${rb.id}`}
+              onClick={() => onRainbowClickEdit?.(i, rb.id)}
+              onOrbitEnable={orbitEnableFor(`__rainbow__${rb.id}`)}
+              onMove={patch => onRainbowMove?.(i, rb.id, patch)}
+              // The pointer meets the TIER'S TOP, and the arch's position is read from where it
+              // lands: how far round the cake, and how far out from the middle. Exactly the pair the
+              // handle machinery used to supply as (u, v) — the same map, from a ray instead.
+              resolve={ray => {
+                const topY = tier.baseY + tier.height;
+                const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY));
+                if (!hit) return null;
+                const u = Math.atan2(hit.x, hit.z) / (Math.PI * 2);
+                const v = Math.min(1, Math.hypot(hit.x, hit.z) / (tier.radius || 1));
+                return rainbowDragTo(rb, { radius: tier.radius }, u, v);
+              }}>
             {selectedGenerated?.kind === 'rainbow' && selectedGenerated.id === rb.id && (() => {
               const b = generatedBounds(
                 rainbowBands(rb, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
@@ -2711,15 +2698,32 @@ function CakeContent({ config, scene, edit = null }) {
                       supportRadius: rainbowSupportRadius(tierData, i, board) }}
               yaw={rb.yaw ?? 0}
             />
-            </group>
+            </DraggableGenerated>
           ))}
           {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
               the generator asks for { radius, topY, boardY } and does not care whether that is a
               whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier
               standing outside it, which is why there is no separate board list to keep in step. */}
           {(tier.clouds ?? []).map(cl => (
-            <group key={`cl-hit-${cl.id}`}
-              onClick={e => { e.stopPropagation(); onCloudClickEdit?.(i, cl.id); }}>
+            <DraggableGenerated
+              key={`cl-hit-${cl.id}`}
+              onClick={() => onCloudClickEdit?.(i, cl.id)}
+              onOrbitEnable={orbitEnableFor(`__cloud__${cl.id}`)}
+              onMove={patch => onCloudMove?.(i, cl.id, patch)}
+              // A cloud on the TOP is read off the tier's lid; one on the board or the wall off the
+              // board, because that is the surface it stands on. Measured against the BOARD's radius
+              // in those two cases: a cloud beside the cake is past the tier's own rim, and a scale
+              // that stopped at the rim would refuse to follow the pointer outward.
+              resolve={ray => {
+                const onTop = (cl.surface ?? 'top') === 'top';
+                const planeY = onTop ? tier.baseY + tier.height : (board ? 0.1 : tier.baseY);
+                const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
+                if (!hit) return null;
+                const against = onTop ? (tier.radius || 1) : (board?.radius ?? tier.radius ?? 1);
+                const u = Math.atan2(hit.x, hit.z) / (Math.PI * 2);
+                const v = Math.min(1, Math.hypot(hit.x, hit.z) / against);
+                return cloudDragTo(cl, { radius: tier.radius, handleRadius: against }, u, v);
+              }}>
               {selectedGenerated?.kind === 'cloud' && selectedGenerated.id === cl.id && (() => {
                 const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
                 const pts = pl.lobes.flatMap(l => [
@@ -2738,7 +2742,7 @@ function CakeContent({ config, scene, edit = null }) {
                 params={cl}
                 cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
               />
-            </group>
+            </DraggableGenerated>
           ))}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
@@ -3239,8 +3243,6 @@ export default function CakeCanvas({
   penDrawMode = false, penStyle, onAddStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
-  rainbowMode = false, rainbowSelected = null, onRainbowMove, onRainbowSelect, onRainbowClick,
-  cloudMode = false, cloudSelected = null, onCloudMove, onCloudSelect, onCloudClick,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
@@ -3394,14 +3396,6 @@ export default function CakeCanvas({
         selectedGenerated={selectedGenerated}
         onCloudClick={onCloudClick}
         onRainbowClick={onRainbowClick}
-        cloudMode={cloudMode}
-        cloudSelected={cloudSelected}
-        onCloudMove={onCloudMove}
-        onCloudSelect={onCloudSelect}
-        rainbowMode={rainbowMode}
-        rainbowSelected={rainbowSelected}
-        onRainbowMove={onRainbowMove}
-        onRainbowSelect={onRainbowSelect}
         blocksMode={blocksMode}
         blocksSelected={blocksSelected}
         onBlockMove={onBlockMove}

@@ -3895,7 +3895,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function removeRainbow(tierIndex, id) {
     updateTierRainbows(tierIndex, cur => cur.filter(r => r.id !== id));
-    setRainbowSelected(null);
     clearAllSelections();
   }
 
@@ -3919,22 +3918,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function removeCloud(tierIndex, id) {
     updateTierClouds(tierIndex, cur => cur.filter(c => c.id !== id));
-    setCloudSelected(null);
     clearAllSelections();
   }
 
   // The handle machinery hands back (u, v) on the surface; cloudDragTo turns that into the cloud's
   // own words. A board cloud is measured against the BOARD's radius, because it stands outside the
   // cake and the tier's own scale would cap it at the cake's edge.
-  function handleCloudMove(tier, idx, u, v) {
-    const t = design.tiers[tier];
-    if (!t?.clouds?.[idx]) return;
-    const ct = canvasConfig.tiers ?? [];
-    const radius = ct[tier]?.radius ?? 1;
-    const cake = { radius, topY: 0, boardY: 0,
-                   handleRadius: ct[0] ? boardOf(ct[0]).radius : radius };
-    updateTierClouds(tier, cur => cur.map((c, k) =>
-      k === idx ? { ...c, ...cloudDragTo(c, cake, u, v) } : c));
+  // The canvas resolves the pointer against the surface the cloud sits on and hands back the patch
+  // already in the cloud's own words — it has the tier geometry to hand, and re-deriving it here
+  // would be a second definition of where a tier's lid is.
+  function handleCloudMove(tierIndex, id, patch) {
+    updateTierClouds(tierIndex, cur => cur.map(c => (c.id === id ? { ...c, ...patch } : c)));
   }
 
   function removeGrass() {
@@ -4114,8 +4108,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // dust splash — polar (u, v) against the surface, moved by a handle on the cake — so this reuses
   // FinishHandles rather than inventing a third way to drag something.
   const [grassSelected, setGrassSelected] = useState(null);   // { tier, idx } — BOARD_TIER for the board
-  const [rainbowSelected, setRainbowSelected] = useState(null);   // { tier, idx } — which arch is being moved
-  const [cloudSelected, setCloudSelected] = useState(null);       // { tier, idx } — which cloud is being moved
   const GRASS_PATCH_R = 0.42;
 
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
@@ -4158,17 +4150,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   // The lean is held. `offsetX` is the arch's SHAPE, not its position, so a drag moves where the
   // rainbow stands without quietly turning "over, falling right" into something else.
-  function handleRainbowMove(tier, idx, u, v) {
-    const t = design.tiers[tier];
-    const rb = t?.rainbows?.[idx];
-    if (!rb) return;
-    // The RESOLVED radius the canvas renders, not one re-derived here — a drag computed against a
-    // different number than the picture would put the handle where the arch is not. topY/boardY are
-    // unused by the drag map (it only needs the footprint), so they are not looked up.
-    const cake = { radius: canvasConfig.tiers?.[tier]?.radius ?? 1, topY: 0, boardY: 0 };
-    updateTierRainbows(tier, cur => cur.map((r, k) =>
-      k === idx ? { ...r, ...rainbowDragTo(r, cake, u, v) } : r));
+  function handleRainbowMove(tierIndex, id, patch) {
+    updateTierRainbows(tierIndex, cur => cur.map(r => (r.id === id ? { ...r, ...patch } : r)));
   }
+
 
   function handleGrassMove(tier, idx, u, v) {
     if (tier === BOARD_TIER) {
@@ -5708,15 +5693,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'text'          ? { type: 'text', id: card.id }
       : null;
     if (el?.type === 'cloud') {
-      const idx = (design.tiers[el.tierIndex]?.clouds ?? []).findIndex(c => c.id === el.id);
-      setCloudSelected(idx >= 0 ? { tier: el.tierIndex, idx } : null);
     }
     if (el?.type === 'rainbow') {
       // Which handle is lit follows which card is open. Without this, opening a card on a cake with
       // two rainbows leaves the previous one's dot highlighted, and the highlight is the only thing
       // saying which of two identical dots belongs to the panel you are looking at.
-      const idx = (design.tiers[el.tierIndex]?.rainbows ?? []).findIndex(r => r.id === el.id);
-      setRainbowSelected(idx >= 0 ? { tier: el.tierIndex, idx } : null);
     }
     if (el) selectExclusive(el, stickerIds);
   }
@@ -8508,31 +8489,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  this, the only way in was the card, and the only way to the card was the stack: you
                  had to find the thing you were already looking at. */
               onCloudClick={(tier, id) => {
-                const idx = (design.tiers[tier]?.clouds ?? []).findIndex(c => c.id === id);
-                setCloudSelected(idx >= 0 ? { tier, idx } : null);
                 selectExclusive({ type: 'cloud', tierIndex: tier, id });
               }}
               onRainbowClick={(tier, id) => {
-                const idx = (design.tiers[tier]?.rainbows ?? []).findIndex(r => r.id === id);
-                setRainbowSelected(idx >= 0 ? { tier, idx } : null);
                 selectExclusive({ type: 'rainbow', tierIndex: tier, id });
               }}
-              cloudMode={selectedEl?.type === 'cloud'}
-              cloudSelected={cloudSelected}
               onCloudMove={handleCloudMove}
-              onCloudSelect={(tier, idx) => {
-                setCloudSelected({ tier, idx });
-                const cl = design.tiers[tier]?.clouds?.[idx];
-                if (cl) selectExclusive({ type: 'cloud', tierIndex: tier, id: cl.id });
-              }}
-              rainbowMode={selectedEl?.type === 'rainbow'}
-              rainbowSelected={rainbowSelected}
               onRainbowMove={handleRainbowMove}
-              onRainbowSelect={(tier, idx) => {
-                setRainbowSelected({ tier, idx });
-                const rb = design.tiers[tier]?.rainbows?.[idx];
-                if (rb) selectExclusive({ type: 'rainbow', tierIndex: tier, id: rb.id });
-              }}
               grassMode={selectedEl?.type === 'grass'}
               grassSelected={grassSelected}
               onGrassMove={handleGrassMove}
