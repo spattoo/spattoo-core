@@ -2,7 +2,7 @@
  *
  * Used by the reel recorder (catalogue authors only — see spattoo-docs/features/reel-capture.md).
  * Nothing in here is three.js aware: it takes a canvas and a function that advances the shot, and
- * gives back a file. The camera move lives with the camera, in ReelDirector.
+ * gives back a file. The camera move lives with the camera, in TakeDirector.
  *
  * ── NO LIBRARY, ON PURPOSE ──────────────────────────────────────────────────────────────────────
  * canvas.captureStream() and MediaRecorder are browser APIs, so the whole recording path costs zero

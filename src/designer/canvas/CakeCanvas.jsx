@@ -61,7 +61,7 @@ import { frostingAllowsStyles } from '../frostings.js';
 import { makeWallReliefSampler } from '../geometry/creamWall.js';
 import { makeDripReliefSampler, dripRenderParams } from '../geometry/chocolateDrip.js';
 import { toCanvasConfig } from '../hooks/useCakeDesign.js';
-import ReelDirector from '../reel/ReelDirector.jsx';
+import TakeDirector from '../reel/TakeDirector.jsx';
 
 // ── Board footprint ─────────────────────────────────────────────────────────────────────────────
 // The board under a cake, sized to CONTAIN the bottom tier. A number cake sits on a RECTANGULAR board (a
@@ -2235,6 +2235,8 @@ function CakeScene({
    *
    * It also doubles as "we are filming", which is why the front marker keys off it. */
   filmGround = null,
+  // Photo only: no sky, no floor — the cake on nothing. See the two uses below.
+  filmCutout = false,
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
@@ -2337,10 +2339,20 @@ function CakeScene({
   return (
     <>
       <SceneLights shadows />
-      <color attach="background" args={[filmGround || DESIGNER_GROUND]} />
+      {/* ⚠️ NOT `{!filmCutout && <color attach="background" …/>}`. That was the first version and it
+          does not work: R3F's attach does NOT put the old value back when the element unmounts, so
+          the scene kept the last ground it was given and a "cutout" rendered a solid grey rectangle
+          with every pixel at alpha 255. The build was clean, the prop arrived as `true`, and the
+          only way to see it was to read scene.background out of a running page.
+          Absence has to be a VALUE somebody sets, so one component owns the background outright. */}
+      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_GROUND)} />
       <SceneEnv />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
+      {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
+          a grey slab on a transparent background, which is not a cutout — it is a worse photo than
+          the one with a proper ground. The contact shadow goes too, and that is the honest cost:
+          nothing for it to fall on. */}
+      {!filmCutout && <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
         onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
         {/* ⚠️ MUCH bigger while filming, and not for the reason it looks like.
             Matching the floor's colour to the sky's is not enough to hide the join: the floor is a
@@ -2361,7 +2373,7 @@ function CakeScene({
             ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
             the first failure to show up, and a fix at one end can break the other. */}
         <meshStandardMaterial color={filmGround || '#faf7f4'} roughness={0.85} />
-      </mesh>
+      </mesh>}
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
@@ -2916,6 +2928,32 @@ function CakeThumbnailScene({ config }) {
   );
 }
 
+/* ── What is behind the cake — including nothing ─────────────────────────────────────────────────
+ *
+ * ONE owner for the scene's background, because "no background" has to be something a caller can
+ * ASK for. The declarative `<color attach="background">` cannot say it: null is not a colour, and
+ * unmounting the element does not clear the value R3F already wrote.
+ *
+ * ⚠️ TWO THINGS MAKE A FRAME SEE-THROUGH AND BOTH ARE HERE. With scene.background null, three.js
+ * falls through to the RENDERER's clear — whose alpha is 1 by default. Clearing the background
+ * alone produced a cutout that was still a solid grey rectangle, and clearing the alpha alone did
+ * nothing at all because the background painted over it.
+ *
+ * ⚠️ And in React rather than inside the capture. The PREVIEW has to be see-through too, or the
+ * panel shows a frame with a ground in it while promising a file without one — and this feature's
+ * whole claim is that the frame on screen is the file. Done at capture time it would have produced
+ * a correct download that nobody could have predicted from the screen.
+ */
+function SceneBackground({ colour }) {
+  const { gl, scene } = useThree();
+  useEffect(() => {
+    scene.background = colour ? new THREE.Color(colour) : null;
+    gl.setClearAlpha(colour ? 1 : 0);
+    return () => { gl.setClearAlpha(1); };
+  }, [gl, scene, colour]);
+  return null;
+}
+
 // Reusable temps for the per-frame bbox fit (avoid per-frame allocation).
 const _fitBox = new THREE.Box3();
 const _fitSphere = new THREE.Sphere();
@@ -3159,10 +3197,12 @@ export default function CakeCanvas({
   hitTestRef,
   snapCameraRef,
   // Filled with the reel recorder when the designer passes it — catalogue authors only, so for
-  // every other baker this is undefined and ReelDirector never mounts.
-  reelRef = null,
+  // every other baker this is undefined and TakeDirector never mounts.
+  takeRef = null,
+  onAngleChange = null,
   // The reel's ground while the panel is open, else null. See CakeScene.
   filmGround = null,
+  filmCutout = false,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penStyle, onAddStroke,
@@ -3246,7 +3286,16 @@ export default function CakeCanvas({
       shadows
       camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
       style={{ position: 'absolute', inset: 0 }}
-      gl={{ preserveDrawingBuffer: true }}
+      /* ⚠️ alpha, so a photo can be captured as a CUTOUT.
+       *
+       * Transparency is decided when the context is CREATED and can never be turned on afterwards:
+       * without this the drawing buffer has no alpha channel, setClearAlpha(0) is quietly ignored,
+       * and a "transparent" photo downloads with a black rectangle behind the cake. Costs nothing
+       * the rest of the time — a background colour is painted over it on every ordinary frame, which
+       * is why the two off-screen capture canvases have always asked for it.
+       *
+       * preserveDrawingBuffer is what lets the reel and the photo read pixels back out at all. */
+      gl={{ preserveDrawingBuffer: true, alpha: true }}
       onCreated={({ gl }) => { glRef.current = gl; gl.localClippingEnabled = true; }}
       onPointerDown={e => { pointerRef.current = { x: e.clientX, y: e.clientY, dragged: false }; }}
       onPointerMove={e => {
@@ -3258,12 +3307,13 @@ export default function CakeCanvas({
       <CameraCapture cameraRef={cameraRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} orbitRef={orbitRef} />
-      {/* Fills reelRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
+      {/* Fills takeRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
           camera only exists inside the Canvas, so anything that drives it has to live in here and
-          hand a function out. Renders nothing; costs nothing when reelRef is not passed. */}
-      {reelRef && <ReelDirector reelRef={reelRef} orbitRef={orbitRef} />}
+          hand a function out. Renders nothing; costs nothing when takeRef is not passed. */}
+      {takeRef && <TakeDirector takeRef={takeRef} orbitRef={orbitRef} onAngleChange={onAngleChange} />}
       <CakeScene
         filmGround={filmGround}
+        filmCutout={filmCutout}
         config={config}
         selectedTier={selectedTier}
         onTierClick={i  => { if (!pointerRef.current.dragged) onTierClick(i); }}

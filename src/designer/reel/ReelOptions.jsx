@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Panel, PanelBlock } from '../../shared/Panel.jsx';
-import { DESIGNER_GROUND } from '../constants.js';
+import { TAKE_GROUNDS } from '../constants.js';
 import { pickMimeType, isInstagramReady, recordButtonState } from './recordReel.js';
 
 /* ── The shot, chosen before it is taken ─────────────────────────────────────────────────────────
@@ -14,23 +14,10 @@ import { pickMimeType, isInstagramReady, recordButtonState } from './recordReel.
  * anything that does not belongs in the code, not in front of the person filming.
  */
 
-/* ── The grounds ─────────────────────────────────────────────────────────────────────────────────
- * A CURATED LIST, not a colour picker — the same call the storefront themes made for exactly this
- * problem (templates.js `grounds`). A free picker means somebody records a cake on neon pink at the
- * moment they are trying to post something, and the bakers who would not need the freedom anyway.
- *
- * The baker's own primary is offered FIRST but is not the default, because a dark green brand behind
- * a dark green cake is mush and no rule we could write would predict that. They look and choose.
+/* The grounds live in constants.js — the photo panel offers the same five, and two copies of a
+ * swatch list is two places for "Slate" to become two different greys. The baker's own primary is
+ * prepended below rather than living in the list, since it is theirs and not ours.
  */
-const GROUNDS = [
-  // Literally the designer's own ground, imported rather than retyped: picking Studio — or opening
-  // the panel, which selects it — must leave the scene exactly as the baker had it.
-  { key: 'studio', label: 'Studio', value: DESIGNER_GROUND },
-  { key: 'cream',  label: 'Cream',  value: '#FBF3E7' },
-  { key: 'blush',  label: 'Blush',  value: '#FBEFEF' },
-  { key: 'slate',  label: 'Slate',  value: '#2E3A36' },
-  { key: 'ink',    label: 'Ink',    value: '#14181A' },
-];
 
 const LENGTHS = [2.5, 3.5, 4.5, 6];
 const SWEEPS  = [90, 120, 150, 180];
@@ -44,15 +31,15 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
   const [dir, setDir]           = useState(1);
   const [seconds, setSeconds]   = useState(4.5);
   const [arcDeg, setArcDeg]     = useState(120);
-  const [ground, setGround]     = useState(GROUNDS[0].value);
+  const [ground, setGround]     = useState(TAKE_GROUNDS[0].value);
   // Their own name on the frame. On by default — the whole point of the entitlement is that the reel
   // markets the bakery, and somebody who wants that never has to find this control.
   const [includeName, setIncludeName] = useState(true);
 
   // Brand colour first, if they have one and it is not already in the list.
-  const grounds = brandPrimary && !GROUNDS.some(g => g.value.toLowerCase() === brandPrimary.toLowerCase())
-    ? [{ key: 'brand', label: 'Your colour', value: brandPrimary }, ...GROUNDS]
-    : GROUNDS;
+  const grounds = brandPrimary && !TAKE_GROUNDS.some(g => g.value.toLowerCase() === brandPrimary.toLowerCase())
+    ? [{ key: 'brand', label: 'Your colour', value: brandPrimary }, ...TAKE_GROUNDS]
+    : TAKE_GROUNDS;
 
   // Push the choice into the scene, including on open — the preview is only truthful if the ground
   // on screen is the one that will record.
