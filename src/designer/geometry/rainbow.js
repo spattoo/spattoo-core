@@ -103,6 +103,30 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   standoff: 0,
   flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
 
+  // ── Curled ends ───────────────────────────────────────────────────────────────────────────────
+  // A second rainbow shape, not a second generator: same ropes, same arch, same everything, and the
+  // ends roll up instead of reaching for a surface. Set a side's foot to 'curl' to get it.
+  curlTurns: 1.35,     // how far round the end winds, in whole turns
+  // How wide the coil starts, in ROPE THICKNESSES. Same on every band — see bandPath.
+  curlSize: 1.6,
+  // How far each band's coil rides out of the rainbow's plane, in rope thicknesses. NOT decoration:
+  // without it neighbouring coils intersect, and no other setting prevents that — see bandPath.
+  curlLift: 0.9,
+  // How far the bands spread apart before they curl, in rope thicknesses per band. Also NOT
+  // decoration: the coils tangle without it, and the reference shows the cake between the bands on
+  // the curled side — see bandPath.
+  curlSplay: 1.2,
+  // How far the coil closes: 0 leaves a loose hook the same width as the arch, 1 winds it in as
+  // tight as the rope's own thickness allows. Never tighter — see bandPath.
+  curlTightness: 0.82,
+  // How much further one side of the stack runs before it rolls up. Zero puts every coil at one
+  // height, which reads as a comb; the reference fans them down a diagonal.
+  //
+  // SIGNED, because which way the fan runs is a look and not a fact, and a photograph is not
+  // something to measure it off. Positive carries the INNER bands further, so the outer coils sit
+  // highest; negative does the reverse. The studio shows it either way and the author picks.
+  curlFan: 1.1,
+
   arcSegments: 96,     // along the path
   tubeSegments: 12,    // around the rope
 });
@@ -111,12 +135,57 @@ export const RAINBOW_DEFAULTS = Object.freeze({
 //   board — the top of the board, so it stands beside the cake (reference 1)
 //   top   — the top of the cake, so it sits on it (references 2 and 4)
 //   none  — no legs at all: a bare half-circle
+//   curl  — no leg either: the rope carries on past the arch and rolls up (reference 5)
 // The distance is never authored, only chosen: `board` on a three-tier stack is a long way further
 // than on a single, and that is the whole reason this is not a GLB.
 export function legFootY(legs, { topY = 0, boardY = 0 } = {}) {
   if (legs === 'top') return topY;
-  if (legs === 'none') return null;
+  if (legs === 'none' || legs === 'curl') return null;
   return boardY;
+}
+
+/**
+ * The rope's end, rolled up — the curled rainbow's whole difference from the plain one.
+ *
+ * Walked forward one small turn at a time rather than solved as a spiral formula, and that is the
+ * point of it: the walk STARTS with the heading and the curvature the arch already had, so there is
+ * no crease where the arch stops and the coil begins. A spiral about a fixed pole cannot do that —
+ * its tangent sits a fixed angle off the circle's, so the join kinks by that angle however the
+ * numbers are chosen.
+ *
+ * The radius runs down from the band's own to `rEnd` across the coil, which is what a baker's hand
+ * does: the rope keeps turning and each turn comes in tighter.
+ *
+ * @param heading  direction of travel at the start, radians
+ * @param dir      +1 or -1 — which way it winds
+ */
+export function curlPoints({ x, y, z = 0, zEnd = null, heading, dir = -1, turns = 1, radius0, rEnd, segments = 64 }) {
+  const pts = [];
+  const total = turns * Math.PI * 2;
+  if (!(total > 0) || !(radius0 > 0)) return pts;
+
+  // Eased, not linear, so the rope leaves the arch's plane smoothly instead of setting off at an
+  // angle from the first point.
+  const ease = u => u * u * (3 - 2 * u);
+  const lift = zEnd == null ? 0 : zEnd - z;
+
+  const steps = Math.max(8, Math.round(segments * turns));
+  const dTheta = total / steps;
+  let th = heading, px = x, py = y;
+  for (let i = 0; i < steps; i++) {
+    const u = (i + 0.5) / steps;
+    const r = radius0 + (rEnd - radius0) * u;
+    const ds = r * dTheta;
+    const pz = z + lift * ease(Math.min(1, u * 2));
+    // Turn half, step, turn half — the midpoint rule. Turning a whole step before moving swings the
+    // coil wide of where that curvature actually puts it, and the error compounds over two turns.
+    th += dir * dTheta / 2;
+    px += Math.cos(th) * ds;
+    py += Math.sin(th) * ds;
+    th += dir * dTheta / 2;
+    pts.push(new THREE.Vector3(px, py, pz));
+  }
+  return pts;
 }
 
 /**
@@ -126,20 +195,141 @@ export function legFootY(legs, { topY = 0, boardY = 0 } = {}) {
  * no corner between them to round off or crease. That is why this can be sampled as one smooth run
  * of points rather than stitched from separate curves with a join to argue about.
  */
-export function bandPath({ radius, archY, footLeftY, footRightY, standoff = 0, centerX = 0, arcSegments = RAINBOW_DEFAULTS.arcSegments }) {
+export function bandPath({
+  radius, archY, footLeftY, footRightY, standoff = 0, centerX = 0,
+  arcSegments = RAINBOW_DEFAULTS.arcSegments,
+  // A curled end, per side. Set instead of a foot, never as well as one — a rope that reaches the
+  // board has no spare end to roll up.
+  curlLeft = false, curlRight = false, thickness = 0,
+  curlTurns = RAINBOW_DEFAULTS.curlTurns,
+  curlSize = RAINBOW_DEFAULTS.curlSize,
+  curlLift = RAINBOW_DEFAULTS.curlLift,
+  curlSplay = RAINBOW_DEFAULTS.curlSplay,
+  curlTightness = RAINBOW_DEFAULTS.curlTightness,
+  curlFan = RAINBOW_DEFAULTS.curlFan,
+  bandIndex = 0, bandCount = 1,
+}) {
   const pts = [];
   const z = standoff;   // one plane, set back from the cake's centre — a rainbow is flat
   // Each leg is drawn only if its foot is BELOW where the arc springs. A foot at or above that is
   // not a short leg, it is no leg — the arc simply ends there.
   const hasLeft  = footLeftY  != null && footLeftY  < archY;
   const hasRight = footRightY != null && footRightY < archY;
-  if (hasLeft) pts.push(new THREE.Vector3(centerX - radius, footLeftY, z));
-  // Left (π) round to right (0). Descending so the run reads left-to-right with the legs.
-  for (let i = 0; i <= arcSegments; i++) {
-    const a = Math.PI - (i / arcSegments) * Math.PI;
-    pts.push(new THREE.Vector3(centerX + Math.cos(a) * radius, archY + Math.sin(a) * radius, z));
+
+  // ── How far each band runs past the springing point before it rolls up ────────────────────────
+  // Not the same for every band, or the coils land in a row at one height and read as a comb. In the
+  // reference the INNER bands carry furthest down and the outer ones stop highest, which fans the
+  // coils along a diagonal. `bandIndex` counts outward from the hole, so the extra runs the other
+  // way.
+  // Signed: a negative fan runs the OUTER bands further instead, which is the same look mirrored.
+  const spread = bandCount > 1
+    ? (curlFan >= 0 ? (bandCount - 1 - bandIndex) : bandIndex) / (bandCount - 1)
+    : 0;
+  const extra = Math.abs(curlFan) * spread * (Math.PI / 2);
+
+  // ── How big the coil is ───────────────────────────────────────────────────────────────────────
+  // Measured in ROPES, not in bands. A scroll end is a small thing a couple of rope-widths across,
+  // and it is the same small thing on every band, because a baker rolls each end the same way.
+  //
+  // Starting it at the band's own radius instead — to match the arch's curvature exactly at the
+  // join — was the obvious idea and produced nonsense: the first turn of a coil is as wide as the
+  // curve it starts from, so the outer band swung out to x = 3.17 on a cake of radius 1.2. The join
+  // needs a continuous TANGENT, which the walk gives it by construction; matching curvature as well
+  // is not worth a coil the size of the rainbow. A scroll has an inflection at the join anyway —
+  // that S is what makes it read as rolled.
+  //
+  // A coil cannot close tighter than the rope is thick without eating itself: at radius thickness/2
+  // the inside of the tube meets its own axis and the tip turns inside out. Kept clear of it.
+  const minR = Math.max(1e-4, thickness * 0.62);
+  const r0 = Math.max(minR, thickness * Math.max(0.6, curlSize));
+  const t = Math.max(0, Math.min(1, curlTightness));
+  const rEnd = r0 + (minR - r0) * t;
+
+  // ── Which way the coil winds ──────────────────────────────────────────────────────────────────
+  // AGAINST the arch, so the end scrolls outward and away.
+  //
+  // Winding it the same way as the arch is the intuitive answer and it is wrong. The arch travels
+  // left to right, heading swinging up → right → down: clockwise. Carry on clockwise from the right
+  // end and the coil sweeps down, then back LEFT under the arch, and straight through the ropes
+  // inside it — measured at every fan setting, the worst gap between a coil and another band was
+  // 0.000 to 0.004 against a rope 0.138 thick. Not close: passing clean through.
+  //
+  // Which is also the physical answer. A baker cannot roll the end inward; the rest of the rainbow
+  // is in the way. It gets rolled outward, and the S that leaves at the join is what a scroll IS.
+  const ARCH_DIR = -1;
+  const CURL_DIR = -ARCH_DIR;
+  // ── The coils lift out of the plane, and they have to ─────────────────────────────────────────
+  // Two neighbouring coils are the same shape one rope-width apart, and a coil is WIDER than that: a
+  // rope 0.138 thick coils no tighter than 0.111 radius, which is 0.222 across against a 0.138 gap.
+  // They intersect. Measured at every fan setting from -0.8 to 1, the worst gap between one band's
+  // coil and another band was 0.001-0.004 — passing clean through, not grazing. No fan fixes it:
+  // separating them along the arc would need roughly a 300 degree stagger, which is not a rainbow.
+  //
+  // Which is true of the fondant too. Six touching ropes cannot all be curled in one plane; the
+  // curls ride over each other, and in the reference they plainly sit at slightly different depths.
+  //
+  // Fanned about the middle rather than stacked one way, so the piece stays centred on the plane it
+  // was authored in, and eased in over the first half turn so the arch itself is still flat.
+  const lift = (bandIndex - (bandCount - 1) / 2) * thickness * Math.max(0, curlLift);
+  const curlArgs = { z, zEnd: z + lift, turns: curlTurns, radius0: r0, rEnd };
+
+  // ── The bands splay apart before they curl ────────────────────────────────────────────────────
+  // In the arch the ropes touch; on the curled side they must not, or the coils tangle. A coil is
+  // 0.222 across and touching ropes are 0.138 apart, so a coil ALWAYS reaches its neighbour — and it
+  // winds a turn and a third, which carries it back over the two bands outside it as well. Lifting
+  // them apart in depth alone still left the worst gap at 0.006-0.031 of a 0.138 rope.
+  //
+  // The reference solves it the way fondant does: on the curled side the bands spread, and the white
+  // of the cake shows between them. Eased in over the last radian so the arch is still concentric
+  // where anyone reads it as an arch.
+  const ease = u => u * u * (3 - 2 * u);
+  const SPLAY_ARC = 1.0;
+  const splayR = Math.max(0, curlSplay) * thickness * bandIndex;
+  const aLeft = Math.PI + (curlLeft ? extra : 0);
+  const aRight = -(curlRight ? extra : 0);
+  const nearEnd = a => Math.max(
+    curlLeft  ? (a - (aLeft - SPLAY_ARC)) / SPLAY_ARC : 0,
+    curlRight ? ((aRight + SPLAY_ARC) - a) / SPLAY_ARC : 0,
+  );
+  const radiusAt = a => radius + splayR * ease(Math.max(0, Math.min(1, nearEnd(a))));
+  const arcPoint = a => new THREE.Vector3(
+    centerX + Math.cos(a) * radiusAt(a), archY + Math.sin(a) * radiusAt(a), z);
+
+  // Where the coil leaves, taken from the last two points of the run rather than from the circle's
+  // tangent. Once the radius grows the band is no longer travelling along a circle, and using the
+  // circle's tangent would crease the join by exactly the amount it had splayed.
+  const headingOf = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+
+  // ── The left end ──────────────────────────────────────────────────────────────────────────────
+  if (curlLeft) {
+    // Walked BACKWARD from the arc's start, away from the arch, then reversed onto the front of the
+    // path — the points have to read left-to-right like every other band. Walking backwards flips
+    // which way the curve turns, hence the sign.
+    const a0 = arcPoint(aLeft), a1 = arcPoint(aLeft - 0.01);
+    const coil = curlPoints({ ...curlArgs, x: a0.x, y: a0.y,
+      heading: headingOf(a1, a0), dir: -CURL_DIR });
+    pts.push(...coil.reverse());
+  } else if (hasLeft) {
+    pts.push(new THREE.Vector3(centerX - radius, footLeftY, z));
   }
-  if (hasRight) pts.push(new THREE.Vector3(centerX + radius, footRightY, z));
+
+  // Left (π) round to right (0), plus whatever each curled end runs on for. Descending so the run
+  // reads left-to-right with the legs.
+  const span = aLeft - aRight;
+  const segs = Math.max(2, Math.round(arcSegments * (span / Math.PI)));
+  for (let i = 0; i <= segs; i++) {
+    const a = aLeft - (i / segs) * span;
+    pts.push(arcPoint(a));
+  }
+
+  // ── The right end ─────────────────────────────────────────────────────────────────────────────
+  if (curlRight) {
+    const end = pts[pts.length - 1], prev = pts[pts.length - 2];
+    pts.push(...curlPoints({ ...curlArgs, x: end.x, y: end.y,
+      heading: headingOf(prev, end), dir: CURL_DIR }));
+  } else if (hasRight) {
+    pts.push(new THREE.Vector3(centerX + radius, footRightY, z));
+  }
   return pts;
 }
 
@@ -400,6 +590,18 @@ export function rainbowBands(params = {}, cake = {}) {
   const radii = [];
   for (let i = 0; i < p.bands; i++) radii.push(bandRadius(i, { innerRadius, thickness, gap }));
 
+  // Everything a curled end needs, gathered once. `bandIndex` is what fans the coils: they must not
+  // all roll up at the same height.
+  const curlArgs = (i) => ({
+    arcSegments: p.arcSegments,
+    curlLeft:  p.footLeft  === 'curl',
+    curlRight: p.footRight === 'curl',
+    curlTurns: p.curlTurns, curlSize: p.curlSize, curlLift: p.curlLift,
+    curlSplay: p.curlSplay,
+    curlTightness: p.curlTightness, curlFan: p.curlFan,
+    thickness, bandIndex: i, bandCount: p.bands,
+  });
+
   const bands = [];
   for (let i = 0; i < p.bands; i++) {
     const radius = radii[i];
@@ -412,10 +614,10 @@ export function rainbowBands(params = {}, cake = {}) {
       color: p.colors[i % p.colors.length],
       path: onWall
         ? wrapToWall(
-            bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, arcSegments: p.arcSegments }),
+            bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, ...curlArgs(i) }),
             { radius: R, theta0: p.theta ?? 0, proud: (p.proud ?? 0) * R, seat: thickness / 2 },
           )
-        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, arcSegments: p.arcSegments }),
+        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, ...curlArgs(i) }),
       thickness,
     });
   }

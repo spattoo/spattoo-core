@@ -1023,3 +1023,114 @@ describe('dragging a rainbow', () => {
     expect(moved.standoff).toBe(0);
   });
 });
+
+// ── A curled end ────────────────────────────────────────────────────────────────────────────────
+// The scrolled rainbow (reference 5): the same arch, with an end rolled up instead of reaching for a
+// surface. Three things here were got WRONG first and are pinned because measuring caught them, not
+// because they seemed likely.
+describe('a rainbow with its ends curled', () => {
+  const CAKE_C = { radius: 1.2, topY: 1.55, boardY: 0.1, height: 1.45 };
+  const curled = (over = {}) =>
+    rainbowBands({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'curl', ...over }, CAKE_C);
+  // Everything after the arc is coil, and the coil is a known number of points.
+  const coilOf = (b, over = {}) =>
+    b.path.slice(-Math.round(64 * (over.curlTurns ?? RAINBOW_DEFAULTS.curlTurns)));
+
+  it('leaves the plain rainbow alone, whatever the curl settings say', () => {
+    // The whole reason this is one generator and not two. A curl setting must be inert until an end
+    // is actually set to curl.
+    const plain = rainbowBands({ ...RAINBOW_DEFAULTS }, CAKE_C);
+    const loud  = rainbowBands({ ...RAINBOW_DEFAULTS, curlTurns: 9, curlSize: 9,
+      curlTightness: 0, curlFan: 9, curlSplay: 9, curlLift: 9 }, CAKE_C);
+    plain.bands.forEach((b, i) =>
+      b.path.forEach((pt, j) => expect(pt.distanceTo(loud.bands[i].path[j])).toBeLessThan(1e-12)));
+  });
+
+  it('grows no leg on the curled side', () => {
+    // 'curl' is a way of ENDING, like 'none' — not a foot that happens to be decorated.
+    expect(legFootY('curl', { topY: 5, boardY: 1 })).toBeNull();
+  });
+
+  it('winds away from the arch, not into it', () => {
+    // Carrying on the way the arch already turns is the intuitive answer and it is wrong: the coil
+    // sweeps back under the arch and through the ropes inside it. Measured at every stagger from
+    // -0.8 to 1, the worst gap between a coil and another band was 0.000-0.004 of a 0.138 rope.
+    //
+    // Stated as a shape rather than as a direction: the coil must stay OUTSIDE the arch's hole.
+    const { bands, centerX, archY } = curled();
+    const hole = bands[0].radius - bands[0].thickness / 2;
+    for (const b of bands) {
+      for (const p of coilOf(b)) {
+        expect(Math.hypot(p.x - centerX, p.y - archY)).toBeGreaterThan(hole);
+      }
+    }
+  });
+
+  it('keeps the coils clear of each other', () => {
+    // Which needs BOTH the spread and the lift, and neither is decoration. A rope 0.138 thick coils
+    // no tighter than 0.111 radius — 0.222 across, against touching ropes 0.138 apart — so in one
+    // plane, at any stagger, the coils intersect.
+    const { bands, thickness } = curled();
+    for (const a of bands) {
+      for (const p of coilOf(a)) {
+        for (const b of bands) {
+          if (b.index === a.index) continue;
+          for (const q of b.path) {
+            expect(p.distanceTo(q)).toBeGreaterThan(thickness * 0.9);
+          }
+        }
+      }
+    }
+  });
+
+  it('coils no tighter than the rope can be rolled', () => {
+    // Below thickness/2 the inside of the tube meets its own axis and the tip turns inside out.
+    const { bands, thickness } = curled({ curlTightness: 1 });
+    for (const b of bands) {
+      const c = coilOf(b);
+      for (let i = 1; i < c.length - 1; i++) {
+        const h0 = Math.atan2(c[i].y - c[i - 1].y, c[i].x - c[i - 1].x);
+        const h1 = Math.atan2(c[i + 1].y - c[i].y, c[i + 1].x - c[i].x);
+        const turn = Math.abs(Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0)));
+        if (turn > 1e-6) expect(c[i].distanceTo(c[i + 1]) / turn).toBeGreaterThan(thickness / 2);
+      }
+    }
+  });
+
+  it('is still a concentric arch where anyone reads it as one', () => {
+    // The bands spread apart before they curl, and that must not reach the top of the arch — the
+    // thing that makes a rainbow a rainbow is the ropes touching.
+    const { bands, thickness, centerX, archY } = curled();
+    const atAngle = (b, ang) => {
+      let best = null, bd = Infinity;
+      for (const p of b.path) {
+        const d = Math.abs(Math.atan2(p.y - archY, p.x - centerX) - ang);
+        if (d < bd) { bd = d; best = p; }
+      }
+      return Math.hypot(best.x - centerX, best.y - archY);
+    };
+    for (const ang of [Math.PI, Math.PI * 0.75, Math.PI / 2]) {
+      const rs = bands.map(b => atAngle(b, ang));
+      rs.slice(1).forEach((r, i) => expect((r - rs[i]) / thickness).toBeCloseTo(1, 1));
+    }
+  });
+
+  it('joins the coil to the arch without a crease', () => {
+    // The walk starts with the heading the run already had, so no step turns more sharply than the
+    // coil's own step does. A join that kinked would show up here as one outlier.
+    const { bands } = curled();
+    for (const b of bands) {
+      const h = b.path.slice(1).map((p, i) => Math.atan2(p.y - b.path[i].y, p.x - b.path[i].x));
+      const turns = h.slice(1).map((a, i) => Math.abs(Math.atan2(Math.sin(a - h[i]), Math.cos(a - h[i]))));
+      expect(Math.max(...turns)).toBeLessThan(0.25);
+    }
+  });
+
+  it('staggers the ends, so the coils are not a comb', () => {
+    const spread = fan => {
+      const ys = curled({ curlFan: fan }).bands.map(b => b.path[b.path.length - 1].y);
+      return Math.max(...ys) - Math.min(...ys);
+    };
+    expect(spread(1.1)).toBeGreaterThan(spread(0));
+  });
+});

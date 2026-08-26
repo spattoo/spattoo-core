@@ -72,6 +72,31 @@ export const RAINBOW_ARRANGEMENTS = [
       const r = t.w * 0.34;
       return <path d={`M${t.cx - r} ${t.top} A${r} ${r} 0 0 1 ${t.cx + r} ${t.top}`} />;
     } },
+  // The scrolled one: the same arch, with the ends rolled up instead of reaching for anything. Its
+  // own tile rather than a tick-box beside the others, because to a customer it is a DIFFERENT
+  // rainbow — the thing they point at in a photo — and the tiles are what they point at here.
+  //
+  // Left foot on the cake, right end curled, which is the reference: the plain side tucks behind a
+  // cloud and the curled side is the whole look.
+  { key: 'curled', surface: 'top', label: 'Curled ends',
+    params: { footLeft: 'top', footRight: 'curl', spring: 1, offsetX: 0, standoff: 0,
+              scale: 0.75, flatten: 0 },
+    draw: t => {
+      const r = t.w * 0.30;
+      // Walked, like the geometry walks it, so the icon is the object rather than a guess at it.
+      // SVG's y points DOWN, which is the only difference.
+      const seg = [];
+      let th = Math.PI / 2, px = t.cx + r, py = t.top, rad = r * 0.42;
+      const steps = 20, dth = (Math.PI * 2 * 1.2) / steps;
+      for (let i = 0; i < steps; i++) {
+        rad = Math.max(r * 0.09, rad * 0.90);
+        th -= dth;
+        px += Math.cos(th) * rad * dth;
+        py += Math.sin(th) * rad * dth;
+        seg.push(`L${px.toFixed(1)} ${py.toFixed(1)}`);
+      }
+      return <path d={`M${t.cx - r} ${t.top} A${r} ${r} 0 0 1 ${t.cx + r} ${t.top}${seg.join('')}`} />;
+    } },
   // ONE wall tile, not two. The pair that was here differed only in HEIGHT — ends on the board
   // versus floating partway up — and the spring already moves it between them. A chooser offering
   // two points on a slider as though they were different shapes is a chooser with a wasted tile.
