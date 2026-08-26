@@ -101,6 +101,32 @@ export const RAINBOW_ARRANGEMENTS = [
       }
       return <path d={`M${t.cx - r} ${t.top} A${r} ${r} 0 0 1 ${t.cx + r} ${t.top}${seg.join('')}`} />;
     } },
+  // The wall one with its ends rolled up. The geometry needed nothing: the coils are built in the
+  // flat frame like the rest of the band and `wrapToWall` bends them round the tier with it, so they
+  // hug the cake at the same distance the ropes do — measured at 1.278 from the axis on a tier of
+  // 1.2, which is the radius plus half a rope plus `proud`.
+  //
+  // Its stack rests on the BOARD rather than the cake top, and that falls out of the construction
+  // too: the chain rests its first coil on whatever the rainbow's other end stands on.
+  { key: 'wall-curled', surface: 'side', label: 'On the wall, curled',
+    params: { footLeft: 'board', footRight: 'curl', spring: 0.18, offsetX: 0, standoff: 0,
+              theta: -0.09, proud: 0.02, scale: 0.75, flatten: 0,
+              bands: 6, innerRadius: 0.30, thickness: 0.12 },
+    draw: t => {
+      const r = Math.min(t.w * 0.30, (t.base - t.top) * 0.75);
+      const y = t.base - 1;
+      const seg = [];
+      let th = Math.PI / 2, px = t.cx + r, py = y, rad = r * 0.34;
+      const steps = 16, dth = (Math.PI * 2 * 1.1) / steps;
+      for (let i = 0; i < steps; i++) {
+        rad = Math.max(r * 0.10, rad * 0.90);
+        th -= dth;
+        px += Math.cos(th) * rad * dth;
+        py += Math.sin(th) * rad * dth;
+        seg.push(`L${px.toFixed(1)} ${py.toFixed(1)}`);
+      }
+      return <path d={`M${t.cx - r} ${y} A${r} ${r} 0 0 1 ${t.cx + r} ${y}${seg.join('')}`} />;
+    } },
   // ONE wall tile, not two. The pair that was here differed only in HEIGHT — ends on the board
   // versus floating partway up — and the spring already moves it between them. A chooser offering
   // two points on a slider as though they were different shapes is a chooser with a wasted tile.
@@ -118,11 +144,18 @@ export const RAINBOW_ARRANGEMENTS = [
     } },
 ];
 
-// Which arrangement a rainbow currently IS. On the wall the feet are not part of the choice — the
-// tile is the surface, and where it sits up the wall is the drag's job.
+// Which arrangement a rainbow currently IS.
+//
+// On the wall the FEET are still not part of the choice — where it sits up the wall is the drag's
+// job, and a wall rainbow saved with no feet at all would otherwise match no tile and leave the
+// chooser blank. But whether its ends CURL is part of the choice, because that is now two different
+// wall tiles. Matching on the surface alone would have highlighted the first of them for both.
+const curls = x => x?.footLeft === 'curl' || x?.footRight === 'curl';
+
 export function arrangementOf(rb) {
   return RAINBOW_ARRANGEMENTS.find(a =>
     (rb?.surface ?? 'top') === a.surface
+    && curls(rb) === curls(a.params)
     && (a.surface === 'side'
         || (rb?.footLeft === a.params.footLeft && rb?.footRight === a.params.footRight)));
 }
