@@ -15,6 +15,22 @@ describe('rainbow arrangements', () => {
     for (const a of RAINBOW_ARRANGEMENTS) expect(a.label?.length).toBeGreaterThan(0);
   });
 
+
+  it('offers them in the order a customer reads them', () => {
+    // Plainest first, flourishes last. The order IS the menu, and it is the one thing about this
+    // list a test can hold that reading the array cannot: a tile added later lands wherever the
+    // person adding it happened to type it.
+    expect(RAINBOW_ARRANGEMENTS.map(a => a.key)).toEqual([
+      'on-top', 'wall', 'fall-left', 'fall-right', 'curled', 'wall-curled',
+    ]);
+  });
+
+  it('keeps the two curled ones at the end', () => {
+    const keys = RAINBOW_ARRANGEMENTS.map(a => a.key);
+    const curled = keys.filter(k => k.includes('curled'));
+    expect(keys.slice(-curled.length)).toEqual(curled);
+  });
+
   it('identifies each tile from its own parameters', () => {
     // The round trip that matters: pick a tile, and the chooser must show THAT tile as chosen. Two
     // tiles that answer to the same shape mean one of them can never look selected.

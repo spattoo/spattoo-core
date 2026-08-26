@@ -43,14 +43,38 @@ function leanFeet(t, dir) {
   return dir > 0 ? [rest, fall] : [fall, rest];
 }
 
+// ── ORDER IS THE MENU ────────────────────────────────────────────────────────────────────────────
+// Plainest first, and the two curled ones LAST. A customer reads this as a list of rainbows, so the
+// one they picture when they hear the word goes at the top and the flourishes go at the bottom.
+// Top-of-cake and wall lead, because those are the two places a rainbow goes; the leaning pair and
+// then the curled pair follow, each kept together with its own partner.
 export const RAINBOW_ARRANGEMENTS = [
-  { key: 'fall-right', surface: 'top', label: 'Over, falling right',
-    params: { footLeft: 'top', footRight: 'board', spring: 1, offsetX: 0.71, standoff: 0,
-              scale: 1, flatten: 0 },
-    draw: (t, floor) => {
-      const [a, b] = leanFeet(t, 1);
-      const r = (b - a) / 2;
-      return <path d={`M${a} ${t.top} A${r} ${r} 0 0 1 ${b} ${t.top} L${b} ${floor}`} />;
+  // spring 1, NOT above it. Past 1 the springing point rises above the cake top and the arch grows
+  // LEGS to reach it — it stood on 0.38 of stilt, floating clear of the cake it was supposed to be
+  // sitting on. At 1 the springing point is pinned to the feet, so the arc rests straight on the
+  // surface. scale 0.75 puts the feet inside the rim and the arch about 61% of the cake's height,
+  // which is the proportion in the references.
+  { key: 'on-top', surface: 'top', label: 'On the top',
+    params: { footLeft: 'top', footRight: 'top', spring: 1, offsetX: 0, standoff: 0,
+              scale: 0.75, flatten: 0 },
+    draw: t => {
+      const r = t.w * 0.34;
+      return <path d={`M${t.cx - r} ${t.top} A${r} ${r} 0 0 1 ${t.cx + r} ${t.top}`} />;
+    } },
+  // ONE wall tile, not two. The pair that was here differed only in HEIGHT — ends on the board
+  // versus floating partway up — and the spring already moves it between them. A chooser offering
+  // two points on a slider as though they were different shapes is a chooser with a wasted tile.
+  // Every number was dialled in by hand and handed over as "take this as the default", so it is
+  // transcribed rather than derived. Two are things nobody would guess: flatten is ZERO (round ropes
+  // read better on a wall than pressed ribbons, whatever the photos suggest), and the arch is turned
+  // slightly off dead-centre, which stops it looking like a diagram.
+  { key: 'wall', surface: 'side', label: 'On the wall',
+    params: { footLeft: 'board', footRight: 'board', spring: 0.18, offsetX: 0, standoff: 0,
+              theta: -0.09, proud: 0.02, scale: 0.75, flatten: 0,
+              bands: 6, innerRadius: 0.30, thickness: 0.12 },
+    draw: t => {
+      const r = Math.min(t.w * 0.30, (t.base - t.top) * 0.75);
+      return <path d={`M${t.cx - r} ${t.base - 1} A${r} ${r} 0 0 1 ${t.cx + r} ${t.base - 1}`} />;
     } },
   { key: 'fall-left', surface: 'top', label: 'Over, falling left',
     params: { footLeft: 'board', footRight: 'top', spring: 1, offsetX: 0.71, standoff: 0,
@@ -60,17 +84,13 @@ export const RAINBOW_ARRANGEMENTS = [
       const r = (b - a) / 2;
       return <path d={`M${a} ${floor} L${a} ${t.top} A${r} ${r} 0 0 1 ${b} ${t.top}`} />;
     } },
-  // spring 1, NOT above it. Past 1 the springing point rises above the cake top and the arch grows
-  // LEGS to reach it — it stood on 0.38 of stilt, floating clear of the cake it was supposed to be
-  // sitting on. At 1 the springing point is pinned to the feet, so the arc rests straight on the
-  // surface. scale 0.75 puts the feet inside the rim and the arch about 61% of the cake's height,
-  // which is the proportion in the references.
-  { key: 'on-top', surface: 'top', label: 'Sitting on top',
-    params: { footLeft: 'top', footRight: 'top', spring: 1, offsetX: 0, standoff: 0,
-              scale: 0.75, flatten: 0 },
-    draw: t => {
-      const r = t.w * 0.34;
-      return <path d={`M${t.cx - r} ${t.top} A${r} ${r} 0 0 1 ${t.cx + r} ${t.top}`} />;
+  { key: 'fall-right', surface: 'top', label: 'Over, falling right',
+    params: { footLeft: 'top', footRight: 'board', spring: 1, offsetX: 0.71, standoff: 0,
+              scale: 1, flatten: 0 },
+    draw: (t, floor) => {
+      const [a, b] = leanFeet(t, 1);
+      const r = (b - a) / 2;
+      return <path d={`M${a} ${t.top} A${r} ${r} 0 0 1 ${b} ${t.top} L${b} ${floor}`} />;
     } },
   // The scrolled one: the same arch, with the ends rolled up instead of reaching for anything. Its
   // own tile rather than a tick-box beside the others, because to a customer it is a DIFFERENT
@@ -126,21 +146,6 @@ export const RAINBOW_ARRANGEMENTS = [
         seg.push(`L${px.toFixed(1)} ${py.toFixed(1)}`);
       }
       return <path d={`M${t.cx - r} ${y} A${r} ${r} 0 0 1 ${t.cx + r} ${y}${seg.join('')}`} />;
-    } },
-  // ONE wall tile, not two. The pair that was here differed only in HEIGHT — ends on the board
-  // versus floating partway up — and the spring already moves it between them. A chooser offering
-  // two points on a slider as though they were different shapes is a chooser with a wasted tile.
-  // Every number was dialled in by hand and handed over as "take this as the default", so it is
-  // transcribed rather than derived. Two are things nobody would guess: flatten is ZERO (round ropes
-  // read better on a wall than pressed ribbons, whatever the photos suggest), and the arch is turned
-  // slightly off dead-centre, which stops it looking like a diagram.
-  { key: 'wall', surface: 'side', label: 'On the wall',
-    params: { footLeft: 'board', footRight: 'board', spring: 0.18, offsetX: 0, standoff: 0,
-              theta: -0.09, proud: 0.02, scale: 0.75, flatten: 0,
-              bands: 6, innerRadius: 0.30, thickness: 0.12 },
-    draw: t => {
-      const r = Math.min(t.w * 0.30, (t.base - t.top) * 0.75);
-      return <path d={`M${t.cx - r} ${t.base - 1} A${r} ${r} 0 0 1 ${t.cx + r} ${t.base - 1}`} />;
     } },
 ];
 
