@@ -8131,6 +8131,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   My decorations
                 </div>
                 {(() => {
+                  // Nothing at all until the catalogue has arrived — NOT the empty message.
+                  // "Mine" is the one card with no category_id to narrow on, so it is the only one
+                  // that fetches the whole catalogue and therefore the slowest to fill. While it is
+                  // in flight `mine` is empty for a reason that has nothing to do with the customer,
+                  // and this block used to answer that window with "Nothing here yet" — telling
+                  // someone with ten uploads, for as long as the fetch took, that they had none.
+                  // The spinner at the top of the panel is already saying the true thing.
+                  if (elementTypesLoading) return null;
                   const mine = filterEl(Object.values(otherElementsDb).flat().filter(el => el.baker_id));
                   return mine.length ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
