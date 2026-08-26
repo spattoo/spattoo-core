@@ -43,29 +43,18 @@ function leanFeet(t, dir) {
   return dir > 0 ? [rest, fall] : [fall, rest];
 }
 
+// ── ORDER IS THE MENU ────────────────────────────────────────────────────────────────────────────
+// Plainest first, and the two curled ones LAST. A customer reads this as a list of rainbows, so the
+// one they picture when they hear the word goes at the top and the flourishes go at the bottom.
+// Top-of-cake and wall lead, because those are the two places a rainbow goes; the leaning pair and
+// then the curled pair follow, each kept together with its own partner.
 export const RAINBOW_ARRANGEMENTS = [
-  { key: 'fall-right', surface: 'top', label: 'Over, falling right',
-    params: { footLeft: 'top', footRight: 'board', spring: 1, offsetX: 0.71, standoff: 0,
-              scale: 1, flatten: 0 },
-    draw: (t, floor) => {
-      const [a, b] = leanFeet(t, 1);
-      const r = (b - a) / 2;
-      return <path d={`M${a} ${t.top} A${r} ${r} 0 0 1 ${b} ${t.top} L${b} ${floor}`} />;
-    } },
-  { key: 'fall-left', surface: 'top', label: 'Over, falling left',
-    params: { footLeft: 'board', footRight: 'top', spring: 1, offsetX: 0.71, standoff: 0,
-              scale: 1, flatten: 0 },
-    draw: (t, floor) => {
-      const [a, b] = leanFeet(t, -1);
-      const r = (b - a) / 2;
-      return <path d={`M${a} ${floor} L${a} ${t.top} A${r} ${r} 0 0 1 ${b} ${t.top}`} />;
-    } },
   // spring 1, NOT above it. Past 1 the springing point rises above the cake top and the arch grows
   // LEGS to reach it — it stood on 0.38 of stilt, floating clear of the cake it was supposed to be
   // sitting on. At 1 the springing point is pinned to the feet, so the arc rests straight on the
   // surface. scale 0.75 puts the feet inside the rim and the arch about 61% of the cake's height,
   // which is the proportion in the references.
-  { key: 'on-top', surface: 'top', label: 'Sitting on top',
+  { key: 'on-top', surface: 'top', label: 'On the top',
     params: { footLeft: 'top', footRight: 'top', spring: 1, offsetX: 0, standoff: 0,
               scale: 0.75, flatten: 0 },
     draw: t => {
@@ -87,13 +76,91 @@ export const RAINBOW_ARRANGEMENTS = [
       const r = Math.min(t.w * 0.30, (t.base - t.top) * 0.75);
       return <path d={`M${t.cx - r} ${t.base - 1} A${r} ${r} 0 0 1 ${t.cx + r} ${t.base - 1}`} />;
     } },
+  { key: 'fall-left', surface: 'top', label: 'Over, falling left',
+    params: { footLeft: 'board', footRight: 'top', spring: 1, offsetX: 0.71, standoff: 0,
+              scale: 1, flatten: 0 },
+    draw: (t, floor) => {
+      const [a, b] = leanFeet(t, -1);
+      const r = (b - a) / 2;
+      return <path d={`M${a} ${floor} L${a} ${t.top} A${r} ${r} 0 0 1 ${b} ${t.top}`} />;
+    } },
+  { key: 'fall-right', surface: 'top', label: 'Over, falling right',
+    params: { footLeft: 'top', footRight: 'board', spring: 1, offsetX: 0.71, standoff: 0,
+              scale: 1, flatten: 0 },
+    draw: (t, floor) => {
+      const [a, b] = leanFeet(t, 1);
+      const r = (b - a) / 2;
+      return <path d={`M${a} ${t.top} A${r} ${r} 0 0 1 ${b} ${t.top} L${b} ${floor}`} />;
+    } },
+  // The scrolled one: the same arch, with the ends rolled up instead of reaching for anything. Its
+  // own tile rather than a tick-box beside the others, because to a customer it is a DIFFERENT
+  // rainbow — the thing they point at in a photo — and the tiles are what they point at here.
+  //
+  // Left foot on the cake, right end curled, which is the reference: the plain side tucks behind a
+  // cloud and the curled side is the whole look.
+  // spring 1.16, not 1. The arch springs a little ABOVE the cake top, which is what gives the stack
+  // of curls room to stand on the cake rather than starting inside it. Dialled in against the
+  // reference rather than derived — 1 puts the springing point exactly on the surface, and the
+  // lowest coil then has nowhere to sit.
+  { key: 'curled', surface: 'top', label: 'Curled ends',
+    params: { footLeft: 'top', footRight: 'curl', spring: 1.16, offsetX: 0, standoff: 0,
+              scale: 0.75, flatten: 0 },
+    draw: t => {
+      const r = t.w * 0.30;
+      // Walked, like the geometry walks it, so the icon is the object rather than a guess at it.
+      // SVG's y points DOWN, which is the only difference.
+      const seg = [];
+      let th = Math.PI / 2, px = t.cx + r, py = t.top, rad = r * 0.42;
+      const steps = 20, dth = (Math.PI * 2 * 1.2) / steps;
+      for (let i = 0; i < steps; i++) {
+        rad = Math.max(r * 0.09, rad * 0.90);
+        th -= dth;
+        px += Math.cos(th) * rad * dth;
+        py += Math.sin(th) * rad * dth;
+        seg.push(`L${px.toFixed(1)} ${py.toFixed(1)}`);
+      }
+      return <path d={`M${t.cx - r} ${t.top} A${r} ${r} 0 0 1 ${t.cx + r} ${t.top}${seg.join('')}`} />;
+    } },
+  // The wall one with its ends rolled up. The geometry needed nothing: the coils are built in the
+  // flat frame like the rest of the band and `wrapToWall` bends them round the tier with it, so they
+  // hug the cake at the same distance the ropes do — measured at 1.278 from the axis on a tier of
+  // 1.2, which is the radius plus half a rope plus `proud`.
+  //
+  // Its stack rests on the BOARD rather than the cake top, and that falls out of the construction
+  // too: the chain rests its first coil on whatever the rainbow's other end stands on.
+  { key: 'wall-curled', surface: 'side', label: 'On the wall, curled',
+    params: { footLeft: 'board', footRight: 'curl', spring: 0.18, offsetX: 0, standoff: 0,
+              theta: -0.09, proud: 0.02, scale: 0.75, flatten: 0,
+              bands: 6, innerRadius: 0.30, thickness: 0.12 },
+    draw: t => {
+      const r = Math.min(t.w * 0.30, (t.base - t.top) * 0.75);
+      const y = t.base - 1;
+      const seg = [];
+      let th = Math.PI / 2, px = t.cx + r, py = y, rad = r * 0.34;
+      const steps = 16, dth = (Math.PI * 2 * 1.1) / steps;
+      for (let i = 0; i < steps; i++) {
+        rad = Math.max(r * 0.10, rad * 0.90);
+        th -= dth;
+        px += Math.cos(th) * rad * dth;
+        py += Math.sin(th) * rad * dth;
+        seg.push(`L${px.toFixed(1)} ${py.toFixed(1)}`);
+      }
+      return <path d={`M${t.cx - r} ${y} A${r} ${r} 0 0 1 ${t.cx + r} ${y}${seg.join('')}`} />;
+    } },
 ];
 
-// Which arrangement a rainbow currently IS. On the wall the feet are not part of the choice — the
-// tile is the surface, and where it sits up the wall is the drag's job.
+// Which arrangement a rainbow currently IS.
+//
+// On the wall the FEET are still not part of the choice — where it sits up the wall is the drag's
+// job, and a wall rainbow saved with no feet at all would otherwise match no tile and leave the
+// chooser blank. But whether its ends CURL is part of the choice, because that is now two different
+// wall tiles. Matching on the surface alone would have highlighted the first of them for both.
+const curls = x => x?.footLeft === 'curl' || x?.footRight === 'curl';
+
 export function arrangementOf(rb) {
   return RAINBOW_ARRANGEMENTS.find(a =>
     (rb?.surface ?? 'top') === a.surface
+    && curls(rb) === curls(a.params)
     && (a.surface === 'side'
         || (rb?.footLeft === a.params.footLeft && rb?.footRight === a.params.footRight)));
 }

@@ -958,6 +958,35 @@ function UploadsIcon({ size = 20 }) {
   );
 }
 
+// "My decorations" — the one card in the category grid that can never have a photo on it.
+//
+// Every other tile shows a real decoration, because a category is a shelf of things and the picture
+// IS the label. This one is not a shelf, it is an ownership filter with no row in element_categories
+// to hang a thumbnail_url on, so there is nothing to upload and nowhere to put it. Showing the
+// customer's own first decoration would have been the nice answer and is the one thing the grid
+// cannot afford: knowing what is in here means fetching the whole catalogue, which is exactly what
+// the grid exists to defer. So it is drawn.
+//
+// A STACK of pictures, deliberately built from the same frame-and-hill mark as UploadsIcon. The two
+// are neighbours in this panel and the relationship is real — these are your uploads, filed — so the
+// icon should rhyme with that one rather than invent a second visual language for the same idea. The
+// second sheet behind it is what makes it "several of mine" instead of "a picture", and it is drawn
+// as an open corner rather than a full rectangle so the two outlines never cross and turn to mud at
+// 30px.
+function MyDecorationsIcon({ size = 30 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {/* The sheet behind: top and right edges only. */}
+      <path d="M7.6 6.4V4.7A1.7 1.7 0 0 1 9.3 3h10A1.7 1.7 0 0 1 21 4.7v10a1.7 1.7 0 0 1-1.7 1.7h-1.7" />
+      {/* The one in front, with the same sun and hill Uploads uses. */}
+      <rect x="3" y="7.6" width="14.6" height="13.4" rx="2.2" />
+      <circle cx="7.1" cy="11.7" r="1.35" />
+      <path d="M17.6 17.6l-3.9-3.9L6.4 21" />
+    </svg>
+  );
+}
+
 function TextIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1691,7 +1720,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3885,17 +3914,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     updateTierRainbows(i, cur => [
       ...cur,
       { ...RAINBOW_DEFAULTS, ...tuned, id,
-        // Each one a quarter turn further round, so a second rainbow is visibly a second rainbow
-        // rather than a redraw of the first. Position along the surface stays as authored: WHERE it
-        // sits is the customer's decision once they can drag it.
-        yaw: cur.length * (Math.PI / 2) },
+        // ── The first one lands in the MIDDLE ───────────────────────────────────────────────────
+        // An arch carries its own lean — `offsetX` is how far it straddles along its own plane, and
+        // for the shapes that fall off one side that is most of a radius. Placed with no position of
+        // its own it therefore arrives shoved to one side, which is exactly what "it loads to the
+        // right" was. Cancelling the lean puts the arc over the middle of the cake.
+        //
+        // A SECOND one steps aside rather than landing on the first, and it steps — it does not
+        // turn. Turning each new one a quarter round was the old answer and it was the same mistake
+        // the drag made: a rainbow seen edge-on is not a rainbow anybody ordered.
+        ...(() => {
+          const lean = -((tuned.offsetX ?? RAINBOW_DEFAULTS.offsetX) ?? 0);
+          if (!cur.length) return { px: lean, pz: 0 };
+          const a = cur.length * 1.2;          // irrational-ish turn, so four in a row do not stack
+          return { px: lean + Math.sin(a) * 0.4, pz: Math.cos(a) * 0.4 };
+        })() },
     ]);
     selectExclusive({ type: 'rainbow', tierIndex: i, id });
   }
 
   function removeRainbow(tierIndex, id) {
     updateTierRainbows(tierIndex, cur => cur.filter(r => r.id !== id));
-    setRainbowSelected(null);
     clearAllSelections();
   }
 
@@ -3919,22 +3958,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function removeCloud(tierIndex, id) {
     updateTierClouds(tierIndex, cur => cur.filter(c => c.id !== id));
-    setCloudSelected(null);
     clearAllSelections();
   }
 
   // The handle machinery hands back (u, v) on the surface; cloudDragTo turns that into the cloud's
   // own words. A board cloud is measured against the BOARD's radius, because it stands outside the
   // cake and the tier's own scale would cap it at the cake's edge.
-  function handleCloudMove(tier, idx, u, v) {
-    const t = design.tiers[tier];
-    if (!t?.clouds?.[idx]) return;
-    const ct = canvasConfig.tiers ?? [];
-    const radius = ct[tier]?.radius ?? 1;
-    const cake = { radius, topY: 0, boardY: 0,
-                   handleRadius: ct[0] ? boardOf(ct[0]).radius : radius };
-    updateTierClouds(tier, cur => cur.map((c, k) =>
-      k === idx ? { ...c, ...cloudDragTo(c, cake, u, v) } : c));
+  // The canvas resolves the pointer against the surface the cloud sits on and hands back the patch
+  // already in the cloud's own words — it has the tier geometry to hand, and re-deriving it here
+  // would be a second definition of where a tier's lid is.
+  function handleCloudMove(tierIndex, id, patch) {
+    updateTierClouds(tierIndex, cur => cur.map(c => (c.id === id ? { ...c, ...patch } : c)));
   }
 
   function removeGrass() {
@@ -4054,6 +4088,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'writing', id });
   }
 
+  // ── Luster dust, from a catalogue row ─────────────────────────────────────────────────────────
+  // Dust is not an object you place: it is `tier.dusting`, a wall treatment made of flicked splashes
+  // plus an appearance. So a row cannot carry a POSITION the way a rainbow does — what it carries is
+  // the LOOK, and tapping it seeds the tier with that look and opens the tool so the next tap flicks
+  // dust that already looks like the thing that was chosen.
+  //
+  // NOT the colour, though — that is the customer's, along with density, fleck size, direction,
+  // spread, height and glow, all of which their own card offers. A row that meant "gold" would be a
+  // row they can undo with one tap.
+  //
+  // What a row is FOR is the material character the card does not expose: sparkle, glitter,
+  // metalness, clearcoat. A soft pearl dust and a hard glitter are genuinely different products in a
+  // way that gold and silver are not.
+  function addDustFromRow(el) {
+    const i = rainbowTierIndex();
+    applyDustLook(i, el?.placement_config?.luster_dust ?? {});
+    setDustTier(i);
+    selectExclusive({ type: 'tool', tool: 'luster-dust' });
+  }
+
+  // ── The cream pen, from a catalogue row ───────────────────────────────────────────────────────
+  // Same shape as the dust: the pen is a way of DRAWING, not an object, so a row carries the LOOK —
+  // the nozzle, the colour, how thick and how soft — and tapping it sets the pen to that and opens
+  // it. Every stroke drawn afterwards comes out as the thing that was chosen.
+  //
+  // `penStyle` is the seam. It already held exactly these settings for the pen's own card, so a row
+  // does not need a second place to put them.
+  function addPenFromRow(el) {
+    const tuned = el?.placement_config?.cream_pen ?? {};
+    setPenStyle(prev => ({ ...prev, ...tuned }));
+    selectExclusive({ type: 'tool', tool: 'pen' });
+  }
+
   function addAgeFromRow(el) {
     addAge(el?.placement_config?.number_topper ?? {});
     focusEditor('decoration');
@@ -4078,6 +4145,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // every saved snapshot — renaming them is a data migration for a word nobody sees. This key has
     // no rows yet, so it costs nothing to get right now.
     number_topper: addAgeFromRow,
+    // Both are LOOKS rather than objects — see addDustFromRow and addPenFromRow.
+    luster_dust: addDustFromRow,
+    cream_pen: addPenFromRow,
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -4114,8 +4184,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // dust splash — polar (u, v) against the surface, moved by a handle on the cake — so this reuses
   // FinishHandles rather than inventing a third way to drag something.
   const [grassSelected, setGrassSelected] = useState(null);   // { tier, idx } — BOARD_TIER for the board
-  const [rainbowSelected, setRainbowSelected] = useState(null);   // { tier, idx } — which arch is being moved
-  const [cloudSelected, setCloudSelected] = useState(null);       // { tier, idx } — which cloud is being moved
   const GRASS_PATCH_R = 0.42;
 
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
@@ -4158,17 +4226,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   // The lean is held. `offsetX` is the arch's SHAPE, not its position, so a drag moves where the
   // rainbow stands without quietly turning "over, falling right" into something else.
-  function handleRainbowMove(tier, idx, u, v) {
-    const t = design.tiers[tier];
-    const rb = t?.rainbows?.[idx];
-    if (!rb) return;
-    // The RESOLVED radius the canvas renders, not one re-derived here — a drag computed against a
-    // different number than the picture would put the handle where the arch is not. topY/boardY are
-    // unused by the drag map (it only needs the footprint), so they are not looked up.
-    const cake = { radius: canvasConfig.tiers?.[tier]?.radius ?? 1, topY: 0, boardY: 0 };
-    updateTierRainbows(tier, cur => cur.map((r, k) =>
-      k === idx ? { ...r, ...rainbowDragTo(r, cake, u, v) } : r));
+  function handleRainbowMove(tierIndex, id, patch) {
+    updateTierRainbows(tierIndex, cur => cur.map(r => (r.id === id ? { ...r, ...patch } : r)));
   }
+
 
   function handleGrassMove(tier, idx, u, v) {
     if (tier === BOARD_TIER) {
@@ -5228,9 +5289,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // ONE renderer so the two groups never drift. `label` is the group heading.
   function renderRingPickerCard(label, els) {
     if (!els.length) return null;
-    const q = elemSearch.trim().toLowerCase();
-    const visible = q ? els.filter(el => `${el.name ?? ''} ${el.description ?? ''}`.toLowerCase().includes(q)) : els;
-    if (q && visible.length === 0) return null;
+    // `filterEl`, not a filter of its own. This card used to match on the search text alone, and the
+    // element stores accumulate across every category opened this session — so once Piping had been
+    // visited its card stayed on screen inside Animals, inside Sky, inside everything. Two
+    // categories looked open at once because two categories WERE on screen at once.
+    //
+    // The main grid had the rule already. Having a second, narrower copy of the same filtering here
+    // is what let them drift apart.
+    const visible = filterEl(els);
+    if (!visible.length) return null;
     return (
       <div style={{ ...s.elementCard, cursor: 'default' }}>
         <div style={s.elementCardLabel}>{label}</div>
@@ -5708,15 +5775,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'text'          ? { type: 'text', id: card.id }
       : null;
     if (el?.type === 'cloud') {
-      const idx = (design.tiers[el.tierIndex]?.clouds ?? []).findIndex(c => c.id === el.id);
-      setCloudSelected(idx >= 0 ? { tier: el.tierIndex, idx } : null);
     }
     if (el?.type === 'rainbow') {
       // Which handle is lit follows which card is open. Without this, opening a card on a cake with
       // two rainbows leaves the previous one's dot highlighted, and the highlight is the only thing
       // saying which of two identical dots belongs to the panel you are looking at.
-      const idx = (design.tiers[el.tierIndex]?.rainbows ?? []).findIndex(r => r.id === el.id);
-      setRainbowSelected(idx >= 0 ? { tier: el.tierIndex, idx } : null);
     }
     if (el) selectExclusive(el, stickerIds);
   }
@@ -7974,7 +8037,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {activeCategory.name}
                 </button>
               ) : (
-                <span style={s.flyoutTitle}>Elements</span>
+                /* "Decorations" — never "Elements". `element` is our word for a row in a table;
+                   the customer is looking for a decoration to put on a cake, and the rail beside
+                   this panel has always called it that. */
+                <span style={s.flyoutTitle}>Decorations</span>
               )}
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
             </div>
@@ -7983,7 +8049,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <input
               value={elemSearch}
               onChange={e => setElemSearch(e.target.value)}
-              placeholder="Search elements…"
+              placeholder="Search decorations…"
               style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff', flexShrink: 0 }}
             />
 
@@ -8017,8 +8083,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       {cat.thumbnail_url ? (
                         <img src={cat.thumbnail_url} alt="" loading="lazy" decoding="async"
                              style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6, boxSizing: 'border-box' }} />
+                      ) : cat.id === MY_DECORATIONS.id ? (
+                        // Never gets a photo — see MyDecorationsIcon for why. The dot below is for a
+                        // category that simply has not been given one YET, which is a different
+                        // thing and should keep looking like an absence.
+                        <span style={{ color: '#7d757d' }}><MyDecorationsIcon /></span>
                       ) : (
-                        // My decorations, and any category whose elements have no thumbnail yet.
+                        // A category whose elements have no thumbnail yet.
                         <span aria-hidden style={{ fontSize: 20, opacity: 0.28 }}>◍</span>
                       )}
                       {cat.count != null && (
@@ -8090,10 +8161,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!elemSearch.trim() && hasCap('element:manage')
               && (activeCategory?.id === MY_DECORATIONS.id || (!categories.length && !activeCategory)) && (
               <>
-                <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', margin: '14px 0 8px' }}>
-                  My decorations
-                </div>
+                {/* The heading is for the LEGACY layout only. Reached through its own card, the
+                    flyout's own title already says "My decorations" in full — printing it again
+                    directly underneath said the same words twice in one small panel. Without
+                    categories there is no such title (the flyout says "Decorations"), so the
+                    section still needs to name itself. */}
+                {!categories.length && (
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', margin: '14px 0 8px' }}>
+                    My decorations
+                  </div>
+                )}
                 {(() => {
+                  // Nothing at all until the catalogue has arrived — NOT the empty message.
+                  // "Mine" is the one card with no category_id to narrow on, so it is the only one
+                  // that fetches the whole catalogue and therefore the slowest to fill. While it is
+                  // in flight `mine` is empty for a reason that has nothing to do with the customer,
+                  // and this block used to answer that window with "Nothing here yet" — telling
+                  // someone with ten uploads, for as long as the fetch took, that they had none.
+                  // The spinner at the top of the panel is already saying the true thing.
+                  if (elementTypesLoading) return null;
                   const mine = filterEl(Object.values(otherElementsDb).flat().filter(el => el.baker_id));
                   return mine.length ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
@@ -8106,7 +8192,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontSize: 11, color: '#9a939a', fontWeight: 600, marginBottom: 10, lineHeight: 1.45 }}>
+                    // #9a939a at 11px was the only thing on the screen and could barely be read —
+                    // about 2.9:1 against the panel, well under the 4.5:1 a sentence needs. Grey
+                    // that pale is the colour of a DISABLED control, and this is the one piece of
+                    // text a customer opening an empty shelf has to take in. #5c565c is ~7:1.
+                    <div style={{ fontSize: 12, color: '#5c565c', fontWeight: 600, marginBottom: 10, lineHeight: 1.5, maxWidth: 260 }}>
                       Nothing here yet. Upload a picture of a decoration and use it on your cakes.
                     </div>
                   );
@@ -8118,88 +8208,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </>
             )}
 
-            {/* Cream pen + texts — code-level decoration sections (not DB element types), shown
-                last. Tapping opens the editor in the same flyout slot; its back arrow returns here. */}
-            {!elemSearch.trim() && (
-              <>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'tool', tool: 'pen' }); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0 }} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Cream Pen</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Draw cream freehand on the cake</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'tool', tool: 'luster-dust' }); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'radial-gradient(circle at 35% 35%, #f0cf63, #9a7b2e)', flexShrink: 0 }} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Luster Dust</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Flick metallic gold dust on the cake</div>
-                  </div>
-                </button>
-                {/* Grass sits with the TOOLS, beside luster dust — both are treatments applied to a
-                    surface, not objects you place. It is emphatically not under the Cream Pen: that
-                    is for writing and simple shapes, and nobody looks for a lawn inside a pen. */}
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addGrass(); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(160deg, #7bc043, #2e7d32)', flexShrink: 0 }} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Grass</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Pipe grass over the top of a tier</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addNameBlocks(); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#f2ede6', border: '1.5px solid #ddd2c4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 800, fontSize: 15, color: '#b07d8f' }}>Aa</div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Letter Blocks</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Spell a name in fondant cubes</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addWritingFromRow(); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
-                    <TextIcon size={22} />
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Texts</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Write a name in piped cream</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => {
-                    setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false);
-                    addAgeFromRow();   // no row: the Tools path takes the defaults
-                  }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FBF1D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b8860b', flexShrink: 0, fontWeight: 800, fontSize: 20 }}>
-                    8
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    {/* ── "Number topper", never "Age Number" ────────────────────────────────────
-                        A 5 on a cake is usually somebody's age, and naming the element after that
-                        makes the product sound like it is asking for one. It is not, and it does not
-                        store one — this is a gold digit standing on the top, and "topper" is what
-                        the thing is called in a bakery anyway.
-                        Same reasoning that moved the storefront from an age band to a celebration
-                        type (spattoo-api migration 046): the recommender never needed the person's
-                        age, and neither does a decoration. Nothing about children's data should be
-                        implied by a label when no data is involved.
-                        The internal key stays `age` / `ages` / addAge — it is written into every
-                        saved design snapshot, so renaming it is a data migration for a word no
-                        customer sees. Label here, key untouched. */}
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Number topper</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Gold number standing on top</div>
-                  </div>
-                </button>
-              </>
-            )}
+            {/* ── There is no tools section any more, and that is the point ─────────────────────
+                Six code-level cards used to sit at the bottom of this panel: Cream Pen, Luster Dust,
+                Grass, Letter Blocks, Texts and Number topper. Every one is a catalogue row now, so
+                every one is filed where a customer browses for it — Art, Finishes, Flowers & Leaves,
+                Numbers & Letters — instead of loose beneath the shelves.
+                They went one at a time, and each was reported before it went. The cards were never
+                laziness: a card was the only way in until the thing could be SAVED, and until today
+                two of these studios had no Save button at all and a third threw on render for
+                seventeen days. There was nothing to file them under.
+                Every one is still reached the same way, through PROCEDURAL_TOOLS on its row. What
+                went was the second door, never the feature.
+                If a future tool needs a card here, it is worth asking first whether it needs a row
+                instead. The answer has been "a row" six times running. */}
             </div>{/* end flyoutScroll */}
           </div>
         )}
@@ -8508,31 +8529,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  this, the only way in was the card, and the only way to the card was the stack: you
                  had to find the thing you were already looking at. */
               onCloudClick={(tier, id) => {
-                const idx = (design.tiers[tier]?.clouds ?? []).findIndex(c => c.id === id);
-                setCloudSelected(idx >= 0 ? { tier, idx } : null);
                 selectExclusive({ type: 'cloud', tierIndex: tier, id });
               }}
               onRainbowClick={(tier, id) => {
-                const idx = (design.tiers[tier]?.rainbows ?? []).findIndex(r => r.id === id);
-                setRainbowSelected(idx >= 0 ? { tier, idx } : null);
                 selectExclusive({ type: 'rainbow', tierIndex: tier, id });
               }}
-              cloudMode={selectedEl?.type === 'cloud'}
-              cloudSelected={cloudSelected}
               onCloudMove={handleCloudMove}
-              onCloudSelect={(tier, idx) => {
-                setCloudSelected({ tier, idx });
-                const cl = design.tiers[tier]?.clouds?.[idx];
-                if (cl) selectExclusive({ type: 'cloud', tierIndex: tier, id: cl.id });
-              }}
-              rainbowMode={selectedEl?.type === 'rainbow'}
-              rainbowSelected={rainbowSelected}
               onRainbowMove={handleRainbowMove}
-              onRainbowSelect={(tier, idx) => {
-                setRainbowSelected({ tier, idx });
-                const rb = design.tiers[tier]?.rainbows?.[idx];
-                if (rb) selectExclusive({ type: 'rainbow', tierIndex: tier, id: rb.id });
-              }}
               grassMode={selectedEl?.type === 'grass'}
               grassSelected={grassSelected}
               onGrassMove={handleGrassMove}

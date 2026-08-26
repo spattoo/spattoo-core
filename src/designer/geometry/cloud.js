@@ -243,42 +243,6 @@ export function cloudBaseY(surface, { topY = 0, boardY = 0 } = {}) {
 }
 
 /**
- * How much a cloud must shrink to stay on what it is sitting on.
- *
- * Measured from the LUMPS, not from a width. The first version took half the cloud's width and asked
- * whether that fitted across the cake — right when a cloud was a flat row facing the viewer, and
- * wrong the moment it became a bunch with depth standing anywhere round the cake. A puffy cloud near
- * the rim reached 1.30 on a 1.20 cake with the fit reporting 1.00: the balls behind the front row,
- * and every ball's own radius, were simply not in the sum.
- *
- * So it asks the real question — is every ball, edge included, inside the rim — and answers it by
- * bisection, because `reach` climbs with the scale but not in any form worth inverting.
- *
- * `outward` is a POSITION and does not shrink; the cloud does. Same trade as everywhere else here:
- * where it sits is the author's decision, its size is not.
- */
-export function cloudFitScale({ lobes = [], centerX = 0, outward = 0, cakeRadius = 1 }) {
-  if (!lobes.length || !(cakeRadius > 0)) return 1;
-
-  // The furthest any part of the cloud reaches from the cake's axis, at a given scale.
-  const reach = f => Math.max(...lobes.map(l =>
-    Math.hypot(centerX + f * l.x, outward + f * l.z) + f * l.r));
-
-  if (reach(1) <= cakeRadius) return 1;
-  // The POSITION is already off the cake, and no size fixes that. As small as is drawable rather
-  // than zero, so the picture shows the problem instead of hiding it.
-  if (reach(0) > cakeRadius) return 0.05;
-
-  let lo = 0, hi = 1;
-  for (let i = 0; i < 24; i++) {
-    const mid = (lo + hi) / 2;
-    if (reach(mid) <= cakeRadius) lo = mid; else hi = mid;
-  }
-  return lo;
-}
-
-
-/**
  * The cloud placed in the world.
  *
  * `surface` decides the whole placement, not just a height:
@@ -301,31 +265,30 @@ export function cloudPlacement(params = {}, cake = {}) {
   const centerX = (p.offsetX ?? 0) * R;
   const standoff = (p.standoff ?? 0) * R;
 
-  // Only a cloud ON the cake has an edge to fall off. One on the board or the wall has the whole
-  // board under it, and shrinking it there would be answering a question nobody asked.
-  // Where it stands, before anything shrinks — a position, not a size.
+  // ── Size is the author's, and so is position. Neither one moves the other ─────────────────────
+  // A cloud dragged toward the rim used to SHRINK, on a fit solved so nothing overhung. Nobody
+  // asked for that. There is a size control, which is what a size control is for, and a fondant
+  // cloud on a real cake overhangs the edge — the reference photo shows exactly that.
   //
-  // Capped on the TOP, and this is the one case where position is not purely the author's. Its own
-  // middle placed ON the rim leaves nothing to stand on, and no amount of shrinking fixes that: at
-  // exactly the rim the fit solves to zero and the cloud disappears. A drag to the edge would delete
-  // it. So the middle keeps a tenth of the cake in reserve — far enough out that the cloud still
-  // overhangs the rim the way the reference does, near enough in that it is still a cloud.
+  // It cost twice over. The shrink itself was never wanted, and it dragged a position cap in behind
+  // it: at exactly the rim the fit solved to zero, so the middle had to be held a tenth of the cake
+  // short of the edge to stop a drag deleting the cloud. Take the fit away and the cap has nothing
+  // to protect, so both are gone. Drag it to the rim and it hangs off the rim.
   //
-  // Same rule the rainbow's standing arch follows, for the same reason and in the same place.
-  const outwardRaw = onTop ? Math.min(standoff, R * 0.9) : (p.standoff ? standoff : R + w0 * 0.35);
-  let fit = 1;
-  if (onTop) fit = cloudFitScale({ lobes, centerX, outward: outwardRaw, cakeRadius: R });
-  const width = w0 * fit, height = h0 * fit, thickness = t0 * fit;
-
   // On the board a cloud stands OUTSIDE the cake by default rather than under it, which is where the
   // hardcoded distance used to put it — but as a number that can be dragged.
-  const outward = outwardRaw;
+  const outward = onTop ? standoff : (p.standoff ? standoff : R + w0 * 0.35);
+  const width = w0, height = h0, thickness = t0;
   const yaw = p.yaw ?? 0;
   const spin = (x, z) => new THREE.Vector3(
     Math.cos(yaw) * x + Math.sin(yaw) * z, 0, -Math.sin(yaw) * x + Math.cos(yaw) * z);
 
+  // Where the cloud's own middle ends up once it has been carried round the cake. Both variants use
+  // it; they differ only in whether the shape is TURNED on arrival.
+  const middle = spin(centerX, outward);
+
   const placed = lobes.map(l => {
-    const x = l.x * fit, y = l.y * fit, z = l.z * fit, r = l.r * fit;
+    const { x, y, z, r } = l;
     if (onWall) {
       // Divided by the radius the ball's own middle sits at, so a row of balls bent round the cake
       // spans the same length of wall it spanned flat.
@@ -334,25 +297,34 @@ export function cloudPlacement(params = {}, cake = {}) {
       const out = rw + z;
       return { r, position: new THREE.Vector3(Math.sin(th) * out, baseY + y, Math.cos(th) * out), rotationY: th };
     }
-    // Turned round the cake as a whole, so a cloud can stand anywhere on the board rather than only
-    // in front. The lumps keep their arrangement — this rotates where the cloud IS, not what it is.
-    const flat = spin(centerX + x, outward + z);
-    return { r, position: new THREE.Vector3(flat.x, baseY + y, flat.z), rotationY: yaw };
+    // Carried to where it stands, and set down STILL FACING THE FRONT. Neither variant turns.
+    //
+    // The flat one never did — it is a cut sheet, and a quarter turn shows you its thin edge. The
+    // puff did, on the reasoning that a bunch of balls reads the same from any angle so it may as
+    // well keep its bulge pointing outward. That was wrong for the same reason the rainbow's was:
+    // it made a DRAG turn the thing instead of moving it, and on a cake nobody is looking for the
+    // side view of a cloud. Both are placed now, and neither is rotated.
+    const pos = { x: middle.x + x, z: middle.z + z };
+    return { r, position: new THREE.Vector3(pos.x, baseY + y, pos.z), rotationY: 0 };
   });
 
   return {
     variant: p.variant,
     lobes: placed,
-    // The flat variant's shape is ONE outline, not a list of lumps — traced at the size that fits,
-    // so the piece that gets cut is the piece that goes on.
-    outline: flat ? cloudOutline({ ...p, scale: (p.scale ?? 1) * fit }, cake) : null,
+    // The flat variant's shape is ONE outline, not a list of lumps, so the piece that gets cut is
+    // the piece that goes on.
+    outline: flat ? cloudOutline(p, cake) : null,
     // How that sheet meets the cake. The renderer bends it for a wall; elsewhere it is a translate.
+    // Already carried round the cake, and NOT turned — so the renderer has a translate and nothing
+    // else. `centerX` and `theta` are still here for the wall, where the sheet is bent rather than
+    // placed and the bend needs to know where along the wall it starts.
     sheet: flat
-      ? { onWall, wallR: R, theta: p.theta ?? 0, centerX, baseY, yaw,
-          z: onWall ? 0 : outward,
+      ? { onWall, wallR: R, theta: p.theta ?? 0, centerX, baseY,
+          x: onWall ? 0 : middle.x,
+          z: onWall ? 0 : middle.z,
           thickness, bevel: Math.max(0, Math.min(0.9, p.bevel ?? 0)) }
       : null,
-    width, height, thickness, baseY, fit,
+    width, height, thickness, baseY,
   };
 }
 

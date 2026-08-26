@@ -525,6 +525,22 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // The LOOK, applied before any splash exists.
+  //
+  // `updateDusting` only touches a tier that is already dusted, which is right for a slider on an
+  // open card and useless for a catalogue row: tapping "Gold dust" has to seed the tier with that
+  // row's appearance so the first flick already looks like the thing that was chosen. Splashes are
+  // kept, so picking a different dust re-colours what is there rather than wiping it.
+  function applyDustLook(index, look) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, dusting: { ...LUSTER_DUST_DEFAULTS, ...(t.dusting ?? {}), ...look,
+                             splashes: t.dusting?.splashes ?? [] } }
+        : t),
+    }));
+  }
+
   function updateDusting(index, changes) {
     setDesign(prev => ({
       ...prev,
@@ -1338,7 +1354,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
-    addDustSplash, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
+    addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     setTierRainbows, updateTierRainbows, updateTierClouds,
     setNameBlocks, updateNameBlocks,

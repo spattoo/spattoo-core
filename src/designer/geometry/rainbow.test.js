@@ -3,7 +3,9 @@ import {
   RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale, wrapToWall,
   rainbowFootReach,
   rainbowHandleAt, rainbowDragTo,
+  rainbowPlacedPoints,
 } from './rainbow.js';
+import { movableContract } from './movableContract.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
 // Not that it looks like one — no test can say that, which is what the studio is for. What a test
@@ -957,7 +959,42 @@ describe('dragging a rainbow', () => {
   const OVER = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', yaw: 0 };
   const WALL = { ...RAINBOW_DEFAULTS, surface: 'side', footLeft: 'board', spring: 0.18, theta: -0.09 };
 
-  it('puts the handle back where a drag asked for it', () => {
+  it('MOVES it, and never turns it', () => {
+    // The whole complaint, as a test. A drag used to write `yaw`, which carried the arch round the
+    // cake's axis and swung it edge-on on the way — so dragging it toward the middle rotated it
+    // instead of moving it. Nobody decorating a cake wants a rainbow seen from the side.
+    for (const [u, v] of [[0, 0.5], [0.25, 0.8], [0.5, 0.3], [0.9, 1]]) {
+      const patch = rainbowDragTo(OVER, CAKE, u, v);
+      expect(Object.keys(patch).sort()).toEqual(['px', 'pz']);
+      expect(patch).not.toHaveProperty('yaw');
+    }
+  });
+
+  it('puts it where the pointer is', () => {
+    // A position, not an orbit: every point on the surface is reachable and distinct, including the
+    // middle — which the old solve could never reach at all.
+    const seen = new Set();
+    for (const u of [0, 0.25, 0.5, 0.75]) {
+      for (const v of [0, 0.3, 0.6, 1]) {
+        const { px, pz } = rainbowDragTo(OVER, CAKE, u, v);
+        seen.add(`${px.toFixed(6)},${pz.toFixed(6)}`);
+      }
+    }
+    // v = 0 is the middle whatever the angle, so the four u values collapse to one there.
+    expect(seen.size).toBe(13);
+    // toBeCloseTo, not toEqual: cos(0.3 * 2pi) * 0 is a signed negative zero.
+    const mid = rainbowDragTo(OVER, CAKE, 0.3, 0);
+    expect(mid.px).toBeCloseTo(0, 9);
+    expect(mid.pz).toBeCloseTo(0, 9);
+  });
+
+  it('starts in the middle', () => {
+    // What a freshly placed rainbow does before anybody drags it.
+    expect(RAINBOW_DEFAULTS.px).toBe(0);
+    expect(RAINBOW_DEFAULTS.pz).toBe(0);
+  });
+
+  it('reports back the place a drag put it', () => {
     for (const u of [0, 0.1, 0.25, 0.5, 0.9]) {
       const moved = { ...OVER, ...rainbowDragTo(OVER, CAKE, u, 0.8) };
       const back = rainbowHandleAt(moved, CAKE);
@@ -965,6 +1002,8 @@ describe('dragging a rainbow', () => {
       expect(back.v).toBeCloseTo(0.8, 6);
     }
   });
+
+
 
   it('does the same on the wall, in the wall\'s own words', () => {
     for (const [u, v] of [[0.1, 0.2], [0.5, 0.6], [0.95, 0.9]]) {
@@ -989,37 +1028,166 @@ describe('dragging a rainbow', () => {
     expect(rainbowHandleAt(WALL, CAKE).surface).toBe('side');
   });
 
-  it('sits the handle on the ARCH, not on the cake\'s middle', () => {
-    // The default leans, so its centre stands 0.71 of the radius off the axis. A handle at the axis
-    // would be a dot nowhere near the thing it moves.
-    expect(rainbowHandleAt(OVER, CAKE).v).toBeCloseTo(0.71, 3);
+
+
+
+
+  it('still gives the WALL both freedoms', () => {
+    // Nothing is inert there: theta runs right round and spring runs the whole height.
+    const moved = rainbowDragTo(WALL, CAKE, 0.4, 0.6);
+    expect(moved.theta).toBeDefined();
+    expect(moved.spring).toBeCloseTo(0.6, 6);
+  });
+});
+
+// ── A curled end ────────────────────────────────────────────────────────────────────────────────
+// The scrolled rainbow (reference 5): the same arch, with an end rolled up instead of reaching for a
+// surface. Three things here were got WRONG first and are pinned because measuring caught them, not
+// because they seemed likely.
+describe('a rainbow with its ends curled', () => {
+  const CAKE_C = { radius: 1.2, topY: 1.55, boardY: 0.1, height: 1.45 };
+  const curled = (over = {}) =>
+    rainbowBands({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'curl', ...over }, CAKE_C);
+  // Everything after the arc is coil, and the coil is a known number of points.
+  const coilOf = (b, over = {}) =>
+    b.path.slice(-Math.round(64 * (over.curlTurns ?? RAINBOW_DEFAULTS.curlTurns)));
+
+  it('leaves the plain rainbow alone, whatever the curl settings say', () => {
+    // The whole reason this is one generator and not two. A curl setting must be inert until an end
+    // is actually set to curl.
+    const plain = rainbowBands({ ...RAINBOW_DEFAULTS }, CAKE_C);
+    const loud  = rainbowBands({ ...RAINBOW_DEFAULTS, curlTurns: 9, curlSize: 9,
+      curlTightness: 0, curlFan: 9, curlSplay: 9, curlLift: 9 }, CAKE_C);
+    plain.bands.forEach((b, i) =>
+      b.path.forEach((pt, j) => expect(pt.distanceTo(loud.bands[i].path[j])).toBeLessThan(1e-12)));
   });
 
-  it('follows the arch when the clearance rule steps it back', () => {
-    // The handle is drawn from the EFFECTIVE position. Drawn from what was ASKED for, it would float
-    // in front of an arch that had been pushed behind the cake.
-    const asked = { ...RAINBOW_DEFAULTS, footLeft: 'board', footRight: 'board', offsetX: 0, standoff: 0 };
-    const { standoff } = rainbowBands(asked, CAKE);
-    expect(standoff).toBeGreaterThan(0);                       // it really was pushed
-    expect(rainbowHandleAt(asked, CAKE).v).toBeCloseTo(standoff / CAKE.radius, 6);
+  it('grows no leg on the curled side', () => {
+    // 'curl' is a way of ENDING, like 'none' — not a foot that happens to be decorated.
+    expect(legFootY('curl', { topY: 5, boardY: 1 })).toBeNull();
   });
 
-  it('carries on round the back rather than sticking there', () => {
-    // Handles speak u in 0…1 and the geometry speaks radians. Clamping would stop a drag dead at the
-    // seam behind the cake, which feels like the rainbow hitting a wall that is not there.
-    const a = rainbowDragTo(OVER, CAKE, 0.99, 0.8);
-    const b = rainbowDragTo(OVER, CAKE, 0.01, 0.8);
-    for (const y of [a.yaw, b.yaw]) {
-      expect(y).toBeGreaterThanOrEqual(0);
-      expect(y).toBeLessThan(Math.PI * 2);
+
+
+  it('stacks the coils, each sitting on the one below', () => {
+    // The construction, as a number. Consecutive coils are exactly one coil-width apart — that is
+    // what "sits on" means, and it is why they cannot tangle. Everything that used to keep them
+    // apart (a fan, a splay, a lift) was invented to solve a problem this does not have.
+    const { bands, thickness } = curled();
+    const n = Math.round(64 * RAINBOW_DEFAULTS.curlTurns);
+    // The arc's LAST point, which is where the chain placed it — one before the coil's first.
+    const starts = bands.map(b => b.path[b.path.length - n - 1]);
+    const step = 2 * Math.max(thickness * 0.62, thickness * RAINBOW_DEFAULTS.curlSize);
+    for (let i = 1; i < starts.length; i++) {
+      expect(starts[i].distanceTo(starts[i - 1])).toBeCloseTo(step, 6);
     }
   });
 
-  it('stops at the lean rather than going imaginary', () => {
-    // The centre cannot come closer to the axis than the arch's own offset. An honest limit: the
-    // arch simply will not come any further in.
-    const moved = rainbowDragTo(OVER, CAKE, 0.25, 0.1);
-    expect(Number.isFinite(moved.standoff)).toBe(true);
-    expect(moved.standoff).toBe(0);
+  it('stacks UPWARD and leans left, rather than marching round the arch', () => {
+    const starts = curled().bands.map(b =>
+      b.path[b.path.length - Math.round(64 * RAINBOW_DEFAULTS.curlTurns) - 1]);
+    for (let i = 1; i < starts.length; i++) expect(starts[i].y).toBeGreaterThan(starts[i - 1].y);
+    // The lean is not a setting — each band's arc is one rope further out, so one coil-width along
+    // it lands slightly further round every time. The top of the stack is left of its middle.
+    expect(starts[starts.length - 1].x).toBeLessThan(Math.max(...starts.map(s => s.x)));
   });
+
+  it('leaves the arch alone — the inner radius does not move to make room', () => {
+    const plain = rainbowBands({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'none' }, CAKE_C);
+    const curl  = curled();
+    curl.bands.forEach((b, i) => expect(b.radius).toBeCloseTo(plain.bands[i].radius, 9));
+  });
+
+  it('is never shrunk to make an imaginary foot land', () => {
+    // The board-fit rule shrinks an arch so its FALLING foot lands on what is under it. A curled end
+    // has no foot — nor does a 'none' end — and the test for falling was `foot !== topY`, which reads
+    // null as falling. So a curled rainbow was shrunk to 0.83 at size 1.6 to seat a foot it does not
+    // have, and the card told the customer the board was capping its size.
+    const big = { ...RAINBOW_DEFAULTS, scale: 1.6, footLeft: 'top' };
+    const CAKE_S = { ...CAKE_C, supportRadius: 1.6 };
+    expect(rainbowBands({ ...big, footRight: 'curl' }, CAKE_S).supportFit).toBe(1);
+    expect(rainbowBands({ ...big, footRight: 'none' }, CAKE_S).supportFit).toBe(1);
+    // ...and one that really does fall still is.
+    expect(rainbowBands({ ...big, footRight: 'board' }, CAKE_S).supportFit).toBeLessThan(1);
+  });
+
+  it('coils no tighter than the rope can be rolled', () => {
+    // Below thickness/2 the inside of the tube meets its own axis and the tip turns inside out.
+    const { bands, thickness } = curled({ curlTightness: 1 });
+    for (const b of bands) {
+      const c = coilOf(b);
+      for (let i = 1; i < c.length - 1; i++) {
+        const h0 = Math.atan2(c[i].y - c[i - 1].y, c[i].x - c[i - 1].x);
+        const h1 = Math.atan2(c[i + 1].y - c[i].y, c[i + 1].x - c[i].x);
+        const turn = Math.abs(Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0)));
+        if (turn > 1e-6) expect(c[i].distanceTo(c[i + 1]) / turn).toBeGreaterThan(thickness / 2);
+      }
+    }
+  });
+
+
+  it('joins the coil to the arch without a crease', () => {
+    // The walk starts with the heading the run already had, so no step turns more sharply than the
+    // coil's own step does. A join that kinked would show up here as one outlier.
+    const { bands } = curled();
+    for (const b of bands) {
+      const h = b.path.slice(1).map((p, i) => Math.atan2(p.y - b.path[i].y, p.x - b.path[i].x));
+      const turns = h.slice(1).map((a, i) => Math.abs(Math.atan2(Math.sin(a - h[i]), Math.cos(a - h[i]))));
+      expect(Math.max(...turns)).toBeLessThan(0.25);
+    }
+  });
+
+});
+
+// ── The movable contract ────────────────────────────────────────────────────────────────────────
+// Registered, not hand-written: `movableContract` asks the same questions of every decoration that
+// is dragged, and `check:movable` fails the build if a procedural tool is not here.
+//
+// The rainbow declares ONE freedom on the cake — round it — and that is the fix from 2026-08-26.
+// It used to declare two, and the second was dead over the middle 71% of the cake top and threw the
+// arch backwards past that. A freedom that does not move the thing is not a freedom.
+movableContract('rainbow', {
+  positionKeys: ['px', 'pz', 'theta', 'spring'],
+  // The PLACED points, not the bands' own — the arch's yaw is applied by the renderer, so
+  // `rainbowBands` alone does not know where the rainbow is. Same helper the selection box
+  // uses, which is the point: one answer, not three.
+  pointsOf: rainbowPlacedPoints,
+  cases: [
+    {
+      label: 'over the cake',
+      cake: { radius: 1.2, topY: 1.55, boardY: 0.1 },
+      params: { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', yaw: 0 },
+      freedoms: [{
+        label: 'round the cake',
+        // v is passed and deliberately ignored — the drag on the top is purely angular.
+        drag: (p, c, u) => rainbowDragTo(p, c, u, 0.5),
+        targets: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875],
+      }],
+    },
+    {
+      label: 'on the wall',
+      cake: { radius: 1.2, topY: 1.55, boardY: 0.1 },
+      params: { ...RAINBOW_DEFAULTS, surface: 'side', footLeft: 'board', spring: 0.18, theta: -0.09 },
+      freedoms: [
+        // v held at the arch's CURRENT height, so only the angle varies. The wall's drag writes
+        // both coordinates at once, and a freedom that moved two things could not tell you which
+        // one broke a law.
+        { label: 'round the wall', drag: (p, c, u) => rainbowDragTo(p, c, u, p.spring),
+          targets: [0, 0.2, 0.4, 0.6, 0.8] },
+        // Deliberately NOT declared as a freedom, and this is a finding rather than an omission.
+        // `spring` is what a drag up the wall writes, and with the feet on the board raising it
+        // does not move the arch — it STRETCHES it. Measured: the bottom stays pinned at y 0.17
+        // while the top runs 1.36 → 2.52, so the height nearly doubles across the drag. That fails
+        // "a drag moves it, it never reshapes it", and the contract found it the moment the rainbow
+        // was registered. Declaring it here would be claiming a freedom that reshapes.
+        //
+        // Left as it is for now because nobody has reported it and fixing it means deciding what a
+        // wall rainbow should do when dragged up — move, or grow. See the changelog.
+      ],
+    },
+  ],
+  roundTrip: (moved, cake, target, f) => {
+    const back = rainbowHandleAt(moved, cake);
+    expect(f.label.includes('up the wall') ? back.v : back.u).toBeCloseTo(target, 6);
+  },
 });

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CLOUD_DEFAULTS, cloudLobes, cloudPlacement, cloudBaseY, cloudFitScale, cloudGuide, cloudOutline,
+  CLOUD_DEFAULTS, cloudLobes, cloudPlacement, cloudBaseY, cloudGuide, cloudOutline,
+  cloudHandleAt, cloudDragTo,
 } from './cloud.js';
+import { movableContract } from './movableContract.js';
 
 const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
 
@@ -168,54 +170,49 @@ describe('where it sits', () => {
   });
 });
 
-describe('staying on what it sits on', () => {
-  it('shrinks a cloud placed near the rim rather than moving it', () => {
-    // Where it sits is the author's decision; its size is not. Same trade the rainbow's standing
-    // arch makes.
-    const near = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', offsetX: 0.9 }, CAKE);
-    expect(near.fit).toBeLessThan(1);
-    const right = Math.max(...near.lobes.map(l => l.position.x + l.r));
-    expect(right).toBeLessThanOrEqual(CAKE.radius + 1e-6);
-  });
-
-  it('leaves a centred cloud alone', () => {
-    expect(cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', offsetX: 0 }, CAKE).fit).toBe(1);
-  });
-
-  it('does not shrink one on the board or the wall', () => {
-    // There is no edge to fall off — the whole board is under it. Shrinking there would be
-    // answering a question nobody asked.
-    for (const surface of ['board', 'side']) {
-      expect(cloudPlacement({ ...CLOUD_DEFAULTS, surface, offsetX: 0.9 }, CAKE).fit).toBe(1);
+// ── Size is the author's, position is the author's, and neither moves the other ─────────────────
+// A cloud used to SHRINK as it was dragged toward the rim, on a fit solved so nothing overhung.
+// Nobody asked for that: there is a size control, which is what a size control is for, and a real
+// fondant cloud hangs over the edge — the reference photo shows one doing it. The fit also dragged
+// a position cap in behind it, because at the rim it solved to zero and deleted the cloud.
+//
+// Both are gone, and these pin them staying gone.
+describe('dragging a cloud does not resize it', () => {
+  it('is the same size wherever it is put', () => {
+    const at = extra => cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', ...extra }, CAKE);
+    const middle = at({ standoff: 0 });
+    for (const extra of [{ standoff: 0.5 }, { standoff: 0.95 }, { standoff: 1.4 },
+                         { offsetX: 0.9 }, { yaw: Math.PI / 2, standoff: 0.9 }]) {
+      const there = at(extra);
+      expect(there.width).toBeCloseTo(middle.width, 9);
+      expect(there.height).toBeCloseTo(middle.height, 9);
+      expect(there.thickness).toBeCloseTo(middle.thickness, 9);
     }
   });
 
-  it('measures the fit from the LUMPS, not from a width', () => {
-    // The bug this replaces: a width-based fit ignored the bunch's depth and every ball's own
-    // radius, so a puffy cloud near the rim reached 1.30 on a 1.20 cake and reported a fit of 1.00.
-    const CAKE_R = 1.2;
-    const near = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff: 0.9 }, CAKE);
-    const reach = Math.max(...near.lobes.map(l => Math.hypot(l.position.x, l.position.z) + l.r));
-    expect(reach).toBeLessThanOrEqual(CAKE_R + 1e-3);
-    expect(near.fit).toBeLessThan(1);
+  it('lets a cloud at the rim hang over it, like fondant does', () => {
+    // The behaviour the shrink existed to prevent. It is not a bug — it is what the reference looks
+    // like, and the baker moves or resizes it if they disagree.
+    const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff: 1 }, CAKE);
+    const reach = Math.max(...lobes.map(l => Math.hypot(l.position.x, l.position.z) + l.r));
+    expect(reach).toBeGreaterThan(CAKE.radius);
   });
 
-  it('leaves a cloud alone until it actually reaches the rim', () => {
-    // Shrinking one that already fits would be answering a question nobody asked.
-    for (const standoff of [0, 0.45, 0.75]) {
-      expect(cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff }, CAKE).fit).toBe(1);
-    }
+  it('does not cap how far out it can be dragged', () => {
+    // The cap only existed to stop the fit solving to zero. With no fit it has nothing to protect,
+    // and a drag that silently stops short of where the pointer went is its own bug.
+    const out = s => {
+      const { lobes } = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff: s }, CAKE);
+      return lobes.reduce((a, l) => a + l.position.z, 0) / lobes.length;
+    };
+    expect(out(1.3)).toBeGreaterThan(out(1.0));
+    expect(out(1.0)).toBeGreaterThan(out(0.7));
   });
 
-  it('never lets a drag to the rim delete it', () => {
-    // Its middle placed ON the rim leaves nothing to stand on, and the fit solves to ZERO there —
-    // the cloud disappears. So the position is capped, and this is the one case where where-it-sits
-    // is not purely the author's.
-    for (const standoff of [1, 1.5, 4]) {
-      const r = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', standoff }, CAKE);
-      expect(r.fit).toBeGreaterThan(0.3);
-      expect(r.lobes.length).toBeGreaterThan(0);
-    }
+  it('still scales when the SIZE is changed, which is the control that does it', () => {
+    const one = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', scale: 1 }, CAKE);
+    const two = cloudPlacement({ ...CLOUD_DEFAULTS, surface: 'top', scale: 2 }, CAKE);
+    expect(two.width / one.width).toBeCloseTo(2, 6);
   });
 });
 
@@ -291,4 +288,124 @@ describe('what the baker rolls', () => {
     const sorted = [...ballsOfCakeWidth].sort((a, b) => b - a);
     expect(ballsOfCakeWidth).toEqual(sorted);
   });
+});
+
+// ── The two variants must land in the SAME place from the same numbers ──────────────────────────
+// They do not share a placement path: the puff spins its balls round the cake, the flat one is a
+// single extruded sheet the renderer positions. So a number that reaches one and not the other is
+// invisible in the geometry and obvious on screen — `yaw` was dropped from the sheet, and a flat
+// cloud could only move front-to-back however it was dragged, while its selection box (computed
+// from the lobes) travelled correctly and drifted away from it.
+describe('a flat cloud goes where a puffy one goes', () => {
+  const CAKE_T = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+
+  // Where the renderer puts the sheet: a translate, and nothing else. The carrying-round-the-cake is
+  // done in the geometry now, so `sheet.x`/`sheet.z` are already the final place.
+  const sheetCentre = sheet => ({ x: sheet.x, z: sheet.z });
+  const lobesCentre = lobes => ({
+    x: (Math.min(...lobes.map(l => l.position.x)) + Math.max(...lobes.map(l => l.position.x))) / 2,
+    z: (Math.min(...lobes.map(l => l.position.z)) + Math.max(...lobes.map(l => l.position.z))) / 2,
+  });
+
+  it('carries the sheet round the cake, not only the balls', () => {
+    for (const yaw of [0, 0.7, Math.PI, 4.5]) {
+      const pl = cloudPlacement({ ...CLOUD_DEFAULTS, variant: 'flat', surface: 'top', yaw, standoff: 0.6 }, CAKE_T);
+      const a = sheetCentre(pl.sheet), b = lobesCentre(pl.lobes);
+      // Within a hundredth, not exactly: the lumps are deliberately unequal, so their bounding
+      // centre sits a hair off the sheet's origin. What matters is that both TURN.
+      expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(0.05);
+    }
+  });
+
+  it('moves on BOTH axes, not just front to back', () => {
+    // The symptom, stated as a number: turning the yaw must change x, or the cloud is on a rail.
+    const at = yaw => sheetCentre(cloudPlacement(
+      { ...CLOUD_DEFAULTS, variant: 'flat', surface: 'top', yaw, standoff: 0.6 }, CAKE_T).sheet);
+    expect(Math.abs(at(Math.PI / 2).x - at(0).x)).toBeGreaterThan(0.5);
+  });
+});
+
+// ── A flat cloud is a sticker: it slides, it does not turn ──────────────────────────────────────
+// The two variants are different objects and only one of them has a front. A puff is a bunch of
+// balls — turn it and it reads the same, and it MUST turn, or the side that bulges toward you goes
+// on pointing at the front while the cloud sits round the back. A flat one is a cut sheet: a quarter
+// turn shows you its thin edge, a half turn shows you its back, and neither is ever wanted.
+describe('a cloud faces the front wherever it is dragged', () => {
+  const CAKE_T = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+  const YAWS = [0, 0.7, Math.PI / 2, Math.PI, 4.5, 6.0];
+  const place = (variant, yaw, standoff = 0.6) =>
+    cloudPlacement({ ...CLOUD_DEFAULTS, variant, surface: 'top', yaw, standoff }, CAKE_T);
+
+  it('never turns the sheet, however far round it goes', () => {
+    for (const yaw of YAWS) {
+      for (const l of place('flat', yaw).lobes) expect(l.rotationY).toBe(0);
+    }
+  });
+
+  it('does not turn a puffy one either', () => {
+    // It used to, on the reasoning that a bunch of balls reads the same from any angle. True, and
+    // beside the point: turning it made a DRAG rotate the cloud instead of moving it, and on a cake
+    // nobody is looking for the side view of a cloud. Neither variant turns now.
+    for (const yaw of YAWS) {
+      for (const l of place('puff', yaw).lobes) expect(l.rotationY).toBe(0);
+    }
+  });
+
+  it('keeps its shape while it travels — the lumps hold their arrangement', () => {
+    // A rigid move, not a reshape: every lump's offset from the cloud's middle is the same at every
+    // yaw. Without this, "does not turn" could be satisfied by flattening it.
+    const offsets = yaw => {
+      const { lobes } = place('flat', yaw);
+      const mx = lobes.reduce((a, l) => a + l.position.x, 0) / lobes.length;
+      const mz = lobes.reduce((a, l) => a + l.position.z, 0) / lobes.length;
+      return lobes.map(l => [l.position.x - mx, l.position.z - mz]);
+    };
+    const first = offsets(0);
+    for (const yaw of YAWS) {
+      offsets(yaw).forEach(([x, z], i) => {
+        expect(x).toBeCloseTo(first[i][0], 6);
+        expect(z).toBeCloseTo(first[i][1], 6);
+      });
+    }
+  });
+
+});
+
+// ── The movable contract ────────────────────────────────────────────────────────────────────────
+// Registered rather than hand-written — see movableContract.js. `check:movable` fails the build if
+// a procedural tool is dragged and is not here.
+//
+// The cloud has TWO live freedoms on the cake top, unlike the rainbow's one, so this is where the
+// contract's "no dead freedom" question earns its keep on a two-dimensional drag.
+movableContract('cloud', {
+  positionKeys: ['yaw', 'standoff', 'theta'],
+  pointsOf: (p, cake) => cloudPlacement(p, cake).lobes.map(l => l.position),
+  cases: [
+    {
+      label: 'on the cake top',
+      cake: CAKE,
+      params: { ...CLOUD_DEFAULTS, surface: 'top', standoff: 0.5 },
+      freedoms: [
+        { label: 'round the cake', drag: (p, c, u) => cloudDragTo(p, c, u, 0.5),
+          targets: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] },
+        // The freedom the rainbow's equivalent could not keep — its arch's own offset made most of
+        // the range unreachable. A cloud's does not, and this is what says so.
+        { label: 'out from the middle', drag: (p, c, v) => cloudDragTo(p, c, 0.25, v),
+          targets: [0.1, 0.3, 0.5, 0.7, 0.9] },
+      ],
+    },
+    {
+      label: 'on the wall',
+      cake: CAKE,
+      params: { ...CLOUD_DEFAULTS, surface: 'side' },
+      freedoms: [
+        { label: 'round the wall', drag: (p, c, u) => cloudDragTo(p, c, u, 0),
+          targets: [0, 0.2, 0.4, 0.6, 0.8] },
+      ],
+    },
+  ],
+  roundTrip: (moved, cake, target, f) => {
+    const back = cloudHandleAt(moved, cake);
+    expect(f.label === 'out from the middle' ? back.v : back.u).toBeCloseTo(target, 6);
+  },
 });

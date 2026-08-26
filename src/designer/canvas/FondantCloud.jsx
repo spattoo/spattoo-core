@@ -94,8 +94,10 @@ export default function FondantCloud({
     const geo = sheetGeometry(outline, sheet);
     return sheet.onWall
       ? bendToWall(geo, sheet)
-      // Flat surfaces need no bending, only putting where it sits.
-      : (geo.translate(sheet.centerX, sheet.baseY, sheet.z), geo);
+      // A translate and nothing else. `sheet.x`/`sheet.z` have already been carried round the cake,
+      // and a flat cloud is never turned: it keeps facing the front wherever it is dragged, which is
+      // the whole point of it being a cut sheet rather than a bunch of balls.
+      : (geo.translate(sheet.x, sheet.baseY, sheet.z), geo);
   }, [outline, sheet]);
 
   // A geometry per drag of a slider, and nothing else frees them.

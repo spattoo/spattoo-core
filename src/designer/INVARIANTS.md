@@ -342,6 +342,53 @@ affecting FLAT decals too; relief only made it visible. Three successive displac
 failed because the displacement was never the cause. Verify curved decals at **scale 3, at the tangent** —
 scale 1 tucks the edges slightly *inward* and hides the bug.)
 
+## 10. A dragged decoration signs the movable contract — RULE IS ON, gated by `check:movable`
+
+Four decorations are dragged on the cake: the rainbow, the cloud, the number topper and cream
+writing. In one week the first two broke six different ways, and **every one was found by the person
+using it**:
+
+* the cloud moved on ONE axis — the renderer skipped the yaw its selection box applied
+* the cloud SHRANK as it was dragged toward the rim
+* the rainbow's border turned about its own centre while the arch turns about the cake's axis, so at
+  any yaw the box was not where the rainbow was
+* the rainbow's drag was DEAD over the middle 71% of the cake top, then threw it backwards
+* the cloud could not be grabbed at all — nothing took the pointer but the cake
+* three grab planes were single-sided, so they stopped being targets once the cake turned
+
+None of those is exotic. They are four mistakes, repeated. So they get asked mechanically.
+
+**1. One place says where it is.** The renderer, the selection box and the drag all read the same
+answer. Never two implementations of one transform — that is what detached both the cloud and the
+rainbow from their own borders.
+
+**2. Every pointer position moves it.** No dead patch, no discontinuity. A drag that SOLVES for its
+parameters can have no answer over part of its domain, which is exactly how the rainbow lost 71% of
+the cake top. If a freedom does not move the thing, it is not a freedom — do not offer it.
+
+**3. A drag moves; it never resizes or reshapes.** Position and size are separate, and neither one
+moves the other. There is a size control; that is what a size control is for.
+
+**4. What you can grab is what you can see, from every angle.** A grab target at least as big as the
+selection border, and `side={THREE.DoubleSide}` — a plane's default `FrontSide` is not hit from
+behind, and the decoration silently stops being a target with nothing on screen to explain why.
+
+**5. `handleAt` and `dragTo` are exact inverses** on the freedoms that exist.
+
+### How it is enforced
+
+* **`movableContract(name, spec)`** in `src/designer/geometry/movableContract.js` — one shared suite
+  that asks laws 2, 3 and 5 of a registration. All four decorations are registered.
+* **`npm run check:movable`** — reads `PROCEDURAL_TOOLS` out of `CakeDesigner` and fails if a
+  dragged tool has no registration, so a new one cannot ship without signing. It also greps for law
+  1's and law 4's two smells: a `SelectionBox` group carrying its own `rotation=`, and an invisible
+  grab plane or circle without `DoubleSide`.
+
+**Law 1 is not fully enforced**, and the guard says so. Doing it structurally means geometry
+returning world-space points with nothing downstream free to add a transform. `rainbowBands` still
+returns the arch in its own frame and `RainbowArch` spins it — `rainbowPlacedPoints` is the one
+shared answer for everything except the renderer, which leaves exactly one copy left to remove.
+
 ## Definition of Done (run through this before saying "done")
 - [ ] No new `=== '<slug>'` / type branch in render or popup code (config instead).
 - [ ] No hardcoded world dimension that assumes a fixed cake radius/size — value is a fraction of the

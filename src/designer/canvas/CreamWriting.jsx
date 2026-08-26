@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildCreamWriting } from '../geometry/creamText.js';
-import { topClamp } from '../geometry/surface.js';
+import { writingPlaceAt } from '../geometry/surface.js';
 import { planeHit, cylinderHit } from '../utils/raycasting.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { creamMaterialProps, goldMaterialProps, silverMaterialProps, metallicCreamProps, GOLD_FINISH_COLOR, SILVER_FINISH_COLOR, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
@@ -63,25 +63,21 @@ export default function CreamWriting({
   // and grabProps are shared (useDragPlacement). Called before the early return to satisfy hook rules.
   const { grabProps } = useDragPlacement({
     camera, gl, onMove, onClick, onOrbitEnable,
+    // Intersecting stays here — it needs a camera. WHERE that lands is a rule, and the rule lives
+    // in geometry/surface.js so the movable contract can ask it questions.
     resolve: (ray) => {
-      if (surface === 'side' && !sideRect) {
-        const hit = cylinderHit(ray, sideR);
-        if (!hit) return null;
-        return { sideAngle: hit.theta, sideY: clamp(hit.y, minSideY, maxSideY) };
-      }
+      const where = { surface, sideRect, sideWidth: sideTier?.width, minSideY, maxSideY,
+                      shape: shp, boardShape: boardShp };
+      if (surface === 'side' && !sideRect) return writingPlaceAt(where, cylinderHit(ray, sideR));
       if (surface === 'side') {
         // Rect side: intersect the front face plane (z = depth/2), drag in x & y.
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(sideR));
         const t = new THREE.Vector3();
-        if (!ray.intersectPlane(plane, t)) return null;
-        return { offsetX: clamp(t.x, -sideTier.width / 2, sideTier.width / 2), sideY: clamp(t.y, minSideY, maxSideY) };
+        return writingPlaceAt(where,
+          ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -(sideR)), t) ? t : null);
       }
       const planeY = surface === 'board' ? boardY : topY;
-      const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
-      if (!hit) return null;
-      const cs = surface === 'board' ? (boardShp ?? shp) : shp;
-      const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
-      return surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z };
+      return writingPlaceAt(where,
+        planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY)));
     },
   });
 
@@ -132,7 +128,9 @@ export default function CreamWriting({
   const grabPlane = (z = 0.005) => (
     <mesh position={[0, 0, z]} {...grabProps}>
       <planeGeometry args={[grabW, grabH]} />
-      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false}
+          side={THREE.DoubleSide} /* or it is not a target from behind, and the decoration
+          becomes ungrabbable the moment the cake is turned past it */ />
     </mesh>
   );
 
@@ -146,7 +144,9 @@ export default function CreamWriting({
           {/* tangent grab plane just in front of the wrapped text */}
           <mesh position={[0, 0, bb.max.z + 0.01]} {...grabProps}>
             <planeGeometry args={[grabW, grabH]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false}
+          side={THREE.DoubleSide} /* or it is not a target from behind, and the decoration
+          becomes ungrabbable the moment the cake is turned past it */ />
           </mesh>
         </group>
       </group>

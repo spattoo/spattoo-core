@@ -29,7 +29,7 @@
 //   npm run release -- --dry-run         print the plan, change nothing
 //   npm run release -- --no-push         do everything locally, push by hand
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,6 +76,8 @@ const run = (cmd, args, cwd) => {
 };
 const die  = (m) => { console.error(`\n✗ release — ${m}\n`); process.exit(1); };
 const ok   = (m) => console.log(`  ✓ ${m}`);
+// Not an error — the release is fine. Something the person running it has to DO afterwards.
+const warn = (m) => console.log(`  ! ${m}`);
 const step = (m) => console.log(`\n${m}`);
 
 // ── 0. both repos exist and are clean ──────────────────────────────────────────────────────────
@@ -91,6 +93,62 @@ for (const [label, dir] of [['core', CORE], ...TARGETS.map(t => [t.label, t.dir]
   }
 }
 ok(`all ${TARGETS.length + 1} checkouts are clean`);
+
+// ── 0c. nobody is running a dev server we are about to pull the rug from under ──────────────────
+// Clearing node_modules/.vite (see "Vite's pre-bundled dependency cache" below) is REQUIRED and
+// breaks any dev server already running: it goes on serving dep URLs stamped with the hash it
+// booted with, the files behind them are gone, and every one 504s. What reaches the screen is
+// "Failed to fetch dynamically imported module" and a blank page — nothing that says "cache", and
+// nothing a reload fixes.
+//
+// This used to be a warning printed at the moment of clearing. It was accurate, it was ignored, and
+// the evening it mattered it scrolled past in the middle of a long release and cost half an hour of
+// hunting a bug that did not exist. A warning you can miss is not a guard; it is a note explaining
+// the damage afterwards.
+//
+// So it STOPS, before anything is bumped, tagged or installed. The escape hatch is real but has to
+// be TYPED — `--keep-dev-servers` — because a bypass you choose is a different thing from a line
+// you scrolled past.
+function devPort(dir) {
+  // The port the consumer pins in its own config; Vite's default otherwise.
+  for (const f of ['vite.config.js', 'vite.config.mjs', 'vite.config.ts']) {
+    const p = join(dir, f);
+    if (!existsSync(p)) continue;
+    const m = readFileSync(p, 'utf8').match(/server\s*:\s*\{[^}]*?port\s*:\s*(\d+)/s);
+    if (m) return Number(m[1]);
+  }
+  return 5173;
+}
+// Whoever holds the port. `lsof` rather than a bare connect, because naming the pid is the
+// difference between "something is running" and a line you can act on without hunting for it.
+// `lsof -ti` EXITS 1 when nothing holds the port, which is the ordinary case — and `sh` throws on a
+// non-zero exit, so calling it bare would crash every release where no dev server is running. The
+// catch also covers a machine without lsof: this guard failing open is right, since a release that
+// cannot run because its optional safety check is unavailable is worse than the thing it guards.
+function holders(port) {
+  // -sTCP:LISTEN, and it is not optional. Without it lsof reports every ESTABLISHED socket on the
+  // port too — so an open browser TAB counts as a dev server, and a release is refused because
+  // somebody is looking at the app. Only the process holding the listening socket is one.
+  let out = '';
+  try { out = sh('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN']); } catch { return []; }
+  return out.split('\n').map(s => s.trim()).filter(Boolean);
+}
+if (!flag('--keep-dev-servers')) {
+  const live = TARGETS
+    .map(t => ({ t, port: devPort(t.dir), pids: holders(devPort(t.dir)) }))
+    .filter(x => x.pids.length);
+  if (live.length) {
+    const lines = live.map(x => `    ${x.t.label}  port ${x.port}  pid ${x.pids.join(', ')}`).join('\n');
+    die('a dev server is running for a consumer this release will re-install.\n'
+      + lines + '\n\n'
+      + '  This release clears each consumer\'s node_modules/.vite, which those servers are\n'
+      + '  currently serving out of. Carrying on leaves them 504ing on every dependency and\n'
+      + '  showing a blank screen, and a reload does NOT fix it — only a restart does.\n\n'
+      + '  Stop them and run again, or keep them and take the restart on yourself:\n'
+      + '      npm run release -- --keep-dev-servers   (then restart each server afterwards)');
+  }
+  ok('no dev server is holding a consumer\'s dep cache');
+}
 
 // ── 0b. web is caught up too, BEFORE anything is bumped ────────────────────────────────────────
 // This used to live down in "Updating web", after core was tagged and pushed and after packing —
@@ -216,6 +274,38 @@ for (const t of TARGETS) {
   if (DRY) console.log(`  · would run: npm install   (${t.label})`);
   else execFileSync('npm', ['install'], { cwd: t.dir, stdio: ['ignore', 'ignore', 'inherit'] });
   ok('npm install — package-lock integrity rewritten');
+
+  // ── Vite's pre-bundled dependency cache has to go with it ─────────────────────────────────────
+  // Vite optimises dependencies into node_modules/.vite/deps and keys that cache on the dependency
+  // SPEC, not on the file. `file:…/spattoo-designer-0.1.384.tgz` looks the same to it whatever the
+  // tarball now contains — so a consumer's dev server goes on serving the bundle it built the first
+  // time, across restarts, forever.
+  //
+  // It is not a theoretical risk. The admin's cache was ELEVEN DAYS old while four releases went
+  // out: every one landed on disk, none reached the screen, and the only symptom was a feature that
+  // "was not there". Restarting the server does not fix it, which is what makes it so expensive —
+  // the obvious remedy is the one that does not work, so the search goes looking for a bug instead.
+  //
+  // Cheap to drop: Vite rebuilds it on the next boot in a second or two.
+  //
+  // ── AND IT HAS TO BE SAID OUT LOUD ────────────────────────────────────────────────────────────
+  // Clearing this under a RUNNING dev server breaks it. The server keeps serving dep URLs stamped
+  // with the hash it started with, the files behind them are gone, and every one 504s with
+  // "Outdated Optimize Dep" — which surfaces as a blank screen and "Failed to fetch dynamically
+  // imported module", nothing that names a cache. A restart fixes it in two seconds and is
+  // impossible to guess.
+  //
+  // The cache existing is the tell: Vite creates it at startup, so if it is here, a server has run
+  // since the last clear and may still be running. If it is not here, nobody needs telling.
+  const viteCache = join(t.dir, 'node_modules', '.vite');
+  const hadCache = existsSync(viteCache);
+  if (DRY) console.log(`  · would clear: ${viteCache}`);
+  else rmSync(viteCache, { recursive: true, force: true });
+  if (hadCache) {
+    ok("cleared Vite's dep cache — it ignores a changed tarball behind an unchanged spec");
+    warn(`RESTART any running dev server for ${t.label} — until you do it will 504 with `
+       + `"Outdated Optimize Dep" and show a blank screen`);
+  }
 
   run('git', ['add', '-A'], t.dir);
   run('git', ['commit', '-m', `chore(${t.scope}): vendor ${VERSION}`], t.dir);

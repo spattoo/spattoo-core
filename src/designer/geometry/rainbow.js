@@ -101,7 +101,26 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // back was compensating for an arch too shallow to clear any other way; fix the proportions and
   // the need disappears. A little forward or back is taste; it is not what clears the cake.
   standoff: 0,
+  // ── WHERE IT STANDS on the surface, × tier radius ─────────────────────────────────────────────
+  // A plain translation, and the ONLY thing a drag writes. It used to write `yaw`, which carried the
+  // arch round the cake's axis and TURNED it on the way — so dragging it toward the middle swung it
+  // edge-on instead of moving it. Nobody decorating a cake wants a rainbow seen from the side.
+  //
+  // 0,0 is the middle of the surface. Not `offsetX`: that is the arch's LEAN, part of its shape.
+  px: 0,
+  pz: 0,
   flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
+
+  // ── Curled ends ───────────────────────────────────────────────────────────────────────────────
+  // A second rainbow shape, not a second generator: same ropes, same arch, same everything, and the
+  // ends roll up instead of reaching for a surface. Set a side's foot to 'curl' to get it.
+  curlTurns: 1.35,     // how far round the end winds, in whole turns
+  // How wide the coil starts, in ROPE THICKNESSES. Same on every band — see bandPath.
+  curlSize: 0.75,
+  // How far the coil closes: 0 leaves a loose hook the same width as the arch, 1 winds it in as
+  // tight as the rope's own thickness allows. Never tighter — see bandPath.
+  curlTightness: 0.82,
+  // How much further one side of the stack runs before it rolls up. Zero puts every coil at one
 
   arcSegments: 96,     // along the path
   tubeSegments: 12,    // around the rope
@@ -111,12 +130,57 @@ export const RAINBOW_DEFAULTS = Object.freeze({
 //   board — the top of the board, so it stands beside the cake (reference 1)
 //   top   — the top of the cake, so it sits on it (references 2 and 4)
 //   none  — no legs at all: a bare half-circle
+//   curl  — no leg either: the rope carries on past the arch and rolls up (reference 5)
 // The distance is never authored, only chosen: `board` on a three-tier stack is a long way further
 // than on a single, and that is the whole reason this is not a GLB.
 export function legFootY(legs, { topY = 0, boardY = 0 } = {}) {
   if (legs === 'top') return topY;
-  if (legs === 'none') return null;
+  if (legs === 'none' || legs === 'curl') return null;
   return boardY;
+}
+
+/**
+ * The rope's end, rolled up — the curled rainbow's whole difference from the plain one.
+ *
+ * Walked forward one small turn at a time rather than solved as a spiral formula, and that is the
+ * point of it: the walk STARTS with the heading and the curvature the arch already had, so there is
+ * no crease where the arch stops and the coil begins. A spiral about a fixed pole cannot do that —
+ * its tangent sits a fixed angle off the circle's, so the join kinks by that angle however the
+ * numbers are chosen.
+ *
+ * The radius runs down from the band's own to `rEnd` across the coil, which is what a baker's hand
+ * does: the rope keeps turning and each turn comes in tighter.
+ *
+ * @param heading  direction of travel at the start, radians
+ * @param dir      +1 or -1 — which way it winds
+ */
+export function curlPoints({ x, y, z = 0, zEnd = null, heading, dir = -1, turns = 1, radius0, rEnd, segments = 64 }) {
+  const pts = [];
+  const total = turns * Math.PI * 2;
+  if (!(total > 0) || !(radius0 > 0)) return pts;
+
+  // Eased, not linear, so the rope leaves the arch's plane smoothly instead of setting off at an
+  // angle from the first point.
+  const ease = u => u * u * (3 - 2 * u);
+  const lift = zEnd == null ? 0 : zEnd - z;
+
+  const steps = Math.max(8, Math.round(segments * turns));
+  const dTheta = total / steps;
+  let th = heading, px = x, py = y;
+  for (let i = 0; i < steps; i++) {
+    const u = (i + 0.5) / steps;
+    const r = radius0 + (rEnd - radius0) * u;
+    const ds = r * dTheta;
+    const pz = z + lift * ease(Math.min(1, u * 2));
+    // Turn half, step, turn half — the midpoint rule. Turning a whole step before moving swings the
+    // coil wide of where that curvature actually puts it, and the error compounds over two turns.
+    th += dir * dTheta / 2;
+    px += Math.cos(th) * ds;
+    py += Math.sin(th) * ds;
+    th += dir * dTheta / 2;
+    pts.push(new THREE.Vector3(px, py, pz));
+  }
+  return pts;
 }
 
 /**
@@ -126,20 +190,107 @@ export function legFootY(legs, { topY = 0, boardY = 0 } = {}) {
  * no corner between them to round off or crease. That is why this can be sampled as one smooth run
  * of points rather than stitched from separate curves with a join to argue about.
  */
-export function bandPath({ radius, archY, footLeftY, footRightY, standoff = 0, centerX = 0, arcSegments = RAINBOW_DEFAULTS.arcSegments }) {
+export function bandPath({
+  radius, archY, footLeftY, footRightY, standoff = 0, centerX = 0,
+  arcSegments = RAINBOW_DEFAULTS.arcSegments,
+  // A curled end, per side. Set instead of a foot, never as well as one — a rope that reaches the
+  // board has no spare end to roll up.
+  curlLeft = false, curlRight = false, thickness = 0,
+  curlTurns = RAINBOW_DEFAULTS.curlTurns,
+  curlSize = RAINBOW_DEFAULTS.curlSize,
+  endAngle = 0,
+  curlTightness = RAINBOW_DEFAULTS.curlTightness,
+  bandIndex = 0, bandCount = 1,
+}) {
   const pts = [];
   const z = standoff;   // one plane, set back from the cake's centre — a rainbow is flat
   // Each leg is drawn only if its foot is BELOW where the arc springs. A foot at or above that is
   // not a short leg, it is no leg — the arc simply ends there.
   const hasLeft  = footLeftY  != null && footLeftY  < archY;
   const hasRight = footRightY != null && footRightY < archY;
-  if (hasLeft) pts.push(new THREE.Vector3(centerX - radius, footLeftY, z));
-  // Left (π) round to right (0). Descending so the run reads left-to-right with the legs.
-  for (let i = 0; i <= arcSegments; i++) {
-    const a = Math.PI - (i / arcSegments) * Math.PI;
-    pts.push(new THREE.Vector3(centerX + Math.cos(a) * radius, archY + Math.sin(a) * radius, z));
+
+  // ── How big the coil is ───────────────────────────────────────────────────────────────────────
+  // Measured in ROPES, not in bands. A scroll end is a small thing a couple of rope-widths across,
+  // and it is the same small thing on every band, because a baker rolls each end the same way.
+  //
+  // Starting it at the band's own radius instead — to match the arch's curvature exactly at the
+  // join — was the obvious idea and produced nonsense: the first turn of a coil is as wide as the
+  // curve it starts from, so the outer band swung out to x = 3.17 on a cake of radius 1.2. The join
+  // needs a continuous TANGENT, which the walk gives it by construction; matching curvature as well
+  // is not worth a coil the size of the rainbow. A scroll has an inflection at the join anyway —
+  // that S is what makes it read as rolled.
+  //
+  // A coil cannot close tighter than the rope is thick without eating itself: at radius thickness/2
+  // the inside of the tube meets its own axis and the tip turns inside out. Kept clear of it.
+  const minR = Math.max(1e-4, thickness * 0.62);
+  const r0 = Math.max(minR, thickness * Math.max(0.6, curlSize));
+  const t = Math.max(0, Math.min(1, curlTightness));
+  const rEnd = r0 + (minR - r0) * t;
+
+  // ── Which way the coil winds ──────────────────────────────────────────────────────────────────
+  // AGAINST the arch, so the end scrolls outward and away.
+  //
+  // Winding it the same way as the arch is the intuitive answer and it is wrong. The arch travels
+  // left to right, heading swinging up → right → down: clockwise. Carry on clockwise from the right
+  // end and the coil sweeps down, then back LEFT under the arch, and straight through the ropes
+  // inside it — measured at every fan setting, the worst gap between a coil and another band was
+  // 0.000 to 0.004 against a rope 0.138 thick. Not close: passing clean through.
+  //
+  // Which is also the physical answer. A baker cannot roll the end inward; the rest of the rainbow
+  // is in the way. It gets rolled outward, and the S that leaves at the join is what a scroll IS.
+  const ARCH_DIR = -1;
+  const CURL_DIR = -ARCH_DIR;
+  const curlArgs = { z, turns: curlTurns, radius0: r0, rEnd };
+
+  // ── Where each band stops ─────────────────────────────────────────────────────────────────────
+  // Handed in, not worked out here. The curls are a STACK — the innermost rests on the cake, each
+  // next one sits on the one below and steps a little left — and a stack cannot be solved one band
+  // at a time, because where a coil sits depends on the coil under it. `curlChain` solves the whole
+  // run in rainbowBands and hands each band the angle it stops at.
+  //
+  // Everything this replaced was mine and none of it was asked for: a fan that ran the ends past the
+  // springing point (which buried five of six coils INSIDE the cake), a splay that spread the bands
+  // apart until the rainbow opened like a peacock, and a lift that pushed the coils out of the plane
+  // to stop them intersecting. All three existed to stop coils tangling. Stacking them cannot tangle
+  // them — each one is placed exactly one coil-width from its neighbour, which is what "sits on"
+  // means — so all three are gone, and the arch is left alone. The inner radius does not move.
+  const aLeft = Math.PI - (curlLeft ? (endAngle ?? 0) : 0);
+  const aRight = curlRight ? (endAngle ?? 0) : 0;
+  const arcPoint = a => new THREE.Vector3(
+    centerX + Math.cos(a) * radius, archY + Math.sin(a) * radius, z);
+
+  const headingOf = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+
+  // ── The left end ──────────────────────────────────────────────────────────────────────────────
+  if (curlLeft) {
+    // Walked BACKWARD from the arc's start, away from the arch, then reversed onto the front of the
+    // path — the points have to read left-to-right like every other band. Walking backwards flips
+    // which way the curve turns, hence the sign.
+    const a0 = arcPoint(aLeft), a1 = arcPoint(aLeft - 0.01);
+    const coil = curlPoints({ ...curlArgs, x: a0.x, y: a0.y,
+      heading: headingOf(a1, a0), dir: -CURL_DIR });
+    pts.push(...coil.reverse());
+  } else if (hasLeft) {
+    pts.push(new THREE.Vector3(centerX - radius, footLeftY, z));
   }
-  if (hasRight) pts.push(new THREE.Vector3(centerX + radius, footRightY, z));
+
+  // Left (π) round to right (0), plus whatever each curled end runs on for. Descending so the run
+  // reads left-to-right with the legs.
+  const span = aLeft - aRight;
+  const segs = Math.max(2, Math.round(arcSegments * (span / Math.PI)));
+  for (let i = 0; i <= segs; i++) {
+    const a = aLeft - (i / segs) * span;
+    pts.push(arcPoint(a));
+  }
+
+  // ── The right end ─────────────────────────────────────────────────────────────────────────────
+  if (curlRight) {
+    const end = pts[pts.length - 1], prev = pts[pts.length - 2];
+    pts.push(...curlPoints({ ...curlArgs, x: end.x, y: end.y,
+      heading: headingOf(prev, end), dir: CURL_DIR }));
+  } else if (hasRight) {
+    pts.push(new THREE.Vector3(centerX + radius, footRightY, z));
+  }
   return pts;
 }
 
@@ -363,7 +514,12 @@ export function rainbowBands(params = {}, cake = {}) {
   // size on a 0.92 tier the six feet land at 0.98 … 1.51 across a tier ending at 1.20: half the
   // rainbow unsupported, by default.
   const support = cake.supportRadius;
-  const falling = !onWall && !standingOnTop && (rawLeft !== topY || rawRight !== topY);
+  // A foot that FALLS is one that exists and lands lower than the cake top. `!== topY` was the test,
+  // and it read `null` as falling — so an end with NO foot counted as one. A curled end has no foot
+  // (nor does a 'none' end), and nothing that has no foot can put a foot off the board, yet a curled
+  // rainbow was being shrunk to 0.83 at size 1.6 to make an imaginary one land.
+  const fallsAt = raw => raw != null && raw < topY;
+  const falling = !onWall && !standingOnTop && (fallsAt(rawLeft) || fallsAt(rawRight));
   let supportFit = 1;
   if (falling && Number.isFinite(support) && support > 0) {
     // Solved by iteration, because the two rules feed each other. Shrinking the arch does NOT reduce
@@ -400,6 +556,31 @@ export function rainbowBands(params = {}, cake = {}) {
   const radii = [];
   for (let i = 0; i < p.bands; i++) radii.push(bandRadius(i, { innerRadius, thickness, gap }));
 
+  // ── The stack of curls, solved for the whole run at once ──────────────────────────────────────
+  // The innermost coil rests on whatever the rainbow stands on; every other one sits on the coil
+  // below it. That cannot be worked out band by band, so it is worked out here and each band is told
+  // only where IT stops.
+  //
+  // What it rests ON is the same surface the feet use — the cake top for a rainbow sitting on the
+  // cake, the board for one standing beside it — so a curled rainbow is grounded exactly the way a
+  // footed one is. Nothing floats.
+  const coilR = Math.max(thickness * 0.62, thickness * Math.max(0.6, p.curlSize));
+  const restY = legFootY(p.footLeft === 'curl' ? p.footRight : p.footLeft, cake)
+             ?? legFootY('board', cake);
+  const chain = (p.footLeft === 'curl' || p.footRight === 'curl')
+    ? curlChain({ radii, centerX: placedX, archY, restY: restY + thickness / 2, coilR })
+    : [];
+
+  const curlArgs = (i) => ({
+    arcSegments: p.arcSegments,
+    // A band with no place in the stack keeps its foot rather than curling into thin air.
+    curlLeft:  p.footLeft  === 'curl' && chain[i] != null,
+    curlRight: p.footRight === 'curl' && chain[i] != null,
+    curlTurns: p.curlTurns, curlSize: p.curlSize, curlTightness: p.curlTightness,
+    endAngle: chain[i] ?? 0,
+    thickness, bandIndex: i, bandCount: p.bands,
+  });
+
   const bands = [];
   for (let i = 0; i < p.bands; i++) {
     const radius = radii[i];
@@ -412,14 +593,95 @@ export function rainbowBands(params = {}, cake = {}) {
       color: p.colors[i % p.colors.length],
       path: onWall
         ? wrapToWall(
-            bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, arcSegments: p.arcSegments }),
+            bandPath({ radius, archY, footLeftY, footRightY, standoff: 0, centerX: placedX, ...curlArgs(i) }),
             { radius: R, theta0: p.theta ?? 0, proud: (p.proud ?? 0) * R, seat: thickness / 2 },
           )
-        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, arcSegments: p.arcSegments }),
+        : bandPath({ radius, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, ...curlArgs(i) }),
       thickness,
     });
   }
   return { bands, thickness, gap, archY, footLeftY, footRightY, standoff: clearStandoff, centerX: placedX, cakeRadius: R, supportFit };
+}
+
+/**
+ * Where each band stops, so the curls form a STACK rather than a scatter.
+ *
+ * The innermost coil rests ON the cake. The next sits on top of it, the one after on that, and so on
+ * — and because each band's arc is one rope further out than the last, "one coil-width away along a
+ * circle one rope bigger" lands up AND slightly left every time. The lean is not a setting; it falls
+ * out of the geometry, which is why the reference has it without anybody deciding to.
+ *
+ * Solved as a chain of circle intersections: band i's end is the point on its OWN arc (radius
+ * unchanged — the arch is never deformed to make room) at exactly one coil-width from band i-1's
+ * end. Exactly, so the coils touch and cannot overlap; on its own circle, so the rainbow keeps its
+ * shape.
+ *
+ * Returns one angle per band, measured the way the arc is: 0 at the springing point, rising toward
+ * the top. Nulls where no solution exists — a coil-width bigger than the gap between two arcs has
+ * nowhere to sit — and the caller leaves those bands uncurled rather than inventing a position.
+ */
+export function curlChain({ radii = [], centerX = 0, archY = 0, restY = 0, coilR = 0 }) {
+  const out = [];
+  const step = 2 * coilR;
+  let prev = null;
+
+  for (let i = 0; i < radii.length; i++) {
+    const r = radii[i];
+    if (!(r > 0)) { out.push(null); continue; }
+
+    if (prev == null) {
+      // The first one RESTS: its centre sits one coil-radius above the surface, so the coil touches
+      // rather than floating over or sinking into it.
+      const wantY = restY + coilR;
+      const sin = (wantY - archY) / r;
+      if (Math.abs(sin) > 1) { out.push(null); continue; }
+      const a = Math.asin(sin);
+      prev = { x: centerX + Math.cos(a) * r, y: archY + Math.sin(a) * r };
+      out.push(a);
+      continue;
+    }
+
+    // Where circle(arch centre, r) meets circle(previous coil, one coil-width). Two answers; take
+    // the one FURTHER ROUND the arch, which is the one that stacks upward instead of doubling back
+    // down the way it came.
+    const dx = prev.x - centerX, dy = prev.y - archY;
+    const d = Math.hypot(dx, dy);
+    if (d < 1e-9 || d > r + step || d < Math.abs(r - step)) { out.push(null); prev = null; continue; }
+    const base = Math.atan2(dy, dx);
+    const cos = (d * d + r * r - step * step) / (2 * d * r);
+    const a = base + Math.acos(Math.max(-1, Math.min(1, cos)));
+    prev = { x: centerX + Math.cos(a) * r, y: archY + Math.sin(a) * r };
+    out.push(a);
+  }
+  return out;
+}
+
+/**
+ * The rainbow's points WHERE IT ACTUALLY STANDS — the arch turned by its own yaw.
+ *
+ * `rainbowBands` returns the arch in its own frame and `RainbowArch` spins that frame about the
+ * cake's axis, so the bands' points are NOT where the rainbow is. Everything that needs to know
+ * where the rainbow is has to apply the same spin, and that is a copy of the transform waiting to
+ * drift from the renderer's.
+ *
+ * It already did. The selection box was drawn with `position` then `rotation`, which turns the box
+ * about its OWN centre rather than about the cake's axis — so at any yaw but zero the border stood
+ * somewhere the rainbow was not, and the rainbow read as ungrabbable.
+ *
+ * This is the one place that answers the question. Two callers today: the selection box, and the
+ * movable contract's test. The renderer is still the second copy of the spin, which is the gap the
+ * world-space refactor closes — see movableContract.js.
+ */
+export function rainbowOffset(params = {}, cake = {}) {
+  const R = cake.radius ?? 1;
+  if ((params.surface ?? 'top') === 'side') return [0, 0, 0];
+  return [(params.px ?? 0) * R, 0, (params.pz ?? 0) * R];
+}
+
+export function rainbowPlacedPoints(params = {}, cake = {}) {
+  const { bands } = rainbowBands(params, cake);
+  const [ox, , oz] = rainbowOffset(params, cake);
+  return bands.flatMap(b => b.path.map(p => new THREE.Vector3(p.x + ox, p.y, p.z + oz)));
 }
 
 /**
@@ -536,38 +798,51 @@ export function rainbowHandleAt(params = {}, cake = {}) {
   }
   // The EFFECTIVE numbers, not the authored ones. The clearance rule can push an arch further back
   // than it was asked to stand, and a handle drawn from the request would float in front of it.
-  const { centerX, standoff } = rainbowBands(p, cake);
+  const px = p.px ?? 0, pz = p.pz ?? 0;
   return {
     surface: 'top_surface',
-    u: wrapU(((p.yaw ?? 0) + Math.atan2(centerX, standoff)) / TAU),
-    v: R > 0 ? Math.min(1, Math.hypot(centerX, standoff) / R) : 0,
+    u: wrapU(Math.atan2(px, pz) / TAU),
+    v: Math.min(1, Math.hypot(px, pz)),
   };
 }
 
 /**
- * The parameters after a drag to (u, v) — the inverse of the above.
+ * The parameters after a drag to (u, v).
  *
- * Holds the lean. `offsetX` is the arch's SHAPE, not its position: how far it straddles along its
- * own plane is what makes it "over, falling right" rather than "sitting on top", and a drag that
+ * ── ON THE CAKE, A DRAG MOVES IT ROUND AND DOES NOTHING ELSE ──────────────────────────────────
+ * `v` — how far the pointer is from the axis — is deliberately ignored. It used to set how far back
+ * the arch stood, by solving hypot(centerX, standoff) = v·R, and that was wrong in two ways at once
+ * on the same rainbow:
+ *
+ *   · DEAD over most of the cake. The arch's centre already stands `centerX` off the axis — 0.85 on
+ *     a cake of radius 1.2 for the default lean — so every v below 0.71 has no solution and rests
+ *     at zero. Dragging anywhere in the middle 71% of the cake top did nothing at all.
+ *   · A LEAP past that. From v = 0.71 to the rim the standoff runs 0 → 0.70, so the arch shoots
+ *     backwards away from the cake in the last third of the drag.
+ *
+ * Reported as "sometimes stuck", "sometimes rotating", "adding space between cake and rainbow" —
+ * three symptoms, one cause. The old limit was documented here as honest. It was not: it was most
+ * of the control surface doing nothing.
+ *
+ * So the drag is purely angular, which is also what the card promises the customer — "drag it on
+ * the cake to move it round". How far back it stands is authored in the studio, and the arch keeps
+ * whatever it was given: the orbit radius is the same at every yaw, so it cannot gain or lose ground
+ * on the cake by being moved round it.
+ *
+ * Holds the lean too. `offsetX` is the arch's SHAPE, not its position — how far it straddles along
+ * its own plane is what makes it "over, falling right" rather than "sitting on top", and a drag that
  * quietly flattened it would be moving a different rainbow to where you pointed.
- *
- * Which means the centre cannot come closer to the axis than the lean itself, and the drag stops
- * there rather than going imaginary. An honest limit, and a visible one: the arch simply will not
- * come any further in.
  */
 export function rainbowDragTo(params = {}, cake = {}, u = 0, v = 0) {
   const p = { ...RAINBOW_DEFAULTS, ...params };
+  // The WALL keeps both freedoms, and they are real ones there: `theta` runs right round and
+  // `spring` runs the full height with nothing to make either inert.
   if (p.surface === 'side') return { theta: wrapAngle(u * TAU), spring: clamp01(v) };
 
-  const R = cake.radius ?? 1;
-  const { centerX } = rainbowBands(p, cake);
-  const want = clamp01(v) * R;
-  // hypot(centerX, standoff) = want. Below the lean there is no solution, so it rests at zero.
-  const standoff = Math.sqrt(Math.max(0, want * want - centerX * centerX));
-  return {
-    yaw: wrapAngle(u * TAU - Math.atan2(centerX, standoff)),
-    standoff: R > 0 ? standoff / R : 0,
-  };
+  // (u, v) is just the pointer in polar form — the caller measured it off the surface. Turned back
+  // into a POSITION here, because that is what a drag means: put it where I pointed.
+  const d = clamp01(v);
+  return { px: Math.sin(u * TAU) * d, pz: Math.cos(u * TAU) * d };
 }
 
 /**

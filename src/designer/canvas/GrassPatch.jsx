@@ -70,8 +70,24 @@ export default function GrassPatch({
     mesh.computeBoundingSphere();
   }, [seats, topY]);
 
-  useLayoutEffect(() => { onStats?.({ tufts: seats.length, blades: seats.length * strands }); },
-    [seats, strands, onStats]);
+  // ── The cost, counted from the geometry rather than guessed ───────────────────────────────────
+  // `tris` is what the studio's cost panel warns on, and it was never reported at all — the panel
+  // read a name that existed nowhere and the whole screen threw. Counting it here rather than in the
+  // studio keeps it honest: this is the buffer that actually gets drawn, so the number cannot drift
+  // from the thing it describes the way a formula in the panel would.
+  //
+  // The count is what a MERGED patch would cost, which is the number worth warning about. As an
+  // InstancedMesh it is one draw call over one tuft; the warning is about the day somebody merges.
+  useLayoutEffect(() => {
+    const perTuft = geo?.index
+      ? geo.index.count / 3
+      : (geo?.attributes?.position?.count ?? 0) / 3;
+    onStats?.({
+      tufts: seats.length,
+      blades: seats.length * strands,
+      tris: Math.round(seats.length * perTuft),
+    });
+  }, [seats, strands, geo, onStats]);
 
   if (!seats.length) return null;
   return (
