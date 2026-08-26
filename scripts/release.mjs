@@ -29,7 +29,7 @@
 //   npm run release -- --dry-run         print the plan, change nothing
 //   npm run release -- --no-push         do everything locally, push by hand
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -216,6 +216,23 @@ for (const t of TARGETS) {
   if (DRY) console.log(`  · would run: npm install   (${t.label})`);
   else execFileSync('npm', ['install'], { cwd: t.dir, stdio: ['ignore', 'ignore', 'inherit'] });
   ok('npm install — package-lock integrity rewritten');
+
+  // ── Vite's pre-bundled dependency cache has to go with it ─────────────────────────────────────
+  // Vite optimises dependencies into node_modules/.vite/deps and keys that cache on the dependency
+  // SPEC, not on the file. `file:…/spattoo-designer-0.1.384.tgz` looks the same to it whatever the
+  // tarball now contains — so a consumer's dev server goes on serving the bundle it built the first
+  // time, across restarts, forever.
+  //
+  // It is not a theoretical risk. The admin's cache was ELEVEN DAYS old while four releases went
+  // out: every one landed on disk, none reached the screen, and the only symptom was a feature that
+  // "was not there". Restarting the server does not fix it, which is what makes it so expensive —
+  // the obvious remedy is the one that does not work, so the search goes looking for a bug instead.
+  //
+  // Cheap to drop: Vite rebuilds it on the next boot in a second or two.
+  const viteCache = join(t.dir, 'node_modules', '.vite');
+  if (DRY) console.log(`  · would clear: ${viteCache}`);
+  else rmSync(viteCache, { recursive: true, force: true });
+  ok("cleared Vite's dep cache — it ignores a changed tarball behind an unchanged spec");
 
   run('git', ['add', '-A'], t.dir);
   run('git', ['commit', '-m', `chore(${t.scope}): vendor ${VERSION}`], t.dir);
