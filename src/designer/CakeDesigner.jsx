@@ -8147,27 +8147,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ fontSize: 10, color: '#888' }}>Flick metallic gold dust on the cake</div>
                   </div>
                 </button>
-                {/* Grass sits with the TOOLS, beside luster dust — both are treatments applied to a
-                    surface, not objects you place. It is emphatically not under the Cream Pen: that
-                    is for writing and simple shapes, and nobody looks for a lawn inside a pen. */}
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addGrass(); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(160deg, #7bc043, #2e7d32)', flexShrink: 0 }} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Grass</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Pipe grass over the top of a tier</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addNameBlocks(); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#f2ede6', border: '1.5px solid #ddd2c4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 800, fontSize: 15, color: '#b07d8f' }}>Aa</div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Letter Blocks</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Spell a name in fondant cubes</div>
-                  </div>
-                </button>
+                {/* ── Grass and Letter Blocks were the last two cards here ───────────────────
+                    Both are rows in the catalogue now — Grass under Flowers & Leaves, Letter Blocks
+                    under Numbers & Letters — so a card here would be the same decoration offered
+                    twice, once filed and once loose, which is what Texts and Number topper were
+                    reported for below.
+                    Neither could be saved until today. Grass named an element type that did not
+                    exist (migration 076), and then its studio threw on render for seventeen days
+                    over an undeclared name. So the cards were not laziness: there was genuinely
+                    nothing to file them under. */}
                 {/* ── Texts and Number topper USED to be two more cards here ─────────────────
                     They are rows in the catalogue now, under Numbers & Letters, so a card here was
                     the same decoration offered twice — once filed and once loose at the bottom of
