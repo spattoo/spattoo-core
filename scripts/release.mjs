@@ -76,6 +76,8 @@ const run = (cmd, args, cwd) => {
 };
 const die  = (m) => { console.error(`\n✗ release — ${m}\n`); process.exit(1); };
 const ok   = (m) => console.log(`  ✓ ${m}`);
+// Not an error — the release is fine. Something the person running it has to DO afterwards.
+const warn = (m) => console.log(`  ! ${m}`);
 const step = (m) => console.log(`\n${m}`);
 
 // ── 0. both repos exist and are clean ──────────────────────────────────────────────────────────
@@ -229,10 +231,25 @@ for (const t of TARGETS) {
   // the obvious remedy is the one that does not work, so the search goes looking for a bug instead.
   //
   // Cheap to drop: Vite rebuilds it on the next boot in a second or two.
+  //
+  // ── AND IT HAS TO BE SAID OUT LOUD ────────────────────────────────────────────────────────────
+  // Clearing this under a RUNNING dev server breaks it. The server keeps serving dep URLs stamped
+  // with the hash it started with, the files behind them are gone, and every one 504s with
+  // "Outdated Optimize Dep" — which surfaces as a blank screen and "Failed to fetch dynamically
+  // imported module", nothing that names a cache. A restart fixes it in two seconds and is
+  // impossible to guess.
+  //
+  // The cache existing is the tell: Vite creates it at startup, so if it is here, a server has run
+  // since the last clear and may still be running. If it is not here, nobody needs telling.
   const viteCache = join(t.dir, 'node_modules', '.vite');
+  const hadCache = existsSync(viteCache);
   if (DRY) console.log(`  · would clear: ${viteCache}`);
   else rmSync(viteCache, { recursive: true, force: true });
-  ok("cleared Vite's dep cache — it ignores a changed tarball behind an unchanged spec");
+  if (hadCache) {
+    ok("cleared Vite's dep cache — it ignores a changed tarball behind an unchanged spec");
+    warn(`RESTART any running dev server for ${t.label} — until you do it will 504 with `
+       + `"Outdated Optimize Dep" and show a blank screen`);
+  }
 
   run('git', ['add', '-A'], t.dir);
   run('git', ['commit', '-m', `chore(${t.scope}): vendor ${VERSION}`], t.dir);
