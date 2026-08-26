@@ -1112,6 +1112,19 @@ describe('a rainbow with its ends curled', () => {
     curl.bands.forEach((b, i) => expect(b.radius).toBeCloseTo(plain.bands[i].radius, 9));
   });
 
+  it('is never shrunk to make an imaginary foot land', () => {
+    // The board-fit rule shrinks an arch so its FALLING foot lands on what is under it. A curled end
+    // has no foot — nor does a 'none' end — and the test for falling was `foot !== topY`, which reads
+    // null as falling. So a curled rainbow was shrunk to 0.83 at size 1.6 to seat a foot it does not
+    // have, and the card told the customer the board was capping its size.
+    const big = { ...RAINBOW_DEFAULTS, scale: 1.6, footLeft: 'top' };
+    const CAKE_S = { ...CAKE_C, supportRadius: 1.6 };
+    expect(rainbowBands({ ...big, footRight: 'curl' }, CAKE_S).supportFit).toBe(1);
+    expect(rainbowBands({ ...big, footRight: 'none' }, CAKE_S).supportFit).toBe(1);
+    // ...and one that really does fall still is.
+    expect(rainbowBands({ ...big, footRight: 'board' }, CAKE_S).supportFit).toBeLessThan(1);
+  });
+
   it('coils no tighter than the rope can be rolled', () => {
     // Below thickness/2 the inside of the tube meets its own axis and the tip turns inside out.
     const { bands, thickness } = curled({ curlTightness: 1 });

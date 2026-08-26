@@ -506,7 +506,12 @@ export function rainbowBands(params = {}, cake = {}) {
   // size on a 0.92 tier the six feet land at 0.98 … 1.51 across a tier ending at 1.20: half the
   // rainbow unsupported, by default.
   const support = cake.supportRadius;
-  const falling = !onWall && !standingOnTop && (rawLeft !== topY || rawRight !== topY);
+  // A foot that FALLS is one that exists and lands lower than the cake top. `!== topY` was the test,
+  // and it read `null` as falling — so an end with NO foot counted as one. A curled end has no foot
+  // (nor does a 'none' end), and nothing that has no foot can put a foot off the board, yet a curled
+  // rainbow was being shrunk to 0.83 at size 1.6 to make an imaginary one land.
+  const fallsAt = raw => raw != null && raw < topY;
+  const falling = !onWall && !standingOnTop && (fallsAt(rawLeft) || fallsAt(rawRight));
   let supportFit = 1;
   if (falling && Number.isFinite(support) && support > 0) {
     // Solved by iteration, because the two rules feed each other. Shrinking the arch does NOT reduce
