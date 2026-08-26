@@ -8119,9 +8119,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </>
             )}
 
-            {/* Cream pen + texts — code-level decoration sections (not DB element types), shown
-                last. Tapping opens the editor in the same flyout slot; its back arrow returns here. */}
-            {!elemSearch.trim() && (
+            {/* ── The code-level tools, shown on the WAY IN only ────────────────────────────────
+                Not DB element types, so they belong to no category — which is precisely why they
+                must not sit inside one. Gated on `!elemSearch` alone, they appeared at the bottom of
+                Animals, of Sky, of everything, as though "pipe grass over a tier" were an animal.
+                The same mistake the piping card made, found the same way: a thing with no category
+                rendered as though every category owned it.
+                So: on the menu, and nowhere else. Search still finds them, because someone typing
+                "grass" wants grass and not a lecture about where it is filed. */}
+            {!elemSearch.trim() && (!categories.length || !activeCategory) && (
               <>
                 <button
                   onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'tool', tool: 'pen' }); setElementsOpen(false); }}
@@ -8162,43 +8168,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ fontSize: 10, color: '#888' }}>Spell a name in fondant cubes</div>
                   </div>
                 </button>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); addWritingFromRow(); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1a1a', flexShrink: 0 }}>
-                    <TextIcon size={22} />
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Texts</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Write a name in piped cream</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => {
-                    setExpandedPipingId(null); setToolsOpen(false); setElementsOpen(false);
-                    addAgeFromRow();   // no row: the Tools path takes the defaults
-                  }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FBF1D8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b8860b', flexShrink: 0, fontWeight: 800, fontSize: 20 }}>
-                    8
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    {/* ── "Number topper", never "Age Number" ────────────────────────────────────
-                        A 5 on a cake is usually somebody's age, and naming the element after that
-                        makes the product sound like it is asking for one. It is not, and it does not
-                        store one — this is a gold digit standing on the top, and "topper" is what
-                        the thing is called in a bakery anyway.
-                        Same reasoning that moved the storefront from an age band to a celebration
-                        type (spattoo-api migration 046): the recommender never needed the person's
-                        age, and neither does a decoration. Nothing about children's data should be
-                        implied by a label when no data is involved.
-                        The internal key stays `age` / `ages` / addAge — it is written into every
-                        saved design snapshot, so renaming it is a data migration for a word no
-                        customer sees. Label here, key untouched. */}
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Number topper</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Gold number standing on top</div>
-                  </div>
-                </button>
+                {/* ── Texts and Number topper USED to be two more cards here ─────────────────
+                    They are rows in the catalogue now, under Numbers & Letters, so a card here was
+                    the same decoration offered twice — once filed and once loose at the bottom of
+                    every category. Reported as exactly that: "texts and numbers are still present
+                    as tools below".
+                    Grass and Letter Blocks are the same shape of thing and still have cards, for
+                    one reason only: nobody has pressed Save in their studios yet, so they have no
+                    row to be filed under. Both studios are already pointed at the right shelf —
+                    Grass at Flowers & Leaves, Letter Blocks at Numbers & Letters — so the moment
+                    either is saved, its card here should go the way these two did.
+                    Cream Pen and Luster Dust stay. They are not objects you place; they are ways of
+                    drawing ON the cake, and a catalogue row would be a thing that is not a thing. */}
               </>
             )}
             </div>{/* end flyoutScroll */}
