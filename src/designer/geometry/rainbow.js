@@ -747,29 +747,42 @@ export function rainbowHandleAt(params = {}, cake = {}) {
 }
 
 /**
- * The parameters after a drag to (u, v) — the inverse of the above.
+ * The parameters after a drag to (u, v).
  *
- * Holds the lean. `offsetX` is the arch's SHAPE, not its position: how far it straddles along its
- * own plane is what makes it "over, falling right" rather than "sitting on top", and a drag that
+ * ── ON THE CAKE, A DRAG MOVES IT ROUND AND DOES NOTHING ELSE ──────────────────────────────────
+ * `v` — how far the pointer is from the axis — is deliberately ignored. It used to set how far back
+ * the arch stood, by solving hypot(centerX, standoff) = v·R, and that was wrong in two ways at once
+ * on the same rainbow:
+ *
+ *   · DEAD over most of the cake. The arch's centre already stands `centerX` off the axis — 0.85 on
+ *     a cake of radius 1.2 for the default lean — so every v below 0.71 has no solution and rests
+ *     at zero. Dragging anywhere in the middle 71% of the cake top did nothing at all.
+ *   · A LEAP past that. From v = 0.71 to the rim the standoff runs 0 → 0.70, so the arch shoots
+ *     backwards away from the cake in the last third of the drag.
+ *
+ * Reported as "sometimes stuck", "sometimes rotating", "adding space between cake and rainbow" —
+ * three symptoms, one cause. The old limit was documented here as honest. It was not: it was most
+ * of the control surface doing nothing.
+ *
+ * So the drag is purely angular, which is also what the card promises the customer — "drag it on
+ * the cake to move it round". How far back it stands is authored in the studio, and the arch keeps
+ * whatever it was given: the orbit radius is the same at every yaw, so it cannot gain or lose ground
+ * on the cake by being moved round it.
+ *
+ * Holds the lean too. `offsetX` is the arch's SHAPE, not its position — how far it straddles along
+ * its own plane is what makes it "over, falling right" rather than "sitting on top", and a drag that
  * quietly flattened it would be moving a different rainbow to where you pointed.
- *
- * Which means the centre cannot come closer to the axis than the lean itself, and the drag stops
- * there rather than going imaginary. An honest limit, and a visible one: the arch simply will not
- * come any further in.
  */
 export function rainbowDragTo(params = {}, cake = {}, u = 0, v = 0) {
   const p = { ...RAINBOW_DEFAULTS, ...params };
+  // The WALL keeps both freedoms, and they are real ones there: `theta` runs right round and
+  // `spring` runs the full height with nothing to make either inert.
   if (p.surface === 'side') return { theta: wrapAngle(u * TAU), spring: clamp01(v) };
 
-  const R = cake.radius ?? 1;
-  const { centerX } = rainbowBands(p, cake);
-  const want = clamp01(v) * R;
-  // hypot(centerX, standoff) = want. Below the lean there is no solution, so it rests at zero.
-  const standoff = Math.sqrt(Math.max(0, want * want - centerX * centerX));
-  return {
-    yaw: wrapAngle(u * TAU - Math.atan2(centerX, standoff)),
-    standoff: R > 0 ? standoff / R : 0,
-  };
+  // The EFFECTIVE standoff, not the authored one — the clearance rule may have pushed the arch
+  // further back than it asked for, and the yaw has to be solved against where it actually is.
+  const { centerX, standoff } = rainbowBands(p, cake);
+  return { yaw: wrapAngle(u * TAU - Math.atan2(centerX, standoff)) };
 }
 
 /**

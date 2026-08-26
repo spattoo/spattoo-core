@@ -132,7 +132,9 @@ export default function CreamWriting({
   const grabPlane = (z = 0.005) => (
     <mesh position={[0, 0, z]} {...grabProps}>
       <planeGeometry args={[grabW, grabH]} />
-      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false}
+          side={THREE.DoubleSide} /* or it is not a target from behind, and the decoration
+          becomes ungrabbable the moment the cake is turned past it */ />
     </mesh>
   );
 
@@ -146,7 +148,9 @@ export default function CreamWriting({
           {/* tangent grab plane just in front of the wrapped text */}
           <mesh position={[0, 0, bb.max.z + 0.01]} {...grabProps}>
             <planeGeometry args={[grabW, grabH]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false}
+          side={THREE.DoubleSide} /* or it is not a target from behind, and the decoration
+          becomes ungrabbable the moment the cake is turned past it */ />
           </mesh>
         </group>
       </group>

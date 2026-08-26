@@ -957,13 +957,35 @@ describe('dragging a rainbow', () => {
   const OVER = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', yaw: 0 };
   const WALL = { ...RAINBOW_DEFAULTS, surface: 'side', footLeft: 'board', spring: 0.18, theta: -0.09 };
 
-  it('puts the handle back where a drag asked for it', () => {
+  it('puts the arch at the angle the drag asked for', () => {
+    // `u` round the cake is the whole of the drag on the top. `v` is not an input — see below.
     for (const u of [0, 0.1, 0.25, 0.5, 0.9]) {
       const moved = { ...OVER, ...rainbowDragTo(OVER, CAKE, u, 0.8) };
-      const back = rainbowHandleAt(moved, CAKE);
-      expect(back.u).toBeCloseTo(u, 6);
-      expect(back.v).toBeCloseTo(0.8, 6);
+      expect(rainbowHandleAt(moved, CAKE).u).toBeCloseTo(u, 6);
     }
+  });
+
+  it('moves it round the cake without moving it off the cake', () => {
+    // The reported symptom, as a number: dragging used to set how far BACK the arch stood, from how
+    // far the pointer was from the axis. So the last third of a drag shot it backwards — "adding
+    // space between cake and rainbow". The orbit radius must not change at all.
+    const at = v => {
+      const moved = { ...OVER, ...rainbowDragTo(OVER, CAKE, 0.3, v) };
+      return rainbowHandleAt(moved, CAKE).v;
+    };
+    for (const v of [0, 0.2, 0.5, 0.71, 0.9, 1]) expect(at(v)).toBeCloseTo(at(0), 9);
+  });
+
+  it('has no dead patch — every angle moves it', () => {
+    // The other half of the same bug. The arch's own centre stands 0.71 of the radius off the axis,
+    // so solving for a distance had NO answer below that: the middle 71% of the cake top was inert,
+    // which is what "sometimes stuck and not moving" was.
+    const seen = new Set();
+    for (const u of [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875]) {
+      // v deliberately in the old dead zone.
+      seen.add(rainbowDragTo(OVER, CAKE, u, 0.15).yaw.toFixed(6));
+    }
+    expect(seen.size).toBe(8);
   });
 
   it('does the same on the wall, in the wall\'s own words', () => {
@@ -1015,12 +1037,18 @@ describe('dragging a rainbow', () => {
     }
   });
 
-  it('stops at the lean rather than going imaginary', () => {
-    // The centre cannot come closer to the axis than the arch's own offset. An honest limit: the
-    // arch simply will not come any further in.
-    const moved = rainbowDragTo(OVER, CAKE, 0.25, 0.1);
-    expect(Number.isFinite(moved.standoff)).toBe(true);
-    expect(moved.standoff).toBe(0);
+  it('does not touch how far back the arch stands', () => {
+    // That is authored in the studio. A drag that changed it was moving a different rainbow to
+    // where you pointed, and it is what the customer saw as the arch drifting off the cake.
+    expect(rainbowDragTo(OVER, CAKE, 0.25, 0.1)).not.toHaveProperty('standoff');
+    expect(rainbowDragTo(OVER, CAKE, 0.25, 1.0)).not.toHaveProperty('standoff');
+  });
+
+  it('still gives the WALL both freedoms', () => {
+    // Nothing is inert there: theta runs right round and spring runs the whole height.
+    const moved = rainbowDragTo(WALL, CAKE, 0.4, 0.6);
+    expect(moved.theta).toBeDefined();
+    expect(moved.spring).toBeCloseTo(0.6, 6);
   });
 });
 

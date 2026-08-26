@@ -82,7 +82,9 @@ export default function AgeNumber({
       {/* upright grab plane just in front of the number */}
       <mesh position={[0, numH / 2, size * 0.22]} {...grabProps}>
         <planeGeometry args={[numW + size * 0.3, numH + size * 0.3]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false}
+          side={THREE.DoubleSide} /* or it is not a target from behind, and the decoration
+          becomes ungrabbable the moment the cake is turned past it */ />
       </mesh>
     </group>
   );

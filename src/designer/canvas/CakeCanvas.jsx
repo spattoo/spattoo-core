@@ -2682,9 +2682,37 @@ function CakeContent({ config, scene, edit = null }) {
                 rainbowBands(rb, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
                                    supportRadius: rainbowSupportRadius(tierData, i, board) })
                   .bands.flatMap(x => x.path), 0.04);
+              // NESTED, and the order is the whole of it. `rainbowBands` returns the arch in its
+              // own frame and RainbowArch spins that frame about the CAKE'S AXIS — so the box has
+              // to be spun about the axis too, and then moved to the centre inside that spin.
+              //
+              // One group doing `position` then `rotation` is the other order: it turns the box
+              // about its OWN centre and leaves it standing where yaw 0 put it. At any yaw but zero
+              // the box and the rainbow were in different places on the cake, which is what made
+              // this look like the rainbow could not be grabbed — the border was not where the
+              // rainbow was.
               return b && (
-                <group position={b.centre} rotation={[0, rb.yaw ?? 0, 0]}>
-                  <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                <group rotation={[0, rb.yaw ?? 0, 0]}>
+                  <group position={b.centre}>
+                    <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                    {/* Something to actually take hold of.
+                        Until this, the only thing that took the drag was the ropes — and a rainbow
+                        is thin ropes around a big hole, so a press that missed fell through to the
+                        cake and spun the whole thing instead. "Sometimes it drags the entire cake."
+                        There is nothing to tune about that: the target really is that small.
+                        ONLY while selected, so it cannot steal a click from anything in normal
+                        browsing — and while it is selected the border is drawn round exactly this
+                        rectangle, so what you can grab is what you can see.
+                        DoubleSide, or it vanishes as a target the moment the cake is turned past
+                        it: a plane's default FrontSide is not hit from behind, and the customer
+                        would find the rainbow ungrabbable from half the angles with nothing on
+                        screen to explain why. */}
+                    <mesh renderOrder={-1}>
+                      <planeGeometry args={[b.width, b.height]} />
+                      <meshBasicMaterial transparent opacity={0} depthWrite={false}
+                        side={THREE.DoubleSide} />
+                    </mesh>
+                  </group>
                 </group>
               );
             })()}
