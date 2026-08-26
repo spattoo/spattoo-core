@@ -8155,57 +8155,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </>
             )}
 
-            {/* ── The code-level tools, shown on the WAY IN only ────────────────────────────────
-                Not DB element types, so they belong to no category — which is precisely why they
-                must not sit inside one. Gated on `!elemSearch` alone, they appeared at the bottom of
-                Animals, of Sky, of everything, as though "pipe grass over a tier" were an animal.
-                The same mistake the piping card made, found the same way: a thing with no category
-                rendered as though every category owned it.
-                So: on the menu, and nowhere else. Search still finds them, because someone typing
-                "grass" wants grass and not a lecture about where it is filed. */}
-            {!elemSearch.trim() && (!categories.length || !activeCategory) && (
-              <>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'tool', tool: 'pen' }); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F2F1EE', flexShrink: 0 }} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Cream Pen</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Draw cream freehand on the cake</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'tool', tool: 'luster-dust' }); setElementsOpen(false); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'radial-gradient(circle at 35% 35%, #f0cf63, #9a7b2e)', flexShrink: 0 }} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Luster Dust</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Flick metallic gold dust on the cake</div>
-                  </div>
-                </button>
-                {/* ── Grass and Letter Blocks were the last two cards here ───────────────────
-                    Both are rows in the catalogue now — Grass under Flowers & Leaves, Letter Blocks
-                    under Numbers & Letters — so a card here would be the same decoration offered
-                    twice, once filed and once loose, which is what Texts and Number topper were
-                    reported for below.
-                    Neither could be saved until today. Grass named an element type that did not
-                    exist (migration 076), and then its studio threw on render for seventeen days
-                    over an undeclared name. So the cards were not laziness: there was genuinely
-                    nothing to file them under. */}
-                {/* ── Texts and Number topper USED to be two more cards here ─────────────────
-                    They are rows in the catalogue now, under Numbers & Letters, so a card here was
-                    the same decoration offered twice — once filed and once loose at the bottom of
-                    every category. Reported as exactly that: "texts and numbers are still present
-                    as tools below".
-                    Grass and Letter Blocks are the same shape of thing and still have cards, for
-                    one reason only: nobody has pressed Save in their studios yet, so they have no
-                    row to be filed under. Both studios are already pointed at the right shelf —
-                    Grass at Flowers & Leaves, Letter Blocks at Numbers & Letters — so the moment
-                    either is saved, its card here should go the way these two did.
-                    Cream Pen and Luster Dust stay. They are not objects you place; they are ways of
-                    drawing ON the cake, and a catalogue row would be a thing that is not a thing. */}
-              </>
-            )}
+            {/* ── There is no tools section any more, and that is the point ─────────────────────
+                Six code-level cards used to sit at the bottom of this panel: Cream Pen, Luster Dust,
+                Grass, Letter Blocks, Texts and Number topper. Every one is a catalogue row now, so
+                every one is filed where a customer browses for it — Art, Finishes, Flowers & Leaves,
+                Numbers & Letters — instead of loose beneath the shelves.
+                They went one at a time, and each was reported before it went. The cards were never
+                laziness: a card was the only way in until the thing could be SAVED, and until today
+                two of these studios had no Save button at all and a third threw on render for
+                seventeen days. There was nothing to file them under.
+                Every one is still reached the same way, through PROCEDURAL_TOOLS on its row. What
+                went was the second door, never the feature.
+                If a future tool needs a card here, it is worth asking first whether it needs a row
+                instead. The answer has been "a row" six times running. */}
             </div>{/* end flyoutScroll */}
           </div>
         )}
