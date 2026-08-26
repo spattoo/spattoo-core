@@ -108,14 +108,14 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // ends roll up instead of reaching for a surface. Set a side's foot to 'curl' to get it.
   curlTurns: 1.35,     // how far round the end winds, in whole turns
   // How wide the coil starts, in ROPE THICKNESSES. Same on every band — see bandPath.
-  curlSize: 1.6,
+  curlSize: 2.0,
   // How far each band's coil rides out of the rainbow's plane, in rope thicknesses. NOT decoration:
   // without it neighbouring coils intersect, and no other setting prevents that — see bandPath.
-  curlLift: 0.9,
+  curlLift: 0.5,
   // How far the bands spread apart before they curl, in rope thicknesses per band. Also NOT
   // decoration: the coils tangle without it, and the reference shows the cake between the bands on
   // the curled side — see bandPath.
-  curlSplay: 1.2,
+  curlSplay: 0.15,
   // How far the coil closes: 0 leaves a loose hook the same width as the arch, 1 winds it in as
   // tight as the rope's own thickness allows. Never tighter — see bandPath.
   curlTightness: 0.82,
@@ -125,7 +125,7 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // SIGNED, because which way the fan runs is a look and not a fact, and a photograph is not
   // something to measure it off. Positive carries the INNER bands further, so the outer coils sit
   // highest; negative does the reverse. The studio shows it either way and the author picks.
-  curlFan: 1.1,
+  curlFan: 0.9,
 
   arcSegments: 96,     // along the path
   tubeSegments: 12,    // around the rope
@@ -216,16 +216,34 @@ export function bandPath({
   const hasLeft  = footLeftY  != null && footLeftY  < archY;
   const hasRight = footRightY != null && footRightY < archY;
 
-  // ── How far each band runs past the springing point before it rolls up ────────────────────────
-  // Not the same for every band, or the coils land in a row at one height and read as a comb. In the
-  // reference the INNER bands carry furthest down and the outer ones stop highest, which fans the
-  // coils along a diagonal. `bandIndex` counts outward from the hole, so the extra runs the other
-  // way.
-  // Signed: a negative fan runs the OUTER bands further instead, which is the same look mirrored.
+  // ── Where each band STOPS, short of the springing point, before it rolls up ───────────────────
+  // Short of it, never past it — and that is the whole difference between a curled rainbow and a
+  // row of buried stubs.
+  //
+  // The springing point on a cake-top rainbow IS the cake top. Running a band PAST it, which is what
+  // this did first, puts the coil inside the cake: five of the six were swallowed whole and only the
+  // outermost, standing furthest out, cleared the rim. On screen that read as "the curls do not
+  // work" when in fact they were all there, underground.
+  //
+  // Stopping early also fans them for free. The bands are concentric, so at one shared angle above
+  // the springline the outer band's end is already higher and further out than the inner's — which
+  // is the diagonal the reference shows, with the pink coil at the top and the purple one down by
+  // the cake. The fan then widens that: OUTER bands stop earliest, so they sit highest.
+  //
+  // Signed, so an author can run it the other way and judge which suits the shape.
   const spread = bandCount > 1
-    ? (curlFan >= 0 ? (bandCount - 1 - bandIndex) : bandIndex) / (bandCount - 1)
+    ? (curlFan >= 0 ? bandIndex : (bandCount - 1 - bandIndex)) / (bandCount - 1)
     : 0;
-  const extra = Math.abs(curlFan) * spread * (Math.PI / 2);
+  //
+  // And every band stops SOME way short, fan or no fan. A coil leaving the arch turns outward and
+  // downward first, so one that begins exactly at the springing point dips below it — which on a
+  // cake-top rainbow means below the cake top, and the innermost band's tip came out at 1.51 against
+  // a top of 1.55. The floor is the angle at which the arch has already risen by the coil's own
+  // radius, so the coil has its own height in hand before it starts. Derived, not picked: change the
+  // coil's size and the clearance follows it.
+  const coilR = Math.max(1e-4, thickness * 0.62, thickness * Math.max(0.6, curlSize));
+  const floor = radius > coilR ? Math.asin(coilR / radius) : Math.PI / 4;
+  const cutBack = floor + Math.abs(curlFan) * spread * (Math.PI / 2);
 
   // ── How big the coil is ───────────────────────────────────────────────────────────────────────
   // Measured in ROPES, not in bands. A scroll end is a small thing a couple of rope-widths across,
@@ -285,8 +303,8 @@ export function bandPath({
   const ease = u => u * u * (3 - 2 * u);
   const SPLAY_ARC = 1.0;
   const splayR = Math.max(0, curlSplay) * thickness * bandIndex;
-  const aLeft = Math.PI + (curlLeft ? extra : 0);
-  const aRight = -(curlRight ? extra : 0);
+  const aLeft = Math.PI - (curlLeft ? cutBack : 0);
+  const aRight = (curlRight ? cutBack : 0);
   const nearEnd = a => Math.max(
     curlLeft  ? (a - (aLeft - SPLAY_ARC)) / SPLAY_ARC : 0,
     curlRight ? ((aRight + SPLAY_ARC) - a) / SPLAY_ARC : 0,
