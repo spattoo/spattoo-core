@@ -4074,6 +4074,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'tool', tool: 'luster-dust' });
   }
 
+  // ── The cream pen, from a catalogue row ───────────────────────────────────────────────────────
+  // Same shape as the dust: the pen is a way of DRAWING, not an object, so a row carries the LOOK —
+  // the nozzle, the colour, how thick and how soft — and tapping it sets the pen to that and opens
+  // it. Every stroke drawn afterwards comes out as the thing that was chosen.
+  //
+  // `penStyle` is the seam. It already held exactly these settings for the pen's own card, so a row
+  // does not need a second place to put them.
+  function addPenFromRow(el) {
+    const tuned = el?.placement_config?.cream_pen ?? {};
+    setPenStyle(prev => ({ ...prev, ...tuned }));
+    selectExclusive({ type: 'tool', tool: 'pen' });
+  }
+
   function addAgeFromRow(el) {
     addAge(el?.placement_config?.number_topper ?? {});
     focusEditor('decoration');
@@ -4098,8 +4111,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // every saved snapshot — renaming them is a data migration for a word nobody sees. This key has
     // no rows yet, so it costs nothing to get right now.
     number_topper: addAgeFromRow,
-    // A LOOK rather than an object — see addDustFromRow.
+    // Both are LOOKS rather than objects — see addDustFromRow and addPenFromRow.
     luster_dust: addDustFromRow,
+    cream_pen: addPenFromRow,
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the

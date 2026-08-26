@@ -45,6 +45,9 @@ const NOT_DRAGGED = {
   // of: a tap flicks a splash where you tapped, and a splash is adjusted through its own card. The
   // ELEMENT has no position at all, so there is nothing for the movable contract to ask about.
   luster_dust: 'a wall treatment flicked where you tap — the element has no position of its own',
+  // The pen is a way of DRAWING. A stroke is where the hand went; there is no object to take hold of
+  // and move afterwards, so there is no position for the contract to ask about.
+  cream_pen: 'freehand strokes follow the hand — there is no placed object to drag',
 };
 
 const designer = read('src/designer/CakeDesigner.jsx');
