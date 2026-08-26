@@ -3885,10 +3885,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     updateTierRainbows(i, cur => [
       ...cur,
       { ...RAINBOW_DEFAULTS, ...tuned, id,
-        // Each one a quarter turn further round, so a second rainbow is visibly a second rainbow
-        // rather than a redraw of the first. Position along the surface stays as authored: WHERE it
-        // sits is the customer's decision once they can drag it.
-        yaw: cur.length * (Math.PI / 2) },
+        // ── The first one lands in the MIDDLE ───────────────────────────────────────────────────
+        // An arch carries its own lean — `offsetX` is how far it straddles along its own plane, and
+        // for the shapes that fall off one side that is most of a radius. Placed with no position of
+        // its own it therefore arrives shoved to one side, which is exactly what "it loads to the
+        // right" was. Cancelling the lean puts the arc over the middle of the cake.
+        //
+        // A SECOND one steps aside rather than landing on the first, and it steps — it does not
+        // turn. Turning each new one a quarter round was the old answer and it was the same mistake
+        // the drag made: a rainbow seen edge-on is not a rainbow anybody ordered.
+        ...(() => {
+          const lean = -((tuned.offsetX ?? RAINBOW_DEFAULTS.offsetX) ?? 0);
+          if (!cur.length) return { px: lean, pz: 0 };
+          const a = cur.length * 1.2;          // irrational-ish turn, so four in a row do not stack
+          return { px: lean + Math.sin(a) * 0.4, pz: Math.cos(a) * 0.4 };
+        })() },
     ]);
     selectExclusive({ type: 'rainbow', tierIndex: i, id });
   }

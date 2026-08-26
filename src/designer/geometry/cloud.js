@@ -297,17 +297,15 @@ export function cloudPlacement(params = {}, cake = {}) {
       const out = rw + z;
       return { r, position: new THREE.Vector3(Math.sin(th) * out, baseY + y, Math.cos(th) * out), rotationY: th };
     }
-    // Carried round the cake as a whole, so a cloud can stand anywhere rather than only in front.
+    // Carried to where it stands, and set down STILL FACING THE FRONT. Neither variant turns.
     //
-    // Whether it also TURNS depends on which cloud it is, and the two are genuinely different
-    // objects. A PUFF is a bunch of balls with no front — turn it and it reads the same, and it must
-    // turn, or the side that bulges toward you would stay pointing at the front while the cloud is
-    // round the back. A FLAT one is a cut sheet with a face and a thin edge: at a quarter turn you
-    // are looking at the edge, at a half turn at its back, and there is no reason to show either.
-    // So it does not turn. It is carried to the same place and set down still facing the front,
-    // which is how a sticker moves.
-    const pos = flat ? { x: middle.x + x, z: middle.z + z } : spin(centerX + x, outward + z);
-    return { r, position: new THREE.Vector3(pos.x, baseY + y, pos.z), rotationY: flat ? 0 : yaw };
+    // The flat one never did — it is a cut sheet, and a quarter turn shows you its thin edge. The
+    // puff did, on the reasoning that a bunch of balls reads the same from any angle so it may as
+    // well keep its bulge pointing outward. That was wrong for the same reason the rainbow's was:
+    // it made a DRAG turn the thing instead of moving it, and on a cake nobody is looking for the
+    // side view of a cloud. Both are placed now, and neither is rotated.
+    const pos = { x: middle.x + x, z: middle.z + z };
+    return { r, position: new THREE.Vector3(pos.x, baseY + y, pos.z), rotationY: 0 };
   });
 
   return {

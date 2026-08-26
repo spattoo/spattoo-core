@@ -2709,7 +2709,8 @@ function CakeContent({ config, scene, edit = null }) {
                       DoubleSide, or it vanishes as a target the moment the cake is turned past it:
                       a plane's default FrontSide is not hit from behind, and the customer would find
                       the rainbow ungrabbable from half the angles with nothing to explain why. */}
-                  <mesh renderOrder={-1} rotation={[0, rb.yaw ?? 0, 0]}>
+                  {/* No rotation: the arch faces the front and a drag moves it. */}
+                  <mesh renderOrder={-1}>
                     <planeGeometry args={[b.width, b.height]} />
                     <meshBasicMaterial transparent opacity={0} depthWrite={false}
                       side={THREE.DoubleSide} />
@@ -2729,7 +2730,6 @@ function CakeContent({ config, scene, edit = null }) {
                       // A rect board is measured across its narrow way, so the arch lands on it at
                       // any angle rather than only over the corners.
                       supportRadius: rainbowSupportRadius(tierData, i, board) }}
-              yaw={rb.yaw ?? 0}
             />
             </DraggableGenerated>
           ))}

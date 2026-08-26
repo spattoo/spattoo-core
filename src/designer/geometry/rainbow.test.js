@@ -959,36 +959,51 @@ describe('dragging a rainbow', () => {
   const OVER = { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', yaw: 0 };
   const WALL = { ...RAINBOW_DEFAULTS, surface: 'side', footLeft: 'board', spring: 0.18, theta: -0.09 };
 
-  it('puts the arch at the angle the drag asked for', () => {
-    // `u` round the cake is the whole of the drag on the top. `v` is not an input — see below.
+  it('MOVES it, and never turns it', () => {
+    // The whole complaint, as a test. A drag used to write `yaw`, which carried the arch round the
+    // cake's axis and swung it edge-on on the way — so dragging it toward the middle rotated it
+    // instead of moving it. Nobody decorating a cake wants a rainbow seen from the side.
+    for (const [u, v] of [[0, 0.5], [0.25, 0.8], [0.5, 0.3], [0.9, 1]]) {
+      const patch = rainbowDragTo(OVER, CAKE, u, v);
+      expect(Object.keys(patch).sort()).toEqual(['px', 'pz']);
+      expect(patch).not.toHaveProperty('yaw');
+    }
+  });
+
+  it('puts it where the pointer is', () => {
+    // A position, not an orbit: every point on the surface is reachable and distinct, including the
+    // middle — which the old solve could never reach at all.
+    const seen = new Set();
+    for (const u of [0, 0.25, 0.5, 0.75]) {
+      for (const v of [0, 0.3, 0.6, 1]) {
+        const { px, pz } = rainbowDragTo(OVER, CAKE, u, v);
+        seen.add(`${px.toFixed(6)},${pz.toFixed(6)}`);
+      }
+    }
+    // v = 0 is the middle whatever the angle, so the four u values collapse to one there.
+    expect(seen.size).toBe(13);
+    // toBeCloseTo, not toEqual: cos(0.3 * 2pi) * 0 is a signed negative zero.
+    const mid = rainbowDragTo(OVER, CAKE, 0.3, 0);
+    expect(mid.px).toBeCloseTo(0, 9);
+    expect(mid.pz).toBeCloseTo(0, 9);
+  });
+
+  it('starts in the middle', () => {
+    // What a freshly placed rainbow does before anybody drags it.
+    expect(RAINBOW_DEFAULTS.px).toBe(0);
+    expect(RAINBOW_DEFAULTS.pz).toBe(0);
+  });
+
+  it('reports back the place a drag put it', () => {
     for (const u of [0, 0.1, 0.25, 0.5, 0.9]) {
       const moved = { ...OVER, ...rainbowDragTo(OVER, CAKE, u, 0.8) };
-      expect(rainbowHandleAt(moved, CAKE).u).toBeCloseTo(u, 6);
+      const back = rainbowHandleAt(moved, CAKE);
+      expect(back.u).toBeCloseTo(u, 6);
+      expect(back.v).toBeCloseTo(0.8, 6);
     }
   });
 
-  it('moves it round the cake without moving it off the cake', () => {
-    // The reported symptom, as a number: dragging used to set how far BACK the arch stood, from how
-    // far the pointer was from the axis. So the last third of a drag shot it backwards — "adding
-    // space between cake and rainbow". The orbit radius must not change at all.
-    const at = v => {
-      const moved = { ...OVER, ...rainbowDragTo(OVER, CAKE, 0.3, v) };
-      return rainbowHandleAt(moved, CAKE).v;
-    };
-    for (const v of [0, 0.2, 0.5, 0.71, 0.9, 1]) expect(at(v)).toBeCloseTo(at(0), 9);
-  });
 
-  it('has no dead patch — every angle moves it', () => {
-    // The other half of the same bug. The arch's own centre stands 0.71 of the radius off the axis,
-    // so solving for a distance had NO answer below that: the middle 71% of the cake top was inert,
-    // which is what "sometimes stuck and not moving" was.
-    const seen = new Set();
-    for (const u of [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875]) {
-      // v deliberately in the old dead zone.
-      seen.add(rainbowDragTo(OVER, CAKE, u, 0.15).yaw.toFixed(6));
-    }
-    expect(seen.size).toBe(8);
-  });
 
   it('does the same on the wall, in the wall\'s own words', () => {
     for (const [u, v] of [[0.1, 0.2], [0.5, 0.6], [0.95, 0.9]]) {
@@ -1013,38 +1028,9 @@ describe('dragging a rainbow', () => {
     expect(rainbowHandleAt(WALL, CAKE).surface).toBe('side');
   });
 
-  it('sits the handle on the ARCH, not on the cake\'s middle', () => {
-    // The default leans, so its centre stands 0.71 of the radius off the axis. A handle at the axis
-    // would be a dot nowhere near the thing it moves.
-    expect(rainbowHandleAt(OVER, CAKE).v).toBeCloseTo(0.71, 3);
-  });
 
-  it('follows the arch when the clearance rule steps it back', () => {
-    // The handle is drawn from the EFFECTIVE position. Drawn from what was ASKED for, it would float
-    // in front of an arch that had been pushed behind the cake.
-    const asked = { ...RAINBOW_DEFAULTS, footLeft: 'board', footRight: 'board', offsetX: 0, standoff: 0 };
-    const { standoff } = rainbowBands(asked, CAKE);
-    expect(standoff).toBeGreaterThan(0);                       // it really was pushed
-    expect(rainbowHandleAt(asked, CAKE).v).toBeCloseTo(standoff / CAKE.radius, 6);
-  });
 
-  it('carries on round the back rather than sticking there', () => {
-    // Handles speak u in 0…1 and the geometry speaks radians. Clamping would stop a drag dead at the
-    // seam behind the cake, which feels like the rainbow hitting a wall that is not there.
-    const a = rainbowDragTo(OVER, CAKE, 0.99, 0.8);
-    const b = rainbowDragTo(OVER, CAKE, 0.01, 0.8);
-    for (const y of [a.yaw, b.yaw]) {
-      expect(y).toBeGreaterThanOrEqual(0);
-      expect(y).toBeLessThan(Math.PI * 2);
-    }
-  });
 
-  it('does not touch how far back the arch stands', () => {
-    // That is authored in the studio. A drag that changed it was moving a different rainbow to
-    // where you pointed, and it is what the customer saw as the arch drifting off the cake.
-    expect(rainbowDragTo(OVER, CAKE, 0.25, 0.1)).not.toHaveProperty('standoff');
-    expect(rainbowDragTo(OVER, CAKE, 0.25, 1.0)).not.toHaveProperty('standoff');
-  });
 
   it('still gives the WALL both freedoms', () => {
     // Nothing is inert there: theta runs right round and spring runs the whole height.
@@ -1161,7 +1147,7 @@ describe('a rainbow with its ends curled', () => {
 // It used to declare two, and the second was dead over the middle 71% of the cake top and threw the
 // arch backwards past that. A freedom that does not move the thing is not a freedom.
 movableContract('rainbow', {
-  positionKeys: ['yaw', 'theta', 'spring'],
+  positionKeys: ['px', 'pz', 'theta', 'spring'],
   // The PLACED points, not the bands' own — the arch's yaw is applied by the renderer, so
   // `rainbowBands` alone does not know where the rainbow is. Same helper the selection box
   // uses, which is the point: one answer, not three.

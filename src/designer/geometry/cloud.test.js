@@ -330,7 +330,7 @@ describe('a flat cloud goes where a puffy one goes', () => {
 // balls — turn it and it reads the same, and it MUST turn, or the side that bulges toward you goes
 // on pointing at the front while the cloud sits round the back. A flat one is a cut sheet: a quarter
 // turn shows you its thin edge, a half turn shows you its back, and neither is ever wanted.
-describe('a flat cloud faces the front wherever it is dragged', () => {
+describe('a cloud faces the front wherever it is dragged', () => {
   const CAKE_T = { radius: 1.2, topY: 1.55, boardY: 0.1 };
   const YAWS = [0, 0.7, Math.PI / 2, Math.PI, 4.5, 6.0];
   const place = (variant, yaw, standoff = 0.6) =>
@@ -342,9 +342,12 @@ describe('a flat cloud faces the front wherever it is dragged', () => {
     }
   });
 
-  it('does turn a puffy one, which has no front to keep', () => {
+  it('does not turn a puffy one either', () => {
+    // It used to, on the reasoning that a bunch of balls reads the same from any angle. True, and
+    // beside the point: turning it made a DRAG rotate the cloud instead of moving it, and on a cake
+    // nobody is looking for the side view of a cloud. Neither variant turns now.
     for (const yaw of YAWS) {
-      for (const l of place('puff', yaw).lobes) expect(l.rotationY).toBeCloseTo(yaw, 6);
+      for (const l of place('puff', yaw).lobes) expect(l.rotationY).toBe(0);
     }
   });
 

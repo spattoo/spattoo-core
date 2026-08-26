@@ -1,6 +1,6 @@
 import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
-import { rainbowBands, bandGeometry, RAINBOW_DEFAULTS } from '../geometry/rainbow.js';
+import { rainbowBands, rainbowOffset, bandGeometry, RAINBOW_DEFAULTS } from '../geometry/rainbow.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 
 // Grain size: world units per repeat of the shared fondant map. The same 0.18 the GLB path uses, so
@@ -35,7 +35,6 @@ function bandGrain(lengthAlong, circumference) {
 export default function RainbowArch({
   params = RAINBOW_DEFAULTS,
   cake,                       // { radius, topY, boardY } — the geometry it has to fit
-  yaw = 0,                    // where it stands around the cake
   roughness = 0.88,           // fondant: matte, with just enough sheen to read as sugar not paper
   metalness = 0,
   fondant = true,             // the shared sugar-paste grain; off renders a clean tube
@@ -70,8 +69,13 @@ export default function RainbowArch({
 
   useEffect(() => () => grains?.forEach(t => t.dispose()), [grains]);
 
+  // MOVED, not turned. This was `rotation={[0, yaw, 0]}`, which carried the arch round the cake's
+  // axis and swung it edge-on as it went — so dragging it toward the middle rotated it instead of
+  // moving it, and nobody decorating a cake wants a rainbow seen from the side.
+  //
+  // The same helper the selection box uses, so the border cannot drift off the arch again.
   return (
-    <group rotation={[0, yaw, 0]}>
+    <group position={rainbowOffset(p, cake)}>
       {bands.map((b, i) => (
             <mesh key={b.index} geometry={geometries[i]} castShadow receiveShadow>
               {/* normalScale matches the GLB path's 1.5 — at the shipped 0.5 the grain was too faint

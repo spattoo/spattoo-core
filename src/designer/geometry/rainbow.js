@@ -101,6 +101,14 @@ export const RAINBOW_DEFAULTS = Object.freeze({
   // back was compensating for an arch too shallow to clear any other way; fix the proportions and
   // the need disappears. A little forward or back is taste; it is not what clears the cake.
   standoff: 0,
+  // ── WHERE IT STANDS on the surface, × tier radius ─────────────────────────────────────────────
+  // A plain translation, and the ONLY thing a drag writes. It used to write `yaw`, which carried the
+  // arch round the cake's axis and TURNED it on the way — so dragging it toward the middle swung it
+  // edge-on instead of moving it. Nobody decorating a cake wants a rainbow seen from the side.
+  //
+  // 0,0 is the middle of the surface. Not `offsetX`: that is the arch's LEAN, part of its shape.
+  px: 0,
+  pz: 0,
   flatten: 0,          // 0 = round rope, → 1 squashes it into a flat band (references 1 and 3)
 
   // ── Curled ends ───────────────────────────────────────────────────────────────────────────────
@@ -664,12 +672,16 @@ export function curlChain({ radii = [], centerX = 0, archY = 0, restY = 0, coilR
  * movable contract's test. The renderer is still the second copy of the spin, which is the gap the
  * world-space refactor closes — see movableContract.js.
  */
+export function rainbowOffset(params = {}, cake = {}) {
+  const R = cake.radius ?? 1;
+  if ((params.surface ?? 'top') === 'side') return [0, 0, 0];
+  return [(params.px ?? 0) * R, 0, (params.pz ?? 0) * R];
+}
+
 export function rainbowPlacedPoints(params = {}, cake = {}) {
   const { bands } = rainbowBands(params, cake);
-  const yaw = params.yaw ?? 0;
-  const c = Math.cos(yaw), s = Math.sin(yaw);
-  return bands.flatMap(b => b.path.map(p =>
-    new THREE.Vector3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z)));
+  const [ox, , oz] = rainbowOffset(params, cake);
+  return bands.flatMap(b => b.path.map(p => new THREE.Vector3(p.x + ox, p.y, p.z + oz)));
 }
 
 /**
@@ -786,11 +798,11 @@ export function rainbowHandleAt(params = {}, cake = {}) {
   }
   // The EFFECTIVE numbers, not the authored ones. The clearance rule can push an arch further back
   // than it was asked to stand, and a handle drawn from the request would float in front of it.
-  const { centerX, standoff } = rainbowBands(p, cake);
+  const px = p.px ?? 0, pz = p.pz ?? 0;
   return {
     surface: 'top_surface',
-    u: wrapU(((p.yaw ?? 0) + Math.atan2(centerX, standoff)) / TAU),
-    v: R > 0 ? Math.min(1, Math.hypot(centerX, standoff) / R) : 0,
+    u: wrapU(Math.atan2(px, pz) / TAU),
+    v: Math.min(1, Math.hypot(px, pz)),
   };
 }
 
@@ -827,10 +839,10 @@ export function rainbowDragTo(params = {}, cake = {}, u = 0, v = 0) {
   // `spring` runs the full height with nothing to make either inert.
   if (p.surface === 'side') return { theta: wrapAngle(u * TAU), spring: clamp01(v) };
 
-  // The EFFECTIVE standoff, not the authored one — the clearance rule may have pushed the arch
-  // further back than it asked for, and the yaw has to be solved against where it actually is.
-  const { centerX, standoff } = rainbowBands(p, cake);
-  return { yaw: wrapAngle(u * TAU - Math.atan2(centerX, standoff)) };
+  // (u, v) is just the pointer in polar form — the caller measured it off the surface. Turned back
+  // into a POSITION here, because that is what a drag means: put it where I pointed.
+  const d = clamp01(v);
+  return { px: Math.sin(u * TAU) * d, pz: Math.cos(u * TAU) * d };
 }
 
 /**
