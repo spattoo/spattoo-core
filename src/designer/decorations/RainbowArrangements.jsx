@@ -78,8 +78,12 @@ export const RAINBOW_ARRANGEMENTS = [
   //
   // Left foot on the cake, right end curled, which is the reference: the plain side tucks behind a
   // cloud and the curled side is the whole look.
+  // spring 1.16, not 1. The arch springs a little ABOVE the cake top, which is what gives the stack
+  // of curls room to stand on the cake rather than starting inside it. Dialled in against the
+  // reference rather than derived — 1 puts the springing point exactly on the surface, and the
+  // lowest coil then has nowhere to sit.
   { key: 'curled', surface: 'top', label: 'Curled ends',
-    params: { footLeft: 'top', footRight: 'curl', spring: 1, offsetX: 0, standoff: 0,
+    params: { footLeft: 'top', footRight: 'curl', spring: 1.16, offsetX: 0, standoff: 0,
               scale: 0.75, flatten: 0 },
     draw: t => {
       const r = t.w * 0.30;
