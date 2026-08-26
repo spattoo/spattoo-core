@@ -479,3 +479,43 @@ export function selfTest() {
 
   return errs;
 }
+
+// ── Where a dragged decoration lands on a surface ───────────────────────────────────────────────
+// The number topper's and cream writing's move maps, lifted out of their components so they can be
+// asked the movable contract's questions. They were four and twelve lines inside a `resolve` that
+// also did raycasting, and a map you cannot call is a map you cannot test — which is how three grab
+// planes stayed single-sided and a drag stayed dead over most of a cake.
+//
+// These take the world point the ray already hit, not the ray: intersecting is the canvas's job and
+// needs a camera. What lands here is the part with a rule in it.
+
+/**
+ * The number topper, on the cake top. A direct assignment, clamped inside the tier — so it has no
+ * solve to go dead and no scale to disturb, which is the whole of why it never broke the way the
+ * rainbow's did.
+ */
+export function numberTopperPlaceAt(shape, hit) {
+  if (!hit) return null;
+  const p = shape ? topClamp(shape, hit.x, hit.z, 1.0) : hit;
+  return { offsetX: p.x, offsetZ: p.z };
+}
+
+/**
+ * Cream writing, on any of its three surfaces. Each writes its own pair of coordinates, and which
+ * pair is part of what the surface MEANS — a writing on a round wall is at an angle and a height,
+ * one on a flat wall is at an x and a height, and one on the board is at an x and a z.
+ */
+export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSideY, shape, boardShape }, hit) {
+  if (!hit) return null;
+  const clampTo = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  if (surface === 'side' && !sideRect) {
+    return { sideAngle: hit.theta, sideY: clampTo(hit.y, minSideY, maxSideY) };
+  }
+  if (surface === 'side') {
+    return { offsetX: clampTo(hit.x, -sideWidth / 2, sideWidth / 2),
+             sideY: clampTo(hit.y, minSideY, maxSideY) };
+  }
+  const cs = surface === 'board' ? (boardShape ?? shape) : shape;
+  const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
+  return surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z };
+}

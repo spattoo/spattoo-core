@@ -2,7 +2,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Text3D, Center } from '@react-three/drei';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topClamp } from '../geometry/surface.js';
+import { numberTopperPlaceAt } from '../geometry/surface.js';
 import { planeHit } from '../utils/raycasting.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 
@@ -34,10 +34,10 @@ export default function AgeNumber({
   const { grabProps } = useDragPlacement({
     camera, gl, onMove, onClick, onOrbitEnable,
     resolve: (ray) => {
-      const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY));
-      if (!hit) return null;
-      const p = shp ? topClamp(shp, hit.x, hit.z, 1.0) : hit;
-      return { offsetX: p.x, offsetZ: p.z };
+      // The rule lives in geometry/surface.js so the movable contract can ask it questions.
+      // Intersecting the plane stays here, because that needs a camera.
+      return numberTopperPlaceAt(shp,
+        planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY)));
     },
   });
 

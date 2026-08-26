@@ -171,7 +171,10 @@ export default function ResizeHandles({ width, height, centerY = 0, z = 0, value
               onClick={e => e.stopPropagation()}
               onPointerEnter={e => { e.stopPropagation(); onOrbitEnable?.(false); }}
             >
-              <circleGeometry args={[TOUCH, 12]} />
+              <circleGeometry args={[TOUCH, 12]}
+          // DoubleSide: a plane is not hit from behind, so without it this stops being a
+          // drag target the moment the cake is turned past it.
+          side={THREE.DoubleSide} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
           </group>

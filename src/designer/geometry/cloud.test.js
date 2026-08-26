@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   CLOUD_DEFAULTS, cloudLobes, cloudPlacement, cloudBaseY, cloudGuide, cloudOutline,
+  cloudHandleAt, cloudDragTo,
 } from './cloud.js';
+import { movableContract } from './movableContract.js';
 
 const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
 
@@ -364,4 +366,43 @@ describe('a flat cloud faces the front wherever it is dragged', () => {
     }
   });
 
+});
+
+// ── The movable contract ────────────────────────────────────────────────────────────────────────
+// Registered rather than hand-written — see movableContract.js. `check:movable` fails the build if
+// a procedural tool is dragged and is not here.
+//
+// The cloud has TWO live freedoms on the cake top, unlike the rainbow's one, so this is where the
+// contract's "no dead freedom" question earns its keep on a two-dimensional drag.
+movableContract('cloud', {
+  positionKeys: ['yaw', 'standoff', 'theta'],
+  pointsOf: (p, cake) => cloudPlacement(p, cake).lobes.map(l => l.position),
+  cases: [
+    {
+      label: 'on the cake top',
+      cake: CAKE,
+      params: { ...CLOUD_DEFAULTS, surface: 'top', standoff: 0.5 },
+      freedoms: [
+        { label: 'round the cake', drag: (p, c, u) => cloudDragTo(p, c, u, 0.5),
+          targets: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] },
+        // The freedom the rainbow's equivalent could not keep — its arch's own offset made most of
+        // the range unreachable. A cloud's does not, and this is what says so.
+        { label: 'out from the middle', drag: (p, c, v) => cloudDragTo(p, c, 0.25, v),
+          targets: [0.1, 0.3, 0.5, 0.7, 0.9] },
+      ],
+    },
+    {
+      label: 'on the wall',
+      cake: CAKE,
+      params: { ...CLOUD_DEFAULTS, surface: 'side' },
+      freedoms: [
+        { label: 'round the wall', drag: (p, c, u) => cloudDragTo(p, c, u, 0),
+          targets: [0, 0.2, 0.4, 0.6, 0.8] },
+      ],
+    },
+  ],
+  roundTrip: (moved, cake, target, f) => {
+    const back = cloudHandleAt(moved, cake);
+    expect(f.label === 'out from the middle' ? back.v : back.u).toBeCloseTo(target, 6);
+  },
 });

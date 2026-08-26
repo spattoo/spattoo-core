@@ -625,6 +625,30 @@ export function rainbowBands(params = {}, cake = {}) {
 }
 
 /**
+ * The rainbow's points WHERE IT ACTUALLY STANDS — the arch turned by its own yaw.
+ *
+ * `rainbowBands` returns the arch in its own frame and `RainbowArch` spins that frame about the
+ * cake's axis, so the bands' points are NOT where the rainbow is. Everything that needs to know
+ * where the rainbow is has to apply the same spin, and that is a copy of the transform waiting to
+ * drift from the renderer's.
+ *
+ * It already did. The selection box was drawn with `position` then `rotation`, which turns the box
+ * about its OWN centre rather than about the cake's axis — so at any yaw but zero the border stood
+ * somewhere the rainbow was not, and the rainbow read as ungrabbable.
+ *
+ * This is the one place that answers the question. Two callers today: the selection box, and the
+ * movable contract's test. The renderer is still the second copy of the spin, which is the gap the
+ * world-space refactor closes — see movableContract.js.
+ */
+export function rainbowPlacedPoints(params = {}, cake = {}) {
+  const { bands } = rainbowBands(params, cake);
+  const yaw = params.yaw ?? 0;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  return bands.flatMap(b => b.path.map(p =>
+    new THREE.Vector3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z)));
+}
+
+/**
  * How far out the rainbow reaches, so the BOARD can be made big enough to stand it on.
  *
  * A board sized for the cake alone is not a board for a cake with a rainbow leaning off it — the

@@ -3,7 +3,9 @@ import {
   RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale, wrapToWall,
   rainbowFootReach,
   rainbowHandleAt, rainbowDragTo,
+  rainbowPlacedPoints,
 } from './rainbow.js';
+import { movableContract } from './movableContract.js';
 
 // ── What is worth asserting about a rainbow ─────────────────────────────────────────────────────
 // Not that it looks like one — no test can say that, which is what the studio is for. What a test
@@ -1161,4 +1163,57 @@ describe('a rainbow with its ends curled', () => {
     };
     expect(spread(1.1)).toBeGreaterThan(spread(0));
   });
+});
+
+// ── The movable contract ────────────────────────────────────────────────────────────────────────
+// Registered, not hand-written: `movableContract` asks the same questions of every decoration that
+// is dragged, and `check:movable` fails the build if a procedural tool is not here.
+//
+// The rainbow declares ONE freedom on the cake — round it — and that is the fix from 2026-08-26.
+// It used to declare two, and the second was dead over the middle 71% of the cake top and threw the
+// arch backwards past that. A freedom that does not move the thing is not a freedom.
+movableContract('rainbow', {
+  positionKeys: ['yaw', 'theta', 'spring'],
+  // The PLACED points, not the bands' own — the arch's yaw is applied by the renderer, so
+  // `rainbowBands` alone does not know where the rainbow is. Same helper the selection box
+  // uses, which is the point: one answer, not three.
+  pointsOf: rainbowPlacedPoints,
+  cases: [
+    {
+      label: 'over the cake',
+      cake: { radius: 1.2, topY: 1.55, boardY: 0.1 },
+      params: { ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'board', yaw: 0 },
+      freedoms: [{
+        label: 'round the cake',
+        // v is passed and deliberately ignored — the drag on the top is purely angular.
+        drag: (p, c, u) => rainbowDragTo(p, c, u, 0.5),
+        targets: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875],
+      }],
+    },
+    {
+      label: 'on the wall',
+      cake: { radius: 1.2, topY: 1.55, boardY: 0.1 },
+      params: { ...RAINBOW_DEFAULTS, surface: 'side', footLeft: 'board', spring: 0.18, theta: -0.09 },
+      freedoms: [
+        // v held at the arch's CURRENT height, so only the angle varies. The wall's drag writes
+        // both coordinates at once, and a freedom that moved two things could not tell you which
+        // one broke a law.
+        { label: 'round the wall', drag: (p, c, u) => rainbowDragTo(p, c, u, p.spring),
+          targets: [0, 0.2, 0.4, 0.6, 0.8] },
+        // Deliberately NOT declared as a freedom, and this is a finding rather than an omission.
+        // `spring` is what a drag up the wall writes, and with the feet on the board raising it
+        // does not move the arch — it STRETCHES it. Measured: the bottom stays pinned at y 0.17
+        // while the top runs 1.36 → 2.52, so the height nearly doubles across the drag. That fails
+        // "a drag moves it, it never reshapes it", and the contract found it the moment the rainbow
+        // was registered. Declaring it here would be claiming a freedom that reshapes.
+        //
+        // Left as it is for now because nobody has reported it and fixing it means deciding what a
+        // wall rainbow should do when dragged up — move, or grow. See the changelog.
+      ],
+    },
+  ],
+  roundTrip: (moved, cake, target, f) => {
+    const back = rainbowHandleAt(moved, cake);
+    expect(f.label.includes('up the wall') ? back.v : back.u).toBeCloseTo(target, 6);
+  },
 });

@@ -35,12 +35,11 @@ import {
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
-import { rainbowHandleAt } from '../geometry/rainbow.js';
+import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
+  from '../geometry/rainbow.js';
 import FondantCloud from './FondantCloud.jsx';
 import { cloudHandleAt, cloudDragTo, cloudPlacement } from '../geometry/cloud.js';
-import { rainbowDragTo } from '../geometry/rainbow.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
-import { rainbowBands } from '../geometry/rainbow.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
@@ -497,7 +496,10 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
           canvas.addEventListener('pointerup',   onUp);
         }}
         onClick={e => e.stopPropagation()}>
-        <planeGeometry args={[hitW, fs * 1.4]} />
+        <planeGeometry args={[hitW, fs * 1.4]}
+          // DoubleSide: a plane is not hit from behind, so without it this stops being a
+          // drag target the moment the cake is turned past it.
+          side={THREE.DoubleSide} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       </group>
@@ -1785,7 +1787,10 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
         }}
         onClick={e => e.stopPropagation()}
       >
-        <planeGeometry args={[hitBox.width, hitBox.height]} />
+        <planeGeometry args={[hitBox.width, hitBox.height]}
+          // DoubleSide: a plane is not hit from behind, so without it this stops being a
+          // drag target the moment the cake is turned past it.
+          side={THREE.DoubleSide} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       </group>
@@ -1891,7 +1896,10 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e_onDown} onClick={e => e.stopPropagation()}>
-        <planeGeometry args={[hitBox.width, hitBox.height]} />
+        <planeGeometry args={[hitBox.width, hitBox.height]}
+          // DoubleSide: a plane is not hit from behind, so without it this stops being a
+          // drag target the moment the cake is turned past it.
+          side={THREE.DoubleSide} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
     </>
@@ -2678,41 +2686,34 @@ function CakeContent({ config, scene, edit = null }) {
                 return rainbowDragTo(rb, { radius: tier.radius }, u, v);
               }}>
             {selectedGenerated?.kind === 'rainbow' && selectedGenerated.id === rb.id && (() => {
+              // ONE answer to "where is the rainbow", shared with the movable contract's test.
+              // Hand-rolling the spin here is what detached the border from the arch: a group doing
+              // `position` then `rotation` turns the box about its OWN centre, while RainbowArch
+              // turns the arch about the CAKE'S axis.
               const b = generatedBounds(
-                rainbowBands(rb, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
-                                   supportRadius: rainbowSupportRadius(tierData, i, board) })
-                  .bands.flatMap(x => x.path), 0.04);
-              // NESTED, and the order is the whole of it. `rainbowBands` returns the arch in its
-              // own frame and RainbowArch spins that frame about the CAKE'S AXIS — so the box has
-              // to be spun about the axis too, and then moved to the centre inside that spin.
-              //
-              // One group doing `position` then `rotation` is the other order: it turns the box
-              // about its OWN centre and leaves it standing where yaw 0 put it. At any yaw but zero
-              // the box and the rainbow were in different places on the cake, which is what made
-              // this look like the rainbow could not be grabbed — the border was not where the
-              // rainbow was.
+                rainbowPlacedPoints(rb, { radius: tier.radius, topY: tier.baseY + tier.height,
+                                          boardY: tier.baseY,
+                                          supportRadius: rainbowSupportRadius(tierData, i, board) }),
+                0.04);
               return b && (
-                <group rotation={[0, rb.yaw ?? 0, 0]}>
-                  <group position={b.centre}>
-                    <SelectionBox width={b.width} height={b.height} depth={b.depth} />
-                    {/* Something to actually take hold of.
-                        Until this, the only thing that took the drag was the ropes — and a rainbow
-                        is thin ropes around a big hole, so a press that missed fell through to the
-                        cake and spun the whole thing instead. "Sometimes it drags the entire cake."
-                        There is nothing to tune about that: the target really is that small.
-                        ONLY while selected, so it cannot steal a click from anything in normal
-                        browsing — and while it is selected the border is drawn round exactly this
-                        rectangle, so what you can grab is what you can see.
-                        DoubleSide, or it vanishes as a target the moment the cake is turned past
-                        it: a plane's default FrontSide is not hit from behind, and the customer
-                        would find the rainbow ungrabbable from half the angles with nothing on
-                        screen to explain why. */}
-                    <mesh renderOrder={-1}>
-                      <planeGeometry args={[b.width, b.height]} />
-                      <meshBasicMaterial transparent opacity={0} depthWrite={false}
-                        side={THREE.DoubleSide} />
-                    </mesh>
-                  </group>
+                <group position={b.centre}>
+                  <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                  {/* Something to actually take hold of.
+                      Until this, the only thing that took the drag was the ropes — and a rainbow is
+                      thin ropes around a big hole, so a press that missed fell through to the cake
+                      and spun the whole thing instead. "Sometimes it drags the entire cake." There
+                      is nothing to tune about that: the target really is that small.
+                      ONLY while selected, so it cannot steal a click from anything in normal
+                      browsing — and while it is selected the border is drawn round exactly this
+                      rectangle, so what you can grab is what you can see.
+                      DoubleSide, or it vanishes as a target the moment the cake is turned past it:
+                      a plane's default FrontSide is not hit from behind, and the customer would find
+                      the rainbow ungrabbable from half the angles with nothing to explain why. */}
+                  <mesh renderOrder={-1} rotation={[0, rb.yaw ?? 0, 0]}>
+                    <planeGeometry args={[b.width, b.height]} />
+                    <meshBasicMaterial transparent opacity={0} depthWrite={false}
+                      side={THREE.DoubleSide} />
+                  </mesh>
                 </group>
               );
             })()}
