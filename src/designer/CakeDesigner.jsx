@@ -8127,9 +8127,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!elemSearch.trim() && hasCap('element:manage')
               && (activeCategory?.id === MY_DECORATIONS.id || (!categories.length && !activeCategory)) && (
               <>
-                <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', margin: '14px 0 8px' }}>
-                  My decorations
-                </div>
+                {/* The heading is for the LEGACY layout only. Reached through its own card, the
+                    flyout's own title already says "My decorations" in full — printing it again
+                    directly underneath said the same words twice in one small panel. Without
+                    categories there is no such title (the flyout says "Decorations"), so the
+                    section still needs to name itself. */}
+                {!categories.length && (
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', margin: '14px 0 8px' }}>
+                    My decorations
+                  </div>
+                )}
                 {(() => {
                   // Nothing at all until the catalogue has arrived — NOT the empty message.
                   // "Mine" is the one card with no category_id to narrow on, so it is the only one
@@ -8151,7 +8158,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontSize: 11, color: '#9a939a', fontWeight: 600, marginBottom: 10, lineHeight: 1.45 }}>
+                    // #9a939a at 11px was the only thing on the screen and could barely be read —
+                    // about 2.9:1 against the panel, well under the 4.5:1 a sentence needs. Grey
+                    // that pale is the colour of a DISABLED control, and this is the one piece of
+                    // text a customer opening an empty shelf has to take in. #5c565c is ~7:1.
+                    <div style={{ fontSize: 12, color: '#5c565c', fontWeight: 600, marginBottom: 10, lineHeight: 1.5, maxWidth: 260 }}>
                       Nothing here yet. Upload a picture of a decoration and use it on your cakes.
                     </div>
                   );
