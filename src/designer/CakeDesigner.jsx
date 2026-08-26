@@ -958,6 +958,35 @@ function UploadsIcon({ size = 20 }) {
   );
 }
 
+// "My decorations" — the one card in the category grid that can never have a photo on it.
+//
+// Every other tile shows a real decoration, because a category is a shelf of things and the picture
+// IS the label. This one is not a shelf, it is an ownership filter with no row in element_categories
+// to hang a thumbnail_url on, so there is nothing to upload and nowhere to put it. Showing the
+// customer's own first decoration would have been the nice answer and is the one thing the grid
+// cannot afford: knowing what is in here means fetching the whole catalogue, which is exactly what
+// the grid exists to defer. So it is drawn.
+//
+// A STACK of pictures, deliberately built from the same frame-and-hill mark as UploadsIcon. The two
+// are neighbours in this panel and the relationship is real — these are your uploads, filed — so the
+// icon should rhyme with that one rather than invent a second visual language for the same idea. The
+// second sheet behind it is what makes it "several of mine" instead of "a picture", and it is drawn
+// as an open corner rather than a full rectangle so the two outlines never cross and turn to mud at
+// 30px.
+function MyDecorationsIcon({ size = 30 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {/* The sheet behind: top and right edges only. */}
+      <path d="M7.6 6.4V4.7A1.7 1.7 0 0 1 9.3 3h10A1.7 1.7 0 0 1 21 4.7v10a1.7 1.7 0 0 1-1.7 1.7h-1.7" />
+      {/* The one in front, with the same sun and hill Uploads uses. */}
+      <rect x="3" y="7.6" width="14.6" height="13.4" rx="2.2" />
+      <circle cx="7.1" cy="11.7" r="1.35" />
+      <path d="M17.6 17.6l-3.9-3.9L6.4 21" />
+    </svg>
+  );
+}
+
 function TextIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -8054,8 +8083,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       {cat.thumbnail_url ? (
                         <img src={cat.thumbnail_url} alt="" loading="lazy" decoding="async"
                              style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6, boxSizing: 'border-box' }} />
+                      ) : cat.id === MY_DECORATIONS.id ? (
+                        // Never gets a photo — see MyDecorationsIcon for why. The dot below is for a
+                        // category that simply has not been given one YET, which is a different
+                        // thing and should keep looking like an absence.
+                        <span style={{ color: '#7d757d' }}><MyDecorationsIcon /></span>
                       ) : (
-                        // My decorations, and any category whose elements have no thumbnail yet.
+                        // A category whose elements have no thumbnail yet.
                         <span aria-hidden style={{ fontSize: 20, opacity: 0.28 }}>◍</span>
                       )}
                       {cat.count != null && (
