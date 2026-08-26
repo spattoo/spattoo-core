@@ -4065,8 +4065,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // the LOOK, and tapping it seeds the tier with that look and opens the tool so the next tap flicks
   // dust that already looks like the thing that was chosen.
   //
-  // Which is why it belongs in the catalogue at all: "Gold dust" and "Rose dust" are two rows over
-  // one tool, exactly as "Pastel arch" and "Bold six-band" are two rows over one rainbow.
+  // NOT the colour, though — that is the customer's, along with density, fleck size, direction,
+  // spread, height and glow, all of which their own card offers. A row that meant "gold" would be a
+  // row they can undo with one tap.
+  //
+  // What a row is FOR is the material character the card does not expose: sparkle, glitter,
+  // metalness, clearcoat. A soft pearl dust and a hard glitter are genuinely different products in a
+  // way that gold and silver are not.
   function addDustFromRow(el) {
     const i = rainbowTierIndex();
     applyDustLook(i, el?.placement_config?.luster_dust ?? {});
