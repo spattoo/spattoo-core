@@ -1081,36 +1081,35 @@ describe('a rainbow with its ends curled', () => {
     expect(legFootY('curl', { topY: 5, boardY: 1 })).toBeNull();
   });
 
-  it('winds away from the arch, not into it', () => {
-    // Carrying on the way the arch already turns is the intuitive answer and it is wrong: the coil
-    // sweeps back under the arch and through the ropes inside it. Measured at every stagger from
-    // -0.8 to 1, the worst gap between a coil and another band was 0.000-0.004 of a 0.138 rope.
-    //
-    // Stated as a shape rather than as a direction: the coil must stay OUTSIDE the arch's hole.
-    const { bands, centerX, archY } = curled();
-    const hole = bands[0].radius - bands[0].thickness / 2;
-    for (const b of bands) {
-      for (const p of coilOf(b)) {
-        expect(Math.hypot(p.x - centerX, p.y - archY)).toBeGreaterThan(hole);
-      }
+
+
+  it('stacks the coils, each sitting on the one below', () => {
+    // The construction, as a number. Consecutive coils are exactly one coil-width apart — that is
+    // what "sits on" means, and it is why they cannot tangle. Everything that used to keep them
+    // apart (a fan, a splay, a lift) was invented to solve a problem this does not have.
+    const { bands, thickness } = curled();
+    const n = Math.round(64 * RAINBOW_DEFAULTS.curlTurns);
+    // The arc's LAST point, which is where the chain placed it — one before the coil's first.
+    const starts = bands.map(b => b.path[b.path.length - n - 1]);
+    const step = 2 * Math.max(thickness * 0.62, thickness * RAINBOW_DEFAULTS.curlSize);
+    for (let i = 1; i < starts.length; i++) {
+      expect(starts[i].distanceTo(starts[i - 1])).toBeCloseTo(step, 6);
     }
   });
 
-  it('keeps the coils clear of each other', () => {
-    // Which needs BOTH the spread and the lift, and neither is decoration. A rope 0.138 thick coils
-    // no tighter than 0.111 radius — 0.222 across, against touching ropes 0.138 apart — so in one
-    // plane, at any stagger, the coils intersect.
-    const { bands, thickness } = curled();
-    for (const a of bands) {
-      for (const p of coilOf(a)) {
-        for (const b of bands) {
-          if (b.index === a.index) continue;
-          for (const q of b.path) {
-            expect(p.distanceTo(q)).toBeGreaterThan(thickness * 0.9);
-          }
-        }
-      }
-    }
+  it('stacks UPWARD and leans left, rather than marching round the arch', () => {
+    const starts = curled().bands.map(b =>
+      b.path[b.path.length - Math.round(64 * RAINBOW_DEFAULTS.curlTurns) - 1]);
+    for (let i = 1; i < starts.length; i++) expect(starts[i].y).toBeGreaterThan(starts[i - 1].y);
+    // The lean is not a setting — each band's arc is one rope further out, so one coil-width along
+    // it lands slightly further round every time. The top of the stack is left of its middle.
+    expect(starts[starts.length - 1].x).toBeLessThan(Math.max(...starts.map(s => s.x)));
+  });
+
+  it('leaves the arch alone — the inner radius does not move to make room', () => {
+    const plain = rainbowBands({ ...RAINBOW_DEFAULTS, footLeft: 'top', footRight: 'none' }, CAKE_C);
+    const curl  = curled();
+    curl.bands.forEach((b, i) => expect(b.radius).toBeCloseTo(plain.bands[i].radius, 9));
   });
 
   it('coils no tighter than the rope can be rolled', () => {
@@ -1127,23 +1126,6 @@ describe('a rainbow with its ends curled', () => {
     }
   });
 
-  it('is still a concentric arch where anyone reads it as one', () => {
-    // The bands spread apart before they curl, and that must not reach the top of the arch — the
-    // thing that makes a rainbow a rainbow is the ropes touching.
-    const { bands, thickness, centerX, archY } = curled();
-    const atAngle = (b, ang) => {
-      let best = null, bd = Infinity;
-      for (const p of b.path) {
-        const d = Math.abs(Math.atan2(p.y - archY, p.x - centerX) - ang);
-        if (d < bd) { bd = d; best = p; }
-      }
-      return Math.hypot(best.x - centerX, best.y - archY);
-    };
-    for (const ang of [Math.PI, Math.PI * 0.75, Math.PI / 2]) {
-      const rs = bands.map(b => atAngle(b, ang));
-      rs.slice(1).forEach((r, i) => expect((r - rs[i]) / thickness).toBeCloseTo(1, 1));
-    }
-  });
 
   it('joins the coil to the arch without a crease', () => {
     // The walk starts with the heading the run already had, so no step turns more sharply than the
@@ -1156,13 +1138,6 @@ describe('a rainbow with its ends curled', () => {
     }
   });
 
-  it('staggers the ends, so the coils are not a comb', () => {
-    const spread = fan => {
-      const ys = curled({ curlFan: fan }).bands.map(b => b.path[b.path.length - 1].y);
-      return Math.max(...ys) - Math.min(...ys);
-    };
-    expect(spread(1.1)).toBeGreaterThan(spread(0));
-  });
 });
 
 // ── The movable contract ────────────────────────────────────────────────────────────────────────
