@@ -41,6 +41,10 @@ const problems = [];
 const NOT_DRAGGED = {
   grass: 'a treatment that covers the top — it has no position of its own',
   letter_blocks: 'placed as a row along the cake, positioned by the row and not by a drag',
+  // Dust is `tier.dusting` — a wall treatment, not an object. There is no decoration to take hold
+  // of: a tap flicks a splash where you tapped, and a splash is adjusted through its own card. The
+  // ELEMENT has no position at all, so there is nothing for the movable contract to ask about.
+  luster_dust: 'a wall treatment flicked where you tap — the element has no position of its own',
 };
 
 const designer = read('src/designer/CakeDesigner.jsx');

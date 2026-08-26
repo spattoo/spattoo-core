@@ -1691,7 +1691,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -4059,6 +4059,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'writing', id });
   }
 
+  // ── Luster dust, from a catalogue row ─────────────────────────────────────────────────────────
+  // Dust is not an object you place: it is `tier.dusting`, a wall treatment made of flicked splashes
+  // plus an appearance. So a row cannot carry a POSITION the way a rainbow does — what it carries is
+  // the LOOK, and tapping it seeds the tier with that look and opens the tool so the next tap flicks
+  // dust that already looks like the thing that was chosen.
+  //
+  // Which is why it belongs in the catalogue at all: "Gold dust" and "Rose dust" are two rows over
+  // one tool, exactly as "Pastel arch" and "Bold six-band" are two rows over one rainbow.
+  function addDustFromRow(el) {
+    const i = rainbowTierIndex();
+    applyDustLook(i, el?.placement_config?.luster_dust ?? {});
+    setDustTier(i);
+    selectExclusive({ type: 'tool', tool: 'luster-dust' });
+  }
+
   function addAgeFromRow(el) {
     addAge(el?.placement_config?.number_topper ?? {});
     focusEditor('decoration');
@@ -4083,6 +4098,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // every saved snapshot — renaming them is a data migration for a word nobody sees. This key has
     // no rows yet, so it costs nothing to get right now.
     number_topper: addAgeFromRow,
+    // A LOOK rather than an object — see addDustFromRow.
+    luster_dust: addDustFromRow,
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
