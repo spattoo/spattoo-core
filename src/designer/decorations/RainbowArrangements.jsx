@@ -149,6 +149,22 @@ export const RAINBOW_ARRANGEMENTS = [
     } },
 ];
 
+/**
+ * A tile's WHOLE shape, as a rainbow's own parameters.
+ *
+ * `surface` sits beside `params` rather than inside it, so spreading `a.params` alone silently
+ * leaves the surface behind — which reads as working for every tile whose surface happens to match
+ * the default, and breaks for the rest. Two callers need this (the customer's chooser and the seed
+ * for a newly added rainbow) and both got it wrong independently, which is the argument for naming
+ * it once.
+ *
+ * `scale` is dropped ONLY where a size already exists to protect — see the chooser. A new rainbow
+ * has no previous size, so it takes the tile's.
+ */
+export function arrangementShape(a) {
+  return { surface: a.surface, ...a.params };
+}
+
 // Which arrangement a rainbow currently IS.
 //
 // On the wall the FEET are still not part of the choice — where it sits up the wall is the drag's

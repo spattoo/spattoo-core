@@ -34,7 +34,7 @@ import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
-import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf } from './decorations/RainbowArrangements.jsx';
+import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
@@ -3908,12 +3908,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const i = rainbowTierIndex();
     const tuned = el?.placement_config?.rainbow ?? {};
     const id = `rb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // ── A new rainbow is one of the TILES, never a mixture of two ────────────────────────────────
+    // RAINBOW_DEFAULTS is not a neutral base: its feet and its `offsetX: 0.71` are the FALLING RIGHT
+    // shape. So a catalogue row that authors only part of a shape inherits the rest from a different
+    // one. That is not hypothetical — the shipped Rainbow row sets both feet to 'top' and never
+    // mentions offsetX, so it arrived as an on-top arch carrying a falling rainbow's lean: a shape
+    // none of the six tiles can produce, which is exactly what "the default one is not from the
+    // tiles" was. It looked centred only because the code below then shoved it back by -0.71 to
+    // hide the lean it should not have had.
+    //
+    // The first tile sits BETWEEN the defaults and the row, so it fills what the row leaves unsaid
+    // without overruling what the row actually says. An admin who authors a wall rainbow still gets
+    // one; a row that authors nothing gets "On the top" exactly, tile for tile.
+    const base = { ...RAINBOW_DEFAULTS, ...arrangementShape(RAINBOW_ARRANGEMENTS[0]), ...tuned };
     // Computed inside the updater from the LIVE list, not from `design` as this component last
     // rendered it — otherwise two quick presses both read the same list and the second rainbow lands
     // exactly on the first. The same bug the grass patches had, fixed the same way.
     updateTierRainbows(i, cur => [
       ...cur,
-      { ...RAINBOW_DEFAULTS, ...tuned, id,
+      { ...base, id,
         // ── The first one lands in the MIDDLE ───────────────────────────────────────────────────
         // An arch carries its own lean — `offsetX` is how far it straddles along its own plane, and
         // for the shapes that fall off one side that is most of a radius. Placed with no position of
@@ -3924,7 +3937,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // turn. Turning each new one a quarter round was the old answer and it was the same mistake
         // the drag made: a rainbow seen edge-on is not a rainbow anybody ordered.
         ...(() => {
-          const lean = -((tuned.offsetX ?? RAINBOW_DEFAULTS.offsetX) ?? 0);
+          // From the MERGED shape, not from `tuned` with RAINBOW_DEFAULTS behind it. Those two
+          // disagree the moment the tile supplies an offsetX the row does not, and this line
+          // cancelling a lean the arch no longer has is how a centred rainbow ends up shoved
+          // three quarters of a radius to the left.
+          const lean = -(base.offsetX ?? 0);
           if (!cur.length) return { px: lean, pz: 0 };
           const a = cur.length * 1.2;          // irrational-ish turn, so four in a row do not stack
           return { px: lean + Math.sin(a) * 0.4, pz: Math.cos(a) * 0.4 };
@@ -7277,8 +7294,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <ArrangementTile key={a.key} item={a} on={current?.key === a.key}
                 tiers={design.tiers.length} tierIndex={card.tierIndex} size={40}
                 onPick={() => {
-                  const { scale, ...shape } = a.params;
-                  set({ surface: a.surface, ...shape });
+                  const { scale, ...shape } = arrangementShape(a);
+                  set(shape);
                 }} />
             ))}
           </div>
