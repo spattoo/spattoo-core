@@ -3885,7 +3885,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function clearAllSelections() { selectExclusive(null); }
 
-  function handleDeselect() { clearAllSelections(); }
+  // Clicking the floor or the sky clears the selection — right for every other tool, and wrong while
+  // piping. Drawing means aiming at the cake, and missing it is ordinary: a stroke that starts a
+  // fraction off the rim, a finger that lands on the board. Each of those ended the whole piping
+  // session, took the nozzle cursor with it, and left the customer wondering why they could no
+  // longer draw.
+  //
+  // Piping ends on "Done piping" and nowhere else. That was the point of adding the button; this is
+  // the other half of it.
+  function handleDeselect() {
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
+    clearAllSelections();
+  }
 
   // ── Grass ───────────────────────────────────────────────────────────────────
   // Applied to the TOP tier: grass covers a surface, and the only top surface fully in view is the
