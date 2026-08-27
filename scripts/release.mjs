@@ -56,9 +56,22 @@ const ADMIN    = resolve(opt('--admin', join(CORE, '..', 'spattoo-admin')));
 //
 //   pkg    — the package.json holding the tarball reference, relative to the repo root
 //   scope  — the commit-message scope, so history reads chore(app): / chore(admin):
+//
+// ── --skip-admin ────────────────────────────────────────────────────────────────────────────────
+// Releasing both together is the right default and the paragraph above is why. But a consumer can
+// be genuinely UNAVAILABLE: somebody else mid-change on a feature branch with a dirty tree, which
+// the "all checkouts are clean" preflight rejects — correctly, and it then blocks a web release that
+// has nothing to do with admin. Waiting for another person's branch to land is not a release
+// policy.
+//
+// So it can be skipped, explicitly and never by default, and the run says loudly what it leaves
+// behind: admin goes on vendoring the previous tarball until somebody releases again. That is the
+// invisible-staleness the paragraph above warns about, which is exactly why it is announced rather
+// than merely allowed.
+const SKIP_ADMIN = flag('--skip-admin');
 const TARGETS = [
   { label: 'web',   dir: WEB,   pkg: ['apps', 'app', 'package.json'], scope: 'app'   },
-  { label: 'admin', dir: ADMIN, pkg: ['package.json'],                scope: 'admin' },
+  ...(SKIP_ADMIN ? [] : [{ label: 'admin', dir: ADMIN, pkg: ['package.json'], scope: 'admin' }]),
 ];
 const REF      = process.env.SPATTOO_RELEASE_REF || 'origin/dev';
 const BRANCH   = REF.replace(/^origin\//, '');
@@ -93,6 +106,12 @@ for (const [label, dir] of [['core', CORE], ...TARGETS.map(t => [t.label, t.dir]
   }
 }
 ok(`all ${TARGETS.length + 1} checkouts are clean`);
+if (SKIP_ADMIN) {
+  warn('--skip-admin: spattoo-admin is NOT being updated and will go on vendoring the PREVIOUS');
+  warn('  tarball until the next full release. It aliases core\'s source locally, so nobody will');
+  warn('  notice by using it — only a deploy would. Release again without this flag when the admin');
+  warn('  checkout is free.');
+}
 
 // ── 0c. nobody is running a dev server we are about to pull the rug from under ──────────────────
 // Clearing node_modules/.vite (see "Vite's pre-bundled dependency cache" below) is REQUIRED and
