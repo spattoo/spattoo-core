@@ -4370,6 +4370,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleTierClick(i) {
+    // ── The cake is the CANVAS while piping, not a thing to select ─────────────────────────────
+    // A tap on the cake normally selects that tier and opens its panel, which replaces the pen
+    // editor and so ends draw mode. While piping that is precisely backwards: the cake is what you
+    // are drawing ON, and every press lands on it.
+    //
+    // The catchers already stopPropagation on POINTERDOWN, and it does not help — tier selection
+    // fires on CLICK, a separate event that goes through regardless. Hence the guard here rather
+    // than another stopPropagation there.
+    //
+    // The floor got the same treatment last release. Between them: while the pen is out, nothing on
+    // the canvas changes the selection, and piping ends on "Done piping".
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     closeAllPopups();
     // Clicking the already-selected tier toggles it off; otherwise the tier becomes the sole selection.
     const isSame = selectedEl?.type === 'tier' && selectedEl.index === i;
@@ -4427,12 +4439,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleTopPipingSelect(tierIndex, layerId) {
+    // While the pen is out the cake is a CANVAS, not a set of things to select — see
+    // handleTierClick. A ring or a decoration under the nozzle is something you are drawing over.
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const arr = design.tiers[tierIndex]?.topPipings ?? [];
     const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
     if (piping) openCardForLayer(tierIndex, 'rim', piping);
   }
 
   function handleBottomPipingSelect(tierIndex, layerId) {
+    // While the pen is out the cake is a CANVAS, not a set of things to select — see
+    // handleTierClick. A ring or a decoration under the nozzle is something you are drawing over.
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const arr = design.tiers[tierIndex]?.bottomPipings ?? [];
     const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
     if (piping) openCardForLayer(tierIndex, 'board', piping);
@@ -4510,6 +4528,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleStickerSelect(id, ctrlKey = false) {
+    // Same rule as the tier and the rings: while piping, a decoration under the nozzle is something
+    // you are drawing OVER, not something to open. Selecting it swaps the pen editor away and ends
+    // the session mid-stroke.
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const sticker = design.stickers.find(s => s.id === id);
     focusEditor('decoration');
 
