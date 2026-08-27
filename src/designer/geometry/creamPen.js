@@ -234,11 +234,24 @@ function rng(seed) {
 }
 
 // stroke: { kind:'stamp', point, normal, thickness, seed }
-//      or { kind:'stamprope', points, normal, thickness, spacing, seed }
+//      or { kind:'stamprope', points, normal, thickness, spacing, seed, regular }
 // footprint: the GLB's max(x,z) extent after it's centred with its base at y=0.
 // Returns [{ pos:[x,y,z], quat:[x,y,z,w], scale }]. Each stamp sits with its base ON the
 // surface (the stored points are the SEATED centerline, lifted one radius along the normal,
 // so we drop back by the radius) and its up axis along the surface normal.
+//
+// ── `regular`: the difference between scattering and PIPING ──────────────────────────────────────
+// Every copy is normally given a small random spin and a few percent of random scale. That is what
+// makes a dragged row of blossoms look strewn by hand instead of printed, and it is right for what
+// this was built for.
+//
+// It is wrong for piping. A piped border is one shell pressed out over and over by the same nozzle
+// at the same angle — its whole character is that the repeats AGREE. Jittered, the same GLB reads as
+// a row of shells somebody knocked askew. So `regular` turns both randomisations off and locks each
+// copy's forward to the path tangent, which is the shape a baker's hand actually makes.
+//
+// A flag rather than a second function: the walk, the seating and the orientation are identical, and
+// the one thing that differs is whether the hand wobbles.
 export function stampTransforms(stroke, footprint) {
   const up0 = new THREE.Vector3().fromArray(stroke.normal || [0, 1, 0]);
   if (up0.lengthSq() < 1e-9) up0.set(0, 1, 0);
@@ -246,6 +259,7 @@ export function stampTransforms(stroke, footprint) {
   const th = stroke.thickness ?? 0.03;
   const target = 2 * th;                         // stamp footprint ≈ rope diameter
   const baseScale = target / Math.max(footprint, 1e-4);
+  const regular = !!stroke.regular;
   const rand = rng(((stroke.seed ?? 1) * 100003 + 7) | 0);
   const out = [];
 
@@ -253,14 +267,16 @@ export function stampTransforms(stroke, footprint) {
     const up = up0.clone();
     const surface = seatedP.clone().addScaledVector(up, -th);   // base on the surface
     const fwd = forward ? forward.clone() : new THREE.Vector3(1, 0, 0);
-    fwd.applyAxisAngle(up, forward ? (rand() - 0.5) * 0.5 : rand() * Math.PI * 2);  // spin
+    // A lone regular stamp still has to face somewhere, and `rand()` would be a different somewhere
+    // every render. Zero keeps it put.
+    if (!regular) fwd.applyAxisAngle(up, forward ? (rand() - 0.5) * 0.5 : rand() * Math.PI * 2);
     let z = fwd.sub(up.clone().multiplyScalar(fwd.dot(up)));     // forward ⟂ up
     if (z.lengthSq() < 1e-8) z = new THREE.Vector3(0, 0, 1).sub(up.clone().multiplyScalar(up.z));
     z.normalize();
     const x = new THREE.Vector3().crossVectors(up, z).normalize();
     const m = new THREE.Matrix4().makeBasis(x, up, z);
     const q = new THREE.Quaternion().setFromRotationMatrix(m);
-    out.push({ pos: surface.toArray(), quat: q.toArray(), scale: baseScale * (1 + (rand() - 0.5) * 0.16) });
+    out.push({ pos: surface.toArray(), quat: q.toArray(), scale: regular ? baseScale : baseScale * (1 + (rand() - 0.5) * 0.16) });
   };
 
   if (stroke.kind === 'stamp') { place(new THREE.Vector3().fromArray(stroke.point)); return out; }

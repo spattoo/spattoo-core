@@ -4132,6 +4132,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   // `penStyle` is the seam. It already held exactly these settings for the pen's own card, so a row
   // does not need a second place to put them.
+  // ── "I'll pipe it myself" ────────────────────────────────────────────────────────────────────
+  // The zones above answer "where does this ring go". They cover the borders a baker pipes round a
+  // rim or a board and nothing else — but a baker pipes anywhere, and the zone list is the whole
+  // vocabulary the customer had. This hands them the same shape with no zone at all: drag on the
+  // cake and it repeats along the line drawn.
+  //
+  // Nothing new renders it. The pen already stamps a GLB along a dragged path (`stamprope` in
+  // CreamPen.jsx), walking the drawn polyline by arc length and dropping a copy every
+  // `spacing × footprint`, each seated on the surface and turned to face along the path. That has
+  // been complete since the pen was built and unreachable in core, because `stampId`/`stampUrl` sat
+  // in penStyle and NOTHING ever set them. This is the door, not the machinery.
+  //
+  // `stampRegular` is the one thing piping needs that scattering does not — see stampTransforms.
+  function pipeItMyself(el) {
+    const { glbUrl } = resolvePipingGlbs(el);
+    if (!glbUrl) return;
+    setPenStyle(prev => ({
+      ...prev,
+      stampId: el.id,
+      stampUrl: glbUrl,
+      stampRegular: true,
+      stampName: el.name,
+      color: el.default_color ?? prev.color,
+    }));
+    // Collapse the piping card: the choice has been made and the next move is on the cake, not in
+    // this popup. Leaving it open puts a zone list over the surface being drawn on.
+    setExpandedPipingId(null);
+    selectExclusive({ type: 'tool', tool: 'pen' });
+  }
+
+  // Back to drawing plain cream. Without this the only way out of stamp mode is a reload — penStyle
+  // keeps whatever was last put in it, so a customer who tried piping by hand and then wanted a line
+  // of cream would go on stamping shells with no way to say stop.
+  function pipeWithCreamAgain() {
+    setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false, stampName: null }));
+  }
+
   function addPenFromRow(el) {
     const tuned = el?.placement_config?.cream_pen ?? {};
     setPenStyle(prev => ({ ...prev, ...tuned }));
@@ -7025,8 +7062,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
-          Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.
+          {penStyle.stampUrl
+            ? 'Drag on the cake and the shape repeats along your line — release to stop. Drag the empty space around it to rotate.'
+            : 'Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.'}
         </div>
+
+        {/* ── What is on the nozzle ─────────────────────────────────────────────────────────────
+            Only in stamp mode, and it earns its space twice over: it NAMES what is about to be
+            repeated, and it is the only way back to plain cream. penStyle keeps whatever was last
+            put into it, so without this a customer who tried "I'll pipe it myself" and then wanted a
+            line of cream would go on stamping shells with no way to say stop. */}
+        {penStyle.stampUrl && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
+                        padding: '7px 9px', borderRadius: 9, background: '#F7F5F1', border: '1.5px solid #E3E0DA' }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: '#1a1a1a', flex: 1, minWidth: 0,
+                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Piping {penStyle.stampName ?? 'a shape'}
+            </span>
+            <button onClick={pipeWithCreamAgain}
+              style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 7,
+                       border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
+                       fontFamily: "'Quicksand',sans-serif" }}>
+              Cream instead
+            </button>
+          </div>
+        )}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Cream colour</div>
         <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
@@ -7034,7 +7094,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
-        <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
+        {/* Softness shapes the swept ROPE and does nothing to a stamped shape — the stamp path never
+            reads it. Shown for cream, hidden for a stamp, because a slider that moves and changes
+            nothing is worse than one that is missing.
+
+            Spacing replaces it, and it is the control piping actually turns on: how tightly the
+            repeats sit. 0.55 is shells crowding each other, 1.4 is a dotted run. It has lived in
+            penStyle since the pen was built with nothing to set it. */}
+        {penStyle.stampUrl ? (
+          <PenSlider label="Spacing" value={penStyle.spacing ?? 0.85} min={0.5} max={1.6} step={0.05}
+            onChange={v => setPenStyle(ps => ({ ...ps, spacing: v }))} fmt={v => v.toFixed(2)} />
+        ) : (
+          <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
+        )}
 
         <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
           {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
@@ -9433,6 +9505,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })}
+              {/* ── Or put it where you like ────────────────────────────────────────────────────
+                  Every tile above answers "which BORDER does this ring go round". Between them they
+                  cover a rim and a board, which is most of what gets piped and nowhere near all of
+                  it — a baker pipes wherever they want, and until now the zone list was the entire
+                  vocabulary a customer had.
+
+                  Offered here rather than as its own decoration because it is the SAME shape and the
+                  same decision: you are choosing where this piping goes, and "anywhere I draw" is one
+                  of the answers. A separate card would have made it a different product.
+
+                  Only when there is a GLB to repeat. A piping pattern that resolves to nothing would
+                  put the cake in draw mode and then stamp nothing at all, which reads as the drawing
+                  being broken. */}
+              {!!resolvePipingGlbs(pipingPopupEl).glbUrl && (
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
+                  <button
+                    onClick={() => pipeItMyself(pipingPopupEl)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
+                             border: '1.5px solid #999999', background: '#fff',
+                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
+                    {/* A hand-drawn squiggle with beads along it — the line you draw, and this shape
+                        repeating down it. The zone tiles are all rings; this one must not look like
+                        another ring or it reads as a seventh border. */}
+                    <svg width="26" height="18" viewBox="0 0 34 20" fill="none" aria-hidden focusable="false"
+                         style={{ flexShrink: 0 }}>
+                      <path d="M2 14C6 4 11 4 15 10s9 6 13 -4" stroke="#c9c1b4" strokeWidth="1.6"
+                            strokeLinecap="round" strokeDasharray="2.6 2.6" />
+                      {[[3.4, 12.4], [8.2, 6.4], [13.2, 8.2], [18.4, 12], [23.6, 11.2], [28.4, 5.2]].map(([cx, cy], i) => (
+                        <circle key={i} cx={cx} cy={cy} r="2.4" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.2" />
+                      ))}
+                    </svg>
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#1a1a1a' }}>I'll pipe it myself</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
+                        Draw anywhere on the cake and this shape repeats along your line.
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              )}
               {/* Card-level Remove — takes the whole decoration off the cake (every tier × zone), the same
                   action the sticker/cluster/foil/cream cards offer. The per-zone checkboxes above stay as
                   the fine-grained control. Config-gated on allowed_actions.delete; hidden when it isn't
