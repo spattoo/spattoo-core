@@ -337,6 +337,18 @@ export default function OrderModal({
   // satisfied by an eggless top tier sitting on an egg-based base.
   const [dietaryOptions, setDietaryOptions] = useState([]);
   const [dietaryKeys,    setDietaryKeys]    = useState(sd.dietaryKeys ?? []);
+  /* "None of these" — an ANSWER, not the absence of one.
+   *
+   * ⚠️ Zero requirements on an order used to mean two different things: the customer said they have
+   * none, or nobody ever asked. The read side already documents `[]` as "this order states none"
+   * (withDietaryKeys) — but nothing made that true, because skipping the step produced exactly the
+   * same rows. This is what makes the claim honest going forward: the step cannot be passed without
+   * an answer, so from here on an empty set genuinely means somebody said "no".
+   *
+   * It stays a UI-level guarantee. Orders placed BEFORE this shipped are still indistinguishable,
+   * and nothing in the schema records "was asked" — that would be a column, and it is not worth one
+   * while the form is the only way in. */
+  const [dietaryNone,    setDietaryNone]    = useState((sd.dietaryKeys ?? []).length > 0 ? false : (sd.dietaryNone ?? false));
 
   // What this bakery actually deals in. A diet option they don't offer is dropped; an
   // allergen NEVER is — see visibleRequirements() for why hiding one would be the worst
@@ -539,7 +551,12 @@ export default function OrderModal({
    */
   const weightOk    = parseFloat(weightKg) > 0;
   const flavourOk   = flavours.some(f => f.name.trim());
-  const canGoNextDetails = weightOk && flavourOk;
+  /* ⚠️ Dietary must be ANSWERED, not satisfied. Either a requirement is stated or "none" is — and
+   * the point of requiring it is the allergen tail: "we can't deliver a cake made with egg to
+   * someone who is pure vegetarian" is only avoidable if the question was actually put. An
+   * unanswered section and a "no" look identical in the data otherwise. */
+  const dietaryAnswered  = dietaryNone || dietaryKeys.length > 0;
+  const canGoNextDetails = weightOk && flavourOk && dietaryAnswered;
   const canSubmit   = (deliveryMode === 'pickup' || deliveryAddress.trim()) && !!deliveryDate;
 
 
@@ -558,7 +575,8 @@ export default function OrderModal({
    * the whole modal rendered as "Something went wrong." The build was clean and 1173 tests passed;
    * only opening it showed anything. Second time today. */
   const missing = currentStepKey === 'details'
-    ? [!weightOk && 'a cake weight', !flavourOk && 'a flavour'].filter(Boolean)
+    ? [!weightOk && 'a cake weight', !flavourOk && 'a flavour',
+       !dietaryAnswered && 'a dietary answer (tick “No dietary requirements” if there are none)'].filter(Boolean)
     : currentStepKey === 'delivery'
       ? [!deliveryDate && 'a delivery date',
          (deliveryMode === 'home_delivery' && !deliveryAddress.trim()) && 'a delivery address'].filter(Boolean)
@@ -968,13 +986,33 @@ export default function OrderModal({
                               return (
                                 <Chip key={o.key} label={o.label} active={active} isMobile={isMobile}
                                   tone={{ fg: primaryColor, bg: hexToRgba(primaryColor, 0.1), border: primaryColor }}
-                                  onClick={() => setDietaryKeys(ks => active ? ks.filter(k => k !== o.key) : [...ks, o.key])} />
+                                  onClick={() => {
+                                    // Choosing a requirement is itself an answer, so "none" cannot
+                                    // stand alongside one.
+                                    setDietaryNone(false);
+                                    setDietaryKeys(ks => active ? ks.filter(k => k !== o.key) : [...ks, o.key]);
+                                  }} />
                               );
                             })}
                           </div>
                         </div>
                       );
                     })}
+
+                    {/* ⚠️ The explicit negative, and the reason this section can be answered at all.
+                        Set apart from the requirement chips rather than sitting among them: it is
+                        not a fourth diet, it is the statement that there are none — and a customer
+                        who has one must not be able to tick it by momentum. Ticking it clears
+                        whatever was chosen, because the two cannot both be true. */}
+                    <div style={{ marginTop: 4 }}>
+                      <Chip label="No dietary requirements" active={dietaryNone} isMobile={isMobile}
+                        tone={{ fg: primaryColor, bg: hexToRgba(primaryColor, 0.1), border: primaryColor }}
+                        onClick={() => {
+                          const next = !dietaryNone;
+                          setDietaryNone(next);
+                          if (next) setDietaryKeys([]);
+                        }} />
+                    </div>
 
                     {/* An allergen this bakery has said it can't guarantee. It stays
                         tickable and IS recorded on the order — the point is that the
