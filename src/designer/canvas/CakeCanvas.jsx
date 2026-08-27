@@ -2167,7 +2167,7 @@ function CameraPositionSync({ position }) {
 }
 
 // Smoothly lerps the camera to a target position when snapCameraRef.current() is called.
-function CameraSnapper({ snapCameraRef, orbitRef }) {
+function CameraSnapper({ snapCameraRef, turnCameraRef, orbitRef }) {
   const { camera } = useThree();
   const targetPos = useRef(null);
 
@@ -2175,6 +2175,24 @@ function CameraSnapper({ snapCameraRef, orbitRef }) {
     if (!snapCameraRef) return;
     snapCameraRef.current = (pos) => { targetPos.current = new THREE.Vector3(...pos); };
   }, [snapCameraRef]);
+
+  // ── Turning the cake without dragging it ──────────────────────────────────────────────────────
+  // Drag-to-rotate is the normal way round and it stops working exactly when you need it most: with
+  // the pen out, a drag on the cake DRAWS, so the only way to reach the far side is to find empty
+  // background — which on a phone, or a cake that fills the frame, barely exists.
+  //
+  // This spins the camera about the orbit target and hands the result to the SAME lerp the snapper
+  // uses, so the cake glides round instead of teleporting, and there is one piece of camera-easing
+  // code rather than two.
+  useEffect(() => {
+    if (!turnCameraRef) return;
+    turnCameraRef.current = (radians) => {
+      const t = orbitRef?.current?.target ?? new THREE.Vector3(0, 0, 0);
+      const from = targetPos.current ?? camera.position;      // compose with a turn already in flight
+      const p = from.clone().sub(t).applyAxisAngle(new THREE.Vector3(0, 1, 0), radians);
+      targetPos.current = t.clone().add(p);
+    };
+  }, [turnCameraRef, camera, orbitRef]);
 
   useFrame(() => {
     if (!targetPos.current) return;
@@ -3262,7 +3280,7 @@ export default function CakeCanvas({
   stickerResize = null,
   isStickerMovable,
   hitTestRef,
-  snapCameraRef,
+  snapCameraRef, turnCameraRef,
   // Filled with the reel recorder when the designer passes it — catalogue authors only, so for
   // every other baker this is undefined and TakeDirector never mounts.
   takeRef = null,
@@ -3373,7 +3391,7 @@ export default function CakeCanvas({
     >
       <CameraCapture cameraRef={cameraRef} />
       <CameraPositionSync position={cameraPosition} />
-      <CameraSnapper snapCameraRef={snapCameraRef} orbitRef={orbitRef} />
+      <CameraSnapper snapCameraRef={snapCameraRef} turnCameraRef={turnCameraRef} orbitRef={orbitRef} />
       {/* Fills takeRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
           camera only exists inside the Canvas, so anything that drives it has to live in here and
           hand a function out. Renders nothing; costs nothing when takeRef is not passed. */}

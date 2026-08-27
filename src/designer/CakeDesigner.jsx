@@ -2207,6 +2207,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const navMenuRef       = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
+  const turnCameraRef    = useRef(null);   // spin the cake from a button — see the pen editor
   // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const takeRef          = useRef(null);
@@ -7219,8 +7220,50 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
         )}
 
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
+        {/* ── Auto-correct shape ───────────────────────────────────────────────────────────────
+            Nobody draws a clean border with a mouse. A run round the rim comes out wobbling, and the
+            wobble is the difference between a piped cake and a dragged mouse — a real baker's hand
+            is steadied by the turntable and the cake's own edge, and this is the equivalent.
+            It only ever snaps to a circle about the cake's axis or to a straight line, and only when
+            the drawing is clearly one of those. A heart, a name, a deliberate squiggle come back
+            exactly as drawn — guessing wrong destroys work, so the bar is high and the fallback is
+            always "leave it alone". Applied when the stroke is COMMITTED, so what is saved is what
+            is meant. */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={penStyle.autoShape ?? false}
+            onChange={e => setPenStyle(ps => ({ ...ps, autoShape: e.target.checked }))}
+            style={{ width: 15, height: 15, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#1a1a1a' }}>Auto-correct shape</span>
+            <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.35 }}>
+              Tidies a rim border into a true circle, and a near-straight run into a straight one.
+            </span>
+          </span>
+        </label>
+
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 10 }}>
           {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
+        </div>
+
+        {/* ── Turning the cake while the pen is out ──────────────────────────────────────────────
+            Drag-to-rotate still works on empty background, and stops being reachable exactly when it
+            matters: with the pen out a drag on the CAKE draws, so reaching the far side means finding
+            bare canvas — which on a phone, or with a cake that fills the frame, is barely there.
+            A third of a turn a press: enough to bring the other side round in three, small enough to
+            keep your bearings. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', flex: 1 }}>
+            Turn the cake
+          </span>
+          {[['↺', -1], ['↻', 1]].map(([glyph, dir]) => (
+            <button key={dir} onClick={() => turnCameraRef.current?.(dir * Math.PI / 3)}
+              title={dir < 0 ? 'Turn left' : 'Turn right'}
+              style={{ width: 34, height: 30, borderRadius: 8, border: '1.5px solid #999999',
+                       background: '#fff', color: '#1a1a1a', fontSize: 15, cursor: 'pointer',
+                       fontFamily: "'Quicksand',sans-serif", lineHeight: 1 }}>
+              {glyph}
+            </button>
+          ))}
         </div>
 
         {/* ── Done ────────────────────────────────────────────────────────────────────────────────
@@ -8792,6 +8835,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               isStickerMovable={isStickerMovable}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
+              turnCameraRef={turnCameraRef}
               takeRef={canRecordReel ? takeRef : null}
               onAngleChange={setPhotoAngle}
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}

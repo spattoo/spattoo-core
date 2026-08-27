@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect, Suspense } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
+import { snapStroke } from '../geometry/strokeSnap.js';
 import { buildRay } from '../utils/raycasting.js';
 import { creamMaterialProps } from './CakeTier.jsx';
 import StampStroke from './StampStroke.jsx';
@@ -112,6 +113,18 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
           for (let i = 1; i < pts.length; i++) len += pts[i].distanceTo(pts[i - 1]);
           const isTap = len < (s.thickness ?? 0.03) * 1.2;
           const base = { nozzle: s.nozzle, color: s.color, thickness: s.thickness, softness: s.softness, tierIndex };
+          // ── Auto-correct ─────────────────────────────────────────────────────────────────
+          // Applied ONCE, here, to the points that get stored — not at render time. A stroke has to
+          // redraw identically forever, and a tidy-up that ran on every render would re-tidy an
+          // already-tidy line and could drift. What is saved is what was meant.
+          //
+          // Taps are exempt: a single dab has no shape to correct, and `snapStroke` would be reading
+          // hand-jitter as intent.
+          let pts2 = pts.map(round);
+          if (s.autoShape && !isTap) {
+            const snapped = snapStroke(pts2, { normal: nrm ?? [0, 1, 0], axis: [0, 0] });
+            pts2 = snapped.points;
+          }
           if (s.stampId && s.stampUrl && (nrm || !isTap)) {
             // GLB stamp mode: tap → one stamp, drag → a row of stamps along the path.
             const seed = Math.floor(Math.random() * 1e6);
@@ -122,11 +135,11 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
             const stamp = { ...base, stampId: s.stampId, glbUrl: s.stampUrl, seed, regular: !!s.stampRegular,
                             rotation: s.stampRotation ?? null, lean: s.stampLean ?? 0 };
             if (isTap) onAddStroke?.({ kind: 'stamp', ...stamp, point: round(pts[0]), normal: nrm });
-            else onAddStroke?.({ kind: 'stamprope', ...stamp, points: pts.map(round), normal: nrm || [0, 1, 0], spacing: s.spacing ?? 0.85 });
+            else onAddStroke?.({ kind: 'stamprope', ...stamp, points: pts2, normal: nrm || [0, 1, 0], spacing: s.spacing ?? 0.85 });
           } else if (isTap && nrm) {
             onAddStroke?.({ kind: 'heap', ...base, heapHeight: s.heapHeight, point: round(pts[0]), normal: nrm });
           } else {
-            onAddStroke?.({ ...base, points: pts.map(round) });
+            onAddStroke?.({ ...base, points: pts2 });
           }
         }
         return [];
