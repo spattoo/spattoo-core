@@ -1784,7 +1784,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const DUST_COLORS = [   // quick picks; the colour picker covers everything else
     { label: 'Gold', color: '#f0cf63' }, { label: 'Silver', color: '#cdd2d8' },
   ];
-  const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: 0.03, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
+  // ── Two different sizes, because they measure two different things ─────────────────────────────
+  // The pen's `thickness` is a rope DIAMETER — 0.03 is a fine line of cream. The stamp path reuses
+  // the same number as its target footprint (2×thickness), which is right for a bead and far too
+  // small for a piped shell: a ring shell stands SHELL_HEIGHT_FRAC × the tier radius tall, so on the
+  // bottom tier 0.24 × 1.2 = 0.288 against the pen default's 0.104. Piped by hand at the pen's size,
+  // a border came out at under half the ring's, which is what "piping is too small" was.
+  //
+  // Halved because the stamp target is a DIAMETER and the shell fraction is a full height. It puts
+  // the two in the same league; it does not make them equal — the fraction normalises height and the
+  // stamp scales by widest horizontal extent, which no constant here can reconcile for an arbitrary
+  // GLB. Hence the wider slider in stamp mode rather than a range that stops just above this.
+  const PEN_DEFAULT_THICKNESS = 0.03;
+  const PIPE_STAMP_THICKNESS  = +(SHELL_HEIGHT_FRAC * TIER_RADII[0] / 2).toFixed(3);   // 0.144
+  const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -4154,6 +4167,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       stampUrl: glbUrl,
       stampRegular: true,
       stampName: el.name,
+      // Which card to go BACK to. Tapping this swaps the piping card for the pen card, and without
+      // remembering where it came from there is no return: the zone tiles, the colour and the size
+      // for the ring version are all behind a card the customer can no longer find.
+      stampCardId: el.cardId,
+      // ── Size it like PIPING, not like a rope ─────────────────────────────────────────────────
+      // `thickness` on the pen is a rope DIAMETER, and the stamp scales to it: target = 2×thickness.
+      // At the pen's own default that is 0.104 against a ring shell's 0.24 × 1.2 = 0.288, so the
+      // first thing a customer saw was their border piped at under half size — beads, not shells.
+      //
+      // PIPE_STAMP_THICKNESS lands the stamp on the ring's own footing. It is an ESTIMATE, not a
+      // derivation: SHELL_HEIGHT_FRAC normalises a shell's HEIGHT and the stamp scales by its widest
+      // horizontal extent, so the two agree in magnitude and not exactly. That is what the slider is
+      // for, and why its range opens up in stamp mode rather than stopping just above this value.
+      thickness: PIPE_STAMP_THICKNESS,
       color: el.default_color ?? prev.color,
     }));
     // Collapse the piping card: the choice has been made and the next move is on the cake, not in
@@ -4162,11 +4189,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'tool', tool: 'pen' });
   }
 
+  // Back to the piping card this came from — the zone tiles, and everything about the ring version.
+  const stampSourceCard = pipingCards.find(c => c.cardId === penStyle.stampCardId) ?? null;
+  function backToPipingCard() {
+    if (!stampSourceCard) return;
+    openPipingPopup(stampSourceCard, { cardId: stampSourceCard.cardId });
+  }
+
   // Back to drawing plain cream. Without this the only way out of stamp mode is a reload — penStyle
   // keeps whatever was last put in it, so a customer who tried piping by hand and then wanted a line
   // of cream would go on stamping shells with no way to say stop.
   function pipeWithCreamAgain() {
-    setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false, stampName: null }));
+    setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
+                           stampName: null, stampCardId: null, thickness: PEN_DEFAULT_THICKNESS }));
   }
 
   function addPenFromRow(el) {
@@ -7073,18 +7108,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             put into it, so without this a customer who tried "I'll pipe it myself" and then wanted a
             line of cream would go on stamping shells with no way to say stop. */}
         {penStyle.stampUrl && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
-                        padding: '7px 9px', borderRadius: 9, background: '#F7F5F1', border: '1.5px solid #E3E0DA' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: '#1a1a1a', flex: 1, minWidth: 0,
-                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ marginTop: 8, padding: '8px 9px', borderRadius: 9,
+                        background: '#F7F5F1', border: '1.5px solid #E3E0DA' }}>
+            {/* The name on its OWN line and allowed to wrap. Sharing a row with the buttons squeezed
+                it to "Piping …", which told the customer nothing — the one thing this strip exists
+                to say is WHAT is on the nozzle. */}
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#1a1a1a', lineHeight: 1.35, marginBottom: 7 }}>
               Piping {penStyle.stampName ?? 'a shape'}
-            </span>
-            <button onClick={pipeWithCreamAgain}
-              style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 7,
-                       border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
-                       fontFamily: "'Quicksand',sans-serif" }}>
-              Cream instead
-            </button>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {/* The way BACK. Choosing "I'll pipe it myself" swaps the piping card for this one, and
+                  without this there is no route to the zone tiles, the ring's colour or its size
+                  again — the card is still in the stack but the customer has no reason to know that
+                  the thing they were just looking at is the thing to reopen. */}
+              {stampSourceCard && (
+                <button onClick={backToPipingCard}
+                  style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
+                           border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
+                           fontFamily: "'Quicksand',sans-serif" }}>
+                  ‹ Back to {stampSourceCard.name}
+                </button>
+              )}
+              <button onClick={pipeWithCreamAgain}
+                style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
+                         border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
+                         fontFamily: "'Quicksand',sans-serif" }}>
+                Cream instead
+              </button>
+            </div>
           </div>
         )}
 
@@ -7093,7 +7144,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={152} />
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
-        <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
+        {/* "Size" and a wider range in stamp mode. The word first: on the pen this IS a thickness —
+            how fat the rope is — but on a stamp it is how big the whole shape comes out, and calling
+            that thickness invites a customer to look for the shape to get chunkier.
+            The range second: the rope's 0.16 ceiling is barely above where a piped shell STARTS
+            (0.144), so there was no room to make a border bigger and plenty to make it far too
+            small. A stamp gets 0.04–0.34 — roughly a quarter to a little over double a ring's. */}
+        {penStyle.stampUrl ? (
+          <PenSlider label="Size" value={penStyle.thickness} min={0.04} max={0.34} step={0.005}
+            onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
+        ) : (
+          <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
+        )}
         {/* Softness shapes the swept ROPE and does nothing to a stamped shape — the stamp path never
             reads it. Shown for cream, hidden for a stamp, because a slider that moves and changes
             nothing is worse than one that is missing.
