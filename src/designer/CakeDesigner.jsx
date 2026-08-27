@@ -9723,7 +9723,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   Only when there is a GLB to repeat. A piping pattern that resolves to nothing would
                   put the cake in draw mode and then stamp nothing at all, which reads as the drawing
                   being broken. */}
-              {!!resolvePipingGlbs(pipingPopupEl).glbUrl && (
+              {/* ── Gated on the element, not on the designer ─────────────────────────────────
+                  `hand_piping` is ticked per element in admin, by whoever calibrated it. Not every
+                  piping element survives being repeated along a freehand line: a wrap band is ONE
+                  pre-formed ring and a drip is a procedural curtain, both rings by nature, and
+                  stamping either along a squiggle produces something nobody would pipe. A shell or
+                  a rosette repeats happily.
+                  Absent means OFF. An element nobody has considered does not get the feature by
+                  default — the alternative is offering it everywhere and finding out on a customer's
+                  cake which elements it ruins. */}
+              {!!pipingPopupEl.placement_config?.hand_piping
+                && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
                   <button
                     onClick={() => pipeItMyself(pipingPopupEl)}
