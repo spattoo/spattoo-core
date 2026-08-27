@@ -34,6 +34,14 @@ export const useStudioNarrow = (breakpoint = 760) => useNarrow(breakpoint);
 // and Close becomes a × in the corner. The × is not decoration — dropping "Close" from the button
 // row is what leaves the real actions enough width to sit side by side, and a × top-right is where
 // a full-screen tool is closed from anyway.
+// ── A Close that does nothing is worse than no Close ─────────────────────────────────────────────
+// CutoutSheet rendered A4Sheet without an onClose, so this drew a Close button wired to `undefined`.
+// It looked exactly like a working one and swallowed every press — a baker pressing it concluded the
+// app had frozen, which is a far worse impression than a surface with no Close in the header at all
+// (the cut-out sheet opens in a modal that has its own ×).
+//
+// So the button is only drawn when there is something for it to do. A caller that forgets is now
+// visibly missing a Close rather than invisibly broken.
 export function StudioHeader({ title, actions, onClose }) {
   const narrow = useStudioNarrow();
 
@@ -43,7 +51,7 @@ export function StudioHeader({ title, actions, onClose }) {
         <div style={chrome.title}>{title}</div>
         <div style={chrome.actions}>
           {actions}
-          <button style={chrome.ghostBtn} onClick={onClose}>Close</button>
+          {onClose && <button style={chrome.ghostBtn} onClick={onClose}>Close</button>}
         </div>
       </div>
     );
@@ -55,7 +63,7 @@ export function StudioHeader({ title, actions, onClose }) {
         {/* nowrap + the title winning the flex row is the whole point — `minWidth: 0` is deliberately
             NOT set here, because that is what would let it shrink and wrap again. */}
         <div style={{ ...chrome.title, whiteSpace: 'nowrap', flex: 1 }}>{title}</div>
-        <button style={chrome.closeX} onClick={onClose} aria-label="Close">×</button>
+        {onClose && <button style={chrome.closeX} onClick={onClose} aria-label="Close">×</button>}
       </div>
       {/* Actions share the row evenly rather than sitting at their natural widths: "Save sheet" and
           "Download PDF" are not the same length, and a ragged pair reads as one being an

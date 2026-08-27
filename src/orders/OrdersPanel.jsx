@@ -201,7 +201,8 @@ function CutoutModal({ ids, order, apiClient, onClose }) {
         {err && <div style={{ padding: 16, color: '#B42318', fontWeight: 600, fontSize: 13 }}>{err}</div>}
         {elements === null
           ? <div style={{ padding: 40, textAlign: 'center', color: '#6B8C74', fontWeight: 600 }}>Loading decorations…</div>
-          : <CutoutSheet elements={elements} title={order?.customer_name || order?.id || 'cake'} />}
+          : <CutoutSheet elements={elements} title={order?.customer_name || order?.id || 'cake'}
+                         onClose={onClose} />}
       </div>
     </div>
   );

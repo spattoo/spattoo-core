@@ -33,8 +33,10 @@ const s = {
  * @param {object[]} elements   the design's decorations — anything with an image. A GLB-only topper
  *                              is skipped by elementSources, which returns nothing for it.
  * @param {string}   [title]    used for the file name, so a downloaded PDF says which cake it is.
+ * @param {function} [onClose]  wired to the sheet header's Close. Omitted, the header simply has no
+ *                              Close — it used to draw one anyway, connected to nothing.
  */
-export default function CutoutSheet({ elements = [], title = 'cake' }) {
+export default function CutoutSheet({ elements = [], title = 'cake', onClose }) {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState('');
@@ -94,6 +96,7 @@ export default function CutoutSheet({ elements = [], title = 'cake' }) {
         // The baker chooses what goes on. Auto-placing the first decoration would be undoing their
         // first act, which is the same reason the Edible Print Studio does not either.
         autoPlaceFirst={false}
+        onClose={onClose}
         paletteTitle="This cake's decorations"
         emptyHint="Drag a decoration onto the sheet to start."
         error={err}

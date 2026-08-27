@@ -82,3 +82,33 @@ describe('StudioHeader on a laptop', () => {
     expect(html).not.toContain('aria-label="Close"');
   });
 });
+
+// ── A Close that does nothing is worse than no Close ─────────────────────────────────────────────
+// CutoutSheet rendered A4Sheet without an onClose, so this header drew a Close button wired to
+// `undefined`. It looked exactly like a working one and swallowed every press — a baker pressing it
+// concluded the app had frozen, which is a far worse impression than a header with no Close on a
+// surface that is closed some other way.
+//
+// The prop being optional is what made it silent: nothing throws, nothing warns, and every existing
+// test passed because they all supply one.
+describe('StudioHeader without an onClose', () => {
+  it('draws no Close button on a laptop rather than a dead one', () => {
+    const html = renderToStaticMarkup(
+      <StudioHeader title="Edible Print Studio" actions={<button>Download PDF</button>} />);
+    expect(html).not.toContain('Close');
+    expect(html).toContain('Download PDF');     // the rest of the header is unaffected
+  });
+
+  it('draws no × on a phone either', () => {
+    asPhone();
+    const html = renderToStaticMarkup(
+      <StudioHeader title="Edible Print Studio" actions={<button>Download PDF</button>} />);
+    expect(html).not.toContain('aria-label="Close"');
+  });
+
+  it('still draws Close when there IS something for it to do', () => {
+    expect(render({ onClose: () => {} })).toContain('Close');
+    asPhone();
+    expect(render({ onClose: () => {} })).toContain('aria-label="Close"');
+  });
+});
