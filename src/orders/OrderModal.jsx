@@ -517,7 +517,31 @@ export default function OrderModal({
   // create would fail server-side (phone/email required) after three steps. An EXISTING
   // (found) customer already has their details, so no re-check.
   const canGoNext0  = searchPhase === 'found' || (searchPhase === 'not_found' && customer.firstName.trim() && customer.phone.trim() && emailOk);
-  const canSubmit   = deliveryMode === 'pickup' || deliveryAddress.trim();
+
+  /* ── What an order cannot be placed without ────────────────────────────────────────────────────
+   *
+   * Every step but the first used to pass unconditionally (`: false` below), so an order could be
+   * placed with no weight, no flavour and no delivery date. All three are load-bearing DOWNSTREAM,
+   * which is why this is a gate and not a nicety:
+   *
+   *   weight        the X-ray's tin plan is `weight != null ? weightToInch(weight, square) : null`
+   *                 — with no weight it cannot tell the baker which tin to bake in, which is the
+   *                 central question that report exists to answer. Flavour rates are per KG too, so
+   *                 no weight also means no price.
+   *   flavour       the baker does not know what to bake, nothing can be priced, and the
+   *                 flavour/dietary conflict warning has nothing to compare against.
+   *   deliveryDate  sendDeliveryDigest queries `.eq('delivery_date', date)`. An order with no date
+   *                 never appears in ANY digest and cannot be placed on the calendar — it exists and
+   *                 is invisible to the baker's daily workflow.
+   *
+   * ⚠️ A weight of 0 is not a weight. `parseFloat` on '' is NaN and on '0' is 0, and both must fail
+   * here — a zero-weight order divides through the tin plan's volume maths.
+   */
+  const weightOk    = parseFloat(weightKg) > 0;
+  const flavourOk   = flavours.some(f => f.name.trim());
+  const canGoNextDetails = weightOk && flavourOk;
+  const canSubmit   = (deliveryMode === 'pickup' || deliveryAddress.trim()) && !!deliveryDate;
+
 
   // Steps depend on mode: the customer is already known from their session, so the
   // customer-search step exists ONLY for the baker placing an order on someone's behalf.
@@ -525,6 +549,20 @@ export default function OrderModal({
     ? [{ key: 'details', label: 'Cake Details' }, { key: 'delivery', label: 'Delivery' }]
     : [{ key: 'customer', label: 'Customer' }, { key: 'details', label: 'Cake Details' }, { key: 'delivery', label: 'Delivery' }];
   const currentStepKey = STEP_DEFS[step]?.key;
+
+  /* What is still missing, in the order the fields appear. Shown beside the disabled button: a
+   * button that will not press and does not say why is the reason people abandon a form.
+   *
+   * ⚠️ DECLARED HERE, below currentStepKey, not up with the other gates. Placed above it this read
+   * a `const` before its initialiser — "Cannot access 'currentStepKey' before initialization" — and
+   * the whole modal rendered as "Something went wrong." The build was clean and 1173 tests passed;
+   * only opening it showed anything. Second time today. */
+  const missing = currentStepKey === 'details'
+    ? [!weightOk && 'a cake weight', !flavourOk && 'a flavour'].filter(Boolean)
+    : currentStepKey === 'delivery'
+      ? [!deliveryDate && 'a delivery date',
+         (deliveryMode === 'home_delivery' && !deliveryAddress.trim()) && 'a delivery address'].filter(Boolean)
+      : [];
   const isLastStep     = step === STEP_DEFS.length - 1;
   const submitLabel     = mode === 'customer' ? 'Request quote' : 'Create order';
   const submittingLabel = mode === 'customer' ? 'Requesting…'   : 'Creating…';
@@ -679,6 +717,7 @@ export default function OrderModal({
     onCustomerStep && searchPhase === 'phone' ? !canSearch
     : onCustomerStep ? !canGoNext0
     : isLastStep ? (!canSubmit || submitting)
+    : currentStepKey === 'details' ? !canGoNextDetails
     : false;
 
   function handleFooterPrimary() {
@@ -731,6 +770,16 @@ export default function OrderModal({
                 {' '}and{' '}
                 <a href={`${legalBase}/privacy`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Privacy Policy</a>.
                 {' '}Cartoon characters and brand themes are usually protected — your baker may not be able to use them.
+              </div>
+            )}
+            {/* Why the button will not press. Named fields, in the order they appear on the step —
+                "Add a cake weight and a flavour" is actionable where a greyed-out button is a
+                puzzle, and this is a form somebody is filling in to spend money. */}
+            {missing.length > 0 && (
+              <div style={{ fontSize: isMobile ? 12.5 : 11.5, color: '#8A5A1E', background: '#FDF3E3',
+                            border: '1px solid #F0DCB8', borderRadius: 9, padding: '8px 11px',
+                            marginBottom: 10, lineHeight: 1.5, fontFamily: "'Quicksand',sans-serif" }}>
+                Still needed: {missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`}.
               </div>
             )}
             <div style={{ display:'flex', gap:10 }}>
@@ -889,7 +938,7 @@ export default function OrderModal({
                 )}
 
                 <label style={field}>
-                  <span style={lbl}>Cake weight (kg)</span>
+                  <span style={lbl}>Cake weight (kg) *</span>
                   <input style={inp} type="number" min="0.5" max="100" step="0.5"
                     placeholder="e.g. 2" value={weightKg} autoFocus
                     onChange={e => setWeightKg(e.target.value)} />
@@ -1087,7 +1136,7 @@ export default function OrderModal({
               <>
                 <div style={{ display:'flex', gap:10 }}>
                   <label style={{ ...field, flex:1 }}>
-                    <span style={lbl}>Date</span>
+                    <span style={lbl}>Date *</span>
                     <input style={inp} type="date" value={deliveryDate} autoFocus
                       onChange={e => setDeliveryDate(e.target.value)} />
                   </label>
