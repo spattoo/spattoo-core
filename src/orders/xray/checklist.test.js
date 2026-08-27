@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { harvestPlaceables } from './harvest.js';
+import { harvestPlaceables, proceduralPlacements } from './harvest.js';
 import { buildXrayReport, splitInstructions } from './report.js';
 
 // A checklist makes a claim nothing else on the sheet makes: that this is EVERYTHING.
@@ -210,5 +210,54 @@ describe('hand-piped strokes in the checklist', () => {
     ])).flatMap(g => g.items).filter(i => i.what === 'Freehand piping');
     expect(items).toHaveLength(2);
     expect(items.find(i => i.count === 2)).toBeTruthy();
+  });
+});
+
+// ── Procedural decorations ───────────────────────────────────────────────────────────────────────
+// A rainbow is BUILT, so it lives in a per-tier collection rather than design.stickers — and this
+// file enumerated the collections it knew about. A cake whose most visible decoration was a rainbow
+// said nothing about the rainbow, on the checklist or in the guides. The comment at the top of
+// harvestPlaceables calls that the completeness trap; it happened anyway.
+describe('procedural decorations reach the sheet', () => {
+  const design = {
+    tiers: [
+      { topPipings: [], bottomPipings: [],
+        rainbows: [{ id: 'rb-1', elementId: 'el-rainbow', elementName: 'Pastel rainbow' }],
+        clouds: [{ id: 'cl-1', elementId: 'el-cloud', elementName: 'Puffy cloud' },
+                 { id: 'cl-2', elementId: 'el-cloud', elementName: 'Puffy cloud' }] },
+    ],
+  };
+
+  it('lists a rainbow and its clouds', () => {
+    const what = harvestPlaceables(design).flatMap(g => g.items.map(i => i.what));
+    expect(what).toContain('Pastel rainbow');
+    expect(what).toContain('Puffy cloud');
+  });
+
+  it('names them from the element, falling back to a plain word', () => {
+    const bare = { tiers: [{ rainbows: [{ id: 'rb-9' }] }] };
+    const what = harvestPlaceables(bare).flatMap(g => g.items.map(i => i.what));
+    expect(what).toContain('Rainbow');
+  });
+
+  it('counts two clouds as two, not one', () => {
+    const items = harvestPlaceables(design).flatMap(g => g.items);
+    const clouds = items.filter(i => i.what === 'Puffy cloud');
+    // Distinct instances, so distinct keys — two things to place, two things to tick.
+    expect(clouds.reduce((n, c) => n + c.count, 0)).toBe(2);
+  });
+
+  it('exposes their element ids so a guide can be fetched', () => {
+    const ids = proceduralPlacements(design, 1).map(p => p.elementId);
+    expect(ids).toContain('el-rainbow');
+    expect(ids).toContain('el-cloud');
+  });
+
+  it('tolerates an older design that never recorded the element', () => {
+    // Not fixable after the fact — an order saved before the designer recorded this simply does not
+    // know which rainbow it was. It must still appear on the checklist.
+    const old = { tiers: [{ rainbows: [{ id: 'rb-old' }] }] };
+    expect(proceduralPlacements(old, 1)[0].elementId).toBeNull();
+    expect(harvestPlaceables(old).flatMap(g => g.items).length).toBeGreaterThan(0);
   });
 });

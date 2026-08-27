@@ -3954,6 +3954,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     updateTierRainbows(i, cur => [
       ...cur,
       { ...base, id,
+        // ── Which CATALOGUE element this is ────────────────────────────────────────────────────
+        // A placed rainbow used to keep only its own instance id, so nothing downstream could tell
+        // WHICH rainbow it was — and the X-Ray sheet looks a craft guide up by element id. The
+        // result was a cake whose most visible decoration had no how-to at all.
+        elementId: el?.id ?? null,
+        elementName: el?.name ?? null,
         // ── The first one lands in the MIDDLE ───────────────────────────────────────────────────
         // An arch carries its own lean — `offsetX` is how far it straddles along its own plane, and
         // for the shapes that fall off one side that is most of a radius. Placed with no position of
@@ -3992,6 +3998,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     updateTierClouds(i, cur => [
       ...cur,
       { ...CLOUD_DEFAULTS, ...tuned, id,
+        // The catalogue element, so the X-Ray can find its guide — see addRainbow.
+        elementId: el?.id ?? null,
+        elementName: el?.name ?? null,
         // Each one further round than the last, so a second cloud is visibly a second cloud rather
         // than a redraw of the first. Read from the LIVE list inside the updater, or two quick
         // presses both see the same list and the second lands exactly on the first.

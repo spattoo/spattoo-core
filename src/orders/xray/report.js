@@ -1,5 +1,5 @@
 import { computeTinPlan } from './tinHelper.js';
-import { harvestColors, harvestPiping, harvestPlaceables } from './harvest.js';
+import { proceduralPlacements, harvestColors, harvestPiping, harvestPlaceables } from './harvest.js';
 import { gelRecipeFor } from './gelLibrary.js';
 
 // ── The X-Ray report, as DATA ────────────────────────────────────────────────────────────────────
@@ -175,8 +175,13 @@ export function buildXrayReport({ design, weightKg, guides, flavours, specialIns
     // element id. Kept here rather than derived in the view, so both renderings ask for the same
     // set (the sheet in the kitchen and the screen in the office, again).
     placeableElementIds: [...new Set(
-      [...(design?.stickers ?? []), ...(design?.decorations ?? [])]
-        .map(s => s?.elementId).filter(Boolean),
+      [
+        ...(design?.stickers ?? []), ...(design?.decorations ?? []),
+        // Procedural decorations — a rainbow is BUILT and is exactly the sort of thing a baker
+        // wants a how-to for. They were absent because they live in per-tier collections rather
+        // than design.stickers, so nothing here ever asked for their guides.
+        ...proceduralPlacements(design),
+      ].map(s => s?.elementId).filter(Boolean),
     )],
     // True when there is nothing to say — the caller shows an empty state rather than a blank sheet.
     isEmpty: !tins.tiers.length && !colors.length && !elements.length && !piping.freehand.length,

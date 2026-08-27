@@ -258,7 +258,45 @@ export function harvestPlaceables(design) {
     );
   });
 
+  // ── Procedural decorations ──────────────────────────────────────────────────────────────────
+  // Rainbows, clouds, grass and letter blocks are BUILT rather than placed as a model, so they live
+  // in their own per-tier collections instead of design.stickers — and this file enumerated the
+  // collections it knew about, so all four were missing from the sheet entirely. A cake whose most
+  // visible decoration is a rainbow said nothing about the rainbow.
+  //
+  // The comment at the top of this function calls that the completeness trap, and it happened
+  // anyway. Hence proceduralPlacements() below: ONE list of the collections, so a new procedural
+  // decoration is added in a place that is obviously about being complete.
+  proceduralPlacements(design, n).forEach(p => push(finishing, p.what, p.where, p.key));
+
   if (finishing.items.length) groups.push(finishing);
 
   return groups;
+}
+
+// Every BUILT decoration on the cake, per tier. Kept beside the checklist AND the guide harvest so
+// the two can never disagree about what is on the cake.
+//
+// `elementId` is what a craft guide is looked up by. It is null on anything placed before the
+// designer started recording it, and that is not fixable after the fact — an order saved then simply
+// does not know which rainbow it was. New ones do.
+export function proceduralPlacements(design, tierCount) {
+  const n = tierCount ?? (design?.tiers?.length ?? 1);
+  const out = [];
+  const add = (item, label, tierIndex, kind, idx) => {
+    if (!item) return;
+    out.push({
+      what: item.elementName || label,
+      where: tierLabel(tierIndex, n),
+      key: `${kind}-${item.id ?? idx}`,
+      elementId: item.elementId ?? null,
+    });
+  };
+  (design?.tiers ?? []).forEach((t, i) => {
+    (t?.rainbows ?? []).forEach((r, k) => add(r, 'Rainbow', i, 'rb', k));
+    (t?.clouds ?? []).forEach((c, k) => add(c, 'Cloud', i, 'cl', k));
+    if (t?.grass) add(t.grass, 'Piped grass', i, 'grass', 0);
+  });
+  if (design?.nameBlocks) add(design.nameBlocks, 'Letter blocks', 0, 'blocks', 0);
+  return out;
 }
