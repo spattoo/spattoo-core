@@ -125,32 +125,41 @@ describe('stampTransforms', () => {
     // a rim's edge.
     const SHIPPED = [-68, -1, 175];
 
-    it('drops the LEAN when piping, so a shell stands on a flat top', () => {
-      // Reproduced verbatim the -68° pivots the piece about its base and lays it down — right on a
-      // rim edge, wrong in the middle of a cake. Local X is tangential in the ring's frame, so that
-      // component IS the lean and it is the one part not carried over.
+    it('applies the calibration VERBATIM, the way the ring does', () => {
+      // Decomposing it was an earlier attempt here, and it was compensating in the wrong place: the
+      // ring bakes a +90° X turn into the GEOMETRY (extractGeo) before any config value is read, so
+      // -68° against that is a modest upright tilt rather than the near-flat lean it reads as alone.
+      // Now that the stamp shares extractGeo, the honest thing is to apply what the ring applies.
+      const composed = (rx, ry, rz) => {
+        const D = Math.PI / 180;
+        return new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(0, ry * D, 0))
+          .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rx * D, 0, rz * D)));
+      };
       const [t] = stampTransforms(rope({ regular: true, rotation: SHIPPED }), 1);
-      const verbatim = stampTransforms(rope({ regular: false, rotation: SHIPPED, seed: 1 }), 1)[0];
-      expect(t.quat).not.toEqual(verbatim.quat);
-      // The roll and spin survive: this is not "ignore the calibration".
-      const none = stampTransforms(rope({ regular: true }), 1)[0];
-      expect(t.quat).not.toEqual(none.quat);
+      // Straight line along +x on a flat top, so the surface basis is a pure yaw and the piece's
+      // rotation relative to it must be exactly what the ring's mesh+group composition gives.
+      const want = composed(SHIPPED[0], SHIPPED[1], SHIPPED[2]);
+      const got = new THREE.Quaternion().fromArray(t.quat);
+      // Undo the basis (which for this path maps +Z across the run) and compare.
+      const basis = new THREE.Quaternion().setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(
+          new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)));
+      expect(basis.invert().multiply(got).angleTo(want)).toBeCloseTo(0, 5);
     });
 
-    it('puts the lean back, by degrees, when asked', () => {
-      const flat = stampTransforms(rope({ regular: true, rotation: SHIPPED }), 1)[0];
-      const leaned = stampTransforms(rope({ regular: true, rotation: SHIPPED, lean: -68 }), 1)[0];
-      expect(leaned.quat).not.toEqual(flat.quat);
-      // lean 0 is the same as no lean at all — the slider's rest position changes nothing.
+    it('lets `lean` adjust ON TOP of the calibration, resting at zero', () => {
+      const asRing = stampTransforms(rope({ regular: true, rotation: SHIPPED }), 1)[0];
+      // Zero changes nothing — the slider's rest position is the ring's own angle.
       expect(stampTransforms(rope({ regular: true, rotation: SHIPPED, lean: 0 }), 1)[0].quat)
-        .toEqual(flat.quat);
-    });
-
-    it('leaves SCATTERING taking the whole rotation verbatim', () => {
-      // Only piping decomposes it. A cream-pen stamp keeps every degree it was placed with.
-      const a = stampTransforms(rope({ regular: false, rotation: SHIPPED, seed: 5 }), 1);
-      const b = stampTransforms(rope({ regular: false, rotation: [0, -1, 175], seed: 5 }), 1);
-      expect(a[0].quat).not.toEqual(b[0].quat);          // the -68 still counts there
+        .toEqual(asRing.quat);
+      // And it moves when turned.
+      expect(stampTransforms(rope({ regular: true, rotation: SHIPPED, lean: 20 }), 1)[0].quat)
+        .not.toEqual(asRing.quat);
+      // +20 of lean is the same as asking for 20 more degrees of X in the config.
+      const plus20 = [SHIPPED[0] + 20, SHIPPED[1], SHIPPED[2]];
+      expect(stampTransforms(rope({ regular: true, rotation: SHIPPED, lean: 20 }), 1)[0].quat)
+        .toEqual(stampTransforms(rope({ regular: true, rotation: plus20 }), 1)[0].quat);
     });
 
     it('tilts about X by the configured degrees when scattering', () => {

@@ -302,12 +302,21 @@ export function stampTransforms(stroke, metrics) {
   //
   // `lean` puts it back by degrees, because this decomposition is READ off the renderer rather than
   // proven, and a number the customer can turn beats another round of me guessing at it.
+  // The calibration is applied VERBATIM, and that only became the right answer once the geometry was
+  // prepared the way a ring prepares it. extractGeo bakes a +90° X turn into the mesh, so the -68°
+  // is not the huge lean it reads as on paper — against that baked turn it nets to a modest upright
+  // tilt, which is what a rim shell actually looks like. Decomposing it (an earlier attempt here)
+  // was compensating for the missing +90° in the wrong place.
+  //
+  // `lean` stays, as an adjustment ON TOP rather than a replacement: 0 is the ring's own angle, and
+  // it is there because this is the fourth attempt at this orientation and a number the customer can
+  // turn is worth more than my confidence.
   const rot = stroke.rotation;
   const lean = stroke.lean ?? 0;
   let extra = null;
   if (rot || lean) {
     const DEG = Math.PI / 180;
-    const rx = regular ? lean : (rot?.[0] ?? 0);   // scattering keeps the whole rotation verbatim
+    const rx = (rot?.[0] ?? 0) + lean;
     const ry = rot?.[1] ?? 0;
     const rz = rot?.[2] ?? 0;
     if (rx || ry || rz) {
