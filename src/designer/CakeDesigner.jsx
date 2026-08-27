@@ -1720,7 +1720,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -2208,6 +2208,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
   const turnCameraRef    = useRef(null);   // spin the cake from a button — see the pen editor
+  // Draw or slide: one pen, two gestures, and they cannot share a drag. See the toggle in the pen card.
+  const [penMove, setPenMove] = useState(false);
   // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const takeRef          = useRef(null);
@@ -4216,6 +4218,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Back to drawing plain cream. Without this the only way out of stamp mode is a reload — penStyle
   // keeps whatever was last put in it, so a customer who tried piping by hand and then wanted a line
   // of cream would go on stamping shells with no way to say stop.
+  // Coming back to the pen always starts in DRAW. A tool that remembers it was left in move mode
+  // greets the next visit by doing nothing when you drag, which reads as broken.
+  useEffect(() => {
+    if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) setPenMove(false);
+  }, [selectedEl]);
+
   function pipeWithCreamAgain() {
     setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
                            stampName: null, stampCardId: null, stampRotation: null, stampLean: 0,
@@ -7094,6 +7102,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={152} />
         )}
 
+        {/* ── Draw or slide ────────────────────────────────────────────────────────────────────
+            One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
+            pressing the cake to draw over it are the same press. So it is a mode, said out loud,
+            rather than a modifier key nobody would find on a phone.
+            Sliding moves the WHOLE stroke and keeps its shape: it is the unit you drew, and the unit
+            a ring already is. Until this, a border a few millimetres too low cost you the whole line.
+        */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {[['Draw', false], ['Move', true]].map(([label, val]) => (
+            <button key={label} onClick={() => setPenMove(val)}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
+                       border: `1.5px solid ${penMove === val ? '#2C4433' : '#999999'}`,
+                       background: penMove === val ? '#2C4433' : '#fff',
+                       color: penMove === val ? '#fff' : '#1a1a1a',
+                       fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {penMove && (
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
+            Drag a piped line to slide it. It keeps its shape and stays on the cake.
+          </div>
+        )}
+
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
         <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
@@ -8813,7 +8846,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onWritingClick={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
               onWritingMove={(id, moves) => updateWriting(id, moves)}
               selectedWritingId={selectedWritingId}
-              penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen'}
+              penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && !penMove}
+              penMoveMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && penMove}
+              onMoveStroke={updateStrokePoints}
               penStyle={penStyle}
               onAddStroke={addStroke}
               dustMode={selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust'}

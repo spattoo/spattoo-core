@@ -3,6 +3,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
+import { translateStroke, distanceToStroke } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
 import { creamMaterialProps } from './CakeTier.jsx';
 import StampStroke from './StampStroke.jsx';
@@ -42,10 +43,16 @@ function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, sof
 
 const CatcherMat = () => <meshBasicMaterial transparent opacity={0} depthWrite={false} />;
 
-export default function CreamPen({ piping = [], drawMode = false, penStyle, tierData = [], board, onAddStroke }) {
+export default function CreamPen({ piping = [], drawMode = false, moveMode = false, penStyle, tierData = [], board, onAddStroke, onMoveStroke }) {
   const { gl, camera, scene } = useThree();
   const [live, setLive] = useState([]);          // Vector3[] — seated centerline of the in-progress stroke
   const activeRef = useRef(null);                // { tierIndex } while drawing, else null
+  // { id, from, original } while sliding a placed stroke. Separate from activeRef because the two
+  // gestures are different: drawing accumulates points, moving replays one stroke from its ORIGINAL
+  // position each frame — replaying from the live one would compound every mouse-move into a drift.
+  const moveRef   = useRef(null);
+  const pipingRef = useRef(piping);
+  pipingRef.current = piping;
   const styleRef  = useRef(penStyle);
   styleRef.current = penStyle;
   const rc = useRef(new THREE.Raycaster());
@@ -71,6 +78,27 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
     e.stopPropagation();
     try { gl.domElement.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
     const s = seatAt(e.clientX, e.clientY);
+
+    // ── Sliding a placed stroke ────────────────────────────────────────────────────────────────
+    // The nearest stroke to the press wins, which is what a finger means by "that one", and only
+    // within a grab radius — a press on bare cake with the nearest line half a cake away is not a
+    // grab of it. The radius scales with the stroke's own thickness so a fat border is as easy to
+    // catch as a fine one.
+    if (moveMode) {
+      if (!s) return;
+      const hit = [-1, null];
+      let best = Infinity;
+      for (const st of pipingRef.current) {
+        const pts = st.points ?? (st.point ? [st.point] : null);
+        if (!pts) continue;
+        const d = distanceToStroke(pts, s.p.toArray());
+        const reach = Math.max(0.12, (st.thickness ?? 0.03) * 3);
+        if (d < best && d < reach) { best = d; hit[0] = d; hit[1] = st; }
+      }
+      if (hit[1]) moveRef.current = { id: hit[1].id, from: s.p.toArray(), original: hit[1].points };
+      return;
+    }
+
     activeRef.current = { tierIndex, normal: s ? s.n : null };
     setLive(s ? [s.p] : []);
   };
@@ -78,10 +106,22 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
   // Raw-DOM move + commit. Coalesced events give every intermediate position, so fast
   // drags stay continuous instead of breaking into disconnected beads.
   useEffect(() => {
-    if (!drawMode) return;
+    if (!drawMode && !moveMode) return;
     const el = gl.domElement;
 
     const onMove = ev => {
+      if (moveRef.current) {
+        const m = moveRef.current;
+        const s = seatAt(ev.clientX, ev.clientY);
+        if (!s) return;
+        const st = pipingRef.current.find(x => x.id === m.id);
+        // Replayed from the ORIGINAL points every frame, never from the live ones — accumulating
+        // would turn every intermediate pointermove into another displacement.
+        onMoveStroke?.(m.id, translateStroke(m.original, m.from, s.p.toArray(), {
+          normal: st?.normal ?? [0, 1, 0], axis: [0, 0],
+        }));
+        return;
+      }
       if (!activeRef.current) return;
       const samples = ev.getCoalescedEvents ? ev.getCoalescedEvents() : null;
       const evs = (samples && samples.length) ? samples : [ev];
@@ -99,6 +139,7 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
     };
 
     const onUp = () => {
+      if (moveRef.current) { moveRef.current = null; return; }
       if (!activeRef.current) return;
       const { tierIndex, normal } = activeRef.current;
       activeRef.current = null;
@@ -157,7 +198,7 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drawMode, gl, camera, scene, onAddStroke]);
+  }, [drawMode, moveMode, gl, camera, scene, onAddStroke, onMoveStroke]);
 
   // ── The pointer has to SAY you can draw ────────────────────────────────────────────────────────
   // Draw mode changed nothing about the canvas: same arrow, same cake, and the only clue was a line
@@ -175,8 +216,15 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
   // out where the point is rather than at the corner of a 26px box. `crosshair` is the fallback for
   // anything that will not take an SVG cursor; both beat the arrow, which is actively misleading.
   useEffect(() => {
-    if (!drawMode) return;
+    if (!drawMode && !moveMode) return;
     const el = gl.domElement;
+    // Move mode says so with the OS's own move cursor rather than a second drawn glyph: it is a
+    // gesture every pointer already understands, and a nozzle there would promise drawing.
+    if (moveMode) {
+      const prevMove = el.style.cursor;
+      el.style.cursor = 'move';
+      return () => { el.style.cursor = prevMove; };
+    }
     const nozzle = encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">'
       + '<path d="M6 3.2 L15.4 3.2 L11.6 13.4 L9.8 13.4 Z" fill="#ffffff" stroke="#2b2b2b" stroke-width="1.5" stroke-linejoin="round"/>'
@@ -187,10 +235,11 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
     // Put it BACK rather than clearing it — the canvas sets its own cursor for dragging and
     // rotating, and blanking it here would leave the cake with a default arrow after every visit.
     return () => { el.style.cursor = prev; };
-  }, [drawMode, gl]);
+  }, [drawMode, moveMode, gl]);
 
   // Leaving draw mode mid-stroke drops the in-progress stroke.
   useEffect(() => { if (!drawMode) { activeRef.current = null; setLive([]); } }, [drawMode]);
+  useEffect(() => { if (!moveMode) moveRef.current = null; }, [moveMode]);
 
   return (
     <>
@@ -205,7 +254,7 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
           thickness={penStyle.thickness} softness={penStyle.softness} />
       )}
 
-      {drawMode && tierData.map((t, i) => {
+      {(drawMode || moveMode) && tierData.map((t, i) => {
         const isRect = (t.shape ?? 'round') === 'rect';
         return (
           <mesh key={i} position={[0, t.baseY + t.height / 2, 0]} userData={{ isPenCatcher: true }}
