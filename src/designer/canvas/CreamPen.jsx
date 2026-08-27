@@ -119,7 +119,8 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
             // redraw identically after a reload, and penStyle is live UI state that will have moved
             // on — a border piped in stamp mode would come back jittered because the pen was back on
             // cream by then. Same reason the points are stored rather than recomputed.
-            const stamp = { ...base, stampId: s.stampId, glbUrl: s.stampUrl, seed, regular: !!s.stampRegular };
+            const stamp = { ...base, stampId: s.stampId, glbUrl: s.stampUrl, seed, regular: !!s.stampRegular,
+                            rotation: s.stampRotation ?? null };
             if (isTap) onAddStroke?.({ kind: 'stamp', ...stamp, point: round(pts[0]), normal: nrm });
             else onAddStroke?.({ kind: 'stamprope', ...stamp, points: pts.map(round), normal: nrm || [0, 1, 0], spacing: s.spacing ?? 0.85 });
           } else if (isTap && nrm) {

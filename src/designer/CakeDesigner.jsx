@@ -4171,6 +4171,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // remembering where it came from there is no return: the zone tiles, the colour and the size
       // for the ring version are all behind a card the customer can no longer find.
       stampCardId: el.cardId,
+      // How the ring stands this piece up. Without it a shell authored lying on its side is piped
+      // lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
+      // The RIM (top) config, because drawing on the cake is the case that surface answers: feet on
+      // the surface, leaning along it. The board variant is the same piece rotated for a plate.
+      stampRotation: pipingPlacementFromConfig(el.placement_config, true).rotation ?? null,
       // ── Size it like PIPING, not like a rope ─────────────────────────────────────────────────
       // `thickness` on the pen is a rope DIAMETER, and the stamp scales to it: target = 2×thickness.
       // At the pen's own default that is 0.104 against a ring shell's 0.24 × 1.2 = 0.288, so the
@@ -4201,7 +4206,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // of cream would go on stamping shells with no way to say stop.
   function pipeWithCreamAgain() {
     setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
-                           stampName: null, stampCardId: null, thickness: PEN_DEFAULT_THICKNESS }));
+                           stampName: null, stampCardId: null, stampRotation: null,
+                           thickness: PEN_DEFAULT_THICKNESS }));
   }
 
   function addPenFromRow(el) {

@@ -80,6 +80,55 @@ describe('stampTransforms', () => {
     });
   });
 
+  // ── The element's own rotation ──────────────────────────────────────────────────────────────────
+  // Up-to-normal and forward-to-tangent says where a copy sits and which way it points. It says
+  // nothing about how the GLB was authored, so a shell modelled lying on its side is piped lying on
+  // its side — the same element ringed round a rim stood up, hand-piped it fell over. A ring reads
+  // placement_config.*_rotation and splits it: Y yaws about the normal, X and Z tilt upright.
+  describe('rotation — standing the piece up the way a ring does', () => {
+    // Which way the GLB's own +Y ends up pointing, in world space.
+    const localUp = t => new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(new THREE.Quaternion().fromArray(t.quat));
+
+    it('leaves the piece along the surface normal when there is no rotation', () => {
+      const [t] = stampTransforms(rope({ regular: true }), 1);
+      expect(localUp(t).y).toBeCloseTo(1, 6);
+    });
+
+    it('tilts about X by the configured degrees', () => {
+      const [t] = stampTransforms(rope({ regular: true, rotation: [90, 0, 0] }), 1);
+      expect(localUp(t).y).toBeCloseTo(0, 6);            // laid right over
+    });
+
+    it('tilts RELATIVE TO THE SURFACE, not to the world', () => {
+      // The reason the rotation is applied after the basis. On a wall the normal points sideways,
+      // and a piece leaning 30° must lean 30° off ITS OWN wall — composed the other way round,
+      // every copy round a curved tier would lean a different direction.
+      const wall = rope({ regular: true, normal: [1, 0, 0], points: [[0, 0, 0], [0, 0, 1]], rotation: [30, 0, 0] });
+      const [t] = stampTransforms(wall, 1);
+      const up = localUp(t);
+      const surfaceNormal = new THREE.Vector3(1, 0, 0);
+      expect(up.angleTo(surfaceNormal)).toBeCloseTo(30 * Math.PI / 180, 5);
+    });
+
+    it('yaws about the normal for the Y component, leaving it upright', () => {
+      const [t] = stampTransforms(rope({ regular: true, rotation: [0, 40, 0] }), 1);
+      expect(localUp(t).y).toBeCloseTo(1, 6);            // spun in place, still standing
+      const none = stampTransforms(rope({ regular: true }), 1)[0];
+      expect(t.quat).not.toEqual(none.quat);             // …but genuinely turned
+    });
+
+    it('treats an all-zero rotation as none, so config noise costs nothing', () => {
+      const zero = stampTransforms(rope({ regular: true, rotation: [0, 0, 0] }), 1);
+      expect(zero).toEqual(stampTransforms(rope({ regular: true }), 1));
+    });
+
+    it('applies the same rotation to every copy along the run', () => {
+      const got = stampTransforms(rope({ regular: true, rotation: [25, 10, 0] }), 1);
+      for (const t of got) expect(t.quat).toEqual(got[0].quat);
+    });
+  });
+
   it('places a single stamp for a tap without consulting the random spin', () => {
     // A lone regular stamp still has to face somewhere, and it must be the SAME somewhere every
     // render — `rand()` there would spin it on each redraw.

@@ -263,6 +263,26 @@ export function stampTransforms(stroke, footprint) {
   const rand = rng(((stroke.seed ?? 1) * 100003 + 7) | 0);
   const out = [];
 
+  // ── The element's own rotation, the way a RING applies it ────────────────────────────────────
+  // Aligning up to the surface normal and forward to the tangent says where a copy sits and which
+  // way it faces. It says nothing about how the GLB is authored — a shell modelled lying on its side
+  // stays lying on its side, which is why hand-piped shells came out fallen while the same element
+  // ringed round a rim stood up.
+  //
+  // A ring reads `placement_config.*_rotation` and splits it (CakeTier: `ryA`/`meshA`): Y yaws the
+  // piece about the surface normal, X and Z tilt it upright. Nested there as group(yaw) →
+  // mesh(tilt), so the same composition is qYaw · qTilt applied AFTER the basis. Degrees, because
+  // that is what an admin types and what the column stores.
+  const rot = stroke.rotation;
+  let extra = null;
+  if (rot && (rot[0] || rot[1] || rot[2])) {
+    const DEG = Math.PI / 180;
+    extra = new THREE.Quaternion()
+      .setFromEuler(new THREE.Euler(0, (rot[1] ?? 0) * DEG, 0))
+      .multiply(new THREE.Quaternion().setFromEuler(
+        new THREE.Euler((rot[0] ?? 0) * DEG, 0, (rot[2] ?? 0) * DEG)));
+  }
+
   const place = (seatedP, forward) => {
     const up = up0.clone();
     const surface = seatedP.clone().addScaledVector(up, -th);   // base on the surface
@@ -276,6 +296,11 @@ export function stampTransforms(stroke, footprint) {
     const x = new THREE.Vector3().crossVectors(up, z).normalize();
     const m = new THREE.Matrix4().makeBasis(x, up, z);
     const q = new THREE.Quaternion().setFromRotationMatrix(m);
+    // AFTER the basis, so the tilt is applied in the copy's own frame — the piece leans relative to
+    // the surface it sits on, which is what a ring does and what a hand does. Multiplied the other
+    // way round it would lean relative to the world and every copy on a curved wall would lean a
+    // different way.
+    if (extra) q.multiply(extra);
     out.push({ pos: surface.toArray(), quat: q.toArray(), scale: regular ? baseScale : baseScale * (1 + (rand() - 0.5) * 0.16) });
   };
 
