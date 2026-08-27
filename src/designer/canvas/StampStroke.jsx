@@ -16,19 +16,33 @@ export default function StampStroke({ stroke, url, color, softness }) {
 
   // Merge every mesh in the GLB into one geometry, centred on X/Z with its base at y=0, and
   // report the footprint (max x/z extent) so the placement math can scale it to the rope size.
-  const { geo, footprint } = useMemo(() => {
+  // footprint (widest horizontal extent) sizes a SCATTERED stamp; height sizes a PIPED one, the way
+  // a ring does. bbox lets the placement re-seat the piece after it has been turned — see
+  // stampTransforms.
+  const { geo, footprint, height, bbox } = useMemo(() => {
     const geos = [];
     scene.traverse(o => { if (o.isMesh && o.geometry) geos.push(o.geometry.clone()); });
-    if (!geos.length) return { geo: null, footprint: 1 };
+    if (!geos.length) return { geo: null, footprint: 1, height: 1, bbox: null };
     const merged = geos.length === 1 ? geos[0] : mergeGeos(geos);
     merged.computeBoundingBox();
     const b = merged.boundingBox, size = new THREE.Vector3(), c = new THREE.Vector3();
     b.getSize(size); b.getCenter(c);
     merged.translate(-c.x, -b.min.y, -c.z);
-    return { geo: merged, footprint: Math.max(size.x, size.z) };
+    // Re-measured AFTER the translate, so the box is in the frame the transform will rotate.
+    merged.computeBoundingBox();
+    const nb = merged.boundingBox;
+    return {
+      geo: merged,
+      footprint: Math.max(size.x, size.z),
+      height: size.y || 1,
+      bbox: { min: nb.min.toArray(), max: nb.max.toArray() },
+    };
   }, [scene]);
 
-  const transforms = useMemo(() => (geo ? stampTransforms(stroke, footprint) : []), [geo, footprint, stroke]);
+  const transforms = useMemo(
+    () => (geo ? stampTransforms(stroke, { footprint, height, bbox }) : []),
+    [geo, footprint, height, bbox, stroke],
+  );
   if (!geo) return null;
   const mat = creamMaterialProps(softness ?? stroke.softness, color ?? stroke.color);
 

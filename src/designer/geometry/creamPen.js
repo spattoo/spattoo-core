@@ -252,14 +252,26 @@ function rng(seed) {
 //
 // A flag rather than a second function: the walk, the seating and the orientation are identical, and
 // the one thing that differs is whether the hand wobbles.
-export function stampTransforms(stroke, footprint) {
+export function stampTransforms(stroke, metrics) {
   const up0 = new THREE.Vector3().fromArray(stroke.normal || [0, 1, 0]);
   if (up0.lengthSq() < 1e-9) up0.set(0, 1, 0);
   up0.normalize();
   const th = stroke.thickness ?? 0.03;
   const target = 2 * th;                         // stamp footprint ≈ rope diameter
-  const baseScale = target / Math.max(footprint, 1e-4);
   const regular = !!stroke.regular;
+  // ── Sized by HEIGHT for piping, by footprint for scattering ──────────────────────────────────
+  // A ring sizes a shell by how TALL it stands: `sc = radius × SHELL_HEIGHT_FRAC / size.y`. The
+  // stamp sized by widest horizontal extent, which for a shell authored lying down is its LENGTH —
+  // so one slider produced two different sizes depending on how the model happened to be exported,
+  // and neither matched the ring.
+  //
+  // `metrics` is the bare footprint number for every caller that predates this, or
+  // {footprint, height}. Scattering keeps the footprint it was built on, so nothing already stamped
+  // on a cake changes size.
+  const mm = (typeof metrics === 'number') ? { footprint: metrics, height: metrics } : (metrics ?? {});
+  const footprint = mm.footprint ?? 1;
+  const height = mm.height ?? footprint;
+  const baseScale = target / Math.max(regular ? height : footprint, 1e-4);
   const rand = rng(((stroke.seed ?? 1) * 100003 + 7) | 0);
   const out = [];
 
@@ -273,19 +285,62 @@ export function stampTransforms(stroke, footprint) {
   // piece about the surface normal, X and Z tilt it upright. Nested there as group(yaw) →
   // mesh(tilt), so the same composition is qYaw · qTilt applied AFTER the basis. Degrees, because
   // that is what an admin types and what the column stores.
+  // ── Which part of the calibration to keep ────────────────────────────────────────────────────
+  // A calibrated ring rotation is not a small adjustment. The shipped Classic Shell Border is
+  // [-68, -1, 175]: a 175° ROLL that fixes how the GLB was authored, and a -68° TILT that leans the
+  // piece out over the rim's edge.
+  //
+  // In the ring's own frame those axes have meanings. Local X runs TANGENTIALLY, along the border,
+  // so a rotation about X tips the piece forward or back — that IS the outward lean. Z is the radial
+  // axis (CakeTier: "local z = the radial axis the renderer places along"), so a rotation about it
+  // rolls the piece upright. Y spins it in place.
+  //
+  // Reproduced verbatim on a flat cake top, the -68° pivots the shell about its base and lays it
+  // down — which is exactly what it should do on a rim edge and exactly wrong in the middle. So the
+  // roll and the spin are kept (they fix the model), and the lean is dropped: a hand-piped shell
+  // stands on whatever surface it is drawn on.
+  //
+  // `lean` puts it back by degrees, because this decomposition is READ off the renderer rather than
+  // proven, and a number the customer can turn beats another round of me guessing at it.
   const rot = stroke.rotation;
+  const lean = stroke.lean ?? 0;
   let extra = null;
-  if (rot && (rot[0] || rot[1] || rot[2])) {
+  if (rot || lean) {
     const DEG = Math.PI / 180;
-    extra = new THREE.Quaternion()
-      .setFromEuler(new THREE.Euler(0, (rot[1] ?? 0) * DEG, 0))
-      .multiply(new THREE.Quaternion().setFromEuler(
-        new THREE.Euler((rot[0] ?? 0) * DEG, 0, (rot[2] ?? 0) * DEG)));
+    const rx = regular ? lean : (rot?.[0] ?? 0);   // scattering keeps the whole rotation verbatim
+    const ry = rot?.[1] ?? 0;
+    const rz = rot?.[2] ?? 0;
+    if (rx || ry || rz) {
+      extra = new THREE.Quaternion()
+        .setFromEuler(new THREE.Euler(0, ry * DEG, 0))
+        .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rx * DEG, 0, rz * DEG)));
+    }
+  }
+
+  // ── Sitting ON the surface after the piece has been turned ───────────────────────────────────
+  // StampStroke translates the merged geometry so its base is at y=0 IN THE AUTHORED FRAME. That
+  // only seats the piece if it is authored standing. Roll it 175° to stand it up and the old base is
+  // now its top, so it hangs under the cake — and any lean pivots it about a point that is no longer
+  // its lowest.
+  //
+  // So: rotate the bounding box the same way the piece is rotated, and read how far its lowest
+  // corner has ended up below the origin. That drop is added back along the surface normal. Needs
+  // the box, so it only applies where StampStroke supplies one — without it this is a no-op and the
+  // behaviour is exactly what it was.
+  let seatDrop = 0;
+  if (mm.bbox && extra) {
+    const b = new THREE.Box3(
+      new THREE.Vector3().fromArray(mm.bbox.min),
+      new THREE.Vector3().fromArray(mm.bbox.max),
+    ).applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(extra));
+    seatDrop = -b.min.y * baseScale;         // >0 when the turn pushed the piece below its origin
   }
 
   const place = (seatedP, forward) => {
     const up = up0.clone();
-    const surface = seatedP.clone().addScaledVector(up, -th);   // base on the surface
+    // -th puts the base back on the surface (the stored centerline is lifted one radius); +seatDrop
+    // lifts it by however far the rotation dropped its lowest point.
+    const surface = seatedP.clone().addScaledVector(up, -th + seatDrop);
     const fwd = forward ? forward.clone() : new THREE.Vector3(1, 0, 0);
     // A lone regular stamp still has to face somewhere, and `rand()` would be a different somewhere
     // every render. Zero keeps it put.

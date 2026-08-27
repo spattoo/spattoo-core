@@ -4206,7 +4206,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // of cream would go on stamping shells with no way to say stop.
   function pipeWithCreamAgain() {
     setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
-                           stampName: null, stampCardId: null, stampRotation: null,
+                           stampName: null, stampCardId: null, stampRotation: null, stampLean: 0,
                            thickness: PEN_DEFAULT_THICKNESS }));
   }
 
@@ -7169,10 +7169,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Spacing replaces it, and it is the control piping actually turns on: how tightly the
             repeats sit. 0.55 is shells crowding each other, 1.4 is a dotted run. It has lived in
             penStyle since the pen was built with nothing to set it. */}
-        {penStyle.stampUrl ? (
+        {penStyle.stampUrl ? (<>
           <PenSlider label="Spacing" value={penStyle.spacing ?? 0.85} min={0.5} max={1.6} step={0.05}
             onChange={v => setPenStyle(ps => ({ ...ps, spacing: v }))} fmt={v => v.toFixed(2)} />
-        ) : (
+          {/* ── Lean ──────────────────────────────────────────────────────────────────────────────
+              A calibrated ring rotation carries a big outward TILT — the shipped shell border is
+              -68° — because a rim shell hangs over the cake's edge. Reproduced in the middle of a
+              flat top it simply lays the piece down, so hand-piping stands the piece up and starts
+              this at zero.
+              It is a control rather than a constant because the decomposition behind it is read off
+              the renderer, not proven: local X is tangential so a rotation about it is the lean, and
+              if a particular model wants some of that back, this is how it gets it. */}
+          <PenSlider label="Lean" value={penStyle.stampLean ?? 0} min={-80} max={80} step={2}
+            onChange={v => setPenStyle(ps => ({ ...ps, stampLean: v }))} fmt={v => `${v}°`} />
+        </>) : (
           <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
         )}
 

@@ -120,16 +120,51 @@ describe('stampTransforms', () => {
       expect(localUp(t).y).toBeCloseTo(1, 6);
     });
 
-    it('tilts about X by the configured degrees', () => {
-      const [t] = stampTransforms(rope({ regular: true, rotation: [90, 0, 0] }), 1);
-      expect(localUp(t).y).toBeCloseTo(0, 6);            // laid right over
+    // The value shipped on "Classic Shell Border", copied from its bundle rather than invented:
+    // a 175° roll that fixes how the GLB was authored, and a -68° tilt that hangs the piece out over
+    // a rim's edge.
+    const SHIPPED = [-68, -1, 175];
+
+    it('drops the LEAN when piping, so a shell stands on a flat top', () => {
+      // Reproduced verbatim the -68° pivots the piece about its base and lays it down — right on a
+      // rim edge, wrong in the middle of a cake. Local X is tangential in the ring's frame, so that
+      // component IS the lean and it is the one part not carried over.
+      const [t] = stampTransforms(rope({ regular: true, rotation: SHIPPED }), 1);
+      const verbatim = stampTransforms(rope({ regular: false, rotation: SHIPPED, seed: 1 }), 1)[0];
+      expect(t.quat).not.toEqual(verbatim.quat);
+      // The roll and spin survive: this is not "ignore the calibration".
+      const none = stampTransforms(rope({ regular: true }), 1)[0];
+      expect(t.quat).not.toEqual(none.quat);
+    });
+
+    it('puts the lean back, by degrees, when asked', () => {
+      const flat = stampTransforms(rope({ regular: true, rotation: SHIPPED }), 1)[0];
+      const leaned = stampTransforms(rope({ regular: true, rotation: SHIPPED, lean: -68 }), 1)[0];
+      expect(leaned.quat).not.toEqual(flat.quat);
+      // lean 0 is the same as no lean at all — the slider's rest position changes nothing.
+      expect(stampTransforms(rope({ regular: true, rotation: SHIPPED, lean: 0 }), 1)[0].quat)
+        .toEqual(flat.quat);
+    });
+
+    it('leaves SCATTERING taking the whole rotation verbatim', () => {
+      // Only piping decomposes it. A cream-pen stamp keeps every degree it was placed with.
+      const a = stampTransforms(rope({ regular: false, rotation: SHIPPED, seed: 5 }), 1);
+      const b = stampTransforms(rope({ regular: false, rotation: [0, -1, 175], seed: 5 }), 1);
+      expect(a[0].quat).not.toEqual(b[0].quat);          // the -68 still counts there
+    });
+
+    it('tilts about X by the configured degrees when scattering', () => {
+      const [t] = stampTransforms(rope({ regular: false, rotation: [90, 0, 0], seed: 1 }), 1);
+      expect(Math.abs(localUp(t).y)).toBeLessThan(0.2);  // laid right over
     });
 
     it('tilts RELATIVE TO THE SURFACE, not to the world', () => {
       // The reason the rotation is applied after the basis. On a wall the normal points sideways,
       // and a piece leaning 30° must lean 30° off ITS OWN wall — composed the other way round,
       // every copy round a curved tier would lean a different direction.
-      const wall = rope({ regular: true, normal: [1, 0, 0], points: [[0, 0, 0], [0, 0, 1]], rotation: [30, 0, 0] });
+      // Expressed as `lean`, which is the X tilt in piping mode — the configured rotation's own X is
+      // the rim's outward hang and is dropped here (see "drops the LEAN when piping").
+      const wall = rope({ regular: true, normal: [1, 0, 0], points: [[0, 0, 0], [0, 0, 1]], lean: 30 });
       const [t] = stampTransforms(wall, 1);
       const up = localUp(t);
       const surfaceNormal = new THREE.Vector3(1, 0, 0);
