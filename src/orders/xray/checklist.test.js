@@ -169,3 +169,46 @@ describe('checklist numbering', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+// ── Hand-piped runs ──────────────────────────────────────────────────────────────────────────────
+// A run drawn by hand is many strokes and ONE job. Keyed by the stroke's own id it became one
+// checklist line per drag — a real order came back with twenty-eight identical "Freehand piping"
+// items and a headline count of 29, which tells a baker nothing about how much work there is.
+describe('hand-piped strokes in the checklist', () => {
+  const stroke = (over = {}) => ({
+    id: `s${Math.random()}`, tierIndex: 0, color: '#ffffff', nozzle: 'star5',
+    points: [[0, 1, 0], [0.2, 1, 0]], ...over,
+  });
+  const withPiping = (piping) => ({ tiers: [{ topPipings: [], bottomPipings: [] }], piping });
+
+  it('collapses many strokes of one decoration into a single line with a count', () => {
+    const piping = Array.from({ length: 28 }, () =>
+      stroke({ stampId: 'el-1', stampName: 'Ruffled Swirl' }));
+    const items = harvestPlaceables(withPiping(piping)).flatMap(g => g.items);
+    const mine = items.filter(i => i.what.includes('Ruffled Swirl'));
+    expect(mine).toHaveLength(1);
+    expect(mine[0].count).toBe(28);
+    expect(mine[0].what).toBe('Ruffled Swirl — piped by hand');
+  });
+
+  it('keeps genuinely different jobs apart', () => {
+    // Different colour, different decoration, different tier — each is a moment the baker stops and
+    // changes something, so each is its own line.
+    const items = harvestPlaceables(withPiping([
+      stroke({ stampId: 'el-1', stampName: 'Swirl', color: '#ffffff' }),
+      stroke({ stampId: 'el-1', stampName: 'Swirl', color: '#ff0000' }),
+      stroke({ stampId: 'el-2', stampName: 'Rosette', color: '#ffffff' }),
+      stroke({ stampId: 'el-1', stampName: 'Swirl', color: '#ffffff', tierIndex: 1 }),
+    ])).flatMap(g => g.items).filter(i => i.what.includes('piped by hand'));
+    expect(items).toHaveLength(4);
+    for (const i of items) expect(i.count).toBe(1);
+  });
+
+  it('still groups plain cream-pen strokes by nozzle and colour', () => {
+    const items = harvestPlaceables(withPiping([
+      stroke({ nozzle: 'star5' }), stroke({ nozzle: 'star5' }), stroke({ nozzle: 'round' }),
+    ])).flatMap(g => g.items).filter(i => i.what === 'Freehand piping');
+    expect(items).toHaveLength(2);
+    expect(items.find(i => i.count === 2)).toBeTruthy();
+  });
+});

@@ -86,7 +86,10 @@ export function buildXrayReport({ design, weightKg, guides, flavours, specialIns
   const unique = [];
   const seen = new Map();
   for (const el of piping.elements) {
-    const k = `${el.elementId}|${el.tier}|${el.zone}`;
+    // zoneLabel, not zone: a hand-piped run anchors at 'Rim' so its leader line points somewhere
+    // sensible, and it is NOT the same job as an actual rim ring of the same element. Keyed on
+    // `zone` alone the two would merge into one line and the sheet would lose a whole task.
+    const k = `${el.elementId}|${el.tier}|${el.zoneLabel ?? el.zone}`;
     if (seen.has(k)) { seen.get(k).count++; continue; }
     const item = { ...el, count: 1 };
     seen.set(k, item);

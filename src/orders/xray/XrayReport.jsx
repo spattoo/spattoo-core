@@ -509,7 +509,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
                   <div style={s.swatch(el.color)} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={s.tag}>{el.tier} · {el.zone}{el.count > 1 ? ` · ×${el.count}` : ''}</span>
+                      {/* zoneLabel when there is one — "Hand-piped" rather than "Rim", which would
+                          send a baker to pipe a border that is not there. */}
+                      <span style={s.tag}>{el.tier} · {el.zoneLabel ?? el.zone}{el.count > 1 ? ` · ×${el.count}` : ''}</span>
                     </div>
                     {el.primary.length > 0 ? (
                       <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
