@@ -290,8 +290,32 @@ export function stampTransforms(stroke, footprint) {
     // A lone regular stamp still has to face somewhere, and `rand()` would be a different somewhere
     // every render. Zero keeps it put.
     if (!regular) fwd.applyAxisAngle(up, forward ? (rand() - 0.5) * 0.5 : rand() * Math.PI * 2);
-    let z = fwd.sub(up.clone().multiplyScalar(fwd.dot(up)));     // forward ⟂ up
-    if (z.lengthSq() < 1e-8) z = new THREE.Vector3(0, 0, 1).sub(up.clone().multiplyScalar(up.z));
+    // ── Which way the piece FACES: along the run, or across it ──────────────────────────────────
+    // Scattering faces along the drag — a row of blossoms follows the hand, and that is what this
+    // was built for.
+    //
+    // A ring does the opposite, and working it out from the renderer is the only way to see it.
+    // Shell nests group(yaw = -rotY + π/2 + ry) → mesh(tilt), with an identity outer quaternion on a
+    // plain ring. At shell angle `a` that yaw is (π/2 − a), which sends the GLB's +Z to
+    // (cos a, 0, sin a) — the OUTWARD RADIAL. A piped shell points away from the cake, square across
+    // the border's direction of travel, not along it.
+    //
+    // Piped by hand with +Z along the tangent, every shell was turned a quarter turn, and the X-tilt
+    // that should lean it forward leaned it SIDEWAYS instead. That is what "it's falling" was — not
+    // a missing rotation (the previous fix, which was real but not this) but a rotation applied to a
+    // frame that was already ninety degrees out.
+    //
+    // Tied to `regular` because that flag already means "behave like a ring". Scattering keeps the
+    // convention it was written with, so no cream-pen stroke anybody has already drawn moves.
+    let z;
+    if (regular) {
+      z = new THREE.Vector3().crossVectors(fwd, up);              // across the run
+      if (z.lengthSq() < 1e-8) z = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 0, 1), up);
+      if (z.lengthSq() < 1e-8) z = new THREE.Vector3().crossVectors(new THREE.Vector3(1, 0, 0), up);
+    } else {
+      z = fwd.sub(up.clone().multiplyScalar(fwd.dot(up)));        // along the run
+      if (z.lengthSq() < 1e-8) z = new THREE.Vector3(0, 0, 1).sub(up.clone().multiplyScalar(up.z));
+    }
     z.normalize();
     const x = new THREE.Vector3().crossVectors(up, z).normalize();
     const m = new THREE.Matrix4().makeBasis(x, up, z);

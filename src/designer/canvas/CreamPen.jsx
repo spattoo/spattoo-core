@@ -133,24 +133,6 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
       });
     };
 
-    // ── The pointer has to SAY you can draw ──────────────────────────────────────────────────────
-    // Draw mode changed nothing about the canvas: same arrow, same cake, and the only clue was a
-    // line of text in a panel on the other side of the screen. A customer who has just chosen "I'll
-    // pipe it myself" is looking AT THE CAKE, and an arrow there means "drag me to rotate" — which
-    // is what the cake does every other second of the session.
-    //
-    // A nozzle, drawn inline, with its TIP as the hotspot (the last two numbers) so the cream comes
-    // out where the point is rather than where the corner of a 24px box is. `crosshair` is the
-    // fallback for anything that will not take an SVG cursor; both beat the default arrow, which is
-    // actively misleading here.
-    const nozzle = encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">'
-      + '<path d="M6 3.2 L15.4 3.2 L11.6 13.4 L9.8 13.4 Z" fill="#ffffff" stroke="#2b2b2b" stroke-width="1.5" stroke-linejoin="round"/>'
-      + '<circle cx="10.7" cy="16.4" r="2.1" fill="#ffffff" stroke="#2b2b2b" stroke-width="1.4"/>'
-      + '</svg>');
-    const prevCursor = el.style.cursor;
-    el.style.cursor = `url("data:image/svg+xml,${nozzle}") 10 18, crosshair`;
-
     el.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
@@ -158,12 +140,41 @@ export default function CreamPen({ piping = [], drawMode = false, penStyle, tier
       // Put it back rather than clearing it — the canvas sets its own cursor for dragging and
       // rotating, and blanking it here would leave the cake with a default arrow after every visit
       // to the pen.
-      el.style.cursor = prevCursor;
       el.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
   }, [drawMode, gl, camera, scene, onAddStroke]);
+
+  // ── The pointer has to SAY you can draw ────────────────────────────────────────────────────────
+  // Draw mode changed nothing about the canvas: same arrow, same cake, and the only clue was a line
+  // of text in a panel on the other side of the screen. Somebody who has just chosen "I'll pipe it
+  // myself" is looking AT THE CAKE, where an arrow means "drag me to rotate" — which is what the
+  // cake does every other second of the session.
+  //
+  // ITS OWN EFFECT, and that is the point. It lived in the capture effect above, which depends on
+  // `onAddStroke` — a fresh function on every render of the designer. So committing a stroke
+  // re-rendered the parent, tore this down and rebuilt it, and the cursor blinked out on release:
+  // exactly "once I stop holding, the piping cursor is gone". Nothing here depends on anything that
+  // changes while drawing, so it is set once when draw mode opens and restored when it closes.
+  //
+  // A nozzle, drawn inline, with its TIP as the hotspot (the last two numbers) so the cream comes
+  // out where the point is rather than at the corner of a 26px box. `crosshair` is the fallback for
+  // anything that will not take an SVG cursor; both beat the arrow, which is actively misleading.
+  useEffect(() => {
+    if (!drawMode) return;
+    const el = gl.domElement;
+    const nozzle = encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">'
+      + '<path d="M6 3.2 L15.4 3.2 L11.6 13.4 L9.8 13.4 Z" fill="#ffffff" stroke="#2b2b2b" stroke-width="1.5" stroke-linejoin="round"/>'
+      + '<circle cx="10.7" cy="16.4" r="2.1" fill="#ffffff" stroke="#2b2b2b" stroke-width="1.4"/>'
+      + '</svg>');
+    const prev = el.style.cursor;
+    el.style.cursor = `url("data:image/svg+xml,${nozzle}") 10 18, crosshair`;
+    // Put it BACK rather than clearing it — the canvas sets its own cursor for dragging and
+    // rotating, and blanking it here would leave the cake with a default arrow after every visit.
+    return () => { el.style.cursor = prev; };
+  }, [drawMode, gl]);
 
   // Leaving draw mode mid-stroke drops the in-progress stroke.
   useEffect(() => { if (!drawMode) { activeRef.current = null; setLive([]); } }, [drawMode]);

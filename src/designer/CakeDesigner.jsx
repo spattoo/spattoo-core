@@ -7179,6 +7179,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
           {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
         </div>
+
+        {/* ── Done ────────────────────────────────────────────────────────────────────────────────
+            Piping is not one stroke. A baker pipes a border, then a line down the side, then a few
+            flourishes on top — and until now the only way to stop was to go and click something
+            else, which meant every exit was an accident. Draw mode stays on across as many strokes
+            as you like and ends when you SAY it ends.
+
+            It doubles as the answer to "how do I get out of this": with a nozzle for a cursor and
+            drags landing cream instead of rotating the cake, a visible way out is not a nicety. */}
+        <button onClick={() => selectExclusive(null)}
+          style={{ width: '100%', marginTop: 8, padding: '9px 0', borderRadius: 8, border: 'none',
+                   background: '#2C4433', color: '#fff', fontWeight: 800, fontSize: 12,
+                   cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>
+          Done piping
+        </button>
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
           <button onClick={removeStroke} disabled={!design.piping.length}
             style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,

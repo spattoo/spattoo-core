@@ -56,6 +56,31 @@ describe('stampTransforms', () => {
       for (const v of q) expect(v).toEqual(q[0]);
     });
 
+    it('faces ACROSS the run, the way a ring points a shell outward', () => {
+      // Worked out from the renderer, not assumed. Shell nests group(yaw = -rotY + π/2 + ry) →
+      // mesh(tilt) with an identity outer quaternion on a plain ring; at shell angle `a` that yaw
+      // sends the GLB's +Z to (cos a, 0, sin a) — the outward radial. A piped shell points AWAY
+      // from the cake, square across the border, not along it.
+      //
+      // Piped along the tangent instead, the configured X-tilt leans the piece sideways rather than
+      // forward, which is what "it's falling" was.
+      const [t] = stampTransforms(rope({ regular: true }), 1);   // path runs along +x, up is +y
+      const facing = new THREE.Vector3(0, 0, 1)
+        .applyQuaternion(new THREE.Quaternion().fromArray(t.quat));
+      expect(Math.abs(facing.x)).toBeLessThan(1e-6);             // NOT along the run
+      expect(Math.abs(facing.z)).toBeCloseTo(1, 6);              // across it
+    });
+
+    it('leaves SCATTERING facing along the run, so drawn strokes do not move', () => {
+      // The convention only changes for piping. Every cream-pen stamp already on a cake was placed
+      // facing along the drag, and a stored stroke has to redraw as it was drawn.
+      const loose = stampTransforms(rope({ regular: false, seed: 11 }), 1);
+      const facings = loose.map(t => new THREE.Vector3(0, 0, 1)
+        .applyQuaternion(new THREE.Quaternion().fromArray(t.quat)));
+      // Jittered ±0.25 rad about the tangent, so each still points broadly along +x.
+      for (const f of facings) expect(Math.abs(f.x)).toBeGreaterThan(0.9);
+    });
+
     it('still TURNS with the path — it follows the line, it is not frozen', () => {
       // An L: along +x, then along +z. A shell has to face the way the hand was moving, or the
       // corner of a border shows every copy pointing the wrong way.
