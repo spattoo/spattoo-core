@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Outlines } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import FondantBuild from './FondantBuild.jsx';
 import { SHAPES, expandParts } from '../geometry/fondantParts.js';
@@ -131,30 +131,67 @@ const formProgress = (shape, k) =>
  *
  * Posed per shape from the shared rhythm above, so hand and piece move as one gesture.
  */
-function Palm({ position, rotation, scale }) {
-  return (
-    <mesh position={position} rotation={rotation} scale={scale}>
-      {/* A flattened ellipsoid: the shape of a palm laid on a board, which is all that is needed
-          once it is outlined. A modelled hand would be read as a claim about technique detail we
-          have not got. */}
-      <sphereGeometry args={[1, 20, 14]} />
-      {/* Pale and see-through, but NOT invisible. The first pass sat at 0.22 opacity in a warm
-          off-white on a warm off-white background and simply could not be seen — a hand that has to
-          be hunted for is the same as no hand. The outline does the work; the fill only stops the
-          piece showing through as if the palm were a wireframe cage. */}
-      {/* ⚠️ A SILHOUETTE OUTLINE, NOT EDGES. `Edges` draws every triangle boundary, and a smooth
-          ellipsoid has thousands — the palms came out as wireframe cages sitting over the fondant,
-          which is worse than not showing them. `Outlines` draws the shape's own contour, which is
-          what "outlined hands" means and what a diagram uses.
+const ICON_INK = '#2E3338';
 
-          Cool-toned rather than cream: it has to read as NOT-FONDANT at a glance, and a warm white
-          beside warm brown just reads as more fondant. */}
-      <meshStandardMaterial color="#EDF2F6" transparent opacity={0.34} roughness={0.85} depthWrite={false} />
-      {/* World units, and SMALL. `thickness={2.5} screenspace` swallowed the whole bench in one
-          grey slab — screenspace thickness is measured in pixels-ish and 2.5 is enormous at this
-          scale. */}
-      <Outlines thickness={0.006} color="#5A6570" />
-    </mesh>
+/* ── The hand, as an ICON ────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A SOLID SIDE-ON SILHOUETTE — an open palm, fingers reaching left, thumb raised. Four attempts
+ * to get here, and each failure taught the same lesson from a different angle:
+ *
+ *   1. A flattened ellipsoid per palm. Read as a DISC. A viewer who must be TOLD what a shape is
+ *      has not been shown anything.
+ *   2. Ellipsoid + fingers + thumb, modelled in 3D. From a camera above and in front the fingers
+ *      pointed away and foreshortened into stubs; the pair read as two small crabs. Enlarging them
+ *      only made the crabs bigger.
+ *   3. Flat, but built from rounded RECTANGLES and seen palm-on. Legible, and still wrong: it read
+ *      as a mitten or a comb, because a front-on hand is mostly a blob and the thing that makes a
+ *      hand instantly recognisable is its PROFILE.
+ *   4. This. Drawn side-on in curves, filled solid, billboarded to the camera. It survives any
+ *      orbit and any size, because a silhouette is what an icon is.
+ *
+ * Solid rather than hollow: an outline needs a light interior, and a light interior over pale
+ * fondant on a pale bench is three near-whites stacked. Dark ink separates cleanly from both, and
+ * the slight transparency keeps the work readable underneath.
+ *
+ * Drawn here rather than loaded as an SVG — that would be an asset to ship and version, for one
+ * closed path.
+ */
+function handShape() {
+  const h = new THREE.Shape();
+  /* ⚠️ THE PALM CARRIES THE MASS. The first cut of this path was drawn at roughly 4:1 and rendered
+   * as two dark SLIVERS — a hand read from the side is not a thin blade, it is a broad wedge with
+   * the fingers tapering off it. The heel is now nearly half as deep as the hand is long. */
+  h.moveTo(-0.52, 0.020);
+  // Along the top of the fingers, scalloped just enough to count them. A smooth edge is a flipper.
+  h.quadraticCurveTo(-0.42, 0.085, -0.35, 0.055);
+  h.quadraticCurveTo(-0.30, 0.105, -0.23, 0.070);
+  h.quadraticCurveTo(-0.18, 0.115, -0.11, 0.080);
+  h.quadraticCurveTo(-0.06, 0.120, -0.01, 0.090);
+  // The thumb: up, over, and back down into the web. Without it this is a paddle.
+  h.bezierCurveTo(0.020, 0.190, 0.060, 0.310, 0.130, 0.295);
+  h.bezierCurveTo(0.190, 0.280, 0.165, 0.190, 0.145, 0.135);
+  // Across the back of the hand and round the wrist.
+  h.quadraticCurveTo(0.260, 0.130, 0.360, 0.125);
+  h.bezierCurveTo(0.470, 0.118, 0.545, 0.060, 0.545, -0.020);
+  // The heel — the deep part — and the underside sweeping back out to the fingertips.
+  h.bezierCurveTo(0.545, -0.150, 0.430, -0.265, 0.230, -0.280);
+  h.bezierCurveTo(0.060, -0.292, -0.130, -0.190, -0.300, -0.090);
+  h.quadraticCurveTo(-0.430, -0.030, -0.520, 0.020);
+  return h;
+}
+
+const HAND_GEOM = new THREE.ShapeGeometry(handShape(), 14);
+
+function Hand({ position, rotation = 0, scale = 1, flip = false }) {
+  return (
+    // Billboarded: the icon turns to face the camera however the scene is orbited, which is the
+    // whole reason it survives where the modelled hand did not.
+    <Billboard position={position}>
+      <mesh geometry={HAND_GEOM} rotation={[0, 0, rotation]}
+            scale={[flip ? -scale : scale, scale, scale]}>
+        <meshBasicMaterial color={ICON_INK} transparent opacity={0.86} depthWrite={false} />
+      </mesh>
+    </Billboard>
   );
 }
 
@@ -167,8 +204,17 @@ function Hands({ shape, k, r, size }) {
    * the piece completely and the guide would show two hands and no fondant. So a palm is sized to
    * the WORK, at roughly twice the piece across. Nobody reads it as a measurement; they read it as
    * "this is where your hands go". */
-  const palm = [p * 1.7, p * 0.45, p * 2.3];
-  const thick = palm[1];
+  /* One number: a hand keeps its proportions, where an ellipsoid was stretched per axis.
+   *
+   * ⚠️ CLAMPED, because A HAND IS A FIXED SIZE and the piece is not. Scaling it off the working
+   * ball alone was fine for an arm and grotesque for the head — at 5× a 0.37 ball the pair filled
+   * the bench and swallowed the very thing they were rounding. It still tracks the piece a little,
+   * so a pea-sized eye does not get bench-sized hands, but it cannot run away.
+   *
+   * The lower bound matters as much: below ~0.5 the fingers were a few pixels each and the pair
+   * read as two small crabs. Legibility, not realism, sets both ends. */
+  const hs    = THREE.MathUtils.clamp(p * 4.0, 0.62, 1.0);
+  const thick = hs * 0.10;
 
   if (shape === 'rope') {
     // Two flat palms ABOVE the rope, shuttling along it — the same `rollPasses` the rope uses.
@@ -179,11 +225,16 @@ function Hands({ shape, k, r, size }) {
     /* ⚠️ Spread by at least a palm's own WIDTH. Placing them at ±len/2 put both hands on top of
        each other on a short rope — two palms occupying one space reads as a single blob, and the
        whole point is that a rope is rolled with two hands apart. */
-    const sep = Math.max(len * 0.55, palm[0] * 1.15);
+    /* ⚠️ Two separations at once, and both were wrong first time. They must clear EACH OTHER
+       (a hand's own width) or the pair merges into one grey mass — and they must be turned off
+       square, because fingers pointing straight away from the camera foreshorten into stubs and
+       the fan that makes a hand legible disappears. A three-quarter yaw shows the fingers. */
+    const sep = Math.max(len * 0.55, hs * 0.62);
     return (
       <group>
-        <Palm position={[x - sep, top + thick, 0]} rotation={[0, 0, 0]} scale={palm} />
-        <Palm position={[x + sep, top + thick, 0]} rotation={[0, 0, 0]} scale={palm} />
+        {/* Coming in from either side onto the rope, fingers reaching toward it. */}
+        <Hand position={[x - sep, top + thick * 1.6, 0]} rotation={-0.35} scale={hs} flip />
+        <Hand position={[x + sep, top + thick * 1.6, 0]} rotation={ 0.35} scale={hs} />
       </group>
     );
   }
@@ -192,16 +243,22 @@ function Hands({ shape, k, r, size }) {
     // other side, so a second palm underneath would be a lie.
     const press = Math.abs(pressPulse(k));
     const top   = THREE.MathUtils.lerp(p, size[1], k) * 2;
-    return <Palm position={[0, top + thick * (1.8 - press), 0]} rotation={[0, 0, 0]} scale={palm} />;
+    // Pressing down from above: turned so the palm faces the work.
+    return <Hand position={[hs * 0.1, top + thick * (3.4 - press * 2), 0]} rotation={-0.5} scale={hs} />;
   }
   // Rounding and tapering: cupped either side, turning with the piece.
-  const a   = k * Math.PI * 1.6;
   const wid = THREE.MathUtils.lerp(p, size[0], k);
   const mid = THREE.MathUtils.lerp(p, size[1], k);
+  /* ⚠️ NO YAW ON THE PAIR. Turning the group about Y was right for modelled palms following the
+     piece round; for BILLBOARDED icons it only walks them in a circle, and half a turn in they
+     were both stacked on the same side of the ball with the work hidden behind them. The piece
+     itself already turns — the hands only need to stay either side of it. */
   return (
-    <group rotation={[0, a, 0]} position={[0, mid, 0]}>
-      <Palm position={[-(wid + thick * 1.6), 0, 0]} rotation={[0, 0, 1.35]} scale={palm} />
-      <Palm position={[  wid + thick * 1.6,  0, 0]} rotation={[0, 0, -1.35]} scale={palm} />
+    <group position={[0, mid, 0]}>
+      {/* Cupped: palms turned to FACE each other, which is how a ball is rounded. */}
+      {/* Clear of the piece by half a hand, or they cup thin air over the top of it. */}
+      <Hand position={[-(wid + hs * 0.42), 0, 0]} rotation={-0.25} scale={hs} flip />
+      <Hand position={[  wid + hs * 0.42,  0, 0]} rotation={ 0.25} scale={hs} />
     </group>
   );
 }
