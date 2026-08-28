@@ -133,65 +133,72 @@ const formProgress = (shape, k) =>
  */
 const ICON_INK = '#2E3338';
 
-/* ── The hand, as an ICON ────────────────────────────────────────────────────────────────────────
+/* ── The hand, as an outlined icon ───────────────────────────────────────────────────────────────
  *
- * ⚠️ A SOLID SIDE-ON SILHOUETTE — an open palm, fingers reaching left, thumb raised. Four attempts
- * to get here, and each failure taught the same lesson from a different angle:
+ * The open-palm glyph everyone already knows: four fingers up, thumb to the side, drawn as a
+ * STROKE. Five attempts to arrive here, and the shortest way to say what each taught:
  *
- *   1. A flattened ellipsoid per palm. Read as a DISC. A viewer who must be TOLD what a shape is
- *      has not been shown anything.
- *   2. Ellipsoid + fingers + thumb, modelled in 3D. From a camera above and in front the fingers
- *      pointed away and foreshortened into stubs; the pair read as two small crabs. Enlarging them
- *      only made the crabs bigger.
- *   3. Flat, but built from rounded RECTANGLES and seen palm-on. Legible, and still wrong: it read
- *      as a mitten or a comb, because a front-on hand is mostly a blob and the thing that makes a
- *      hand instantly recognisable is its PROFILE.
- *   4. This. Drawn side-on in curves, filled solid, billboarded to the camera. It survives any
- *      orbit and any size, because a silhouette is what an icon is.
+ *   1. A flattened ellipsoid per palm — read as a DISC.
+ *   2. Ellipsoid + fingers + thumb, modelled in 3D — the fingers foreshortened into stubs from the
+ *      guide's own camera; the pair read as small CRABS, and enlarging them only enlarged that.
+ *   3. Flat rounded rectangles, palm-on, SOLID — the right construction, the wrong rendering.
+ *   4. A solid side-on silhouette — it flattened at working size into a dark WEDGE, and sizing it
+ *      became a straight trade between "bat wings" and "eyebrows".
+ *   5. This: attempt 3's construction, drawn as an OUTLINE.
  *
- * Solid rather than hollow: an outline needs a light interior, and a light interior over pale
- * fondant on a pale bench is three near-whites stacked. Dark ink separates cleanly from both, and
- * the slight transparency keeps the work readable underneath.
+ * ⚠️ THE STROKE IS WHY IT WORKS. A solid icon at this size is a blob whatever its contour, because
+ * the eye is given one filled region and no internal structure. An outline keeps the gaps between
+ * the fingers, and those gaps are what say "hand" — it is the same reason the reference glyph is
+ * drawn as a stroke rather than a fill. It also stops the icon blotting out the fondant it is
+ * working on, which no amount of transparency did convincingly.
  *
- * Drawn here rather than loaded as an SVG — that would be an asset to ship and version, for one
- * closed path.
+ * Each part is a rounded-rectangle RING (an outer contour with an inner one as a hole). Where a
+ * finger meets the palm its side strokes carry on into it, which is exactly what the reference
+ * does and what makes the fingers countable.
  */
-function handShape() {
-  const h = new THREE.Shape();
-  /* ⚠️ THE PALM CARRIES THE MASS. The first cut of this path was drawn at roughly 4:1 and rendered
-   * as two dark SLIVERS — a hand read from the side is not a thin blade, it is a broad wedge with
-   * the fingers tapering off it. The heel is now nearly half as deep as the hand is long. */
-  h.moveTo(-0.52, 0.020);
-  // Along the top of the fingers, scalloped just enough to count them. A smooth edge is a flipper.
-  h.quadraticCurveTo(-0.42, 0.085, -0.35, 0.055);
-  h.quadraticCurveTo(-0.30, 0.105, -0.23, 0.070);
-  h.quadraticCurveTo(-0.18, 0.115, -0.11, 0.080);
-  h.quadraticCurveTo(-0.06, 0.120, -0.01, 0.090);
-  // The thumb: up, over, and back down into the web. Without it this is a paddle.
-  // ⚠️ Kept LOW. Drawn to 0.30 it stood up off the hand as a spike and read as a horn — a thumb
-  // sits close to the hand, and it only has to break the outline enough to be seen.
-  h.bezierCurveTo(0.030, 0.160, 0.075, 0.215, 0.135, 0.200);
-  h.bezierCurveTo(0.180, 0.188, 0.168, 0.160, 0.152, 0.132);
-  // Across the back of the hand and round the wrist.
-  h.quadraticCurveTo(0.260, 0.130, 0.360, 0.125);
-  h.bezierCurveTo(0.470, 0.118, 0.545, 0.060, 0.545, -0.020);
-  // The heel — the deep part — and the underside sweeping back out to the fingertips.
-  h.bezierCurveTo(0.545, -0.150, 0.430, -0.265, 0.230, -0.280);
-  h.bezierCurveTo(0.060, -0.292, -0.130, -0.190, -0.300, -0.090);
-  h.quadraticCurveTo(-0.430, -0.030, -0.520, 0.020);
-  return h;
+const STROKE = 0.055;
+
+function roundedPath(P, cx, cy, w, h, r) {
+  const x = cx - w / 2, y = cy - h / 2, rr = Math.max(0.001, Math.min(r, w / 2, h / 2));
+  P.moveTo(x + rr, y);
+  P.lineTo(x + w - rr, y);      P.quadraticCurveTo(x + w, y, x + w, y + rr);
+  P.lineTo(x + w, y + h - rr);  P.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+  P.lineTo(x + rr, y + h);      P.quadraticCurveTo(x, y + h, x, y + h - rr);
+  P.lineTo(x, y + rr);          P.quadraticCurveTo(x, y, x + rr, y);
+  return P;
 }
 
-const HAND_GEOM = new THREE.ShapeGeometry(handShape(), 14);
+// One stroked rounded rectangle: the outer contour, with the inset contour punched out of it.
+function ring(cx, cy, w, h, r) {
+  const outer = roundedPath(new THREE.Shape(), cx, cy, w, h, r);
+  const iw = w - STROKE * 2, ih = h - STROKE * 2;
+  if (iw > 0.01 && ih > 0.01) {
+    outer.holes.push(roundedPath(new THREE.Path(), cx, cy, iw, ih, Math.max(0.001, r - STROKE)));
+  }
+  return outer;
+}
+
+/* Palm, four fingers, thumb. Finger heights are staggered — index shorter than middle, little
+ * finger shortest — because an even row reads as a comb. */
+const HAND_PARTS = [
+  ring( 0.00, -0.20, 0.74, 0.66, 0.24),   // palm, rounded at the heel
+  ring(-0.21,  0.13, 0.17, 0.66, 0.085),  // index
+  ring(-0.03,  0.18, 0.17, 0.76, 0.085),  // middle — the tallest
+  ring( 0.15,  0.15, 0.17, 0.70, 0.085),  // ring
+  ring( 0.32,  0.08, 0.16, 0.56, 0.080),  // little
+  ring(-0.38, -0.12, 0.17, 0.46, 0.085),  // thumb, set low at the side
+];
+
+const HAND_GEOM = new THREE.ShapeGeometry(HAND_PARTS, 8);
 
 function Hand({ position, rotation = 0, scale = 1, flip = false }) {
   return (
     // Billboarded: the icon turns to face the camera however the scene is orbited, which is the
-    // whole reason it survives where the modelled hand did not.
+    // whole reason a flat glyph survives here where a modelled hand did not.
     <Billboard position={position}>
       <mesh geometry={HAND_GEOM} rotation={[0, 0, rotation]}
             scale={[flip ? -scale : scale, scale, scale]}>
-        <meshBasicMaterial color={ICON_INK} transparent opacity={0.86} depthWrite={false} />
+        <meshBasicMaterial color={ICON_INK} transparent opacity={0.92} depthWrite={false} />
       </mesh>
     </Billboard>
   );
@@ -223,7 +230,7 @@ function Hands({ shape, k, r, size }) {
    * not to dominate and it reads as a dark smudge. 4× the ball gave wings, 1.7× gave eyebrows.
    * This is the middle, and it is a compromise rather than an answer — the real fix is a properly
    * authored icon, not a better constant. */
-  const hs    = THREE.MathUtils.clamp(p * 2.6, 0.34, 0.58);
+  const hs    = THREE.MathUtils.clamp(p * 2.2, 0.32, 0.52);
   const thick = hs * 0.10;
 
   if (shape === 'rope') {
@@ -245,8 +252,12 @@ function Hands({ shape, k, r, size }) {
         {/* Coming in from either side onto the rope, fingers reaching toward it. */}
         {/* ⚠️ LEVEL. Tilting them apart splayed the pair outward like wings; hands rolling a rope
             are flat and parallel, and the parallel is most of what says "rolling". */}
-        <Hand position={[x - sep, top + hs * 0.34, 0]} rotation={0} scale={hs} flip />
-        <Hand position={[x + sep, top + hs * 0.34, 0]} rotation={0} scale={hs} />
+        {/* ⚠️ Turned over. The glyph is drawn fingers-UP, and hands rolling a rope come down onto
+            it — upright, the pair looked like two people waving at a sausage. */}
+        {/* Fingertips just TOUCHING the rope. Floating clear of it read as two hands hovering
+            over the work rather than doing it — contact is the whole claim of the shot. */}
+        <Hand position={[x - sep, top + hs * 0.42, 0]} rotation={Math.PI} scale={hs} flip />
+        <Hand position={[x + sep, top + hs * 0.42, 0]} rotation={Math.PI} scale={hs} />
       </group>
     );
   }
@@ -256,7 +267,7 @@ function Hands({ shape, k, r, size }) {
     const press = Math.abs(pressPulse(k));
     const top   = THREE.MathUtils.lerp(p, size[1], k) * 2;
     // Pressing down from above: turned so the palm faces the work.
-    return <Hand position={[hs * 0.15, top + hs * (0.5 - press * 0.25), 0]} rotation={0} scale={hs} />;
+    return <Hand position={[0, top + hs * (0.58 - press * 0.25), 0]} rotation={Math.PI} scale={hs} />;
   }
   // Rounding and tapering: cupped either side, turning with the piece.
   const wid = THREE.MathUtils.lerp(p, size[0], k);
@@ -269,8 +280,12 @@ function Hands({ shape, k, r, size }) {
     <group position={[0, mid, 0]}>
       {/* Cupped: palms turned to FACE each other, which is how a ball is rounded. */}
       {/* Clear of the piece by half a hand, or they cup thin air over the top of it. */}
-      <Hand position={[-(wid + hs * 0.45), 0, 0]} rotation={0} scale={hs} flip />
-      <Hand position={[  wid + hs * 0.45,  0, 0]} rotation={0} scale={hs} />
+      {/* ⚠️ UPRIGHT, not turned on their side. Rotating the glyph 90° to "reach across" laid the
+          fingers horizontally, and a palm-on hand seen sideways is not a hand — it is a comb lying
+          down, and the pair read as two scribbles either side of the ball. Rounding a ball between
+          the palms keeps the hands vertical anyway; a slight inward lean is all it needs. */}
+      <Hand position={[-(wid + hs * 0.34), hs * 0.06, 0]} rotation={ 0.22} scale={hs} flip />
+      <Hand position={[  wid + hs * 0.34,  hs * 0.06, 0]} rotation={-0.22} scale={hs} />
     </group>
   );
 }
@@ -374,7 +389,11 @@ function ActivePiece({ part, t, color, hands }) {
  * bench at once shows two balls being rolled simultaneously, which no pair of hands does — you roll
  * one, then the other, and the honest simplification is to make one and let its twin arrive with it.
  */
-export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227', hands = true }) {
+/* ⚠️ `hands` DEFAULTS OFF. The icon works — an outlined open palm, fingers countable — but the
+ * motion alone was already legible, and a second dark object beside a small piece competes with the
+ * thing it is annotating. Kept because it took five attempts to get an icon that reads at all, and
+ * a later pass may want it back for the shapes where the grip is the whole difficulty. */
+export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227', hands = false }) {
   const list   = useMemo(() => (parts ?? []).filter(p => p?.shape && SHAPES[p.shape]), [parts]);
   const done   = useMemo(() => list.slice(0, step ?? 0), [list, step]);
   const active = step == null ? null : (list[step] ?? null);
