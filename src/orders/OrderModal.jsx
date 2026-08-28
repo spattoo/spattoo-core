@@ -9,6 +9,7 @@ import { uploadThumbnail } from '../designer/utils/thumbnail.js';
 import {
   findFlavourConflicts, conflictSentence, conflictCallToAction, dietTone,
   visibleRequirements, unguaranteedRequirements, unguaranteedSentence,
+  EGG_KEY, EGGLESS_KEY, eggChoiceOf, impliesEggless,
 } from './dietary.js';
 import Chip from '../shared/Chip.jsx';
 // The SAME occasion list the storefront offers — they write the same column, and a baker picking
@@ -358,6 +359,60 @@ export default function OrderModal({
     [dietaryOptions],
   );
 
+  /* ── Egg or eggless ─────────────────────────────────────────────────────────────────────────
+   *
+   * Asked outright rather than left as one chip in a list of exceptions. The list below asks
+   * "anything special?", and against that question a customer who eats egg correctly answers
+   * "no" — so the commonest attribute of an Indian cake order was being decided by SILENCE, and
+   * the baker could not tell "they want egg" from "nobody asked". Meanwhile a customer who
+   * wants eggless arrives EXPECTING the choice and finds their half of it filed under dietary
+   * requirements, which is not how they think of it: here it is closer to a flavour than to an
+   * allergy — it changes the price, the flavour list and often the lead time.
+   *
+   * Derived from the vocabulary, never hardcoded, so `baker_dietary_exclusions` drives it:
+   *   both offered  → a real question, and the step cannot be passed without an answer
+   *   one offered   → NOT a question. A pure-veg bakery is told to the customer as a fact and
+   *                   nothing is recorded on the order — inventing a "requirement" the customer
+   *                   never asserted would put words in their mouth, and `source='customer'`
+   *                   is precisely the column that must not be allowed to lie.
+   *   neither       → the baker has switched both off; ask nothing.
+   */
+  const eggOptions = useMemo(
+    () => [EGG_KEY, EGGLESS_KEY]
+      .map(k => visibleDietaryOptions.find(o => o.key === k))
+      .filter(Boolean),
+    [visibleDietaryOptions],
+  );
+  const eggIsAQuestion = eggOptions.length === 2;
+  const eggChoice      = eggChoiceOf(dietaryKeys);
+
+  // Everything the "anything special?" list still asks about, once the egg question has taken
+  // its two chips out. Vegan and Jain stay here: they are genuinely the long tail, and unlike
+  // eggless nobody arrives at the form expecting to be asked.
+  const visibleSpecialOptions = useMemo(
+    () => visibleDietaryOptions.filter(o => o.key !== EGG_KEY && o.key !== EGGLESS_KEY),
+    [visibleDietaryOptions],
+  );
+
+  /* ⚠️ Vegan and Jain CONTAIN the eggless rule, so they answer the question rather than sit
+   * beside it. Without this the form would happily take "vegan, with egg" — a contradiction
+   * that reads as an ordinary order and is only caught at the bench, if at all. */
+  const eggForcedByDiet = impliesEggless(dietaryKeys);
+
+  // "Special requirements" is now everything EXCEPT the egg answer. Keeping the two in one
+  // `dietaryKeys` array is right — it is one column and one set of rows — but they are two
+  // questions to the customer, and a "with egg" answer must not silently satisfy "anything
+  // else we should know?".
+  const specialKeys = useMemo(
+    () => dietaryKeys.filter(k => k !== EGG_KEY && k !== EGGLESS_KEY),
+    [dietaryKeys],
+  );
+
+  // Choosing a side of the egg question replaces the other — they cannot both be true.
+  function chooseEgg(key) {
+    setDietaryKeys(ks => [...ks.filter(k => k !== EGG_KEY && k !== EGGLESS_KEY), key]);
+  }
+
   // Allergens the customer ticked that this bakery has said it can't guarantee. Recorded
   // on the order regardless — the point is that the baker sees it and can answer, not
   // that the customer is turned away.
@@ -554,9 +609,16 @@ export default function OrderModal({
   /* ⚠️ Dietary must be ANSWERED, not satisfied. Either a requirement is stated or "none" is — and
    * the point of requiring it is the allergen tail: "we can't deliver a cake made with egg to
    * someone who is pure vegetarian" is only avoidable if the question was actually put. An
-   * unanswered section and a "no" look identical in the data otherwise. */
-  const dietaryAnswered  = dietaryNone || dietaryKeys.length > 0;
-  const canGoNextDetails = weightOk && flavourOk && dietaryAnswered;
+   * unanswered section and a "no" look identical in the data otherwise.
+   *
+   * `specialKeys`, not `dietaryKeys`: since the egg question was pulled out above, picking
+   * "Eggless" is an answer to THAT question and says nothing about allergies. Counting it here
+   * would let the section it no longer belongs to be passed by proxy. */
+  const dietaryAnswered  = dietaryNone || specialKeys.length > 0;
+  /* Answered when the bakery offers both sides and one is picked. A single-option bakery is not
+   * asking, and vegan/Jain have already decided it — neither can be "unanswered". */
+  const eggAnswered      = !eggIsAQuestion || eggForcedByDiet || eggChoice != null;
+  const canGoNextDetails = weightOk && flavourOk && eggAnswered && dietaryAnswered;
   const canSubmit   = (deliveryMode === 'pickup' || deliveryAddress.trim()) && !!deliveryDate;
 
 
@@ -575,8 +637,10 @@ export default function OrderModal({
    * the whole modal rendered as "Something went wrong." The build was clean and 1173 tests passed;
    * only opening it showed anything. Second time today. */
   const missing = currentStepKey === 'details'
-    ? [!weightOk && 'a cake weight', !flavourOk && 'a flavour',
-       !dietaryAnswered && 'a dietary answer (tick “No dietary requirements” if there are none)'].filter(Boolean)
+    ? [!weightOk && 'a cake weight',
+       !eggAnswered && 'egg or eggless',
+       !flavourOk && 'a flavour',
+       !dietaryAnswered && 'a dietary answer (tick “No other requirements” if there are none)'].filter(Boolean)
     : currentStepKey === 'delivery'
       ? [!deliveryDate && 'a delivery date',
          (deliveryMode === 'home_delivery' && !deliveryAddress.trim()) && 'a delivery address'].filter(Boolean)
@@ -962,23 +1026,74 @@ export default function OrderModal({
                     onChange={e => setWeightKg(e.target.value)} />
                 </label>
 
+                {/* ── Egg or eggless ─────────────────────────────────────────────────
+                    Sits with weight and flavour because that is what it is: a product
+                    attribute that moves the price and the flavour list, asked outright
+                    rather than inferred from a customer declining to mention it.
+
+                    A single-option bakery is TOLD, not asked. "This bakery is fully
+                    eggless" is information a customer wants and a question with one
+                    answer is not a question — and answering it on their behalf would
+                    write an assertion into `source='customer'` that they never made. */}
+                {eggOptions.length > 0 && (
+                  <div style={{ ...field, gap: isMobile?10:8 }}>
+                    <span style={lbl}>{eggIsAQuestion ? 'Egg or eggless *' : 'Egg'}</span>
+                    {eggIsAQuestion ? (
+                      <>
+                        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                          {eggOptions.map(o => (
+                            <Chip key={o.key} label={o.label} isMobile={isMobile}
+                              active={eggForcedByDiet ? o.key === EGGLESS_KEY : eggChoice === o.key}
+                              tone={{ fg: primaryColor, bg: hexToRgba(primaryColor, 0.1), border: primaryColor }}
+                              /* Locked rather than hidden while a vegan or Jain requirement is
+                                 standing: the answer is still shown, so the customer can see
+                                 what was decided for them and why, instead of a control that
+                                 silently disappears. */
+                              disabled={eggForcedByDiet}
+                              onClick={() => chooseEgg(o.key)} />
+                          ))}
+                        </div>
+                        {eggForcedByDiet && (
+                          <span style={{ fontSize: isMobile?12:11, color:'#888' }}>
+                            Set by your diet choice below — vegan and Jain cakes are always eggless.
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ fontSize: isMobile?13:12, color:'#666' }}>
+                        {eggOptions[0].key === EGGLESS_KEY
+                          ? 'This bakery is fully eggless — every cake is made without egg.'
+                          : 'This bakery bakes with egg.'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* ABOVE flavour on purpose: the requirement constrains which flavours
                     can be made, so it is asked before the thing it constrains. And it is
                     ORDER-level, not per tier like flavour — an eggless requirement is not
-                    satisfied by an eggless top tier on an egg-based base. */}
-                {visibleDietaryOptions.length > 0 && (
+                    satisfied by an eggless top tier on an egg-based base.
+
+                    ⚠️ "SPECIAL requirements", not "Dietary requirements". The old heading
+                    named a category everybody belongs to — eating egg is a diet too — while
+                    the control below only ever recorded a DEVIATION, and the thing being
+                    deviated from was never stated anywhere on screen. So a customer who
+                    eats egg read "Diet" as a choice they were about to be offered, found
+                    only "Eggless", and had no way to tell what ticking nothing meant. */}
+                {visibleSpecialOptions.length > 0 && (
                   <div style={{ ...field, gap: isMobile?10:8 }}>
-                    <span style={lbl}>Dietary requirements</span>
+                    <span style={lbl}>Special requirements</span>
                     {['diet', 'allergen'].map(kind => {
-                      const group = visibleDietaryOptions.filter(o => o.kind === kind);
+                      const group = visibleSpecialOptions.filter(o => o.kind === kind);
                       if (!group.length) return null;
                       return (
                         <div key={kind} style={{ display:'flex', flexDirection:'column', gap:5 }}>
-                          {/* Split by kind rather than run together in one row: eggless is a
-                              product attribute and an allergy is a safety matter, and a picker
-                              that presents them identically invites treating them identically. */}
+                          {/* Split by kind rather than run together in one row: a vegan diet
+                              is a product attribute and an allergy is a safety matter, and a
+                              picker that presents them identically invites treating them
+                              identically. */}
                           <span style={{ fontSize: isMobile?12:10, fontWeight:700, color:'#888' }}>
-                            {kind === 'diet' ? 'Diet' : 'Allergies'}
+                            {kind === 'diet' ? 'Special diet' : 'Allergies'}
                           </span>
                           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                             {group.map(o => {
@@ -990,7 +1105,20 @@ export default function OrderModal({
                                     // Choosing a requirement is itself an answer, so "none" cannot
                                     // stand alongside one.
                                     setDietaryNone(false);
-                                    setDietaryKeys(ks => active ? ks.filter(k => k !== o.key) : [...ks, o.key]);
+                                    setDietaryKeys(ks => {
+                                      if (active) return ks.filter(k => k !== o.key);
+                                      /* ⚠️ Vegan and Jain ANSWER the egg question, so ticking one
+                                         must also drop a standing "with egg" — otherwise the form
+                                         happily submits a vegan cake made with egg, which reads as
+                                         an ordinary order all the way to the bench. Adding eggless
+                                         explicitly, rather than leaving it implied, keeps the
+                                         bench sheet honest for a baker who reads down the chips
+                                         and not the diet's definition. */
+                                      const next = [...ks, o.key];
+                                      return impliesEggless([o.key])
+                                        ? [...next.filter(k => k !== EGG_KEY && k !== EGGLESS_KEY), EGGLESS_KEY]
+                                        : next;
+                                    });
                                   }} />
                               );
                             })}
@@ -1003,14 +1131,19 @@ export default function OrderModal({
                         Set apart from the requirement chips rather than sitting among them: it is
                         not a fourth diet, it is the statement that there are none — and a customer
                         who has one must not be able to tick it by momentum. Ticking it clears
-                        whatever was chosen, because the two cannot both be true. */}
+                        whatever was chosen, because the two cannot both be true.
+
+                        ⚠️ "No OTHER requirements", and it clears only the special keys. The egg
+                        answer is a separate question that has already been answered — wiping it
+                        here would silently undo a choice made two fields up, and the customer
+                        would have no idea it had happened. */}
                     <div style={{ marginTop: 4 }}>
-                      <Chip label="No dietary requirements" active={dietaryNone} isMobile={isMobile}
+                      <Chip label="No other requirements" active={dietaryNone} isMobile={isMobile}
                         tone={{ fg: primaryColor, bg: hexToRgba(primaryColor, 0.1), border: primaryColor }}
                         onClick={() => {
                           const next = !dietaryNone;
                           setDietaryNone(next);
-                          if (next) setDietaryKeys([]);
+                          if (next) setDietaryKeys(ks => ks.filter(k => k === EGG_KEY || k === EGGLESS_KEY));
                         }} />
                     </div>
 

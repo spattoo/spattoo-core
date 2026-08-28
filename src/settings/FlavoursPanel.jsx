@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import Chip from '../shared/Chip.jsx';
-import { dietTone } from '../orders/dietary.js';
+import { dietTone, restrictions } from '../orders/dietary.js';
 import DietaryOptionsSection from './DietaryOptionsSection.jsx';
 import { dockedLeft } from '../shared/rail.js';
 
@@ -101,7 +101,10 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
 
   // What this bakery deals in — drives both the per-flavour chips below and,
   // via the API, what a customer is offered.
-  const offeredDiet = (diet ?? []).filter(d => !dietOff.has(d.key));
+  /* Requirements a flavour can be declared incapable of. `restrictions()` drops the egg
+     choice: "this flavour can't be made with egg" is not a sentence — egg is the absence
+     of a constraint, so there is nothing for a flavour to fail to satisfy. */
+  const offeredDiet = restrictions(diet ?? []).filter(d => !dietOff.has(d.key));
 
   function toggleConflict(flavourId, key) {
     setConflicts(prev => {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   findFlavourConflicts, conflictSentence, conflictCallToAction, conflictBenchLine,
   visibleRequirements, unguaranteedRequirements, unguaranteedSentence,
+  restrictions, dietaryLine, eggChoiceOf, impliesEggless, EGG_KEY, EGGLESS_KEY,
 } from './dietary.js';
 
 // The rule these tests protect is not "does it find a match" — it is that the two
@@ -154,5 +155,78 @@ describe('bench line', () => {
   it('omits the tier when there is only one', () => {
     expect(conflictBenchLine({ ...c, tier: 0 }, { tierCount: 1 }))
       .toBe('NUT-FREE REQUIRED — The flavour is Hazelnut Praline. Confirm with the customer before baking.');
+  });
+});
+
+// ── The egg choice ────────────────────────────────────────────────────────────
+// `egg` is the one requirement that restricts nothing, and the whole cost of putting it
+// in this vocabulary is paid in ONE rule: surfaces that flag a deviation must drop it.
+// Get that wrong and the bench band fires on nearly every sheet — which does not look
+// like a bug, it looks like a band, right up until the kitchen stops reading it and
+// walks past an EGGLESS one.
+const EGG = { key: 'egg', label: 'With egg', kind: 'diet' };
+
+describe('the egg choice is not a restriction', () => {
+  it('is dropped from the set the bench surfaces render', () => {
+    expect(restrictions([EGG, NUT_FREE]).map(r => r.key)).toEqual(['nut_free']);
+  });
+
+  // The load-bearing case: an order whose ONLY dietary row is the egg answer must leave
+  // the band with nothing to draw, not draw an empty one.
+  it('leaves nothing behind when it is the only answer', () => {
+    expect(restrictions([EGG])).toEqual([]);
+    expect(dietaryLine([EGG])).toBe('');
+  });
+
+  // Belt and braces: dietaryLine filters even if a caller forgets, because the failure
+  // is invisible in review — the band still looks correct, it is just always there.
+  it('never reaches the printed line, even when passed straight in', () => {
+    expect(dietaryLine([EGG, NUT_FREE])).toBe('NUT-FREE — REQUIRED');
+  });
+
+  // A flavour cannot fail to satisfy "with egg" — there is nothing to satisfy. A stray
+  // declaration must not be able to generate "Chocolate usually isn\'t with egg".
+  it('is ignored when matching flavour declarations', () => {
+    const conflicts = findFlavourConflicts({
+      flavours: [{ tier: 0, name: 'Chocolate', flavourId: 'f1' }],
+      requirements: [EGG],
+      declarations: { f1: [{ key: 'egg', declared_by: 'spattoo' }] },
+    });
+    expect(conflicts).toEqual([]);
+  });
+});
+
+describe('reading the egg answer back', () => {
+  it('reads either side', () => {
+    expect(eggChoiceOf(['egg'])).toBe(EGG_KEY);
+    expect(eggChoiceOf(['eggless', 'nut_free'])).toBe(EGGLESS_KEY);
+  });
+
+  it('is unanswered when neither is present', () => {
+    expect(eggChoiceOf([])).toBe(null);
+    expect(eggChoiceOf(['nut_free'])).toBe(null);
+    expect(eggChoiceOf(undefined)).toBe(null);
+  });
+
+  // Both at once is incoherent. Guessing a winner would silently pick a side of a
+  // question the customer got wrong; the API refuses the combination outright.
+  it('treats both-at-once as unanswered rather than picking a side', () => {
+    expect(eggChoiceOf(['egg', 'eggless'])).toBe(null);
+  });
+});
+
+describe('diets that contain the eggless rule', () => {
+  // Without this the form takes "vegan, with egg" — a contradiction that reads as an
+  // ordinary order all the way to the bench.
+  it('recognises vegan and Jain', () => {
+    expect(impliesEggless(['vegan'])).toBe(true);
+    expect(impliesEggless(['jain'])).toBe(true);
+    expect(impliesEggless(['nut_free', 'jain'])).toBe(true);
+  });
+
+  it('does not over-reach to other requirements', () => {
+    expect(impliesEggless(['nut_free'])).toBe(false);
+    expect(impliesEggless([])).toBe(false);
+    expect(impliesEggless(undefined)).toBe(false);
   });
 });

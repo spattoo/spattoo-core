@@ -3,7 +3,7 @@ import { layoutDiagram, DIAGRAM } from './xrayProject.js';
 import { strengthColor } from './report.js';
 import { loadImage } from '../framePhoto.js';
 import { corsUrl } from '../../designer/utils/assetUrl.js';
-import { dietTone, hasAllergen, dietaryLine } from '../dietary.js';
+import { dietTone, hasAllergen, dietaryLine, restrictions } from '../dietary.js';
 
 // ── The X-Ray report, as a sheet of paper ────────────────────────────────────────────────────────
 // The screen version of this report is read at a desk. THIS one is carried to a bench, put down next
@@ -184,7 +184,10 @@ function drawHeader(sheet, { order, baker, logo, conflicts, spec }) {
   // a grey rule and costs nothing. Colour is never the only carrier. Tones come from
   // dietary.js so paper and screen agree — green for a diet requirement, amber for an
   // allergen, deliberately NOT red-vs-green (the one pair colour-blind readers confuse).
-  const reqs = order?.dietary_requirements ?? [];
+  // restrictions(): same rule as the screen. A printed band that appears on nearly every
+  // sheet trains the kitchen to skip it, and the sheets it would then be skipped on are
+  // the eggless and nut-free ones this band exists for.
+  const reqs = restrictions(order?.dietary_requirements);
   if (reqs.length) {
     const allergen = hasAllergen(reqs);
     const padY = mm(3), boxTop = sheet.y;

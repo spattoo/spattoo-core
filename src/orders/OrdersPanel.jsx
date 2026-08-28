@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
-import { dietTone, hasAllergen } from './dietary.js';
+import { dietTone, hasAllergen, restrictions } from './dietary.js';
 import {
   buildStatusIndex, DEFAULT_STATUS_INDEX,
   statusLabel, isClosed, isTerminal, isDesignLocked, statusTone,
@@ -1318,10 +1318,15 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
                 </div>
                 {/* Its own line rather than appended to the subtitle above: that line
                     ellipsises, and a long flavour name would push the requirement off
-                    the end of exactly the row where a baker is scanning for it. */}
-                {order.dietary_requirements?.length > 0 && (
+                    the end of exactly the row where a baker is scanning for it.
+
+                    restrictions(): this row exists to make a DEVIATION jump out of a long
+                    list. "With egg" is true of most orders, so a chip for it would appear
+                    on most rows and turn the signal into wallpaper — taking the eggless
+                    and nut-free chips down with it. The detail panel still shows it. */}
+                {restrictions(order.dietary_requirements).length > 0 && (
                   <div style={{ marginTop: 4 }}>
-                    <DietChips reqs={order.dietary_requirements} small />
+                    <DietChips reqs={restrictions(order.dietary_requirements)} small />
                   </div>
                 )}
               </div>

@@ -421,10 +421,16 @@ export function eligibleFlavours(flavours, dietaryKeys = []) {
 
 // A hard exclusion. `conflicts_with` is what this baker has said they cannot make a flavour AS —
 // it is never a claim that the flavour is unsafe, and it is never used to rank.
+//
+// The egg CHOICE is dropped first: it is the one dietary key that restricts nothing, so a flavour
+// can no more conflict with it than with a delivery date. Nothing can declare it (the declaration
+// UIs don't offer it), so this defends against stray data rather than against the UI — but this is
+// a HARD filter, and a stray row here would silently empty a baker's flavour list.
 function conflicts(flavour, dietaryKeys) {
-  if (!dietaryKeys.length) return false;
+  const keys = dietaryKeys.filter(k => k !== 'egg');
+  if (!keys.length) return false;
   const declared = (flavour.conflicts_with ?? []).map(c => (typeof c === 'string' ? c : c.key));
-  return dietaryKeys.some(k => declared.includes(k));
+  return keys.some(k => declared.includes(k));
 }
 
 function reasonFor(rule, flavour) {
