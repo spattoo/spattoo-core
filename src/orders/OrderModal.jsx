@@ -1041,7 +1041,7 @@ export default function OrderModal({
                 )}
 
                 <div style={{ ...field, gap: isMobile?10:8 }}>
-                  <span style={lbl}>{tierCount === 1 ? 'Flavour' : 'Flavour per tier'}</span>
+                  <span style={lbl}>{tierCount === 1 ? 'Flavour *' : 'Flavour per tier *'}</span>
                   {Array.from({ length: tierCount }, (_, i) => (
                     <div key={i} style={{ display:'flex', flexDirection:'column', gap:5 }}>
                       {tierCount > 1 && (
