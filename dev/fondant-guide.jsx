@@ -6,6 +6,7 @@ import FondantGuide from '../src/designer/canvas/FondantGuide.jsx';
 import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
 import { PRESETS } from '../src/designer/geometry/fondantParts.js';
 import { buildSteps } from '../src/designer/geometry/fondantSteps.js';
+import { BENCH, ASSEMBLY } from '../src/designer/canvas/FondantGuide.jsx';
 
 // Judging the MOTION before any chrome: does the ball read as being rolled, does the shaping read
 // as shaping, and does the press land like soft fondant rather than a part clicking into a socket.
@@ -41,14 +42,19 @@ function App() {
   const s = steps[step];
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Canvas shadows camera={{ position: [0, 1.5, 4.6], fov: 34 }} style={{ flex: 1 }}>
+      <Canvas shadows camera={{ position: [0, 1.5, 4.9], fov: 36 }} style={{ flex: 1 }}>
         <color attach="background" args={['#EDEAE3']} />
         <SceneLights /><SceneEnv />
         <FondantGuide parts={parts} step={steps[step].partIndex} t={t} color={COLOUR} />
-        <mesh rotation={[-Math.PI/2,0,0]} receiveShadow>
-          <circleGeometry args={[2.6, 64]} /><shadowMaterial opacity={0.26} />
+        {/* Two boards: the work surface on the left, the cake board on the right. Separate, so the
+            split between making and assembling is stated by the scene and not only by the gap. */}
+        <mesh position={[BENCH.x, 0, BENCH.z]} rotation={[-Math.PI/2,0,0]} receiveShadow>
+          <circleGeometry args={[0.95, 48]} /><shadowMaterial opacity={0.26} />
         </mesh>
-        <OrbitControls target={[0, 0.8, 0]} />
+        <mesh position={[ASSEMBLY.x, 0, ASSEMBLY.z]} rotation={[-Math.PI/2,0,0]} receiveShadow>
+          <circleGeometry args={[1.15, 48]} /><shadowMaterial opacity={0.26} />
+        </mesh>
+        <OrbitControls target={[0, 0.75, 0]} />
       </Canvas>
       <div style={{ padding: 14, background: '#fff', borderTop: '1px solid #e5e5e5' }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: '#9a9a9a' }}>STEP {s.n} OF {s.of}</div>

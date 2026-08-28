@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { Outlines } from '@react-three/drei';
 import * as THREE from 'three';
 import FondantBuild from './FondantBuild.jsx';
 import { SHAPES, expandParts } from '../geometry/fondantParts.js';
@@ -43,9 +44,20 @@ const PINCH_END = 0.22;   // tear off a piece and round it between the palms
 const FORM_END  = 0.82;   // work it into shape — the part worth watching
                           // …and the remainder places it
 
-// Where a piece is worked before it is placed — in front of the figure, clear of it, so the ball
-// is never inside the thing being built.
-const BENCH = new THREE.Vector3(0, 0, 1.5);
+/* ── Two places, side by side ────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ MAKING ON THE LEFT, ASSEMBLING ON THE RIGHT. The bench used to sit in FRONT of the figure, so
+ * from the camera a piece was worked BELOW the bear and then travelled up into it. That reads as
+ * one muddled space: the piece looks like part of the figure that has fallen off, and at the moment
+ * of placing it passes across the very thing it is joining.
+ *
+ * Two clearly separate areas is how a bench actually works — you shape a piece in the space in
+ * front of you and the figure stands to one side — and it lets a reader watch either half without
+ * the other moving. Left-to-right because that is the direction the eye already travels, so the
+ * journey of a piece runs the same way as the reading order.
+ */
+export const BENCH    = new THREE.Vector3(-1.15, 0, 0.15);   // where a piece is made
+export const ASSEMBLY = new THREE.Vector3( 0.95, 0, 0);      // where the figure stands
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
@@ -70,10 +82,16 @@ export const startingRadius = (size) =>
  * Deliberately small movements. A piece that swings about reads as being juggled; fondant is worked
  * against a board with the weight of a palm on it.
  */
+/* ⚠️ ONE SHARED RHYTHM. The hands and the piece are posed from the SAME oscillation — if each had
+ * its own, they would drift apart within a second and the hands would be seen rolling thin air
+ * beside a piece moving to its own beat. Worse than no hands at all. */
+export const rollPasses = (k) => Math.sin(k * Math.PI * 7);
+export const pressPulse = (k) => Math.sin(clamp01(k) * Math.PI * 3);
+
 const FORMING = {
   // Rolled under flat palms, shuttling along its own length. The rock about Z is the wrist.
   rope: (k, g, r) => {
-    const passes = Math.sin(k * Math.PI * 7);
+    const passes = rollPasses(k);
     g.position.x = BENCH.x + passes * r * 0.55;
     g.rotation.z = Math.PI / 2 + passes * 0.10;   // lying down, rocking
     g.rotation.y = 0;
@@ -101,6 +119,93 @@ const formProgress = (shape, k) =>
     ? easeInOut(clamp01(Math.floor(k * 3 + 0.5) / 3))    // three distinct presses
     : easeInOut(k);
 
+/* ── Hands ───────────────────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ OUTLINED AND TRANSLUCENT, NEVER SOLID. The fondant is the subject; a pair of opaque hands in
+ * front of it hides the very thing being shown, which is the usual failure of a filmed how-to and
+ * the one advantage a drawn guide has. These are a palm's silhouette and nothing more — no fingers,
+ * no skin tone, nothing that invites a judgement about whose hands they are.
+ *
+ * They exist because the motion alone was not enough: a rope elongating on a board says WHAT
+ * happens and not HOW, and "how do I make an arm?" is the question the whole guide is for.
+ *
+ * Posed per shape from the shared rhythm above, so hand and piece move as one gesture.
+ */
+function Palm({ position, rotation, scale }) {
+  return (
+    <mesh position={position} rotation={rotation} scale={scale}>
+      {/* A flattened ellipsoid: the shape of a palm laid on a board, which is all that is needed
+          once it is outlined. A modelled hand would be read as a claim about technique detail we
+          have not got. */}
+      <sphereGeometry args={[1, 20, 14]} />
+      {/* Pale and see-through, but NOT invisible. The first pass sat at 0.22 opacity in a warm
+          off-white on a warm off-white background and simply could not be seen — a hand that has to
+          be hunted for is the same as no hand. The outline does the work; the fill only stops the
+          piece showing through as if the palm were a wireframe cage. */}
+      {/* ⚠️ A SILHOUETTE OUTLINE, NOT EDGES. `Edges` draws every triangle boundary, and a smooth
+          ellipsoid has thousands — the palms came out as wireframe cages sitting over the fondant,
+          which is worse than not showing them. `Outlines` draws the shape's own contour, which is
+          what "outlined hands" means and what a diagram uses.
+
+          Cool-toned rather than cream: it has to read as NOT-FONDANT at a glance, and a warm white
+          beside warm brown just reads as more fondant. */}
+      <meshStandardMaterial color="#EDF2F6" transparent opacity={0.34} roughness={0.85} depthWrite={false} />
+      {/* World units, and SMALL. `thickness={2.5} screenspace` swallowed the whole bench in one
+          grey slab — screenspace thickness is measured in pixels-ish and 2.5 is enormous at this
+          scale. */}
+      <Outlines thickness={0.006} color="#5A6570" />
+    </mesh>
+  );
+}
+
+/* Where the two palms sit for each action. `r` is the working ball's radius, so the hands scale
+ * with the piece rather than dwarfing a nose or vanishing beside a body. */
+function Hands({ shape, k, r, size }) {
+  const p = Math.max(r, 0.05);
+
+  /* ⚠️ DELIBERATELY NOT TO SCALE. A real palm dwarfs a bear's arm — drawn honestly it would cover
+   * the piece completely and the guide would show two hands and no fondant. So a palm is sized to
+   * the WORK, at roughly twice the piece across. Nobody reads it as a measurement; they read it as
+   * "this is where your hands go". */
+  const palm = [p * 1.7, p * 0.45, p * 2.3];
+  const thick = palm[1];
+
+  if (shape === 'rope') {
+    // Two flat palms ABOVE the rope, shuttling along it — the same `rollPasses` the rope uses.
+    // The rope lies on its side, so its top is its RADIUS, not its length.
+    const x   = rollPasses(k) * p * 0.6;
+    const len = THREE.MathUtils.lerp(p, size[1], k);
+    const top = THREE.MathUtils.lerp(p, size[0], k) * 2;
+    /* ⚠️ Spread by at least a palm's own WIDTH. Placing them at ±len/2 put both hands on top of
+       each other on a short rope — two palms occupying one space reads as a single blob, and the
+       whole point is that a rope is rolled with two hands apart. */
+    const sep = Math.max(len * 0.55, palm[0] * 1.15);
+    return (
+      <group>
+        <Palm position={[x - sep, top + thick, 0]} rotation={[0, 0, 0]} scale={palm} />
+        <Palm position={[x + sep, top + thick, 0]} rotation={[0, 0, 0]} scale={palm} />
+      </group>
+    );
+  }
+  if (shape === 'disc' || shape === 'slab') {
+    // One palm pressing down in the same three pulses the piece flattens in; the board takes the
+    // other side, so a second palm underneath would be a lie.
+    const press = Math.abs(pressPulse(k));
+    const top   = THREE.MathUtils.lerp(p, size[1], k) * 2;
+    return <Palm position={[0, top + thick * (1.8 - press), 0]} rotation={[0, 0, 0]} scale={palm} />;
+  }
+  // Rounding and tapering: cupped either side, turning with the piece.
+  const a   = k * Math.PI * 1.6;
+  const wid = THREE.MathUtils.lerp(p, size[0], k);
+  const mid = THREE.MathUtils.lerp(p, size[1], k);
+  return (
+    <group rotation={[0, a, 0]} position={[0, mid, 0]}>
+      <Palm position={[-(wid + thick * 1.6), 0, 0]} rotation={[0, 0, 1.35]} scale={palm} />
+      <Palm position={[  wid + thick * 1.6,  0, 0]} rotation={[0, 0, -1.35]} scale={palm} />
+    </group>
+  );
+}
+
 /* The one piece being made right now. `t` runs 0→1 across the step. */
 function ActivePiece({ part, t, color }) {
   const ref = useRef();
@@ -117,7 +222,8 @@ function ActivePiece({ part, t, color }) {
   useFrame(() => {
     const g = ref.current;
     if (!g) return;
-    const dest = new THREE.Vector3(...(part.pos ?? [0, 0, 0]));
+    // The figure stands to the RIGHT, so a piece's authored position is relative to that area.
+    const dest = new THREE.Vector3(...(part.pos ?? [0, 0, 0])).add(ASSEMBLY);
 
     if (rolling) {
       // Rounding it between the palms: a real ball, turning, on the bench.
@@ -163,7 +269,19 @@ function ActivePiece({ part, t, color }) {
   });
 
   if (!target) return null;
+  // Hands only while the piece is being WORKED. During placing they would obscure the moment the
+  // guide is least ambiguous about — where the piece goes.
+  const working = t <= FORM_END;
+  const formK = clamp01((t - PINCH_END) / (FORM_END - PINCH_END));
+
   return (
+    <>
+    {working && (
+      <group position={[BENCH.x, 0, BENCH.z]}>
+        <Hands shape={rolling ? 'ball' : part.shape} k={rolling ? t / PINCH_END : formK}
+               r={r} size={part.size} />
+      </group>
+    )}
     <group ref={ref}>
       <mesh castShadow {...(rolling ? {} : { geometry: target })}>
         {rolling && <sphereGeometry args={[r, 32, 24]} />}
@@ -173,6 +291,7 @@ function ActivePiece({ part, t, color }) {
                               emissive="#5a3a1a" emissiveIntensity={0.14} />
       </mesh>
     </group>
+    </>
   );
 }
 
@@ -198,11 +317,17 @@ export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227'
 
   return (
     <group>
-      <FondantBuild parts={done} color={color} />
-      {active && (t >= 1
-        // Finished: hand it to the normal renderer, which is also what brings in the mirrored twin.
-        ? <FondantBuild parts={[active]} color={color} />
-        : <ActivePiece part={active} t={t} color={color} />)}
+      {/* Everything already made stands together, to the right. */}
+      <group position={ASSEMBLY}>
+        <FondantBuild parts={done} color={color} />
+        {active && t >= 1 && (
+          // Finished: hand it to the normal renderer, which is also what brings in the mirrored twin.
+          <FondantBuild parts={[active]} color={color} />
+        )}
+      </group>
+      {/* The piece being made travels from the bench into that group's space, so it is NOT a child
+          of it — it carries the offset itself (see `dest`). */}
+      {active && t < 1 && <ActivePiece part={active} t={t} color={color} />}
     </group>
   );
 }
@@ -217,7 +342,7 @@ function KneadingLump({ color }) {
     ref.current.rotation.x += dt * 0.22;
   });
   return (
-    <mesh ref={ref} position={[0, 0.42, 0]} castShadow>
+    <mesh ref={ref} position={[BENCH.x, 0.42, BENCH.z]} castShadow>
       <sphereGeometry args={[0.42, 32, 24]} />
       <meshStandardMaterial color={color} roughness={0.72} metalness={0} />
     </mesh>
