@@ -45,7 +45,8 @@ function App() {
       <Canvas shadows camera={{ position: [0, 1.5, 4.9], fov: 36 }} style={{ flex: 1 }}>
         <color attach="background" args={['#EDEAE3']} />
         <SceneLights /><SceneEnv />
-        <FondantGuide parts={parts} step={steps[step].partIndex} t={t} color={COLOUR} />
+        <FondantGuide parts={parts} step={steps[step].partIndex} t={t} color={COLOUR}
+                      hands={q.get('hands') !== '0'} />
         {/* Two boards: the work surface on the left, the cake board on the right. Separate, so the
             split between making and assembling is stated by the scene and not only by the gap. */}
         <mesh position={[BENCH.x, 0, BENCH.z]} rotation={[-Math.PI/2,0,0]} receiveShadow>

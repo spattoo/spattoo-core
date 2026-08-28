@@ -168,8 +168,10 @@ function handShape() {
   h.quadraticCurveTo(-0.18, 0.115, -0.11, 0.080);
   h.quadraticCurveTo(-0.06, 0.120, -0.01, 0.090);
   // The thumb: up, over, and back down into the web. Without it this is a paddle.
-  h.bezierCurveTo(0.020, 0.190, 0.060, 0.310, 0.130, 0.295);
-  h.bezierCurveTo(0.190, 0.280, 0.165, 0.190, 0.145, 0.135);
+  // ⚠️ Kept LOW. Drawn to 0.30 it stood up off the hand as a spike and read as a horn — a thumb
+  // sits close to the hand, and it only has to break the outline enough to be seen.
+  h.bezierCurveTo(0.030, 0.160, 0.075, 0.215, 0.135, 0.200);
+  h.bezierCurveTo(0.180, 0.188, 0.168, 0.160, 0.152, 0.132);
   // Across the back of the hand and round the wrist.
   h.quadraticCurveTo(0.260, 0.130, 0.360, 0.125);
   h.bezierCurveTo(0.470, 0.118, 0.545, 0.060, 0.545, -0.020);
@@ -213,7 +215,15 @@ function Hands({ shape, k, r, size }) {
    *
    * The lower bound matters as much: below ~0.5 the fingers were a few pixels each and the pair
    * read as two small crabs. Legibility, not realism, sets both ends. */
-  const hs    = THREE.MathUtils.clamp(p * 4.0, 0.62, 1.0);
+  /* ⚠️ SMALL. At 4× the working ball each hand was 1.3 times the ROPE'S OWN LENGTH — two dark
+   * masses either side of a small sausage, which read as bat wings rather than hands. An icon
+   * annotates the work; it does not loom over it. */
+  /* ⚠️ THE TENSION THIS SITS IN, stated so the next person does not rediscover it by bisection:
+   * big enough to READ as a hand and it dominates a piece the size of a bear's arm; small enough
+   * not to dominate and it reads as a dark smudge. 4× the ball gave wings, 1.7× gave eyebrows.
+   * This is the middle, and it is a compromise rather than an answer — the real fix is a properly
+   * authored icon, not a better constant. */
+  const hs    = THREE.MathUtils.clamp(p * 2.6, 0.34, 0.58);
   const thick = hs * 0.10;
 
   if (shape === 'rope') {
@@ -233,8 +243,10 @@ function Hands({ shape, k, r, size }) {
     return (
       <group>
         {/* Coming in from either side onto the rope, fingers reaching toward it. */}
-        <Hand position={[x - sep, top + thick * 1.6, 0]} rotation={-0.35} scale={hs} flip />
-        <Hand position={[x + sep, top + thick * 1.6, 0]} rotation={ 0.35} scale={hs} />
+        {/* ⚠️ LEVEL. Tilting them apart splayed the pair outward like wings; hands rolling a rope
+            are flat and parallel, and the parallel is most of what says "rolling". */}
+        <Hand position={[x - sep, top + hs * 0.34, 0]} rotation={0} scale={hs} flip />
+        <Hand position={[x + sep, top + hs * 0.34, 0]} rotation={0} scale={hs} />
       </group>
     );
   }
@@ -244,7 +256,7 @@ function Hands({ shape, k, r, size }) {
     const press = Math.abs(pressPulse(k));
     const top   = THREE.MathUtils.lerp(p, size[1], k) * 2;
     // Pressing down from above: turned so the palm faces the work.
-    return <Hand position={[hs * 0.1, top + thick * (3.4 - press * 2), 0]} rotation={-0.5} scale={hs} />;
+    return <Hand position={[hs * 0.15, top + hs * (0.5 - press * 0.25), 0]} rotation={0} scale={hs} />;
   }
   // Rounding and tapering: cupped either side, turning with the piece.
   const wid = THREE.MathUtils.lerp(p, size[0], k);
@@ -257,14 +269,14 @@ function Hands({ shape, k, r, size }) {
     <group position={[0, mid, 0]}>
       {/* Cupped: palms turned to FACE each other, which is how a ball is rounded. */}
       {/* Clear of the piece by half a hand, or they cup thin air over the top of it. */}
-      <Hand position={[-(wid + hs * 0.42), 0, 0]} rotation={-0.25} scale={hs} flip />
-      <Hand position={[  wid + hs * 0.42,  0, 0]} rotation={ 0.25} scale={hs} />
+      <Hand position={[-(wid + hs * 0.45), 0, 0]} rotation={0} scale={hs} flip />
+      <Hand position={[  wid + hs * 0.45,  0, 0]} rotation={0} scale={hs} />
     </group>
   );
 }
 
 /* The one piece being made right now. `t` runs 0→1 across the step. */
-function ActivePiece({ part, t, color }) {
+function ActivePiece({ part, t, color, hands }) {
   const ref = useRef();
   const target = useMemo(() => SHAPES[part.shape]?.make?.() ?? null, [part.shape]);
   const r = startingRadius(part.size);
@@ -333,7 +345,7 @@ function ActivePiece({ part, t, color }) {
 
   return (
     <>
-    {working && (
+    {working && hands && (
       <group position={[BENCH.x, 0, BENCH.z]}>
         <Hands shape={rolling ? 'ball' : part.shape} k={rolling ? t / PINCH_END : formK}
                r={r} size={part.size} />
@@ -362,7 +374,7 @@ function ActivePiece({ part, t, color }) {
  * bench at once shows two balls being rolled simultaneously, which no pair of hands does — you roll
  * one, then the other, and the honest simplification is to make one and let its twin arrive with it.
  */
-export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227' }) {
+export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227', hands = true }) {
   const list   = useMemo(() => (parts ?? []).filter(p => p?.shape && SHAPES[p.shape]), [parts]);
   const done   = useMemo(() => list.slice(0, step ?? 0), [list, step]);
   const active = step == null ? null : (list[step] ?? null);
@@ -384,7 +396,7 @@ export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227'
       </group>
       {/* The piece being made travels from the bench into that group's space, so it is NOT a child
           of it — it carries the offset itself (see `dest`). */}
-      {active && t < 1 && <ActivePiece part={active} t={t} color={color} />}
+      {active && t < 1 && <ActivePiece part={active} t={t} color={color} hands={hands} />}
     </group>
   );
 }
