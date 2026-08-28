@@ -531,3 +531,53 @@ export function today() {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+
+/* ── What is already on a restored draft, in the customer's own words ────────────────────────────
+ *
+ * ⚠️ WRITTEN FOR THE MOMENT A DRAFT COMES BACK, which is the moment it does the most damage
+ * unseen. The draft survives seven days, and a seeded answer does not merely sit in a box waiting
+ * to be noticed — it SILENTLY NARROWS LATER QUESTIONS. `recipient` is the case that surfaced it:
+ * answered once, it removes "Who's it for?" from the flow entirely and splits "What kind of
+ * celebration?" down the child branch, so a returning customer is offered a first birthday, a
+ * children's party and a teenager's party as though that were everything a bakery does.
+ *
+ * A stale weight is visible in its field. A stale recipient is visible only in what it has taken
+ * away, which is why this exists: it is the only way to SEE a restored draft before it starts
+ * making decisions.
+ *
+ * Short labels, most-identifying first, and only what has actually been answered — a summary that
+ * lists blanks is a form, and this has to be readable in one glance beside a button.
+ */
+export function draftSummary(draft) {
+  if (!draft) return [];
+  const d = draft.details ?? {};
+  const label = (list, v) => list.find(([k]) => k === v)?.[1] ?? null;
+  const out = [];
+
+  /* ⚠️ READ FROM THE REAL SHAPE, which is not where it reads like it should be. `weightKg` and
+   * `servings` are on `draft.size`, flavours are a top-level ARRAY OF ROWS, and photos hang off
+   * `draft.design` rather than the draft. The first cut of this guessed `details.weightKg` and
+   * `draft.photos`, found neither, and reported "a design" on a completely blank draft — because
+   * `draft.design` is an object of nulls and an object is truthy. A summary that invents an answer
+   * is worse than none: this is the screen that decides whether somebody keeps their work. */
+  if (d.recipient) out.push(label(RECIPIENTS, d.recipient) ?? d.recipient);
+  if (d.occasion)  out.push(label(OCCASIONS,  d.occasion)  ?? d.occasion);
+
+  const flavour = (draft.flavours ?? []).find(f => f?.name?.trim())?.name;
+  if (flavour) out.push(flavour.trim());
+
+  const kg = draft.size?.weightKg;
+  if (kg != null && parseFloat(kg) > 0) out.push(`${kg} kg`);
+  else if (draft.size?.servings != null) out.push(`${draft.size.servings} servings`);
+
+  if (d.deliveryDate) out.push(d.deliveryDate);
+
+  // Named rather than omitted: a photo and a design are the two things somebody would be most
+  // upset to lose, so they have to appear in the sentence that asks whether to keep it all.
+  const photos = draft.design?.photos?.length ?? 0;
+  if (photos) out.push(`${photos} photo${photos > 1 ? 's' : ''}`);
+  // `kind` is what isFilled treats as "there is a design" — the object itself always exists.
+  if (draft.design?.kind) out.push(draft.design.templateName || 'a design');
+
+  return out;
+}
