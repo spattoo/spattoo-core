@@ -621,6 +621,22 @@ export default function OrderModal({
   const canGoNextDetails = weightOk && flavourOk && eggAnswered && dietaryAnswered;
   const canSubmit   = (deliveryMode === 'pickup' || deliveryAddress.trim()) && !!deliveryDate;
 
+  // ── Has the customer put anything into this form? ────────────────────────────────────────────
+  // A backdrop click and Esc dismiss a panel somebody opened and does not want. They are the wrong
+  // gesture for a half-filled order — the click is a miss, and the cost is every field entered plus
+  // the trip back through the steps. So while there is something to lose, only the ✕ closes.
+  //
+  // Seeded values do not count: a cake opened from the storefront arrives with a weight and
+  // flavours already chosen, and treating those as the customer's work would make a panel they had
+  // not touched undismissable.
+  const touched = Boolean(
+    customer.firstName || customer.lastName || customer.email || customer.phone
+    || deliveryAddress.trim() || deliveryDate || specialInstructions.trim()
+    || String(cakeNumber ?? '').trim()
+    || (String(weightKg ?? '') !== (seed?.size?.weightKg != null ? String(seed.size.weightKg) : ''))
+    || step > 0,
+  );
+
 
   // Steps depend on mode: the customer is already known from their session, so the
   // customer-search step exists ONLY for the baker placing an order on someone's behalf.
@@ -817,6 +833,7 @@ export default function OrderModal({
     <>
       <Panel
         onClose={onClose}
+        guardUnsaved={touched}
         isMobile={isMobile}
         width={360}
         title={manual ? 'New Order' : mode === 'customer' ? 'Request a Quote' : 'Order This Cake'}
