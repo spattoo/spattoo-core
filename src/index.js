@@ -96,6 +96,11 @@ export { default as FondantCloud } from './designer/canvas/FondantCloud.jsx';
 // exported together because the studio needs both: it edits the list and draws it with the same
 // component the designer will, so what an author judges is what a customer sees.
 export { default as FondantBuild } from './designer/canvas/FondantBuild.jsx';
+// The 3D how-to-make-it: the same parts list replayed as a ball being rolled, shaped and pressed
+// on. No new data — a piece is already a scaled primitive at a position, so the animation is the
+// interpolation into it.
+export { default as FondantGuide, piecesAfterStep as fondantPiecesAfterStep } from './designer/canvas/FondantGuide.jsx';
+export { buildSteps as fondantBuildSteps, supportingPart as fondantSupportingPart } from './designer/geometry/fondantSteps.js';
 export {
   SHAPES as FONDANT_SHAPES, SHAPE_ORDER as FONDANT_SHAPE_ORDER, PRESETS as FONDANT_PRESETS,
   defaultPart as fondantDefaultPart, expandParts as fondantExpandParts,
