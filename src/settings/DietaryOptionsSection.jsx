@@ -1,4 +1,5 @@
 import { Section, Field, Toggle } from './controls.jsx';
+import { EGG_KEY, EGGLESS_KEY } from '../orders/dietary.js';
 
 // ── "Which dietary options do you deal in?" ───────────────────────────────────
 // Its own module rather than another block pasted inside FlavoursPanel: it answers a
@@ -53,12 +54,22 @@ export default function DietaryOptionsSection({ options, excluded, onToggle, isM
                         {o.label}
                       </div>
                       {/* Said out loud on the row itself, not only in the group hint —
-                          this is the line that stops a baker mis-reading the switch. */}
+                          this is the line that stops a baker mis-reading the switch.
+
+                          ⚠️ Egg and eggless get their own wording because switching one off
+                          does not merely hide a chip: it turns "egg or eggless?" from a
+                          question the customer answers into a fact they are told. A baker
+                          needs to know that is what the switch does, or a pure-veg kitchen
+                          will leave "with egg" on and keep taking orders it won't bake. */}
                       {!on && (
                         <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
                           {o.kind === 'allergen'
                             ? "Shown to customers as “can't guarantee” — still recorded if they ask"
-                            : 'Hidden from customers'}
+                            : o.key === EGG_KEY
+                              ? 'Customers are told every cake here is eggless — they aren’t asked'
+                              : o.key === EGGLESS_KEY
+                                ? 'Customers are told you bake with egg — they aren’t asked'
+                                : 'Hidden from customers'}
                         </div>
                       )}
                     </div>

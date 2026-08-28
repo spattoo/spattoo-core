@@ -1305,6 +1305,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function addStroke(stroke) {
     setDesign(prev => ({ ...prev, piping: [...prev.piping, { ...DEFAULT_STROKE, id: crypto.randomUUID(), ...stroke }] }));
   }
+  // Replace one stroke's points, keeping everything else about it. The whole of "slide a placed
+  // stroke": the shape, colour, nozzle, seed and orientation are all unchanged and only WHERE it
+  // sits moves. Keyed by id rather than index because Undo re-indexes the list.
+  function updateStrokePoints(id, points) {
+    setDesign(prev => ({
+      ...prev,
+      piping: prev.piping.map(s => (s.id === id ? { ...s, points } : s)),
+    }));
+  }
   function removeStroke() {
     setDesign(prev => ({ ...prev, piping: prev.piping.slice(0, -1) }));
   }
@@ -1365,7 +1374,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    addStroke, removeStroke, clearPiping,
+    addStroke, updateStrokePoints, removeStroke, clearPiping,
     resetDesign,
     addStickerBatch,
     loadDesign,

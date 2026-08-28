@@ -94,3 +94,54 @@ describe('buildXrayReport', () => {
     expect(r.elements).toHaveLength(2);   // the rest of the report still stands
   });
 });
+
+// ── A hand-piped run is the same element as its ring ─────────────────────────────────────────────
+// It carries the element's own id, so it must earn that element's craft guide — the very nozzle a
+// ring of it would use — and a leader line on the diagram. It used to go down the freehand path
+// instead, which reported a generic cream-pen tip nobody had chosen and appeared on no diagram,
+// because `diagram` is built from `elements` and freehand entries were never in it.
+describe('hand-piped runs in the report', () => {
+  const guides = { 'el-1': { nozzle_recs: [{ rank: 'primary', brand: 'Wilton', number: '1M', confidence: 0.95 }] } };
+  const design = {
+    tiers: [{ topPipings: [], bottomPipings: [] }],
+    piping: Array.from({ length: 12 }, (_, i) => ({
+      id: `s${i}`, tierIndex: 0, stampId: 'el-1', stampName: 'Ruffled Swirl',
+      color: '#ffffff', nozzle: 'round', normal: [0, 1, 0], points: [[0, 1, 0], [0.2, 1, 0]],
+    })),
+  };
+
+  it('gets the element\'s own nozzle, not a generic cream-pen tip', () => {
+    const r = buildXrayReport({ design, guides });
+    const mine = r.elements.filter(e => e.elementId === 'el-1');
+    expect(mine).toHaveLength(1);                       // twelve strokes, ONE line
+    expect(mine[0].count).toBe(12);
+    expect(mine[0].primary.length).toBeGreaterThan(0);  // the guide reached it
+  });
+
+  it('earns a leader line on the diagram', () => {
+    const r = buildXrayReport({ design, guides });
+    expect(r.diagram.some(d => d.key.startsWith('el-1'))).toBe(true);
+  });
+
+  it('is not listed as a cream-pen nozzle as well', () => {
+    // Left in both places it would be counted twice AND credited with a tip nobody picked.
+    const r = buildXrayReport({ design, guides });
+    expect(r.freehand).toHaveLength(0);
+  });
+
+  it('says "Hand-piped", never "Rim"', () => {
+    // The anchor is Rim so the leader line points somewhere sensible; the LABEL must not claim a
+    // border that is not there, or a baker pipes one.
+    const r = buildXrayReport({ design, guides });
+    expect(r.elements[0].zoneLabel).toBe('Hand-piped');
+  });
+
+  it('does not merge with an actual rim ring of the same element', () => {
+    const both = {
+      tiers: [{ topPipings: [{ id: 'el-1', name: 'Ruffled Swirl', color: '#ffffff' }], bottomPipings: [] }],
+      piping: design.piping,
+    };
+    const r = buildXrayReport({ design: both, guides });
+    expect(r.elements.filter(e => e.elementId === 'el-1')).toHaveLength(2);
+  });
+});

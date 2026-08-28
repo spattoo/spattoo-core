@@ -96,7 +96,40 @@ export function harvestPiping(design) {
     });
   });
 
-  const freehand = (design?.piping ?? []).map((p, idx) => {
+  // ── A hand-piped run is the SAME element as its ring ────────────────────────────────────────
+  // A stamped stroke carries the element's own id, so it earns the element's own craft guide — the
+  // very nozzle a ring of it would use — and a leader line on the diagram beside the rings.
+  //
+  // Sent down the freehand path instead (which is where it went), it reported a generic cream-pen
+  // tip nobody had chosen, and appeared on no diagram at all: `diagram` is built from `elements`,
+  // and freehand entries were never in it. That is the "nozzle given, diagram missing" case.
+  (design?.piping ?? []).forEach((p, idx) => {
+    if (!p?.stampId) return;
+    ids.add(p.stampId);
+    const ti = typeof p.tierIndex === 'number' ? p.tierIndex : 0;
+    // Rim or Base only decides where the leader line points. Read off the surface the stroke was
+    // drawn against rather than guessed: work on the cake TOP belongs at the rim line, work down
+    // the wall belongs lower. The label the baker reads is `zoneLabel`, which says neither.
+    const onTop = Math.abs(p?.normal?.[1] ?? 1) > 0.7;
+    elements.push({
+      elementId: p.stampId,
+      name: p.stampName || 'Piping',
+      color: normalizeHex(p.color),
+      tier: tierLabel(ti, n),
+      tierIndex: ti,
+      tierCount: n,
+      zone: onTop ? 'Rim' : 'Base',
+      // What the SHEET says. "Cake · Rim" would claim a border that is not there — this run is
+      // wherever the customer drew it, and calling it a rim ring would send a baker to pipe one.
+      zoneLabel: 'Hand-piped',
+      bbox: null,
+      seenTechnique: null,
+    });
+  });
+
+  // Cream-pen strokes only — a stamped one is an element, harvested above. Left in here it would be
+  // counted twice AND credited with a nozzle nobody picked.
+  const freehand = (design?.piping ?? []).filter(p => !p?.stampId).map((p, idx) => {
     const m = FREEHAND_NOZZLE[p?.nozzle] ?? FREEHAND_NOZZLE.round;
     const ti = p?.tierIndex;
     return {
@@ -205,14 +238,65 @@ export function harvestPlaceables(design) {
     if (w?.text) push(finishing, `Message — "${w.text}"`, 'cream pen', `writing-${w.id ?? idx}`);
   });
 
-  (design?.piping ?? []).forEach((p, idx) => push(
-    finishing,
-    'Freehand piping',
-    typeof p?.tierIndex === 'number' ? tierLabel(p.tierIndex, n) : 'cream pen',
-    `fh-${p?.id ?? idx}`,
-  ));
+  // ── One line per JOB, not per stroke ────────────────────────────────────────────────────────
+  // The key used to be the stroke's own id, so a border piped as twenty-eight drags became
+  // twenty-eight identical checklist items — a sheet nobody can tick and a count ("29 items") that
+  // says nothing about how much work there is.
+  //
+  // A baker fits one nozzle, mixes one colour, and pipes until it is done. That is the unit, so the
+  // key is what would make them stop and change something: the tier, the colour, and what is on the
+  // nozzle. `push` already merges on the key and keeps a count, so the line comes out with ×28.
+  (design?.piping ?? []).forEach((p) => {
+    const what = p?.stampId
+      ? `${p.stampName || 'Decoration'} — piped by hand`
+      : 'Freehand piping';
+    push(
+      finishing,
+      what,
+      typeof p?.tierIndex === 'number' ? tierLabel(p.tierIndex, n) : 'cream pen',
+      `fh-${p?.stampId ?? p?.nozzle ?? 'round'}-${normalizeHex(p?.color) ?? ''}-${p?.tierIndex ?? 'x'}`,
+    );
+  });
+
+  // ── Procedural decorations ──────────────────────────────────────────────────────────────────
+  // Rainbows, clouds, grass and letter blocks are BUILT rather than placed as a model, so they live
+  // in their own per-tier collections instead of design.stickers — and this file enumerated the
+  // collections it knew about, so all four were missing from the sheet entirely. A cake whose most
+  // visible decoration is a rainbow said nothing about the rainbow.
+  //
+  // The comment at the top of this function calls that the completeness trap, and it happened
+  // anyway. Hence proceduralPlacements() below: ONE list of the collections, so a new procedural
+  // decoration is added in a place that is obviously about being complete.
+  proceduralPlacements(design, n).forEach(p => push(finishing, p.what, p.where, p.key));
 
   if (finishing.items.length) groups.push(finishing);
 
   return groups;
+}
+
+// Every BUILT decoration on the cake, per tier. Kept beside the checklist AND the guide harvest so
+// the two can never disagree about what is on the cake.
+//
+// `elementId` is what a craft guide is looked up by. It is null on anything placed before the
+// designer started recording it, and that is not fixable after the fact — an order saved then simply
+// does not know which rainbow it was. New ones do.
+export function proceduralPlacements(design, tierCount) {
+  const n = tierCount ?? (design?.tiers?.length ?? 1);
+  const out = [];
+  const add = (item, label, tierIndex, kind, idx) => {
+    if (!item) return;
+    out.push({
+      what: item.elementName || label,
+      where: tierLabel(tierIndex, n),
+      key: `${kind}-${item.id ?? idx}`,
+      elementId: item.elementId ?? null,
+    });
+  };
+  (design?.tiers ?? []).forEach((t, i) => {
+    (t?.rainbows ?? []).forEach((r, k) => add(r, 'Rainbow', i, 'rb', k));
+    (t?.clouds ?? []).forEach((c, k) => add(c, 'Cloud', i, 'cl', k));
+    if (t?.grass) add(t.grass, 'Piped grass', i, 'grass', 0);
+  });
+  if (design?.nameBlocks) add(design.nameBlocks, 'Letter blocks', 0, 'blocks', 0);
+  return out;
 }

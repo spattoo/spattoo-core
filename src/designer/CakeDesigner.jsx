@@ -34,7 +34,7 @@ import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
-import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf } from './decorations/RainbowArrangements.jsx';
+import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
@@ -1720,7 +1720,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1784,7 +1784,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const DUST_COLORS = [   // quick picks; the colour picker covers everything else
     { label: 'Gold', color: '#f0cf63' }, { label: 'Silver', color: '#cdd2d8' },
   ];
-  const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: 0.03, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
+  // ── Two different sizes, because they measure two different things ─────────────────────────────
+  // The pen's `thickness` is a rope DIAMETER — 0.03 is a fine line of cream. The stamp path reuses
+  // the same number as its target footprint (2×thickness), which is right for a bead and far too
+  // small for a piped shell: a ring shell stands SHELL_HEIGHT_FRAC × the tier radius tall, so on the
+  // bottom tier 0.24 × 1.2 = 0.288 against the pen default's 0.104. Piped by hand at the pen's size,
+  // a border came out at under half the ring's, which is what "piping is too small" was.
+  //
+  // Halved because the stamp target is a DIAMETER and the shell fraction is a full height. It puts
+  // the two in the same league; it does not make them equal — the fraction normalises height and the
+  // stamp scales by widest horizontal extent, which no constant here can reconcile for an arbitrary
+  // GLB. Hence the wider slider in stamp mode rather than a range that stops just above this.
+  const PEN_DEFAULT_THICKNESS = 0.03;
+  const PIPE_STAMP_THICKNESS  = +(SHELL_HEIGHT_FRAC * TIER_RADII[0] / 2).toFixed(3);   // 0.144
+  const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -2194,6 +2207,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const navMenuRef       = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
+  const turnCameraRef    = useRef(null);   // spin the cake from a button — see the pen editor
+  // Draw or slide: one pen, two gestures, and they cannot share a drag. See the toggle in the pen card.
+  const [penMove, setPenMove] = useState(false);
   // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const takeRef          = useRef(null);
@@ -3872,7 +3888,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function clearAllSelections() { selectExclusive(null); }
 
-  function handleDeselect() { clearAllSelections(); }
+  // Clicking the floor or the sky clears the selection — right for every other tool, and wrong while
+  // piping. Drawing means aiming at the cake, and missing it is ordinary: a stroke that starts a
+  // fraction off the rim, a finger that lands on the board. Each of those ended the whole piping
+  // session, took the nozzle cursor with it, and left the customer wondering why they could no
+  // longer draw.
+  //
+  // Piping ends on "Done piping" and nowhere else. That was the point of adding the button; this is
+  // the other half of it.
+  function handleDeselect() {
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
+    clearAllSelections();
+  }
 
   // ── Grass ───────────────────────────────────────────────────────────────────
   // Applied to the TOP tier: grass covers a surface, and the only top surface fully in view is the
@@ -3908,12 +3935,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const i = rainbowTierIndex();
     const tuned = el?.placement_config?.rainbow ?? {};
     const id = `rb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // ── A new rainbow is one of the TILES, never a mixture of two ────────────────────────────────
+    // RAINBOW_DEFAULTS is not a neutral base: its feet and its `offsetX: 0.71` are the FALLING RIGHT
+    // shape. So a catalogue row that authors only part of a shape inherits the rest from a different
+    // one. That is not hypothetical — the shipped Rainbow row sets both feet to 'top' and never
+    // mentions offsetX, so it arrived as an on-top arch carrying a falling rainbow's lean: a shape
+    // none of the six tiles can produce, which is exactly what "the default one is not from the
+    // tiles" was. It looked centred only because the code below then shoved it back by -0.71 to
+    // hide the lean it should not have had.
+    //
+    // The first tile sits BETWEEN the defaults and the row, so it fills what the row leaves unsaid
+    // without overruling what the row actually says. An admin who authors a wall rainbow still gets
+    // one; a row that authors nothing gets "On the top" exactly, tile for tile.
+    const base = { ...RAINBOW_DEFAULTS, ...arrangementShape(RAINBOW_ARRANGEMENTS[0]), ...tuned };
     // Computed inside the updater from the LIVE list, not from `design` as this component last
     // rendered it — otherwise two quick presses both read the same list and the second rainbow lands
     // exactly on the first. The same bug the grass patches had, fixed the same way.
     updateTierRainbows(i, cur => [
       ...cur,
-      { ...RAINBOW_DEFAULTS, ...tuned, id,
+      { ...base, id,
+        // ── Which CATALOGUE element this is ────────────────────────────────────────────────────
+        // A placed rainbow used to keep only its own instance id, so nothing downstream could tell
+        // WHICH rainbow it was — and the X-Ray sheet looks a craft guide up by element id. The
+        // result was a cake whose most visible decoration had no how-to at all.
+        elementId: el?.id ?? null,
+        elementName: el?.name ?? null,
         // ── The first one lands in the MIDDLE ───────────────────────────────────────────────────
         // An arch carries its own lean — `offsetX` is how far it straddles along its own plane, and
         // for the shapes that fall off one side that is most of a radius. Placed with no position of
@@ -3924,7 +3970,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // turn. Turning each new one a quarter round was the old answer and it was the same mistake
         // the drag made: a rainbow seen edge-on is not a rainbow anybody ordered.
         ...(() => {
-          const lean = -((tuned.offsetX ?? RAINBOW_DEFAULTS.offsetX) ?? 0);
+          // From the MERGED shape, not from `tuned` with RAINBOW_DEFAULTS behind it. Those two
+          // disagree the moment the tile supplies an offsetX the row does not, and this line
+          // cancelling a lean the arch no longer has is how a centred rainbow ends up shoved
+          // three quarters of a radius to the left.
+          const lean = -(base.offsetX ?? 0);
           if (!cur.length) return { px: lean, pz: 0 };
           const a = cur.length * 1.2;          // irrational-ish turn, so four in a row do not stack
           return { px: lean + Math.sin(a) * 0.4, pz: Math.cos(a) * 0.4 };
@@ -3948,6 +3998,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     updateTierClouds(i, cur => [
       ...cur,
       { ...CLOUD_DEFAULTS, ...tuned, id,
+        // The catalogue element, so the X-Ray can find its guide — see addRainbow.
+        elementId: el?.id ?? null,
+        elementName: el?.name ?? null,
         // Each one further round than the last, so a second cloud is visibly a second cloud rather
         // than a redraw of the first. Read from the LIVE list inside the updater, or two quick
         // presses both see the same list and the second lands exactly on the first.
@@ -4115,6 +4168,77 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   // `penStyle` is the seam. It already held exactly these settings for the pen's own card, so a row
   // does not need a second place to put them.
+  // ── "I'll pipe it myself" ────────────────────────────────────────────────────────────────────
+  // The zones above answer "where does this ring go". They cover the borders a baker pipes round a
+  // rim or a board and nothing else — but a baker pipes anywhere, and the zone list is the whole
+  // vocabulary the customer had. This hands them the same shape with no zone at all: drag on the
+  // cake and it repeats along the line drawn.
+  //
+  // Nothing new renders it. The pen already stamps a GLB along a dragged path (`stamprope` in
+  // CreamPen.jsx), walking the drawn polyline by arc length and dropping a copy every
+  // `spacing × footprint`, each seated on the surface and turned to face along the path. That has
+  // been complete since the pen was built and unreachable in core, because `stampId`/`stampUrl` sat
+  // in penStyle and NOTHING ever set them. This is the door, not the machinery.
+  //
+  // `stampRegular` is the one thing piping needs that scattering does not — see stampTransforms.
+  function pipeItMyself(el) {
+    const { glbUrl } = resolvePipingGlbs(el);
+    if (!glbUrl) return;
+    setPenStyle(prev => ({
+      ...prev,
+      stampId: el.id,
+      stampUrl: glbUrl,
+      stampRegular: true,
+      stampName: el.name,
+      // Which card to go BACK to. Tapping this swaps the piping card for the pen card, and without
+      // remembering where it came from there is no return: the zone tiles, the colour and the size
+      // for the ring version are all behind a card the customer can no longer find.
+      stampCardId: el.cardId,
+      // How the ring stands this piece up. Without it a shell authored lying on its side is piped
+      // lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
+      // The RIM (top) config, because drawing on the cake is the case that surface answers: feet on
+      // the surface, leaning along it. The board variant is the same piece rotated for a plate.
+      stampRotation: pipingPlacementFromConfig(el.placement_config, true).rotation ?? null,
+      // ── Size it like PIPING, not like a rope ─────────────────────────────────────────────────
+      // `thickness` on the pen is a rope DIAMETER, and the stamp scales to it: target = 2×thickness.
+      // At the pen's own default that is 0.104 against a ring shell's 0.24 × 1.2 = 0.288, so the
+      // first thing a customer saw was their border piped at under half size — beads, not shells.
+      //
+      // PIPE_STAMP_THICKNESS lands the stamp on the ring's own footing. It is an ESTIMATE, not a
+      // derivation: SHELL_HEIGHT_FRAC normalises a shell's HEIGHT and the stamp scales by its widest
+      // horizontal extent, so the two agree in magnitude and not exactly. That is what the slider is
+      // for, and why its range opens up in stamp mode rather than stopping just above this value.
+      thickness: PIPE_STAMP_THICKNESS,
+      color: el.default_color ?? prev.color,
+    }));
+    // Collapse the piping card: the choice has been made and the next move is on the cake, not in
+    // this popup. Leaving it open puts a zone list over the surface being drawn on.
+    setExpandedPipingId(null);
+    selectExclusive({ type: 'tool', tool: 'pen' });
+  }
+
+  // Back to the piping card this came from — the zone tiles, and everything about the ring version.
+  const stampSourceCard = pipingCards.find(c => c.cardId === penStyle.stampCardId) ?? null;
+  function backToPipingCard() {
+    if (!stampSourceCard) return;
+    openPipingPopup(stampSourceCard, { cardId: stampSourceCard.cardId });
+  }
+
+  // Back to drawing plain cream. Without this the only way out of stamp mode is a reload — penStyle
+  // keeps whatever was last put in it, so a customer who tried piping by hand and then wanted a line
+  // of cream would go on stamping shells with no way to say stop.
+  // Coming back to the pen always starts in DRAW. A tool that remembers it was left in move mode
+  // greets the next visit by doing nothing when you drag, which reads as broken.
+  useEffect(() => {
+    if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) setPenMove(false);
+  }, [selectedEl]);
+
+  function pipeWithCreamAgain() {
+    setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
+                           stampName: null, stampCardId: null, stampRotation: null, stampLean: 0,
+                           thickness: PEN_DEFAULT_THICKNESS }));
+  }
+
   function addPenFromRow(el) {
     const tuned = el?.placement_config?.cream_pen ?? {};
     setPenStyle(prev => ({ ...prev, ...tuned }));
@@ -4264,6 +4388,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleTierClick(i) {
+    // ── The cake is the CANVAS while piping, not a thing to select ─────────────────────────────
+    // A tap on the cake normally selects that tier and opens its panel, which replaces the pen
+    // editor and so ends draw mode. While piping that is precisely backwards: the cake is what you
+    // are drawing ON, and every press lands on it.
+    //
+    // The catchers already stopPropagation on POINTERDOWN, and it does not help — tier selection
+    // fires on CLICK, a separate event that goes through regardless. Hence the guard here rather
+    // than another stopPropagation there.
+    //
+    // The floor got the same treatment last release. Between them: while the pen is out, nothing on
+    // the canvas changes the selection, and piping ends on "Done piping".
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     closeAllPopups();
     // Clicking the already-selected tier toggles it off; otherwise the tier becomes the sole selection.
     const isSame = selectedEl?.type === 'tier' && selectedEl.index === i;
@@ -4321,12 +4457,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleTopPipingSelect(tierIndex, layerId) {
+    // While the pen is out the cake is a CANVAS, not a set of things to select — see
+    // handleTierClick. A ring or a decoration under the nozzle is something you are drawing over.
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const arr = design.tiers[tierIndex]?.topPipings ?? [];
     const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
     if (piping) openCardForLayer(tierIndex, 'rim', piping);
   }
 
   function handleBottomPipingSelect(tierIndex, layerId) {
+    // While the pen is out the cake is a CANVAS, not a set of things to select — see
+    // handleTierClick. A ring or a decoration under the nozzle is something you are drawing over.
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const arr = design.tiers[tierIndex]?.bottomPipings ?? [];
     const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
     if (piping) openCardForLayer(tierIndex, 'board', piping);
@@ -4404,6 +4546,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleStickerSelect(id, ctrlKey = false) {
+    // Same rule as the tier and the rings: while piping, a decoration under the nozzle is something
+    // you are drawing OVER, not something to open. Selecting it swaps the pen editor away and ends
+    // the session mid-stroke.
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const sticker = design.stickers.find(s => s.id === id);
     focusEditor('decoration');
 
@@ -6965,6 +7111,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={152} />
         )}
 
+        {/* ── Draw or slide ────────────────────────────────────────────────────────────────────
+            One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
+            pressing the cake to draw over it are the same press. So it is a mode, said out loud,
+            rather than a modifier key nobody would find on a phone.
+            Sliding moves the WHOLE stroke and keeps its shape: it is the unit you drew, and the unit
+            a ring already is. Until this, a border a few millimetres too low cost you the whole line.
+        */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {[['Draw', false], ['Move', true]].map(([label, val]) => (
+            <button key={label} onClick={() => setPenMove(val)}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
+                       border: `1.5px solid ${penMove === val ? '#2C4433' : '#999999'}`,
+                       background: penMove === val ? '#2C4433' : '#fff',
+                       color: penMove === val ? '#fff' : '#1a1a1a',
+                       fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {penMove && (
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
+            Drag a piped line to slide it. It keeps its shape and stays on the cake.
+          </div>
+        )}
+
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
         <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
@@ -7008,20 +7179,149 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
-          Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.
+          {penStyle.stampUrl
+            ? 'Drag on the cake and the shape repeats along your line — release to stop. Drag the empty space around it to rotate.'
+            : 'Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.'}
         </div>
+
+        {/* ── What is on the nozzle ─────────────────────────────────────────────────────────────
+            Only in stamp mode, and it earns its space twice over: it NAMES what is about to be
+            repeated, and it is the only way back to plain cream. penStyle keeps whatever was last
+            put into it, so without this a customer who tried "I'll pipe it myself" and then wanted a
+            line of cream would go on stamping shells with no way to say stop. */}
+        {penStyle.stampUrl && (
+          <div style={{ marginTop: 8, padding: '8px 9px', borderRadius: 9,
+                        background: '#F7F5F1', border: '1.5px solid #E3E0DA' }}>
+            {/* The name on its OWN line and allowed to wrap. Sharing a row with the buttons squeezed
+                it to "Piping …", which told the customer nothing — the one thing this strip exists
+                to say is WHAT is on the nozzle. */}
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#1a1a1a', lineHeight: 1.35, marginBottom: 7 }}>
+              Piping {penStyle.stampName ?? 'a shape'}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {/* The way BACK. Choosing "I'll pipe it myself" swaps the piping card for this one, and
+                  without this there is no route to the zone tiles, the ring's colour or its size
+                  again — the card is still in the stack but the customer has no reason to know that
+                  the thing they were just looking at is the thing to reopen. */}
+              {stampSourceCard && (
+                <button onClick={backToPipingCard}
+                  style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
+                           border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
+                           fontFamily: "'Quicksand',sans-serif" }}>
+                  ‹ Back to {stampSourceCard.name}
+                </button>
+              )}
+              <button onClick={pipeWithCreamAgain}
+                style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
+                         border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
+                         fontFamily: "'Quicksand',sans-serif" }}>
+                Cream instead
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Cream colour</div>
         <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={152} />
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
-        <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
-        <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
+        {/* "Size" and a wider range in stamp mode. The word first: on the pen this IS a thickness —
+            how fat the rope is — but on a stamp it is how big the whole shape comes out, and calling
+            that thickness invites a customer to look for the shape to get chunkier.
+            The range second: the rope's 0.16 ceiling is barely above where a piped shell STARTS
+            (0.144), so there was no room to make a border bigger and plenty to make it far too
+            small. A stamp gets 0.04–0.34 — roughly a quarter to a little over double a ring's. */}
+        {penStyle.stampUrl ? (
+          <PenSlider label="Size" value={penStyle.thickness} min={0.04} max={0.34} step={0.005}
+            onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
+        ) : (
+          <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
+        )}
+        {/* Softness shapes the swept ROPE and does nothing to a stamped shape — the stamp path never
+            reads it. Shown for cream, hidden for a stamp, because a slider that moves and changes
+            nothing is worse than one that is missing.
 
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
+            Spacing replaces it, and it is the control piping actually turns on: how tightly the
+            repeats sit. 0.55 is shells crowding each other, 1.4 is a dotted run. It has lived in
+            penStyle since the pen was built with nothing to set it. */}
+        {penStyle.stampUrl ? (<>
+          <PenSlider label="Spacing" value={penStyle.spacing ?? 0.85} min={0.5} max={1.6} step={0.05}
+            onChange={v => setPenStyle(ps => ({ ...ps, spacing: v }))} fmt={v => v.toFixed(2)} />
+          {/* ── Lean ──────────────────────────────────────────────────────────────────────────────
+              A calibrated ring rotation carries a big outward TILT — the shipped shell border is
+              -68° — because a rim shell hangs over the cake's edge. Reproduced in the middle of a
+              flat top it simply lays the piece down, so hand-piping stands the piece up and starts
+              this at zero.
+              It is a control rather than a constant because the decomposition behind it is read off
+              the renderer, not proven: local X is tangential so a rotation about it is the lean, and
+              if a particular model wants some of that back, this is how it gets it. */}
+          <PenSlider label="Lean" value={penStyle.stampLean ?? 0} min={-80} max={80} step={2}
+            onChange={v => setPenStyle(ps => ({ ...ps, stampLean: v }))} fmt={v => `${v}°`} />
+        </>) : (
+          <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
+        )}
+
+        {/* ── Auto-correct shape ───────────────────────────────────────────────────────────────
+            Nobody draws a clean border with a mouse. A run round the rim comes out wobbling, and the
+            wobble is the difference between a piped cake and a dragged mouse — a real baker's hand
+            is steadied by the turntable and the cake's own edge, and this is the equivalent.
+            It only ever snaps to a circle about the cake's axis or to a straight line, and only when
+            the drawing is clearly one of those. A heart, a name, a deliberate squiggle come back
+            exactly as drawn — guessing wrong destroys work, so the bar is high and the fallback is
+            always "leave it alone". Applied when the stroke is COMMITTED, so what is saved is what
+            is meant. */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={penStyle.autoShape ?? false}
+            onChange={e => setPenStyle(ps => ({ ...ps, autoShape: e.target.checked }))}
+            style={{ width: 15, height: 15, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#1a1a1a' }}>Auto-correct shape</span>
+            <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.35 }}>
+              Tidies a rim border into a true circle, and a near-straight run into a straight one.
+            </span>
+          </span>
+        </label>
+
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 10 }}>
           {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
         </div>
+
+        {/* ── Turning the cake while the pen is out ──────────────────────────────────────────────
+            Drag-to-rotate still works on empty background, and stops being reachable exactly when it
+            matters: with the pen out a drag on the CAKE draws, so reaching the far side means finding
+            bare canvas — which on a phone, or with a cake that fills the frame, is barely there.
+            A third of a turn a press: enough to bring the other side round in three, small enough to
+            keep your bearings. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', flex: 1 }}>
+            Turn the cake
+          </span>
+          {[['↺', -1], ['↻', 1]].map(([glyph, dir]) => (
+            <button key={dir} onClick={() => turnCameraRef.current?.(dir * Math.PI / 3)}
+              title={dir < 0 ? 'Turn left' : 'Turn right'}
+              style={{ width: 34, height: 30, borderRadius: 8, border: '1.5px solid #999999',
+                       background: '#fff', color: '#1a1a1a', fontSize: 15, cursor: 'pointer',
+                       fontFamily: "'Quicksand',sans-serif", lineHeight: 1 }}>
+              {glyph}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Done ────────────────────────────────────────────────────────────────────────────────
+            Piping is not one stroke. A baker pipes a border, then a line down the side, then a few
+            flourishes on top — and until now the only way to stop was to go and click something
+            else, which meant every exit was an accident. Draw mode stays on across as many strokes
+            as you like and ends when you SAY it ends.
+
+            It doubles as the answer to "how do I get out of this": with a nozzle for a cursor and
+            drags landing cream instead of rotating the cake, a visible way out is not a nicety. */}
+        <button onClick={() => selectExclusive(null)}
+          style={{ width: '100%', marginTop: 8, padding: '9px 0', borderRadius: 8, border: 'none',
+                   background: '#2C4433', color: '#fff', fontWeight: 800, fontSize: 12,
+                   cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>
+          Done piping
+        </button>
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
           <button onClick={removeStroke} disabled={!design.piping.length}
             style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
@@ -7277,8 +7577,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <ArrangementTile key={a.key} item={a} on={current?.key === a.key}
                 tiers={design.tiers.length} tierIndex={card.tierIndex} size={40}
                 onPick={() => {
-                  const { scale, ...shape } = a.params;
-                  set({ surface: a.surface, ...shape });
+                  const { scale, ...shape } = arrangementShape(a);
+                  set(shape);
                 }} />
             ))}
           </div>
@@ -8555,7 +8855,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onWritingClick={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
               onWritingMove={(id, moves) => updateWriting(id, moves)}
               selectedWritingId={selectedWritingId}
-              penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen'}
+              penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && !penMove}
+              penMoveMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && penMove}
+              onMoveStroke={updateStrokePoints}
               penStyle={penStyle}
               onAddStroke={addStroke}
               dustMode={selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust'}
@@ -8577,6 +8879,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               isStickerMovable={isStickerMovable}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
+              turnCameraRef={turnCameraRef}
               takeRef={canRecordReel ? takeRef : null}
               onAngleChange={setPhotoAngle}
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
@@ -9416,6 +9719,57 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })}
+              {/* ── Or put it where you like ────────────────────────────────────────────────────
+                  Every tile above answers "which BORDER does this ring go round". Between them they
+                  cover a rim and a board, which is most of what gets piped and nowhere near all of
+                  it — a baker pipes wherever they want, and until now the zone list was the entire
+                  vocabulary a customer had.
+
+                  Offered here rather than as its own decoration because it is the SAME shape and the
+                  same decision: you are choosing where this piping goes, and "anywhere I draw" is one
+                  of the answers. A separate card would have made it a different product.
+
+                  Only when there is a GLB to repeat. A piping pattern that resolves to nothing would
+                  put the cake in draw mode and then stamp nothing at all, which reads as the drawing
+                  being broken. */}
+              {/* ── Gated on the element, not on the designer ─────────────────────────────────
+                  `hand_piping` is ticked per element in admin, by whoever calibrated it. Not every
+                  piping element survives being repeated along a freehand line: a wrap band is ONE
+                  pre-formed ring and a drip is a procedural curtain, both rings by nature, and
+                  stamping either along a squiggle produces something nobody would pipe. A shell or
+                  a rosette repeats happily.
+                  Absent means OFF. An element nobody has considered does not get the feature by
+                  default — the alternative is offering it everywhere and finding out on a customer's
+                  cake which elements it ruins. */}
+              {!!pipingPopupEl.placement_config?.hand_piping
+                && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
+                  <button
+                    onClick={() => pipeItMyself(pipingPopupEl)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
+                             border: '1.5px solid #999999', background: '#fff',
+                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
+                    {/* A hand-drawn squiggle with beads along it — the line you draw, and this shape
+                        repeating down it. The zone tiles are all rings; this one must not look like
+                        another ring or it reads as a seventh border. */}
+                    <svg width="26" height="18" viewBox="0 0 34 20" fill="none" aria-hidden focusable="false"
+                         style={{ flexShrink: 0 }}>
+                      <path d="M2 14C6 4 11 4 15 10s9 6 13 -4" stroke="#c9c1b4" strokeWidth="1.6"
+                            strokeLinecap="round" strokeDasharray="2.6 2.6" />
+                      {[[3.4, 12.4], [8.2, 6.4], [13.2, 8.2], [18.4, 12], [23.6, 11.2], [28.4, 5.2]].map(([cx, cy], i) => (
+                        <circle key={i} cx={cx} cy={cy} r="2.4" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.2" />
+                      ))}
+                    </svg>
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#1a1a1a' }}>I'll pipe it myself</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
+                        Draw anywhere on the cake and this shape repeats along your line.
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              )}
               {/* Card-level Remove — takes the whole decoration off the cake (every tier × zone), the same
                   action the sticker/cluster/foil/cream cards offer. The per-zone checkboxes above stay as
                   the fine-grained control. Config-gated on allowed_actions.delete; hidden when it isn't

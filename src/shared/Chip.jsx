@@ -38,7 +38,13 @@ export default function Chip({
         cursor: disabled ? 'not-allowed' : 'pointer',
         background: active ? bg : 'transparent',
         color: active ? fg : '#666',
-        opacity: disabled ? 0.5 : 1,
+        /* ⚠️ A locked chip that IS the current value stays at full strength. Dimming
+           everything equally made a locked pair unreadable — the egg/eggless chips, once
+           vegan forces eggless, showed the chosen and the rejected side at the same
+           weight, so the customer could not tell which way it had been decided. That is
+           the whole reason those chips are locked rather than hidden. Fading is for what
+           you CANNOT pick, never for what has been picked for you. */
+        opacity: disabled && !active ? 0.5 : 1,
         fontFamily: "'Quicksand', sans-serif",
         transition: 'all 0.15s',
       }}

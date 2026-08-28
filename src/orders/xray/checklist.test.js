@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { harvestPlaceables } from './harvest.js';
+import { harvestPlaceables, proceduralPlacements } from './harvest.js';
 import { buildXrayReport, splitInstructions } from './report.js';
 
 // A checklist makes a claim nothing else on the sheet makes: that this is EVERYTHING.
@@ -167,5 +167,97 @@ describe('checklist numbering', () => {
   it('keys are unique, so a tick cannot land on two rows', () => {
     const keys = report.checklist.flatMap(g => g.items.map(i => i.key));
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// ── Hand-piped runs ──────────────────────────────────────────────────────────────────────────────
+// A run drawn by hand is many strokes and ONE job. Keyed by the stroke's own id it became one
+// checklist line per drag — a real order came back with twenty-eight identical "Freehand piping"
+// items and a headline count of 29, which tells a baker nothing about how much work there is.
+describe('hand-piped strokes in the checklist', () => {
+  const stroke = (over = {}) => ({
+    id: `s${Math.random()}`, tierIndex: 0, color: '#ffffff', nozzle: 'star5',
+    points: [[0, 1, 0], [0.2, 1, 0]], ...over,
+  });
+  const withPiping = (piping) => ({ tiers: [{ topPipings: [], bottomPipings: [] }], piping });
+
+  it('collapses many strokes of one decoration into a single line with a count', () => {
+    const piping = Array.from({ length: 28 }, () =>
+      stroke({ stampId: 'el-1', stampName: 'Ruffled Swirl' }));
+    const items = harvestPlaceables(withPiping(piping)).flatMap(g => g.items);
+    const mine = items.filter(i => i.what.includes('Ruffled Swirl'));
+    expect(mine).toHaveLength(1);
+    expect(mine[0].count).toBe(28);
+    expect(mine[0].what).toBe('Ruffled Swirl — piped by hand');
+  });
+
+  it('keeps genuinely different jobs apart', () => {
+    // Different colour, different decoration, different tier — each is a moment the baker stops and
+    // changes something, so each is its own line.
+    const items = harvestPlaceables(withPiping([
+      stroke({ stampId: 'el-1', stampName: 'Swirl', color: '#ffffff' }),
+      stroke({ stampId: 'el-1', stampName: 'Swirl', color: '#ff0000' }),
+      stroke({ stampId: 'el-2', stampName: 'Rosette', color: '#ffffff' }),
+      stroke({ stampId: 'el-1', stampName: 'Swirl', color: '#ffffff', tierIndex: 1 }),
+    ])).flatMap(g => g.items).filter(i => i.what.includes('piped by hand'));
+    expect(items).toHaveLength(4);
+    for (const i of items) expect(i.count).toBe(1);
+  });
+
+  it('still groups plain cream-pen strokes by nozzle and colour', () => {
+    const items = harvestPlaceables(withPiping([
+      stroke({ nozzle: 'star5' }), stroke({ nozzle: 'star5' }), stroke({ nozzle: 'round' }),
+    ])).flatMap(g => g.items).filter(i => i.what === 'Freehand piping');
+    expect(items).toHaveLength(2);
+    expect(items.find(i => i.count === 2)).toBeTruthy();
+  });
+});
+
+// ── Procedural decorations ───────────────────────────────────────────────────────────────────────
+// A rainbow is BUILT, so it lives in a per-tier collection rather than design.stickers — and this
+// file enumerated the collections it knew about. A cake whose most visible decoration was a rainbow
+// said nothing about the rainbow, on the checklist or in the guides. The comment at the top of
+// harvestPlaceables calls that the completeness trap; it happened anyway.
+describe('procedural decorations reach the sheet', () => {
+  const design = {
+    tiers: [
+      { topPipings: [], bottomPipings: [],
+        rainbows: [{ id: 'rb-1', elementId: 'el-rainbow', elementName: 'Pastel rainbow' }],
+        clouds: [{ id: 'cl-1', elementId: 'el-cloud', elementName: 'Puffy cloud' },
+                 { id: 'cl-2', elementId: 'el-cloud', elementName: 'Puffy cloud' }] },
+    ],
+  };
+
+  it('lists a rainbow and its clouds', () => {
+    const what = harvestPlaceables(design).flatMap(g => g.items.map(i => i.what));
+    expect(what).toContain('Pastel rainbow');
+    expect(what).toContain('Puffy cloud');
+  });
+
+  it('names them from the element, falling back to a plain word', () => {
+    const bare = { tiers: [{ rainbows: [{ id: 'rb-9' }] }] };
+    const what = harvestPlaceables(bare).flatMap(g => g.items.map(i => i.what));
+    expect(what).toContain('Rainbow');
+  });
+
+  it('counts two clouds as two, not one', () => {
+    const items = harvestPlaceables(design).flatMap(g => g.items);
+    const clouds = items.filter(i => i.what === 'Puffy cloud');
+    // Distinct instances, so distinct keys — two things to place, two things to tick.
+    expect(clouds.reduce((n, c) => n + c.count, 0)).toBe(2);
+  });
+
+  it('exposes their element ids so a guide can be fetched', () => {
+    const ids = proceduralPlacements(design, 1).map(p => p.elementId);
+    expect(ids).toContain('el-rainbow');
+    expect(ids).toContain('el-cloud');
+  });
+
+  it('tolerates an older design that never recorded the element', () => {
+    // Not fixable after the fact — an order saved before the designer recorded this simply does not
+    // know which rainbow it was. It must still appear on the checklist.
+    const old = { tiers: [{ rainbows: [{ id: 'rb-old' }] }] };
+    expect(proceduralPlacements(old, 1)[0].elementId).toBeNull();
+    expect(harvestPlaceables(old).flatMap(g => g.items).length).toBeGreaterThan(0);
   });
 });

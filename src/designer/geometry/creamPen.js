@@ -234,33 +234,162 @@ function rng(seed) {
 }
 
 // stroke: { kind:'stamp', point, normal, thickness, seed }
-//      or { kind:'stamprope', points, normal, thickness, spacing, seed }
+//      or { kind:'stamprope', points, normal, thickness, spacing, seed, regular }
 // footprint: the GLB's max(x,z) extent after it's centred with its base at y=0.
 // Returns [{ pos:[x,y,z], quat:[x,y,z,w], scale }]. Each stamp sits with its base ON the
 // surface (the stored points are the SEATED centerline, lifted one radius along the normal,
 // so we drop back by the radius) and its up axis along the surface normal.
-export function stampTransforms(stroke, footprint) {
+//
+// ── `regular`: the difference between scattering and PIPING ──────────────────────────────────────
+// Every copy is normally given a small random spin and a few percent of random scale. That is what
+// makes a dragged row of blossoms look strewn by hand instead of printed, and it is right for what
+// this was built for.
+//
+// It is wrong for piping. A piped border is one shell pressed out over and over by the same nozzle
+// at the same angle — its whole character is that the repeats AGREE. Jittered, the same GLB reads as
+// a row of shells somebody knocked askew. So `regular` turns both randomisations off and locks each
+// copy's forward to the path tangent, which is the shape a baker's hand actually makes.
+//
+// A flag rather than a second function: the walk, the seating and the orientation are identical, and
+// the one thing that differs is whether the hand wobbles.
+export function stampTransforms(stroke, metrics) {
   const up0 = new THREE.Vector3().fromArray(stroke.normal || [0, 1, 0]);
   if (up0.lengthSq() < 1e-9) up0.set(0, 1, 0);
   up0.normalize();
   const th = stroke.thickness ?? 0.03;
   const target = 2 * th;                         // stamp footprint ≈ rope diameter
-  const baseScale = target / Math.max(footprint, 1e-4);
+  const regular = !!stroke.regular;
+  // ── Sized by HEIGHT for piping, by footprint for scattering ──────────────────────────────────
+  // A ring sizes a shell by how TALL it stands: `sc = radius × SHELL_HEIGHT_FRAC / size.y`. The
+  // stamp sized by widest horizontal extent, which for a shell authored lying down is its LENGTH —
+  // so one slider produced two different sizes depending on how the model happened to be exported,
+  // and neither matched the ring.
+  //
+  // `metrics` is the bare footprint number for every caller that predates this, or
+  // {footprint, height}. Scattering keeps the footprint it was built on, so nothing already stamped
+  // on a cake changes size.
+  const mm = (typeof metrics === 'number') ? { footprint: metrics, height: metrics } : (metrics ?? {});
+  const footprint = mm.footprint ?? 1;
+  const height = mm.height ?? footprint;
+  const baseScale = target / Math.max(regular ? height : footprint, 1e-4);
   const rand = rng(((stroke.seed ?? 1) * 100003 + 7) | 0);
   const out = [];
 
+  // ── The element's own rotation, the way a RING applies it ────────────────────────────────────
+  // Aligning up to the surface normal and forward to the tangent says where a copy sits and which
+  // way it faces. It says nothing about how the GLB is authored — a shell modelled lying on its side
+  // stays lying on its side, which is why hand-piped shells came out fallen while the same element
+  // ringed round a rim stood up.
+  //
+  // A ring reads `placement_config.*_rotation` and splits it (CakeTier: `ryA`/`meshA`): Y yaws the
+  // piece about the surface normal, X and Z tilt it upright. Nested there as group(yaw) →
+  // mesh(tilt), so the same composition is qYaw · qTilt applied AFTER the basis. Degrees, because
+  // that is what an admin types and what the column stores.
+  // ── Which part of the calibration to keep ────────────────────────────────────────────────────
+  // A calibrated ring rotation is not a small adjustment. The shipped Classic Shell Border is
+  // [-68, -1, 175]: a 175° ROLL that fixes how the GLB was authored, and a -68° TILT that leans the
+  // piece out over the rim's edge.
+  //
+  // In the ring's own frame those axes have meanings. Local X runs TANGENTIALLY, along the border,
+  // so a rotation about X tips the piece forward or back — that IS the outward lean. Z is the radial
+  // axis (CakeTier: "local z = the radial axis the renderer places along"), so a rotation about it
+  // rolls the piece upright. Y spins it in place.
+  //
+  // Reproduced verbatim on a flat cake top, the -68° pivots the shell about its base and lays it
+  // down — which is exactly what it should do on a rim edge and exactly wrong in the middle. So the
+  // roll and the spin are kept (they fix the model), and the lean is dropped: a hand-piped shell
+  // stands on whatever surface it is drawn on.
+  //
+  // `lean` puts it back by degrees, because this decomposition is READ off the renderer rather than
+  // proven, and a number the customer can turn beats another round of me guessing at it.
+  // The calibration is applied VERBATIM, and that only became the right answer once the geometry was
+  // prepared the way a ring prepares it. extractGeo bakes a +90° X turn into the mesh, so the -68°
+  // is not the huge lean it reads as on paper — against that baked turn it nets to a modest upright
+  // tilt, which is what a rim shell actually looks like. Decomposing it (an earlier attempt here)
+  // was compensating for the missing +90° in the wrong place.
+  //
+  // `lean` stays, as an adjustment ON TOP rather than a replacement: 0 is the ring's own angle, and
+  // it is there because this is the fourth attempt at this orientation and a number the customer can
+  // turn is worth more than my confidence.
+  const rot = stroke.rotation;
+  const lean = stroke.lean ?? 0;
+  let extra = null;
+  if (rot || lean) {
+    const DEG = Math.PI / 180;
+    const rx = (rot?.[0] ?? 0) + lean;
+    const ry = rot?.[1] ?? 0;
+    const rz = rot?.[2] ?? 0;
+    if (rx || ry || rz) {
+      extra = new THREE.Quaternion()
+        .setFromEuler(new THREE.Euler(0, ry * DEG, 0))
+        .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rx * DEG, 0, rz * DEG)));
+    }
+  }
+
+  // ── Sitting ON the surface after the piece has been turned ───────────────────────────────────
+  // StampStroke translates the merged geometry so its base is at y=0 IN THE AUTHORED FRAME. That
+  // only seats the piece if it is authored standing. Roll it 175° to stand it up and the old base is
+  // now its top, so it hangs under the cake — and any lean pivots it about a point that is no longer
+  // its lowest.
+  //
+  // So: rotate the bounding box the same way the piece is rotated, and read how far its lowest
+  // corner has ended up below the origin. That drop is added back along the surface normal. Needs
+  // the box, so it only applies where StampStroke supplies one — without it this is a no-op and the
+  // behaviour is exactly what it was.
+  let seatDrop = 0;
+  if (mm.bbox && extra) {
+    const b = new THREE.Box3(
+      new THREE.Vector3().fromArray(mm.bbox.min),
+      new THREE.Vector3().fromArray(mm.bbox.max),
+    ).applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(extra));
+    seatDrop = -b.min.y * baseScale;         // >0 when the turn pushed the piece below its origin
+  }
+
   const place = (seatedP, forward) => {
     const up = up0.clone();
-    const surface = seatedP.clone().addScaledVector(up, -th);   // base on the surface
+    // -th puts the base back on the surface (the stored centerline is lifted one radius); +seatDrop
+    // lifts it by however far the rotation dropped its lowest point.
+    const surface = seatedP.clone().addScaledVector(up, -th + seatDrop);
     const fwd = forward ? forward.clone() : new THREE.Vector3(1, 0, 0);
-    fwd.applyAxisAngle(up, forward ? (rand() - 0.5) * 0.5 : rand() * Math.PI * 2);  // spin
-    let z = fwd.sub(up.clone().multiplyScalar(fwd.dot(up)));     // forward ⟂ up
-    if (z.lengthSq() < 1e-8) z = new THREE.Vector3(0, 0, 1).sub(up.clone().multiplyScalar(up.z));
+    // A lone regular stamp still has to face somewhere, and `rand()` would be a different somewhere
+    // every render. Zero keeps it put.
+    if (!regular) fwd.applyAxisAngle(up, forward ? (rand() - 0.5) * 0.5 : rand() * Math.PI * 2);
+    // ── Which way the piece FACES: along the run, or across it ──────────────────────────────────
+    // Scattering faces along the drag — a row of blossoms follows the hand, and that is what this
+    // was built for.
+    //
+    // A ring does the opposite, and working it out from the renderer is the only way to see it.
+    // Shell nests group(yaw = -rotY + π/2 + ry) → mesh(tilt), with an identity outer quaternion on a
+    // plain ring. At shell angle `a` that yaw is (π/2 − a), which sends the GLB's +Z to
+    // (cos a, 0, sin a) — the OUTWARD RADIAL. A piped shell points away from the cake, square across
+    // the border's direction of travel, not along it.
+    //
+    // Piped by hand with +Z along the tangent, every shell was turned a quarter turn, and the X-tilt
+    // that should lean it forward leaned it SIDEWAYS instead. That is what "it's falling" was — not
+    // a missing rotation (the previous fix, which was real but not this) but a rotation applied to a
+    // frame that was already ninety degrees out.
+    //
+    // Tied to `regular` because that flag already means "behave like a ring". Scattering keeps the
+    // convention it was written with, so no cream-pen stroke anybody has already drawn moves.
+    let z;
+    if (regular) {
+      z = new THREE.Vector3().crossVectors(fwd, up);              // across the run
+      if (z.lengthSq() < 1e-8) z = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 0, 1), up);
+      if (z.lengthSq() < 1e-8) z = new THREE.Vector3().crossVectors(new THREE.Vector3(1, 0, 0), up);
+    } else {
+      z = fwd.sub(up.clone().multiplyScalar(fwd.dot(up)));        // along the run
+      if (z.lengthSq() < 1e-8) z = new THREE.Vector3(0, 0, 1).sub(up.clone().multiplyScalar(up.z));
+    }
     z.normalize();
     const x = new THREE.Vector3().crossVectors(up, z).normalize();
     const m = new THREE.Matrix4().makeBasis(x, up, z);
     const q = new THREE.Quaternion().setFromRotationMatrix(m);
-    out.push({ pos: surface.toArray(), quat: q.toArray(), scale: baseScale * (1 + (rand() - 0.5) * 0.16) });
+    // AFTER the basis, so the tilt is applied in the copy's own frame — the piece leans relative to
+    // the surface it sits on, which is what a ring does and what a hand does. Multiplied the other
+    // way round it would lean relative to the world and every copy on a curved wall would lean a
+    // different way.
+    if (extra) q.multiply(extra);
+    out.push({ pos: surface.toArray(), quat: q.toArray(), scale: regular ? baseScale : baseScale * (1 + (rand() - 0.5) * 0.16) });
   };
 
   if (stroke.kind === 'stamp') { place(new THREE.Vector3().fromArray(stroke.point)); return out; }

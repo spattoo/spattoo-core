@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
 import FlavourWheel from './FlavourWheel.jsx';
 import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS } from './suggestFlavour.js';
-import { rankedOccasions, everyTier } from './cakeDraft.js';
+import { rankedOccasions, everyTier, celebrationsFor } from './cakeDraft.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -151,10 +151,10 @@ const QUESTIONS = [
     key: 'celebration',
     title: 'What kind of celebration?',
     when: a => a.recipient === 'child' || a.recipient === 'adult',
-    options: a => (a.recipient === 'child'
-      ? [['first_birthday', 'A first birthday'], ['kids_party', "A children's party"],
-         ['teen_party', "A teenager's party"]]
-      : [['grown_ups', 'A grown-ups’ celebration'], ['elders', 'A celebration for elders']]),
+    // The vocabulary lives in cakeDraft.js beside OCCASIONS — it is a persisted order field with a
+    // CHECK behind it, so it has to sit where `check:occasions` can read it. Written out here it
+    // was a three-part contract that nothing verified.
+    options: a => celebrationsFor(a.recipient),
   },
   // The same list the details facet uses — they write the same field, so offering different sets
   // would let the answer depend on which screen happened to ask.
@@ -353,6 +353,31 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
       return { key: q.key, label: opts.find(([v]) => v === answers[q.key])?.[1] ?? answers[q.key] };
     });
 
+  /* ⚠️ SHOWN WHILE QUESTIONS ARE STILL PENDING, not only on the result.
+   *
+   * `recipient` is asked HERE and nowhere else, written to the draft, and the draft is persisted
+   * for seven days — so a visit within that week seeds it and "never ask twice" drops the question
+   * from `pending`. Correct, and it had one consequence nobody had followed through: a SEEDED
+   * ANSWER SILENTLY NARROWS A LATER QUESTION. `celebration` splits on recipient, so somebody who
+   * answered "a little one" last Friday opens the app today, is never asked who it is for, and is
+   * offered a first birthday, a children's party and a teenager's party as though that were the
+   * whole world. It reads as "this bakery only does children's cakes".
+   *
+   * That is worse than a stale field left filled in, because the stale answer is not on screen at
+   * all — it is only visible in what it has removed. So the chips render from the first question
+   * onward, ABOVE it, where they say what is already assumed and let any of it be changed. */
+  const chipRow = answerChips.length > 0 && (
+    <div style={s.chips}>
+      {answerChips.map(c => (
+        <button key={c.key} type="button" style={s.chip} onClick={() => reopen(c.key)}
+                title="Change this">
+          {c.label}
+          <span style={s.chipEdit}>change</span>
+        </button>
+      ))}
+    </div>
+  );
+
   // Overwrites FlavourFacet's registration (we render after it). One arrow now walks:
   //   result → the last question asked → … → the two doors → the entry screen → closed
   // and each press moves exactly one step, which is what "remembers the previous step" means.
@@ -382,6 +407,9 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
 
     return (
       <div style={s.qWrap}>
+        {/* Above the question, not below the options: on a phone the options already run to the
+            fold, and an explanation that has to be scrolled to has not explained anything. */}
+        {chipRow}
         <div style={s.qTitle}>{q.title}</div>
         <div style={s.qOpts}>
           {(typeof q.options === 'function' ? q.options(answers) : q.options).map(([value, label]) => (
@@ -419,17 +447,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
           is what "change my answer" has to mean: the customer wants ONE of them different, not to
           re-run the interview. It also works on a draft restored from a previous visit, because it
           reads the answers rather than a memory of this session. */}
-      {answerChips.length > 0 && (
-        <div style={s.chips}>
-          {answerChips.map(c => (
-            <button key={c.key} type="button" style={s.chip} onClick={() => reopen(c.key)}
-                    title="Change this">
-              {c.label}
-              <span style={s.chipEdit}>change</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {chipRow}
 
       </div>
     );
@@ -474,17 +492,7 @@ function Suggester({ draft, patch, close, bakerName, flavours, loading, onBack, 
           is what "change my answer" has to mean: the customer wants ONE of them different, not to
           re-run the interview. It also works on a draft restored from a previous visit, because it
           reads the answers rather than a memory of this session. */}
-      {answerChips.length > 0 && (
-        <div style={s.chips}>
-          {answerChips.map(c => (
-            <button key={c.key} type="button" style={s.chip} onClick={() => reopen(c.key)}
-                    title="Change this">
-              {c.label}
-              <span style={s.chipEdit}>change</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {chipRow}
       {/* Named, so the recommendation announces itself as one. Without it the screen opened on a
           slice and a name with no more standing than the cards below it — which is how a customer's
           eye reached the runners-up first and read THEM as the answer. */}

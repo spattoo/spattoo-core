@@ -2167,7 +2167,7 @@ function CameraPositionSync({ position }) {
 }
 
 // Smoothly lerps the camera to a target position when snapCameraRef.current() is called.
-function CameraSnapper({ snapCameraRef, orbitRef }) {
+function CameraSnapper({ snapCameraRef, turnCameraRef, orbitRef }) {
   const { camera } = useThree();
   const targetPos = useRef(null);
 
@@ -2175,6 +2175,24 @@ function CameraSnapper({ snapCameraRef, orbitRef }) {
     if (!snapCameraRef) return;
     snapCameraRef.current = (pos) => { targetPos.current = new THREE.Vector3(...pos); };
   }, [snapCameraRef]);
+
+  // ── Turning the cake without dragging it ──────────────────────────────────────────────────────
+  // Drag-to-rotate is the normal way round and it stops working exactly when you need it most: with
+  // the pen out, a drag on the cake DRAWS, so the only way to reach the far side is to find empty
+  // background — which on a phone, or a cake that fills the frame, barely exists.
+  //
+  // This spins the camera about the orbit target and hands the result to the SAME lerp the snapper
+  // uses, so the cake glides round instead of teleporting, and there is one piece of camera-easing
+  // code rather than two.
+  useEffect(() => {
+    if (!turnCameraRef) return;
+    turnCameraRef.current = (radians) => {
+      const t = orbitRef?.current?.target ?? new THREE.Vector3(0, 0, 0);
+      const from = targetPos.current ?? camera.position;      // compose with a turn already in flight
+      const p = from.clone().sub(t).applyAxisAngle(new THREE.Vector3(0, 1, 0), radians);
+      targetPos.current = t.clone().add(p);
+    };
+  }, [turnCameraRef, camera, orbitRef]);
 
   useFrame(() => {
     if (!targetPos.current) return;
@@ -2296,7 +2314,7 @@ function CakeScene({
   // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
   stickerResize = null,
   onWritingClick, onWritingMove, selectedWritingId = null,
-  penDrawMode = false, penStyle, onAddStroke,
+  penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
@@ -2452,7 +2470,7 @@ function CakeScene({
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
-          penDrawMode, penStyle, onAddStroke,
+          penDrawMode, penMoveMode, penStyle, onAddStroke, onMoveStroke,
           // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
@@ -2553,7 +2571,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedStickerIds = null, onStickerSelect = NOOP, onStickerLongPress, onStickerMove = NOOP,
     onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
     onWritingClick, onWritingMove, selectedWritingId = null,
-    penDrawMode = false, penStyle, onAddStroke,
+    penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke,
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit,
     onCloudMove, onRainbowMove,
   } = edit ?? {};
@@ -2831,6 +2849,8 @@ function CakeContent({ config, scene, edit = null }) {
       <CreamPen
         piping={piping}
         drawMode={penDrawMode}
+        moveMode={penMoveMode}
+        onMoveStroke={onMoveStroke}
         penStyle={penStyle}
         tierData={tierData}
         board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 } : undefined}
@@ -3262,7 +3282,7 @@ export default function CakeCanvas({
   stickerResize = null,
   isStickerMovable,
   hitTestRef,
-  snapCameraRef,
+  snapCameraRef, turnCameraRef,
   // Filled with the reel recorder when the designer passes it — catalogue authors only, so for
   // every other baker this is undefined and TakeDirector never mounts.
   takeRef = null,
@@ -3273,7 +3293,7 @@ export default function CakeCanvas({
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, selectedWritingId = null,
-  penDrawMode = false, penStyle, onAddStroke,
+  penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
@@ -3373,7 +3393,7 @@ export default function CakeCanvas({
     >
       <CameraCapture cameraRef={cameraRef} />
       <CameraPositionSync position={cameraPosition} />
-      <CameraSnapper snapCameraRef={snapCameraRef} orbitRef={orbitRef} />
+      <CameraSnapper snapCameraRef={snapCameraRef} turnCameraRef={turnCameraRef} orbitRef={orbitRef} />
       {/* Fills takeRef with the recorder, the same way CameraSnapper fills snapCameraRef — the
           camera only exists inside the Canvas, so anything that drives it has to live in here and
           hand a function out. Renders nothing; costs nothing when takeRef is not passed. */}
@@ -3419,6 +3439,8 @@ export default function CakeCanvas({
         onWritingMove={onWritingMove}
         selectedWritingId={selectedWritingId}
         penDrawMode={penDrawMode}
+        penMoveMode={penMoveMode}
+        onMoveStroke={onMoveStroke}
         penStyle={penStyle}
         onAddStroke={onAddStroke}
         creamPaint={creamPaint}

@@ -6,6 +6,7 @@ import VerifyStep from './VerifyStep.jsx';
 import { SizeFacet, DateFacet } from './SizeDateFacets.jsx';
 import {
   FACETS, emptyDraft, loadDraft, saveDraft, clearDraft, isFilled, canSubmit, withTierCount,
+  draftSummary,
 } from './cakeDraft.js';
 
 // ── The shell ───────────────────────────────────────────────────────────────────────────────────
@@ -109,6 +110,32 @@ export default function FacetShell({
   // code would punish them for our failure. Retry goes straight back to the network.
   const [session, setSession] = useState(null);
 
+  /* ── A restored draft has to announce itself ────────────────────────────────────────────────────
+   *
+   * ⚠️ THE DRAFT SURVIVES SEVEN DAYS, AND A SEEDED ANSWER NARROWS LATER QUESTIONS SILENTLY. That is
+   * the fault this closes, and it is not the ordinary "a field was still filled in": `recipient` is
+   * asked in one place, and once answered it removes "Who's it for?" from the flow AND splits the
+   * celebration question down the child branch. A customer returning inside the week is never asked
+   * who the cake is for and is then offered a first birthday, a children's party and a teenager's
+   * party as though that were everything the bakery does. It reads as a bakery that only does
+   * children's cakes, and nothing on screen explains it.
+   *
+   * ⚠️ NOT SOLVED BY CLEARING ON ENTRY. The obvious fix — wipe the draft when "Let's make your cake"
+   * is tapped — kills resume outright, because that button is the ONLY way in: every return visit
+   * would start from nothing and the seven days would never restore anything. A cake is a considered
+   * purchase and putting the phone down mid-way is exactly the case the persistence exists for.
+   *
+   * So it ASKS, once, before the doors. That is simultaneously the fix for the invisible answer, the
+   * summary of what is already chosen, and a one-tap clear that is not hidden at the bottom of a
+   * screen.
+   *
+   * ⚠️ Captured from the FIRST render only. Reading it live would make the panel flip back to this
+   * screen the moment the customer answered anything, which is the same trap the `asked` list fell
+   * into elsewhere in this flow. */
+  const [resumeAsked, setResumeAsked] = useState(false);
+  const [restored] = useState(() => draftSummary(draft));
+  const askResume = restored.length > 0 && !resumeAsked;
+
   useEffect(() => { saveDraft(draft); }, [draft]);
 
   const remaining = useMemo(() => FACETS.filter(f => !isFilled(draft, f)), [draft]);
@@ -209,7 +236,13 @@ export default function FacetShell({
               ? <img src={logo} alt={baker?.name || 'Bakery'} style={s.logo} />
               : <div style={s.eyebrow}>{baker?.name}</div>}
             <h2 style={s.title}>
-              {open ? FACET_TITLE[open] : verifying ? 'Almost there' : 'Where would you like to start?'}
+              {/* ⚠️ The resume screen brings its OWN question, so the panel must not also ask one.
+                  "Where would you like to start?" over "Pick up where you left off?" is two
+                  questions stacked, and they disagree — one assumes nothing has happened yet. */}
+              {open ? FACET_TITLE[open]
+                : verifying ? 'Almost there'
+                : askResume ? 'Welcome back'
+                : 'Where would you like to start?'}
             </h2>
           </div>
           <button type="button"
@@ -275,6 +308,23 @@ export default function FacetShell({
                     send({ ...draft, contact: { ...draft.contact, ...field, name } }, tok);
                   }}
                 />
+              ) : askResume ? (
+                /* Before the doors, and instead of them — a choice this small is not a banner to
+                   be scrolled past. It names what is being resumed, because "continue?" with no
+                   object is a question nobody can answer. */
+                <div style={s.resumeWrap}>
+                  <div style={s.resumeTitle}>Pick up where you left off?</div>
+                  <div style={s.resumeChips}>
+                    {restored.map((r, i) => <span key={i} style={s.resumeChip}>{r}</span>)}
+                  </div>
+                  <button type="button" style={s.entry(primary)} onClick={() => setResumeAsked(true)}>
+                    <span style={s.entryLabel}>Continue this cake</span>
+                  </button>
+                  <button type="button" style={s.resumeFresh}
+                          onClick={() => { patch({ __reset: true }); setResumeAsked(true); }}>
+                    Start a new one
+                  </button>
+                </div>
               ) : (
                 <>
                   {ENTRIES.map(e => (
@@ -319,7 +369,13 @@ export default function FacetShell({
                                   onClick={() => setConfirmReset(false)}>Cancel</button>
                         </>
                       ) : (
-                        <button type="button" style={s.resetLink}
+                        /* ⚠️ A BUTTON, not a 12px link. It was styled quiet and put at the bottom
+                           on the reasoning that it is "the least likely thing anybody came here to
+                           do" — but it turned out to be the CURE for the commonest confusion (a
+                           draft restored days later), and the first person to hit that could not
+                           find it. Quiet is right for something rarely wanted; this is rarely
+                           wanted and urgently needed when it is. */
+                        <button type="button" style={s.resetBtn}
                                 onClick={() => setConfirmReset(true)}>Start over</button>
                       )}
                     </div>
@@ -412,7 +468,18 @@ const s = {
   tick: (primary) => ({ color: primary, fontWeight: 800, fontSize: 14 }),
 
   rest:    { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  resetWrap: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  resetWrap: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  resetBtn:  { border: '1.5px solid #DFD6C8', background: '#fff', borderRadius: 11,
+               padding: '10px 16px', font: 'inherit', fontSize: 13, fontWeight: 700,
+               color: '#6B5B4C', cursor: 'pointer' },
+  resumeWrap:  { display: 'flex', flexDirection: 'column', gap: 10 },
+  resumeTitle: { fontSize: 17, fontWeight: 800, color: '#3D3226' },
+  resumeChips: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 2 },
+  resumeChip:  { fontSize: 12, fontWeight: 700, color: '#6B5B4C', background: '#F4EFE7',
+                 border: '1px solid #E5DCCF', borderRadius: 999, padding: '5px 10px' },
+  resumeFresh: { border: '1.5px solid #DFD6C8', background: '#fff', borderRadius: 12,
+                 padding: '12px 16px', font: 'inherit', fontSize: 14, fontWeight: 700,
+                 color: '#6B5B4C', cursor: 'pointer' },
   resetLink: { border: 'none', background: 'none', font: 'inherit', fontSize: 12, fontWeight: 700,
                color: '#A2968A', cursor: 'pointer', padding: 0, textDecoration: 'underline' },
   resetAsk:  { fontSize: 12.5, fontWeight: 700, color: '#7A6C60' },

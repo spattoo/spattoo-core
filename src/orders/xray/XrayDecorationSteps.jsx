@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
@@ -133,6 +133,26 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
   const [freshStages, setFreshStages] = useState(null);
 
   const guide = fresh ?? row.guide;
+
+  // ── A guide that EXISTS is shown ──────────────────────────────────────────────────────────────
+  // It used to start collapsed behind a "12 steps" button, so a decoration whose how-to was already
+  // written looked, at a glance, exactly like one with nothing behind it — and reading it cost a
+  // click per decoration on a sheet meant to be read at 6am with your hands full. The button that
+  // deserves a press is "How do I make this?", which spends credits; opening something already paid
+  // for does not.
+  //
+  // Auto-opened ONCE per guide rather than on every render, so a baker who collapses a long one to
+  // reach the next decoration does not have it spring back at them. `openedFor` remembers which
+  // guide was opened, because the guides arrive asynchronously and a row can be rendered before its
+  // own has landed.
+  const openedFor = useRef(null);
+  useEffect(() => {
+    if (!guide) return;
+    const id = row.elementId ?? row.key;
+    if (openedFor.current === id) return;
+    openedFor.current = id;
+    setOpen(true);
+  }, [guide, row.elementId, row.key]);
   // An element guide is shared and amortises across every cake using it; photo steps belong to this
   // order alone. Saying which is which is the difference between "worth it" and "why again?".
   const canGenerate = row.elementId

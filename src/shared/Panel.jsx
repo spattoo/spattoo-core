@@ -158,6 +158,10 @@ const footStyle = (isMobile) => ({
  *
  * `onClose` is what makes it dismissable — pass it and the panel closes on Esc, on backdrop click
  * and from the ✕. Omit it for a panel the user must resolve some other way, and no ✕ is drawn.
+ *
+ * `guardUnsaved` protects work in progress: while it is true, Esc and the backdrop are ignored and
+ * only the ✕ (or the panel's own buttons) close. Pass it whatever means "this holds something the
+ * customer typed" — a filled order form, a half-written message.
  */
 export function Panel({ open = true, onClose, title, subtitle, width = 420, isMobile = false,
                         bodyPadding, flow = 'stack', subhead, footer, showClose = true, wave = 0,
@@ -172,6 +176,16 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
                         // Whether to dim and blur everything behind the panel. Off for a panel whose
                         // whole point is what is visible behind it.
                         scrim = true,
+                        // ── Work in progress must not be dismissable by accident ────────────────
+                        // A backdrop click and Esc are for a panel somebody opened and does not
+                        // want. They are the wrong gesture for one holding eight fields of typing:
+                        // the click is a miss, and the cost is everything entered.
+                        //
+                        // OPT-IN rather than the default, because most panels here hold nothing to
+                        // lose and taking away their easy dismissal would be a worse trade. The ✕
+                        // always works — nobody presses it by accident, and it must never be
+                        // second-guessed.
+                        guardUnsaved = false,
                         onBack, backLabel = 'Back', children }) {
   // A backdrop click closes only if the press STARTED on the backdrop. Without this, dragging a
   // slider or a colour swatch and releasing past the panel's edge dispatches a click on the nearest
@@ -182,10 +196,10 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
 
   useEffect(() => {
     if (!open || !onClose) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape' && !guardUnsaved) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, guardUnsaved]);
 
   if (!open) return null;
 
@@ -194,7 +208,7 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
       style={overlayStyle(isMobile, zIndex, scrim)}
       onPointerDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
       onClick={(e) => {
-        if (onClose && pressedBackdrop.current && e.target === e.currentTarget) onClose();
+        if (onClose && !guardUnsaved && pressedBackdrop.current && e.target === e.currentTarget) onClose();
       }}
     >
       <style>{PANEL_CSS}</style>

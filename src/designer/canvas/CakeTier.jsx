@@ -28,7 +28,13 @@ import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, 
 import { ringPositions, angleAtPoint } from './ringPositions.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
-function extractGeo(scene) {
+// ⚠️ EXPORTED because the hand-piping path needs the IDENTICAL preparation, not a similar one.
+// StampStroke used to do its own — merge every mesh, centre on X/Z, seat on the raw base — and the
+// difference was invisible and fatal: this bakes a +90° X rotation into the geometry before any
+// config value is read, so a hand-piped shell was already a quarter turn out before the calibrated
+// rotation was applied to it. Three separate attempts to fix that by adjusting the ROTATION failed,
+// because the rotation was never the thing that differed. One preparation, one place.
+export function extractGeo(scene) {
   let geo = null;
   scene.traverse(obj => {
     if (obj.isMesh && !geo) geo = obj.geometry.clone();

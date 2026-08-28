@@ -348,6 +348,41 @@ export const OCCASIONS = [
 // existed three times — here as RECIPIENT_LABEL (lowercase, for prose), in the storefront's
 // QUESTIONS, and hardcoded inside the baker's OrderModal. RECIPIENT_LABEL stays: it renders into a
 // sentence ("For: a child") and needs the lowercase form. This is the one a control offers.
+/* ── The kind of celebration ─────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ LIVES HERE, BESIDE OCCASIONS, and not in the question that asks it. It is a persisted order
+ * field with a CHECK constraint behind it (migration 046), so it is one of the three-part contracts
+ * `check:occasions` exists to police — storefront ↔ API ↔ database. Buried inside a branching
+ * `options:` callback in FlavourFacet it could not be read by that gate at all, which is why adding
+ * a value to it was, until now, a change nothing verified.
+ *
+ * NOT an age. It asked "Roughly how old?" and stored an age band — an attribute of a PERSON, usually
+ * a child, usually not the one answering, which put it at odds with our own Privacy Policy §10 and
+ * inside what DPDP Section 9 governs. A first birthday is a milder cake because of the OCCASION, not
+ * the guest. See migration 046.
+ */
+export const CELEBRATIONS = [
+  ['first_birthday', 'A first birthday'],
+  ['kids_party',     'A children’s party'],
+  ['teen_party',     'A teenager’s party'],
+  ['grown_ups',      'A grown-ups’ celebration'],
+  // ⚠️ "A milestone birthday", not "a big birthday" — big reads as a LARGE PARTY, which is the
+  // wrong axis for a field whose job is to steer the flavour, and milestone is the word people
+  // already use for a 40th or a 60th.
+  ['milestone',      'A milestone birthday'],
+  ['elders',         'A celebration for elders'],
+];
+
+/* Which of them are offered to whom. A party type means nothing for a couple, the family, friends
+ * or the office, so those are not asked at all rather than shown a list none of it fits. */
+const CELEBRATIONS_BY_RECIPIENT = {
+  child: ['first_birthday', 'kids_party', 'teen_party'],
+  adult: ['grown_ups', 'milestone', 'elders'],
+};
+
+export const celebrationsFor = (recipient) =>
+  CELEBRATIONS.filter(([k]) => (CELEBRATIONS_BY_RECIPIENT[recipient] ?? []).includes(k));
+
 export const RECIPIENTS = [
   ['child',      'A child'],
   ['adult',      'A grown-up'],
@@ -530,4 +565,54 @@ export function today() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/* ── What is already on a restored draft, in the customer's own words ────────────────────────────
+ *
+ * ⚠️ WRITTEN FOR THE MOMENT A DRAFT COMES BACK, which is the moment it does the most damage
+ * unseen. The draft survives seven days, and a seeded answer does not merely sit in a box waiting
+ * to be noticed — it SILENTLY NARROWS LATER QUESTIONS. `recipient` is the case that surfaced it:
+ * answered once, it removes "Who's it for?" from the flow entirely and splits "What kind of
+ * celebration?" down the child branch, so a returning customer is offered a first birthday, a
+ * children's party and a teenager's party as though that were everything a bakery does.
+ *
+ * A stale weight is visible in its field. A stale recipient is visible only in what it has taken
+ * away, which is why this exists: it is the only way to SEE a restored draft before it starts
+ * making decisions.
+ *
+ * Short labels, most-identifying first, and only what has actually been answered — a summary that
+ * lists blanks is a form, and this has to be readable in one glance beside a button.
+ */
+export function draftSummary(draft) {
+  if (!draft) return [];
+  const d = draft.details ?? {};
+  const label = (list, v) => list.find(([k]) => k === v)?.[1] ?? null;
+  const out = [];
+
+  /* ⚠️ READ FROM THE REAL SHAPE, which is not where it reads like it should be. `weightKg` and
+   * `servings` are on `draft.size`, flavours are a top-level ARRAY OF ROWS, and photos hang off
+   * `draft.design` rather than the draft. The first cut of this guessed `details.weightKg` and
+   * `draft.photos`, found neither, and reported "a design" on a completely blank draft — because
+   * `draft.design` is an object of nulls and an object is truthy. A summary that invents an answer
+   * is worse than none: this is the screen that decides whether somebody keeps their work. */
+  if (d.recipient) out.push(label(RECIPIENTS, d.recipient) ?? d.recipient);
+  if (d.occasion)  out.push(label(OCCASIONS,  d.occasion)  ?? d.occasion);
+
+  const flavour = (draft.flavours ?? []).find(f => f?.name?.trim())?.name;
+  if (flavour) out.push(flavour.trim());
+
+  const kg = draft.size?.weightKg;
+  if (kg != null && parseFloat(kg) > 0) out.push(`${kg} kg`);
+  else if (draft.size?.servings != null) out.push(`${draft.size.servings} servings`);
+
+  if (d.deliveryDate) out.push(d.deliveryDate);
+
+  // Named rather than omitted: a photo and a design are the two things somebody would be most
+  // upset to lose, so they have to appear in the sentence that asks whether to keep it all.
+  const photos = draft.design?.photos?.length ?? 0;
+  if (photos) out.push(`${photos} photo${photos > 1 ? 's' : ''}`);
+  // `kind` is what isFilled treats as "there is a design" — the object itself always exists.
+  if (draft.design?.kind) out.push(draft.design.templateName || 'a design');
+
+  return out;
 }

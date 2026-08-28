@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { dietTone, hasAllergen, dietaryLine, findFlavourConflicts, conflictBenchLine } from '../dietary.js';
+import { dietTone, hasAllergen, dietaryLine, restrictions, findFlavourConflicts, conflictBenchLine } from '../dietary.js';
 import { buildXrayReport } from './report.js';
 import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
@@ -243,7 +243,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
             changes what goes in the bowl rather than how it is decorated, and it is the
             one that cannot be corrected later. Imperative wording — it is the
             customer's requirement to meet, not a claim that the cake meets it. */}
-        {order.dietary_requirements?.length > 0 && (() => {
+        {/* restrictions(): the band is here to STOP a baker mid-scan. "EGG — REQUIRED" is
+            true of most cakes, so a band that fired on it would fire almost always, and a
+            band that always fires is furniture — including on the sheet where it says
+            EGGLESS or NUT-FREE. The egg answer is on the order detail instead. */}
+        {restrictions(order.dietary_requirements).length > 0 && (() => {
           const allergen = hasAllergen(order.dietary_requirements);
           const t = dietTone(allergen ? 'allergen' : 'diet');
           return (
@@ -509,7 +513,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
                   <div style={s.swatch(el.color)} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={s.tag}>{el.tier} · {el.zone}{el.count > 1 ? ` · ×${el.count}` : ''}</span>
+                      {/* zoneLabel when there is one — "Hand-piped" rather than "Rim", which would
+                          send a baker to pipe a border that is not there. */}
+                      <span style={s.tag}>{el.tier} · {el.zoneLabel ?? el.zone}{el.count > 1 ? ` · ×${el.count}` : ''}</span>
                     </div>
                     {el.primary.length > 0 ? (
                       <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import { dockedLeft } from '../shared/rail.js';
+import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 function fmt(iso) {
   if (!iso) return null;
@@ -465,11 +466,15 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
           borderBottom: '1.5px solid #E8E4DC', flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          <button
-            onClick={isMobile && (selected || adding) ? () => { setSelected(null); setAdding(false); } : (onBack ?? onClose)}
-            style={closeBtn}>
-            <ArrowLeftIcon />
-          </button>
+          {/* ⚠️ Mobile and desktop leave this panel differently, on purpose — see
+              shared/panelTopBar.jsx. Mobile keeps the arrow, which also steps detail → list.
+              Desktop gets a ✕ at the far right (below) and a back control only when there is
+              genuinely somewhere back, in which case it says where. */}
+          {isMobile
+            ? <PanelBackArrow onClick={(selected || adding)
+                ? () => { setSelected(null); setAdding(false); }
+                : (onBack ?? onClose)} />
+            : onBack && <PanelBackCrumb label="Dashboard" onClick={onBack} />}
           <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{topBarTitle}</span>
           {(!isMobile || (!selected && !adding)) && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{customers.length} total</span>
@@ -482,11 +487,10 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
               fontSize: 13, fontWeight: 700,
             }}>+ Add</button>
           )}
-          {onBack && (
-            <button onClick={onClose} style={closeBtn} title="Home">
-              <HomeIcon />
-            </button>
-          )}
+          {/* Always present on desktop — the same rule as OrdersPanel, from the same module.
+              Replaces the old home icon, which appeared only beside the back arrow and did
+              exactly this. */}
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
 
         {/* Filter banner */}
@@ -596,30 +600,6 @@ function PencilIcon({ size = 14 }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-  );
-}
-
-const closeBtn = {
-  width: 32, height: 32, borderRadius: 8,
-  border: '1.5px solid #E8E4DC', background: '#F7F5F0',
-  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  fontSize: 13, color: '#666', flexShrink: 0,
-};
-
-function ArrowLeftIcon() {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5M12 5l-7 7 7 7" />
-    </svg>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z" />
-      <path d="M9 21V12h6v9" />
     </svg>
   );
 }
