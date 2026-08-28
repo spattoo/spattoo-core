@@ -122,8 +122,13 @@ function ActivePiece({ part, t, color }) {
  */
 export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227' }) {
   const list   = useMemo(() => (parts ?? []).filter(p => p?.shape && SHAPES[p.shape]), [parts]);
-  const done   = useMemo(() => list.slice(0, step), [list, step]);
-  const active = list[step] ?? null;
+  const done   = useMemo(() => list.slice(0, step ?? 0), [list, step]);
+  const active = step == null ? null : (list[step] ?? null);
+
+  /* ⚠️ `step == null` is the COLOUR step — the fondant exists but no piece has been made yet. It
+     shows the coloured lump turning under a hand, because a step that showed an empty bench would
+     read as the guide having nothing to say about the part a baker is most stuck on. */
+  if (step == null) return <KneadingLump color={color} />;
 
   return (
     <group>
@@ -133,6 +138,23 @@ export default function FondantGuide({ parts, step = 0, t = 1, color = '#C9A227'
         ? <FondantBuild parts={[active]} color={color} />
         : <ActivePiece part={active} t={t} color={color} />)}
     </group>
+  );
+}
+
+/* The coloured lump, before anything is made from it. Turning slowly: kneading is what the step
+ * describes, and a static ball reads as fondant already prepared rather than being worked. */
+function KneadingLump({ color }) {
+  const ref = useRef();
+  useFrame((_, dt) => {
+    if (!ref.current) return;
+    ref.current.rotation.y += dt * 0.5;
+    ref.current.rotation.x += dt * 0.22;
+  });
+  return (
+    <mesh ref={ref} position={[0, 0.42, 0]} castShadow>
+      <sphereGeometry args={[0.42, 32, 24]} />
+      <meshStandardMaterial color={color} roughness={0.72} metalness={0} />
+    </mesh>
   );
 }
 

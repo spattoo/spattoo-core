@@ -11,7 +11,8 @@ import { buildSteps } from '../src/designer/geometry/fondantSteps.js';
 // as shaping, and does the press land like soft fondant rather than a part clicking into a socket.
 function App() {
   const parts = PRESETS.bear.parts();
-  const steps = buildSteps(parts);
+  const COLOUR = '#8B5A2B';   // a real brown, so the colour step has something to describe
+  const steps = buildSteps(parts, { color: COLOUR });
   const q = new URLSearchParams(location.search);
   const [step, setStep] = useState(Number(q.get('step') ?? 0));
   const [t, setT] = useState(q.has('t') ? Number(q.get('t')) : 0);
@@ -40,7 +41,7 @@ function App() {
       <Canvas shadows camera={{ position: [0, 1.5, 4.6], fov: 34 }} style={{ flex: 1 }}>
         <color attach="background" args={['#EDEAE3']} />
         <SceneLights /><SceneEnv />
-        <FondantGuide parts={parts} step={step} t={t} color="#C79A6B" />
+        <FondantGuide parts={parts} step={steps[step].partIndex} t={t} color={COLOUR} />
         <mesh rotation={[-Math.PI/2,0,0]} receiveShadow>
           <circleGeometry args={[2.6, 64]} /><shadowMaterial opacity={0.26} />
         </mesh>
@@ -48,7 +49,10 @@ function App() {
       </Canvas>
       <div style={{ padding: 14, background: '#fff', borderTop: '1px solid #e5e5e5' }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: '#9a9a9a' }}>STEP {s.n} OF {s.of}</div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#2C4433', margin: '4px 0 8px' }}>{s.instruction}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#2C4433', margin: '4px 0 4px' }}>{s.instruction}</div>
+        {/* The two lines that stop the usual failure, shown only where they apply. */}
+        {s.colour?.warn && <div style={{ fontSize: 12.5, color: '#8A4B00', marginBottom: 4 }}>⚠️ {s.colour.warn}</div>}
+        {s.colour?.rest && <div style={{ fontSize: 12.5, color: '#666', marginBottom: 8 }}>{s.colour.rest}</div>}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={() => setPlaying(p => !p)}>{playing ? 'Pause' : 'Play'}</button>
           <button onClick={() => { setStep(x => Math.max(0, x-1)); setT(0); }}>Prev</button>

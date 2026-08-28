@@ -1,4 +1,5 @@
-import { expandParts, restingY, SHAPES } from './fondantParts.js';
+import { expandParts, SHAPES } from './fondantParts.js';
+import { colourGuidance, clampPercent } from './fondantColour.js';
 
 /* ── How to make it: the build, one piece at a time ──────────────────────────────────────────────
  *
@@ -53,21 +54,24 @@ const humanName = (part) =>
 
 const volume = (p) => (p.size?.[0] ?? 0) * (p.size?.[1] ?? 0) * (p.size?.[2] ?? 0);
 
-/* Against the body, in words a bench can act on. Deliberately coarse — six buckets, not a
- * percentage. A baker matching "about half the size" gets it right; a baker reading "47%" measures
- * nothing and trusts it less. */
+/* ⚠️ A PERCENTAGE OF THE FIRST PIECE, not a measurement and not a vague bucket.
+ *
+ * "Roll a ball of radius 0.14" is meaningless at a bench; "about half the size" was the first cut
+ * and is weaker than it looks, because half and a third are the only two fractions it can express —
+ * an ear and a muzzle came out described identically. A percentage is what a baker can actually
+ * eyeball against the ball already in their hand, and it is how the request was phrased: "the
+ * second one approx 60% of the first".
+ *
+ * A LENGTH ratio, from the cube root of the volume ratio — a piece "60%" the size is 60% as WIDE,
+ * which is what the eye compares. Comparing volumes directly would call a half-width ball 12%.
+ * Rounded to 5% because nobody can judge finer than that, and a number that pretends to can only
+ * lose trust.
+ */
 function relativeSize(part, base) {
   if (!base || base.id === part.id) return null;
-  const r = Math.cbrt(volume(part) / Math.max(volume(base), 1e-9));   // a length ratio, not a volume one
-  if (r >= 0.85) return 'about the same size as the body';
-  if (r >= 0.6)  return 'about three-quarters the size of the body';
-  if (r >= 0.4)  return 'about half the size of the body';
-  if (r >= 0.25) return 'about a third the size of the body';
-  if (r >= 0.12) return 'about a fifth the size of the body';
-  // Still against the body. A bucket that stopped comparing ("a tiny piece") left the smallest
-  // pieces — eyes, a nose — as the only ones with nothing to judge them by, which is where a
-  // relative scale is needed MOST.
-  return 'much smaller than the body, about a pea';
+  const v = (p) => (p.size?.[0] ?? 0) * (p.size?.[1] ?? 0) * (p.size?.[2] ?? 0);
+  const r = Math.cbrt(v(part) / Math.max(v(base), 1e-9));
+  return clampPercent(r * 100);
 }
 
 /* ⚠️ WHICH PIECE IT IS PRESSED ONTO — the one it TOUCHES, not the one that would catch it.
@@ -112,16 +116,23 @@ export function supportingPart(part, earlier) {
  * Stored pieces, not drawn ones: a mirrored pair is ONE step ("roll two ears"), because that is one
  * action at a bench and two steps would have the baker make an ear, then make the same ear again.
  */
-export function buildSteps(parts) {
+export function buildSteps(parts, { color = null } = {}) {
   const list = (parts ?? []).filter(p => p?.shape && SHAPES[p.shape]);
   const base = list[0] ?? null;
+  const baseName = base ? humanName(base) : 'first piece';
 
-  return list.map((part, i) => {
-    const earlier  = list.slice(0, i);
-    const on       = supportingPart(part, earlier);
-    const pair     = !!part.mirror && Math.abs(part.pos?.[0] ?? 0) > 1e-3;
-    const name     = humanName(part);
-    const size     = relativeSize(part, base);
+  /* ⚠️ THE COLOUR STEP COMES FIRST, and it is not a formality. Rolling a ball is obvious the moment
+   * you see one; mixing a brown that does not come out muddy is not, and it is the step that cannot
+   * be undone once it is kneaded in. A guide that opens at "roll a ball" has skipped the only part
+   * of the job a nervous baker was actually stuck on. Omitted entirely when there is no colour to
+   * describe — an invented shade is worse than none. */
+  const colour = colourGuidance(color);
+  const pieces = list.map((part, i) => {
+    const earlier = list.slice(0, i);
+    const on      = supportingPart(part, earlier);
+    const pair    = !!part.mirror && Math.abs(part.pos?.[0] ?? 0) > 1e-3;
+    const name    = humanName(part);
+    const size    = relativeSize(part, base);
 
     const spec  = HOW[part.shape] ?? { lead: ['Roll a piece', 'Roll two pieces'], tail: '' };
     const lead  = spec.lead[pair ? 1 : 0];
@@ -131,27 +142,41 @@ export function buildSteps(parts) {
     const instruction = first
       // The base is sized against the CAKE, not against itself — it is the only piece with an
       // outside reference, and every later size hangs off it.
-      ? `${lead} for the ${name}${tail ? `, ${tail}` : ''}. Size it against the cake — everything `
-        + 'else is judged against this.'
+      ? `${lead} for the ${name}${tail ? `, ${tail}` : ''}. Size it against the cake — every other `
+        + 'piece is judged against this one.'
       : [
           `${lead} for the ${name}${pair ? 's' : ''}`,
-          size ? `, ${size}` : '',
+          size ? `, about ${size}% the size of the ${baseName}` : '',
           tail ? `, ${tail}` : '',
           on ? `. Press ${pair ? 'them' : 'it'} onto the ${humanName(on)}.` : '. Set it on the board.',
         ].join('');
 
     return {
-      n: i + 1,
-      of: list.length,
-      part,
-      pair,
+      kind: 'piece',
+      partIndex: i,
+      part, pair,
       onId: on?.id ?? null,
+      percent: size,
       title: pair ? `${name}s` : name,
       instruction,
       // The figure as it stands after this step — what the viewer draws.
       upto: list.slice(0, i + 1),
     };
   });
+
+  const all = colour
+    ? [{
+        kind: 'colour',
+        partIndex: null,
+        title: `colour the fondant`,
+        instruction: colour.instruction,
+        colour,
+        upto: [],
+      }, ...pieces]
+    : pieces;
+
+  // Numbered once, at the end, so a colour step present or absent never leaves a gap in the count.
+  return all.map((st, i) => ({ ...st, n: i + 1, of: all.length }));
 }
 
 // Every piece drawn at this step, mirrored copies included — for a viewer that wants a count
