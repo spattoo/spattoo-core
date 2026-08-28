@@ -348,6 +348,41 @@ export const OCCASIONS = [
 // existed three times — here as RECIPIENT_LABEL (lowercase, for prose), in the storefront's
 // QUESTIONS, and hardcoded inside the baker's OrderModal. RECIPIENT_LABEL stays: it renders into a
 // sentence ("For: a child") and needs the lowercase form. This is the one a control offers.
+/* ── The kind of celebration ─────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ LIVES HERE, BESIDE OCCASIONS, and not in the question that asks it. It is a persisted order
+ * field with a CHECK constraint behind it (migration 046), so it is one of the three-part contracts
+ * `check:occasions` exists to police — storefront ↔ API ↔ database. Buried inside a branching
+ * `options:` callback in FlavourFacet it could not be read by that gate at all, which is why adding
+ * a value to it was, until now, a change nothing verified.
+ *
+ * NOT an age. It asked "Roughly how old?" and stored an age band — an attribute of a PERSON, usually
+ * a child, usually not the one answering, which put it at odds with our own Privacy Policy §10 and
+ * inside what DPDP Section 9 governs. A first birthday is a milder cake because of the OCCASION, not
+ * the guest. See migration 046.
+ */
+export const CELEBRATIONS = [
+  ['first_birthday', 'A first birthday'],
+  ['kids_party',     'A children’s party'],
+  ['teen_party',     'A teenager’s party'],
+  ['grown_ups',      'A grown-ups’ celebration'],
+  // ⚠️ "A milestone birthday", not "a big birthday" — big reads as a LARGE PARTY, which is the
+  // wrong axis for a field whose job is to steer the flavour, and milestone is the word people
+  // already use for a 40th or a 60th.
+  ['milestone',      'A milestone birthday'],
+  ['elders',         'A celebration for elders'],
+];
+
+/* Which of them are offered to whom. A party type means nothing for a couple, the family, friends
+ * or the office, so those are not asked at all rather than shown a list none of it fits. */
+const CELEBRATIONS_BY_RECIPIENT = {
+  child: ['first_birthday', 'kids_party', 'teen_party'],
+  adult: ['grown_ups', 'milestone', 'elders'],
+};
+
+export const celebrationsFor = (recipient) =>
+  CELEBRATIONS.filter(([k]) => (CELEBRATIONS_BY_RECIPIENT[recipient] ?? []).includes(k));
+
 export const RECIPIENTS = [
   ['child',      'A child'],
   ['adult',      'A grown-up'],

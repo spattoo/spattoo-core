@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Slice } from './CakeVisual.jsx';
 import FlavourWheel from './FlavourWheel.jsx';
 import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS } from './suggestFlavour.js';
-import { rankedOccasions, everyTier } from './cakeDraft.js';
+import { rankedOccasions, everyTier, celebrationsFor } from './cakeDraft.js';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -151,10 +151,10 @@ const QUESTIONS = [
     key: 'celebration',
     title: 'What kind of celebration?',
     when: a => a.recipient === 'child' || a.recipient === 'adult',
-    options: a => (a.recipient === 'child'
-      ? [['first_birthday', 'A first birthday'], ['kids_party', "A children's party"],
-         ['teen_party', "A teenager's party"]]
-      : [['grown_ups', 'A grown-ups’ celebration'], ['elders', 'A celebration for elders']]),
+    // The vocabulary lives in cakeDraft.js beside OCCASIONS — it is a persisted order field with a
+    // CHECK behind it, so it has to sit where `check:occasions` can read it. Written out here it
+    // was a three-part contract that nothing verified.
+    options: a => celebrationsFor(a.recipient),
   },
   // The same list the details facet uses — they write the same field, so offering different sets
   // would let the answer depend on which screen happened to ask.
