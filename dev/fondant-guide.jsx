@@ -18,6 +18,9 @@ function App() {
   const [t, setT] = useState(q.has('t') ? Number(q.get('t')) : 0);
   const [playing, setPlaying] = useState(!q.has('t'));
   const raf = useRef();
+  // Slow. This is a guide somebody is trying to FOLLOW at a bench, not a title sequence — the
+  // forming phase alone is ~3s of it.
+  const SECONDS_PER_STEP = Number(q.get('secs') ?? 5);
 
   useEffect(() => {
     if (!playing) return;
@@ -25,7 +28,7 @@ function App() {
     const tick = (now) => {
       const dt = (now - last) / 1000; last = now;
       setT(prev => {
-        const next = prev + dt / 2.2;                 // ~2.2s a step
+        const next = prev + dt / SECONDS_PER_STEP;
         if (next >= 1) { setStep(s => (s + 1) % steps.length); return 0; }
         return next;
       });

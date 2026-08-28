@@ -29,12 +29,21 @@ import { SHAPES, expandParts } from '../geometry/fondantParts.js';
  * scene sixty times a second — the mistake already made once in this codebase and paid for.
  */
 
-// Fractions of one step. Rolling gets the most time because it is the part a nervous baker is
-// actually asking about; placing is quick because it is obvious once you can see the target.
-const ROLL_END  = 0.42;
-const SHAPE_END = 0.72;
+/* ── Fractions of one step ───────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ FORMING GETS MOST OF THE TIME, and the first cut had this backwards. It gave rolling the
+ * largest share and lerped the shape smoothly in a third of a second, which produced an ASSEMBLY
+ * animation: pieces appeared, morphed, and were placed. Assembly is the part a baker can already
+ * picture. The part they are stuck on is "how do I make an ARM?" — and a smooth scale lerp is not
+ * an answer, it is a dissolve.
+ *
+ * So the middle phase is the guide, and it is now more than half of every step.
+ */
+const PINCH_END = 0.22;   // tear off a piece and round it between the palms
+const FORM_END  = 0.82;   // work it into shape — the part worth watching
+                          // …and the remainder places it
 
-// Where a piece is rolled before it is placed — in front of the figure, clear of it, so the ball
+// Where a piece is worked before it is placed — in front of the figure, clear of it, so the ball
 // is never inside the thing being built.
 const BENCH = new THREE.Vector3(0, 0, 1.5);
 
@@ -47,60 +56,117 @@ const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 export const startingRadius = (size) =>
   Math.cbrt(Math.max((size?.[0] ?? 0) * (size?.[1] ?? 0) * (size?.[2] ?? 0), 1e-9));
 
+/* ── The hand action that makes each shape ───────────────────────────────────────────────────────
+ *
+ * ⚠️ THIS IS THE POINT OF THE WHOLE FILE. A shape does not just BECOME longer; it is rolled longer,
+ * back and forth, in passes. Rhythm is what separates "somebody made this" from "this morphed" —
+ * and with no hands on screen, the motion is the only thing carrying it. Each entry returns a small
+ * per-frame overlay applied while the piece is being worked.
+ *
+ *   k     0→1 through the forming phase
+ *   g     the group being posed
+ *   r     the starting ball's radius, for sizing the movement
+ *
+ * Deliberately small movements. A piece that swings about reads as being juggled; fondant is worked
+ * against a board with the weight of a palm on it.
+ */
+const FORMING = {
+  // Rolled under flat palms, shuttling along its own length. The rock about Z is the wrist.
+  rope: (k, g, r) => {
+    const passes = Math.sin(k * Math.PI * 7);
+    g.position.x = BENCH.x + passes * r * 0.55;
+    g.rotation.z = Math.PI / 2 + passes * 0.10;   // lying down, rocking
+    g.rotation.y = 0;
+  },
+  // Rounded first, then one end narrowed — the piece turns under the hands as it tapers.
+  egg: (k, g) => { g.rotation.y = k * Math.PI * 1.6; g.rotation.z = Math.sin(k * Math.PI * 4) * 0.06; },
+  // Same turning, plus the rock that comes from working one end harder than the other.
+  cone: (k, g) => { g.rotation.y = k * Math.PI * 1.6; g.rotation.z = Math.sin(k * Math.PI * 3) * 0.12; },
+  // Pressed flat. Three distinct presses rather than one squash, because that is how a disc is
+  // actually made — press, turn, press again.
+  disc: (k, g) => { g.rotation.y = k * Math.PI; },
+  // Rolled long, then brought round. The spin shows the ring closing.
+  ring: (k, g) => { g.rotation.x = -Math.PI / 2 + k * 0.5; g.rotation.z = k * Math.PI * 1.2; },
+  slab: (k, g) => { g.rotation.y = k * 0.3; },
+  // A ball is not shaped — it is only rounded, so it keeps turning between the palms.
+  ball: (k, g) => { g.rotation.y = k * Math.PI * 2; g.rotation.x = k * Math.PI * 0.8; },
+};
+
+/* How much of the way to its final proportions the piece is at `k`.
+ *
+ * ⚠️ A DISC AND A SLAB ARE PRESSED, NOT STRETCHED: they flatten in punches, so the eased curve is
+ * stepped for them. Everything else grows steadily under a rolling palm. */
+const formProgress = (shape, k) =>
+  (shape === 'disc' || shape === 'slab')
+    ? easeInOut(clamp01(Math.floor(k * 3 + 0.5) / 3))    // three distinct presses
+    : easeInOut(k);
+
 /* The one piece being made right now. `t` runs 0→1 across the step. */
 function ActivePiece({ part, t, color }) {
   const ref = useRef();
-  const geom = useMemo(() => SHAPES[part.shape]?.make?.() ?? null, [part.shape]);
+  const target = useMemo(() => SHAPES[part.shape]?.make?.() ?? null, [part.shape]);
+  const r = startingRadius(part.size);
+
+  /* ⚠️ THE PINCH PHASE DRAWS A REAL SPHERE, not the target geometry scaled down. It used to draw
+   * the target — so a step captioned "roll a ball, then pinch it into a cone" opened on a tiny
+   * CONE, and the one moment the guide claims to show a ball being rolled showed the finished
+   * shape instead. The swap happens exactly when the hands change action, which is where a baker
+   * would look for it anyway. */
+  const rolling = t <= PINCH_END;
 
   useFrame(() => {
     const g = ref.current;
     if (!g) return;
+    const dest = new THREE.Vector3(...(part.pos ?? [0, 0, 0]));
 
-    const r = startingRadius(part.size);
-    const target = new THREE.Vector3(...(part.pos ?? [0, 0, 0]));
-
-    if (t <= ROLL_END) {
-      // Rolling: a uniform ball on the bench, turning. The turn is what says "rolling" — a static
-      // sphere sitting there reads as a finished piece waiting, not as one being made.
-      const k = t / ROLL_END;
+    if (rolling) {
+      // Rounding it between the palms: a real ball, turning, on the bench.
+      const k = t / PINCH_END;
       g.position.set(BENCH.x, r, BENCH.z);
-      g.scale.setScalar(r);
-      g.rotation.set(k * Math.PI * 2.2, k * Math.PI * 0.6, 0);
-    } else if (t <= SHAPE_END) {
-      // Shaping: the ball's uniform scale becomes the piece's real proportions, in place, so the
-      // change of FORM is watched on its own rather than while it is also moving.
-      const k = easeInOut((t - ROLL_END) / (SHAPE_END - ROLL_END));
-      g.position.set(BENCH.x, THREE.MathUtils.lerp(r, part.size[1], k), BENCH.z);
+      g.scale.setScalar(1);
+      g.rotation.set(k * Math.PI * 2.4, k * Math.PI * 0.8, 0);
+    } else if (t <= FORM_END) {
+      // Worked into shape, IN PLACE, so the change of form is watched on its own rather than while
+      // it is also travelling.
+      const k = clamp01((t - PINCH_END) / (FORM_END - PINCH_END));
+      const f = formProgress(part.shape, k);
       g.scale.set(
-        THREE.MathUtils.lerp(r, part.size[0], k),
-        THREE.MathUtils.lerp(r, part.size[1], k),
-        THREE.MathUtils.lerp(r, part.size[2], k),
+        THREE.MathUtils.lerp(r, part.size[0], f),
+        THREE.MathUtils.lerp(r, part.size[1], f),
+        THREE.MathUtils.lerp(r, part.size[2], f),
       );
+      /* ⚠️ A ROPE IS ROLLED LYING DOWN, so once it is turned on its side its half-height is its
+         RADIUS, not its long axis. Resting it at size[1] left the arm hovering a visible gap above
+         the board while it was being rolled — which is the one thing a rolling animation cannot
+         afford, since rolling is contact with the board. */
+      const halfHeight = part.shape === 'rope' ? part.size[0] : part.size[1];
+      g.position.set(BENCH.x, THREE.MathUtils.lerp(r, halfHeight, f), BENCH.z);
       g.rotation.set(0, 0, 0);
+      (FORMING[part.shape] ?? FORMING.ball)(k, g, r);
     } else {
       // Placing: travel, then squash on contact. The squash peaks at touchdown and springs back —
-      // fondant pressed on fondant flattens where it meets and does not stay flattened.
-      const k = easeInOut(clamp01((t - SHAPE_END) / (1 - SHAPE_END)));
+      // fondant pressed onto fondant flattens where it meets and does not stay flattened.
+      const k = easeInOut(clamp01((t - FORM_END) / (1 - FORM_END)));
       const from = new THREE.Vector3(BENCH.x, part.size[1], BENCH.z);
-      g.position.lerpVectors(from, target, k);
+      g.position.lerpVectors(from, dest, k);
       /* ⚠️ ARCED, NOT STRAIGHT. A straight lerp from the bench to a point on the head passes
          THROUGH the body — the ear was seen tunnelling out of the bear's chest on its way up,
          which reads as a rendering fault rather than as a hand carrying a piece. A quadratic
          apex above both ends lifts it over, and it is also simply how an arm moves. */
-      const apex = Math.max(from.y, target.y) + 0.45;
+      const apex = Math.max(from.y, dest.y) + 0.45;
       const u = 1 - k;
-      g.position.y = from.y * u * u + apex * 2 * u * k + target.y * k * k;
-      // A short bump near the end: 1 → 0 → 1 over the last third of the travel.
+      g.position.y = from.y * u * u + apex * 2 * u * k + dest.y * k * k;
       const press = Math.sin(clamp01((k - 0.66) / 0.34) * Math.PI) * 0.16;
       g.scale.set(part.size[0] * (1 + press * 0.5), part.size[1] * (1 - press), part.size[2] * (1 + press * 0.5));
       g.rotation.set(...(part.rot ?? [0, 0, 0]));
     }
   });
 
-  if (!geom) return null;
+  if (!target) return null;
   return (
     <group ref={ref}>
-      <mesh geometry={geom} castShadow>
+      <mesh castShadow {...(rolling ? {} : { geometry: target })}>
+        {rolling && <sphereGeometry args={[r, 32, 24]} />}
         {/* The piece being worked is lit a touch warmer than the ones already placed, so the eye
             knows which one to watch without an arrow or an outline pointing at it. */}
         <meshStandardMaterial color={part.color ?? color} roughness={0.72} metalness={0}
