@@ -640,7 +640,7 @@ export default function OrderModal({
     ? [!weightOk && 'a cake weight',
        !eggAnswered && 'egg or eggless',
        !flavourOk && 'a flavour',
-       !dietaryAnswered && 'a dietary answer (tick “No other requirements” if there are none)'].filter(Boolean)
+       !dietaryAnswered && 'a dietary answer (tick “No special requirements” if there are none)'].filter(Boolean)
     : currentStepKey === 'delivery'
       ? [!deliveryDate && 'a delivery date',
          (deliveryMode === 'home_delivery' && !deliveryAddress.trim()) && 'a delivery address'].filter(Boolean)
@@ -1128,17 +1128,33 @@ export default function OrderModal({
                     })}
 
                     {/* ⚠️ The explicit negative, and the reason this section can be answered at all.
-                        Set apart from the requirement chips rather than sitting among them: it is
-                        not a fourth diet, it is the statement that there are none — and a customer
-                        who has one must not be able to tick it by momentum. Ticking it clears
-                        whatever was chosen, because the two cannot both be true.
+                        It is not a fourth allergy — it is the statement that the WHOLE section is
+                        empty — and a customer who has a requirement must not be able to tick it by
+                        momentum. Ticking it clears whatever was chosen, because the two cannot both
+                        be true.
 
-                        ⚠️ "No OTHER requirements", and it clears only the special keys. The egg
-                        answer is a separate question that has already been answered — wiping it
-                        here would silently undo a choice made two fields up, and the customer
-                        would have no idea it had happened. */}
-                    <div style={{ marginTop: 4 }}>
-                      <Chip label="No other requirements" active={dietaryNone} isMobile={isMobile}
+                        ⚠️ A RULE ABOVE IT, not a margin. This sat on `marginTop: 4` inside the same
+                        column as the chip groups, and a comment here claimed it was "set apart".
+                        Four pixels is not apart: it rendered directly under Nut-free / Gluten-free /
+                        Dairy-free and read as a fourth allergy chip that had wrapped to a new line.
+                        The divider is what makes it answer the SECTION rather than the last group,
+                        which is the whole of its meaning.
+
+                        Still LAST, deliberately. Leading with it would be faster for the majority
+                        and is exactly how somebody with a real allergy taps past the question.
+
+                        ⚠️ It clears only the SPECIAL keys. The egg answer is a separate question
+                        already answered above; wiping it here would silently undo a choice made two
+                        fields up, and nothing on screen would say so. */}
+                    <div style={{
+                      marginTop: isMobile ? 14 : 12, paddingTop: isMobile ? 14 : 12,
+                      borderTop: '1px solid #E8E4DC',
+                    }}>
+                      {/* Named to match the section heading word for word. It read "No OTHER
+                          requirements" while the heading still said "Dietary requirements" — under
+                          a heading that names the category, "other" only invites "other than
+                          what?", and the answer (other than the egg choice) is not inferable. */}
+                      <Chip label="No special requirements" active={dietaryNone} isMobile={isMobile}
                         tone={{ fg: primaryColor, bg: hexToRgba(primaryColor, 0.1), border: primaryColor }}
                         onClick={() => {
                           const next = !dietaryNone;

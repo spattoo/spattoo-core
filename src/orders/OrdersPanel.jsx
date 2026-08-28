@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen, restrictions } from './dietary.js';
+import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
 import {
   buildStatusIndex, DEFAULT_STATUS_INDEX,
   statusLabel, isClosed, isTerminal, isDesignLocked, statusTone,
@@ -1437,9 +1438,13 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           borderBottom: '1.5px solid #E8E4DC', flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          <button onClick={isMobile && selected ? () => setSelected(null) : (onBack ?? onClose)} style={closeBtn}>
-            <ArrowLeftIcon />
-          </button>
+          {/* ⚠️ Mobile and desktop leave this panel differently, on purpose — see
+              shared/panelTopBar.jsx. Mobile keeps the arrow, which also steps detail → list.
+              Desktop gets a ✕ at the far right of this bar (below) and a back control only
+              when there is genuinely somewhere back, in which case it says where. */}
+          {isMobile
+            ? <PanelBackArrow onClick={selected ? () => setSelected(null) : (onBack ?? onClose)} />
+            : onBack && <PanelBackCrumb label="Dashboard" onClick={onBack} />}
           <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{topBarTitle}</span>
 
           {/* List | Calendar — the calendar is a view of the same orders, so it lives
@@ -1480,11 +1485,11 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           {view === 'list' && (!isMobile || !selected) && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{orders.length} total</span>
           )}
-          {onBack && (
-            <button onClick={onClose} style={closeBtn} title="Home">
-              <HomeIcon />
-            </button>
-          )}
+          {/* Always present on desktop: closing is always possible, and this is where every
+              other panel in the app puts it. It replaces the old home icon, which appeared
+              only alongside the back arrow and did exactly this — two leave-affordances with
+              nothing to tell them apart. Mobile keeps the arrow above as its only one. */}
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
 
         {/* Filter banner — one banner for both the host's filter and a day picked in
@@ -1774,26 +1779,3 @@ function PencilIcon({ size = 15 }) {
   );
 }
 
-const closeBtn = {
-  width: 32, height: 32, borderRadius: 8,
-  border: '1.5px solid #E8E4DC', background: '#F7F5F0',
-  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  fontSize: 13, color: '#666', flexShrink: 0,
-};
-
-function ArrowLeftIcon() {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5M12 5l-7 7 7 7" />
-    </svg>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z" />
-      <path d="M9 21V12h6v9" />
-    </svg>
-  );
-}
