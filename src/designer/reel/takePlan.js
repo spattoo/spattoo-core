@@ -68,3 +68,31 @@ export function medianOf(samples) {
  */
 export const progressAt = (elapsedMs, seconds) =>
   Math.min(1, Math.max(0, elapsedMs / (seconds * 1000)));
+
+/* ── How high the camera is, partway through ─────────────────────────────────────────────────────
+ *
+ * three.js measures phi DOWN from +Y: 0 is directly overhead, π/2 is level with the cake.
+ *
+ * A take used to hold `start.phi` for its whole length — only the azimuth swept and only the radius
+ * pushed in. So whatever the baker chose, the camera stayed at that height, and NO reel could ever
+ * show the top of a cake. For anything decorated on its lid that is the only side that matters, and
+ * it is exactly the cake a still photograph already has an angle for ("From above", phi 26°).
+ *
+ * `topPhi` null means hold the starting height, which is the previous behaviour to the digit.
+ *
+ * ⚠️ Clamped off BOTH poles. At phi 0 the camera sits on the very axis it is looking down: the up
+ * vector and the view direction become parallel, the view matrix degenerates, and the frame flips or
+ * goes blank depending on the driver. photoAngles.anglePosition guards its presets with the same
+ * margin — a take easing straight to 0 would walk around that guard rather than inherit it.
+ *
+ * Riding the SAME eased phase as the arc and the dolly is what makes this loop: on an out-and-back
+ * the easing returns to 0, so the camera comes back down to where it started and the seam stays
+ * invisible. Giving the lift its own curve would have broken that for no gain.
+ */
+export const POLE_MARGIN = (6 * Math.PI) / 180;
+
+export function elevationAt(startPhi, eased, topPhi = null) {
+  const end = topPhi == null ? startPhi : topPhi;
+  const phi = startPhi + (end - startPhi) * eased;
+  return Math.min(Math.PI - POLE_MARGIN, Math.max(POLE_MARGIN, phi));
+}

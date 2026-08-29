@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { recordCanvas, pickMimeType, isInstagramReady, extensionFor, downloadBlob } from './recordReel.js';
 import { snapshotScene } from './sceneSnapshot.js';
 import { drawCaption, ensureCaptionFont, CAPTION } from './reelCaption.js';
-import { planTake, medianOf, progressAt } from './takePlan.js';
+import { planTake, medianOf, progressAt, elevationAt } from './takePlan.js';
 import { CAMERA_POSITION_MOBILE, DESIGNER_GROUND } from '../constants.js';
 import { photoSize, clampToDevice } from '../photo/photoShapes.js';
 import { anglePosition, angleByKey, angleAt } from '../photo/photoAngles.js';
@@ -136,6 +136,10 @@ export default function TakeDirector({ takeRef, orbitRef, onAngleChange = null }
       // exactly when the loop ends — which is when they scroll.
       arcDeg = 120,
       zoomTo = 0.78,               // closest distance as a fraction of the starting distance
+      // Lift over the cake as it turns, ending looking down at the top. Off by default, so a take
+      // that does not ask for it is the shot this always was. The height it rises TO is the photo
+      // panel's "From above" — see below.
+      riseToTop = false,
       // Turn and return, so the reel loops without a jump. The arc and the dolly both come home.
       pingPong = false,
       // The size ASKED for. What is actually recorded comes from planTake() below — a device that
@@ -230,6 +234,13 @@ export default function TakeDirector({ takeRef, orbitRef, onAngleChange = null }
         // radius. Both from where the baker left the camera, so the shot starts on their framing.
         const start = new THREE.Spherical().setFromVector3(startPos.clone().sub(target));
         const arc = (arcDeg / 360) * TAU;
+        /* Where a rising take ends up, and it is BORROWED rather than chosen.
+         *
+         * "Looking down at a cake" already has a tuned answer — the photo panel's From above, at
+         * phi 26°, written for the single-tier with a scene piped on its lid that is invisible from
+         * any standing angle. A second number here would be a second opinion about the same thing,
+         * and the two would drift the first time either was adjusted. */
+        const topPhi = riseToTop ? angleByKey('above').phi * (Math.PI / 180) : null;
 
         const mimeType = pickMimeType();
 
@@ -273,7 +284,7 @@ export default function TakeDirector({ takeRef, orbitRef, onAngleChange = null }
             const eased = (pingPong ? outAndBack : smootherstep)(t);
             const s = new THREE.Spherical(
               start.radius * (1 + (zoomTo - 1) * eased),
-              start.phi,
+              elevationAt(start.phi, eased, topPhi),
               start.theta + arc * eased,
             );
             camera.position.copy(target.clone().add(new THREE.Vector3().setFromSpherical(s)));

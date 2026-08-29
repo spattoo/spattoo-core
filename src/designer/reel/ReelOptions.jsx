@@ -33,6 +33,10 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
   const [dir, setDir]           = useState(1);
   const [seconds, setSeconds]   = useState(4.5);
   const [arcDeg, setArcDeg]     = useState(120);
+  // Lift over the cake as it turns. Off by default: the shot that has always been here is the right
+  // one for most cakes, and a take that suddenly ended overhead would surprise somebody filming
+  // their tenth cake the same way as their first.
+  const [riseToTop, setRiseToTop] = useState(false);
   const [ground, setGround]     = useState(TAKE_GROUNDS[0].value);
   // Their own name on the frame. On by default — the whole point of the entitlement is that the reel
   // markets the bakery, and somebody who wants that never has to find this control.
@@ -94,7 +98,7 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
     // Footer, not the tail of the body, and no scrim — see PhotoOptions for both.
     <Panel onClose={onClose} title="Record a reel" width={400} isMobile={isMobile} maxHeightMobile={maxHeightMobile} scrim={false}
            footer={<TakeButton disabled={btn.disabled} label={btn.label}
-                               onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir })} />}
+                               onClick={() => onRecord({ pingPong, seconds, arcDeg: arcDeg * dir, riseToTop })} />}
            subtitle="Films the cake and downloads it at 1080×1920.">
       <PanelBlock>
         <div>
@@ -158,6 +162,23 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
             A cake with detail all round its sides wants the full sweep. A rounded, even one — a
             football, a smooth dome — looks much the same from most angles, so a shorter turn with a
             closer push shows more than a long one.
+          </div>
+        </div>
+        {/* ── The top ──────────────────────────────────────────────────────────────────────────
+            Every take used to hold the height the baker left the camera at, so no reel could show
+            the top of a cake at all — and a single-tier decorated on its lid is nearly invisible
+            from any standing angle. The still-photo panel has had an angle for exactly that cake
+            since it shipped; this is the moving version of it, and it rises to the same height. */}
+        <div>
+          <div style={{ ...label, marginTop: 4 }}>Does it show the top?</div>
+          <div style={row}>
+            <button style={pick(!riseToTop)} onClick={() => setRiseToTop(false)}>Stay level</button>
+            <button style={pick(riseToTop)}  onClick={() => setRiseToTop(true)}>Rise over the top</button>
+          </div>
+          <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
+            {riseToTop
+              ? 'Climbs as it turns and finishes looking down, so the lid gets its own moment. For a cake whose design is on top — a piped scene, writing, a covered board.'
+              : 'Keeps the height you framed it at. Right for a tall or tiered cake, where the sides are the cake.'}
           </div>
         </div>
       </PanelBlock>

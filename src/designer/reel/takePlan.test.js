@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planTake, medianOf, progressAt, RUNGS, SLOW_MS } from './takePlan.js';
+import { planTake, medianOf, progressAt, elevationAt, RUNGS, SLOW_MS, POLE_MARGIN } from './takePlan.js';
+import { angleByKey } from '../photo/photoAngles.js';
 
 describe('planTake', () => {
   it('keeps full resolution on a device that sustains the shot', () => {
@@ -86,5 +87,91 @@ describe('progressAt', () => {
     // Same moment in time, same progress, whatever the cadence.
     expect(progressAt(1500, 3)).toBe(0.5);
     expect(slow[45]).toBeCloseTo(fast[90], 10);
+  });
+});
+
+// ── The take that shows the top ──────────────────────────────────────────────────────────────────
+// Every take used to hold `start.phi` for its whole length — only the azimuth swept — so no reel
+// could show the top of a cake. A single-tier decorated on its lid is nearly invisible from any
+// standing angle, and the still-photo panel has had an angle for exactly that cake since it shipped.
+const DEG = Math.PI / 180;
+const LEVEL = 72 * DEG;                     // roughly where a baker leaves the camera
+const TOP   = angleByKey('above').phi * DEG;
+
+describe('elevationAt', () => {
+  it('holds the framed height when a take does not ask to rise', () => {
+    // The old behaviour, to the digit: without a target, nothing about the height changes across
+    // the whole take. This is the assertion that says the default shot is untouched.
+    for (const eased of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(elevationAt(LEVEL, eased, null)).toBe(LEVEL);
+    }
+  });
+
+  it('starts on the baker\'s framing and ends looking down', () => {
+    expect(elevationAt(LEVEL, 0, TOP)).toBeCloseTo(LEVEL, 10);
+    expect(elevationAt(LEVEL, 1, TOP)).toBeCloseTo(TOP, 10);
+  });
+
+  it('rises to the SAME height the photo panel calls "From above"', () => {
+    // Borrowed, not chosen. Two numbers for "looking down at a cake" would drift the first time
+    // either was adjusted, and only one of them would get the adjustment.
+    expect(angleByKey('above').phi).toBe(26);
+    expect(elevationAt(LEVEL, 1, TOP)).toBeCloseTo(26 * DEG, 10);
+  });
+
+  it('climbs steadily, never overshooting either end', () => {
+    let prev = elevationAt(LEVEL, 0, TOP);
+    for (let i = 1; i <= 20; i++) {
+      const phi = elevationAt(LEVEL, i / 20, TOP);
+      expect(phi).toBeLessThanOrEqual(prev + 1e-12);      // phi DECREASES as the camera rises
+      expect(phi).toBeGreaterThanOrEqual(TOP - 1e-12);
+      expect(phi).toBeLessThanOrEqual(LEVEL + 1e-12);
+      prev = phi;
+    }
+  });
+
+  it('comes back down on an out-and-back, so the loop still has no seam', () => {
+    // The lift rides the SAME eased phase as the arc and the dolly, so this drives it through the
+    // real curve rather than asserting against a hand-picked number. If the height did not come
+    // home with the phase, a ping-pong reel would jump on elevation at the loop point even with the
+    // angle and the distance matched — the one seam the out-and-back exists to remove.
+    // (Mirrors outAndBack/smootherstep in TakeDirector, which are not exported.)
+    const smootherstep = t => t * t * t * (t * (t * 6 - 15) + 10);
+    const OUT = 0.4;
+    const outAndBack = t => t <= OUT
+      ? smootherstep(t / OUT)
+      : smootherstep(1 - (t - OUT) / (1 - OUT));
+
+    const at = t => elevationAt(LEVEL, outAndBack(t), TOP);
+    expect(at(0)).toBeCloseTo(LEVEL, 10);        // starts on the baker's framing
+    expect(at(OUT)).toBeCloseTo(TOP, 10);        // highest at the turnaround, not at the end
+    expect(at(1)).toBeCloseTo(LEVEL, 10);        // and home again, which is the seam
+    expect(at(1)).toBeCloseTo(at(0), 10);
+  });
+
+  it('never reaches either pole, whatever it is asked for', () => {
+    // ⚠️ At phi 0 the camera sits on the very axis it looks down: up and view become parallel and
+    // the view matrix degenerates — the frame flips or blanks depending on the driver. Asking for
+    // straight overhead must come back short of it, not produce it.
+    expect(elevationAt(LEVEL, 1, 0)).toBeCloseTo(POLE_MARGIN, 10);
+    expect(elevationAt(LEVEL, 1, -1)).toBeCloseTo(POLE_MARGIN, 10);
+    expect(elevationAt(LEVEL, 1, Math.PI)).toBeCloseTo(Math.PI - POLE_MARGIN, 10);
+    expect(elevationAt(LEVEL, 1, 99)).toBeCloseTo(Math.PI - POLE_MARGIN, 10);
+  });
+
+  it('guards a camera the baker had already dragged to a pole', () => {
+    // The start is theirs, not ours — OrbitControls can leave it very high. Clamping only the
+    // target would let the first frames of a take sit somewhere the last frame is forbidden.
+    expect(elevationAt(0, 0, TOP)).toBeCloseTo(POLE_MARGIN, 10);
+    expect(elevationAt(Math.PI, 0, TOP)).toBeCloseTo(Math.PI - POLE_MARGIN, 10);
+  });
+
+  it('just eases toward the target when the camera already looks down', () => {
+    // Somebody who has already dragged overhead and then asks to rise: the move is small or
+    // downward, and must stay well-defined rather than inverting or jumping.
+    const high = 20 * DEG;
+    expect(elevationAt(high, 0, TOP)).toBeCloseTo(high, 10);
+    expect(elevationAt(high, 1, TOP)).toBeCloseTo(TOP, 10);
+    expect(elevationAt(high, 0.5, TOP)).toBeCloseTo((high + TOP) / 2, 10);
   });
 });
