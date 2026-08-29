@@ -330,26 +330,36 @@ export function rectEdgeRing(shape, off, step, baseY) {
   const halfD = Math.max(0, shape.halfD + off);
   const cr = Math.max(0, Math.min(cr0 + off, halfW, halfD));
   const sx = Math.max(0, halfW - cr), sz = Math.max(0, halfD - cr);
-  const hasCorner = cr >= 0.02;                           // matches the `corner()` guard below
   const out = [];
 
-  // ── THE END MARGIN IS THE CORNER ────────────────────────────────────────────────────────────
-  // Each edge used to centre its shells with a half-pitch margin at both ends (`t = (i+0.5)/N`),
-  // which spaces a STRAIGHT run correctly and crowds every corner. Two shells half a pitch either
-  // side of a right angle are `hypot(p/2, p/2)` = 0.71p apart, not p — the turn eats the chord.
+  // ── A CORNER ONLY GETS SHELLS IF IT CAN HOLD THEM ───────────────────────────────────────────
+  // This used to drop exactly ONE shell on every corner's bisector, asking only that the fillet
+  // exist (`cr >= 0.02`) — never that it be big enough. A shell is laid TANGENTIALLY, across its
+  // facing, so one sitting on a fillet shorter than itself overhangs both ends of that fillet and
+  // the overhang is not over the cake: it is over the air beside it.
   //
-  // It stayed invisible for as long as sheet borders were narrow shells, where 0.71p reads as
-  // "piping turning a corner". A WIDE shell is unforgiving: a scroll measuring 0.688 across, laid
-  // at a 0.558 step, overlaps its neighbour 19% along a run and 40% at the corner — and 40% of two
-  // shells sitting at 45° to each other is not a tight corner, it is one lump.
+  // On a sheet the fillet is only ever as big as the ring's own outset (`SHEET_PIPING_CORNER_RADIUS`
+  // is 0, so cr = off), which is small. The reported case: a scroll 0.688 across on a 0.336 arc —
+  // twice too long — put four shells 0.181 clear of the wall, floating at the corners.
   //
-  // So the margin is derived from the corner instead of assumed. Writing `len = 2m + (N-1)p` and
-  // tying m to p by the geometry of the turn gives an exact solve for both:
+  // So the fillet is measured against the shell. It carries however many WHOLE shells fit at the
+  // authored step, which is none at all on a normal sheet, and the two straight runs then meet
+  // directly.
+  const arcLen = (Math.PI / 2) * cr;
+  const cornerN = Math.floor(arcLen / step);
+  const filled = cornerN > 0;
+
+  // ── AND THE END MARGIN FOLLOWS FROM THAT ────────────────────────────────────────────────────
+  // Each edge used to centre its shells with a half-pitch margin at both ends (`t = (i+0.5)/N`).
+  // That is exactly right where the junction is SMOOTH — a straight run flowing into a tangent
+  // fillet — and wrong where it is a hard right angle, because the turn eats the chord: two shells
+  // half a pitch either side of a corner are `hypot(p/2, p/2)` = 0.71p apart, not p.
   //
-  //   corner shell present — it already sits 0.707·cr diagonally past the edge's end, so the
-  //                          edge's own last shell only owes the remainder:  m = p − 0.707·cr
-  //   no corner shell      — the two end shells straddle the right angle directly, and
-  //                          hypot(m, m) = p  ⇒  m = p/√2
+  // Writing `len = 2m + (N-1)p` and tying m to p by the junction gives an exact solve for both:
+  //
+  //   filled fillet — smooth junction, so the old half-pitch margin stands:  m = p/2
+  //   hard corner   — the two end shells sit on perpendicular faces, `cr + m` from the corner along
+  //                   each, so they are (cr + m)·√2 apart:  (cr + m)√2 = p  ⇒  m = p/√2 − cr
   //
   // N is then chosen the way a swag's count is (see festoon.js): by which candidate lands the
   // PITCH nearest the authored step, scored as a ratio, rather than by rounding the count — the
@@ -357,15 +367,14 @@ export function rectEdgeRing(shape, off, step, baseY) {
   const edge = (ax, az, bx, bz, nx, nz) => {
     const len = Math.hypot(bx - ax, bz - az);
     if (len < 1e-4) return;                               // collapsed side (deep inset): skip
-    const k = hasCorner ? Math.SQRT1_2 * cr : 0;
-    const pitchOf = (n) => (hasCorner ? (len + 2 * k) / (n + 1) : len / (n - 1 + Math.SQRT2));
-    const ideal = hasCorner ? (len + 2 * k) / step - 1 : len / step - Math.SQRT2 + 1;
+    const pitchOf = (n) => (filled ? len / n : (len + 2 * cr) / (n - 1 + Math.SQRT2));
+    const ideal   = filled ? len / step : (len + 2 * cr) / step - Math.SQRT2 + 1;
     const lo = Math.max(1, Math.floor(ideal)), hi = Math.max(1, Math.ceil(ideal));
     const err = (n) => { const r = pitchOf(n) / step; return r >= 1 ? r : 1 / r; };
     const N = err(hi) < err(lo) ? hi : lo;
-    // Clamped so a corner radius larger than the pitch cannot push a shell off the end of its own
-    // edge; the walk below then uses the REAL gap, so positions stay valid either way.
-    const m = Math.min(Math.max(hasCorner ? pitchOf(N) - k : pitchOf(N) * Math.SQRT1_2, 0), len / 2);
+    // Clamped: a fillet wider than the pitch would otherwise ask for a negative margin, i.e. a
+    // shell off the end of its own edge. The walk below uses the REAL gap, so positions stay valid.
+    const m = Math.min(Math.max(filled ? pitchOf(N) / 2 : pitchOf(N) * Math.SQRT1_2 - cr, 0), len / 2);
     const gap = N > 1 ? (len - 2 * m) / (N - 1) : 0;
     const yaw = Math.atan2(nz, nx);
     for (let i = 0; i < N; i++) {
@@ -374,16 +383,22 @@ export function rectEdgeRing(shape, off, step, baseY) {
       out.push({ pos: [x, baseY, z], rotY: yaw, tq: [0, 0, 0, 1] });
     }
   };
-  const corner = (cx, cz, dx, dz) => {                    // one shell on the bisector
-    if (cr < 0.02) return;                                // (near-)sharp corner: rows meet directly, no bridge
-    const L = Math.hypot(dx, dz) || 1, nx = dx / L, nz = dz / L;
-    out.push({ pos: [cx + cr * nx, baseY, cz + cr * nz], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
+  // The fillet walked like any other run: `cornerN` shells across its 90°, half-pitch margins at
+  // both ends so it meets the straight runs at the same spacing they use internally.
+  const corner = (cx, cz, a0) => {
+    for (let i = 0; i < cornerN; i++) {
+      const a = a0 - (Math.PI / 2) * ((i + 0.5) / cornerN);
+      const nx = Math.cos(a), nz = Math.sin(a);
+      out.push({ pos: [cx + cr * nx, baseY, cz + cr * nz], rotY: a, tq: [0, 0, 0, 1] });
+    }
   };
   // Walk the four sides + corners, in perimeter order (front, FR, right, BR, back, BL, left, FL).
-  edge(-sx, halfD,  sx, halfD,  0,  1); corner( sx,  sz,  1,  1);
-  edge(halfW,  sz, halfW, -sz,  1,  0); corner( sx, -sz,  1, -1);
-  edge( sx, -halfD, -sx, -halfD, 0, -1); corner(-sx, -sz, -1, -1);
-  edge(-halfW, -sz, -halfW,  sz, -1, 0); corner(-sx,  sz, -1,  1);
+  // Each fillet sweeps 90° clockwise from the facing of the run that fed into it.
+  const HP = Math.PI / 2;
+  edge(-sx, halfD,  sx, halfD,  0,  1); corner( sx,  sz,  HP);
+  edge(halfW,  sz, halfW, -sz,  1,  0); corner( sx, -sz,  0);
+  edge( sx, -halfD, -sx, -halfD, 0, -1); corner(-sx, -sz, -HP);
+  edge(-halfW, -sz, -halfW,  sz, -1, 0); corner(-sx,  sz, -Math.PI);
   return out;
 }
 
