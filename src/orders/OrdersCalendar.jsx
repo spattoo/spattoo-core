@@ -99,9 +99,15 @@ export default function OrdersCalendar({
    * same at 5 orders a month and 5,000. The board needs the actual rows, so it fetches ONE DAY at a
    * time, when a day is asked for. The scaling decision survives: you pay for the day you open.
    *
-   * GET /api/orders?from=&to= already returns everything the board needs (customer, weight,
-   * flavours, dietary keys, and the design snapshot the weight split reads), so there is no new
-   * endpoint here.
+   * GET /api/orders already returns everything the board needs (customer, weight, flavours,
+   * dietary keys, and the design snapshot the weight split reads), so there is no new endpoint.
+   *
+   * ⚠️ `delivery_date`, NOT `from`/`to`. Those two exist on the same endpoint and read as the
+   * obvious way to ask for one day — but they filter `created_at`, so `{from: d, to: d}` asks for
+   * orders RAISED that day and returns nothing for a day whose cakes were ordered a fortnight ago.
+   * It fails silently: a legitimate 200 with an empty array, on a board whose empty state is a
+   * sentence rather than an error. `delivery_date` is an exact match and is what the panel's own
+   * date filter already passes — the two now agree, which is the point.
    *
    * Cached per date and never re-fetched while the panel is open. On desktop the board opens on
    * HOVER, so without a cache running the mouse across a week would fire seven requests and keep
@@ -116,7 +122,7 @@ export default function OrdersCalendar({
     if (cacheRef.current[date] || typeof apiClient?.fetchOrders !== 'function') return;
     cacheRef.current[date] = true;
     setDayRows(r => ({ ...r, [date]: { loading: true, error: null, orders: [] } }));
-    apiClient.fetchOrders({ from: date, to: date })
+    apiClient.fetchOrders({ delivery_date: date })
       .then(list => setDayRows(r => ({
         ...r, [date]: { loading: false, error: null, orders: Array.isArray(list) ? list : [] },
       })))
@@ -328,7 +334,9 @@ export default function OrdersCalendar({
           cell would be clipped by it — and clipped by the panel around that. */}
       {board && !isMobile && createPortal(
         <div onMouseEnter={() => clearTimeout(hoverTimer.current)} onMouseLeave={hoverOut}>
-          <AnchoredPopup anchor={board.anchor} width={340}
+          {/* side="right", and anchorSize 0 because the anchor IS the cell's right edge — the
+              board opens beside the day, not over it. */}
+          <AnchoredPopup anchor={board.anchor} width={340} side="right" anchorSize={0} gap={10}
                          style={{ background: '#FAF9F6', border: '1.5px solid #E8E4DC',
                                   borderRadius: 14, padding: 14, zIndex: 5000,
                                   boxShadow: '0 10px 30px rgba(26,26,26,0.14)' }}>

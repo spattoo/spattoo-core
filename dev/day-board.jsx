@@ -71,11 +71,28 @@ const apiClient = {
     { date: BUSY,  count: ORDERS.filter(o => o.delivery_date === BUSY).length,  by_status: { pending: 4, confirmed: 3 } },
     { date: QUIET, count: 1, by_status: { confirmed: 1 } },
   ],
-  // Deliberately slow, so the loading state is something you SEE rather than something you assume
-  // renders. A board that flashes empty before it fills is a real defect and an instant stub hides it.
-  fetchOrders: async ({ from }) => {
+  /* ⚠️ THIS STUB MIMICS THE REAL ENDPOINT'S PARAMETERS, INCLUDING THE TRAP.
+   *
+   * The first version accepted `from` and matched it against delivery_date — which is not what
+   * GET /api/orders does, and the difference cost a release. On the real endpoint `from`/`to`
+   * filter `created_at`, so `{from: d, to: d}` asks for orders RAISED that day and returns an empty
+   * array for a day whose cakes were ordered a fortnight ago. A 200 with no rows, on a board whose
+   * empty state is a sentence rather than an error: it looked like a quiet day.
+   *
+   * A stub more permissive than the thing it stands in for cannot catch that. This one filters on
+   * `delivery_date` ONLY, and honours from/to against created_at exactly as the API does — so the
+   * same mistake reproduces here instead of in front of a baker.
+   *
+   * Deliberately slow, too: a board that flashes empty before it fills is a real defect, and an
+   * instant stub hides it.
+   */
+  fetchOrders: async (params = {}) => {
     await new Promise(r => setTimeout(r, 450));
-    return ORDERS.filter(o => o.delivery_date === from);
+    let rows = ORDERS;
+    if (params.delivery_date) rows = rows.filter(o => o.delivery_date === params.delivery_date);
+    if (params.from) rows = rows.filter(o => (o.created_at ?? '') >= params.from);
+    if (params.to)   rows = rows.filter(o => (o.created_at ?? '') <= params.to);
+    return rows;
   },
 };
 

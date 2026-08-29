@@ -73,6 +73,33 @@ describe('AnchoredPopup', () => {
     expect(render({ anchor: { top: 10, left: 900 } }).top).toBe('8px');
   });
 
+  // ── side ──────────────────────────────────────────────────────────────────────────────────────
+  // Left is the default because the colour picker hangs off a swatch on the right-hand card stack.
+  // A calendar day is the opposite: the grid fills the window, so opening left drops the board on
+  // top of the day being pointed at — which is what it did, live, until this existed.
+  it('opens to the RIGHT when asked, instead of over its anchor', () => {
+    viewport(1440, 900);
+    // anchor.left is the cell's right edge; anchorSize 0 means "start here".
+    expect(render({ side: 'right', anchorSize: 0, gap: 10, anchor: { top: 300, left: 500 } }).left)
+      .toBe('510px');
+  });
+
+  it('flips back to the left when there is no room on the right', () => {
+    viewport(1000, 900);
+    // 900 + 10 + 244 = 1154, past the edge — so it goes left of the anchor instead.
+    expect(render({ side: 'right', anchorSize: 0, gap: 10, anchor: { top: 300, left: 900 } }).left)
+      .toBe('646px');
+  });
+
+  it('still never leaves the viewport, whichever side it opened', () => {
+    viewport(320, 900);
+    for (const side of ['left', 'right']) {
+      const left = parseInt(render({ side, anchor: { top: 300, left: 300 } }).left, 10);
+      expect(left).toBeGreaterThanOrEqual(8);
+      expect(left + 244).toBeLessThanOrEqual(320 - 8 + 1);
+    }
+  });
+
   it('keeps the caller\'s own styling', () => {
     viewport(1440, 900);
     const st = render({ style: { background: '#fff', zIndex: 4000 } });

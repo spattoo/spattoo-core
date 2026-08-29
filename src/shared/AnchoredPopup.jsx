@@ -32,7 +32,11 @@ import { useLayoutEffect, useRef, useState } from 'react';
 const MARGIN = 8;      // never nearer any edge than this
 const LIFT   = 48;     // sit slightly above the anchor, so the anchor stays visible
 
-export default function AnchoredPopup({ anchor, width, gap = 18, anchorSize = 26, children, style }) {
+// `side` is which way it opens FIRST; it flips to the other when that would go off-screen, and
+// clamps either way. Left by default because the colour picker — the reason this exists — hangs off
+// a swatch on the right-hand card stack. A calendar cell is the opposite case: the grid fills the
+// window, so opening left drops the popup straight on top of the day being pointed at.
+export default function AnchoredPopup({ anchor, width, gap = 18, anchorSize = 26, side = 'left', children, style }) {
   const ref = useRef(null);
   // Start at the anchor's own top: on the first paint, before the height is known, that is the
   // closest honest guess. The layout effect corrects it before the browser paints, so nothing is
@@ -54,9 +58,12 @@ export default function AnchoredPopup({ anchor, width, gap = 18, anchorSize = 26
   if (!anchor) return null;
 
   const vw = window.innerWidth;
-  // Left of the anchor by preference; right of it if that would go off-screen; then clamped.
-  let left = anchor.left - width - gap;
-  if (left < MARGIN) left = anchor.left + anchorSize + gap;
+  // The preferred side first, the other if that would go off-screen, then clamped either way.
+  const toLeft  = anchor.left - width - gap;
+  const toRight = anchor.left + anchorSize + gap;
+  let left = side === 'right'
+    ? (toRight + width > vw - MARGIN ? toLeft : toRight)
+    : (toLeft < MARGIN ? toRight : toLeft);
   left = Math.min(Math.max(left, MARGIN), vw - width - MARGIN);
 
   return (
