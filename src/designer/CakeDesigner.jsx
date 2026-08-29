@@ -55,6 +55,7 @@ import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
+import AnchoredPopup from '../shared/AnchoredPopup.jsx';
 import MyDecorationStudio from './decorations/MyDecorationStudio.jsx';
 import UploadsPanel from './decorations/UploadsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -9534,18 +9535,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         Anchored to the left of the tapped Color dot, clamped to the viewport. */}
                     {pipingColorKey === `${card.cardId}-${zone}-${tierIndex}` && pipingColorAnchor && createPortal(
                       (() => {
-                        const PAD = 14, EST_H = 400;
+                        const PAD = 14;
                         // Wheel shrinks to fit narrow / pinch-zoomed viewports so the popup box
-                        // (wheel + padding) never exceeds the screen; box below caps it too.
+                        // (wheel + padding) never exceeds the screen.
                         const vw = window.innerWidth;
                         const wheelW = Math.max(150, Math.min(216, vw - 2 * PAD - 16));
                         const popupW = wheelW + 2 * PAD;
-                        // Prefer the popup to the LEFT of the tapped dot; if it won't fit there,
-                        // flip to the right of the 26px dot — then clamp fully on-screen.
-                        let left = pipingColorAnchor.left - popupW - 18;
-                        if (left < 8) left = pipingColorAnchor.left + 26 + 18;
-                        left = Math.min(Math.max(left, 8), vw - popupW - 8);
-                        const top  = Math.max(8, Math.min(pipingColorAnchor.top - 48, window.innerHeight - EST_H));
+                        // Placement is AnchoredPopup's job now. It used to be an EST_H = 400 guess
+                        // here, and the guess was too small — this popup carries a wheel, a swatch
+                        // grid, colours-from-cake and a gradient row — so the bottom fell off the
+                        // screen whenever the swatch sat low enough to expose it.
                         // Gradient eligibility is CONFIG only — the piping element's allowed_actions.gradient.
                         // Stops/mode live on the ring layer (p.gradient); `color` is the solid/stop-0 fallback.
                         const gradEligible = !!pipingPopupEl?.allowed_actions?.gradient;
@@ -9560,10 +9559,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           else writePipingGradient(tierIndex, zone, next, gMode);
                         };
                         return (
-                          <div style={{ position: 'fixed', top, left, zIndex: 4000, background: '#fff',
-                            width: popupW, boxSizing: 'border-box', maxWidth: 'calc(100vw - 16px)',
-                            borderRadius: 16, padding: PAD, boxShadow: '0 12px 44px rgba(0,0,0,0.24)',
-                            border: '1px solid #eadde2' }}>
+                          <AnchoredPopup
+                            anchor={pipingColorAnchor}
+                            width={popupW}
+                            style={{ zIndex: 4000, background: '#fff', borderRadius: 16, padding: PAD,
+                                     boxShadow: '0 12px 44px rgba(0,0,0,0.24)', border: '1px solid #eadde2' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                               <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#1a1a1a', textTransform: 'uppercase' }}>{label}</span>
                               <button style={s.iconBtn} onClick={() => setPipingColorKey(null)}>✕</button>
@@ -9583,7 +9583,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 onModeChange={m => writePipingGradient(tierIndex, zone, gStops, m)}
                               />
                             )}
-                          </div>
+                          </AnchoredPopup>
                         );
                       })(),
                       document.body
