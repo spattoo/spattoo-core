@@ -5,7 +5,7 @@ import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
 import { translateStroke, distanceToStroke } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
-import { creamMaterialProps } from './CakeTier.jsx';
+import { mediumOf } from '../geometry/pipingMedia.js';
 import StampStroke from './StampStroke.jsx';
 import { LoadingPing } from './loadingRegistry.js';
 
@@ -25,7 +25,7 @@ import { LoadingPing } from './loadingRegistry.js';
 // handler reads that tag and disables rotate when you press on the cake (so you draw) and
 // leaves it on for empty space (so you rotate). The pen itself doesn't touch orbit.
 
-function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, softness, heapHeight }) {
+function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, softness, heapHeight, medium }) {
   const geo = useMemo(
     () => (kind === 'heap'
       ? buildPipingHeap(point, normal, nozzle, thickness, heapHeight)
@@ -36,7 +36,10 @@ function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, sof
   return (
     <mesh geometry={geo} castShadow>
       {/* DoubleSide keeps the fan caps lit regardless of winding (cream is opaque) */}
-      <meshPhysicalMaterial side={THREE.DoubleSide} {...creamMaterialProps(softness, color)} />
+      {/* Cream or chocolate — the table answers it, so there is no branch here and a third medium
+          is a row rather than an edit. A stroke saved before media existed has no `medium` and
+          falls back to cream, which is what it was piped as. */}
+      <meshPhysicalMaterial side={THREE.DoubleSide} {...mediumOf(medium).material({ softness }, color)} />
     </mesh>
   );
 }
@@ -153,7 +156,11 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
           let len = 0;
           for (let i = 1; i < pts.length; i++) len += pts[i].distanceTo(pts[i - 1]);
           const isTap = len < (s.thickness ?? 0.03) * 1.2;
-          const base = { nozzle: s.nozzle, color: s.color, thickness: s.thickness, softness: s.softness, tierIndex };
+          /* ⚠️ `medium` IS PERSISTED WITH THE STROKE. It is a property of what was piped, not of the
+             pen's current setting — without it, saving a chocolate line and reloading would render
+             it as buttercream, because the pen might be back on cream by then. */
+          const base = { nozzle: s.nozzle, color: s.color, thickness: s.thickness, softness: s.softness,
+                         medium: s.medium, tierIndex };
           // ── Auto-correct ─────────────────────────────────────────────────────────────────
           // Applied ONCE, here, to the points that get stored — not at render time. A stroke has to
           // redraw identically forever, and a tidy-up that ran on every render would re-tidy an
@@ -251,10 +258,13 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
         : <StrokeMesh key={s.id ?? i} {...s} />))}
 
       {/* Live preview: swept rope/heap only. In stamp mode the stamps appear on release
-          (loading + tiling a GLB every pointermove would stutter the drag). */}
+          (loading + tiling a GLB every pointermove would stutter the drag).
+
+          ⚠️ It takes `medium` too, or a chocolate line is piped looking like buttercream and turns
+          dark the instant you let go. */}
       {drawMode && live.length > 0 && penStyle && !penStyle.stampId && (
         <StrokeMesh points={live} nozzle={penStyle.nozzle} color={penStyle.color}
-          thickness={penStyle.thickness} softness={penStyle.softness} />
+          thickness={penStyle.thickness} softness={penStyle.softness} medium={penStyle.medium} />
       )}
 
       {(drawMode || moveMode) && tierData.map((t, i) => {

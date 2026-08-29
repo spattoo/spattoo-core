@@ -32,6 +32,7 @@ import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
+import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
@@ -1798,7 +1799,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // GLB. Hence the wider slider in stamp mode rather than a range that stops just above this.
   const PEN_DEFAULT_THICKNESS = 0.03;
   const PIPE_STAMP_THICKNESS  = +(SHELL_HEIGHT_FRAC * TIER_RADII[0] / 2).toFixed(3);   // 0.144
-  const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
+  // `medium` is what is in the bag — cream or chocolate. It is a KEY into MEDIA (see pipingMedia.js),
+  // never a branch, and the element row's placement_config is what switches it.
+  const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -4240,9 +4243,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            thickness: PEN_DEFAULT_THICKNESS }));
   }
 
-  function addPenFromRow(el) {
+  /* ⚠️ THE ROW IS THE AUTHORITY, and the medium's defaults sit UNDER it. A `chocolate_pen` row gets
+     a fine round tip, dark brown and a gloss finish without restating any of it; a row that also
+     names a colour — white chocolate, ruby — wins over the default. Master data on the row, material
+     recipe in the table (pipingMedia.js), and neither needs a deploy to change.
+
+     `medium` comes from the registry key rather than from the row, because AddElement writes only
+     `placement_config.procedural` — an admin can pick the generator but cannot author nested config,
+     so a medium that lived only in the nested block could not actually be created by anyone. */
+  function addPenFromRow(el, medium = DEFAULT_MEDIUM) {
     const tuned = el?.placement_config?.cream_pen ?? {};
-    setPenStyle(prev => ({ ...prev, ...tuned }));
+    setPenStyle(prev => ({ ...prev, medium, ...(MEDIA[medium]?.defaults ?? {}), ...tuned }));
     selectExclusive({ type: 'tool', tool: 'pen' });
   }
 
@@ -4273,6 +4284,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Both are LOOKS rather than objects — see addDustFromRow and addPenFromRow.
     luster_dust: addDustFromRow,
     cream_pen: addPenFromRow,
+    /* One pen, two media. A separate KEY rather than a flag on the row, because the key is the only
+       thing an admin can actually author (AddElement writes `procedural` and nothing nested), and
+       because "Chocolate pen" is what it is called on the shelf — a customer looking for chocolate
+       should not have to find a cream pen and change a setting on it. Both land in the same function;
+       nothing branches on the name. */
+    chocolate_pen: el => addPenFromRow(el, 'chocolate'),
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
