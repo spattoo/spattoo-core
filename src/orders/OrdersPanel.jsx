@@ -3,6 +3,7 @@ import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen, restrictions } from './dietary.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
 import FinishedPhotoEditor from './FinishedPhotoEditor.jsx';
+import Segmented from '../shared/Segmented.jsx';
 import {
   buildStatusIndex, DEFAULT_STATUS_INDEX,
   statusLabel, isClosed, isTerminal, isDesignLocked, statusTone,
@@ -1485,24 +1486,13 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           {/* List | Calendar — the calendar is a view of the same orders, so it lives
               here rather than being a separate destination. */}
           {hasCalendar && !selected ? (
-            <div style={{
-              display: 'flex', gap: 2, padding: 2, borderRadius: 10,
-              background: '#F2F0EB', border: '1.5px solid #E8E4DC', flexShrink: 0,
-            }}>
-              {[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }].map(v => (
-                <button key={v.id}
-                  onClick={() => { setView(v.id); if (v.id === 'calendar') { setDateFilter(null); setSelected(null); } }}
-                  style={{
-                    border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-                    padding: isMobile ? '5px 10px' : '5px 14px', fontSize: 12, fontWeight: 800,
-                    background: view === v.id ? '#fff' : 'transparent',
-                    color:      view === v.id ? '#1a1a1a' : '#8a8a8a',
-                    boxShadow:  view === v.id ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
-                  }}>
-                  {v.label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="How to show these orders"
+              items={[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }]}
+              value={view}
+              isMobile={isMobile}
+              onChange={id => { setView(id); if (id === 'calendar') { setDateFilter(null); setSelected(null); } }}
+            />
           ) : null}
 
           <span style={{ flex: 1 }} />

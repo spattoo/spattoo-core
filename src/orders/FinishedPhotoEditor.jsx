@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Panel } from '../shared/Panel.jsx';
+import Segmented from '../shared/Segmented.jsx';
+import { useNarrow } from '../shared/useNarrow.js';
 import { autoFix, relight, brighten } from './photoEdit.js';
 
 /* ── Tidying a finished-cake photo on its way to the customer ────────────────────────────────────
@@ -121,6 +123,8 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
   const [busy, setBusy] = useState(false);
   const [compare, setCompare] = useState(false);   // showing the original
   const [sel, setSel] = useState('bright');        // which tool the one slider is driving
+  // The ONE definition of "is this a phone" — this screen is opened from one almost every time.
+  const isMobile = useNarrow();
 
   const edited = TOOLS.some(t => (t.max ? tools[t.key] > 0 : tools[t.key]));
 
@@ -224,18 +228,14 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
             Only shown once something is applied — with nothing chosen the two states are identical,
             and a comparison between a thing and itself is furniture. */}
         {edited && (
-          <div style={{
-            position: 'absolute', top: 8, right: 8, display: 'flex', gap: 2, padding: 2,
-            borderRadius: 999, background: 'rgba(28,28,28,0.55)', backdropFilter: 'blur(6px)',
-          }}>
-            {[[true, 'Before'], [false, 'After']].map(([isBefore, label]) => (
-              <button key={label} type="button" onClick={() => setCompare(isBefore)} style={{
-                border: 'none', borderRadius: 999, padding: '5px 11px', cursor: 'pointer',
-                fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800,
-                background: compare === isBefore ? '#fff' : 'transparent',
-                color:      compare === isBefore ? '#1a1a1a' : 'rgba(255,255,255,0.85)',
-              }}>{label}</button>
-            ))}
+          <div style={{ position: 'absolute', top: 8, right: 8 }}>
+            <Segmented
+              isMobile={isMobile}
+              label="Compare with the original"
+              items={[{ id: 'before', label: 'Before' }, { id: 'after', label: 'After' }]}
+              value={compare ? 'before' : 'after'}
+              onChange={id => setCompare(id === 'before')}
+            />
           </div>
         )}
       </div>
@@ -247,26 +247,22 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
           ⚠️ THE AMOUNT STAYS ON THE TAB. A plain tab strip would show only which tool is selected and
           hide what is applied to the photo — the one thing the old stacked list gave for free. The
           second line carries it, so all four states are legible without switching between them. */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: `repeat(${TOOLS.filter(t => t.max || bakerName).length}, 1fr)`,
-        gap: 3, padding: 3, borderRadius: 12, marginBottom: 12,
-        background: '#F2F0EB', border: '1.5px solid #E8E4DC',
-      }}>
-        {TOOLS.map(t => {
-          if (t.key === 'mark' && !bakerName) return null;      // nothing to write
-          const on = t.max ? tools[t.key] > 0 : !!tools[t.key];
-          return (
-            <button key={t.key} type="button" title={t.hint} onClick={() => setSel(t.key)}
-              style={tab(sel === t.key, primaryColor)}>
-              <span style={{ display: 'block' }}>{t.short}</span>
-              <span style={{
-                display: 'block', fontSize: 10, fontWeight: 800, marginTop: 1,
-                fontVariantNumeric: 'tabular-nums',
-                color: on ? primaryColor : '#BDB8B0',
-              }}>{on ? (t.max ? `${tools[t.key]}%` : 'on') : 'off'}</span>
-            </button>
-          );
-        })}
+      <div style={{ marginBottom: 12 }}>
+        <Segmented
+          equal
+          isMobile={isMobile}
+          label="What to tidy"
+          tone={primaryColor}
+          items={TOOLS.filter(t => t.max || bakerName).map(t => ({
+            id: t.key,
+            label: t.short,
+            title: t.hint,
+            note: t.max ? (tools[t.key] > 0 ? `${tools[t.key]}%` : 'off') : (tools[t.key] ? 'on' : 'off'),
+            noteOn: t.max ? tools[t.key] > 0 : !!tools[t.key],
+          }))}
+          value={sel}
+          onChange={setSel}
+        />
       </div>
 
       {/* ⚠️ ONE TOOL AT A TIME. Four stacked cards of label + hint + slider are taller than the
@@ -339,19 +335,6 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
     </Panel>
   );
 }
-
-/* ⚠️ A TAB CARRIES TWO INDEPENDENT FACTS and they must not collapse into one another: whether the
- * tool is SELECTED (this panel is driving it) and whether it is APPLIED (it is changing the photo).
- * A tool is normally applied WITHOUT being selected — that is the state of the other three — so a
- * strip that showed only selection would hide what is being done to the picture. Selection is the
- * raised tab; application is the amount printed on its second line. */
-const tab = (selected, color) => ({
-  border: 'none', borderRadius: 9, padding: '6px 4px', cursor: 'pointer', minWidth: 0,
-  fontFamily: 'inherit', fontSize: 12, fontWeight: 800, textAlign: 'center',
-  background: selected ? '#fff' : 'transparent',
-  color:      selected ? color : '#8a8a8a',
-  boxShadow:  selected ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
-});
 
 const labelStyle = { display: 'block', fontSize: 13.5, fontWeight: 700, color: '#2C4433' };
 const hintStyle  = { display: 'block', fontSize: 11.5, color: '#8a8a8a', marginTop: 1 };
