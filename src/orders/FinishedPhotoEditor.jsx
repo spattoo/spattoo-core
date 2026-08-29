@@ -44,15 +44,23 @@ const PREVIEW_MAX = 900;
  *  - Backdrop stops at 100% because it interpolates TOWARD a target colour; past 1 it overshoots the
  *    target and starts inventing a wall lighter than white.
  */
+/* ⚠️ `short` IS FOR THE TAB, `label` FOR THE PANEL, and both are needed. Four equal tabs on a 360px
+ * phone give each about 80px — "Clean backdrop" does not fit and truncating it to "Clean back…"
+ * makes the strip unreadable. The tab is a signpost and can be terse; the panel below it has room
+ * for the real name and the sentence explaining what the tool does. */
 const TOOLS = [
-  { key: 'bright', label: 'Brightness',      hint: 'Lifts a photo shot in poor light', max: 100 },
-  { key: 'fix',    label: 'Colour',          hint: 'Corrects a dull, grey cast', max: 150 },
-  { key: 'light',  label: 'Clean backdrop',  hint: 'Lifts a plain wall behind the cake', max: 100 },
-  { key: 'mark',   label: 'Add your name',   hint: 'A small mark in the corner' },
+  { key: 'bright', label: 'Brightness',     short: 'Light',    hint: 'Lifts a photo shot in poor light', max: 100 },
+  { key: 'fix',    label: 'Colour',         short: 'Colour',   hint: 'Corrects a dull, grey cast', max: 150 },
+  { key: 'light',  label: 'Clean backdrop', short: 'Backdrop', hint: 'Lifts a plain wall behind the cake', max: 100 },
+  { key: 'mark',   label: 'Add your name',  short: 'Name',     hint: 'A small mark in the corner' },
 ];
 
-// A sensible amount on first tap, so a baker meets the effect rather than a dead control at zero.
-const NUDGE = 70;
+/* ⚠️ SWITCHING TABS MUST NOT TOUCH THE PHOTO, and this replaced a deliberate earlier behaviour.
+ * When the tools were chips, tapping one turned it on at 70% so a baker met the effect rather than a
+ * dead slider at zero. A tab cannot do that: a tab is navigation, and navigation that edits the
+ * picture means you cannot look at what a tool does without having it applied — and "nothing is
+ * changed unless you choose it" is the first rule of this screen, not a preference. The slider
+ * therefore starts at 0 and the tab reads "off" until it is dragged. */
 
 /* ⚠️ DERIVE "nothing applied" FROM THE TOOL LIST, never from a hand-written list of keys, and keep
  * it at module scope so it is a stable object rather than a new one per render.
@@ -193,8 +201,7 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
       {/* ⚠️ THE PHOTO IS CAPPED IN VIEWPORT HEIGHT, and this is load-bearing rather than cosmetic.
           A tall phone photo in a 100%-wide box is most of a phone screen on its own, which pushed the
           controls below the fold: you adjusted a slider you could see, then scrolled up to find out
-          what it did. An editor you cannot watch while you adjust it is not an editor. 42vh leaves
-          room for the one slider, both chip rows and the footer on a small phone without scrolling. */}
+          what it did. An editor you cannot watch while you adjust it is not an editor. */}
       <div style={{
         position: 'relative', borderRadius: 12, overflow: 'hidden',
         background: '#F4F1EC', marginBottom: 10, minHeight: 160,
@@ -203,44 +210,102 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
         <canvas ref={canvasRef} style={{
           display: 'block', maxWidth: '100%', maxHeight: '38vh', width: 'auto', height: 'auto',
         }} />
+
+        {/* ⚠️ COMPARE SITS ON THE PHOTO, not in its own row above the tools. Two segmented strips
+            stacked one above the other read as one confusing control with seven options; and the row
+            it used to occupy is the row the tab strip now needs. On the image it is also where every
+            other photo editor puts it. Still two LABELLED states rather than press-and-hold: holding
+            gave no clue where to hold, and hid the comparison at the moment you wanted to study it.
+
+            Only shown once something is applied — with nothing chosen the two states are identical,
+            and a comparison between a thing and itself is furniture. */}
+        {edited && (
+          <div style={{
+            position: 'absolute', top: 8, right: 8, display: 'flex', gap: 2, padding: 2,
+            borderRadius: 999, background: 'rgba(28,28,28,0.55)', backdropFilter: 'blur(6px)',
+          }}>
+            {[[true, 'Before'], [false, 'After']].map(([isBefore, label]) => (
+              <button key={label} type="button" onClick={() => setCompare(isBefore)} style={{
+                border: 'none', borderRadius: 999, padding: '5px 11px', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800,
+                background: compare === isBefore ? '#fff' : 'transparent',
+                color:      compare === isBefore ? '#1a1a1a' : 'rgba(255,255,255,0.85)',
+              }}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* ⚠️ TWO LABELLED TABS, not press-and-hold. Holding was tried and was wrong twice over: there
-          was nothing to say WHERE to hold, and a control you have to discover is a control most
-          people never use. The original objection to a toggle — that somebody could leave it on the
-          original and judge the edit by it — is answered by LABELLING which one is on screen rather
-          than by making the interaction awkward.
+      {/* ⚠️ A TAB STRIP, FIXED AT ONE ROW. Chips that wrapped were the previous attempt, and on a
+          narrow window they wrapped to THREE rows — reintroducing the variable height that pushed the
+          photo off screen in the first place. Equal-width tabs cannot wrap and cannot grow.
 
-          Only shown once something is ticked: with nothing chosen the two states are identical, and
-          a comparison between a thing and itself is furniture. */}
-      {edited && (
-        <div style={{
-          display: 'flex', gap: 3, padding: 3, borderRadius: 10, marginBottom: 14,
-          background: '#F2F0EB', border: '1.5px solid #E8E4DC',
-        }}>
-          {[[true, 'Before'], [false, 'After']].map(([isBefore, label]) => (
-            <button key={label} type="button" onClick={() => setCompare(isBefore)} style={{
-              flex: 1, border: 'none', borderRadius: 8, padding: '7px 10px', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
-              background: compare === isBefore ? '#fff' : 'transparent',
-              color:      compare === isBefore ? '#1a1a1a' : '#8a8a8a',
-              boxShadow:  compare === isBefore ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
-            }}>{label}</button>
-          ))}
-        </div>
-      )}
+          ⚠️ THE AMOUNT STAYS ON THE TAB. A plain tab strip would show only which tool is selected and
+          hide what is applied to the photo — the one thing the old stacked list gave for free. The
+          second line carries it, so all four states are legible without switching between them. */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: `repeat(${TOOLS.filter(t => t.max || bakerName).length}, 1fr)`,
+        gap: 3, padding: 3, borderRadius: 12, marginBottom: 12,
+        background: '#F2F0EB', border: '1.5px solid #E8E4DC',
+      }}>
+        {TOOLS.map(t => {
+          if (t.key === 'mark' && !bakerName) return null;      // nothing to write
+          const on = t.max ? tools[t.key] > 0 : !!tools[t.key];
+          return (
+            <button key={t.key} type="button" title={t.hint} onClick={() => setSel(t.key)}
+              style={tab(sel === t.key, primaryColor)}>
+              <span style={{ display: 'block' }}>{t.short}</span>
+              <span style={{
+                display: 'block', fontSize: 10, fontWeight: 800, marginTop: 1,
+                fontVariantNumeric: 'tabular-nums',
+                color: on ? primaryColor : '#BDB8B0',
+              }}>{on ? (t.max ? `${tools[t.key]}%` : 'on') : 'off'}</span>
+            </button>
+          );
+        })}
+      </div>
 
-      {/* ⚠️ ONE SLIDER, NOT FOUR STACKED CARDS. Four rows of label + hint + slider is taller than the
-          photo, so nothing fitted on one screen and adjusting meant scrolling away from the thing
-          being adjusted. The tool being edited gets the slider; the rest collapse to chips that carry
-          their own amount, so what is applied is still readable at a glance — which is the one thing
-          the stacked list gave for free and a plain tab bar would have thrown away. */}
+      {/* ⚠️ ONE TOOL AT A TIME. Four stacked cards of label + hint + slider are taller than the
+          photo, so nothing fitted on one screen and adjusting meant scrolling away from the very
+          thing being adjusted. This panel is a fixed two lines plus a control whichever tab is on,
+          so the photo above it never moves as you switch tools — a layout that jumps on every tap
+          costs more than the space it saves. */}
       {(() => {
         const t = TOOLS.find(x => x.key === sel) || TOOLS[0];
         const v = tools[t.key];
+
+        /* The name mark has no amount, so its tab gets a switch rather than a slider. Giving it a
+           slider for consistency would be a control that does nothing at 40%. */
+        if (!t.max) {
+          const on = !!tools.mark;
+          return (
+            <div style={{ padding: '2px 2px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={labelStyle}>{t.label}</span>
+                  <span style={hintStyle}>{bakerName ? `“${bakerName}” in the corner` : t.hint}</span>
+                </span>
+                <button type="button" role="switch" aria-checked={on} aria-label={t.label}
+                  onClick={() => { setCompare(false); setTools(s2 => ({ ...s2, mark: !s2.mark })); }}
+                  style={{
+                    width: 46, height: 27, flexShrink: 0, borderRadius: 999, cursor: 'pointer',
+                    padding: 2, border: `1.5px solid ${on ? primaryColor : '#C9C4BC'}`,
+                    background: on ? primaryColor : '#fff', display: 'flex',
+                    justifyContent: on ? 'flex-end' : 'flex-start', alignItems: 'center',
+                  }}>
+                  <span style={{
+                    width: 19, height: 19, borderRadius: '50%', display: 'block',
+                    background: on ? '#fff' : '#C9C4BC',
+                  }} />
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div style={{ padding: '2px 2px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
               <span style={{ ...labelStyle, flex: 1, minWidth: 0 }}>{t.label}</span>
               <span style={{
                 fontSize: 11.5, fontWeight: 800, color: v > 0 ? primaryColor : '#B9B3AA',
@@ -250,69 +315,28 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
             <span style={hintStyle}>{t.hint}</span>
             <input
               type="range" min={0} max={t.max} step={5} value={v} aria-label={t.label}
-              onChange={e => { setCompare(false); setTools(s => ({ ...s, [t.key]: Number(e.target.value) })); }}
+              onChange={e => { setCompare(false); setTools(s2 => ({ ...s2, [t.key]: Number(e.target.value) })); }}
               style={{ width: '100%', marginTop: 6, accentColor: primaryColor }}
             />
           </div>
         );
       })()}
 
-      {/* ⚠️ WRAP, DO NOT SCROLL SIDEWAYS. A horizontally scrolling row put the SELECTED chip off
-          the left edge as soon as another was tapped — the one chip that must stay visible, since it
-          names what the slider underneath is doing. Four chips wrap to two rows and all of them stay
-          on screen; a sideways row only pays for itself when there are more than fit in two. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-        {TOOLS.map(t => {
-          if (t.key === 'mark' && !bakerName) return null;   // nothing to write
-
-          /* The name mark has no amount, so its chip is the control itself rather than a way of
-             reaching a slider — tapping it toggles the mark and leaves the slider where it was. */
-          if (!t.max) {
-            const on = !!tools.mark;
-            return (
-              <button key={t.key} type="button" title={t.hint}
-                onClick={() => { setCompare(false); setTools(s => ({ ...s, mark: !s.mark })); }}
-                style={chip(on, false, primaryColor)}>
-                {on ? '✓ ' : ''}{t.label}
-              </button>
-            );
-          }
-
-          const v = tools[t.key];
-          return (
-            <button key={t.key} type="button" title={t.hint}
-              /* Selecting a tool that is off also turns it on, at a sensible amount rather than at
-                 zero: arriving at a dead slider teaches nothing about what the tool does. Tapping the
-                 chip of the tool already selected is how you turn it back off. */
-              onClick={() => {
-                setCompare(false);
-                if (sel === t.key) setTools(s => ({ ...s, [t.key]: v > 0 ? 0 : NUDGE }));
-                else { setSel(t.key); if (!v) setTools(s => ({ ...s, [t.key]: NUDGE })); }
-              }}
-              style={chip(v > 0, sel === t.key, primaryColor)}>
-              {t.label}{v > 0 ? ` ${v}%` : ''}
-            </button>
-          );
-        })}
-      </div>
     </Panel>
   );
 }
 
-/* ⚠️ A CHIP CARRIES TWO INDEPENDENT FACTS and they must not collapse into one another: whether the
- * tool is APPLIED (it is changing the photo) and whether it is SELECTED (the slider is driving it).
- * A tool can easily be applied but not selected — that is the normal state of the other three — and
- * showing only selection would hide what is being done to the photo, which is the whole reason the
- * amount is printed on the chip. Applied is the filled one, since it is the fact about the picture;
- * selected is the ring, since it is only a fact about the editor. */
-const chip = (applied, selected, color) => ({
-  flexShrink: 0, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
-  fontFamily: 'inherit', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap',
-  fontVariantNumeric: 'tabular-nums',
-  border: `1.5px solid ${selected ? color : applied ? `${color}66` : '#E0DDD8'}`,
-  boxShadow: selected ? `0 0 0 2.5px ${color}22` : 'none',
-  background: applied ? `${color}14` : '#fff',
-  color: applied ? color : '#7d7a75',
+/* ⚠️ A TAB CARRIES TWO INDEPENDENT FACTS and they must not collapse into one another: whether the
+ * tool is SELECTED (this panel is driving it) and whether it is APPLIED (it is changing the photo).
+ * A tool is normally applied WITHOUT being selected — that is the state of the other three — so a
+ * strip that showed only selection would hide what is being done to the picture. Selection is the
+ * raised tab; application is the amount printed on its second line. */
+const tab = (selected, color) => ({
+  border: 'none', borderRadius: 9, padding: '6px 4px', cursor: 'pointer', minWidth: 0,
+  fontFamily: 'inherit', fontSize: 12, fontWeight: 800, textAlign: 'center',
+  background: selected ? '#fff' : 'transparent',
+  color:      selected ? color : '#8a8a8a',
+  boxShadow:  selected ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
 });
 
 const labelStyle = { display: 'block', fontSize: 13.5, fontWeight: 700, color: '#2C4433' };
