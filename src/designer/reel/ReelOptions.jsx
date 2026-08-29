@@ -22,7 +22,22 @@ import { pickMimeType, isInstagramReady, recordButtonState } from './recordReel.
  */
 
 const LENGTHS = [2.5, 3.5, 4.5, 6];
-const SWEEPS  = [90, 120, 150, 180];
+
+/* ── The sweep, and the full turn that was deliberately not here ─────────────────────────────────
+ *
+ * 360° was left off on the argument that a complete revolution reads as a product viewer and tells
+ * the viewer exactly when the loop ends — which is when they scroll. That still holds for the
+ * DEFAULT, which is why the default is still 120°.
+ *
+ * But it was answering the wrong question for one real case: showing a cake COMPLETELY. A template
+ * being announced, a cake with something different on every side, a piece a baker wants to show off
+ * rather than tease. For those, "you have now seen all of it" is the point, not a cost.
+ *
+ * A full turn also has a property no other arc has: it ends on the angle it started, so a ONE-WAY
+ * 360 loops with no jump at all — the seam the out-and-back exists to remove is simply not there.
+ */
+const FULL_TURN = 360;
+const SWEEPS    = [90, 120, 150, 180, FULL_TURN];
 
 export default function ReelOptions({ open, onClose, onRecord, busy, onGround, onIncludeName,
                                       brandPrimary, bakeryName = '', canChooseName = false,
@@ -107,10 +122,15 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
             <button style={pick(pingPong)}  onClick={() => setPingPong(true)}>Turn and come back</button>
             <button style={pick(!pingPong)} onClick={() => setPingPong(false)}>One way</button>
           </div>
-          {/* Says WHY rather than what, because the reason is not guessable from the label. */}
+          {/* Says WHY rather than what, because the reason is not guessable from the label.
+              ⚠️ And the "one way jumps" half stops being true at a full turn, which ends on the
+              angle it began. Copy that keeps warning about a seam that is not there teaches the
+              baker to distrust the rest of it. */}
           <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
             {pingPong
               ? 'Returns to where it started, so the reel loops with no jump. The way back is slower — that is the half people actually watch.'
+              : arcDeg === FULL_TURN
+              ? 'A full turn ends where it began, so this one loops cleanly on its own — and gets all the way round in the time a there-and-back would take to do half.'
               : 'Ends somewhere new. Instagram will cut straight back to the start, so expect a visible jump each time it loops.'}
           </div>
         </div>
@@ -154,14 +174,16 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
           <div style={{ ...label, marginTop: 4 }}>How far it turns</div>
           <div style={row}>
             {SWEEPS.map(n => (
-              <button key={n} style={pick(arcDeg === n)} onClick={() => setArcDeg(n)}>{n}°</button>
+              <button key={n} style={pick(arcDeg === n)} onClick={() => setArcDeg(n)}>
+                {n === FULL_TURN ? 'All the way round' : `${n}°`}
+              </button>
             ))}
           </div>
           {/* The one piece of judgement worth putting in front of somebody filming. */}
           <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
-            A cake with detail all round its sides wants the full sweep. A rounded, even one — a
-            football, a smooth dome — looks much the same from most angles, so a shorter turn with a
-            closer push shows more than a long one.
+            {arcDeg === FULL_TURN
+              ? 'Shows every side. Because it finishes on the angle it started, this is the one turn that loops with no jump even going one way — so "One way" and "Turn and come back" both work here.'
+              : 'A cake with detail all round its sides wants the full sweep. A rounded, even one — a football, a smooth dome — looks much the same from most angles, so a shorter turn with a closer push shows more than a long one.'}
           </div>
         </div>
         {/* ── The top ──────────────────────────────────────────────────────────────────────────
@@ -175,9 +197,15 @@ export default function ReelOptions({ open, onClose, onRecord, busy, onGround, o
             <button style={pick(!riseToTop)} onClick={() => setRiseToTop(false)}>Stay level</button>
             <button style={pick(riseToTop)}  onClick={() => setRiseToTop(true)}>Rise over the top</button>
           </div>
+          {/* ⚠️ Says so when the two choices ADD UP to something. A baker who has set both has made
+              the complete view without being told that is what it is called, and the next cake they
+              want it for is one they will have to reconstruct it from memory. Naming it here is the
+              cheapest way to make a two-tap shot repeatable. */}
           <div style={{ fontSize: 11.5, color: '#6E8577', marginTop: 6, lineHeight: 1.5 }}>
-            {riseToTop
-              ? 'Climbs as it turns and finishes looking down, so the lid gets its own moment. For a cake whose design is on top — a piped scene, writing, a covered board.'
+            {riseToTop && arcDeg === FULL_TURN
+              ? 'That is the complete view — every side and the top, in one take. Nothing about this cake is left off screen.'
+              : riseToTop
+              ? 'Climbs as it turns and finishes looking down, so the lid gets its own moment. For a cake whose design is on top — a piped scene, writing, a covered board. Set the turn to "All the way round" as well and the take shows every side and the top.'
               : 'Keeps the height you framed it at. Right for a tall or tiered cake, where the sides are the cake.'}
           </div>
         </div>

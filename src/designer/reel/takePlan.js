@@ -89,6 +89,23 @@ export const progressAt = (elapsedMs, seconds) =>
  * the easing returns to 0, so the camera comes back down to where it started and the seam stays
  * invisible. Giving the lift its own curve would have broken that for no gain.
  */
+/* ── Does the camera finish where it started? ────────────────────────────────────────────────────
+ *
+ * The dolly and the lift ride an out-and-back curve so they come home with the arc and the reel
+ * loops with no jump. That used to be keyed on `pingPong`, which was right while a one-way take
+ * always ended somewhere new.
+ *
+ * A FULL TURN breaks that. It is one-way and it still comes home — on ANGLE. Left riding a one-way
+ * curve, the dolly ends 22% closer than it started and the lift ends overhead, so the loop pops on
+ * distance and height while the angle matches perfectly. Measured on a 6-unit framing: a seam of
+ * 1.32 world units level, 4.35 with the rise on.
+ *
+ * So the question is not "is this a ping-pong" but "does the arc come home", and a full turn is the
+ * other way it can. `arcDeg` may be negative — direction is a signed multiplier, not a branch.
+ */
+export const arcComesHome = (arcDeg, pingPong) =>
+  !!pingPong || (Number.isFinite(arcDeg) && arcDeg !== 0 && Math.abs(arcDeg) % 360 === 0);
+
 export const POLE_MARGIN = (6 * Math.PI) / 180;
 
 export function elevationAt(startPhi, eased, topPhi = null) {

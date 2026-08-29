@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planTake, medianOf, progressAt, elevationAt, RUNGS, SLOW_MS, POLE_MARGIN } from './takePlan.js';
+import { planTake, medianOf, progressAt, elevationAt, arcComesHome, RUNGS, SLOW_MS, POLE_MARGIN } from './takePlan.js';
 import { angleByKey } from '../photo/photoAngles.js';
 
 describe('planTake', () => {
@@ -173,5 +173,47 @@ describe('elevationAt', () => {
     expect(elevationAt(high, 0, TOP)).toBeCloseTo(high, 10);
     expect(elevationAt(high, 1, TOP)).toBeCloseTo(TOP, 10);
     expect(elevationAt(high, 0.5, TOP)).toBeCloseTo((high + TOP) / 2, 10);
+  });
+});
+
+// ── Which takes finish where they started ────────────────────────────────────────────────────────
+// The dolly and the lift ride an out-and-back curve so they come home with the arc and the reel
+// loops with no jump. That was keyed on `pingPong`, which was right while a one-way take always
+// ended somewhere new — and wrong the moment "All the way round" existed. A full turn is one-way
+// and still comes home on ANGLE; left on a one-way curve the dolly ended 22% closer and the lift
+// ended overhead, so the loop popped on distance and height while the angle matched perfectly.
+// Measured on a 6-unit framing: a 1.32 world-unit seam level, 4.35 with the rise on.
+describe('arcComesHome', () => {
+  it('is true for a ping-pong at any arc', () => {
+    for (const deg of [90, 120, 150, 180, 360, -120]) expect(arcComesHome(deg, true)).toBe(true);
+  });
+
+  it('is false for a one-way part-turn — the case that always ended somewhere new', () => {
+    for (const deg of [90, 120, 150, 180, -90, -180, 359]) expect(arcComesHome(deg, false)).toBe(false);
+  });
+
+  it('is TRUE for a one-way FULL turn, which is the whole point', () => {
+    expect(arcComesHome(360, false)).toBe(true);
+    expect(arcComesHome(720, false)).toBe(true);
+  });
+
+  it('handles a full turn the other way round', () => {
+    // Direction is a signed multiplier, not a branch — "turn left" arrives here as -360.
+    expect(arcComesHome(-360, false)).toBe(true);
+    expect(arcComesHome(-720, false)).toBe(true);
+  });
+
+  it('does not call a zero arc a homecoming', () => {
+    // 0 % 360 is 0, so a naive modulo says yes. A take that never moves is a still frame, and
+    // giving it an out-and-back dolly would push the camera in and out of a shot nobody asked to
+    // move at all.
+    expect(arcComesHome(0, false)).toBe(false);
+  });
+
+  it('never throws on a missing or nonsense arc', () => {
+    for (const bad of [undefined, null, NaN, Infinity, '360']) {
+      expect(typeof arcComesHome(bad, false)).toBe('boolean');
+    }
+    expect(arcComesHome(undefined, true)).toBe(true);   // a ping-pong is a homecoming regardless
   });
 });
