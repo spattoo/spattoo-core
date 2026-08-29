@@ -1,49 +1,75 @@
-import { StrictMode, useState, useEffect } from 'react';
+import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import FinishedPhotoEditor from '../src/orders/FinishedPhotoEditor.jsx';
 
-/* The editor on a REAL baker photo. It normally opens between choosing a finished-cake photo and
- * uploading it, which is behind a login, an order, and a status transition — so it cannot be judged
- * by clicking through, and the toggles it offers are exactly the thing that needs judging by eye.
+/* The finished-photo editor on a real photo.
  *
- * Drops a sample photo in on load; drag another in to compare. */
+ * It normally opens between choosing a finished-cake photo and uploading it — behind a login, an
+ * order, and a status transition — so it cannot be judged by clicking through, and the toggles it
+ * offers are exactly the thing that needs judging by eye.
+ *
+ * ⚠️ NO SAMPLE PHOTO IS COMMITTED, deliberately. A finished-cake photo is a CUSTOMER'S cake, and the
+ * one this was built against carries a child's name piped on it and a printed photo topper of a
+ * child; that does not belong in a repository forever. Pick one from disk — it never leaves the
+ * browser.
+ *
+ * ⚠️ And it is a PICKER, not a drop zone. The first cut of this harness listened for a drop on the
+ * page and fetched a sample on load. Both failed: the editor is a modal, so its overlay sits above
+ * the page and swallowed every drop, and Vite answers a missing file with index.html at 200 — so
+ * `r.ok` was true, a File was built out of HTML, and the canvas came up blank with nothing to say
+ * why.
+ */
 function App() {
   const [file, setFile] = useState(null);
   const [out, setOut] = useState(null);
 
-  /* ⚠️ NO SAMPLE PHOTO IS COMMITTED, and that is deliberate. The obvious convenience is to drop a
-     real finished-cake photo into public/ so the harness opens on something — but a finished-cake
-     photo is a CUSTOMER'S cake, and the one this was built against has a child's name piped on it
-     and a printed photo topper of a child. That does not belong in a git repository, on anyone's
-     machine, forever. Drag one in instead; it never leaves the browser. */
-  useEffect(() => {
-    fetch('/sample-cake.jpg').then(r => r.ok ? r.blob() : null)
-      .then(b => b && setFile(new File([b], 'sample-cake.jpg', { type: 'image/jpeg' })))
-      .catch(() => {});   // absent by design — see above
-  }, []);
+  const pick = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f) { setOut(null); setFile(f); }
+  };
 
   return (
-    <div style={{ height: '100%', padding: 20 }}
-         onDragOver={e => e.preventDefault()}
-         onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) { setOut(null); setFile(f); } }}>
-      <div style={{ fontSize: 12, color: '#777', marginBottom: 10 }}>
-        Drop a photo anywhere to load it. {file ? `Loaded: ${file.name}` : 'Waiting…'}
-      </div>
+    <div style={{ minHeight: '100%', padding: 24, fontFamily: "'Quicksand', sans-serif" }}>
+      <h1 style={{ fontSize: 17, fontWeight: 800, color: '#2C4433', marginBottom: 6 }}>
+        Finished-photo editor
+      </h1>
+      <p style={{ fontSize: 13, color: '#777', marginBottom: 16, maxWidth: 520, lineHeight: 1.5 }}>
+        Choose a cake photo. Nothing is uploaded — the whole editor runs in this browser.
+      </p>
+
+      <label style={{
+        display: 'inline-block', padding: '12px 18px', borderRadius: 11, cursor: 'pointer',
+        background: '#3A4F46', color: '#fff', fontSize: 14, fontWeight: 800,
+      }}>
+        Choose a photo…
+        <input type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />
+      </label>
+      {file && <span style={{ marginLeft: 12, fontSize: 12.5, color: '#777' }}>{file.name}</span>}
+
       {file && !out && (
         <FinishedPhotoEditor
-          file={file} bakerName="feelings & flavours" primaryColor="#3A4F46"
+          key={`${file.name}-${file.size}`}
+          file={file}
+          bakerName="feelings & flavours"
+          primaryColor="#3A4F46"
           onCancel={() => setFile(null)}
-          onDone={(f) => setOut(f)}
+          onDone={setOut}
         />
       )}
+
       {out && (
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#2C4433', marginBottom: 8 }}>
             Returned: {out.name} — {(out.size / 1024).toFixed(0)} KB
-            {out === file ? ' (unchanged — the original file itself)' : ' (edited)'}
+            {out === file ? '  (unchanged — the original file itself)' : '  (edited)'}
           </div>
-          <img alt="" src={URL.createObjectURL(out)} style={{ maxWidth: 420, borderRadius: 12 }} />
-          <div><button onClick={() => setOut(null)} style={{ marginTop: 10 }}>Edit again</button></div>
+          <img alt="" src={URL.createObjectURL(out)}
+               style={{ maxWidth: 420, borderRadius: 12, display: 'block' }} />
+          <button onClick={() => setOut(null)} style={{
+            marginTop: 10, padding: '9px 14px', borderRadius: 9, border: '1.5px solid #ddd',
+            background: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+          }}>Edit again</button>
         </div>
       )}
     </div>

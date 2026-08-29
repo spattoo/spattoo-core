@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyse, autoFix, relight, blurSmall } from './photoEdit.js';
+import { analyse, autoFix, relight, blurSmall, brighten } from './photoEdit.js';
 
 /* These protect the two things a screenshot cannot show reliably: that the corrections are
  * CLAMPED (so a warm photo is not dragged blue), and that the relight weight map is SMOOTH (so a
@@ -75,6 +75,47 @@ describe('the auto-fix', () => {
     const copy = Uint8ClampedArray.from(dull.data);
     autoFix(dull);
     expect([...dull.data]).toEqual([...copy]);
+  });
+});
+
+describe('brightening', () => {
+  const dim = img(16, 16, (x, y) => { const v = 40 + x * 8 + y; return [v, v, v]; });
+  const mean = (im) => { let s = 0; const n = im.width * im.height;
+    for (let p = 0; p < n; p++) s += im.data[p*4]; return s / n; };
+
+  it('lifts the picture', () => {
+    expect(mean(brighten(dim, { amount: 0.7 }))).toBeGreaterThan(mean(dim) + 15);
+  });
+
+  it('lifts more the harder it is pushed', () => {
+    expect(mean(brighten(dim, { amount: 1 }))).toBeGreaterThan(mean(brighten(dim, { amount: 0.4 })));
+  });
+
+  /* ⚠️ THE WHOLE REASON THIS IS A CURVE AND NOT `x × k`. A multiplier brightens by CLIPPING: on a
+   * cake photo that means the white piping and pale buttercream flatten to paper and the texture the
+   * photo exists to show is gone — permanently, since clipped is unrecoverable. A gamma curve pins
+   * 0 at 0 and 255 at 255, so however far it is pushed nothing can blow out. Measured on the real
+   * photo: 0.00% of the frame fully white at 40%, 70% AND 100%. */
+  it('never blows a highlight out, however far it is pushed', () => {
+    const near = img(8, 8, () => [250, 252, 249]);          // already nearly white
+    const out  = brighten(near, { amount: 1 });
+    let white = 0;
+    for (let p = 0; p < 64; p++) if (out.data[p*4] >= 255) white++;
+    expect(white).toBe(0);
+  });
+
+  it('holds true black and true white exactly where they were', () => {
+    const ends = img(2, 1, [[0, 0, 0], [255, 255, 255]]);
+    const out  = brighten(ends, { amount: 1 });
+    expect(at(out, 0, 0)).toEqual([0, 0, 0]);
+    expect(at(out, 1, 0)).toEqual([255, 255, 255]);
+  });
+
+  it('changes nothing at 0, and does not mutate the source', () => {
+    const copy = Uint8ClampedArray.from(dim.data);
+    expect([...brighten(dim, { amount: 0 }).data]).toEqual([...copy]);
+    brighten(dim, { amount: 1 });
+    expect([...dim.data]).toEqual([...copy]);
   });
 });
 
