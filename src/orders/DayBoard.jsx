@@ -102,8 +102,11 @@ export default function DayBoard({
                     and "about" is a different promise from "this much". */}
                 {b.kg == null ? '—' : `${b.estimated ? '~' : ''}${formatKg(b.kg)}`}
               </span>
+              {/* Cakes, then tiers only when they differ. A single-tier row saying "1 cake · 1
+                  tier" is noise; a one-cake row that needs two tins is not. */}
               <span style={{ color: '#a0a0a0', whiteSpace: 'nowrap', fontSize: 11 }}>
                 {b.cakes} {b.cakes === 1 ? 'cake' : 'cakes'}
+                {b.tiers > b.cakes && ` · ${b.tiers} tiers`}
               </span>
             </div>
           ))}

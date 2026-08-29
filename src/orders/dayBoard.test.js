@@ -235,3 +235,49 @@ describe('formatKg', () => {
     expect(formatKg(rows[0].kg)).toBe('2.7 kg');
   });
 });
+
+describe('a cake is an order, not a tier', () => {
+  // Reported from the live board: a single two-tier cake, both tiers blueberry, read "5 kg ·
+  // 2 cakes". The weight was right (the split is divided and re-added, so 5 kg really was 5 kg),
+  // which is exactly what made the wrong noun look plausible.
+  const twoTierOneFlavour = order({
+    id: 'one-cake', weight_kg: 5, diet: ['eggless'],
+    flavours: [{ name: 'Blueberry', tier: 0 }, { name: 'Blueberry', tier: 1 }],
+    tiers: [{ shape: 'round', radius: 1, height: 0.7 }, { shape: 'round', radius: 0.72, height: 0.7 }],
+  });
+
+  it('counts ONE cake for a two-tier cake in one flavour', () => {
+    const [row] = batchTotals([twoTierOneFlavour]);
+    expect(row).toMatchObject({ flavour: 'Blueberry', cakes: 1, tiers: 2 });
+    expect(row.kg).toBeCloseTo(5, 10);   // the weight was never the problem
+  });
+
+  it('still counts the tiers, because two tiers is two tins', () => {
+    expect(batchTotals([twoTierOneFlavour])[0].tiers).toBe(2);
+  });
+
+  it('counts two cakes when they really are two orders', () => {
+    const rows = batchTotals([twoTierOneFlavour,
+      order({ id: 'another', weight_kg: 1, diet: ['eggless'], flavours: [{ name: 'Blueberry', tier: 0 }] })]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ cakes: 2, tiers: 3 });
+    expect(rows[0].kg).toBeCloseTo(6, 10);
+  });
+
+  it('counts a tiered cake once in EACH flavour it contributes to', () => {
+    // Two tiers, two flavours: one cake, but it is a cake in both rows — the baker is making one
+    // thing and needs both batches for it.
+    const rows = batchTotals([order({ ...TWO_TIER, id: 'mixed', diet: ['egg'] })]);
+    expect(rows).toHaveLength(2);
+    expect(rows.every(r => r.cakes === 1 && r.tiers === 1)).toBe(true);
+  });
+
+  it('does not merge two different orders that both lack an id', () => {
+    // Falling back to the object identity rather than a constant: two id-less orders are two cakes.
+    const rows = batchTotals([
+      { weight_kg: 1, flavours: [{ name: 'V', tier: 0 }], dietary_requirements: [{ key: 'egg' }] },
+      { weight_kg: 1, flavours: [{ name: 'V', tier: 0 }], dietary_requirements: [{ key: 'egg' }] },
+    ]);
+    expect(rows[0].cakes).toBe(2);
+  });
+});
