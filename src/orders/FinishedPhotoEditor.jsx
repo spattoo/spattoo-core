@@ -52,7 +52,11 @@ const TOOLS = [
   { key: 'bright', label: 'Brightness',     short: 'Light',    hint: 'Lifts a photo shot in poor light', max: 100 },
   { key: 'fix',    label: 'Colour',         short: 'Colour',   hint: 'Corrects a dull, grey cast', max: 150 },
   { key: 'light',  label: 'Clean backdrop', short: 'Backdrop', hint: 'Lifts a plain wall behind the cake', max: 100 },
-  { key: 'mark',   label: 'Add your name',  short: 'Name',     hint: 'A small mark in the corner' },
+  /* "Brand", not "Name": what gets drawn is the bakery's name, and "Name" reads like a field asking
+   * who the baker is rather than a thing to put on the photo. Not "Watermark" either — that word is
+   * about defending an image from theft, which is the wrong idea for a baker putting their bakery on
+   * a cake they are proud of. */
+  { key: 'mark',   label: 'Add your brand', short: 'Brand',    hint: 'A small mark in the corner' },
 ];
 
 /* ⚠️ SWITCHING TABS MUST NOT TOUCH THE PHOTO, and this replaced a deliberate earlier behaviour.
