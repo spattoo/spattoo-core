@@ -4252,7 +4252,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      `placement_config.procedural` — an admin can pick the generator but cannot author nested config,
      so a medium that lived only in the nested block could not actually be created by anyone. */
   function addPenFromRow(el, medium = DEFAULT_MEDIUM) {
-    const tuned = el?.placement_config?.cream_pen ?? {};
+    /* ⚠️ THE NESTED BLOCK IS KEYED BY THE ROW'S OWN GENERATOR, falling back to `cream_pen`. Every
+       existing pen row carries its tuning under `cream_pen` and must keep working; but an admin
+       filling in a chocolate pen would reasonably write `chocolate_pen: {…}`, and reading only the
+       one key would ignore it in silence — the worst kind of wrong, because the row looks configured
+       and behaves as though it is not. */
+    const cfg = el?.placement_config ?? {};
+    const tuned = cfg[cfg.procedural] ?? cfg.cream_pen ?? {};
     setPenStyle(prev => ({ ...prev, medium, ...(MEDIA[medium]?.defaults ?? {}), ...tuned }));
     selectExclusive({ type: 'tool', tool: 'pen' });
   }
