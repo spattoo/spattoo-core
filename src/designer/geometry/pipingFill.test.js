@@ -115,3 +115,27 @@ describe('the patterns', () => {
     expect(fillShape(square, { pattern: 'nope', spacing: 0.2 }).length).toBeGreaterThan(0);
   });
 });
+
+describe('filling solid', () => {
+  const square = [[0, 0], [1, 0], [1, 1], [0, 1]];
+
+  /* ⚠️ SOLID MEANS THE ROPES OVERLAP. If the step were >= the rope width the piece would come out
+   * as tidy stripes labelled "solid", which is the one way this option can silently fail. */
+  it('packs the passes closer together than the rope is wide', () => {
+    const ropeWidth = 0.1;
+    const [path] = fillShape(square, { pattern: 'solid', ropeWidth });
+    const rows = [...new Set(path.map(p => +p[1].toFixed(6)))].sort((a, b) => a - b);
+    for (let i = 1; i < rows.length; i++) expect(rows[i] - rows[i - 1]).toBeLessThan(ropeWidth);
+  });
+
+  // It ignores the gap control by design: "solid" that can be opened up is just a hatch.
+  it('does not let the gap slider un-solid it', () => {
+    const tight = fillShape(square, { pattern: 'solid', ropeWidth: 0.1, spacing: 0.01 });
+    const loose = fillShape(square, { pattern: 'solid', ropeWidth: 0.1, spacing: 0.9 });
+    expect(loose).toEqual(tight);
+  });
+
+  it('lays a cross pass, so no ridges are left along the lay direction', () => {
+    expect(FILL_PATTERNS.solid.passes.length).toBe(2);
+  });
+});

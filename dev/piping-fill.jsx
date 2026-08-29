@@ -20,16 +20,22 @@ const FILLS = [
   ...Object.entries(FILL_PATTERNS).map(([id, s]) => ({ id, label: s.label })),
 ];
 
+const ROPE = 6;          // the nozzle's rope width on the plate, in px
+
 function Studio() {
   const ref = useRef(null);
-  const trail = useRef([]);            // the live trail while the pointer is down
+  /* ⚠️ THE LIVE TRAIL IS STATE, NOT A REF, and that was a real bug: it lived in a ref and the move
+     handler called setDrawing(true) while `drawing` was ALREADY true. React bails out of a re-render
+     when the state is unchanged, so nothing repainted until pointerup and the shape appeared only
+     after letting go. Piping you cannot see as you pipe is not a drawing tool. */
+  const [trail, setTrail] = useState([]);
   const [shape, setShape] = useState(null);
   const [fill, setFill] = useState('none');
   const [spacing, setSpacing] = useState(14);
-  const [drawing, setDrawing] = useState(false);
+  const drawing = trail.length > 0;
 
   const paths = shape && fill !== 'none'
-    ? fillShape(shape.ring, { pattern: fill, spacing, inset: 4, seed: 11 })
+    ? fillShape(shape.ring, { pattern: fill, spacing, inset: 4, seed: 11, ropeWidth: ROPE })
     : [];
 
   // ── Draw ────────────────────────────────────────────────────────────────────────────────────
@@ -49,10 +55,11 @@ function Studio() {
       x.stroke();
     };
 
-    for (const p of paths) stroke(p, 5);                        // fill first, outline over it
-    if (shape) stroke(shape.ring, 8);
-    if (drawing) stroke(trail.current, 8, 'rgba(74,44,27,0.45)');   // wet, still being piped
-  }, [shape, fill, spacing, drawing, paths]);
+    for (const p of paths) stroke(p, ROPE);                     // fill first, outline over it
+    if (shape) stroke(shape.ring, ROPE + 2);
+    // Wet, still being piped: lighter, so it reads as in-progress rather than as the finished piece.
+    if (drawing) stroke(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
+  }, [shape, fill, spacing, drawing, trail, paths]);
 
   // ── Capture ─────────────────────────────────────────────────────────────────────────────────
   const at = e => {
@@ -61,13 +68,12 @@ function Studio() {
   };
   function down(e) {
     ref.current.setPointerCapture(e.pointerId);      // so a finger leaving the plate still tracks
-    trail.current = [at(e)]; setShape(null); setDrawing(true);
+    setShape(null); setTrail([at(e)]);
   }
-  function move(e) { if (drawing) { trail.current = [...trail.current, at(e)]; setDrawing(true); } }
+  function move(e) { if (drawing) setTrail(t => [...t, at(e)]); }
   function up() {
-    setDrawing(false);
-    const tidy = tidyDrawn(trail.current);
-    trail.current = [];
+    const tidy = tidyDrawn(trail);
+    setTrail([]);
     if (tidy) setShape(tidy);
   }
 
@@ -89,10 +95,10 @@ function Studio() {
 
         <div>
           <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6, color: '#333' }}>Fill</div>
-          <Segmented equal items={FILLS} value={fill} onChange={setFill} tone={CHOC} label="Fill" />
+          <Segmented items={FILLS} value={fill} onChange={setFill} tone={CHOC} label="Fill" />
         </div>
 
-        {fill !== 'none' && (
+        {fill !== 'none' && !FILL_PATTERNS[fill]?.packed && (
           <label style={{ fontSize: 12, color: '#555' }}>
             Gap between lines — {spacing}px
             <input type="range" min={6} max={30} value={spacing} style={{ width: '100%', accentColor: CHOC }}
@@ -106,7 +112,7 @@ function Studio() {
             Outline: {shape.ring.length - 1} points{shape.closed ? '' : `, joined up for you (${Math.round(shape.gap)}px gap)`}<br />
             {fill === 'none'
               ? 'No fill — outline only.'
-              : <>Fill: {paths.length} continuous {paths.length === 1 ? 'squeeze' : 'squeezes'} ({liftCount(paths)} {liftCount(paths) === 1 ? 'lift' : 'lifts'})</>}
+              : <>Fill: {FILL_PATTERNS[fill]?.packed ? 'solid — ' : ''}{paths.length} continuous {paths.length === 1 ? 'squeeze' : 'squeezes'} ({liftCount(paths)} {liftCount(paths) === 1 ? 'lift' : 'lifts'})</>}
             {shape && !worthwhile && fill !== 'none' &&
               <><br /><span style={{ color: '#9A6A2F' }}>This reads more like a line than a region — a fill will look like dashes.</span></>}
           </>}

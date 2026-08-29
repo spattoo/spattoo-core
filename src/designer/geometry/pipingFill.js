@@ -10,11 +10,14 @@ import { mulberry32 } from '../utils/random.js';
 // somewhere and then somewhere else. So this returns POLYLINES — the actual route the tip travels —
 // and the existing sweep in `creamPen.js` turns each into geometry. Nothing new renders it.
 //
-// ⚠️ AND THE FILL IS DELIBERATELY OPEN. None of the reference pieces are flooded solid: the discs are
-// packed scribble, the star is cross-hatch, the band is a zigzag lattice, and you can see the tray
-// through all of them. That is not a stylistic accident — a solid slab of chocolate is thick, heavy
-// and dull, and it snaps when lifted. The lacy version is what survives being peeled off parchment.
-// Do not "improve" this into a flood fill.
+// ⚠️ THE LACY FILLS DEFAULT, AND SOLID IS AN EXPLICIT CHOICE. None of the reference pieces are
+// flooded: the discs are packed scribble, the star is cross-hatch, and you can see the tray through
+// all of them. That is not only taste — a solid slab is thicker, heavier, duller, and likelier to
+// snap when peeled off the parchment. So `solid` is offered and never assumed.
+//
+// ⚠️ AND EVEN SOLID IS STILL A PATH. It is passes packed until the ropes touch, which is how it is
+// actually done by hand — nobody floods a shape with a piping bag. Never replace it with a filled
+// polygon: the whole point is that what is drawn is the motion the baker makes.
 //
 // ── Why it returns a LIST of polylines ──────────────────────────────────────────────────────────
 // One polyline is one continuous squeeze. A convex shape fills in a single serpentine pass, so the
@@ -125,6 +128,20 @@ export const FILL_PATTERNS = {
    * "the" direction. That is several passes at angles with no simple relation to each other, so no
    * two of them line up into a visible grid; three is where it stops looking like anything. */
   scribble: { label: 'Scribble',  passes: [0, 0.95, 2.1], wobble: 1 },
+
+  /* ⚠️ SOLID IS NOT A DIFFERENT ALGORITHM — it is passes packed until the ropes TOUCH, which is
+   * exactly how it is done by hand: you do not flood a shape with a piping bag, you lay lines close
+   * enough that they merge. So it stays a path, the build guide still shows the real motion, and
+   * `packed` is the fraction of a rope WIDTH to step by (below 1, so neighbours overlap).
+   *
+   * Two passes at a right angle, unlike everything else here: one pass leaves faint ridges along the
+   * lay direction, and the cross pass fills them. That the crossings line up into a grid — the thing
+   * `weave` is careful to avoid — does not matter when nothing is see-through.
+   *
+   * ⚠️ Worth knowing rather than preventing: a solid piece is thicker, heavier and duller than a lacy
+   * one, and more likely to snap when peeled off the parchment. Small solid shapes are fine; a large
+   * solid panel is the one to be wary of. */
+  solid:  { label: 'Solid', passes: [0, Math.PI / 2], packed: 0.55 },
 };
 
 /**
@@ -134,10 +151,15 @@ export const FILL_PATTERNS = {
  * seed     any integer — the wobble is deterministic, so the same shape fills the same way on every
  *          reload and in every preview. See utils/random.js: never Math.random in procedural work.
  */
-export function fillShape(poly, { pattern = 'hatch', spacing = 0.06, angle = 0, inset = 0, seed = 1 } = {}) {
+export function fillShape(poly, {
+  pattern = 'hatch', spacing = 0.06, angle = 0, inset = 0, seed = 1, ropeWidth = spacing,
+} = {}) {
   const spec = FILL_PATTERNS[pattern] ?? FILL_PATTERNS.hatch;
+  // A packed pattern ignores the gap control: its whole definition is "close enough to merge", so
+  // letting a slider open it up would just be a hatch wearing the word "solid".
+  const step = spec.packed ? ropeWidth * spec.packed : spacing;
   const out = [];
-  for (const p of spec.passes) out.push(...hatchPaths(poly, { spacing, angle: angle + p, inset }));
+  for (const p of spec.passes) out.push(...hatchPaths(poly, { spacing: step, angle: angle + p, inset }));
   if (!spec.wobble) return out;
 
   /* Scribble is a hatch that has stopped being careful. The wobble is applied ALONG the path after

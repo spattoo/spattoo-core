@@ -58,6 +58,8 @@ export default function Segmented({
       style={{
         display: equal ? 'grid' : 'flex',
         gridTemplateColumns: equal ? `repeat(${items.length}, 1fr)` : undefined,
+        // Hugging strips WRAP rather than compress; equal ones are a grid and cannot wrap at all.
+        flexWrap: equal ? undefined : 'wrap',
         gap: 3, padding: 3, borderRadius: 12, flexShrink: 0,
         background: TRACK, border: `1.5px solid ${HAIR}`,
       }}
@@ -83,6 +85,10 @@ export default function Segmented({
             style={{
               border: 'none', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
               minWidth: 0, textAlign: 'center',
+              /* ⚠️ NEVER SHRINK A LABEL TO FIT. Flex's default is to compress items, and with the
+                 clip below that silently truncates: six hugging tabs in a 340px column rendered as
+                 "Nor", "Hatc", "Wov". A wrapped second row is always better than a lie. */
+              flexShrink: 0,
               /* ⚠️ MEASURE THE TAP TARGET, do not assume it. This said "44px on a phone" while
                  padding alone produced 33 — the label's line box is smaller than it looks and the
                  arithmetic is easy to get wrong in your head. `minHeight` states the guarantee
@@ -96,11 +102,13 @@ export default function Segmented({
               boxShadow:  on ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
             }}
           >
-            {/* ⚠️ A LONG LABEL MUST NOT SPILL OUT OF ITS SEGMENT. With `equal`, columns are fixed
-                and a multi-word label wraps happily — but a single long WORD has nothing to wrap at
-                and simply overflowed the track, printing across the segment beside it and past the
-                rounded border. Seen with "Scribble" in a five-item strip. */}
-            <span style={{ display: 'block', overflow: 'hidden', overflowWrap: 'anywhere' }}>{t.label}</span>
+            {/* ⚠️ A LONG LABEL MUST NOT SPILL OUT OF ITS SEGMENT — and must not be MANGLED either.
+                It took three goes. Letting it overflow printed "Scribble" past the rounded border;
+                breaking anywhere gave "Non e" and "Cros s-hatc h"; clipping gave "Nor" and "Hatc".
+                The clip stays as a backstop, but the fix that works is structural: `equal` lays a
+                grid that cannot wrap, so it is for a FEW SHORT labels only, and a hugging strip
+                wraps to a second row instead of compressing. */}
+            <span style={{ display: 'block', overflow: 'hidden' }}>{t.label}</span>
             {t.note != null && (
               <span style={{
                 display: 'block', fontSize: 10, fontWeight: 800, marginTop: 1,
