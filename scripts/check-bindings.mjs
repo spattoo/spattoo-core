@@ -84,6 +84,11 @@ const AMBIENT = new Set([
   'sessionStorage', 'performance', 'crypto', 'screen', 'URL', 'URLSearchParams', 'FormData',
   'Blob', 'File', 'FileReader', 'Image', 'Audio', 'Event', 'CustomEvent', 'AbortController',
   'globalThis', 'self', 'process',
+  // Canvas and image decoding — the finished-photo editor calls createImageBitmap directly, which
+  // is a genuine browser global the list simply had not met yet. `ImageData` and `OffscreenCanvas`
+  // are here for the same family: they are constructed rather than called, so they would not trip
+  // the call-only rule today, and adding them now is cheaper than the next person rediscovering it.
+  'createImageBitmap', 'ImageData', 'ImageBitmap', 'OffscreenCanvas', 'DOMMatrix', 'Path2D',
 ]);
 
 // Every name this file DECLARES, gathered once.

@@ -10362,6 +10362,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         initialOrderId={newOrderId}
         initialView={ordersInitialView}
         bakerTimezone={bakerData?.timezone ?? null}
+        // For the finished-photo editor's optional mark. Absent = the "add your name" tool is not
+        // offered at all, rather than offered and writing nothing.
+        bakerName={bakerData?.name ?? null}
         onNewOrderForDate={hasCap('order:manage') ? startOrderForDate : null}
         onEditDesign={(order, opts) => {
           // Locked orders (confirmed onward) open READ-ONLY in the 3D viewer — never

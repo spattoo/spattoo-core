@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'rea
 import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen, restrictions } from './dietary.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
+import FinishedPhotoEditor from './FinishedPhotoEditor.jsx';
 import {
   buildStatusIndex, DEFAULT_STATUS_INDEX,
   statusLabel, isClosed, isTerminal, isDesignLocked, statusTone,
@@ -479,9 +480,14 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
 // transition). This sheet uploads each pick to R2 (orders/photos) as it's added and
 // hands the resulting keys back on confirm; the caller persists them then advances.
 // Photos are never required — "Mark as ready" works with zero.
-function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
+function MarkReadySheet({ order, apiClient, bakerName, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
   const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
   const [pickError, setPickError] = useState(null);   // why a chosen file was refused
+  /* ⚠️ CHOSEN FILES QUEUE HERE INSTEAD OF UPLOADING. The editor has to run BEFORE anything leaves,
+     because the ready flip that follows this sheet is what emails the customer — so a photo that
+     uploaded on pick would be one the baker never had the chance to tidy. Declining to edit is a
+     complete answer; not having been offered it is not. */
+  const [queue, setQueue] = useState([]);     // Files waiting to be tidied, in pick order
   const { maxImageBytes } = useUploadLimits(apiClient);   // the server's ceiling, not a copy of it
   const uploading = photos.some(p => p.uploading);
   const atMax = photos.length >= MAX_FINISHED_PHOTOS;
@@ -492,17 +498,26 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
   photosRef.current = photos;
   useEffect(() => () => photosRef.current.forEach(p => p.previewUrl && URL.revokeObjectURL(p.previewUrl)), []);
 
-  async function addFiles(e) {
-    const files = [...(e.target.files || [])].slice(0, MAX_FINISHED_PHOTOS - photos.length);
+  // Validate on pick, then queue for the editor. Upload happens on the far side of it.
+  function addFiles(e) {
+    const files = [...(e.target.files || [])].slice(0, MAX_FINISHED_PHOTOS - photos.length - queue.length);
     e.target.value = '';
     setPickError(null);
+    const good = [];
     for (const file of files) {
-      // Refuse what we cannot use, WITH a reason. A HEIC (a Mac drag-drop, an untranscoded iPhone
-      // share) satisfies `image/*`, so it used to get this far, fail to decode, fall through as the
-      // original file and then be refused by the API's content-type allowlist — surfacing to the
-      // baker as a photo that just says "failed" with nothing to act on.
       const bad = validateImageFile(file, { maxBytes: maxImageBytes });
       if (bad) { setPickError(bad); continue; }
+      good.push(file);
+    }
+    if (good.length) setQueue(q => [...q, ...good]);
+  }
+
+  async function uploadFiles(files) {
+    for (const file of files) {
+      /* Already validated on pick — a HEIC (a Mac drag-drop, an untranscoded iPhone share) satisfies
+         `image/*`, so without that check it reaches here, fails to decode, falls through as the
+         original file and is refused by the API's content-type allowlist, surfacing to the baker as
+         a photo that says "failed" with nothing to act on. */
       const id = `p${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const previewUrl = URL.createObjectURL(file);
       setPhotos(ps => [...ps, { id, previewUrl, key: null, uploading: true, failed: false }]);
@@ -530,6 +545,26 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
 
   const slots = [...photos];
   if (!atMax) slots.push(null);   // trailing "add" tile
+
+  /* ⚠️ ONE AT A TIME, and it replaces the sheet rather than sitting inside it. Three photos means
+     three passes; batching them behind one set of toggles would apply a judgement made about one
+     cake to two others shot in different light, which is the thing this feature exists to avoid. */
+  if (queue.length) {
+    const file = queue[0];
+    const next = (out) => { setQueue(q => q.slice(1)); uploadFiles([out]); };
+    return (
+      <FinishedPhotoEditor
+        key={`${file.name}-${file.size}-${queue.length}`}
+        file={file}
+        bakerName={bakerName}
+        primaryColor={primaryColor}
+        onDone={next}
+        // Cancel drops THIS photo and moves on — it does not abandon the ones already chosen, and
+        // it does not close the sheet behind it.
+        onCancel={() => setQueue(q => q.slice(1))}
+      />
+    );
+  }
 
   return (
     <Panel
@@ -931,7 +966,7 @@ function AuditTrail({ orderId, apiClient, refresh }) {
 
 // ── Detail pane ───────────────────────────────────────────────────────────────
 
-function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, statusIndex = DEFAULT_STATUS_INDEX }) {
+function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, bakerName = null, statusIndex = DEFAULT_STATUS_INDEX }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [editing, setEditing]               = useState(false);
   const [saving, setSaving]                 = useState(false);
@@ -1113,7 +1148,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
             </>
         }
         {markingReady && (
-          <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+          <MarkReadySheet order={order} apiClient={apiClient} bakerName={bakerName} primaryColor={primaryColor}
             busy={changingStatus} error={readyErr}
             onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
         )}
@@ -1164,7 +1199,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         }
       </div>
       {markingReady && (
-        <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+        <MarkReadySheet order={order} apiClient={apiClient} bakerName={bakerName} primaryColor={primaryColor}
           busy={changingStatus} error={readyErr}
           onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
       )}
@@ -1341,7 +1376,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
   const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1563,6 +1598,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
                     isMobile={isMobile}
                     homeDeliveryEnabled={homeDeliveryEnabled}
                     bakerSlug={bakerSlug}
+                    bakerName={bakerName}
                     statusIndex={statusIndex}
                   />
                 : <Empty>Select an order to view details.</Empty>
