@@ -96,7 +96,11 @@ export default function Segmented({
               boxShadow:  on ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
             }}
           >
-            <span style={{ display: 'block' }}>{t.label}</span>
+            {/* ⚠️ A LONG LABEL MUST NOT SPILL OUT OF ITS SEGMENT. With `equal`, columns are fixed
+                and a multi-word label wraps happily — but a single long WORD has nothing to wrap at
+                and simply overflowed the track, printing across the segment beside it and past the
+                rounded border. Seen with "Scribble" in a five-item strip. */}
+            <span style={{ display: 'block', overflow: 'hidden', overflowWrap: 'anywhere' }}>{t.label}</span>
             {t.note != null && (
               <span style={{
                 display: 'block', fontSize: 10, fontWeight: 800, marginTop: 1,
