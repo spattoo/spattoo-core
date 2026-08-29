@@ -34,7 +34,8 @@ function Studio() {
   const [spacing, setSpacing] = useState(14);
   const drawing = trail.length > 0;
 
-  const paths = shape && fill !== 'none'
+  // Only a shape that actually closes can be filled — a letter or an "8" has no inside.
+  const paths = shape?.ring && fill !== 'none'
     ? fillShape(shape.ring, { pattern: fill, spacing, inset: 4, seed: 11, ropeWidth: ROPE })
     : [];
 
@@ -55,8 +56,9 @@ function Studio() {
       x.stroke();
     };
 
-    for (const p of paths) stroke(p, ROPE);                     // fill first, outline over it
-    if (shape) stroke(shape.ring, ROPE + 2);
+    for (const p of paths) stroke(p, ROPE);                     // fill first, the stroke over it
+    // ⚠️ Draw `path`, never `ring`: the stroke is piped exactly as it was drawn, open or closed.
+    if (shape) stroke(shape.path, ROPE + 2);
     // Wet, still being piped: lighter, so it reads as in-progress rather than as the finished piece.
     if (drawing) stroke(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
   }, [shape, fill, spacing, drawing, trail, paths]);
@@ -77,7 +79,7 @@ function Studio() {
     if (tidy) setShape(tidy);
   }
 
-  const worthwhile = shape && fillWorthwhile(shape.ring);
+  const worthwhile = shape?.ring && fillWorthwhile(shape.ring);
 
   return (
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -93,10 +95,20 @@ function Studio() {
           Draw a shape on the plate — any shape, it does not need to be neat or to join up.
         </p>
 
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6, color: '#333' }}>Fill</div>
-          <Segmented items={FILLS} value={fill} onChange={setFill} tone={CHOC} label="Fill" />
-        </div>
+        {/* ⚠️ Fill is offered only for a shape that CLOSED. An open stroke — a letter, a number, a
+            swirl — has no inside, and offering a dead control is worse than not offering one. */}
+        {shape && !shape.closed ? (
+          <div style={{ fontSize: 12, color: '#8a6a3a', lineHeight: 1.6, background: '#FDF7EC',
+                        border: '1px solid #EFE2CB', borderRadius: 10, padding: '9px 11px' }}>
+            An open stroke — nothing to fill. Letters, numbers and swirls are piped just like this.
+            Bring the ends together to fill a shape.
+          </div>
+        ) : (
+          <div style={{ opacity: shape ? 1 : 0.55 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6, color: '#333' }}>Fill</div>
+            <Segmented items={FILLS} value={fill} onChange={setFill} tone={CHOC} label="Fill" />
+          </div>
+        )}
 
         {fill !== 'none' && !FILL_PATTERNS[fill]?.packed && (
           <label style={{ fontSize: 12, color: '#555' }}>
@@ -109,11 +121,14 @@ function Studio() {
         <div style={{ fontSize: 12, color: '#555', lineHeight: 1.7 }} data-readout>
           {!shape && <>Nothing drawn yet.</>}
           {shape && <>
-            Outline: {shape.ring.length - 1} points{shape.closed ? '' : `, joined up for you (${Math.round(shape.gap)}px gap)`}<br />
-            {fill === 'none'
+            {shape.closed ? 'Closed shape' : 'Open stroke'}, {shape.path.length} points
+            {shape.closed ? '' : ` — ends ${Math.round(shape.gap)}px apart`}<br />
+            {!shape.closed
+              ? 'Piped as drawn.'
+              : fill === 'none'
               ? 'No fill — outline only.'
               : <>Fill: {FILL_PATTERNS[fill]?.packed ? 'solid — ' : ''}{paths.length} continuous {paths.length === 1 ? 'squeeze' : 'squeezes'} ({liftCount(paths)} {liftCount(paths) === 1 ? 'lift' : 'lifts'})</>}
-            {shape && !worthwhile && fill !== 'none' &&
+            {shape?.ring && !worthwhile && fill !== 'none' &&
               <><br /><span style={{ color: '#9A6A2F' }}>This reads more like a line than a region — a fill will look like dashes.</span></>}
           </>}
         </div>

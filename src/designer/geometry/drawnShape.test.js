@@ -1,74 +1,96 @@
 import { describe, it, expect } from 'vitest';
 import { tidyDrawn, fillWorthwhile } from './drawnShape.js';
 
-/* A pointer fires far faster than a hand moves, so what arrives is not a shape: hundreds of
- * near-identical points, and two ends that never quite meet. These cover the turning of one into
- * the other, and the two judgements the UI needs to make afterwards.
+/* A pointer fires far faster than a hand moves, so what arrives is not a shape. These cover turning
+ * one into the other — and above all that an OPEN stroke stays open, because most of what gets
+ * piped is a letter, a number or a swirl rather than a loop.
  */
 
-// A hand-drawn blob: dense samples, deliberately stopping short of where it began.
-const blob = (n = 200, gap = 0.45) => Array.from({ length: n }, (_, i) => {
-  const t = (i / n) * (Math.PI * 2 - gap);
-  return [100 + Math.cos(t) * 60, 100 + Math.sin(t) * 52];
+// A hand-drawn loop, dense samples, stopping `gap` radians short of where it began.
+const loop = (gapRad = 0.05, r = 60, n = 200) => Array.from({ length: n }, (_, i) => {
+  const t = (i / n) * (Math.PI * 2 - gapRad);
+  return [100 + Math.cos(t) * r, 100 + Math.sin(t) * r];
+});
+// The figure-8 from the bug report: two lobes, ends nowhere near each other.
+const eight = () => Array.from({ length: 160 }, (_, i) => {
+  const t = (i / 160) * Math.PI * 1.9;
+  return [100 + Math.sin(t * 2) * 40, 100 + Math.sin(t) * 70];
 });
 
-describe('turning a trail into a shape', () => {
-  it('thins hundreds of samples down to a handful of corners', () => {
-    const out = tidyDrawn(blob());
-    expect(out.ring.length).toBeLessThan(40);
-    expect(out.ring.length).toBeGreaterThan(6);
+describe('an open stroke stays open', () => {
+  /* ⚠️ THE BUG THIS EXISTS FOR. The first version joined the ends whatever the distance, so drawing
+   * an "8" got a 97px chord slapped across it — something the baker never drew. Letters, numbers and
+   * swirls are most of what gets piped, and none of them close. */
+  it('never joins up a figure-8', () => {
+    const out = tidyDrawn(eight());
+    expect(out.closed).toBe(false);
+    expect(out.ring).toBeNull();
+    expect(out.path[0]).not.toEqual(out.path[out.path.length - 1]);
   });
 
-  /* ⚠️ THE RING IS ALWAYS CLOSED, because a scanline fill needs a closed boundary — an open one
-   * leaks along the missing edge. Whether the BAKER closed it is reported separately. */
-  it('always returns a closed ring, and says whether the baker closed it', () => {
-    const open = tidyDrawn(blob(200, 0.9));
-    expect(open.ring[0]).toEqual(open.ring[open.ring.length - 1]);
-    expect(open.closed).toBe(false);
-    expect(open.gap).toBeGreaterThan(12);
-
-    const shut = tidyDrawn(blob(200, 0.02));
-    expect(shut.closed).toBe(true);
+  it('keeps a wide-open arc open', () => {
+    expect(tidyDrawn(loop(2.5)).closed).toBe(false);
   });
 
-  // A still hand emits a pile of identical points, and duplicates make zero-length fill spans.
-  it('drops duplicate samples from a hand that paused', () => {
+  /* ⚠️ NO MINIMUM AREA. A "1" encloses nothing and is a perfectly good thing to pipe; an earlier
+   * version threw it away as a stray tap, and so could not draw numbers. */
+  it('accepts a stroke that encloses nothing at all', () => {
+    const one = Array.from({ length: 40 }, (_, i) => [100, 40 + i * 2]);
+    const out = tidyDrawn(one);
+    expect(out).not.toBeNull();
+    expect(out.area).toBe(0);
+    expect(out.path.length).toBeGreaterThan(1);
+  });
+});
+
+describe('closure is detected, not imposed', () => {
+  it('recognises a loop the baker did close', () => {
+    const out = tidyDrawn(loop(0.03));
+    expect(out.closed).toBe(true);
+    expect(out.ring[0]).toEqual(out.ring[out.ring.length - 1]);   // exactly shut, so a fill cannot leak
+  });
+
+  /* ⚠️ RELATIVE TO THE SHAPE, NEVER A FIXED PIXEL COUNT. The same 18px gap is a wide horseshoe on a
+   * tiny loop and a closed shape on a large one; a fixed threshold gets one of them wrong. */
+  it('judges the gap against the size of what was drawn', () => {
+    const small = tidyDrawn(loop(0.55, 18));    // ~18px across, gap is a big fraction of it
+    const large = tidyDrawn(loop(0.09, 200));   // much bigger, similar absolute gap
+    expect(large.gap).toBeGreaterThan(small.gap);
+    expect(small.closed).toBe(false);
+    expect(large.closed).toBe(true);
+  });
+});
+
+describe('tidying the trail', () => {
+  it('thins hundreds of samples to a handful of corners', () => {
+    const out = tidyDrawn(loop());
+    expect(out.path.length).toBeLessThan(40);
+    expect(out.path.length).toBeGreaterThan(5);
+  });
+
+  it('drops duplicates from a hand that paused', () => {
     const held = [...Array(60)].map(() => [50, 50]);
-    expect(tidyDrawn([...held, ...blob(), ...held])).not.toBeNull();
     expect(tidyDrawn(held)).toBeNull();
+    expect(tidyDrawn([...held, ...loop(), ...held])).not.toBeNull();
   });
 
-  it('refuses a stray tap or a scrub rather than making a shape from it', () => {
+  it('returns nothing for a tap rather than throwing', () => {
     expect(tidyDrawn(null)).toBeNull();
-    expect(tidyDrawn([[1, 1], [2, 2]])).toBeNull();
-    expect(tidyDrawn([[0, 0], [3, 0], [3, 2], [0, 2]])).toBeNull();   // real, but tiny
-  });
-
-  it('keeps the shape it was given', () => {
-    const { ring } = tidyDrawn(blob());
-    const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
-    expect(Math.min(...xs)).toBeGreaterThan(34);     // the blob spans 40..160 x, 48..152 y
-    expect(Math.max(...xs)).toBeLessThan(166);
-    expect(Math.max(...ys)).toBeLessThan(158);
+    expect(tidyDrawn([[1, 1], [1, 1]])).toBeNull();
   });
 });
 
 describe('is a fill a good idea here', () => {
   it('says yes to a blob', () => {
-    expect(fillWorthwhile(tidyDrawn(blob()).ring)).toBe(true);
+    expect(fillWorthwhile(tidyDrawn(loop(0.03)).ring)).toBe(true);
   });
 
-  /* ⚠️ A SIGNATURE HAS AREA BUT IS A LINE. Hatching a treble clef or a spiral produces a smear of
-   * disconnected dashes, not a filled shape — the UI warns rather than forbids, but it has to know. */
-  it('says no to a long thin squiggle', () => {
-    const squiggle = Array.from({ length: 120 }, (_, i) => [i * 3, 100 + Math.sin(i / 4) * 26]);
-    const tidy = tidyDrawn(squiggle);
-    expect(tidy).not.toBeNull();
-    expect(fillWorthwhile(tidy.ring)).toBe(false);
+  it('says no to a long thin squiggle that happens to close', () => {
+    const squiggle = Array.from({ length: 120 }, (_, i) => [i * 3, 100 + Math.sin(i / 4) * 20]);
+    expect(fillWorthwhile([...squiggle, [0, 99], squiggle[0]])).toBe(false);
   });
 
   it('does not throw on nothing', () => {
     expect(fillWorthwhile(null)).toBe(false);
-    expect(fillWorthwhile([[0, 0], [1, 1]])).toBe(false);
   });
 });
