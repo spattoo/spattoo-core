@@ -118,12 +118,21 @@ export default function DayBoard({
         </div>
       )}
 
+      {/* ── The orders behind it ────────────────────────────────────────────────────────────────
+          Labelled, and that label is doing real work. The board is a BAKING view — batches in
+          bowls, tiers in tins — and the cards are the orders those batches came from. Unlabelled,
+          the two halves read as one list of stuff about a day; named, the board says what it is by
+          structure, and "View orders" below is visibly the way on to the full order view. */}
       {!!shown.length && (
-        <div style={{
-          display: 'grid', gap: 8,
-          gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(2, minmax(0, 1fr))',
-        }}>
-          {shown.map(s => <Sticky key={s.id} s={s} />)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: '#8a8a8a',
+                        textTransform: 'uppercase' }}>Orders</div>
+          <div style={{
+            display: 'grid', gap: 8,
+            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(2, minmax(0, 1fr))',
+          }}>
+            {shown.map(s => <Sticky key={s.id} s={s} />)}
+          </div>
         </div>
       )}
 
