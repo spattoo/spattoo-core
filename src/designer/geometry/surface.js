@@ -330,14 +330,46 @@ export function rectEdgeRing(shape, off, step, baseY) {
   const halfD = Math.max(0, shape.halfD + off);
   const cr = Math.max(0, Math.min(cr0 + off, halfW, halfD));
   const sx = Math.max(0, halfW - cr), sz = Math.max(0, halfD - cr);
+  const hasCorner = cr >= 0.02;                           // matches the `corner()` guard below
   const out = [];
+
+  // ── THE END MARGIN IS THE CORNER ────────────────────────────────────────────────────────────
+  // Each edge used to centre its shells with a half-pitch margin at both ends (`t = (i+0.5)/N`),
+  // which spaces a STRAIGHT run correctly and crowds every corner. Two shells half a pitch either
+  // side of a right angle are `hypot(p/2, p/2)` = 0.71p apart, not p — the turn eats the chord.
+  //
+  // It stayed invisible for as long as sheet borders were narrow shells, where 0.71p reads as
+  // "piping turning a corner". A WIDE shell is unforgiving: a scroll measuring 0.688 across, laid
+  // at a 0.558 step, overlaps its neighbour 19% along a run and 40% at the corner — and 40% of two
+  // shells sitting at 45° to each other is not a tight corner, it is one lump.
+  //
+  // So the margin is derived from the corner instead of assumed. Writing `len = 2m + (N-1)p` and
+  // tying m to p by the geometry of the turn gives an exact solve for both:
+  //
+  //   corner shell present — it already sits 0.707·cr diagonally past the edge's end, so the
+  //                          edge's own last shell only owes the remainder:  m = p − 0.707·cr
+  //   no corner shell      — the two end shells straddle the right angle directly, and
+  //                          hypot(m, m) = p  ⇒  m = p/√2
+  //
+  // N is then chosen the way a swag's count is (see festoon.js): by which candidate lands the
+  // PITCH nearest the authored step, scored as a ratio, rather than by rounding the count — the
+  // count is not what the eye judges.
   const edge = (ax, az, bx, bz, nx, nz) => {
     const len = Math.hypot(bx - ax, bz - az);
     if (len < 1e-4) return;                               // collapsed side (deep inset): skip
-    const N = Math.max(1, Math.round(len / step));        // whole shells, spaced to fit
+    const k = hasCorner ? Math.SQRT1_2 * cr : 0;
+    const pitchOf = (n) => (hasCorner ? (len + 2 * k) / (n + 1) : len / (n - 1 + Math.SQRT2));
+    const ideal = hasCorner ? (len + 2 * k) / step - 1 : len / step - Math.SQRT2 + 1;
+    const lo = Math.max(1, Math.floor(ideal)), hi = Math.max(1, Math.ceil(ideal));
+    const err = (n) => { const r = pitchOf(n) / step; return r >= 1 ? r : 1 / r; };
+    const N = err(hi) < err(lo) ? hi : lo;
+    // Clamped so a corner radius larger than the pitch cannot push a shell off the end of its own
+    // edge; the walk below then uses the REAL gap, so positions stay valid either way.
+    const m = Math.min(Math.max(hasCorner ? pitchOf(N) - k : pitchOf(N) * Math.SQRT1_2, 0), len / 2);
+    const gap = N > 1 ? (len - 2 * m) / (N - 1) : 0;
     const yaw = Math.atan2(nz, nx);
     for (let i = 0; i < N; i++) {
-      const t = (i + 0.5) / N;
+      const t = N === 1 ? 0.5 : (m + i * gap) / len;
       const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
       out.push({ pos: [x, baseY, z], rotY: yaw, tq: [0, 0, 0, 1] });
     }
