@@ -24,10 +24,10 @@ import { autoFix, relight, brighten } from './photoEdit.js';
 // The preview is for judging; the export re-runs at the upload size.
 const PREVIEW_MAX = 900;
 
-/* ⚠️ SLIDERS, NOT TICKBOXES, for the two that have an AMOUNT. A tickbox says "our judgement or
+/* ⚠️ SLIDERS, NOT TICKBOXES, for every tool that has an AMOUNT. A tickbox says "our judgement or
  * nothing", and the first answer to a photo that is still too flat is "give me more" — which a
- * tickbox cannot express. The name mark is genuinely binary and stays a tickbox; pretending it has
- * a strength would be a control that does nothing at 40%.
+ * tickbox cannot express. The name mark is genuinely binary and stays a toggle; pretending it has a
+ * strength would be a control that does nothing at 40%.
  *
  * ⚠️ BRIGHTNESS IS A SEPARATE TOOL FROM COLOUR, and merging them back would undo a real finding.
  * `autoFix` was originally labelled "Brighten" and the report was "it still looks dark" — correctly,
@@ -53,6 +53,16 @@ const TOOLS = [
 
 // A sensible amount on first tap, so a baker meets the effect rather than a dead control at zero.
 const NUDGE = 70;
+
+/* ⚠️ DERIVE "nothing applied" FROM THE TOOL LIST, never from a hand-written list of keys, and keep
+ * it at module scope so it is a stable object rather than a new one per render.
+ *
+ * Both states were originally spelled out longhand, and adding a fourth tool silently broke two
+ * things at once: the export handed back THE ORIGINAL FILE, because `edited` did not mention the new
+ * key and so read false; and Before showed the brightened photo, because the compare state zeroed
+ * the other three by name. Neither is visible in a screenshot of an editor that looks like it works.
+ * A fifth tool must not be able to do this again. */
+const NOTHING = Object.fromEntries(TOOLS.map(t => [t.key, t.max ? 0 : false]));
 
 /* ⚠️ ESCAPE NOTHING HERE — this draws to a canvas, not to SVG. The sibling prototype built the mark
  * as SVG and threw `xmlParseEntityRef: no name` on "feelings & flavours", because a bare & is
@@ -97,9 +107,10 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
   const [tools, setTools] = useState({ bright: 0, fix: 0, light: 0, mark: false });
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [compare, setCompare] = useState(false);   // press to see the original
+  const [compare, setCompare] = useState(false);   // showing the original
+  const [sel, setSel] = useState('bright');        // which tool the one slider is driving
 
-  const edited = tools.fix > 0 || tools.light > 0 || tools.mark;
+  const edited = TOOLS.some(t => (t.max ? tools[t.key] > 0 : tools[t.key]));
 
   // ── Decode once ───────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -127,9 +138,7 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
     if (!src || !canvas) return;
     canvas.width = src.width; canvas.height = src.height;
     const ctx = canvas.getContext('2d');
-    // `compare` renders the untouched original — held, not toggled, so it is impossible to leave it
-    // on and mistake the original for the result.
-    const active = compare ? { fix: 0, light: 0, mark: false } : tools;
+    const active = compare ? NOTHING : tools;
     const out = applyTools(src, active);
     ctx.putImageData(new ImageData(out.data, out.width, out.height), 0, 0);
     if (active.mark && bakerName) drawMark(ctx, bakerName, canvas.width, canvas.height);
@@ -178,14 +187,22 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
       }
     >
       <p style={{ margin: '0 0 12px', fontSize: 13, color: '#777', lineHeight: 1.5 }}>
-        Your customer will see this. Nothing is changed unless you choose it.
+        Nothing changes unless you choose it.
       </p>
 
+      {/* ⚠️ THE PHOTO IS CAPPED IN VIEWPORT HEIGHT, and this is load-bearing rather than cosmetic.
+          A tall phone photo in a 100%-wide box is most of a phone screen on its own, which pushed the
+          controls below the fold: you adjusted a slider you could see, then scrolled up to find out
+          what it did. An editor you cannot watch while you adjust it is not an editor. 42vh leaves
+          room for the one slider, both chip rows and the footer on a small phone without scrolling. */}
       <div style={{
         position: 'relative', borderRadius: 12, overflow: 'hidden',
         background: '#F4F1EC', marginBottom: 10, minHeight: 160,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 'auto' }} />
+        <canvas ref={canvasRef} style={{
+          display: 'block', maxWidth: '100%', maxHeight: '38vh', width: 'auto', height: 'auto',
+        }} />
       </div>
 
       {/* ⚠️ TWO LABELLED TABS, not press-and-hold. Holding was tried and was wrong twice over: there
@@ -213,53 +230,68 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* ⚠️ ONE SLIDER, NOT FOUR STACKED CARDS. Four rows of label + hint + slider is taller than the
+          photo, so nothing fitted on one screen and adjusting meant scrolling away from the thing
+          being adjusted. The tool being edited gets the slider; the rest collapse to chips that carry
+          their own amount, so what is applied is still readable at a glance — which is the one thing
+          the stacked list gave for free and a plain tab bar would have thrown away. */}
+      {(() => {
+        const t = TOOLS.find(x => x.key === sel) || TOOLS[0];
+        const v = tools[t.key];
+        return (
+          <div style={{ padding: '2px 2px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 2 }}>
+              <span style={{ ...labelStyle, flex: 1, minWidth: 0 }}>{t.label}</span>
+              <span style={{
+                fontSize: 11.5, fontWeight: 800, color: v > 0 ? primaryColor : '#B9B3AA',
+                fontVariantNumeric: 'tabular-nums',
+              }}>{v}%</span>
+            </div>
+            <span style={hintStyle}>{t.hint}</span>
+            <input
+              type="range" min={0} max={t.max} step={5} value={v} aria-label={t.label}
+              onChange={e => { setCompare(false); setTools(s => ({ ...s, [t.key]: Number(e.target.value) })); }}
+              style={{ width: '100%', marginTop: 6, accentColor: primaryColor }}
+            />
+          </div>
+        );
+      })()}
+
+      {/* ⚠️ WRAP, DO NOT SCROLL SIDEWAYS. A horizontally scrolling row put the SELECTED chip off
+          the left edge as soon as another was tapped — the one chip that must stay visible, since it
+          names what the slider underneath is doing. Four chips wrap to two rows and all of them stay
+          on screen; a sideways row only pays for itself when there are more than fit in two. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
         {TOOLS.map(t => {
           if (t.key === 'mark' && !bakerName) return null;   // nothing to write
 
-          // The name mark: on or off, no amount.
+          /* The name mark has no amount, so its chip is the control itself rather than a way of
+             reaching a slider — tapping it toggles the mark and leaves the slider where it was. */
           if (!t.max) {
             const on = !!tools.mark;
             return (
-              <button key={t.key} type="button"
+              <button key={t.key} type="button" title={t.hint}
                 onClick={() => { setCompare(false); setTools(s => ({ ...s, mark: !s.mark })); }}
-                style={row(on, primaryColor)}>
-                <span style={tick(on, primaryColor)}>{on ? '✓' : ''}</span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={labelStyle}>{t.label}</span>
-                  <span style={hintStyle}>{t.hint}</span>
-                </span>
+                style={chip(on, false, primaryColor)}>
+                {on ? '✓ ' : ''}{t.label}
               </button>
             );
           }
 
           const v = tools[t.key];
-          const on = v > 0;
           return (
-            <div key={t.key} style={{ ...row(on, primaryColor), display: 'block', cursor: 'default' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {/* Tapping the row turns it on at a sensible amount rather than at zero — a slider
-                    that starts dead teaches nothing about what the tool does. Tapping again is off. */}
-                <button type="button" aria-label={t.label}
-                  onClick={() => { setCompare(false); setTools(s => ({ ...s, [t.key]: on ? 0 : NUDGE })); }}
-                  style={{ ...tick(on, primaryColor), border: `1.5px solid ${on ? primaryColor : '#C9C4BC'}`, cursor: 'pointer' }}>
-                  {on ? '✓' : ''}
-                </button>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={labelStyle}>{t.label}</span>
-                  <span style={hintStyle}>{t.hint}</span>
-                </span>
-                <span style={{
-                  fontSize: 11.5, fontWeight: 800, color: on ? primaryColor : '#B9B3AA',
-                  fontVariantNumeric: 'tabular-nums', minWidth: 34, textAlign: 'right',
-                }}>{v}%</span>
-              </div>
-              <input
-                type="range" min={0} max={t.max} step={5} value={v}
-                onChange={e => { setCompare(false); setTools(s => ({ ...s, [t.key]: Number(e.target.value) })); }}
-                style={{ width: '100%', marginTop: 8, accentColor: primaryColor }}
-              />
-            </div>
+            <button key={t.key} type="button" title={t.hint}
+              /* Selecting a tool that is off also turns it on, at a sensible amount rather than at
+                 zero: arriving at a dead slider teaches nothing about what the tool does. Tapping the
+                 chip of the tool already selected is how you turn it back off. */
+              onClick={() => {
+                setCompare(false);
+                if (sel === t.key) setTools(s => ({ ...s, [t.key]: v > 0 ? 0 : NUDGE }));
+                else { setSel(t.key); if (!v) setTools(s => ({ ...s, [t.key]: NUDGE })); }
+              }}
+              style={chip(v > 0, sel === t.key, primaryColor)}>
+              {t.label}{v > 0 ? ` ${v}%` : ''}
+            </button>
           );
         })}
       </div>
@@ -267,19 +299,20 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
   );
 }
 
-const row = (on, color) => ({
-  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
-  padding: '11px 13px', borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
-  border: `1.5px solid ${on ? color : '#E0DDD8'}`,
-  background: on ? `${color}0F` : '#fff',
-});
-
-const tick = (on, color) => ({
-  width: 18, height: 18, borderRadius: 5, flexShrink: 0, padding: 0,
-  border: `1.5px solid ${on ? color : '#C9C4BC'}`,
-  background: on ? color : '#fff',
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  color: '#fff', fontSize: 11, fontWeight: 900, fontFamily: 'inherit',
+/* ⚠️ A CHIP CARRIES TWO INDEPENDENT FACTS and they must not collapse into one another: whether the
+ * tool is APPLIED (it is changing the photo) and whether it is SELECTED (the slider is driving it).
+ * A tool can easily be applied but not selected — that is the normal state of the other three — and
+ * showing only selection would hide what is being done to the photo, which is the whole reason the
+ * amount is printed on the chip. Applied is the filled one, since it is the fact about the picture;
+ * selected is the ring, since it is only a fact about the editor. */
+const chip = (applied, selected, color) => ({
+  flexShrink: 0, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+  fontFamily: 'inherit', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap',
+  fontVariantNumeric: 'tabular-nums',
+  border: `1.5px solid ${selected ? color : applied ? `${color}66` : '#E0DDD8'}`,
+  boxShadow: selected ? `0 0 0 2.5px ${color}22` : 'none',
+  background: applied ? `${color}14` : '#fff',
+  color: applied ? color : '#7d7a75',
 });
 
 const labelStyle = { display: 'block', fontSize: 13.5, fontWeight: 700, color: '#2C4433' };
