@@ -1,9 +1,10 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { shellMatrix } from './shellMatrix.js';
 import { applyStripes, areStripesActive, stripeColors } from '../shared/color/stripeMaterial.js';
 import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { buildGlazeDrip } from '../shared/glaze/glazeDrip.js';
@@ -340,15 +341,60 @@ function wallHit(ray, { shape, radius, baseY, height }) {
 }
 
 // One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
-function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, gradient, selected, onPointerDown = null }) {
+
+/* ── One draw call for a whole ring ──────────────────────────────────────────────────────────────
+ *
+ * A ring is one geometry repeated. It used to be drawn as one <Shell> per position — three
+ * Object3Ds each, and because CreamMesh declares its material inline, its OWN MeshPhysicalMaterial.
+ * A 48-shell ring was 48 meshes, 48 physical materials and 48 draw calls; a three-tier cake with a
+ * rim and a board ring on each was around 288 of each, for one shape repeated.
+ *
+ * An InstancedMesh is one mesh, one material and one draw call per version, whatever the count. The
+ * per-shell placement moves into the instance matrix — see shellMatrix.js, which composes the exact
+ * hierarchy this replaces and is tested against it element by element.
+ *
+ * ⚠️ NOT merged geometry. A merge would also be one draw call and would cost N× the vertices in
+ * memory, which is the trade GrassPatch's note warns about ("the warning is about the day somebody
+ * merges"). Instancing keeps ONE copy of the geometry and repeats it on the GPU.
+ *
+ * `alt` is a second InstancedMesh rather than a second material on the first: A and B are different
+ * GEOMETRIES, and an instanced draw takes one.
+ */
+function InstancedShells({ geometry, shellScale, placements, color, softness, gradient, selected, dragHandler = null }) {
+  const ref = useRef(null);
+  const matRef = useRef(null);
+  const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
+
+  useLayoutEffect(() => {
+    const im = ref.current;
+    if (!im) return;
+    const m = new THREE.Matrix4();
+    placements.forEach((p, i) => im.setMatrixAt(i, shellMatrix(p, m)));
+    im.instanceMatrix.needsUpdate = true;
+    // Instanced meshes do not compute this themselves, and without it the ring is frustum-culled
+    // against the bounds of a single shell sitting at the origin — so it vanishes the moment the
+    // camera looks away from the middle of the cake.
+    im.computeBoundingSphere();
+  }, [placements, geometry, shellScale]);
+
+  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox); }, [gradient, bbox]);
+
   return (
-    <group position={pos} quaternion={tq} {...(onPointerDown ? { onPointerDown } : {})}>
-      <group rotation={[0, -rotY + Math.PI / 2 + ryGroup, 0]}>
-        <CreamMesh geometry={geometry} rotation={meshRot} scale={shellScale}
-          color={color} softness={softness} gradient={gradient} selected={selected}
-          userData={onPointerDown ? PIPING_HANDLE_DATA : null} />
-      </group>
-    </group>
+    <instancedMesh
+      ref={ref}
+      // `key` on the count: three.js allocates the instance buffer once, at construction, so a ring
+      // that grows (a wider cake, a smaller size) has to be remade rather than resized.
+      key={placements.length}
+      args={[geometry, undefined, placements.length]}
+      castShadow
+      {...(dragHandler ? { userData: PIPING_HANDLE_DATA, onPointerDown: dragHandler } : {})}
+    >
+      <meshPhysicalMaterial ref={matRef}
+        {...creamMaterialProps(softness, color)}
+        emissive={selected ? color : '#000000'}
+        emissiveIntensity={selected ? 0.15 : 0}
+      />
+    </instancedMesh>
   );
 }
 
@@ -359,20 +405,35 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
   const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
-  return positions.map((u, i) => {
+
+  // Split the ring by version, keeping each shell's ORIGINAL index alongside it. The index is what
+  // a drag writes back through (`instances[i].angle`), and an instanced hit reports a position
+  // within its own mesh — so without this an A-shell drag would move whichever B-shell shared its
+  // instance number.
+  const groups = { A: { ver: A, ry: ryA, mesh: meshA, placements: [], indices: [] },
+                   B: { ver: B, ry: ryB, mesh: meshB, placements: [], indices: [] } };
+  positions.forEach((u, i) => {
     const isB = altActive && B && pattern[i % L] === 'B';
-    const ver = isB ? B : A;
+    const g = isB ? groups.B : groups.A;
     let pos = u.pos;
     if (isB && (dRadialB || dYB)) {
       const [px, , pz] = u.pos;
       const len = Math.hypot(px, pz) || 1;
       pos = [px + (px / len) * dRadialB, u.pos[1] + dYB, pz + (pz / len) * dRadialB];
     }
+    g.placements.push({ pos, tq: u.tq, rotY: u.rotY, ryGroup: g.ry, meshRot: g.mesh, shellScale: g.ver.shellScale });
+    g.indices.push(i);
+  });
+
+  return ['A', 'B'].map(k => {
+    const g = groups[k];
+    if (!g.ver || !g.placements.length) return null;
     return (
-      <Shell key={u.key ?? i} pos={pos} rotY={u.rotY} tq={u.tq}
-        ryGroup={isB ? ryB : ryA} meshRot={isB ? meshB : meshA}
-        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected}
-        onPointerDown={dragHandler ? dragHandler(i) : null} />
+      <InstancedShells key={k} geometry={g.ver.geometry} shellScale={g.ver.shellScale}
+        placements={g.placements} color={color} softness={softness} gradient={gradient} selected={selected}
+        dragHandler={dragHandler
+          ? (e) => { const i = g.indices[e.instanceId ?? 0]; if (i != null) dragHandler(i)(e); }
+          : null} />
     );
   });
 }
