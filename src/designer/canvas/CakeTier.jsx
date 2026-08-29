@@ -423,6 +423,39 @@ function wallPerimeter(shape, radius) {
   return shape?.kind === 'rect' ? perimeter(shape) : circlePerimeter(radius);
 }
 
+// The wall a FESTOON drapes along — one perimeter per closed contour, plus how far off it to sit.
+//
+// Branching on `isRoundWall`, NOT on `kind === 'rect'`. The old festoon guard asked for rect, which
+// silently treated a heart or a number cake as round; surface.js warns about that exact slip on the
+// definition of this predicate. Every non-round wall now walks its real outline, and
+// `pipingPerimeters` hands back one loop per contour so a swag never bridges the gap between two
+// digits of a number cake.
+//
+// The radial nudge lands differently on the two branches, and deliberately: a circle can simply BE
+// bigger, so the offset moves the circle itself and the round path stays arithmetically identical
+// to what it always was. A shaped outline is fixed, so there the offset rides along its normal.
+function festoonWall(shape, radius, radialOffset) {
+  if (!shape || isRoundWall(shape)) return { perims: [circlePerimeter(radius + radialOffset)], outset: 0 };
+  return { perims: pipingPerimeters(shape), outset: radialOffset };
+}
+
+// How far a band's rendered geometry stands PROUD OF THE WALL, as a radius fraction — what the
+// side-clearance resolver needs so a decoration on the wall is pushed out past whatever is already
+// piped there.
+//
+// It has to be measured against the wall, not against the cake AXIS. Distance-from-axis is the same
+// thing only on a round tier. On a sheet cake `radius` is the bounding half-extent (the LONG side),
+// so a swag hanging on a SHORT face already sits nearer the axis than `radius` — while one running
+// out to a corner sits far beyond it, and reported a third of a radius of standoff for a rope a
+// couple of millimetres thick. Comparing each axis against that axis's own half-extent gives the
+// real, small number. Round is unchanged: there both half-extents are the radius.
+function proudOfWall(bb, shape, radius) {
+  const halfX = shape?.halfW ?? radius, halfZ = shape?.halfD ?? radius;
+  return Math.max(0,
+    bb.max.x - halfX, -bb.min.x - halfX,
+    bb.max.z - halfZ, -bb.min.z - halfZ) / radius;
+}
+
 // Render a single pre-formed RING GLB as ONE band wrapping the wall (no repetition).
 function renderWrap({ wrapGeo, color, softness, gradient, selected }) {
   return (
@@ -571,17 +604,19 @@ function TopPipingRingImpl({
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped from the rim edge,
-  // instead of repeating a discrete shell. Round cakes only (rect falls through to shells).
+  // instead of repeating a discrete shell. ANY shape — the swag follows the wall's perimeter, and
+  // a circle is just the perimeter a round cake happens to have.
   const festoonGeos = useMemo(() => {
-    if (!bend || !scene || shape?.kind === 'rect') return null;
+    if (!bend || !scene) return null;
     // flip:false to match the calibrator's bend preview, which always bends the un-flipped
     // strip (the flip toggle/bottom_flip applies to discrete shells, not festoons).
-    // The cross-section scales with radius automatically (uscale); scale the absolute drop
+    // The cross-section scales with radius via the calibrated span; scale the absolute drop
     // (bendDepth, tuned at the standard tier radius) by the same ratio so the whole swag
     // shrinks to fit a smaller tier instead of dropping a fixed amount.
+    const { perims, outset } = festoonWall(shape, radius, extraRadialOffset);
     return buildFestoons(scene, {
       flip: false, festoons, depth: bendDepth * (radius / TIER_RADII[0]), tilt: bendTilt * DEG,
-      attachY: topY + yOffset, radius: radius + extraRadialOffset,
+      attachY: topY + yOffset, perims, outset, radius: radius + extraRadialOffset,
       spread: bendRing ? 1.0 : 0.96, sizeFactor,
     });
   }, [bend, scene, shape, festoons, bendDepth, bendTilt, topY, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
@@ -709,17 +744,18 @@ function BottomPipingRingImpl({
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
-  // base, instead of repeating a discrete shell. Round cakes only (rect falls through).
+  // base, instead of repeating a discrete shell. Any shape — see the rim ring's twin above.
   const festoonGeos = useMemo(() => {
-    if (!bend || !scene || shape?.kind === 'rect') return null;
+    if (!bend || !scene) return null;
     // flip:false to match the calibrator's bend preview, which always bends the un-flipped
     // strip (the flip toggle/bottom_flip applies to discrete shells, not festoons).
-    // The cross-section scales with radius automatically (uscale); scale the absolute drop
+    // The cross-section scales with radius via the calibrated span; scale the absolute drop
     // (bendDepth, tuned at the standard tier radius) by the same ratio so the whole swag
     // shrinks to fit a smaller tier instead of dropping a fixed amount.
+    const { perims, outset } = festoonWall(shape, radius, extraRadialOffset);
     return buildFestoons(scene, {
       flip: false, festoons, depth: bendDepth * (radius / TIER_RADII[0]), tilt: bendTilt * DEG,
-      attachY: yBase + yOffset, radius: radius + extraRadialOffset,
+      attachY: yBase + yOffset, perims, outset, radius: radius + extraRadialOffset,
       spread: bendRing ? 1.0 : 0.96, sizeFactor,
     });
   }, [bend, scene, shape, festoons, bendDepth, bendTilt, yBase, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
@@ -730,22 +766,20 @@ function BottomPipingRingImpl({
   useEffect(() => {
     if (!festoonGeos?.length || !radius) return;
     const anchorY = yBase + yOffset;
-    let minY = Infinity, maxY = -Infinity, maxR = 0;
+    let minY = Infinity, maxY = -Infinity, proud = 0;
     festoonGeos.forEach(g => {
       g.computeBoundingBox?.();
       if (g.boundingBox) {
         const bb = g.boundingBox;
         minY = Math.min(minY, bb.min.y); maxY = Math.max(maxY, bb.max.y);
-        // Outward reach: the ring wraps the tier axis, so its furthest point from the axis is the
-        // outer face. bbox is symmetric about the axis, so the max |x|/|z| corner gives that radius.
-        maxR = Math.max(maxR, Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
+        proud = Math.max(proud, proudOfWall(bb, shape, radius));
       }
     });
     if (minY < maxY) setFestoonExtents(glbPath, festoonSig({ size: sizeFactor, bendDepth, festoons, bendRing, bendTilt }), {
       bellyFrac: (anchorY - minY) / radius, topFrac: (maxY - anchorY) / radius,
-      outerFrac: Math.max(0, (maxR - radius) / radius),
+      outerFrac: proud,
     });
-  }, [festoonGeos, yBase, yOffset, radius, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
+  }, [festoonGeos, yBase, yOffset, radius, shape, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
 
   // Wrap elements: a pre-formed ring re-routed onto the tier wall as ONE band (round or rect),
   // riding up the wall by yOffset. Hugs the wall whatever the cake size or shape.
@@ -766,12 +800,13 @@ function BottomPipingRingImpl({
     const bb = wrapGeo.boundingBox;
     if (!bb) return;
     const anchorY = yBase + yOffset;
-    const maxR = Math.max(Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
     setWrapExtents(glbPath, sizeFactor, {
       topFrac: (bb.max.y - anchorY) / radius, botFrac: (bb.min.y - anchorY) / radius,
-      outerFrac: Math.max(0, (maxR - radius) / radius),
+      // Same wall-relative measure as the festoon above. A wrap band already followed the
+      // rounded-rect on a sheet cake, so it was already over-reporting its standoff there.
+      outerFrac: proudOfWall(bb, shape, radius),
     });
-  }, [wrapGeo, radius, yBase, yOffset, glbPath, sizeFactor]);
+  }, [wrapGeo, radius, shape, yBase, yOffset, glbPath, sizeFactor]);
 
   if (!A && !festoonGeos && !wrapGeo) return null;
 
