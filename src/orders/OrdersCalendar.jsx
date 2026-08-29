@@ -1,5 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { statusLabel, DEFAULT_STATUS_INDEX } from './statuses.js';
+import AnchoredPopup from '../shared/AnchoredPopup.jsx';
+import { Panel } from '../shared/Panel.jsx';
+import DayBoard from './DayBoard.jsx';
 
 // ── Orders → Calendar: the delivery month at a glance ─────────────────────────
 // A month grid of how many cakes are due each day, from GET /api/orders/calendar.
@@ -30,6 +34,15 @@ function todayInZone(timezone) {
     return new Date().toLocaleDateString('en-CA');
   }
 }
+
+// "Saturday 14 September" — the board's own heading. Built from the ISO string rather than
+// `new Date(iso)`, which parses as UTC and lands on the previous day for anyone west of it.
+function longDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${DAY_LONG[dt.getDay()]} ${d} ${MONTH_NAMES[m - 1]}`;
+}
+const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const Chevron = ({ dir }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -79,6 +92,65 @@ export default function OrdersCalendar({
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [year, month, apiClient]);
+
+  /* ── The day board ───────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ The month endpoint returns COUNTS ONLY, on purpose — that is what makes this view cost the
+   * same at 5 orders a month and 5,000. The board needs the actual rows, so it fetches ONE DAY at a
+   * time, when a day is asked for. The scaling decision survives: you pay for the day you open.
+   *
+   * GET /api/orders?from=&to= already returns everything the board needs (customer, weight,
+   * flavours, dietary keys, and the design snapshot the weight split reads), so there is no new
+   * endpoint here.
+   *
+   * Cached per date and never re-fetched while the panel is open. On desktop the board opens on
+   * HOVER, so without a cache running the mouse across a week would fire seven requests and keep
+   * firing them on the way back.
+   */
+  const [board, setBoard]   = useState(null);   // { date, anchor } — anchor null on mobile
+  const [dayRows, setDayRows] = useState({});   // date → { loading, error, orders }
+  const hoverTimer = useRef(0);
+  const cacheRef   = useRef({});
+
+  const loadDay = useCallback((date) => {
+    if (cacheRef.current[date] || typeof apiClient?.fetchOrders !== 'function') return;
+    cacheRef.current[date] = true;
+    setDayRows(r => ({ ...r, [date]: { loading: true, error: null, orders: [] } }));
+    apiClient.fetchOrders({ from: date, to: date })
+      .then(list => setDayRows(r => ({
+        ...r, [date]: { loading: false, error: null, orders: Array.isArray(list) ? list : [] },
+      })))
+      .catch(err => {
+        // Let it be retried: a board that failed once and then refuses to try again is worse than
+        // one that is slow.
+        delete cacheRef.current[date];
+        setDayRows(r => ({ ...r, [date]: { loading: false, error: err?.message ?? 'Could not load this day', orders: [] } }));
+      });
+  }, [apiClient]);
+
+  const openBoard = useCallback((date, anchor) => { setBoard({ date, anchor }); loadDay(date); }, [loadDay]);
+  const closeBoard = useCallback(() => { clearTimeout(hoverTimer.current); setBoard(null); }, []);
+
+  // Delayed in AND out. In: crossing three cells on the way to a fourth must not open three boards
+  // or fire three requests. Out: the pointer has to travel over the gap between the cell and the
+  // popup, and closing the instant it leaves the cell would make the board unreachable.
+  const HOVER_MS = 140;
+  const hoverOpen = (date, el) => {
+    if (isMobile) return;
+    clearTimeout(hoverTimer.current);
+    const rect = el.getBoundingClientRect();
+    hoverTimer.current = setTimeout(
+      () => openBoard(date, { top: rect.top, left: rect.left + rect.width }), HOVER_MS);
+  };
+  const hoverOut = () => {
+    if (isMobile) return;
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setBoard(null), HOVER_MS);
+  };
+
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
+  // A month change must not leave a board open over a grid that no longer contains its day.
+  useEffect(() => { setBoard(null); }, [year, month]);
 
   function shiftMonth(delta) {
     const m = month + delta;
@@ -179,9 +251,19 @@ export default function OrdersCalendar({
           return (
             <div
               key={date}
-              onClick={count > 0 ? () => onPickDate(date) : (canCreate ? () => onCreateForDate(date) : undefined)}
+              /* ⚠️ Tap and click do DIFFERENT things, and that is the whole mobile answer.
+               * A phone has no hover, and long-press is undiscoverable and fights scrolling and
+               * text selection — so on a phone the tap opens the board, and the board's own "View
+               * orders" carries on to the list. On desktop the board is already open (hover), so a
+               * click means what it always meant and goes straight to the list. Same board, same
+               * destination, one gesture each. */
+              onClick={count > 0
+                ? (e) => (isMobile ? openBoard(date, null) : onPickDate(date))
+                : (canCreate ? () => onCreateForDate(date) : undefined)}
+              onMouseEnter={count > 0 ? (e) => hoverOpen(date, e.currentTarget) : undefined}
+              onMouseLeave={count > 0 ? hoverOut : undefined}
               title={count > 0
-                ? `${count} ${count === 1 ? 'order' : 'orders'} due — open the list`
+                ? (isMobile ? `${count} ${count === 1 ? 'order' : 'orders'} due` : `${count} ${count === 1 ? 'order' : 'orders'} due — open the list`)
                 : (canCreate ? 'New order for this day' : undefined)}
               style={{
                 minHeight: cellMinHeight, padding: isMobile ? '5px 4px' : '7px 8px',
@@ -235,6 +317,34 @@ export default function OrdersCalendar({
           );
         })}
       </div>
+
+      {/* ── Two containers, one board ─────────────────────────────────────────────────────────
+          The board itself knows nothing about either. Desktop gets an anchored popup that measures
+          itself against the viewport (AnchoredPopup — the same one the colour picker uses, written
+          because a hardcoded height guess kept falling off the bottom of the screen). Mobile gets
+          the standard bottom sheet.
+
+          ⚠️ Portalled on desktop. The month grid is `overflow-y: auto`, so a popup rendered inside a
+          cell would be clipped by it — and clipped by the panel around that. */}
+      {board && !isMobile && createPortal(
+        <div onMouseEnter={() => clearTimeout(hoverTimer.current)} onMouseLeave={hoverOut}>
+          <AnchoredPopup anchor={board.anchor} width={340}
+                         style={{ background: '#FAF9F6', border: '1.5px solid #E8E4DC',
+                                  borderRadius: 14, padding: 14, zIndex: 5000,
+                                  boxShadow: '0 10px 30px rgba(26,26,26,0.14)' }}>
+            <DayBoard dateLabel={longDate(board.date)} {...(dayRows[board.date] ?? { loading: true, orders: [] })}
+                      onViewOrders={() => { closeBoard(); onPickDate(board.date); }} />
+          </AnchoredPopup>
+        </div>,
+        document.body,
+      )}
+
+      {board && isMobile && (
+        <Panel onClose={closeBoard} title={longDate(board.date)} isMobile width={420}>
+          <DayBoard dateLabel="" isMobile {...(dayRows[board.date] ?? { loading: true, orders: [] })}
+                    onViewOrders={() => { closeBoard(); onPickDate(board.date); }} />
+        </Panel>
+      )}
     </div>
   );
 }
