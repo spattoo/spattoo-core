@@ -198,7 +198,7 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
         </>
       }
     >
-      <p style={{ margin: '0 0 12px', fontSize: 13, color: '#777', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 10px', fontSize: 12.5, color: '#777', lineHeight: 1.45 }}>
         Nothing changes unless you choose it.
       </p>
 
@@ -212,7 +212,7 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <canvas ref={canvasRef} style={{
-          display: 'block', maxWidth: '100%', maxHeight: '38vh', width: 'auto', height: 'auto',
+          display: 'block', maxWidth: '100%', maxHeight: '35vh', width: 'auto', height: 'auto',
         }} />
 
         {/* ⚠️ COMPARE SITS ON THE PHOTO, not in its own row above the tools. Two segmented strips
@@ -325,6 +325,16 @@ export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#
           </div>
         );
       })()}
+
+      {/* ⚠️ THE CONSEQUENCE SITS WITH THE BUTTON THAT CAUSES IT, not in the blurb at the top. Whoever
+          reads a preamble on arrival has forgotten it by the time they reach a decision, and this is
+          the decision: the photo leaving here is uploaded and then sent, because the ready flip that
+          follows this sheet emails the customer. Saying so at the top would be true and useless. */}
+      <p style={{
+        margin: '14px 0 0', fontSize: 11.5, color: '#8a8a8a', lineHeight: 1.45, textAlign: 'center',
+      }}>
+        Your customer gets this photo when the order is marked ready.
+      </p>
 
     </Panel>
   );
