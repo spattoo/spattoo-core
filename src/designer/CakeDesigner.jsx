@@ -33,6 +33,8 @@ import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js'
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
+import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
+import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
@@ -5844,7 +5846,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     decorationCards.unshift({ key: 'blocks', type: 'blocks', name: 'Letter Blocks', thumb: null, glyph: 'A' });
   }
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
-    decorationCards.unshift({ key: 'cream-pen', type: 'tool', tool: 'pen', name: 'Cream Pen', thumb: null });
+    // Named for what is in the bag. "Cream Pen" while piping chocolate was the giveaway that the
+    // medium had reached the renderer and nothing else.
+    decorationCards.unshift({ key: 'cream-pen', type: 'tool', tool: 'pen', thumb: null,
+      name: `${MEDIA[penStyle.medium]?.label ?? MEDIA[DEFAULT_MEDIUM].label} Pen` });
   }
   // The element stack is ONE persistent right-side editor holding every editable
   // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
@@ -7163,6 +7168,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
 
+        {/* ⚠️ ONLY WHEN IT CAN ACTUALLY BE FILLED. An open stroke has no inside and a curved wall
+            cannot take a straight pass, so the control is absent rather than present-and-dead —
+            and the line below says which of the two it is, because "no fill button" with no reason
+            reads as a bug. */}
+        {canFillLast && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                Fill the shape
+              </div>
+              <Segmented
+                label="Fill the shape you just drew"
+                items={Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))}
+                value={null}
+                onChange={fillLastStroke}
+                tone={penStyle.color}
+              />
+              <div style={{ fontSize: 10, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
+                Fills the shape you just drew. Undo takes it back.
+              </div>
+            </div>
+        )}
+        {whyNotFill && (
+          <div style={{ fontSize: 10, color: '#999', marginTop: 10, lineHeight: 1.45 }}>{whyNotFill}</div>
+        )}
+
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
         <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
@@ -7203,12 +7233,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Cream Pen (freehand) editor body — rendered inline as the expanded body of its stack card (like
   // renderWritingEditor / renderFoilBody), NOT in a floating popup. Dismiss = collapse the card; no ✕.
   function renderPenBody() {
+    /* ⚠️ THE COPY FOLLOWS THE MEDIUM. The card said "Cream Pen" and "Cream colour" while piping
+       chocolate — the medium reached the renderer and not a word of the interface, which is the kind
+       of gap a screenshot finds and a test never will. */
+    const mediumLabel = MEDIA[penStyle.medium]?.label ?? MEDIA[DEFAULT_MEDIUM].label;
+
+    /* Fill applies to the LAST stroke: the one just drawn, which is what a baker means by "fill it
+       in". Offered only when that stroke can honestly be filled — closed, and on a flat surface. A
+       wall curves away and a straight pass would cut through the cake; see pipingFillOnCake.js. */
+    const last = design.piping?.[design.piping.length - 1] ?? null;
+    const fillable = last && last.kind !== 'stamp' && last.kind !== 'stamprope'
+      ? fillStrokeOnFlat(last.points ?? [], { thickness: last.thickness ?? 0.03 })
+      : null;
+
+    const canFillLast = !!fillable?.canFill;
+    /* Why NOT, in words. "No fill button" with no explanation reads as a bug, and the two reasons
+       lead to different actions: close the shape, or draw it somewhere flat. */
+    const whyNotFill = !last || canFillLast ? null
+      : fillable?.flat
+        ? 'Bring the ends of a stroke together to fill it — letters and swirls are piped as drawn.'
+        : 'A shape on the side of a cake cannot be filled — draw it on the top or the board.';
+
+    function fillLastStroke(pattern) {
+      if (!last) return;
+      const out = fillStrokeOnFlat(last.points ?? [], {
+        pattern, thickness: last.thickness ?? 0.03, seed: last.id?.length ?? 7,
+      });
+      /* Each continuous squeeze becomes its own stroke, which is what it is: the nozzle lifted
+         between them. It also means Undo removes them one at a time, in the order they were piped —
+         the same way undoing any other piping behaves. */
+      for (const pts of out.paths) {
+        addStroke({ ...last, id: undefined, points: pts, fillOf: last.id });
+      }
+    }
+
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
           {penStyle.stampUrl
             ? 'Drag on the cake and the shape repeats along your line — release to stop. Drag the empty space around it to rotate.'
-            : 'Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.'}
+            : `Drag on the cake to pipe ${mediumLabel.toLowerCase()} — release to stop. Drag the empty space around it to rotate.`}
         </div>
 
         {/* ── What is on the nozzle ─────────────────────────────────────────────────────────────
@@ -7248,9 +7312,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
 
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Cream colour</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>{mediumLabel} colour</div>
         <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={152} />
+
+        {/* ⚠️ ONLY WHEN IT CAN ACTUALLY BE FILLED. An open stroke has no inside and a curved wall
+            cannot take a straight pass, so the control is absent rather than present-and-dead —
+            and the line below says which of the two it is, because "no fill button" with no reason
+            reads as a bug. */}
+        {canFillLast && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                Fill the shape
+              </div>
+              <Segmented
+                label="Fill the shape you just drew"
+                items={Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))}
+                value={null}
+                onChange={fillLastStroke}
+                tone={penStyle.color}
+              />
+              <div style={{ fontSize: 10, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
+                Fills the shape you just drew. Undo takes it back.
+              </div>
+            </div>
+        )}
+        {whyNotFill && (
+          <div style={{ fontSize: 10, color: '#999', marginTop: 10, lineHeight: 1.45 }}>{whyNotFill}</div>
+        )}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         {/* "Size" and a wider range in stamp mode. The word first: on the pen this IS a thickness —
