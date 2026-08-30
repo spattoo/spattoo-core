@@ -4290,11 +4290,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Both are LOOKS rather than objects — see addDustFromRow and addPenFromRow.
     luster_dust: addDustFromRow,
     cream_pen: addPenFromRow,
-    /* One pen, two media. A separate KEY rather than a flag on the row, because the key is the only
-       thing an admin can actually author (AddElement writes `procedural` and nothing nested), and
-       because "Chocolate pen" is what it is called on the shelf — a customer looking for chocolate
-       should not have to find a cream pen and change a setting on it. Both land in the same function;
-       nothing branches on the name. */
+    /* One pen, two media. A separate KEY rather than a flag on the row, for two reasons:
+       the key is the only thing an admin can author on Add Element (it writes `procedural` and
+       nothing nested); and a customer looking for chocolate should meet a chocolate item on the
+       shelf rather than a cream one with a setting to change.
+
+       ⚠️ What that item is CALLED is data, not this. The display name lives on the row and an admin
+       edits it without a deploy — it reads "Chocolate Drawing" today. Never write a name into a
+       comment as though the code depends on it; the code depends on the key. */
     chocolate_pen: el => addPenFromRow(el, 'chocolate'),
   };
 
