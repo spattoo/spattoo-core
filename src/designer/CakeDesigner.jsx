@@ -7168,31 +7168,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
 
-        {/* ⚠️ ONLY WHEN IT CAN ACTUALLY BE FILLED. An open stroke has no inside and a curved wall
-            cannot take a straight pass, so the control is absent rather than present-and-dead —
-            and the line below says which of the two it is, because "no fill button" with no reason
-            reads as a bug. */}
-        {canFillLast && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
-                Fill the shape
-              </div>
-              <Segmented
-                label="Fill the shape you just drew"
-                items={Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))}
-                value={null}
-                onChange={fillLastStroke}
-                tone={penStyle.color}
-              />
-              <div style={{ fontSize: 10, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
-                Fills the shape you just drew. Undo takes it back.
-              </div>
-            </div>
-        )}
-        {whyNotFill && (
-          <div style={{ fontSize: 10, color: '#999', marginTop: 10, lineHeight: 1.45 }}>{whyNotFill}</div>
-        )}
-
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
         <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
