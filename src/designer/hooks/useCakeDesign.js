@@ -204,7 +204,13 @@ const DEFAULT_WRITING = {
   surface: 'top',            // 'top' | 'side' | 'board'
   yaw: 0, offsetX: 0, offsetZ: 0, lift: 0.02,
   boardX: undefined, boardZ: undefined,   // board placement (default seeded in CreamWriting)
-  sideAngle: 0, sideY: undefined,         // side placement (default = mid of bottom tier)
+  sideAngle: 0, sideY: undefined,         // side placement: where round, and how high
+  /* ⚠️ WHICH TIER, stored rather than inferred. `sideY` alone could not answer "put this on tier 2":
+     the renderer worked out the tier by finding whichever one contained that height, so the only way
+     to reach an upper tier was to drag a message up the cake and hope — and the drag intersected a
+     cylinder of the BOTTOM tier's radius, which at an upper tier's height is out in the air beside
+     the cake. A cake with one tier never showed the gap; every tiered cake did. */
+  sideTier: 0,
 };
 
 // ── One message, or several ─────────────────────────────────────────────────────────────────────

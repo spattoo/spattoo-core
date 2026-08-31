@@ -1620,7 +1620,16 @@ const EDIT_PANEL_MIN = 108;
 const EDIT_PANEL_MAX_VH = 0.6;
 
 /** The element stack's width on a phone. */
+/* ⚠️ TWO WIDTHS, because the stack does two jobs. Closed, it is a LIST of cards and 156px is right:
+ * narrow enough that the cake stays the thing you are looking at. Expanded, it is an EDITOR, and
+ * 156px is where the Texts card ended up — a textarea, ten fonts and a colour row in a column two
+ * words wide, running off the bottom of the screen. A width chosen for browsing was being asked to
+ * do editing.
+ *
+ * The open width is capped against the viewport rather than fixed, so it cannot exceed a small phone
+ * while still leaving the drag lane (STACK_RIGHT_MOBILE) and a strip of cake visible down the side. */
 const STACK_W_MOBILE = 156;
+const STACK_W_MOBILE_OPEN = 'min(300px, calc(100vw - 84px))';
 /** The flyout handle's width — it lives on the right edge and never moves. */
 const STACK_TAB_W = 22;
 /** How far the stack sits in from the right on a phone: clear of the handle, plus the same 10 of
@@ -7096,6 +7105,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           ))}
         </div>
 
+        {/* ⚠️ WHICH TIER, and only when there is a choice to make. A one-tier cake has nothing to
+            ask, and an extra control on it would be furniture. On a tiered cake this is the whole
+            answer to "I want to write on the second tier": before it, the surface picker offered
+            Top, Side and Board, and Side always meant the bottom one. Changing tier re-seats the
+            message in the middle of that wall — its old height belongs to a different tier. */}
+        {surface === 'side' && (design.tiers?.length ?? 1) > 1 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 5 }}>
+              Which tier
+            </div>
+            <Segmented
+              label="Which tier to write on"
+              isMobile={isMobile}
+              items={design.tiers.map((_, i) => ({
+                id: String(i),
+                label: i === 0 ? 'Bottom' : i === design.tiers.length - 1 ? 'Top' : `Tier ${i + 1}`,
+              }))}
+              value={String(Math.min(w.sideTier ?? 0, design.tiers.length - 1))}
+              onChange={id => setWriting({ sideTier: Number(id), sideY: undefined })}
+              tone={primaryColor}
+            />
+          </div>
+        )}
+
         <textarea
           value={w.text ?? ''}
           onChange={e => setWriting({ text: e.target.value })}
@@ -9419,7 +9452,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 // Mobile: a see-through, narrower overlay so the cake shows THROUGH the stack (the cards
                 // carry the fill). Light tint + a small blur (not the heavy 18px frost, which washed the
                 // cake out to white). Scroll/maxHeight kept so a long element list still works.
-                ? { ...s.editPopup, width: STACK_W_MOBILE, right: STACK_RIGHT_MOBILE, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
+                ? { ...s.editPopup,
+                    width: stackHasExpandedCard ? STACK_W_MOBILE_OPEN : STACK_W_MOBILE,
+                    right: STACK_RIGHT_MOBILE,
+                    /* An open editor needs to be READ, so it takes a solid-enough surface. The
+                       see-through treatment is for the list, where the point is that the cake shows
+                       through the cards. */
+                    background: stackHasExpandedCard ? 'rgba(255,255,255,0.93)' : 'rgba(255,255,255,0.12)',
+                    backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
                 : s.editPopup}>
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>

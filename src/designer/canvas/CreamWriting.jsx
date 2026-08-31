@@ -30,8 +30,10 @@ export default function CreamWriting({
   // ── Resolve the target surface's radius / footprint ──────────────────────────
   const bottom    = tiers?.[0];
   const cakeBaseR = bottom ? (bottom.shape === 'rect' ? Math.max(bottom.width, bottom.depth) / 2 : bottom.radius) : topRadius;
-  const sideY     = writing?.sideY ?? (bottom ? bottom.baseY + bottom.height / 2 : topY / 2);
-  const sideTier  = tiers?.find(t => sideY >= t.baseY && sideY <= t.baseY + t.height) ?? bottom;
+  /* ⚠️ THE TIER COMES FROM THE WRITING, and the height is read within it. Clamped to what the cake
+     actually has, so removing a tier leaves the message on the new top one rather than nowhere. */
+  const sideTier  = tiers?.[Math.min(writing?.sideTier ?? 0, (tiers?.length ?? 1) - 1)] ?? bottom;
+  const sideY     = writing?.sideY ?? (sideTier ? sideTier.baseY + sideTier.height / 2 : topY / 2);
   const sideRect  = (sideTier?.shape ?? shape) === 'rect';
   const sideR     = sideTier ? (sideRect ? sideTier.depth / 2 : sideTier.radius) : topRadius;
   const sideH     = sideTier?.height ?? 1;
@@ -57,7 +59,13 @@ export default function CreamWriting({
   }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.letterSpacing, writing?.curve, wrapRadius]);
 
   // Side-drag vertical bounds (also used by the drag resolver below).
-  const minSideY = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
+  /* ⚠️ A MESSAGE STAYS ON ITS TIER while it is dragged. The range used to span the whole cake, so a
+     drag could slide a message off the tier it belonged to and onto a wall of a different radius —
+     where it then floated, because the geometry is built for the radius it started on. Moving
+     between tiers is a choice made in the card, not something a thumb does by accident. */
+  const bandInset = Math.min(0.14, (sideTier?.height ?? 1) * 0.18);
+  const minSideY = (sideTier?.baseY ?? 0) + bandInset;
+  const maxSideY = Math.max(minSideY + 0.02, (sideTier?.baseY ?? 0) + (sideTier?.height ?? 1) - bandInset);
 
   // Drag-to-place: map the pointer ray to a per-surface placement patch; the press/drag/tap plumbing
   // and grabProps are shared (useDragPlacement). Called before the early return to satisfy hook rules.
