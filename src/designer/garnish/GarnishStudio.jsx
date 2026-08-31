@@ -249,13 +249,34 @@ export default function GarnishStudio({
      under the finger, rather than a mode the baker has to remember they are in. Topmost first, so the
      thing drawn last — the thing they are most likely to be reaching for — wins an overlap. */
   const hitStroke = pt => {
+    /* ⚠️ THE SMALLEST SHAPE THAT CONTAINS THE POINT WINS, not the most recent. Last-added seemed
+       reasonable and made a whole class of piece unreachable: a circle contains nearly the entire
+       plate, so once one was added, pressing anywhere — including inside the triangle sitting on top
+       of it — picked and dragged the circle. A shape drawn INSIDE another could never be selected at
+       all, which is exactly the arrangement the reference garnishes are made of.
+
+       Smallest-first is also what a hand expects: press inside the little shape, get the little
+       shape. */
+    let best = null, bestArea = Infinity;
+    strokes.forEach((s2, i) => {
+      if (!s2.ring || !pointInRing(pt, s2.ring)) return;
+      const a2 = Math.abs(ringArea(s2.ring));
+      if (a2 < bestArea) { best = i; bestArea = a2; }
+    });
+    if (best != null) return best;
+
+    // Nothing contains it: an open stroke has no inside, so it is caught by nearness to the line —
+    // most recent first, since two lines crossing is a genuine tie and the newer one is the one in hand.
     for (let i = strokes.length - 1; i >= 0; i--) {
-      const s2 = strokes[i];
-      if (s2.ring && pointInRing(pt, s2.ring)) return i;
-      // An open stroke has no inside, so it is caught by nearness to the line itself.
-      if (s2.path.some(q => Math.hypot(q[0] - pt[0], q[1] - pt[1]) <= ROPE * 2.5)) return i;
+      if (strokes[i].path.some(q => Math.hypot(q[0] - pt[0], q[1] - pt[1]) <= ROPE * 2.5)) return i;
     }
     return null;
+  };
+
+  const ringArea = ring => {
+    let sum = 0;
+    for (let i = 0; i < ring.length - 1; i++) sum += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+    return sum / 2;
   };
 
   const mapStroke = (s2, f) => ({
@@ -290,7 +311,11 @@ export default function GarnishStudio({
        its first point, or every polygon comes out missing exactly one edge. */
     const poly = shape.make();
     const path = [...poly, poly[0]];
-    setStrokes(s2 => [...s2, { path, ring: path, closed: true, gap: 0, area: 0, fills: [] }]);
+    /* ⚠️ A SHAPE ARRIVES SELECTED. It lands in the middle of the plate, on top of whatever is already
+       there, so the very next thing anyone wants is to move or resize it — and its controls only
+       exist while it is picked. Landing unselected meant adding a shape and then having to work out
+       that you must click the thing you just placed before you can do anything with it. */
+    setStrokes(s2 => { setPicked(s2.length); return [...s2, { path, ring: path, closed: true, gap: 0, area: 0, fills: [] }]; });
   }
 
   function addToCake() {
