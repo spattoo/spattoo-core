@@ -14,6 +14,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { useThree } from '@react-three/fiber';
 import { topperShapes, components, bridgeLoose } from '../src/designer/geometry/topperShape.js';
 import { SizeDial } from '../src/designer/shared/SizeDial.jsx';
+import AcrylicWord from '../src/designer/canvas/AcrylicWord.jsx';
+import { faceFit } from '../src/designer/geometry/topperFaces.js';
 import { SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 
 /* ── An acrylic topper, standing up ──────────────────────────────────────────────────────────────
@@ -100,59 +102,6 @@ const FINISHES = {
   white:  { label: 'Gloss white',   color: '#f2f0ec', metalness: 0.1,  roughness: 0.08 },
 };
 
-function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop, bury, rows, lineGap, face, stroke, fitAspect }) {
-  const { geos, groups, standY } = useMemo(() => {
-    const t = topperShapes(faceOf(face), text, {
-      height, weight, lines: rows || 'auto', lineGap, stroke, fitAspect,
-      baseline: bar ? { thickness: barThick } : null,
-      legs: legCount > 0 ? { count: legCount, length: legLen } : null,
-    });
-    if (!t.parts?.length) return { geos: [], groups: [], standY: 0 };
-    const parts = bridge ? [...t.parts, ...bridgeLoose(t.parts, { width: height * 0.022 })] : t.parts;
-    const grouped = components(parts);
-    const loose = new Set(grouped.slice(1).flat());
-
-    // One geometry per PART, not one merged mesh — so a loose piece can be painted red. The real
-    // renderer will merge; here the whole point is telling them apart.
-    const geos = parts.map((p, i) => {
-      const shape = new THREE.Shape(p.outer.map(q => new THREE.Vector2(q.x, q.y)));
-      shape.holes = (p.holes ?? []).map(h => new THREE.Path(h.map(q => new THREE.Vector2(q.x, q.y))));
-      const g = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
-      g.translate(0, 0, -thickness / 2);
-      return { geo: g, loose: loose.has(i), kind: p.kind };
-    });
-    /* ⚠️ WHAT TOUCHES THE ICING is the bottom of the LEGS, not the bar.
-     *
-     * The legs are the stand. Sitting the bar's underside on the cake buries them completely and the
-     * word looks glued to the surface — which is what the first version did, and it is wrong twice
-     * over: it hides the part a baker has to push in, and it hides whether the prongs are long
-     * enough to hold anything up.
-     *
-     * So the lowest point of the whole object goes `bury` BELOW the icing, leaving the rest of the
-     * leg showing. With no legs there is nothing to stand on and the baseline meets the surface,
-     * which is also how a topper with no legs is actually used — laid against the cake. */
-    const lowest = Math.min(...parts.flatMap(p => p.outer.map(q => q.y)));
-    const foot = t.legs.length ? lowest : t.baselineY;
-    return { geos, groups: grouped, standY: foot + (t.legs.length ? bury : 0) };
-  }, [text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, bury, rows, lineGap, face, stroke, fitAspect]);
-
-  const f = FINISHES[finish];
-  return (
-    <group position={[0, cakeTop - standY, 0]}>
-      {geos.map(({ geo, loose }, i) => (
-        <mesh key={i} geometry={geo} castShadow>
-          {loose
-            ? <meshStandardMaterial color="#d33" metalness={0.1} roughness={0.5} />
-            : <meshStandardMaterial color={f.color} metalness={f.metalness} roughness={f.roughness} envMapIntensity={1.4} />}
-        </mesh>
-      ))}
-      <Report groups={groups} />
-    </group>
-  );
-}
-// Kept as its own component so the count re-reads from the same memo the meshes came from — a
-// separately-computed number is a number that can disagree with the picture beside it.
-function Report() { return null; }
 
 /* The scene is a 6-INCH cake, and that is what makes the numbers mean anything.
  *
@@ -163,13 +112,32 @@ function Report() { return null; }
 const CAKE_R = 1.6;
 const BASE_SPAN = 0.55;   // the authored default: 55% of the cake at size 1
 const MM_PER_UNIT = (6 * 25.4) / (CAKE_R * 2);   // ≈ 47.6
+// ~90mm of wall. At the old 0.55 (about an inch) there was nowhere to put a name on the side,
+// and a side pose judged against a cake that shape would tell you nothing.
+const CAKE_H = 1.9;
 const mm = u => `${(u * MM_PER_UNIT).toFixed(1)}mm`;
 
 // A slab to stand it on, so "does it read as standing" is a question the scene can answer.
-function Cake({ r = CAKE_R, h = 0.55 }) {
+function Cake({ r = CAKE_R, h = CAKE_H }) {
   return (
     <mesh position={[0, h / 2, 0]} receiveShadow>
       <cylinderGeometry args={[r, r, h, 96]} />
+{/* ⚠️ THE SHADOW IS CAST BUT BARELY LANDS, and it is not the plumbing.
+       *
+       * Proven by removing the environment for one frame: the topper's shadow was there on the icing,
+       * sharp and obvious, and had been the whole time. What hides it is contrast — this cake is lit
+       * by ambient 0.45 plus two directionals totalling 1.5, so losing the one that casts leaves a
+       * barely-darker patch on an already blown-out white surface.
+       *
+       * Things I tried that did NOT fix it, recorded so nobody repeats them: adding a fourth
+       * shadow-casting light (SceneLights already takes `shadows`), and dimming the cake's
+       * envMapIntensity to 0.22 and then 0.06 — the material is live (turning it red proved that) and
+       * the brightness simply is not coming from the environment.
+       *
+       * Left alone deliberately. The standoff is verified as GEOMETRY — half of an 83.8mm word on a
+       * 76.2mm radius stands 11.5mm proud, which matches the arithmetic — and how strongly that reads
+       * is a question about the designer's real lighting rig, not something to tune from a harness
+       * whose cake is a stand-in cylinder. */}
       <meshStandardMaterial color="#f3ece2" roughness={0.85} />
     </mesh>
   );
@@ -184,6 +152,8 @@ function App() {
   // argued over. A single name opens on the one setting that exercises none of them.
   const [text, setText]     = useState('Happy Birthday');
   const [face, setFace]     = useState('great_vibes');
+  const [pose, setPose]     = useState('stand');   // where it goes: the top, or flat on the side
+  const [tracking, setTr]   = useState(faceFit('great_vibes'));   // the fit this face joins at
   // 0.12em puts the stroke at about a tenth of the letter, which is what the toppers in the market
   // measure. Below that it is a hairline; above it the counters in a, p and B start closing up.
   const [stroke, setStroke] = useState(0.12);
@@ -237,10 +207,10 @@ function App() {
    * with `height` and one build with no bar tells you all three. */
   const fit = useMemo(() => {
     const p = topperShapes(faceOf(face), text,
-      { height: 1, weight, lines: rows || 'auto', lineGap, stroke, fitAspect });
+      { height: 1, weight, lines: rows || 'auto', lineGap, stroke, fitAspect, tracking });
     const height = p.width > 0 ? (CAKE_R * 2 * span) / p.width : 0.5;
     return { height, cap: p.capHeight * height, feature: p.feature * height };
-  }, [text, weight, span, rows, lineGap, face, stroke, fitAspect]);
+  }, [text, weight, span, rows, lineGap, face, stroke, fitAspect, tracking]);
   const { height } = fit;
 
   // ⚠️ A share of the LETTER, not of the block. Sized off the block it doubles the moment a second
@@ -250,14 +220,14 @@ function App() {
   // The same call the mesh makes, so the reported count is the picture's count.
   const report = useMemo(() => {
     const t = topperShapes(faceOf(face), text, {
-      height, weight, lines: rows || 'auto', lineGap, stroke, fitAspect,
+      height, weight, lines: rows || 'auto', lineGap, stroke, fitAspect, tracking,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
     if (!t.parts?.length) return { n: 0, width: 0, cap: 0, rows: [], feature: 0, gap: 0 };
     const parts = bridge ? [...t.parts, ...bridgeLoose(t.parts, { width: height * 0.022 })] : t.parts;
     return { n: components(parts).length, width: t.width, cap: t.capHeight, rows: t.rows, feature: t.feature, gap: t.lineGap };
-  }, [text, height, weight, bar, barThick, legCount, legLen, bridge, rows, lineGap, face, stroke, fitAspect]);
+  }, [text, height, weight, bar, barThick, legCount, legLen, bridge, rows, lineGap, face, stroke, fitAspect, tracking]);
 
   // One test, both faces: is the narrowest acrylic in the design at least as wide as the sheet?
   const thin = report.feature > 0 && report.feature * MM_PER_UNIT < minDetail;
@@ -286,13 +256,27 @@ function App() {
                         border: '1.5px solid #D8E0DA', borderRadius: 8, marginBottom: 14 }} />
 
         <div style={{ ...row, marginBottom: 12 }}>
+          <span style={lab}>Place</span>
+          <div style={{ display: 'flex', gap: 4, background: '#f2efe9', borderRadius: 8, padding: 3, flex: 1 }}>
+            {[['stand', 'Top (stands)'], ['flat', 'Side (flat)']].map(([k, l]) => (
+              <button key={k} onClick={() => setPose(k)}
+                style={{ flex: 1, padding: '5px 6px', fontFamily: 'inherit', fontSize: 11, fontWeight: 800,
+                         border: 0, borderRadius: 6, cursor: 'pointer',
+                         background: pose === k ? '#3D5A44' : 'transparent',
+                         color: pose === k ? '#fff' : '#6E8577' }}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ ...row, marginBottom: 12 }}>
           <span style={lab}>Face</span>
-          <select value={face} onChange={e => setFace(e.target.value)}
+          <select value={face} onChange={e => { setFace(e.target.value); setTr(faceFit(e.target.value)); }}
                   style={{ flex: 1, padding: '5px 8px', fontFamily: 'inherit', fontSize: 12,
                            border: '1.5px solid #D8E0DA', borderRadius: 7 }}>
             {Object.entries(FACES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
+        {slider('Fit', tracking, setTr, -0.45, 0.05, 0.01, x => (x === 0 ? 'as drawn' : `${x.toFixed(2)} em`))}
         {isMono(face) && slider('Stroke', stroke, setStroke, 0.05, 0.45, 0.005,
           /* ⚠️ Measured, not computed as stroke x height. `height` is the whole stacked BLOCK —
              over two ems once there are two rows — so the arithmetic version read 6.3mm beside a
@@ -313,16 +297,19 @@ function App() {
         {slider('Thickness', thickness, setTh, 0.004, 0.16, 0.002, x => mm(x))}
         {slider('Min detail', minDetail, setMD, 0.4, 4, 0.1, x => `${x.toFixed(1)}mm`)}
 
-        <div style={{ ...row, marginTop: 12 }}>
+        {/* Legs and a bar belong to STANDING — a flat piece has nothing to stand on and prongs would
+            point at the customer. The renderer already ignores them; offering them anyway is a panel
+            that lies about what it does. */}
+        {pose === 'stand' && <div style={{ ...row, marginTop: 12 }}>
           <span style={lab}>Bar</span>
           <input type="checkbox" checked={bar} onChange={e => setBar(e.target.checked)} />
           <span style={{ fontSize: 11, color: '#8a8a8a' }}>a base the letters sit on</span>
-        </div>
-        {bar && slider('· thickness', barRatio, setBR, 0.05, 0.3, 0.01, x => mm(fit.cap * x))}
+        </div>}
+        {pose === 'stand' && bar && slider('· thickness', barRatio, setBR, 0.05, 0.3, 0.01, x => mm(fit.cap * x))}
 
-        {slider('Legs', legCount, setLC, 0, 4, 1, x => String(x))}
-        {legCount > 0 && slider('· length', legLen, setLL, 0.15, 0.9, 0.02, x => mm(x))}
-        {legCount > 0 && slider('· buried', bury, setBury, 0, Math.min(0.9, legLen), 0.01, x => mm(x))}
+        {pose === 'stand' && slider('Legs', legCount, setLC, 0, 4, 1, x => String(x))}
+        {pose === 'stand' && legCount > 0 && slider('· length', legLen, setLL, 0.15, 0.9, 0.02, x => mm(x))}
+        {pose === 'stand' && legCount > 0 && slider('· buried', bury, setBury, 0, Math.min(0.9, legLen), 0.01, x => mm(x))}
 
         <div style={{ ...row, marginTop: 12 }}>
           <span style={lab}>Bridge</span>
@@ -361,16 +348,26 @@ function App() {
       </div>
 
       <div style={{ flex: 1 }}>
-        <Canvas shadows camera={{ position: [0, 1.95, 6.2], fov: 32 }} gl={{ preserveDrawingBuffer: true }}>
+        <Canvas shadows camera={{ position: [0, 2.6, 7.0], fov: 32 }} gl={{ preserveDrawingBuffer: true }}>
           <color attach="background" args={['#EDEAE3']} />
-          <SceneLights />
+          {/* ⚠️ `shadows`, because the STANDOFF is the whole point of the flat pose and is invisible
+              without one: the ends lift off the icing and that gap only reads as a gap when something
+              falls under it. Every reference photo is carried by that shadow.
+              The prop already exists on the designer's own lights — I had added a fourth light of my
+              own before noticing, which would have lit this harness differently from the cake. */}
+          <SceneLights shadows />
           <LocalEnv />
           <Cake />
-          <Topper text={text} height={height} weight={weight} bar={bar} barThick={barThick}
-                  legCount={legCount} legLen={legLen} thickness={thickness} bridge={bridge} finish={finish}
-                  cakeTop={0.55} bury={Math.min(bury, legLen)} rows={rows} lineGap={lineGap}
-                  face={face} stroke={stroke} fitAspect={fitAspect} />
-          <OrbitControls target={[0, 0.9, 0]} />
+          {/* THE renderer, the same one the designer will use — not a copy that looks like it. */}
+          <AcrylicWord
+            font={faceOf(face)} text={text} finish={finish} pose={pose} span={CAKE_R * 2 * span}
+            cfg={{ weight, stroke, tracking, lineGap, maxLines: rows || 3, fitAspect,
+                   thickness, bar, barRatio, legs: legCount, legLen,
+                   bury: Math.min(bury, legLen), bridge }}
+            mount={pose === 'stand'
+              ? { topY: CAKE_H }
+              : { radius: CAKE_R, theta: 0, y: CAKE_H * 0.52 }} />
+          <OrbitControls target={[0, 1.5, 0]} />
         </Canvas>
       </div>
     </div>

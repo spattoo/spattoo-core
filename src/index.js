@@ -85,6 +85,8 @@ export { SizeDial } from './designer/shared/SizeDial.jsx';
 // copied into spattoo-admin; a topper does not get a second copy of anything.
 export { TOPPER_FACES, DEFAULT_TOPPER_FACE, loadTopperFace, isMonoline, faceFit } from './designer/geometry/topperFaces.js';
 export { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, topperFinish, applyTopperFinishConfig } from './designer/geometry/topperFinishes.js';
+// ONE renderer for both places a topper goes — standing on the top, or lying flat on the side.
+export { default as AcrylicWord } from './designer/canvas/AcrylicWord.jsx';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
