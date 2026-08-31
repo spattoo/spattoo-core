@@ -5,6 +5,7 @@ import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
 import { pointInRing } from '../geometry/regions.js';
+import { panelsFrom } from '../geometry/garnishPanel.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
 
 // ── Piping a chocolate garnish, off the cake ─────────────────────────────────────────────────────
@@ -119,6 +120,12 @@ export default function GarnishStudio({
   const [name, setName] = useState(initialName);
   /* Where it goes and how it sits, decided HERE rather than after the fact. The piece is finished
      when it leaves this screen, and "where does it live" is the last question about it. */
+  /* ⚠️ HOW IT IS MADE, not how it looks. Piped is a nozzle laying a rope; cut is chocolate spread,
+     set and cut into shapes. It decides the geometry (swept tube vs extruded slab), what a fill even
+     means (lacy passes vs solid by definition), and which build guide the X-ray prints — a motion, or
+     a cutting template. A property of the PIECE, not of a stroke: nobody pipes half a garnish and
+     cuts the other half. */
+  const [kind, setKind] = useState('piped');
   const [autoShape, setAutoShape] = useState(true);
   /* Which stroke the hands are on. A shape lands centred, so a piece made of several — which is what
      the reference garnishes are — is unusable until they can be moved apart. */
@@ -159,9 +166,28 @@ export default function GarnishStudio({
       x.stroke();
     };
 
-    for (const s of strokes) {
-      for (const f of s.fills) line(f, ROPE);
-      line(s.path, ROPE + 2);                       // the outline sits over its own fill
+    if (kind === 'cut') {
+      /* ⚠️ THE PLATE MUST SHOW WHAT THE CAKE WILL SHOW. Drawing a cut piece as outlines would let
+         somebody design a solid panel while looking at a wireframe of it, so every judgement made
+         here would be about something they are not getting. Holes punched with evenodd — the same
+         "a ring inside a ring is a hole" rule the geometry uses. */
+      for (const panel of panelsFrom(strokes.filter(s2 => s2.ring).map(s2 => s2.ring))) {
+        x.beginPath();
+        for (const ring of [panel.outline, ...panel.holes]) {
+          ring.forEach(([a2, b2], i) => (i ? x.lineTo(a2 * k, b2 * k) : x.moveTo(a2 * k, b2 * k)));
+          x.closePath();
+        }
+        x.fillStyle = color;
+        x.fill('evenodd');
+      }
+      // An open stroke has no inside and cannot be cut, so it stays a line — which is also the
+      // honest signal that it will not become part of the panel.
+      for (const s2 of strokes) if (!s2.ring) line(s2.path, ROPE + 2);
+    } else {
+      for (const s2 of strokes) {
+        for (const f of s2.fills) line(f, ROPE);
+        line(s2.path, ROPE + 2);                    // the outline sits over its own fill
+      }
     }
     if (picked != null && strokes[picked]) {
       // A thin halo, not a box: the shapes are not rectangles and a box round a triangle points at
@@ -172,7 +198,7 @@ export default function GarnishStudio({
     if (drawing) line(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
     // ⚠️ colour and ROPE are dependencies too: without them the plate keeps the shade and the line
     // width it was first painted with, and the controls appear to do nothing until the next stroke.
-  }, [strokes, trail, drawing, color, ROPE, picked]);
+  }, [strokes, trail, drawing, color, ROPE, picked, kind]);
 
   /* Opened FROM a kept piece: load it once, so the studio starts on the drawing rather than on a
      blank plate. Keyed on the piece's id so choosing a different one reloads, and re-renders in
@@ -190,7 +216,7 @@ export default function GarnishStudio({
   /* What gets STORED: the outlines and the NAME of each fill, never the generated fill paths. They
      are most of the size and they regenerate exactly from a seed — see supabase/baker_garnishes.sql. */
   const payloadOf = () => ({
-    v: 1, plate: PLATE, rope: ROPE, color,
+    v: 1, plate: PLATE, rope: ROPE, color, kind,
     strokes: strokes.map(s2 => ({
       path: s2.path.map(([x, y]) => [+x.toFixed(1), +y.toFixed(1)]),
       fill: s2.fillPattern && s2.fillPattern !== 'none' ? s2.fillPattern : null,
@@ -270,7 +296,9 @@ export default function GarnishStudio({
   function addToCake() {
     onSave?.({
       name: name.trim() || 'Chocolate piece', paths: piecePaths(strokes),
-      rope: ROPE, plate: PLATE, color, zone, mode,
+      // The closed rings travel too: a cut piece is built from regions, not from the swept paths.
+      rings: strokes.filter(s2 => s2.ring).map(s2 => s2.ring),
+      kind, rope: ROPE, plate: PLATE, color, zone, mode,
     });
   }
 
@@ -425,6 +453,20 @@ export default function GarnishStudio({
           )}
 
           <div>
+            <span style={labelStyle}>How it is made</span>
+            <div style={{ marginTop: 5 }}>
+              <Segmented label="How the piece is made" isMobile={isMobile} tone={color}
+                items={[{ id: 'piped', label: 'Piped' }, { id: 'cut', label: 'Cut' }]}
+                value={kind} onChange={setKind} />
+            </div>
+            <div style={{ fontSize: 10, color: '#999', marginTop: 4, lineHeight: 1.4 }}>
+              {kind === 'piped'
+                ? 'A nozzle laying a line of chocolate.'
+                : 'Spread thin, set, then cut. A shape inside another is punched out.'}
+            </div>
+          </div>
+
+          <div>
             <span style={labelStyle}>Add a shape</span>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
               {SHAPES.map(sh => (
@@ -535,7 +577,14 @@ export default function GarnishStudio({
 
           {/* ⚠️ Only when the last stroke closed. An open stroke — a vein, a swirl, a letter — has no
               inside, and a dead control is worse than an absent one, so the reason is stated. */}
-          {canFill ? (
+          {kind === 'cut' ? (
+            /* ⚠️ A CUT PANEL IS SOLID BY DEFINITION, so a fill choice on it would be a control with
+               nothing to do. The lacy patterns are a piping technique — passes of a nozzle — and mean
+               nothing to a knife. */
+            <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5 }}>
+              A cut piece is solid chocolate. Draw a shape inside another to punch it out.
+            </div>
+          ) : canFill ? (
             <div>
               <span style={labelStyle}>Fill the last shape</span>
               <div style={{ marginTop: 5 }}>

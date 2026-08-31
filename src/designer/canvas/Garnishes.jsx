@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildGarnishGeometry } from '../geometry/garnishPiece.js';
+import { buildPanelGeometry, panelsFrom } from '../geometry/garnishPanel.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
@@ -48,11 +49,21 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
   /* Built once per piece, not per frame: the sweep walks every point of every path and a filled
      garnish is a few thousand of them. Keyed on the paths and the scale, which are the only inputs
      that change the MESH — moving or turning a piece changes where it is drawn, not what it is. */
-  const built = useMemo(
-    () => buildGarnishGeometry(g.paths, { rope: g.rope ?? 6, plateSize: g.plate ?? 420,
-                                          worldSize: (cake.radius ?? 1.2) * 0.75 * (g.scale ?? 1) }),
-    [g.paths, g.rope, g.plate, g.scale, cake.radius],
-  );
+  const built = useMemo(() => {
+    const world = (cake.radius ?? 1.2) * 0.75 * (g.scale ?? 1);
+    /* ⚠️ TWO WAYS OF BEING MADE, TWO GEOMETRIES. A piped piece is its paths swept into ropes; a cut
+       one is its regions extruded into a slab with the inner rings punched out. Rendering a cut piece
+       as rope would show a wireframe of a solid panel — which is the shape a baker asked for, made
+       the wrong way. */
+    if (g.kind === 'cut' && g.rings?.length) {
+      const scale = world / (g.plate ?? 420);
+      // Only the first panel: a piece is ONE piece of chocolate. Two separate outlines are two
+      // garnishes, and quietly merging them would place something nobody made.
+      const [panel] = panelsFrom(g.rings);
+      return panel ? buildPanelGeometry([panel.outline, ...panel.holes], { scale }) : null;
+    }
+    return buildGarnishGeometry(g.paths, { rope: g.rope ?? 6, plateSize: g.plate ?? 420, worldSize: world });
+  }, [g.kind, g.rings, g.paths, g.rope, g.plate, g.scale, cake.radius]);
 
   /* ⚠️ THE SAME HOOK EVERY OTHER DRAGGED DECORATION USES. Press, drag, tap-versus-drag and orbit
      suppression are one shared behaviour — AgeNumber and CreamWriting were two copies of it before

@@ -15,7 +15,13 @@ const design = {
             topPipings: [], bottomPipings: [], creamLayers: [] }],
   texts: [], ages: [], stickers: [], writings: [], piping: [],
   garnishes: [
-    { id: 'a', name: 'Leaf', paths, rope: 6, plate: 420, radius: 0.5, mode: 'stand', scale: 1.3 },
+    // A CUT panel with a hole punched in it, beside a piped piece — the two ways of being made.
+    { id: 'a', name: 'Panel', kind: 'cut', plate: 420, radius: 0.5, mode: 'stand', scale: 1.3,
+      rings: [
+        [[110, 60], [310, 60], [270, 360], [150, 360], [110, 60]],
+        Array.from({ length: 25 }, (_, i) => { const t = (i / 24) * Math.PI * 2;
+          return [210 + Math.cos(t) * 45, 170 + Math.sin(t) * 45]; }),
+      ] },
     { id: 'b', name: 'Leaf', paths, rope: 6, plate: 420, theta: 3.4, radius: 0.55, mode: 'lie' },
   ],
 };
