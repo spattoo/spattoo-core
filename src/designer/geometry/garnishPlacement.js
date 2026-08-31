@@ -1,0 +1,105 @@
+import { insertionDepth } from './garnishPiece.js';
+
+// ── Where a garnish sits on the cake ─────────────────────────────────────────────────────────────
+//
+// The piece itself is built by `garnishPiece.js` in its own space: centred on x, resting on y = 0.
+// This decides where that space goes on the cake, and it is deliberately the ONLY place that
+// decides — see the movable contract's first law, "one place says where it is". The renderer applies
+// what this returns and adds nothing of its own.
+//
+// ⚠️ POLAR, NOT CARTESIAN. Position is an angle round the cake and a distance out from the middle,
+// because that is the shape of the surface it sits on: a round tier top. Storing x/z instead means
+// every rotation of the cake has to rewrite the stored position, and a piece placed near the rim of
+// a 6-inch cake ends up off the edge of an 8-inch one. Angle-and-fraction survives both.
+//
+// ⚠️ `radius` IS A FRACTION of the tier's radius (0 = the middle, 1 = the rim), for the same reason.
+// A garnish placed "near the edge" should still be near the edge when the customer changes the tier
+// size — which they do, constantly, and which is the bug this shape of storage prevents.
+
+export const GARNISH_DEFAULTS = {
+  theta: 0,          // radians round the cake
+  radius: 0.55,      // fraction of the tier radius, 0 = centre
+  yaw: 0,            // the piece's own turn about vertical, on top of facing outward
+  mode: 'stand',     // 'stand' | 'lie'
+  scale: 1,
+};
+
+/* How close to the rim a piece may be pushed. A standing garnish has a footprint and a lean; put its
+ * anchor exactly on the rim and half of it hangs over air, which reads as an accident rather than a
+ * flourish. Kept as a fraction so it scales with the tier. */
+const RIM_INSET = 0.88;
+
+export const clampRadius = r => Math.max(0, Math.min(RIM_INSET, r));
+
+/**
+ * params  { theta, radius, yaw, mode, scale }
+ * cake    { radius, topY, boardY }
+ * piece   { w, h } — the built piece's size, so a standing one can be buried the right depth
+ *
+ * Returns everything the renderer needs and nothing it has to compute:
+ *   position  [x, y, z] for the piece's own origin (bottom-centre)
+ *   rotation  [rx, ry, rz]
+ *   anchors   the footprint corners in world space — what the movable contract measures
+ */
+export function garnishPlacement(params, cake, piece = { w: 0.6, h: 0.5 }) {
+  const p = { ...GARNISH_DEFAULTS, ...params };
+  const r = clampRadius(p.radius) * cake.radius;
+  const x = Math.cos(p.theta) * r;
+  const z = Math.sin(p.theta) * r;
+  const rope = Math.max(0.004, (piece.h ?? 0.5) * 0.03);
+
+  /* ⚠️ FACING OUTWARD IS THE DEFAULT, and `yaw` is added ON TOP of it rather than replacing it. A
+   * standing garnish is meant to be seen: square-on from where the customer is looking, which for a
+   * piece at angle θ means turning to face away from the middle. Storing an absolute yaw instead
+   * means every piece has to be re-aimed by hand after it is moved round the cake. */
+  const facing = -p.theta;
+
+  const scaled = { w: (piece.w ?? 0.6) * p.scale, h: (piece.h ?? 0.5) * p.scale };
+
+  if (p.mode === 'stand') {
+    return {
+      position: [x, cake.topY - insertionDepth(scaled.h, rope), z],
+      rotation: [0, facing + p.yaw, 0],
+      anchors: footprint(x, z, scaled.w, 0, facing + p.yaw, cake.topY, scaled.h),
+    };
+  }
+  // Lying flat: the piece's own "up" becomes the surface normal, and it rests ON the surface by a
+  // rope's radius rather than half-sunk in it.
+  return {
+    position: [x, cake.topY + rope, z],
+    rotation: [-Math.PI / 2, 0, facing + p.yaw],
+    anchors: footprint(x, z, scaled.w, scaled.h, facing + p.yaw, cake.topY, 0),
+  };
+}
+
+/* The four corners the contract measures. For a standing piece that is a vertical rectangle; for a
+ * lying one a horizontal one. Returned as {x,y,z} because that is what the contract's spread and
+ * centroid helpers read. */
+function footprint(x, z, w, depth, yaw, surfaceY, height) {
+  const hw = w / 2, hd = (depth || 0) / 2;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const pts = [];
+  for (const [dx, dz] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) {
+    pts.push({ x: x + dx * c - dz * s, y: surfaceY, z: z + dx * s + dz * c });
+    if (height) pts.push({ x: x + dx * c - dz * s, y: surfaceY + height, z: z + dx * s + dz * c });
+  }
+  return pts;
+}
+
+/**
+ * Drag: a target expressed as (u round the cake, v out from the middle), each 0–1, because that is
+ * what a pointer on a round surface gives you.
+ *
+ * ⚠️ IT RETURNS NEW PARAMS, never a mutated copy, and it is the same function the movable contract
+ * exercises — so "where the drag puts it" and "where the renderer draws it" cannot drift apart.
+ */
+export function garnishDragTo(params, cake, u, v) {
+  /* ⚠️ RETURNS ONLY THE KEYS IT CHANGES — the caller merges. Not a whole params object, and above
+     all not one built on GARNISH_DEFAULTS, which is how the first version was written: a drag then
+     also rewrote `scale`, `mode` and `yaw`, so moving a piece you had enlarged, laid flat or turned
+     put it silently back to standing, unturned and original size. That is the cloud's old bug in a
+     new coat — it SHRANK as it was dragged toward the rim. The movable contract failed this on the
+     first run, which is the whole reason it exists. `cloudDragTo` returns a partial for the same
+     reason; follow it rather than inventing a second convention. */
+  return { theta: u * Math.PI * 2, radius: clampRadius(v) };
+}
