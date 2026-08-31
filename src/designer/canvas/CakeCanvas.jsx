@@ -2292,7 +2292,7 @@ function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
-  selectedGarnishId = null, onGarnishSelect = null,
+  selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   orbitRef,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
@@ -2469,7 +2469,7 @@ function CakeScene({
           onPipingInstanceMove, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
-          selectedGarnishId, onGarnishSelect,
+          selectedGarnishId, onGarnishSelect, onGarnishMove,
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
@@ -2565,7 +2565,7 @@ function CakeContent({ config, scene, edit = null }) {
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
-    selectedGarnishId = null, onGarnishSelect = NOOP,
+    selectedGarnishId = null, onGarnishSelect = NOOP, onGarnishMove = null,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
     onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
@@ -2868,6 +2868,8 @@ function CakeContent({ config, scene, edit = null }) {
         tierData={tierData}
         selectedId={selectedGarnishId}
         onSelect={onGarnishSelect}
+        onMove={onGarnishMove}
+        onOrbitEnable={orbitEnableFor('__garnish__')}
       />
 
       {bottomTier && texts.map(t => {
@@ -3284,7 +3286,7 @@ export default function CakeCanvas({
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
   // Chocolate garnishes — placed pieces from the garnish studio.
-  selectedGarnishId = null, onGarnishSelect = null,
+  selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   autoRotate = false,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
@@ -3439,6 +3441,7 @@ export default function CakeCanvas({
         onAgeSelect={i => { if (!pointerRef.current.dragged) onAgeSelect?.(i); }}
         onAgeMove={onAgeMove}
         selectedGarnishId={selectedGarnishId}
+        onGarnishMove={onGarnishMove}
         onGarnishSelect={id => {
           // Guarded like the age topper: a drag that happens to end on the piece must not select it.
           if (!pointerRef.current.dragged) onGarnishSelect?.(id);

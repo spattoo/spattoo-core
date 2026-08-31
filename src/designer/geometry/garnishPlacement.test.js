@@ -75,7 +75,7 @@ describe('where a garnish sits', () => {
 /* ⚠️ THE CONTRACT. Unlike the pen — where a stroke is where the hand went and there is nothing to
  * take hold of — a garnish IS a placed object, so it is dragged and must answer for the six ways the
  * rainbow and the cloud broke in one week. */
-movableContract('garnish', {
+movableContract('chocolate_garnish', {
   positionKeys: ['theta', 'radius', 'yaw'],
   pointsOf: (p, cake) => garnishPlacement(p, cake, PIECE).anchors,
   cases: [

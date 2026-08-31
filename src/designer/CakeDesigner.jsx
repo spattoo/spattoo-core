@@ -34,6 +34,8 @@ import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
+import GarnishStudio from './garnish/GarnishStudio.jsx';
+import { garnishDragTo } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
@@ -1724,7 +1726,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, removeStroke, clearPiping, addGarnish, updateGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1803,6 +1805,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const PIPE_STAMP_THICKNESS  = +(SHELL_HEIGHT_FRAC * TIER_RADII[0] / 2).toFixed(3);   // 0.144
   // `medium` is what is in the bag — cream or chocolate. It is a KEY into MEDIA (see pipingMedia.js),
   // never a branch, and the element row's placement_config is what switches it.
+  const [garnishStudio, setGarnishStudio] = useState(false);
+  const [selectedGarnishId, setSelectedGarnishId] = useState(null);
   const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
@@ -4301,6 +4305,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        edits it without a deploy — it reads "Chocolate Drawing" today. Never write a name into a
        comment as though the code depends on it; the code depends on the key. */
     chocolate_pen: el => addPenFromRow(el, 'chocolate'),
+    /* Opens the studio rather than placing something. A garnish has to be MADE before it can be
+       put anywhere, which is the one procedural tool so far whose first act is a screen. */
+    chocolate_garnish: () => setGarnishStudio(true),
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -5845,6 +5852,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.nameBlocks?.blocks?.length) {
     decorationCards.unshift({ key: 'blocks', type: 'blocks', name: 'Letter Blocks', thumb: null, glyph: 'A' });
   }
+  /* One card per placed garnish, newest first — the same shape every other placed decoration has, so
+     a customer meets one accordion rather than a special case for chocolate. */
+  (design.garnishes ?? []).forEach(g => {
+    decorationCards.unshift({ key: `garnish-${g.id}`, type: 'garnish', garnish: g, thumb: null,
+                              name: g.name || 'Chocolate garnish' });
+  });
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
     // Named for what is in the bag. "Cream Pen" while piping chocolate was the giveaway that the
     // medium had reached the renderer and nothing else.
@@ -7207,6 +7220,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   // Cream Pen (freehand) editor body — rendered inline as the expanded body of its stack card (like
   // renderWritingEditor / renderFoilBody), NOT in a floating popup. Dismiss = collapse the card; no ✕.
+  /* A placed garnish: how it sits, how big, and away with it. Everything else about the piece —
+     its shape, its fill — was decided in the studio and is not editable here, because changing it
+     would change every cake that used the same saved garnish if it were ever a reference. It is not
+     (each design carries its own paths), but the card should not invite the idea either. */
+  function renderGarnishBody(g) {
+    if (!g) return null;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+            How it sits
+          </div>
+          <Segmented
+            label="How the garnish sits"
+            items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+            value={g.mode ?? 'stand'}
+            onChange={mode => updateGarnish(g.id, { mode })}
+            tone={primaryColor}
+          />
+        </div>
+
+        <PenSlider label="Size" value={g.scale ?? 1} min={0.4} max={2} step={0.05}
+          onChange={v => updateGarnish(g.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
+        <PenSlider label="Turn" value={g.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
+          onChange={v => updateGarnish(g.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
+
+        <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
+          Drag it on the cake to move it round.
+        </div>
+
+        <button onClick={() => { removeGarnish(g.id); setSelectedGarnishId(null); }}
+          style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                   border: '1.5px solid #E0C9C9', background: '#fff', color: '#A33',
+                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
+          Remove
+        </button>
+      </div>
+    );
+  }
+
   function renderPenBody() {
     /* ⚠️ THE COPY FOLLOWS THE MEDIUM. The card said "Cream Pen" and "Cream colour" while piping
        chocolate — the medium reached the renderer and not a word of the interface, which is the kind
@@ -8895,6 +8948,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // space in it. Reel excluded on purpose — see FitCakeToView.
               filmTight={photoFraming}
               config={canvasConfig}
+              selectedGarnishId={selectedGarnishId}
+              onGarnishSelect={setSelectedGarnishId}
+              /* The patch is only the keys the drag changed, so updateGarnish MERGES — anything the
+                 customer set (size, standing or lying) survives being moved. */
+              onGarnishMove={(id, patch) => updateGarnish(id, patch)}
               autoRotate={creamAutoRotate}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
@@ -9400,6 +9458,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()
+                           : card.type === 'garnish' ? renderGarnishBody(card.garnish)
                            : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
@@ -10260,6 +10319,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             await loadElementsIfNeeded(true);   // the LIBRARY has a new row — re-read the catalog
             setPromoting(null);
             setElementsOpen(true);              // show them where it landed
+          }}
+        />
+      )}
+
+      {/* Pipe a chocolate garnish. Saving drops the piece straight onto the cake and selects it, so
+          the next thing the customer sees is their own piece with its card open — rather than a
+          confirmation and a hunt for where it went. */}
+      {garnishStudio && (
+        <GarnishStudio
+          onCancel={() => setGarnishStudio(false)}
+          onSave={piece => {
+            const id = crypto.randomUUID();
+            addGarnish({ ...piece, id });
+            setSelectedGarnishId(id);
+            setGarnishStudio(false);
           }}
         />
       )}

@@ -1,8 +1,11 @@
 import { useMemo } from 'react';
+import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildGarnishGeometry } from '../geometry/garnishPiece.js';
-import { garnishPlacement } from '../geometry/garnishPlacement.js';
+import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
+import { useDragPlacement } from '../hooks/useDragPlacement.js';
+import { planeHit } from '../utils/raycasting.js';
 
 // ── Chocolate garnishes on the cake ──────────────────────────────────────────────────────────────
 //
@@ -16,7 +19,9 @@ import { mediumOf } from '../geometry/pipingMedia.js';
 // centre while the arch turned about the cake's axis. If you find yourself adding an offset here,
 // the offset belongs in the placement instead.
 
-export default function Garnishes({ garnishes = [], tierData = [], onSelect, selectedId = null }) {
+export default function Garnishes({
+  garnishes = [], tierData = [], onSelect, onMove, onOrbitEnable, selectedId = null,
+}) {
   const top = tierData[tierData.length - 1];
   if (!top || !garnishes.length) return null;
 
@@ -24,13 +29,15 @@ export default function Garnishes({ garnishes = [], tierData = [], onSelect, sel
   return (
     <>
       {garnishes.map(g => (
-        <Garnish key={g.id} g={g} cake={cake} onSelect={onSelect} selected={selectedId === g.id} />
+        <Garnish key={g.id} g={g} cake={cake} onSelect={onSelect} onMove={onMove}
+          onOrbitEnable={onOrbitEnable} selected={selectedId === g.id} />
       ))}
     </>
   );
 }
 
-function Garnish({ g, cake, onSelect, selected }) {
+function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
+  const { camera, gl } = useThree();
   /* Built once per piece, not per frame: the sweep walks every point of every path and a filled
      garnish is a few thousand of them. Keyed on the paths and the scale, which are the only inputs
      that change the MESH — moving or turning a piece changes where it is drawn, not what it is. */
@@ -39,6 +46,30 @@ function Garnish({ g, cake, onSelect, selected }) {
                                           worldSize: (cake.radius ?? 1.2) * 0.75 * (g.scale ?? 1) }),
     [g.paths, g.rope, g.plate, g.scale, cake.radius],
   );
+
+  /* ⚠️ THE SAME HOOK EVERY OTHER DRAGGED DECORATION USES. Press, drag, tap-versus-drag and orbit
+     suppression are one shared behaviour — AgeNumber and CreamWriting were two copies of it before
+     it was extracted, and a third would drift the same way. All this supplies is where the pointer
+     lands: the cake-top plane, converted to the polar pair `garnishDragTo` speaks. */
+  /* ⚠️ EVERY HOOK BEFORE ANY EARLY RETURN. This was written with `if (!built) return null` above
+     the drag hook, so a garnish whose paths failed to build skipped a hook that its neighbours
+     called — React treats a changed hook order as fatal and unmounts the whole tree to an error
+     boundary. `check:hooks` caught it; the guard is below, after every hook has run. */
+  const { grabProps } = useDragPlacement({
+    camera, gl, onOrbitEnable,
+    onClick: () => onSelect?.(g.id),
+    onMove: onMove ? patch => onMove(g.id, patch) : null,
+    resolve: ray => {
+      const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -cake.topY));
+      if (!hit) return null;
+      // Screen point → angle round the cake and fraction out from the middle. Clamping lives in
+      // garnishDragTo, so the rim rule is stated once and the contract can ask about it.
+      const u = Math.atan2(hit.z, hit.x) / (Math.PI * 2);
+      const v = Math.hypot(hit.x, hit.z) / (cake.radius || 1);
+      return garnishDragTo(g, cake, u, v);
+    },
+  });
+
   if (!built) return null;
 
   const place = garnishPlacement(g, cake, built.size);
@@ -50,7 +81,7 @@ function Garnish({ g, cake, onSelect, selected }) {
       position={place.position}
       rotation={place.rotation}
       castShadow
-      onPointerDown={e => { if (onSelect) { e.stopPropagation(); onSelect(g.id); } }}
+      {...grabProps}
     >
       {/* Set chocolate: the same material the pen uses, so a garnish and a piped line on the same
           cake read as the same substance rather than as two different browns. */}
