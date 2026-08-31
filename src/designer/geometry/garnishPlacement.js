@@ -17,7 +17,11 @@ import { insertionDepth } from './garnishPiece.js';
 // size — which they do, constantly, and which is the bug this shape of storage prevents.
 
 export const GARNISH_DEFAULTS = {
-  theta: 0,          // radians round the cake
+  /* ⚠️ π/2 IS THE FRONT OF THE CAKE, and a new piece belongs there. Pieces face outward from the
+   * middle, so one placed at angle 0 — the right-hand side — arrives EDGE-ON to a customer looking
+   * at the front, a sliver they have to rotate the cake to see. The first sight of a piece you just
+   * drew should be the piece, not its edge. */
+  theta: Math.PI / 2,     // radians round the cake; π/2 faces the default camera
   radius: 0.55,      // fraction of the tier radius, 0 = centre
   yaw: 0,            // the piece's own turn about vertical, on top of facing outward
   mode: 'stand',     // 'stand' | 'lie'

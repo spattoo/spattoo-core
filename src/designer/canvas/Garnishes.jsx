@@ -92,9 +92,15 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
     >
       {/* Set chocolate: the same material the pen uses, so a garnish and a piped line on the same
           cake read as the same substance rather than as two different browns. */}
+      {/* ⚠️ SET CHOCOLATE IS WET-LOOKING, and the piece was reading as dull grey-brown. Two reasons:
+          the gloss default was the DRIP's 0.85, tuned for a thick pour where the shine is broad,
+          and a filigree is a thin rope whose highlight is a narrow line — it needs the harder
+          finish to catch anything at all. And `envMapIntensity` was left at 1, so the piece
+          reflected the scene far more weakly than the cake beside it. */}
       <meshPhysicalMaterial
         side={THREE.DoubleSide}
-        {...medium.material({ softness: g.gloss ?? 0.85 }, g.color ?? '#4A2C1B')}
+        {...medium.material({ softness: g.gloss ?? 0.96 }, g.color ?? '#4A2C1B')}
+        envMapIntensity={1.5}
         emissive={selected ? '#ffffff' : '#000000'}
         emissiveIntensity={selected ? 0.06 : 0}
       />

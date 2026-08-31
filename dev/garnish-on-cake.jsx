@@ -15,8 +15,8 @@ const design = {
             topPipings: [], bottomPipings: [], creamLayers: [] }],
   texts: [], ages: [], stickers: [], writings: [], piping: [],
   garnishes: [
-    { id: 'a', name: 'Leaf', paths, rope: 6, plate: 420, theta: -1.2, radius: 0.55, mode: 'stand', scale: 1.6 },
-    { id: 'b', name: 'Leaf', paths, rope: 6, plate: 420, theta: 1.6,  radius: 0.55, mode: 'lie' },
+    { id: 'a', name: 'Leaf', paths, rope: 6, plate: 420, radius: 0.5, mode: 'stand', scale: 1.3 },
+    { id: 'b', name: 'Leaf', paths, rope: 6, plate: 420, theta: 3.4, radius: 0.55, mode: 'lie' },
   ],
 };
 
