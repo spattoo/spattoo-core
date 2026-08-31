@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperShapes, pieceCount, components } from './topperShape.js';
+import { topperShapes, pieceCount, components, bridgeLoose } from './topperShape.js';
 
 // ── An acrylic topper has to be ONE piece ────────────────────────────────────────────────────────
 //
@@ -149,5 +149,54 @@ describe('components — naming what is loose', () => {
     const { parts } = build('Happy Birthday', { baseline: { thickness: 0.07 }, legs: { count: 3 } });
     const seen = components(parts).flat().sort((a, b) => a - b);
     expect(seen).toEqual(parts.map((_, i) => i));
+  });
+});
+
+describe('bridgeLoose — making an i-dot part of the topper', () => {
+  it('joins the stray dot, taking Amelia to one piece', () => {
+    // The whole reason this exists: without it every name containing an i or a j comes back loose,
+    // which is most names, and the feature would only work with scripts nobody has sourced yet.
+    const { parts } = build('Amelia', { baseline: { thickness: 0.09 } });
+    expect(pieceCount(parts)).toBe(2);
+    const joined = [...parts, ...bridgeLoose(parts, { width: 0.02 })];
+    expect(pieceCount(joined)).toBe(1);
+  });
+
+  it('does nothing when there is nothing to join', () => {
+    const { parts } = build('Amy', { baseline: { thickness: 0.1 } });
+    expect(pieceCount(parts)).toBe(1);
+    expect(bridgeLoose(parts)).toEqual([]);
+  });
+
+  it('drops the stem DOWNWARD from the stray part, not up from the bar', () => {
+    // A stem drawn from the bar to the dot would cross the letter it is joining and read as a
+    // stripe through the i. It has to start at the dot and stop at the first thing beneath it.
+    const { parts } = build('Amelia', { baseline: { thickness: 0.09 } });
+    const stray = components(parts)[1][0];
+    const strayLow = Math.min(...parts[stray].outer.map(p => p.y));
+    const [bridge] = bridgeLoose(parts, { width: 0.02 });
+    const top = Math.max(...bridge.outer.map(p => p.y));
+    const bottom = Math.min(...bridge.outer.map(p => p.y));
+    expect(top).toBeGreaterThanOrEqual(strayLow - 1e-6);   // reaches the dot
+    expect(bottom).toBeLessThan(strayLow);                 // and goes down from it
+  });
+
+  it('sits under the stray part it is joining', () => {
+    const { parts } = build('Amelia', { baseline: { thickness: 0.09 } });
+    const stray = components(parts)[1][0];
+    const sx = parts[stray].outer.map(p => p.x);
+    const [bridge] = bridgeLoose(parts, { width: 0.02 });
+    const bx = bridge.outer.map(p => p.x);
+    const mid = (Math.min(...bx) + Math.max(...bx)) / 2;
+    expect(mid).toBeGreaterThanOrEqual(Math.min(...sx) - 1e-6);
+    expect(mid).toBeLessThanOrEqual(Math.max(...sx) + 1e-6);
+  });
+
+  it('joins several strays, not just the first', () => {
+    // "iii" is three dots and three stems: six contours, three of them floating.
+    const { parts } = build('iii', { baseline: { thickness: 0.09 } });
+    const before = pieceCount(parts);
+    expect(before).toBeGreaterThan(1);
+    expect(pieceCount([...parts, ...bridgeLoose(parts, { width: 0.02 })])).toBe(1);
   });
 });

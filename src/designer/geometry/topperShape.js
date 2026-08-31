@@ -171,6 +171,68 @@ export function components(parts) {
   return [...groups.values()].sort((a, b) => b.length - a.length);
 }
 
+/* ── Joining up what floats ──────────────────────────────────────────────────────────────────────
+ *
+ * The dot on an i is its own contour and touches nothing, so every i and j comes back loose. That
+ * is not a font to avoid — it is most fonts — and rejecting them would leave the feature usable
+ * only with scripts nobody has sourced yet.
+ *
+ * So each stray group gets a hairline stem dropped straight down from its lowest point until it
+ * meets material below, and a rectangle spans the gap. Real acrylic toppers do exactly this: look
+ * closely at a cut one and the tittle is joined to its stem by a sliver.
+ *
+ * ⚠️ It changes the letterform, slightly and visibly, and that is the honest cost. `width` is the
+ * lever: thin enough to read as a join, thick enough to survive being cut and handled. Anything
+ * under about a millimetre of real acrylic snaps, which is why this is a fraction of the topper's
+ * height rather than a fixed number — the object gets scaled on the way to the cake.
+ *
+ * Nothing is bridged when the parts are already one piece, and a group with nothing beneath it is
+ * left alone rather than given a stem to nowhere — the count still reports it, and the author still
+ * sees it in red.
+ */
+export function bridgeLoose(parts, { width = 0.02 } = {}) {
+  const groups = components(parts);
+  if (groups.length <= 1) return [];
+
+  const main = new Set(groups[0]);
+  const bridges = [];
+  for (const g of groups.slice(1)) {
+    // The lowest point of the stray group, and the x it sits at.
+    let low = Infinity, lowX = 0;
+    for (const i of g) for (const q of parts[i].outer) if (q.y < low) { low = q.y; lowX = q.x; }
+    // What is directly beneath it, ignoring its own group — the top of the nearest material below.
+    const below = highestBelow(parts, lowX, low, g);
+    if (below == null) continue;                      // nothing under it; leave it flagged, not faked
+    bridges.push({
+      kind: 'bridge',
+      outer: rect(lowX - width / 2, below - width * 0.25, width, (low - below) + width * 0.5),
+      holes: [],
+    });
+  }
+  return bridges;
+}
+
+// The highest y at or below `fromY` in this column, excluding the group doing the asking.
+function highestBelow(parts, x, fromY, exclude) {
+  const skip = new Set(exclude);
+  let best = null;
+  for (let i = 0; i < parts.length; i++) {
+    if (skip.has(i)) continue;
+    const p = parts[i];
+    const b = bbox(p.outer);
+    if (x < b.x0 || x > b.x1) continue;
+    for (let k = 0; k < p.outer.length; k++) {
+      const a = p.outer[k], c = p.outer[(k + 1) % p.outer.length];
+      if ((a.x <= x && c.x >= x) || (c.x <= x && a.x >= x)) {
+        const t = (x - a.x) / ((c.x - a.x) || 1e-12);
+        const y = a.y + (c.y - a.y) * t;
+        if (y <= fromY && (best == null || y > best)) best = y;
+      }
+    }
+  }
+  return best;
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────
 
 const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
