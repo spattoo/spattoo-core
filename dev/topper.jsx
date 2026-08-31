@@ -5,6 +5,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
+import creamFonts from '../src/designer/geometry/creamFonts.json';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useThree } from '@react-three/fiber';
 import { topperShapes, components, bridgeLoose } from '../src/designer/geometry/topperShape.js';
@@ -30,7 +31,20 @@ import { SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
  * answer is a judgement somebody has to make with their eyes.
  */
 
-const FONT = new FontLoader().parse(helvetikerBold);
+/* Block outlines and centreline scripts side by side, because the choice between them is the whole
+ * question. The block face is the worst case for cutting — nothing touches anything — and the
+ * scripts are what the market actually sells. */
+const BLOCK = new FontLoader().parse(helvetikerBold);
+const FACES = {
+  ems_allure: 'Allure (script)',
+  ems_felix: 'Felix (script)',
+  ems_elfin: 'Elfin (script)',
+  hershey_script_1: 'Cursive (script)',
+  hershey_goth_english: 'Gothic',
+  ems_nixish_italic: 'Nixish It. (hand)',
+  block: 'Helvetiker Bold (block)',
+};
+const faceOf = (k) => (k === 'block' ? BLOCK : creamFonts[k]);
 
 /* ⚠️ A LOCAL environment, not the designer's SceneEnv.
  *
@@ -63,10 +77,10 @@ const FINISHES = {
   white:  { label: 'Gloss white',   color: '#f2f0ec', metalness: 0.1,  roughness: 0.08 },
 };
 
-function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop, bury, rows, lineGap }) {
+function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop, bury, rows, lineGap, face, stroke, fitAspect }) {
   const { geos, groups, standY } = useMemo(() => {
-    const t = topperShapes(FONT, text, {
-      height, weight, lines: rows || 'auto', lineGap,
+    const t = topperShapes(faceOf(face), text, {
+      height, weight, lines: rows || 'auto', lineGap, stroke, fitAspect,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
@@ -97,7 +111,7 @@ function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickne
     const lowest = Math.min(...parts.flatMap(p => p.outer.map(q => q.y)));
     const foot = t.legs.length ? lowest : t.baselineY;
     return { geos, groups: grouped, standY: foot + (t.legs.length ? bury : 0) };
-  }, [text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, bury, rows, lineGap]);
+  }, [text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, bury, rows, lineGap, face, stroke, fitAspect]);
 
   const f = FINISHES[finish];
   return (
@@ -143,6 +157,10 @@ const val = { fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 42, textAl
 
 function App() {
   const [text, setText]     = useState('Amelia');
+  const [face, setFace]     = useState('ems_allure');
+  // 0.12em puts the stroke at about a tenth of the letter, which is what the toppers in the market
+  // measure. Below that it is a hairline; above it the counters in a, p and B start closing up.
+  const [stroke, setStroke] = useState(0.12);
   const [span, setSpan]     = useState(0.55);   // share of the cake's width, NOT a letter height
   const [rows, setRows]     = useState(0);   // 0 = let the phrase decide
   // 1.2, not 1.0: helvetiker's cap is 0.72em and its descender reaches -0.21, so at 1.0 the 'p'
@@ -168,23 +186,48 @@ function App() {
    *
    * `topperShapes` sizes by height, so this measures the word at height 1 and divides — the aspect
    * ratio is a property of the text and the font, and one build is enough to learn it. */
-  const height = useMemo(() => {
-    const w1 = topperShapes(FONT, text, { height: 1, weight, lines: rows || 'auto', lineGap }).width;
-    return w1 > 0 ? (CAKE_R * 2 * span) / w1 : 0.5;
-  }, [text, weight, span, rows, lineGap]);
-  const barThick = height * barRatio;
+  /* ⚠️ ONE number, and it is physical: the span across the cake divided by the sheet thickness.
+   *
+   * Nothing narrower than the sheet is thick should be cut, so `fitAspect` is exactly that ratio and
+   * the module stacks rows until the thinnest stroke clears it. The threshold I had before was 12mm
+   * of letter height, which I invented — this one is measurable with a caliper. */
+  const fitAspect = (CAKE_R * 2 * span * MM_PER_UNIT) / (thickness * MM_PER_UNIT);
+
+  /* One probe at height 1, and EVERY size read off it.
+   *
+   * The bar wants the letter height, the letter height wants the finished build, and the finished
+   * build wants the bar — a cycle, and the reason the first attempt at this fix referenced `report`
+   * three lines above where it was declared.
+   *
+   * There is no cycle in the geometry, only in how I reached for it. `capHeight` and `feature` are
+   * measured from the glyph rows, which are laid out before the bar exists, so they scale linearly
+   * with `height` and one build with no bar tells you all three. */
+  const fit = useMemo(() => {
+    const p = topperShapes(faceOf(face), text,
+      { height: 1, weight, lines: rows || 'auto', lineGap, stroke, fitAspect });
+    const height = p.width > 0 ? (CAKE_R * 2 * span) / p.width : 0.5;
+    return { height, cap: p.capHeight * height, feature: p.feature * height };
+  }, [text, weight, span, rows, lineGap, face, stroke, fitAspect]);
+  const { height } = fit;
+
+  // ⚠️ A share of the LETTER, not of the block. Sized off the block it doubles the moment a second
+  // row appears, which is how a 2mm bar became a 6.8mm plinth with nobody touching its slider.
+  const barThick = fit.cap * barRatio;
 
   // The same call the mesh makes, so the reported count is the picture's count.
   const report = useMemo(() => {
-    const t = topperShapes(FONT, text, {
-      height, weight, lines: rows || 'auto', lineGap,
+    const t = topperShapes(faceOf(face), text, {
+      height, weight, lines: rows || 'auto', lineGap, stroke, fitAspect,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
-    if (!t.parts?.length) return { n: 0, width: 0, cap: 0, rows: [] };
+    if (!t.parts?.length) return { n: 0, width: 0, cap: 0, rows: [], feature: 0 };
     const parts = bridge ? [...t.parts, ...bridgeLoose(t.parts, { width: height * 0.022 })] : t.parts;
-    return { n: components(parts).length, width: t.width, cap: t.capHeight, rows: t.rows };
-  }, [text, height, weight, bar, barThick, legCount, legLen, bridge, rows, lineGap]);
+    return { n: components(parts).length, width: t.width, cap: t.capHeight, rows: t.rows, feature: t.feature };
+  }, [text, height, weight, bar, barThick, legCount, legLen, bridge, rows, lineGap, face, stroke, fitAspect]);
+
+  // One test, both faces: is the narrowest acrylic in the design at least as wide as the sheet?
+  const thin = report.feature > 0 && report.feature < thickness;
 
   const slider = (label, v, set, min, max, step, fmt = x => x.toFixed(2)) => (
     <div style={row}>
@@ -209,6 +252,19 @@ function App() {
                style={{ width: '100%', padding: '8px 10px', fontSize: 14, fontFamily: 'inherit',
                         border: '1.5px solid #D8E0DA', borderRadius: 8, marginBottom: 14 }} />
 
+        <div style={{ ...row, marginBottom: 12 }}>
+          <span style={lab}>Face</span>
+          <select value={face} onChange={e => setFace(e.target.value)}
+                  style={{ flex: 1, padding: '5px 8px', fontFamily: 'inherit', fontSize: 12,
+                           border: '1.5px solid #D8E0DA', borderRadius: 7 }}>
+            {Object.entries(FACES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        {face !== 'block' && slider('Stroke', stroke, setStroke, 0.05, 0.45, 0.005,
+          /* ⚠️ Measured, not computed as stroke x height. `height` is the whole stacked BLOCK —
+             over two ems once there are two rows — so the arithmetic version read 6.3mm beside a
+             panel saying 2.6mm for the same stroke. One of those was measured; use that one. */
+          () => mm(fit.feature))}
         {slider('Across cake', span, setSpan, 0.2, 1, 0.01, x => `${Math.round(x * 100)}%`)}
         {slider('Rows', rows, setRows, 0, 3, 1, x => (x === 0 ? 'auto' : String(x)))}
         {slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05)}
@@ -220,7 +276,7 @@ function App() {
           <input type="checkbox" checked={bar} onChange={e => setBar(e.target.checked)} />
           <span style={{ fontSize: 11, color: '#8a8a8a' }}>a base the letters sit on</span>
         </div>
-        {bar && slider('· thickness', barRatio, setBR, 0.05, 0.3, 0.01, x => mm(height * x))}
+        {bar && slider('· thickness', barRatio, setBR, 0.05, 0.3, 0.01, x => mm(fit.cap * x))}
 
         {slider('Legs', legCount, setLC, 0, 4, 1, x => String(x))}
         {legCount > 0 && slider('· length', legLen, setLL, 0.15, 0.9, 0.02, x => mm(x))}
@@ -250,14 +306,14 @@ function App() {
             ? ' — cuts as one topper.'
             : ' — the red parts would arrive loose. Turn on Bridge, add the Bar, or raise Weight.'}
           <div style={{ marginTop: 4, color: report.width > CAKE_R * 2 ? '#8A5A1E' : '#8a8a8a' }}>
-            {mm(report.width)} wide, {mm(report.cap)} letters
+            {mm(report.width)} wide, {mm(report.cap)} letters, {mm(report.feature)} thinnest
             {report.width > CAKE_R * 2 && ' — wider than the cake'}
           </div>
           {/* Below about 12mm the strokes are thinner than the sheet they are cut from. That is the
               number that decides whether a phrase needs stacking, so it is stated, not implied. */}
-          <div style={{ marginTop: 2, color: report.cap * MM_PER_UNIT < 12 ? '#8A5A1E' : '#8a8a8a' }}>
+          <div style={{ marginTop: 2, color: thin ? '#8A5A1E' : '#8a8a8a' }}>
             {report.rows.length > 1 ? report.rows.join(' / ') : '\u00a0'}
-            {report.cap * MM_PER_UNIT < 12 && ' — letters thinner than the sheet; add a row'}
+            {thin && ` — thinner than the ${mm(thickness)} sheet; widen the stroke or the span`}
           </div>
         </div>
       </div>
@@ -270,7 +326,8 @@ function App() {
           <Cake />
           <Topper text={text} height={height} weight={weight} bar={bar} barThick={barThick}
                   legCount={legCount} legLen={legLen} thickness={thickness} bridge={bridge} finish={finish}
-                  cakeTop={0.55} bury={Math.min(bury, legLen)} rows={rows} lineGap={lineGap} />
+                  cakeTop={0.55} bury={Math.min(bury, legLen)} rows={rows} lineGap={lineGap}
+                  face={face} stroke={stroke} fitAspect={fitAspect} />
           <OrbitControls target={[0, 0.62, 0]} />
         </Canvas>
       </div>

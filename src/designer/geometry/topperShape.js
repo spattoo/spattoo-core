@@ -44,7 +44,8 @@ export function topperShapes(font, text, {
   legs = null,              // { count, width, length, inset } — prongs below, or null for none
   lines = 'auto',           // rows to stack over, or 'auto'; '\n' in the text always wins
   lineGap = 1,              // baseline to baseline, in ems
-  fitAspect = 7,            // 'auto' stacks until width : letter-height is no worse than this
+  stroke = 0.1,             // centreline faces only: the monoline's width, in ems
+  fitAspect = 28,           // 'auto' stacks until width : narrowest-acrylic is no worse than this
   maxLines = 3,
 } = {}) {
   const clean = String(text ?? '')
@@ -66,8 +67,8 @@ export function topperShapes(font, text, {
    * Rows are laid out at size 1 with each row centred on its own outline, then the whole block is
    * scaled together — so `height` keeps meaning the height of the finished object and every caller
    * that sized a single line still gets what it asked for. */
-  const rows = lines === 'auto' ? autoRows(font, clean, fitAspect, maxLines)
-                                : buildRows(font, splitRows(font, clean, lines));
+  const rows = lines === 'auto' ? autoRows(font, clean, fitAspect, maxLines, stroke)
+                                : buildRows(font, splitRows(font, clean, lines), stroke);
   if (!rows.length) return EMPTY;
 
   // Centre each row on itself and drop it a line — ragged rows read as centred, which is how these
@@ -156,6 +157,7 @@ export function topperShapes(font, text, {
   return {
     shapes, parts, glyphs, width, height, baselineY, legs: legShapes,
     rows: rows.map(r => r.text), rowHeight: lineGap * scale, capHeight,
+    feature: featureEm(rows, font, stroke) * scale,
   };
 }
 
@@ -167,37 +169,59 @@ export function topperShapes(font, text, {
  * because the caller has to know to ask. Somebody typing "Happy Birthday" should not have to learn
  * what a row is — the shape of the phrase decides this, not the person.
  *
- * The rule is the ratio of the topper's WIDTH to its LETTER height, which is the one number that
- * survives not knowing how big the cake is. A topper is cut to a span across the cake, so
- * letter = span x cap/width: hold width:cap under a limit and the letters clear a floor at any size.
- * At 55% of a 6-inch cake, 7 works out to roughly a 12mm letter — about where a bold stem stops
- * being thicker than the 3mm sheet it is cut from and the topper turns into a comb.
+ * ── THE RULE IS THE NARROWEST BIT OF ACRYLIC ───────────────────────────────────────────────────
+ * The first version of this measured LETTER HEIGHT and stacked below 12mm, which was a number I
+ * made up. It reads well on a block face and is wrong on a monoline script, where the letters can
+ * be tall and the stroke still a hairline — a script's bounding box is mostly ascender and
+ * descender loops, so the box says the letters are big while the thing that gets cut is not.
+ *
+ * What actually breaks in the post is any piece of acrylic NARROWER THAN THE SHEET IS THICK, so
+ * that is what gets measured: `featureEm`, the thinnest stroke in the design. On a centreline face
+ * that is the monoline width exactly; on an outline face it is estimated from the cap, since
+ * measuring a stem properly means walking the outline and a fifth of the cap is what a bold sans
+ * actually runs.
+ *
+ * Expressed as width : feature so it survives not knowing the cake's size — the caller divides its
+ * span in millimetres by the sheet thickness and passes one number.
  *
  * Fewest rows that clear the bar, and it stops early when there are no more words to break on, so a
  * long single word stays on one line rather than being chopped.
  */
-function autoRows(font, clean, fitAspect, maxLines) {
+function autoRows(font, clean, fitAspect, maxLines, stroke) {
   const cap = Math.max(1, Math.round(maxLines) || 1);
   let best = [];
   for (let n = 1; n <= cap; n++) {
-    const rows = buildRows(font, splitRows(font, clean, n));
+    const rows = buildRows(font, splitRows(font, clean, n), stroke);
     if (!rows.length) break;
     if (rows.length < n) return best.length ? best : rows;   // out of words to break on
     best = rows;
     if (!(fitAspect > 0)) break;
     const w = Math.max(...rows.map(r => r.wEm));
-    const h = Math.max(...rows.map(r => r.capEm));
-    if (h > 0 && w / h <= fitAspect) break;
+    const f = featureEm(rows, font, stroke);
+    if (f > 0 && w / f <= fitAspect) break;
   }
   return best;
 }
 
 // One row's outlines in ems with the baseline at y = 0, plus what the balancer and the fit rule
 // need to measure it. Rows of nothing but spaces produce no glyphs and are dropped.
-function buildRows(font, rowText) {
+/* The narrowest piece of acrylic in the design, in ems.
+ *
+ * Exact for a monoline — the stroke IS the width between the two cuts. For an outline face there is
+ * no cheap exact answer (the true minimum is the thinnest stem, which needs the outline walked), and
+ * a fifth of the cap height is what a bold sans stem measures, so that is the estimate. Called out
+ * as an estimate rather than dressed up, because the number decides whether a design ships. */
+const STEM_OF_CAP = 0.2;
+function featureEm(rows, font, stroke) {
+  if (isCentreline(font)) return Math.max(1e-4, stroke || 0.1);
+  return Math.max(...rows.map(r => r.capEm)) * STEM_OF_CAP;
+}
+
+function buildRows(font, rowText, stroke) {
   const rows = [];
   for (const text of rowText) {
-    const o = font.generateShapes(text, 1).map(sh => ({
+    const o = isCentreline(font) ? strokeOutlines(font, text, stroke)
+                                 : font.generateShapes(text, 1).map(sh => ({
       outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y })),
       holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y }))),
     }));
@@ -206,6 +230,103 @@ function buildRows(font, rowText) {
     rows.push({ text, glyphs: o, capEm: b.y1 - b.y0, wEm: b.x1 - b.x0, dx: -(b.x0 + b.x1) / 2 });
   }
   return rows;
+}
+
+/* ── Monoline scripts, from the faces the cream pen already uses ─────────────────────────────────
+ *
+ * ⚠️ Not a new font library. `creamFonts.json` already vendors four public-domain SCRIPT faces —
+ * Allure, Felix, Elfin, Cursive — and they are the right raw material for a topper twice over:
+ *
+ *   - They are CENTRELINES, not outlines. Sweeping a constant width along a centreline is exactly a
+ *     monoline script, which is what the flat acrylic toppers in the market are set in. An outline
+ *     font gives you a typeface with thicks and thins; this gives you the ribbon.
+ *   - A joined script's strokes OVERLAP, so the word is one piece by construction. The block font
+ *     needs a bar and a stem under every floating dot to survive being cut; a script does not.
+ *
+ * The stroke width becomes a real control rather than a styling flourish: it is the acrylic between
+ * two cuts, and it is the difference between a topper and a comb.
+ *
+ * One ring per stroke, so `components` sees strokes touching and the piece count stays honest.
+ */
+const isCentreline = (font) => !!font && !font.generateShapes && !!font.glyphs;
+
+// Missing lowercase falls back to uppercase and back again, so every name renders rather than
+// silently dropping letters — the same bargain creamText.js makes.
+const glyphOf = (face, ch) =>
+  face.glyphs[ch] || face.glyphs[ch.toUpperCase?.()] || face.glyphs[ch.toLowerCase?.()] || null;
+
+function strokeOutlines(face, text, width) {
+  const em = face.em || 1000;
+  const r = Math.max(1e-4, (width || 0.1) / 2) * em;    // half-width, in the face's own units
+  const out = [];
+  let penX = 0;
+  for (const ch of String(text)) {
+    if (ch === ' ') { penX += face.space ?? em * 0.3; continue; }
+    const g = glyphOf(face, ch);
+    if (!g) { penX += face.space ?? em * 0.3; continue; }
+    for (const stroke of g.s) {
+      const ring = ribbon(stroke.map(([x, y]) => ({ x: x + penX, y })), r);
+      if (ring.length > 2) out.push({ outer: ring.map(p => ({ x: p.x / em, y: p.y / em })), holes: [] });
+    }
+    penX += g.a;
+  }
+  return out;
+}
+
+/* A polyline swept to a closed ring of constant width, with round ends.
+ *
+ * Joins use the AVERAGED normal rather than one per segment: per-segment offsets leave a notch on
+ * the outside of every bend, and these faces are sampled densely enough that a script's curve would
+ * come out visibly faceted. The mitre is capped at 3r so a hairpin cannot fire a spike off into the
+ * next letter — the cost is a clipped corner, which is what a cutter would make of it anyway.
+ */
+function ribbon(points, r) {
+  const P = [];
+  for (const p of points) {
+    const last = P[P.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 1e-9) P.push(p);
+  }
+  if (P.length === 0) return [];
+  if (P.length === 1) return arcPoints(P[0], r, 0, Math.PI * 2, 12);
+
+  const seg = [];
+  for (let i = 0; i < P.length - 1; i++) {
+    const dx = P[i + 1].x - P[i].x, dy = P[i + 1].y - P[i].y;
+    const l = Math.hypot(dx, dy) || 1;
+    seg.push({ x: -dy / l, y: dx / l });               // left-hand unit normal
+  }
+
+  const nAt = (i) => {
+    const a = seg[Math.max(0, i - 1)], b = seg[Math.min(seg.length - 1, i)];
+    const mx = a.x + b.x, my = a.y + b.y;
+    const l = Math.hypot(mx, my);
+    if (l < 1e-6) return { x: b.x, y: b.y };           // a full reversal; take one side
+    const scale = Math.min(3, 2 / l);                  // 2/|m| is the exact mitre; 3 caps the spike
+    return { x: (mx / l) * (l / 2) * scale, y: (my / l) * (l / 2) * scale };
+  };
+
+  const left = [], right = [];
+  for (let i = 0; i < P.length; i++) {
+    const n = nAt(i);
+    left.push({ x: P[i].x + n.x * r, y: P[i].y + n.y * r });
+    right.push({ x: P[i].x - n.x * r, y: P[i].y - n.y * r });
+  }
+
+  // Round both ends, so a stroke terminates in a pen shape and not a chisel.
+  const end = P[P.length - 1], endN = seg[seg.length - 1];
+  const start = P[0], startN = seg[0];
+  const capEnd = arcPoints(end, r, Math.atan2(endN.y, endN.x), Math.atan2(endN.y, endN.x) - Math.PI, 6);
+  const capStart = arcPoints(start, r, Math.atan2(-startN.y, -startN.x), Math.atan2(-startN.y, -startN.x) - Math.PI, 6);
+  return [...left, ...capEnd, ...right.reverse(), ...capStart];
+}
+
+function arcPoints(c, r, a0, a1, n) {
+  const pts = [];
+  for (let i = 1; i < n; i++) {
+    const a = a0 + (a1 - a0) * (i / n);
+    pts.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
+  }
+  return pts;
 }
 
 /* ── Where the line breaks go ────────────────────────────────────────────────────────────────────
@@ -268,6 +389,12 @@ function splitRows(font, clean, lines) {
  * of outline builds to answer a question the font already knows: `ha` is the advance width three.js
  * itself sums when it lays the text out. Same number, no geometry. */
 function advanceOf(font, str) {
+  if (isCentreline(font)) {
+    const em = font.em || 1000;
+    let w = 0;
+    for (const ch of String(str)) w += (glyphOf(font, ch)?.a ?? font.space ?? em * 0.3) / em;
+    return w;
+  }
   const d = font?.data;
   if (!d?.glyphs) return String(str).length;          // a font we cannot measure: fall back to count
   const s = 1 / (d.resolution || 1000);
