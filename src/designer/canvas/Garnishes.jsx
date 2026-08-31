@@ -26,10 +26,17 @@ export default function Garnishes({
   if (!top || !garnishes.length) return null;
 
   const cake = { radius: top.radius, topY: top.baseY + top.height, boardY: 0.1 };
+  const bottom = tierData[0] ?? top;
   return (
     <>
       {garnishes.map(g => (
-        <Garnish key={g.id} g={g} cake={cake} onSelect={onSelect} onMove={onMove}
+        /* ⚠️ THE BOARD IS ITS OWN SURFACE, at its own height and its own reach. Handing a board piece
+           the tier's numbers leaves it floating above the cake at the tier's edge — it is on the
+           board, so the board is what it must be measured against. */
+        <Garnish key={g.id} g={g} onSelect={onSelect} onMove={onMove}
+          cake={g.zone === 'board'
+            ? { radius: (bottom.radius ?? top.radius) * 1.35, topY: 0.1, boardY: 0.1 }
+            : cake}
           onOrbitEnable={onOrbitEnable} selected={selectedId === g.id} />
       ))}
     </>

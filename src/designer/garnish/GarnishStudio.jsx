@@ -22,7 +22,6 @@ import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
 // decide for the baker; the same rule the photo editor settled on.
 
 export const PLATE = 420;          // the studio's own square, in its own units
-const ROPE = 6;                    // nozzle rope width on the plate — the piece's real thickness
 const INK = '#4A2C1B';
 const SURFACE = '#F6F4F0';
 
@@ -30,11 +29,23 @@ const SURFACE = '#F6F4F0';
  *  into geometry. Order is piping order, so a build guide can read it as instructions. */
 export const piecePaths = strokes => strokes.flatMap(s => [s.path, ...s.fills]);
 
-export default function GarnishStudio({ initialName = '', onSave, onCancel }) {
+/* ⚠️ THE COLOUR CONTROL IS PASSED IN, not built here. `ColorWheel` is THE colour control for every
+ * colour a customer picks (INVARIANTS #3) and it lives inside CakeDesigner; a row of hand-rolled
+ * chocolate swatches would be a second answer to a settled question, which is exactly the mistake
+ * the letter-blocks card made and was caught on within the hour. */
+export default function GarnishStudio({
+  initialName = '', color = INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
+  onSave, onCancel,
+}) {
+  const ROPE = ropeProp;
   const ref = useRef(null);
   const [trail, setTrail] = useState([]);          // the live stroke, as state — see the note below
   const [strokes, setStrokes] = useState([]);
   const [name, setName] = useState(initialName);
+  /* Where it goes and how it sits, decided HERE rather than after the fact. The piece is finished
+     when it leaves this screen, and "where does it live" is the last question about it. */
+  const [zone, setZone] = useState('top');
+  const [mode, setMode] = useState('stand');
   const isMobile = useNarrow();
   const drawing = trail.length > 0;
 
@@ -57,7 +68,8 @@ export default function GarnishStudio({ initialName = '', onSave, onCancel }) {
       if (!pts || pts.length < 2) return;
       x.beginPath();
       pts.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
-      x.lineWidth = width * k; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = colour;
+      x.lineWidth = width * k; x.lineCap = 'round'; x.lineJoin = 'round';
+      x.strokeStyle = colour === INK ? color : colour;
       x.stroke();
     };
 
@@ -67,7 +79,9 @@ export default function GarnishStudio({ initialName = '', onSave, onCancel }) {
     }
     // Wet, still being piped: lighter, so in-progress reads differently from finished.
     if (drawing) line(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
-  }, [strokes, trail, drawing]);
+    // ⚠️ colour and ROPE are dependencies too: without them the plate keeps the shade and the line
+    // width it was first painted with, and the controls appear to do nothing until the next stroke.
+  }, [strokes, trail, drawing, color, ROPE]);
 
   // ── Capture ───────────────────────────────────────────────────────────────────────────────────
   const at = e => {
@@ -110,11 +124,14 @@ export default function GarnishStudio({ initialName = '', onSave, onCancel }) {
         <>
           <button onClick={onCancel} style={btn(false)}>Cancel</button>
           <button
-            onClick={() => onSave?.({ name: name.trim() || 'Garnish', paths: piecePaths(strokes), rope: ROPE, plate: PLATE })}
+            onClick={() => onSave?.({
+              name: name.trim() || 'Chocolate piece', paths: piecePaths(strokes),
+              rope: ROPE, plate: PLATE, color, zone, mode,
+            })}
             disabled={!strokeCount}
             style={btn(true, !strokeCount)}
           >
-            Save to my garnishes
+            Add to the cake
           </button>
         </>
       }
@@ -135,6 +152,45 @@ export default function GarnishStudio({ initialName = '', onSave, onCancel }) {
         />
 
         <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {colorControl && (
+            <div>
+              <span style={labelStyle}>Chocolate colour</span>
+              <div style={{ marginTop: 5 }}>{colorControl}</div>
+            </div>
+          )}
+
+          <label style={{ display: 'block' }}>
+            <span style={labelStyle}>Line thickness</span>
+            <input type="range" min={3} max={14} step={1} value={ROPE}
+              onChange={e => onRopeChange?.(Number(e.target.value))}
+              style={{ width: '100%', marginTop: 4, accentColor: color }} />
+          </label>
+
+          {/* ⚠️ SIDE IS NOT OFFERED, and that is a real limit rather than an oversight. A piece on a
+              tier wall can only HUG it — standing has no meaning on a vertical surface, and a flat
+              piece has to curve to the wall or it floats at the tangent. That is new geometry, not a
+              flag, so the option is absent rather than present and wrong. */}
+          {!!strokeCount && (
+            <>
+              <div>
+                <span style={labelStyle}>Where it goes</span>
+                <div style={{ marginTop: 5 }}>
+                  <Segmented label="Where the piece goes" isMobile={isMobile} tone={color}
+                    items={[{ id: 'top', label: 'On the cake' }, { id: 'board', label: 'On the board' }]}
+                    value={zone} onChange={setZone} />
+                </div>
+              </div>
+              <div>
+                <span style={labelStyle}>How it sits</span>
+                <div style={{ marginTop: 5 }}>
+                  <Segmented label="How the piece sits" isMobile={isMobile} tone={color}
+                    items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+                    value={mode} onChange={setMode} />
+                </div>
+              </div>
+            </>
+          )}
+
           <label style={{ display: 'block' }}>
             <span style={labelStyle}>Name it</span>
             <input value={name} onChange={e => setName(e.target.value.slice(0, 40))}

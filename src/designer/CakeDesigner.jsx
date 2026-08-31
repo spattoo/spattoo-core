@@ -1815,6 +1815,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // `medium` is what is in the bag — cream or chocolate. It is a KEY into MEDIA (see pipingMedia.js),
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
+  // Kept on the DESIGNER, not inside the studio, so closing and reopening does not lose the chocolate
+  // a baker just chose — the same reason penStyle lives out here.
+  const [garnishColor, setGarnishColor] = useState('#4A2C1B');
+  const [garnishRope, setGarnishRope] = useState(6);
   const [selectedGarnishId, setSelectedGarnishId] = useState(null);
   const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
@@ -4313,7 +4317,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        ⚠️ What that item is CALLED is data, not this. The display name lives on the row and an admin
        edits it without a deploy — it reads "Chocolate Drawing" today. Never write a name into a
        comment as though the code depends on it; the code depends on the key. */
-    chocolate_pen: el => addPenFromRow(el, 'chocolate'),
+    /* ⚠️ CHOCOLATE OPENS THE STUDIO; it does not write on the cake. Drawing a filigree on a curved
+       surface with a mouse is the hard way to do it and not how the piece is made — piped flat on
+       parchment, set, then placed. Doing it on a plate also removes two limits at a stroke: a fill
+       always works (there is no curved wall to cut through), and fill becomes per-shape rather than
+       "whatever you drew last".
+
+       Chocolate strokes already on saved cakes keep rendering; the renderer is untouched. Only the
+       way NEW ones are made has changed. Cream still writes directly on the cake — the same move is
+       planned for it, deliberately after this one. */
+    chocolate_pen: () => setGarnishStudio(true),
     /* Opens the studio rather than placing something. A garnish has to be MADE before it can be
        put anywhere, which is the one procedural tool so far whose first act is a screen. */
     chocolate_garnish: () => setGarnishStudio(true),
@@ -10353,6 +10366,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {garnishStudio && (
         <GarnishStudio
           onCancel={() => setGarnishStudio(false)}
+          color={garnishColor}
+          rope={garnishRope}
+          onRopeChange={setGarnishRope}
+          /* The ONE colour control, handed in rather than rebuilt — see INVARIANTS #3. */
+          colorControl={
+            <ColorWheel color={garnishColor} onChange={setGarnishColor} width={152}
+              cakeColors={[...new Set(collectElementColors(design))]} />
+          }
           onSave={piece => {
             const id = crypto.randomUUID();
             addGarnish({ ...piece, id });
