@@ -530,10 +530,60 @@ describe('fit — letters that meet, instead of a bar bolted across the gap', ()
     return topperShapes(SCRIPT, 'Happy Birthday', { height: 1 / p.width, tracking });
   };
 
-  it('joins the word to itself with no bar and no bridges', () => {
-    expect(bridgeLoose(at(0).parts, { width: 0.02 }).length).toBeGreaterThan(0);
+  it('closes the gaps that a bridge would otherwise have to span', () => {
+    // At the face's own fit the count drops and the longest bridge shrinks; pushed far enough it
+    // reaches zero. The DEFAULT deliberately stops short of that — see the fit note in topperFaces.
+    const longest = (parts) => bridgeLoose(parts, { width: 0.02 }).reduce((m, b) => {
+      const xs = b.outer.map(q => q.x), ys = b.outer.map(q => q.y);
+      return Math.max(m, Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)));
+    }, 0);
+    expect(bridgeLoose(at(-0.07).parts, { width: 0.02 }).length)
+      .toBeLessThan(bridgeLoose(at(0).parts, { width: 0.02 }).length);
+    expect(longest(at(-0.07).parts)).toBeLessThanOrEqual(longest(at(0).parts));
     expect(bridgeLoose(at(-0.15).parts, { width: 0.02 }).length).toBe(0);
-    expect(pieceCount(at(-0.15).parts)).toBe(1);
+  });
+
+  it('keeps every letter — the reason the default is not the zero-bridge value', () => {
+    /* ⚠️ "Zero bridges" is checkable by a machine and is the WRONG target: it tightens until a
+     * distant tittle is swallowed, and at Parisienne's zero-bridge fit the word reads "Bithday".
+     *
+     * Measured as COVERAGE — the union of the glyphs, rasterised. At a fixed height the parts are
+     * the same shapes merely moved closer, so their individual areas cannot change and the only
+     * thing that falls is how much distinct ink is left. That fall IS a letter disappearing.
+     *
+     * (An earlier version of this test summed the part areas at a fixed WIDTH, which measures the
+     * scale and not the overlap: tighter tracking made the letters bigger and the number went UP.) */
+    const at1 = (tracking) => topperShapes(SCRIPT, 'Happy Birthday', { height: 1, tracking, lines: 1 });
+    const coverage = (t) => {
+      const parts = t.parts.filter(p => p.kind === 'glyph');
+      const xs = parts.flatMap(p => p.outer.map(q => q.x));
+      const ys = parts.flatMap(p => p.outer.map(q => q.y));
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      const N = 220;
+      let hit = 0;
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+        const x = x0 + ((x1 - x0) * (i + 0.5)) / N, y = y0 + ((y1 - y0) * (j + 0.5)) / N;
+        if (parts.some(p => inside(p, x, y))) hit++;
+      }
+      // Per unit of bounding box, so a narrower word is not penalised for being narrower.
+      return hit / (N * N) * (x1 - x0);
+    };
+    const inside = (part, x, y) => {
+      if (!ring(part.outer, x, y)) return false;
+      return !(part.holes ?? []).some(h => ring(h, x, y));
+    };
+    const ring = (r, x, y) => {
+      let win = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        if ((r[i].y > y) !== (r[j].y > y) &&
+            x < ((r[j].x - r[i].x) * (y - r[i].y)) / (r[j].y - r[i].y) + r[i].x) win = !win;
+      }
+      return win;
+    };
+
+    const natural = coverage(at1(0));
+    expect(coverage(at1(-0.07)) / natural).toBeGreaterThan(0.92);   // the shipped fit keeps its ink
+    expect(coverage(at1(-0.20)) / natural).toBeLessThan(0.85);      // crushed: letters swallowed
   });
 
   it('changes nothing at all at fit 0', () => {

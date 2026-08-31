@@ -25,17 +25,21 @@ import creamFonts from './creamFonts.json';
  * to actually touch, and at their natural fit they do not: a script came out with a straight 3mm
  * rectangle bolted across the gap between two letters, which read exactly like what it was.
  *
- * `fit` is the tracking, in ems, at which the face joins ITSELF — measured, per face, as the
- * loosest value at which both a phrase and a name cut as one piece with no bridges at all and no
- * base bar. It is negative because letters have to overlap, which is what the toppers in the shops
- * do: look at one and the strokes run into each other.
+ * `fit` is the tracking, in ems, that closes the gaps WHILE THE WORD STILL READS. Negative, because
+ * letters have to overlap — look at a real one and the strokes run into each other.
  *
- * Measured, not guessed. My first sweep stopped at -0.05 and concluded tracking did nothing; the
- * answer for every outline face is around -0.16, three times further out than I looked.
+ * ⚠️ IT IS NOT THE FIT AT WHICH THE FACE FULLY JOINS ITSELF, and that was the first mistake here.
+ * Chasing "zero bridges" is a criterion a machine can check and it is the wrong one: it keeps
+ * tightening until even a distant tittle is swallowed, and at the value it lands on (-0.16 for
+ * Parisienne) the word reads "Bithday" — the r is gone. Correct by every number on the panel: one
+ * piece, no bridges, clears the cutter. Unreadable.
  *
- * `null` means the face never joins at any fit — Allure's tittle floats above its letter and no
- * amount of horizontal tightening will ever reach it, so it needs the bar or a bridge and there is
- * no number that changes that.
+ * So these are set BY LOOKING, at roughly half the fully-joining value, and the test is whether
+ * every letter is still there. That leaves one short bridge on most faces, ~3mm, which is what a cut
+ * topper actually has — far better than a legible-looking number and an illegible word.
+ *
+ * The sweep before that stopped at -0.05 and concluded tracking did nothing at all. Both errors were
+ * about range: once too short, once too far.
  *
  * ⚠️ BUNDLE COST, and why `loadTopperFace` is async for a lookup that could have been a property.
  *
@@ -54,17 +58,17 @@ import creamFonts from './creamFonts.json';
 const parsed = new Map();
 
 export const TOPPER_FACES = {
-  great_vibes:      { label: 'Great Vibes',    kind: 'outline',    fit: -0.15, licence: 'OFL 1.1' },
-  parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.16, licence: 'OFL 1.1' },
-  pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.17, licence: 'OFL 1.1' },
-  dancing_script:   { label: 'Dancing Script', kind: 'outline',    fit: -0.29, licence: 'OFL 1.1' },
-  ems_allure:       { label: 'Allure',         kind: 'centreline', fit: null,  licence: 'public domain' },
-  ems_felix:        { label: 'Felix',          kind: 'centreline', fit: -0.31, licence: 'public domain' },
-  ems_elfin:        { label: 'Elfin',          kind: 'centreline', fit: -0.39, licence: 'public domain' },
-  hershey_script_1: { label: 'Cursive',        kind: 'centreline', fit: -0.36, licence: 'public domain' },
+  great_vibes:      { label: 'Great Vibes',    kind: 'outline',    fit: -0.07, licence: 'OFL 1.1' },
+  parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
+  pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
+  dancing_script:   { label: 'Dancing Script', kind: 'outline',    fit: -0.10, licence: 'OFL 1.1' },
+  ems_allure:       { label: 'Allure',         kind: 'centreline', fit: -0.10, licence: 'public domain' },
+  ems_felix:        { label: 'Felix',          kind: 'centreline', fit: -0.15, licence: 'public domain' },
+  ems_elfin:        { label: 'Elfin',          kind: 'centreline', fit: -0.18, licence: 'public domain' },
+  hershey_script_1: { label: 'Cursive',        kind: 'centreline', fit: -0.16, licence: 'public domain' },
 };
 
-// The fit a face wants, or 0 for one that never joins — a caller should not have to know which.
+// The fit a face wants. 0 for anything unknown, so a caller never has to special-case one.
 export const faceFit = (key) => TOPPER_FACES[key]?.fit ?? 0;
 
 export const DEFAULT_TOPPER_FACE = 'great_vibes';
