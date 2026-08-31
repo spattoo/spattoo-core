@@ -66,7 +66,7 @@ const FINISHES = {
 function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop, bury, rows, lineGap }) {
   const { geos, groups, standY } = useMemo(() => {
     const t = topperShapes(FONT, text, {
-      height, weight, lines: rows, lineGap,
+      height, weight, lines: rows || 'auto', lineGap,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
@@ -144,7 +144,7 @@ const val = { fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 42, textAl
 function App() {
   const [text, setText]     = useState('Amelia');
   const [span, setSpan]     = useState(0.55);   // share of the cake's width, NOT a letter height
-  const [rows, setRows]     = useState(1);
+  const [rows, setRows]     = useState(0);   // 0 = let the phrase decide
   // 1.2, not 1.0: helvetiker's cap is 0.72em and its descender reaches -0.21, so at 1.0 the 'p'
   // of Happy hangs 0.07em INTO the B of Birthday. That overlap is what makes it one piece, which
   // is a real trade and worth reaching for deliberately — not something to ship as the default.
@@ -169,7 +169,7 @@ function App() {
    * `topperShapes` sizes by height, so this measures the word at height 1 and divides — the aspect
    * ratio is a property of the text and the font, and one build is enough to learn it. */
   const height = useMemo(() => {
-    const w1 = topperShapes(FONT, text, { height: 1, weight, lines: rows, lineGap }).width;
+    const w1 = topperShapes(FONT, text, { height: 1, weight, lines: rows || 'auto', lineGap }).width;
     return w1 > 0 ? (CAKE_R * 2 * span) / w1 : 0.5;
   }, [text, weight, span, rows, lineGap]);
   const barThick = height * barRatio;
@@ -177,7 +177,7 @@ function App() {
   // The same call the mesh makes, so the reported count is the picture's count.
   const report = useMemo(() => {
     const t = topperShapes(FONT, text, {
-      height, weight, lines: rows, lineGap,
+      height, weight, lines: rows || 'auto', lineGap,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
@@ -210,8 +210,8 @@ function App() {
                         border: '1.5px solid #D8E0DA', borderRadius: 8, marginBottom: 14 }} />
 
         {slider('Across cake', span, setSpan, 0.2, 1, 0.01, x => `${Math.round(x * 100)}%`)}
-        {slider('Rows', rows, setRows, 1, 3, 1, x => String(x))}
-        {rows > 1 && slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05)}
+        {slider('Rows', rows, setRows, 0, 3, 1, x => (x === 0 ? 'auto' : String(x)))}
+        {slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05)}
         {slider('Weight', weight, setW, 0, 0.04, 0.002, x => x.toFixed(3))}
         {slider('Thickness', thickness, setTh, 0.004, 0.16, 0.002, x => mm(x))}
 

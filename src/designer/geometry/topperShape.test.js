@@ -210,7 +210,7 @@ describe('stacking — the reason a phrase can exist at all', () => {
   };
 
   it('makes the letters BIGGER for the same width across the cake', () => {
-    const one = atSpan('Happy Birthday');
+    const one = atSpan('Happy Birthday', { lines: 1 });   // explicit: the default now stacks on its own
     const two = atSpan('Happy Birthday', { lines: 2 });
     expect(two.rows).toHaveLength(2);
     expect(one.width).toBeCloseTo(two.width, 6);          // same span, by construction
@@ -233,7 +233,7 @@ describe('stacking — the reason a phrase can exist at all', () => {
     }
     // And it really does set larger than the same phrase on one line.
     expect(atSpan('Happy 1st Birthday', { lines: 2 }).capHeight)
-      .toBeGreaterThan(atSpan('Happy 1st Birthday').capHeight);
+      .toBeGreaterThan(atSpan('Happy 1st Birthday', { lines: 1 }).capHeight);
   });
 
   it('lets the author override the balance with a newline', () => {
@@ -306,5 +306,43 @@ describe('stacking — the reason a phrase can exist at all', () => {
     const a = atSpanGap(0.8), b = atSpanGap(1.4);
     expect(a.capHeight).toBeCloseTo(b.capHeight, 6);
     expect(a.height).toBeLessThan(b.height);
+  });
+});
+
+describe('auto — the caller does not have to know rows exist', () => {
+  /* ⚠️ The whole feature was invisible while this was opt-in.
+   *
+   * Stacking shipped behind a `lines` option and "Happy Birthday" still came out as one 11mm line,
+   * because nothing types `lines: 2` on a customer's behalf. The shape of the phrase decides this. */
+  const at = (text, opts) => topperShapes(FONT, text, { height: 1, ...opts });
+
+  it('stacks a phrase without being asked, and leaves a name alone', () => {
+    expect(at('Happy Birthday').rows).toHaveLength(2);
+    expect(at('Amelia').rows).toEqual(['Amelia']);
+    expect(at('Amy').rows).toEqual(['Amy']);
+  });
+
+  it('takes as many rows as the phrase needs, up to the cap', () => {
+    expect(at('Happy 1st Birthday Amelia').rows.length).toBeGreaterThan(1);
+    expect(at('Happy 1st Birthday Amelia', { maxLines: 2 }).rows).toHaveLength(2);
+  });
+
+  it('never breaks a single word, however long', () => {
+    // No spaces means no break points. Chopping "Bartholomew" in half is worse than small letters.
+    expect(at('Bartholomewwwwwwwwww').rows).toHaveLength(1);
+  });
+
+  it('actually clears the ratio it is aiming at', () => {
+    // The rule is width : letter height, which is what survives not knowing the cake's size.
+    const t = at('Happy Birthday', { fitAspect: 7 });
+    expect(t.width / t.capHeight).toBeLessThanOrEqual(7);
+    // And a laxer bar leaves it on one line, so the number is doing the deciding.
+    expect(at('Happy Birthday', { fitAspect: 99 }).rows).toHaveLength(1);
+  });
+
+  it('still does what it is told when told', () => {
+    expect(at('Happy Birthday', { lines: 1 }).rows).toHaveLength(1);
+    expect(at('Amelia', { lines: 2 }).rows).toHaveLength(1);        // one word, nothing to break
+    expect(at('Happy\nBirthday', { lines: 1 }).rows).toHaveLength(2);  // the newline still wins
   });
 });

@@ -42,8 +42,10 @@ export function topperShapes(font, text, {
   weight = 0,
   baseline = null,          // { thickness, overhang } — a bar under the word, or null for none
   legs = null,              // { count, width, length, inset } — prongs below, or null for none
-  lines = 1,                // stack the words over this many rows; '\n' in the text always wins
+  lines = 'auto',           // rows to stack over, or 'auto'; '\n' in the text always wins
   lineGap = 1,              // baseline to baseline, in ems
+  fitAspect = 7,            // 'auto' stacks until width : letter-height is no worse than this
+  maxLines = 3,
 } = {}) {
   const clean = String(text ?? '')
     .replace(/[^\S\n]+/g, ' ')
@@ -64,18 +66,8 @@ export function topperShapes(font, text, {
    * Rows are laid out at size 1 with each row centred on its own outline, then the whole block is
    * scaled together — so `height` keeps meaning the height of the finished object and every caller
    * that sized a single line still gets what it asked for. */
-  const rowText = splitRows(font, clean, lines);
-  const rows = [];
-  for (let i = 0; i < rowText.length; i++) {
-    const raw = font.generateShapes(rowText[i], 1);   // unit em, baseline at y = 0
-    const o = raw.map(sh => ({
-      outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y })),
-      holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y }))),
-    }));
-    if (!o.length) continue;                          // a row of nothing but spaces
-    const b = boundsOf(o);
-    rows.push({ text: rowText[i], glyphs: o, capEm: b.y1 - b.y0, dx: -(b.x0 + b.x1) / 2 });
-  }
+  const rows = lines === 'auto' ? autoRows(font, clean, fitAspect, maxLines)
+                                : buildRows(font, splitRows(font, clean, lines));
   if (!rows.length) return EMPTY;
 
   // Centre each row on itself and drop it a line — ragged rows read as centred, which is how these
@@ -165,6 +157,55 @@ export function topperShapes(font, text, {
     shapes, parts, glyphs, width, height, baselineY, legs: legShapes,
     rows: rows.map(r => r.text), rowHeight: lineGap * scale, capHeight,
   };
+}
+
+/* ── Choosing the number of rows, so nobody has to ─────────────────────────────────────────────────
+ *
+ * ⚠️ THIS IS THE DEFAULT BECAUSE THE FEATURE IS INVISIBLE OTHERWISE.
+ *
+ * Stacking was there behind a `lines` option and a phrase still came out as one unreadable line,
+ * because the caller has to know to ask. Somebody typing "Happy Birthday" should not have to learn
+ * what a row is — the shape of the phrase decides this, not the person.
+ *
+ * The rule is the ratio of the topper's WIDTH to its LETTER height, which is the one number that
+ * survives not knowing how big the cake is. A topper is cut to a span across the cake, so
+ * letter = span x cap/width: hold width:cap under a limit and the letters clear a floor at any size.
+ * At 55% of a 6-inch cake, 7 works out to roughly a 12mm letter — about where a bold stem stops
+ * being thicker than the 3mm sheet it is cut from and the topper turns into a comb.
+ *
+ * Fewest rows that clear the bar, and it stops early when there are no more words to break on, so a
+ * long single word stays on one line rather than being chopped.
+ */
+function autoRows(font, clean, fitAspect, maxLines) {
+  const cap = Math.max(1, Math.round(maxLines) || 1);
+  let best = [];
+  for (let n = 1; n <= cap; n++) {
+    const rows = buildRows(font, splitRows(font, clean, n));
+    if (!rows.length) break;
+    if (rows.length < n) return best.length ? best : rows;   // out of words to break on
+    best = rows;
+    if (!(fitAspect > 0)) break;
+    const w = Math.max(...rows.map(r => r.wEm));
+    const h = Math.max(...rows.map(r => r.capEm));
+    if (h > 0 && w / h <= fitAspect) break;
+  }
+  return best;
+}
+
+// One row's outlines in ems with the baseline at y = 0, plus what the balancer and the fit rule
+// need to measure it. Rows of nothing but spaces produce no glyphs and are dropped.
+function buildRows(font, rowText) {
+  const rows = [];
+  for (const text of rowText) {
+    const o = font.generateShapes(text, 1).map(sh => ({
+      outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y })),
+      holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y }))),
+    }));
+    if (!o.length) continue;
+    const b = boundsOf(o);
+    rows.push({ text, glyphs: o, capEm: b.y1 - b.y0, wEm: b.x1 - b.x0, dx: -(b.x0 + b.x1) / 2 });
+  }
+  return rows;
 }
 
 /* ── Where the line breaks go ────────────────────────────────────────────────────────────────────
