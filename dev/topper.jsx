@@ -13,6 +13,7 @@ import pinyonScript from '../src/designer/geometry/typefaces/pinyon-script.json'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useThree } from '@react-three/fiber';
 import { topperShapes, components, bridgeLoose } from '../src/designer/geometry/topperShape.js';
+import { SizeDial } from '../src/designer/shared/SizeDial.jsx';
 import { SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 
 /* ── An acrylic topper, standing up ──────────────────────────────────────────────────────────────
@@ -160,6 +161,7 @@ function Report() { return null; }
  * the cake is 1.6 units across the radius and 6 inches across the top, so one unit is 47.6mm, and
  * the panel can say "3.0mm" beside a thickness the eye is being asked to judge. */
 const CAKE_R = 1.6;
+const BASE_SPAN = 0.55;   // the authored default: 55% of the cake at size 1
 const MM_PER_UNIT = (6 * 25.4) / (CAKE_R * 2);   // ≈ 47.6
 const mm = u => `${(u * MM_PER_UNIT).toFixed(1)}mm`;
 
@@ -185,7 +187,11 @@ function App() {
   // 0.12em puts the stroke at about a tenth of the letter, which is what the toppers in the market
   // measure. Below that it is a hairline; above it the counters in a, p and B start closing up.
   const [stroke, setStroke] = useState(0.12);
-  const [span, setSpan]     = useState(0.55);   // share of the cake's width, NOT a letter height
+  /* Size is a MULTIPLIER on the authored span, not a share of the cake — the same contract every
+   * other decoration has. `BASE_SPAN` is what the studio will author (placement_config.r); the
+   * customer moves the dial and placement.js clamps it to placement_config.scale. */
+  const [size, setSize]     = useState(1);
+  const span = BASE_SPAN * size;
   const [rows, setRows]     = useState(0);   // 0 = let the phrase decide
   // 1.2, not 1.0: helvetiker's cap is 0.72em and its descender reaches -0.21, so at 1.0 the 'p'
   // of Happy hangs 0.07em INTO the B of Birthday. That overlap is what makes it one piece, which
@@ -292,7 +298,14 @@ function App() {
              over two ems once there are two rows — so the arithmetic version read 6.3mm beside a
              panel saying 2.6mm for the same stroke. One of those was measured; use that one. */
           () => mm(fit.feature))}
-        {slider('Across cake', span, setSpan, 0.2, 1, 0.01, x => `${Math.round(x * 100)}%`)}
+        <div style={{ ...row, marginBottom: 12 }}>
+          <span style={lab}>Size</span>
+          {/* THE size dial, imported from the designer — not a slider that happens to set a size. */}
+          <SizeDial size={size} min={0.5} max={1.7} step={0.05} onChange={setSize} />
+          <span style={{ fontSize: 11, color: '#8a8a8a' }}>
+            {mm(CAKE_R * 2 * span)} across · {Math.round(span * 100)}% of the cake
+          </span>
+        </div>
         {slider('Rows', rows, setRows, 0, 3, 1, x => (x === 0 ? 'auto' : String(x)))}
         {slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05,
           x => (report.gap && Math.abs(report.gap - x) > 0.005 ? `${report.gap.toFixed(2)} nested` : x.toFixed(2)))}

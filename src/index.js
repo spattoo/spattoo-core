@@ -79,6 +79,8 @@ export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './d
 // thing can be cut as one piece. Exported because the admin studio previews from the same numbers
 // the designer renders, the same bargain TextTopperStudio already makes with the text-slot compositor.
 export { topperShapes, pieceCount, components, bridgeLoose } from './designer/geometry/topperShape.js';
+// THE size control — the admin studios size a topper with the same dial the customer will.
+export { SizeDial } from './designer/shared/SizeDial.jsx';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
