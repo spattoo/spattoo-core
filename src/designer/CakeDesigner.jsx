@@ -5888,7 +5888,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   /* One card per placed garnish, newest first — the same shape every other placed decoration has, so
      a customer meets one accordion rather than a special case for chocolate. */
   (design.garnishes ?? []).forEach(g => {
-    decorationCards.unshift({ key: `garnish-${g.id}`, type: 'garnish', garnish: g, thumb: null,
+    decorationCards.unshift({ key: `garnish-${g.id}`, type: 'garnish', id: g.id, garnish: g, thumb: null,
                               name: g.name || 'Chocolate garnish' });
   });
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
@@ -5991,6 +5991,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
       : card.type === 'cloud'         ? { type: 'cloud', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
+      : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
       : card.type === 'blocks'        ? { type: 'blocks' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
@@ -7278,6 +7279,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onChange={v => updateGarnish(g.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
         <PenSlider label="Turn" value={g.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
           onChange={v => updateGarnish(g.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
+        <PenSlider label="Shine" value={g.gloss ?? 0.9} min={0.2} max={1} step={0.05}
+          onChange={v => updateGarnish(g.id, { gloss: v })} fmt={v => v.toFixed(2)} />
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
           Drag it on the cake to move it round.
@@ -9014,7 +9017,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               filmTight={photoFraming}
               config={canvasConfig}
               selectedGarnishId={selectedGarnishId}
-              onGarnishSelect={setSelectedGarnishId}
+              onGarnishSelect={id => { setSelectedGarnishId(id); selectExclusive({ type: 'garnish', id }); }}
               /* The patch is only the keys the drag changed, so updateGarnish MERGES — anything the
                  customer set (size, standing or lying) survives being moved. */
               onGarnishMove={(id, patch) => updateGarnish(id, patch)}

@@ -99,8 +99,13 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
           reflected the scene far more weakly than the cake beside it. */}
       <meshPhysicalMaterial
         side={THREE.DoubleSide}
-        {...medium.material({ softness: g.gloss ?? 0.96 }, g.color ?? '#4A2C1B')}
-        envMapIntensity={1.5}
+        /* ⚠️ TUNED TWICE AND STILL A GUESS, so it is a CONTROL rather than a constant. At the drip's
+           0.85 with no env boost it read dull grey-brown; at 0.96 with 1.5× it washed out — a thin
+           rope catches so much specular that the colour disappears under it. 0.9 and 1.2 sits between
+           the two states I have actually seen, and `Shine` on the card is how a baker settles it on
+           their own cake rather than by my eye on mine. */
+        {...medium.material({ softness: g.gloss ?? 0.9 }, g.color ?? '#4A2C1B')}
+        envMapIntensity={1.2}
         emissive={selected ? '#ffffff' : '#000000'}
         emissiveIntensity={selected ? 0.06 : 0}
       />

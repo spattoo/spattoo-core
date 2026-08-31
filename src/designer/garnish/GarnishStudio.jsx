@@ -197,17 +197,26 @@ export default function GarnishStudio({
           <button onClick={onCancel} style={btn(false)}>Cancel</button>
           {/* ⚠️ KEEPING IT IS THE DEFAULT. A baker who pipes a good piece almost always wants it
               again, and "just this once" is the rarer decision — so it is the quieter button. */}
-          {apiClient?.saveGarnish && (
+          {/* ⚠️ A PIECE OPENED FROM THE SHELF IS ALREADY KEPT. Offering "keep it" again saved a SECOND
+              copy every time one was reused — the row is inserted, never updated, so reopening and
+              placing twice left three identical pieces on the shelf. So the keep option appears only
+              for something new, and reusing is just "use it".
+
+              "Use it on the cake" rather than "just this cake": it reads correctly from both doors,
+              where "just this cake" only made sense next to a save. */}
+          {apiClient?.saveGarnish && !openWith && (
             <button onClick={addToCake} disabled={!strokeCount || saving} style={btn(false, !strokeCount || saving)}>
-              Just this cake
+              Use it on the cake
             </button>
           )}
           <button
-            onClick={apiClient?.saveGarnish ? keepAndAdd : addToCake}
+            onClick={apiClient?.saveGarnish && !openWith ? keepAndAdd : addToCake}
             disabled={!strokeCount || saving}
             style={btn(true, !strokeCount || saving)}
           >
-            {saving ? 'Keeping…' : apiClient?.saveGarnish ? 'Keep it and add to the cake' : 'Add to the cake'}
+            {saving ? 'Keeping…'
+              : (apiClient?.saveGarnish && !openWith) ? 'Keep it and use it on the cake'
+              : 'Use it on the cake'}
           </button>
         </>
       }
