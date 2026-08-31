@@ -99,13 +99,20 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
           reflected the scene far more weakly than the cake beside it. */}
       <meshPhysicalMaterial
         side={THREE.DoubleSide}
-        /* ⚠️ TUNED TWICE AND STILL A GUESS, so it is a CONTROL rather than a constant. At the drip's
-           0.85 with no env boost it read dull grey-brown; at 0.96 with 1.5× it washed out — a thin
-           rope catches so much specular that the colour disappears under it. 0.9 and 1.2 sits between
-           the two states I have actually seen, and `Shine` on the card is how a baker settles it on
-           their own cake rather than by my eye on mine. */
-        {...medium.material({ softness: g.gloss ?? 0.9 }, g.color ?? '#4A2C1B')}
-        envMapIntensity={1.2}
+        /* ⚠️ A THIN ROPE IS ALMOST ALL GRAZING ANGLE, which is why the drip's settings wash a garnish
+           out. Fresnel makes a clearcoat reflect hardest at grazing incidence: on a broad drip most
+           pixels face the viewer and show base colour, but on a swept tube nearly every visible pixel
+           is near the silhouette, so a strong clearcoat covers the whole piece in white-ish
+           reflection and the chocolate underneath never appears. Side by side, the studio showed
+           near-black brown and the placed piece pale taupe — the colour was buried, not under-lit,
+           which is why raising the gloss twice made it worse.
+
+           So the lacquer comes DOWN rather than up, and the env boost with it. `Shine` on the card
+           still opens it back up for anyone who wants a wet-looking piece. */
+        {...medium.material({ softness: g.gloss ?? 0.45 }, g.color ?? '#4A2C1B')}
+        clearcoat={0.25}
+        clearcoatRoughness={0.5}
+        envMapIntensity={0.6}
         emissive={selected ? '#ffffff' : '#000000'}
         emissiveIntensity={selected ? 0.06 : 0}
       />

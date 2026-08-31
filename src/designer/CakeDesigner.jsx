@@ -7279,7 +7279,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onChange={v => updateGarnish(g.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
         <PenSlider label="Turn" value={g.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
           onChange={v => updateGarnish(g.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
-        <PenSlider label="Shine" value={g.gloss ?? 0.9} min={0.2} max={1} step={0.05}
+        <PenSlider label="Shine" value={g.gloss ?? 0.45} min={0} max={1} step={0.05}
           onChange={v => updateGarnish(g.id, { gloss: v })} fmt={v => v.toFixed(2)} />
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
