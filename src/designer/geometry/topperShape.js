@@ -550,61 +550,74 @@ export function components(parts) {
  * is not a font to avoid — it is most fonts — and rejecting them would leave the feature usable
  * only with scripts nobody has sourced yet.
  *
- * So each stray group gets a hairline stem dropped straight down from its lowest point until it
- * meets material below, and a rectangle spans the gap. Real acrylic toppers do exactly this: look
- * closely at a cut one and the tittle is joined to its stem by a sliver.
+ * ⚠️ ALONG THE SHORTEST PATH TO THE BODY, not straight down.
+ *
+ * Dropping a stem downward is right for a tittle and wrong for everything else, and the difference
+ * is not subtle: in "Happy Birthday" set in Great Vibes, one stray letter's nearest neighbour is
+ * 1.35mm to the SIDE of it. Falling vertically, the stem missed that neighbour entirely and ran on
+ * down until it hit the row below — a bar ruled through the whole design to reach material that was
+ * never the closest thing to it.
+ *
+ * So the join is the shortest segment between the stray and the rest, whichever way it points. A
+ * tittle's nearest material is the stem directly beneath it, so that case is unchanged and still
+ * looks like the sliver a cut topper has; a letter beside its neighbour gets a tab a millimetre
+ * long that nobody will find.
  *
  * ⚠️ It changes the letterform, slightly and visibly, and that is the honest cost. `width` is the
  * lever: thin enough to read as a join, thick enough to survive being cut and handled. Anything
  * under about a millimetre of real acrylic snaps, which is why this is a fraction of the topper's
  * height rather than a fixed number — the object gets scaled on the way to the cake.
  *
- * Nothing is bridged when the parts are already one piece, and a group with nothing beneath it is
- * left alone rather than given a stem to nowhere — the count still reports it, and the author still
- * sees it in red.
+ * Nothing is bridged when the parts are already one piece.
  */
 export function bridgeLoose(parts, { width = 0.02 } = {}) {
   const groups = components(parts);
   if (groups.length <= 1) return [];
 
-  const main = new Set(groups[0]);
+  const main = groups[0];
   const bridges = [];
   for (const g of groups.slice(1)) {
-    // The lowest point of the stray group, and the x it sits at.
-    let low = Infinity, lowX = 0;
-    for (const i of g) for (const q of parts[i].outer) if (q.y < low) { low = q.y; lowX = q.x; }
-    // What is directly beneath it, ignoring its own group — the top of the nearest material below.
-    const below = highestBelow(parts, lowX, low, g);
-    if (below == null) continue;                      // nothing under it; leave it flagged, not faked
-    bridges.push({
-      kind: 'bridge',
-      outer: rect(lowX - width / 2, below - width * 0.25, width, (low - below) + width * 0.5),
-      holes: [],
-    });
+    const link = nearestLink(parts, g, main);
+    if (!link) continue;
+    bridges.push({ kind: 'bridge', outer: bar(link[0], link[1], width), holes: [] });
   }
   return bridges;
 }
 
-// The highest y at or below `fromY` in this column, excluding the group doing the asking.
-function highestBelow(parts, x, fromY, exclude) {
-  const skip = new Set(exclude);
-  let best = null;
-  for (let i = 0; i < parts.length; i++) {
-    if (skip.has(i)) continue;
-    const p = parts[i];
-    const b = bbox(p.outer);
-    if (x < b.x0 || x > b.x1) continue;
-    for (let k = 0; k < p.outer.length; k++) {
-      const a = p.outer[k], c = p.outer[(k + 1) % p.outer.length];
-      if ((a.x <= x && c.x >= x) || (c.x <= x && a.x >= x)) {
-        const t = (x - a.x) / ((c.x - a.x) || 1e-12);
-        const y = a.y + (c.y - a.y) * t;
-        if (y <= fromY && (best == null || y > best)) best = y;
-      }
+// The closest pair of points between one group and another, as [from, to].
+function nearestLink(parts, from, to) {
+  let best = Infinity, pair = null;
+  for (const i of from) for (const j of to) {
+    const bi = bbox(parts[i].outer), bj = bbox(parts[j].outer);
+    // Boxes cannot be closer than their gap, so a box already further than the best pair is skipped
+    // whole rather than point by point.
+    const dx = Math.max(0, bi.x0 - bj.x1, bj.x0 - bi.x1);
+    const dy = Math.max(0, bi.y0 - bj.y1, bj.y0 - bi.y1);
+    if (Math.hypot(dx, dy) >= best) continue;
+    for (const p of parts[i].outer) for (const q of parts[j].outer) {
+      const d = Math.hypot(p.x - q.x, p.y - q.y);
+      if (d < best) { best = d; pair = [p, q]; }
     }
   }
-  return best;
+  return pair;
 }
+
+// A rectangle of `width` spanning p to q, run a little past both ends so it overlaps what it joins
+// rather than meeting it edge to edge — the same reason the baseline bar bites up into the letters.
+function bar(p, q, width) {
+  const dx = q.x - p.x, dy = q.y - p.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy * (width / 2), ny = ux * (width / 2);
+  const over = width * 0.6;
+  const a = { x: p.x - ux * over, y: p.y - uy * over };
+  const b = { x: q.x + ux * over, y: q.y + uy * over };
+  return [
+    { x: a.x + nx, y: a.y + ny }, { x: b.x + nx, y: b.y + ny },
+    { x: b.x - nx, y: b.y - ny }, { x: a.x - nx, y: a.y - ny },
+  ];
+}
+
 
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────
 

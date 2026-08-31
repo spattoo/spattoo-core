@@ -456,3 +456,63 @@ describe('nesting — rows that meet instead of rows that get stapled', () => {
     expect(far.lineGap).toBeCloseTo(1.2, 6);
   });
 });
+
+describe('bridging along the shortest path, not straight down', () => {
+  /* ⚠️ A stem that falls vertically is right for a tittle and wrong for everything else.
+   *
+   * In "Happy Birthday" set in Great Vibes, one stray letter's nearest neighbour is 1.35mm to the
+   * SIDE. Falling downward the stem missed it entirely and ran on until it hit the row below — a bar
+   * ruled through the whole design to reach material that was never the closest thing to it. It was
+   * plainly visible in every render and shipped anyway, so it gets a test.
+   */
+  const SCRIPT = new FontLoader().parse(greatVibes);
+  const span = (text, opts = {}) => {
+    const p = topperShapes(SCRIPT, text, { height: 1, ...opts });
+    return topperShapes(SCRIPT, text, { height: 1 / p.width, ...opts });
+  };
+  const longestSide = (part) => {
+    const xs = part.outer.map(p => p.x), ys = part.outer.map(p => p.y);
+    return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  };
+
+  it('never rules a bridge across the design to reach something further away', () => {
+    const t = span('Happy Birthday', { baseline: { thickness: 0.08 } });
+    const bridges = bridgeLoose(t.parts, { width: 0.02 });
+    expect(bridges.length).toBeGreaterThan(0);
+    // Every join is local. A stem that fell to the row below measured most of the object's height.
+    for (const b of bridges) expect(longestSide(b)).toBeLessThan(t.capHeight * 0.4);
+  });
+
+  it('joins each stray to its genuinely nearest material', () => {
+    const t = span('Happy Birthday', { baseline: { thickness: 0.08 } });
+    const groups = components(t.parts);
+    const dist = (A, B) => {
+      let m = Infinity;
+      for (const p of A) for (const q of B) m = Math.min(m, Math.hypot(p.x - q.x, p.y - q.y));
+      return m;
+    };
+    const bridges = bridgeLoose(t.parts, { width: 0.02 });
+    for (let k = 1; k < groups.length; k++) {
+      let nearest = Infinity;
+      for (const i of groups[k]) for (const j of groups[0]) {
+        nearest = Math.min(nearest, dist(t.parts[i].outer, t.parts[j].outer));
+      }
+      // Some bridge must be about that long — not longer, which is what falling vertically produced.
+      expect(bridges.some(b => longestSide(b) < nearest + 0.05)).toBe(true);
+    }
+  });
+
+  it('still drops a tittle straight down, because that IS its nearest material', () => {
+    // The i-dot case must not regress: the stem below the dot is the closest thing to it, so the
+    // shortest path and the downward drop are the same join.
+    const t = topperShapes(FONT, 'Amelia', { height: 1, baseline: { thickness: 0.09 } });
+    const stray = components(t.parts)[1][0];
+    const strayLow = Math.min(...t.parts[stray].outer.map(p => p.y));
+    const [b] = bridgeLoose(t.parts, { width: 0.02 });
+    expect(Math.min(...b.outer.map(p => p.y))).toBeLessThan(strayLow);
+    const bx = b.outer.map(p => p.x), sx = t.parts[stray].outer.map(p => p.x);
+    const mid = (Math.min(...bx) + Math.max(...bx)) / 2;
+    expect(mid).toBeGreaterThanOrEqual(Math.min(...sx) - 0.02);
+    expect(mid).toBeLessThanOrEqual(Math.max(...sx) + 0.02);
+  });
+});
