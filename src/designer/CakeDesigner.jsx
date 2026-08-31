@@ -7105,30 +7105,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           ))}
         </div>
 
-        {/* ⚠️ WHICH TIER, and only when there is a choice to make. A one-tier cake has nothing to
-            ask, and an extra control on it would be furniture. On a tiered cake this is the whole
-            answer to "I want to write on the second tier": before it, the surface picker offered
-            Top, Side and Board, and Side always meant the bottom one. Changing tier re-seats the
-            message in the middle of that wall — its old height belongs to a different tier. */}
-        {surface === 'side' && (design.tiers?.length ?? 1) > 1 && (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 5 }}>
-              Which tier
-            </div>
-            <Segmented
-              label="Which tier to write on"
-              isMobile={isMobile}
-              items={design.tiers.map((_, i) => ({
-                id: String(i),
-                label: i === 0 ? 'Bottom' : i === design.tiers.length - 1 ? 'Top' : `Tier ${i + 1}`,
-              }))}
-              value={String(Math.min(w.sideTier ?? 0, design.tiers.length - 1))}
-              onChange={id => setWriting({ sideTier: Number(id), sideY: undefined })}
-              tone={primaryColor}
-            />
-          </div>
-        )}
-
         <textarea
           value={w.text ?? ''}
           onChange={e => setWriting({ text: e.target.value })}
