@@ -71,3 +71,33 @@ describe('filling a stroke drawn on the cake', () => {
     expect(canFillStroke(null, 0.02)).toBe(false);
   });
 });
+
+describe('what a person calls closed', () => {
+  /* ⚠️ THE BUG THIS EXISTS FOR. A loop drawn by hand on a cake, plainly closed to the eye, was judged
+   * open — the tolerance was 9% of the shape or twice the rope, and with a 0.018 chocolate tip that is
+   * a few millimetres. The card then hid the fill and advised the baker to close a shape they had
+   * already closed. */
+  const handLoop = (gapFrac) => {
+    const r = 0.22, y = 1.55;
+    const span = Math.PI * 2 * (1 - gapFrac);
+    return Array.from({ length: 36 }, (_, i) => {
+      const t = (i / 35) * span;
+      return [Math.cos(t) * r, y, Math.sin(t) * r];
+    });
+  };
+
+  it('accepts a loop a hand actually draws', () => {
+    // ~8% of the way round left open — a visible gap, and unmistakably a loop.
+    expect(fillStrokeOnFlat(handLoop(0.08), { thickness: 0.018 }).canFill).toBe(true);
+  });
+
+  it('still refuses things that are not loops', () => {
+    // A third of the way round missing is a horseshoe, not a shape with an inside.
+    expect(fillStrokeOnFlat(handLoop(0.42), { thickness: 0.018 }).closed).toBe(false);
+    const ess = Array.from({ length: 30 }, (_, i) => {
+      const t = i / 29;
+      return [Math.sin(t * Math.PI * 1.9) * 0.2, 1.55, -0.25 + t * 0.5];
+    });
+    expect(fillStrokeOnFlat(ess, { thickness: 0.018 }).closed).toBe(false);
+  });
+});

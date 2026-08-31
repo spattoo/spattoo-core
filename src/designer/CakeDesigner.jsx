@@ -7286,7 +7286,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const canFillLast = !!fillable?.canFill;
     /* Why NOT, in words. "No fill button" with no explanation reads as a bug, and the two reasons
        lead to different actions: close the shape, or draw it somewhere flat. */
+    /* ⚠️ A TAP HAS NO `points` — it stores a single `point` — so it reached the "on the side" message,
+       which is simply untrue and sends the baker to the wrong place. Three cases, three sentences,
+       and the wrong one is worse than none. */
+    const lastHasPath = (last?.points?.length ?? 0) >= 4;
     const whyNotFill = !last || canFillLast ? null
+      : !lastHasPath
+        ? 'Draw a shape with the pen, then fill it — a single dab has no inside.'
       : fillable?.flat
         ? 'Bring the ends of a stroke together to fill it — letters and swirls are piped as drawn.'
         : 'A shape on the side of a cake cannot be filled — draw it on the top or the board.';

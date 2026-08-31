@@ -48,8 +48,19 @@ export function fillStrokeOnFlat(points, { pattern = 'hatch', thickness = 0.03, 
    * one. Kept in step with that module deliberately; if one changes, so does the other. */
   const xs = flat2d.map(p => p[0]), zs = flat2d.map(p => p[1]);
   const diagonal = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
+  /* ⚠️ GENEROUS, BECAUSE A HAND DOES NOT CLOSE A LOOP ACCURATELY. The first version allowed 9% of the
+   * shape's own size, or twice the rope width — with the chocolate pen's fine 0.018 tip that is a few
+   * millimetres of world space, and a loop drawn on a cake that plainly READS as closed was reported
+   * open. The control then hid itself and explained, politely, that the baker should do what they had
+   * just done.
+   *
+   * A quarter of the shape's own diagonal instead. It still refuses the things that must be refused,
+   * because those are not near misses: the ends of an "S" or a treble clef sit roughly a whole
+   * diagonal apart, and a line's are further still. The gap between "nearly closed" and "not a loop
+   * at all" is wide, so the threshold does not have to be precise — it has to be on the right side of
+   * a chasm, and 9% was on the wrong one. */
   const gap = dist2(flat2d[0], flat2d[flat2d.length - 1]);
-  const closed = gap <= Math.max(thickness * 2, diagonal * 0.09);
+  const closed = gap <= Math.max(thickness * 4, diagonal * 0.25);
   if (!closed) return { flat: true, closed: false, canFill: false, paths: [] };
 
   const ring = [...flat2d.slice(0, -1), flat2d[0]];     // snapped exactly shut, or the fill leaks
