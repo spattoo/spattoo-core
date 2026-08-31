@@ -41,6 +41,13 @@ import creamFonts from './creamFonts.json';
  * The sweep before that stopped at -0.05 and concluded tracking did nothing at all. Both errors were
  * about range: once too short, once too far.
  *
+ * ⚠️ AND EVERY NUMBER HERE IS PER FACE. Having looked at two outline faces and found half the
+ * fully-joining value about right, I set the four centreline ones by applying the same fraction
+ * WITHOUT LOOKING AT THEM. Felix came out at -0.15 and rendered as an unreadable tangle. They need
+ * about -0.04 — a quarter of what the rule predicted — because a monoline's letters already very
+ * nearly touch, so their bridges are under 1.4mm at no tracking at all and there is almost nothing
+ * to close. Half-of-the-join-value was never a rule; it was two observations.
+ *
  * ⚠️ BUNDLE COST, and why `loadTopperFace` is async for a lookup that could have been a property.
  *
  * The four outline faces are ~370KB of JSON. Imported statically they land in the main bundle and
@@ -62,10 +69,12 @@ export const TOPPER_FACES = {
   parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
   pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
   dancing_script:   { label: 'Dancing Script', kind: 'outline',    fit: -0.10, licence: 'OFL 1.1' },
-  ems_allure:       { label: 'Allure',         kind: 'centreline', fit: -0.10, licence: 'public domain' },
-  ems_felix:        { label: 'Felix',          kind: 'centreline', fit: -0.15, licence: 'public domain' },
-  ems_elfin:        { label: 'Elfin',          kind: 'centreline', fit: -0.18, licence: 'public domain' },
-  hershey_script_1: { label: 'Cursive',        kind: 'centreline', fit: -0.16, licence: 'public domain' },
+  // ⚠️ The centreline faces need FAR less than the outline ones, and nothing about the outline
+  // numbers predicts theirs — see the note below.
+  ems_allure:       { label: 'Allure',         kind: 'centreline', fit: -0.04, licence: 'public domain' },
+  ems_felix:        { label: 'Felix',          kind: 'centreline', fit: -0.04, licence: 'public domain' },
+  ems_elfin:        { label: 'Elfin',          kind: 'centreline', fit: -0.04, licence: 'public domain' },
+  hershey_script_1: { label: 'Cursive',        kind: 'centreline', fit: -0.04, licence: 'public domain' },
 };
 
 // The fit a face wants. 0 for anything unknown, so a caller never has to special-case one.
