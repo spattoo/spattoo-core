@@ -10366,6 +10366,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {garnishStudio && (
         <GarnishStudio
           onCancel={() => setGarnishStudio(false)}
+          apiClient={apiClient}
           color={garnishColor}
           rope={garnishRope}
           onRopeChange={setGarnishRope}

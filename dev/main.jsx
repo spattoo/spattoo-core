@@ -66,6 +66,10 @@ function createApiClient(supabaseClient) {
     // ── Uploads (the Uploads panel + the promote studio) ──────────────────────────────────────────
     // The harness speaks to the REAL routes. Without these the panel renders an empty state and the
     // whole feature is unverifiable here — which is exactly how a shipped bug in it went unseen.
+    fetchGarnishes: () => authFetch('/api/garnishes').catch(() => []),
+    saveGarnish: body => authFetch('/api/garnishes', { method: 'POST', body: JSON.stringify(body) }),
+    deleteGarnish: id => authFetch(`/api/garnishes/${id}`, { method: 'DELETE' }),
+
     fetchUploads:    () => authFetch('/api/uploads').catch(() => []),
     registerUpload:  (payload) => authFetch('/api/uploads', { method: 'POST', body: JSON.stringify(payload) }),
     deleteUpload:    (id) => authFetch(`/api/uploads/${id}`, { method: 'DELETE' }),

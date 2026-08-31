@@ -35,7 +35,7 @@ export const piecePaths = strokes => strokes.flatMap(s => [s.path, ...s.fills]);
  * the letter-blocks card made and was caught on within the hour. */
 export default function GarnishStudio({
   initialName = '', color = INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
-  onSave, onCancel,
+  apiClient = null, onSave, onCancel,
 }) {
   const ROPE = ropeProp;
   const ref = useRef(null);
@@ -46,6 +46,12 @@ export default function GarnishStudio({
      when it leaves this screen, and "where does it live" is the last question about it. */
   const [zone, setZone] = useState('top');
   const [mode, setMode] = useState('stand');
+  /* ⚠️ THE LIBRARY IS OPTIONAL, and its absence must not break the studio. `apiClient` may not carry
+     the garnish methods at all — an older host app, or an API that has not been deployed yet — and
+     the answer to that is a studio that draws and places perfectly well but cannot keep anything,
+     not a screen that throws. Every call below is optional-chained for that reason. */
+  const [saved, setSaved] = useState([]);
+  const [saving, setSaving] = useState(false);
   const isMobile = useNarrow();
   const drawing = trail.length > 0;
 
@@ -82,6 +88,67 @@ export default function GarnishStudio({
     // ⚠️ colour and ROPE are dependencies too: without them the plate keeps the shade and the line
     // width it was first painted with, and the controls appear to do nothing until the next stroke.
   }, [strokes, trail, drawing, color, ROPE]);
+
+  useEffect(() => {
+    let alive = true;
+    apiClient?.fetchGarnishes?.()
+      .then(rows => { if (alive) setSaved(rows ?? []); })
+      .catch(() => {});          // no library is a quieter failure than a broken one
+    return () => { alive = false; };
+  }, [apiClient]);
+
+  /* What gets STORED: the outlines and the NAME of each fill, never the generated fill paths. They
+     are most of the size and they regenerate exactly from a seed — see supabase/baker_garnishes.sql. */
+  const payloadOf = () => ({
+    v: 1, plate: PLATE, rope: ROPE, color,
+    strokes: strokes.map(s2 => ({
+      path: s2.path.map(([x, y]) => [+x.toFixed(1), +y.toFixed(1)]),
+      fill: s2.fillPattern && s2.fillPattern !== 'none' ? s2.fillPattern : null,
+    })),
+  });
+
+  /* The tile is drawn FROM the paths — it is literally the plate the baker just looked at, so it is a
+     sample of the piece rather than an illustration of one. */
+  const thumbnail = () => {
+    try { return ref.current?.toDataURL('image/png') ?? null; } catch { return null; }
+  };
+
+  async function keepAndAdd() {
+    setSaving(true);
+    try {
+      await apiClient?.saveGarnish?.({
+        name: name.trim() || 'Chocolate piece', payload: payloadOf(), thumbBase64: thumbnail(),
+      });
+    } catch (e) {
+      // ⚠️ A FAILED SAVE STILL PLACES THE PIECE. The baker drew it; losing it because a network call
+      // failed would be the worst possible trade, and they can save it again from the card later.
+      console.error('Could not keep the garnish', e);
+    } finally {
+      setSaving(false);
+      addToCake();
+    }
+  }
+
+  function addToCake() {
+    onSave?.({
+      name: name.trim() || 'Chocolate piece', paths: piecePaths(strokes),
+      rope: ROPE, plate: PLATE, color, zone, mode,
+    });
+  }
+
+  /* Re-drawing a kept piece: its outlines come back and their fills are REGENERATED, which is the
+     whole reason the fill is not stored. */
+  function openSaved(g) {
+    const p = g.payload ?? {};
+    setStrokes((p.strokes ?? []).map((s2, i) => {
+      const ring = s2.path.length > 2 ? [...s2.path.slice(0, -1), s2.path[0]] : null;
+      const fills = s2.fill && ring
+        ? fillShape(ring, { pattern: s2.fill, spacing: ROPE * 2.2, inset: ROPE * 0.5, ropeWidth: ROPE, seed: i + 3 })
+        : [];
+      return { path: s2.path, ring, fills, fillPattern: s2.fill ?? 'none' };
+    }));
+    setName(g.name ?? '');
+  }
 
   // ── Capture ───────────────────────────────────────────────────────────────────────────────────
   const at = e => {
@@ -123,15 +190,19 @@ export default function GarnishStudio({
       footer={
         <>
           <button onClick={onCancel} style={btn(false)}>Cancel</button>
+          {/* ⚠️ KEEPING IT IS THE DEFAULT. A baker who pipes a good piece almost always wants it
+              again, and "just this once" is the rarer decision — so it is the quieter button. */}
+          {apiClient?.saveGarnish && (
+            <button onClick={addToCake} disabled={!strokeCount || saving} style={btn(false, !strokeCount || saving)}>
+              Just this cake
+            </button>
+          )}
           <button
-            onClick={() => onSave?.({
-              name: name.trim() || 'Chocolate piece', paths: piecePaths(strokes),
-              rope: ROPE, plate: PLATE, color, zone, mode,
-            })}
-            disabled={!strokeCount}
-            style={btn(true, !strokeCount)}
+            onClick={apiClient?.saveGarnish ? keepAndAdd : addToCake}
+            disabled={!strokeCount || saving}
+            style={btn(true, !strokeCount || saving)}
           >
-            Add to the cake
+            {saving ? 'Keeping…' : apiClient?.saveGarnish ? 'Keep it and add to the cake' : 'Add to the cake'}
           </button>
         </>
       }
@@ -189,6 +260,29 @@ export default function GarnishStudio({
                 </div>
               </div>
             </>
+          )}
+
+          {/* ⚠️ ONLY WHEN THERE IS SOMETHING IN IT. An empty "My pieces" heading on a new baker's
+              first visit reads as something missing rather than something not yet made. */}
+          {saved.length > 0 && (
+            <div>
+              <span style={labelStyle}>My pieces</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
+                {saved.slice(0, 12).map(g => (
+                  <button key={g.id} type="button" title={g.name}
+                    onClick={() => openSaved(g)}
+                    style={{ width: 46, height: 46, padding: 0, borderRadius: 9, cursor: 'pointer',
+                             border: '1.5px solid #E0DDD8', background: '#F6F4F0', overflow: 'hidden' }}>
+                    {g.thumbUrl
+                      ? <img src={g.thumbUrl} alt={g.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                      : <span style={{ fontSize: 9, fontWeight: 800, color: '#8a8a8a' }}>{(g.name ?? '?').slice(0, 6)}</span>}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+                Tap one to bring it back and change it.
+              </div>
+            </div>
           )}
 
           <label style={{ display: 'block' }}>
