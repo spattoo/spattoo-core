@@ -45,6 +45,22 @@ const polygon = (n, r, rot = -Math.PI / 2) =>
     return [PLATE / 2 + Math.cos(a2) * r, PLATE / 2 + Math.sin(a2) * r];
   });
 
+/* ⚠️ THE ICON IS THE SHAPE, PIPED. A word makes you read and translate; a picture of the thing is
+ * recognised without either. And drawing them as chocolate ropes — round caps, the piece's own colour,
+ * a stroke rather than a fill — means the button shows what you are about to get instead of a generic
+ * geometric glyph. It also tracks the chosen colour, so a white-chocolate piece has white buttons. */
+const ShapeIcon = ({ kind, color }) => {
+  const st = { fill: 'none', stroke: color, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+      {kind === 'triangle' && <path d="M13 4 L22 20 L4 20 Z" {...st} />}
+      {kind === 'square'   && <rect x="5" y="5" width="16" height="16" rx="1.5" {...st} />}
+      {kind === 'circle'   && <circle cx="13" cy="13" r="8.5" {...st} />}
+      {kind === 'strip'    && <rect x="3" y="9" width="20" height="8" rx="1.5" {...st} />}
+    </svg>
+  );
+};
+
 export const SHAPES = [
   { key: 'triangle', label: 'Triangle', make: () => polygon(3, PLATE * 0.3) },
   { key: 'square',   label: 'Square',   make: () => polygon(4, PLATE * 0.28, -Math.PI / 4) },
@@ -214,8 +230,13 @@ export default function GarnishStudio({
   /* A shape arrives as a finished stroke: closed, so `ring` is set and the fill controls apply to it
      immediately — the same shape as anything drawn in one gesture. */
   function addShape(shape) {
-    const path = shape.make();
-    setStrokes(s2 => [...s2, { path, ring: [...path, path[0]], closed: true, gap: 0, area: 0, fills: [] }]);
+    /* ⚠️ THE PATH CLOSES ITSELF. A triangle is three points, and a polyline through three points draws
+       TWO sides — the third was simply never there. The ring was closed, but the ring is for filling
+       and hit-testing; what gets drawn is the path. A closed shape's path must therefore return to
+       its first point, or every polygon comes out missing exactly one edge. */
+    const poly = shape.make();
+    const path = [...poly, poly[0]];
+    setStrokes(s2 => [...s2, { path, ring: path, closed: true, gap: 0, area: 0, fills: [] }]);
   }
 
   function addToCake() {
@@ -345,6 +366,11 @@ export default function GarnishStudio({
       </p>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        {/* ⚠️ UNDO SITS WITH THE DRAWING. It was at the bottom of the settings column, a long way from
+            the plate and below several controls that have nothing to do with it — so the one action
+            you reach for the instant a stroke goes wrong was the furthest thing from where your hand
+            already was. */}
+        <div>
         <canvas
           ref={ref}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
@@ -353,6 +379,14 @@ export default function GarnishStudio({
             border: '1px solid #E3DFD8', display: 'block', touchAction: 'none', cursor: 'crosshair',
           }}
         />
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button onClick={() => { setStrokes(s2 => s2.slice(0, -1)); setPicked(null); }}
+            disabled={!strokeCount} style={btn(false, !strokeCount)}>Undo</button>
+          <button onClick={() => { setStrokes([]); setPicked(null); }}
+            disabled={!strokeCount} style={btn(false, !strokeCount)}>Clear</button>
+        </div>
+
+        </div>
 
         <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {colorControl && (
@@ -366,11 +400,12 @@ export default function GarnishStudio({
             <span style={labelStyle}>Add a shape</span>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
               {SHAPES.map(sh => (
-                <button key={sh.key} type="button" onClick={() => addShape(sh)}
-                  style={{ padding: '7px 11px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
-                           fontSize: 11.5, fontWeight: 800, border: '1.5px solid #E0DDD8',
-                           background: '#fff', color: '#4a4a4a' }}>
-                  {sh.label}
+                <button key={sh.key} type="button" onClick={() => addShape(sh)} title={sh.label}
+                  aria-label={sh.label}
+                  style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                           padding: 0, borderRadius: 10, cursor: 'pointer',
+                           border: '1.5px solid #E0DDD8', background: '#fff' }}>
+                  <ShapeIcon kind={sh.key} color={color} />
                 </button>
               ))}
             </div>
@@ -505,14 +540,7 @@ export default function GarnishStudio({
               : 'Nothing piped yet.'}
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setStrokes(s => s.slice(0, -1))} disabled={!strokeCount} style={btn(false, !strokeCount)}>
-              Undo stroke
-            </button>
-            <button onClick={() => setStrokes([])} disabled={!strokeCount} style={btn(false, !strokeCount)}>
-              Clear
-            </button>
-          </div>
+
         </div>
       </div>
     </Panel>
