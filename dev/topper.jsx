@@ -246,9 +246,9 @@ function App() {
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
-    if (!t.parts?.length) return { n: 0, width: 0, cap: 0, rows: [], feature: 0 };
+    if (!t.parts?.length) return { n: 0, width: 0, cap: 0, rows: [], feature: 0, gap: 0 };
     const parts = bridge ? [...t.parts, ...bridgeLoose(t.parts, { width: height * 0.022 })] : t.parts;
-    return { n: components(parts).length, width: t.width, cap: t.capHeight, rows: t.rows, feature: t.feature };
+    return { n: components(parts).length, width: t.width, cap: t.capHeight, rows: t.rows, feature: t.feature, gap: t.lineGap };
   }, [text, height, weight, bar, barThick, legCount, legLen, bridge, rows, lineGap, face, stroke, fitAspect]);
 
   // One test, both faces: is the narrowest acrylic in the design at least as wide as the sheet?
@@ -292,7 +292,8 @@ function App() {
           () => mm(fit.feature))}
         {slider('Across cake', span, setSpan, 0.2, 1, 0.01, x => `${Math.round(x * 100)}%`)}
         {slider('Rows', rows, setRows, 0, 3, 1, x => (x === 0 ? 'auto' : String(x)))}
-        {slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05)}
+        {slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05,
+          x => (report.gap && Math.abs(report.gap - x) > 0.005 ? `${report.gap.toFixed(2)} nested` : x.toFixed(2)))}
         {slider('Weight', weight, setW, 0, 0.04, 0.002, x => x.toFixed(3))}
         {slider('Thickness', thickness, setTh, 0.004, 0.16, 0.002, x => mm(x))}
         {slider('Min detail', minDetail, setMD, 0.4, 4, 0.1, x => `${x.toFixed(1)}mm`)}

@@ -411,3 +411,48 @@ describe('weight — the remedy offered for a hairline', () => {
     expect(fat.feature / thin.feature).toBeGreaterThan(1.2);
   });
 });
+
+describe('nesting — rows that meet instead of rows that get stapled', () => {
+  /* ⚠️ The bug this fixes was VISIBLE and shipped anyway.
+   *
+   * Stacked at a fixed gap the rows never touch, so `bridgeLoose` dropped a stem from every floating
+   * letter of the top row straight down through the bottom one — six hairlines ruled through the
+   * middle of a script. No real two-line topper has them: the lines are set close enough that the
+   * descenders of the upper run into the ascenders of the lower and the letterforms join themselves.
+   */
+  const SCRIPT = new FontLoader().parse(greatVibes);
+  const at = (opts) => topperShapes(SCRIPT, 'Happy\nBirthday', { height: 1, lineGap: 1.2, ...opts });
+
+  it('pulls the rows together until they actually touch', () => {
+    const loose = at({ nest: false }), nested = at({});
+    expect(nested.lineGap).toBeLessThan(loose.lineGap);
+    expect(pieceCount(nested.parts)).toBeLessThan(pieceCount(loose.parts));
+  });
+
+  it('leaves fewer stems to drop, which was the whole complaint', () => {
+    expect(bridgeLoose(at({}).parts, { width: 0.02 }).length)
+      .toBeLessThan(bridgeLoose(at({ nest: false }).parts, { width: 0.02 }).length);
+  });
+
+  it('takes the LOOSEST gap that connects, not the tightest', () => {
+    // Past the first point of contact, more overlap only makes the two lines harder to read. So the
+    // result must sit just below where it stops connecting, not down at the floor.
+    const g = at({}).lineGap;
+    expect(g).toBeGreaterThan(at({}).lineGap - 0.05);
+    expect(pieceCount(at({ nest: false, lineGap: g }).parts))
+      .toBeLessThan(pieceCount(at({ nest: false, lineGap: g + 0.15 }).parts));
+  });
+
+  it('never tightens past minGap, and leaves one row alone', () => {
+    expect(at({ minGap: 1.1 }).lineGap).toBeGreaterThanOrEqual(1.1);
+    // A single row has nothing to nest against and must come back exactly as asked.
+    expect(topperShapes(SCRIPT, 'Amelia', { height: 1, lineGap: 1.2 }).lineGap).toBeCloseTo(1.2, 6);
+  });
+
+  it('keeps the requested gap when the rows can never meet', () => {
+    // Crushing lines that will not touch leaves them unreadable AND still bridged. Better to stay
+    // legible and let the stems do their job, which the piece count still reports honestly.
+    const far = topperShapes(SCRIPT, 'Amy\nBob', { height: 1, lineGap: 1.2, minGap: 1.15 });
+    expect(far.lineGap).toBeCloseTo(1.2, 6);
+  });
+});

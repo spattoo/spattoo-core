@@ -43,7 +43,9 @@ export function topperShapes(font, text, {
   baseline = null,          // { thickness, overhang } — a bar under the word, or null for none
   legs = null,              // { count, width, length, inset } — prongs below, or null for none
   lines = 'auto',           // rows to stack over, or 'auto'; '\n' in the text always wins
-  lineGap = 1,              // baseline to baseline, in ems
+  lineGap = 1,              // baseline to baseline, in ems — the LOOSEST setting, not the final one
+  nest = true,              // pull stacked rows together until their letterforms actually meet
+  minGap = 0.45,            // how far they may be pulled before the rows read as one another
   stroke = 0.1,             // centreline faces only: the monoline's width, in ems
   fitAspect = 28,           // 'auto' stacks until width : narrowest-acrylic is no worse than this
   maxLines = 3,
@@ -71,11 +73,29 @@ export function topperShapes(font, text, {
                                 : buildRows(font, splitRows(font, clean, lines), stroke, weight);
   if (!rows.length) return EMPTY;
 
+  /* ── ROWS THAT MEET EACH OTHER, rather than rows that get stapled together ─────────────────────
+   *
+   * ⚠️ Stacking at a fixed gap leaves the rows apart, and `bridgeLoose` then drops a stem from every
+   * floating letter of the upper row down through the lower one. On a block font those stems are
+   * the only thing holding it together. On a script they are vandalism: six hairlines ruled straight
+   * through the middle of the word.
+   *
+   * Look at any real two-line script topper and no such stems exist — the rows are set close enough
+   * that the descenders of the top line run into the ascenders of the bottom one, and the letterforms
+   * do the joining themselves. So `lineGap` becomes the loosest acceptable setting rather than the
+   * answer, and the rows are pulled together until they genuinely touch.
+   *
+   * The LARGEST gap that connects, not the smallest: overlap beyond the point of contact only makes
+   * the two lines harder to read, and there is nothing to gain past the first touch. `minGap` stops
+   * it before the rows start reading as one another for a phrase whose letters will never meet.
+   */
+  const gap = nest && rows.length > 1 ? nestedGap(rows, lineGap, minGap) : lineGap;
+
   // Centre each row on itself and drop it a line — ragged rows read as centred, which is how these
   // are set, and it costs nothing to do it here rather than making every caller do it.
   const glyphOutlines = [];
   for (let i = 0; i < rows.length; i++) {
-    const { dx } = rows[i], dy = -i * lineGap;
+    const { dx } = rows[i], dy = -i * gap;
     const shift = p => ({ x: p.x + dx, y: p.y + dy });
     rows[i].baselineEm = dy;
     for (const g of rows[i].glyphs) {
@@ -156,9 +176,40 @@ export function topperShapes(font, text, {
 
   return {
     shapes, parts, glyphs, width, height, baselineY, legs: legShapes,
-    rows: rows.map(r => r.text), rowHeight: lineGap * scale, capHeight,
+    rows: rows.map(r => r.text), rowHeight: gap * scale, lineGap: gap, capHeight,
     feature: featureEm(rows, font, stroke) * scale,
   };
+}
+
+/* The loosest gap at which every neighbouring pair of rows is in contact.
+ *
+ * Walks down from the requested gap and stops at the first that connects, so the rows are never
+ * pulled tighter than they need to be. Falls back to the requested gap when they never meet — a
+ * phrase whose lines genuinely cannot touch is better left readable and bridged than crushed
+ * together and still bridged.
+ */
+function nestedGap(rows, start, floor) {
+  const shifted = rows.map(r => r.glyphs.map(g => g.outer.map(p => ({ x: p.x + r.dx, y: p.y }))));
+  for (let g = start; g >= floor - 1e-9; g -= 0.025) {
+    let all = true;
+    for (let i = 0; i < shifted.length - 1 && all; i++) all = rowsMeet(shifted[i], shifted[i + 1], g);
+    if (all) return g;
+  }
+  return start;
+}
+
+// Do any two contours of these rows touch, with the lower row dropped by `gap`?
+function rowsMeet(upper, lower, gap) {
+  for (const a of upper) {
+    const ba = bbox(a);
+    for (const b of lower) {
+      const bb = bbox(b);
+      const shifted = { x0: bb.x0, x1: bb.x1, y0: bb.y0 - gap, y1: bb.y1 - gap };
+      if (!boxOverlap(ba, shifted)) continue;
+      if (ringsTouch(a, b.map(p => ({ x: p.x, y: p.y - gap })))) return true;
+    }
+  }
+  return false;
 }
 
 /* ── Choosing the number of rows, so nobody has to ─────────────────────────────────────────────────
