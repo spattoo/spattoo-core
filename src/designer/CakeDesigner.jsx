@@ -1816,6 +1816,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
   const [pendingGarnish, setPendingGarnish] = useState(null);
+  /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
+     saved appears without a refresh — the shelf is the place a baker goes to check it worked. */
+  const [savedGarnishes, setSavedGarnishes] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    apiClient?.fetchGarnishes?.()
+      .then(rows => { if (alive) setSavedGarnishes(rows ?? []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient, garnishStudio]);
   // Kept on the DESIGNER, not inside the studio, so closing and reopening does not lose the chocolate
   // a baker just chose — the same reason penStyle lives out here.
   const [garnishColor, setGarnishColor] = useState('#4A2C1B');
@@ -8656,7 +8666,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   // The spinner at the top of the panel is already saying the true thing.
                   if (elementTypesLoading) return null;
                   const mine = filterEl(Object.values(otherElementsDb).flat().filter(el => el.baker_id));
-                  return mine.length ? (
+                  /* ⚠️ PIECES BELONG HERE TOO. "My decorations" is where somebody looks for the things
+                     they made, and a chocolate piece they piped is one of those — it was reachable
+                     only from the Uploads panel, which is a different door, so this shelf said
+                     "nothing here yet" to a baker who had just drawn two. Shown above the pictures
+                     and only when there are any, and tapping one opens the STUDIO with it loaded:
+                     a piece needs a where and a how, and those live there. */
+                  const myPieces = (savedGarnishes ?? []).filter(g =>
+                    !elemSearch.trim() || (g.name ?? '').toLowerCase().includes(elemSearch.trim().toLowerCase()));
+                  return (mine.length || myPieces.length) ? (
+                    <>
+                    {myPieces.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
+                        {myPieces.map(g => (
+                          <button key={`g${g.id}`} title={g.name}
+                            onClick={() => { setPendingGarnish(g); setGarnishStudio(true); }}
+                            style={{ ...s.elementCard, padding: 6, cursor: 'pointer' }}>
+                            {g.thumbUrl
+                              ? <img src={g.thumbUrl} alt={g.name} style={{ width: '100%', height: 54, objectFit: 'contain' }} />
+                              : <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#8a8a8a' }}>{g.name}</div>}
+                            <div style={{ fontSize: 9.5, fontWeight: 700, color: '#555', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
                       {mine.map(el => (
                         <button key={el.id} onClick={() => tapPlaceElement(el)} style={{ ...s.elementCard, padding: 6, cursor: 'pointer' }}>
@@ -8666,6 +8699,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         </button>
                       ))}
                     </div>
+                    </>
                   ) : (
                     // #9a939a at 11px was the only thing on the screen and could barely be read —
                     // about 2.9:1 against the panel, well under the 4.5:1 a sentence needs. Grey
