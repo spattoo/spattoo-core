@@ -4,6 +4,7 @@ import Segmented from '../../shared/Segmented.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
+import { pointInRing } from '../geometry/regions.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
 
 // ── Piping a chocolate garnish, off the cake ─────────────────────────────────────────────────────
@@ -75,6 +76,10 @@ export default function GarnishStudio({
   /* Where it goes and how it sits, decided HERE rather than after the fact. The piece is finished
      when it leaves this screen, and "where does it live" is the last question about it. */
   const [autoShape, setAutoShape] = useState(true);
+  /* Which stroke the hands are on. A shape lands centred, so a piece made of several — which is what
+     the reference garnishes are — is unusable until they can be moved apart. */
+  const [picked, setPicked] = useState(null);
+  const dragRef = useRef(null);
   const [zone, setZone] = useState('top');
   const [mode, setMode] = useState('stand');
   /* ⚠️ THE LIBRARY IS OPTIONAL, and its absence must not break the studio. `apiClient` may not carry
@@ -114,11 +119,16 @@ export default function GarnishStudio({
       for (const f of s.fills) line(f, ROPE);
       line(s.path, ROPE + 2);                       // the outline sits over its own fill
     }
+    if (picked != null && strokes[picked]) {
+      // A thin halo, not a box: the shapes are not rectangles and a box round a triangle points at
+      // empty corners rather than at the thing selected.
+      line(strokes[picked].ring ?? strokes[picked].path, 1.6, 'rgba(40,90,200,0.9)');
+    }
     // Wet, still being piped: lighter, so in-progress reads differently from finished.
     if (drawing) line(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
     // ⚠️ colour and ROPE are dependencies too: without them the plate keeps the shade and the line
     // width it was first painted with, and the controls appear to do nothing until the next stroke.
-  }, [strokes, trail, drawing, color, ROPE]);
+  }, [strokes, trail, drawing, color, ROPE, picked]);
 
   /* Opened FROM a kept piece: load it once, so the studio starts on the drawing rather than on a
      blank plate. Keyed on the piece's id so choosing a different one reloads, and re-renders in
@@ -165,6 +175,42 @@ export default function GarnishStudio({
     }
   }
 
+  /* ⚠️ PRESSING ON A SHAPE MOVES IT; PRESSING ON BARE PLATE DRAWS. One gesture, decided by what is
+     under the finger, rather than a mode the baker has to remember they are in. Topmost first, so the
+     thing drawn last — the thing they are most likely to be reaching for — wins an overlap. */
+  const hitStroke = pt => {
+    for (let i = strokes.length - 1; i >= 0; i--) {
+      const s2 = strokes[i];
+      if (s2.ring && pointInRing(pt, s2.ring)) return i;
+      // An open stroke has no inside, so it is caught by nearness to the line itself.
+      if (s2.path.some(q => Math.hypot(q[0] - pt[0], q[1] - pt[1]) <= ROPE * 2.5)) return i;
+    }
+    return null;
+  };
+
+  const mapStroke = (s2, f) => ({
+    ...s2,
+    path: s2.path.map(f),
+    ring: s2.ring ? s2.ring.map(f) : null,
+    fills: s2.fills.map(fl => fl.map(f)),
+  });
+
+  const centroidOf = s2 => {
+    const pts = s2.path;
+    return [pts.reduce((a2, q) => a2 + q[0], 0) / pts.length,
+            pts.reduce((a2, q) => a2 + q[1], 0) / pts.length];
+  };
+
+  /* Scale about the shape's OWN centre, not the plate's — resizing a piece must not also relocate it,
+     which is what scaling about the origin does and is the sort of thing that reads as a bug. */
+  function scalePicked(mul) {
+    setStrokes(all => all.map((s2, i) => {
+      if (i !== picked) return s2;
+      const [cx, cy] = centroidOf(s2);
+      return mapStroke(s2, ([x, y]) => [cx + (x - cx) * mul, cy + (y - cy) * mul]);
+    }));
+  }
+
   /* A shape arrives as a finished stroke: closed, so `ring` is set and the fill controls apply to it
      immediately — the same shape as anything drawn in one gesture. */
   function addShape(shape) {
@@ -202,9 +248,27 @@ export default function GarnishStudio({
   /* ⚠️ THE LIVE TRAIL IS STATE, NOT A REF. Held in a ref with a `setDrawing(true)` to force a
      repaint, React bails out when the value is unchanged and nothing appears until you let go —
      piping you cannot see as you pipe. */
-  function down(e) { ref.current.setPointerCapture(e.pointerId); setTrail([at(e)]); }
-  function move(e) { if (drawing) setTrail(t => [...t, at(e)]); }
+  function down(e) {
+    ref.current.setPointerCapture(e.pointerId);
+    const pt = at(e);
+    const hit = hitStroke(pt);
+    if (hit != null) { setPicked(hit); dragRef.current = { idx: hit, last: pt }; return; }
+    setPicked(null);
+    setTrail([pt]);
+  }
+  function move(e) {
+    const pt = at(e);
+    const d = dragRef.current;
+    if (d) {
+      const dx = pt[0] - d.last[0], dy = pt[1] - d.last[1];
+      d.last = pt;
+      setStrokes(all => all.map((s2, i) => (i === d.idx ? mapStroke(s2, ([x, y]) => [x + dx, y + dy]) : s2)));
+      return;
+    }
+    if (drawing) setTrail(t => [...t, pt]);
+  }
   function up() {
+    if (dragRef.current) { dragRef.current = null; return; }
     const tidy = tidyDrawn(trail, { minStep: 3, tolerance: 3 });
     setTrail([]);
     if (!tidy) return;
@@ -314,6 +378,21 @@ export default function GarnishStudio({
               Lands closed, so you can fill it straight away.
             </div>
           </div>
+
+          {picked != null && strokes[picked] && (
+            <div style={{ padding: '9px 11px', borderRadius: 10, background: '#F4F7FB', border: '1.5px solid #DCE6F5' }}>
+              <span style={labelStyle}>The shape you picked</span>
+              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => scalePicked(1.15)} style={miniBtn}>Bigger</button>
+                <button type="button" onClick={() => scalePicked(1 / 1.15)} style={miniBtn}>Smaller</button>
+                <button type="button" onClick={() => { setStrokes(a2 => a2.filter((_, i) => i !== picked)); setPicked(null); }}
+                  style={{ ...miniBtn, color: '#A33', borderColor: '#E0C9C9' }}>Remove</button>
+              </div>
+              <div style={{ fontSize: 10, color: '#8899aa', marginTop: 5, lineHeight: 1.4 }}>
+                Drag it on the plate to move it.
+              </div>
+            </div>
+          )}
 
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={autoShape} onChange={e => setAutoShape(e.target.checked)}
@@ -439,6 +518,10 @@ export default function GarnishStudio({
     </Panel>
   );
 }
+
+const miniBtn = { padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 11.5, fontWeight: 800, border: '1.5px solid #DDD8D0', background: '#fff',
+                  color: '#1a1a1a' };
 
 const labelStyle = { display: 'block', fontSize: 10, fontWeight: 800, color: '#888',
                      letterSpacing: 1, textTransform: 'uppercase' };

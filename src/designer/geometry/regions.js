@@ -121,7 +121,7 @@ export function isInside(inner, outer) {
 
 // Even-odd ray crossing. The half-open edge test keeps a point level with a vertex from counting
 // twice, which is the classic source of a point being called outside a ring it sits well within.
-function pointInRing([x, y], ring) {
+export function pointInRing([x, y], ring) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i], [xj, yj] = ring[j];
