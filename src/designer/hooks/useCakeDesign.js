@@ -1347,6 +1347,26 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       piping: prev.piping.map(s => (s.id === id ? { ...s, points } : s)),
     }));
   }
+  /* ⚠️ A FILL REPLACES THE LAST FILL, it does not stack on top of it. Each pass is a real stroke —
+     that is the point, they are what the baker pipes — but appending them meant choosing a second
+     pattern laid it OVER the first, and made the newest stroke a fill rather than the outline, so the
+     control that offered patterns hid itself after one use. Fills are tagged `fillOf` with the
+     outline's id; this clears that outline's old ones and lays the new. */
+  function setStrokeFill(outlineId, strokes, pattern = null) {
+    /* One state change, so the fill strokes and the pattern the card SHOWS can never disagree —
+       two updates would let a re-render land between them and draw a strip pointing at the wrong
+       pattern for a frame. */
+    setDesign(prev => ({
+      ...prev,
+      piping: [
+        ...prev.piping
+          .filter(s2 => s2.fillOf !== outlineId)
+          .map(s2 => (s2.id === outlineId ? { ...s2, fillPattern: pattern } : s2)),
+        ...strokes.map(s2 => ({ ...DEFAULT_STROKE, id: crypto.randomUUID(), ...s2, fillOf: outlineId })),
+      ],
+    }));
+  }
+
   function removeStroke() {
     setDesign(prev => ({ ...prev, piping: prev.piping.slice(0, -1) }));
   }
@@ -1407,7 +1427,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    addStroke, updateStrokePoints, removeStroke, clearPiping,
+    addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping,
     addGarnish, updateGarnish, removeGarnish,
     resetDesign,
     addStickerBatch,

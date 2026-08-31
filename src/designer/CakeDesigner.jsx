@@ -1735,7 +1735,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, removeStroke, clearPiping, addGarnish, updateGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -7278,7 +7278,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     /* Fill applies to the LAST stroke: the one just drawn, which is what a baker means by "fill it
        in". Offered only when that stroke can honestly be filled — closed, and on a flat surface. A
        wall curves away and a straight pass would cut through the cake; see pipingFillOnCake.js. */
-    const last = design.piping?.[design.piping.length - 1] ?? null;
+    /* ⚠️ THE LAST OUTLINE, not the last stroke. A fill adds strokes of its own, so "the last stroke"
+       became a fill pass the moment one was applied — and the control, which asks whether the last
+       stroke can be filled, answered no and vanished. The baker got one guess at a pattern. */
+    const outlines = (design.piping ?? []).filter(s2 => !s2.fillOf);
+    const last = outlines[outlines.length - 1] ?? null;
     const fillable = last && last.kind !== 'stamp' && last.kind !== 'stamprope'
       ? fillStrokeOnFlat(last.points ?? [], { thickness: last.thickness ?? 0.03 })
       : null;
@@ -7305,9 +7309,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       /* Each continuous squeeze becomes its own stroke, which is what it is: the nozzle lifted
          between them. It also means Undo removes them one at a time, in the order they were piped —
          the same way undoing any other piping behaves. */
-      for (const pts of out.paths) {
-        addStroke({ ...last, id: undefined, points: pts, fillOf: last.id });
-      }
+      setStrokeFill(last.id, out.paths.map(pts => ({ ...last, id: undefined, points: pts })), pattern);
     }
 
     return (
@@ -7371,7 +7373,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <Segmented
                 label="Fill the shape you just drew"
                 items={Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))}
-                value={null}
+                value={last.fillPattern ?? null}
                 onChange={fillLastStroke}
                 tone={penStyle.color}
               />
