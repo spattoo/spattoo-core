@@ -81,6 +81,10 @@ export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './d
 export { topperShapes, pieceCount, components, bridgeLoose } from './designer/geometry/topperShape.js';
 // THE size control — the admin studios size a topper with the same dial the customer will.
 export { SizeDial } from './designer/shared/SizeDial.jsx';
+// One face list and one finish list, shared by the studio and the cake. creamFonts.json is already
+// copied into spattoo-admin; a topper does not get a second copy of anything.
+export { TOPPER_FACES, DEFAULT_TOPPER_FACE, loadTopperFace, isMonoline } from './designer/geometry/topperFaces.js';
+export { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, topperFinish, applyTopperFinishConfig } from './designer/geometry/topperFinishes.js';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
