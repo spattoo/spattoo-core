@@ -75,6 +75,10 @@ export {
   LETTER_COUNTS, LETTER_SIZE_DEFAULTS, letterCount, letterSizeForCount, letterTierDims,
 } from './designer/geometry/glyphShape.js';
 export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './designer/geometry/surface.js';
+// Acrylic toppers: the word, its bar, its prongs — and the connectivity check that says whether the
+// thing can be cut as one piece. Exported because the admin studio previews from the same numbers
+// the designer renders, the same bargain TextTopperStudio already makes with the text-slot compositor.
+export { topperShapes, pieceCount, components } from './designer/geometry/topperShape.js';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
