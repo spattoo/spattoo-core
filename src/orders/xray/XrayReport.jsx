@@ -423,6 +423,8 @@ export default function XrayReport({ order, apiClient, onClose }) {
           photoUrl={order?.design_thumbnail_url}
           // Shared with the PDF, so the close-up and the printed size are the same on both.
           decorationMeta={decorationMeta}
+          // Derived from the pieces' own paths — see GarnishGuides. Nothing is fetched for these.
+          garnishes={report.garnishes ?? []}
           onGenerated={(key, steps) => {
             setGuideRefresh(n => n + 1);                       // element guides, for designed orders
             if (key && steps) setFreshSteps(p => ({ ...p, [key]: steps }));

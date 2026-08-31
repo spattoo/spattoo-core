@@ -85,6 +85,9 @@ describe('a saved design comes back as the same cake', () => {
     boardGrass: { color: '#3f9c33', height: 0.16, ringWidth: 0.8, patches: [{ u: 0.5, v: 0.9, r: 0.3 }] },
     nameBlocks: { zone: 'board', text: 'CAKE', size: 0.3, blockColor: '#f7f5f2',
                   blocks: [{ char: 'C', u: 0.1, v: 0.9, yaw: 0.6 }] },
+    garnishes: [{ id: 'g1', kind: 'piped', theta: 0.4, radius: 0.5, mode: 'stand', zone: 'top',
+                  paths: [[[10, 10], [40, 40]]], rings: [], color: '#4A2C1B', rope: 6, plate: 420,
+                  parts: [{ color: '#4A2C1B', paths: [[[10, 10], [40, 40]]], rings: [] }] }],
   };
 
   const roundTrip = d => normalizeDesign(buildDesignSnapshot(d));
@@ -101,11 +104,25 @@ describe('a saved design comes back as the same cake', () => {
     });
   }
 
-  for (const key of ['boardGrass', 'nameBlocks', 'writings', 'texts', 'ages', 'stickers', 'piping']) {
+  for (const key of ['boardGrass', 'nameBlocks', 'writings', 'texts', 'ages', 'stickers', 'piping', 'garnishes']) {
     it(`design.${key} survives`, () => {
       expect(roundTrip(FULL)[key]).toEqual(FULL[key]);
     });
   }
+
+  /* ⚠️ THE LIST ABOVE IS A LIST SOMEBODY HAS TO REMEMBER TO EXTEND, and twice now nobody did: the
+     legacy `writing`, and then `garnishes` — hydrated on the way in, dropped on the way out, so a
+     placed chocolate piece vanished when the design was saved and nothing failed loudly. This asks
+     the question structurally instead. Whatever `normalizeDesign` decides a design HAS, saving and
+     reloading must give back; a new decoration type that never reaches the snapshot fails here on
+     the day it is added rather than on the day a baker notices their cake is missing something. */
+  it('every field the design carries survives a save, including ones added later', () => {
+    const hydrated = normalizeDesign(FULL);
+    const saved = roundTrip(FULL);
+    const lost = Object.keys(hydrated).filter(k => k !== 'tiers'
+      && JSON.stringify(saved[k]) !== JSON.stringify(hydrated[k]));
+    expect(lost).toEqual([]);
+  });
 
   // A message became a LIST on 2026-08-22. Every template and order saved before that holds a single
   // nullable `writing` OBJECT, and those are not ours to rewrite — a saved order is a record of what

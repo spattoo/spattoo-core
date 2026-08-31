@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
+import GarnishBuildGuide from './GarnishBuildGuide.jsx';
 
 // ── How to make the decorations ──────────────────────────────────────────────────────────────────
 // The nozzle sections answer "which tip pipes this border". This answers the other half: how a
@@ -28,13 +29,22 @@ import { downloadDecorationTemplate } from './decorationTemplate.js';
 // WITH THE CUSTOMER — often after the order is placed. So the A4 print path is always available
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
 export default function XrayDecorationSteps({
-  design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated, s,
+  design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated,
+  garnishes = [], s,
 }) {
   const rows = fromPhoto ? photoRows(design, storedSteps, decorationMeta) : elementRows(design, guides);
-  if (!rows.length) return null;
+  if (!rows.length && !garnishes.length) return null;
 
   return (
     <div>
+      {/* ⚠️ GARNISHES GO IN THEIR OWN SECTION, ABOVE, AND NOT UNDER THE AI LINE BELOW. Their guide is
+          derived from the piece's own stored paths — it is not written by anything and cannot be
+          about a different garnish — so putting it under "check it before you build" would tell a
+          baker to doubt the one guide here that is exact. Honesty runs in both directions. */}
+      {!!garnishes.length && <GarnishGuides garnishes={garnishes} s={s} />}
+
+      {!!rows.length && (
+      <>
       <div style={s.sub}><span style={s.dot('#6A5A8C')} /> Decorations — how to make them</div>
       {/* Said once for the whole section, as well as per row. The row badge marks an individual
           guide as unreviewed; this says the FEATURE is AI, which is what a baker deciding whether
@@ -49,6 +59,38 @@ export default function XrayDecorationSteps({
             key={row.key} row={row} orderId={orderId} photoUrl={photoUrl}
             apiClient={apiClient} onGenerated={onGenerated} s={s}
           />
+        ))}
+      </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+/* ── Chocolate garnishes: the drawing IS the instruction ────────────────────────────────────────
+ *
+ * The strokes were saved in the order they were piped, so the guide is a reading of the piece rather
+ * than a description of it. Nothing is fetched, nothing is generated, and there is no "generate"
+ * button because there is nothing to wait for. */
+function GarnishGuides({ garnishes, s }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={s.sub}><span style={s.dot('#4A2C1B')} /> Chocolate garnishes — how to pipe them</div>
+      <div style={{ ...s.muted, marginTop: -4, marginBottom: 8 }}>
+        Taken from the drawing itself — the numbers are the order it was piped in.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {garnishes.map((g, i) => (
+          <div key={g.id ?? i} style={{ border: '1px solid #ECE7E0', borderRadius: 12, padding: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
+              {g.name || 'Chocolate piece'}
+              <span style={{ fontWeight: 600, color: '#999', marginLeft: 8, fontSize: 12 }}>
+                {g.zone === 'board' ? 'on the board' : 'on the top tier'}
+                {g.mode === 'stand' ? ', standing up' : ', lying flat'}
+              </span>
+            </div>
+            <GarnishBuildGuide garnish={g} cakeDiameterMm={g.cakeDiameterMm ?? null} />
+          </div>
         ))}
       </div>
     </div>

@@ -298,5 +298,17 @@ export function proceduralPlacements(design, tierCount) {
     if (t?.grass) add(t.grass, 'Piped grass', i, 'grass', 0);
   });
   if (design?.nameBlocks) add(design.nameBlocks, 'Letter blocks', 0, 'blocks', 0);
+  /* ⚠️ A GARNISH BELONGS ON THE CHECKLIST — it is a decoration a baker must MAKE, which is the whole
+     point of this list — but its `elementId` is deliberately NOT carried. Every id here is used to
+     fetch a written craft guide, and a garnish already has a better one derived from its own paths;
+     asking for both would print a vague guide beside the true one. The id all garnishes share is the
+     palette element ("Chocolate drawing"), so the written guide could not be about this piece
+     anyway. */
+  (design?.garnishes ?? []).forEach((g, k) => out.push({
+    what: g.name || 'Chocolate garnish',
+    where: g.zone === 'board' ? 'Board' : tierLabel(n - 1, n),
+    key: `garnish-${g.id ?? k}`,
+    elementId: null,
+  }));
   return out;
 }

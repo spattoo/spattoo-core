@@ -85,6 +85,12 @@ export function buildDesignSnapshot(design) {
     // normalizeDesign promotes it, so nothing downstream has to know both shapes.
     writings: writingsOf(design),           // typed cream lettering, one per placement
     piping:   design.piping ?? [],          // freehand cream-pen strokes
+    /* ⚠️ THIS WAS MISSING, and a placed chocolate garnish was therefore lost the moment the design was
+       saved — hydrated on the way in, dropped on the way out, exactly the asymmetry that cost the
+       legacy `writing` above. Nothing failed loudly: the piece simply was not there next time. The
+       structural test below now derives its key list from what hydrate produces rather than from a
+       list someone has to remember to extend. */
+    garnishes: design.garnishes ?? [],      // chocolate pieces piped in the studio and placed
     // Design-level, not per-tier, because the BOARD is: a ring of grass round the cake's foot and a
     // name spelled in fondant cubes both stand on it, not on any one tier.
     boardGrass: design.boardGrass ?? null,
