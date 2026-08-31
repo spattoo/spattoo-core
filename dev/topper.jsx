@@ -6,6 +6,10 @@ import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import creamFonts from '../src/designer/geometry/creamFonts.json';
+import greatVibes from '../src/designer/geometry/typefaces/great-vibes.json';
+import dancingScript from '../src/designer/geometry/typefaces/dancing-script.json';
+import parisienne from '../src/designer/geometry/typefaces/parisienne.json';
+import pinyonScript from '../src/designer/geometry/typefaces/pinyon-script.json';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useThree } from '@react-three/fiber';
 import { topperShapes, components, bridgeLoose } from '../src/designer/geometry/topperShape.js';
@@ -34,17 +38,35 @@ import { SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 /* Block outlines and centreline scripts side by side, because the choice between them is the whole
  * question. The block face is the worst case for cutting — nothing touches anything — and the
  * scripts are what the market actually sells. */
-const BLOCK = new FontLoader().parse(helvetikerBold);
+/* ── The two kinds of script, and they are not interchangeable ──────────────────────────────────
+ * OUTLINE scripts have thicks and thins — the second reference photo — and their hairlines are the
+ * thinnest acrylic in the design by a long way. CENTRELINE faces are monoline, matching the first
+ * photo, and their stroke is whatever you set it to. Both are here because the choice between them
+ * is the choice between the two photos. */
+const OUTLINE = {
+  great_vibes: ['Great Vibes (script)', greatVibes],
+  dancing_script: ['Dancing Script', dancingScript],
+  parisienne: ['Parisienne (script)', parisienne],
+  pinyon_script: ['Pinyon Script', pinyonScript],
+  block: ['Helvetiker Bold (block)', helvetikerBold],
+};
+const PARSED = Object.fromEntries(
+  Object.entries(OUTLINE).map(([k, [, json]]) => [k, new FontLoader().parse(json)]));
+
 const FACES = {
-  ems_allure: 'Allure (script)',
-  ems_felix: 'Felix (script)',
-  ems_elfin: 'Elfin (script)',
-  hershey_script_1: 'Cursive (script)',
-  hershey_goth_english: 'Gothic',
-  ems_nixish_italic: 'Nixish It. (hand)',
+  great_vibes: 'Great Vibes (script)',
+  dancing_script: 'Dancing Script',
+  parisienne: 'Parisienne (script)',
+  pinyon_script: 'Pinyon Script',
+  ems_allure: 'Allure (mono)',
+  ems_felix: 'Felix (mono)',
+  ems_elfin: 'Elfin (mono)',
+  hershey_script_1: 'Cursive (mono)',
+  ems_nixish_italic: 'Nixish It. (mono)',
   block: 'Helvetiker Bold (block)',
 };
-const faceOf = (k) => (k === 'block' ? BLOCK : creamFonts[k]);
+const faceOf = (k) => PARSED[k] ?? creamFonts[k];
+const isMono = (k) => !PARSED[k];
 
 /* ⚠️ A LOCAL environment, not the designer's SceneEnv.
  *
@@ -157,7 +179,7 @@ const val = { fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 42, textAl
 
 function App() {
   const [text, setText]     = useState('Amelia');
-  const [face, setFace]     = useState('ems_allure');
+  const [face, setFace]     = useState('great_vibes');
   // 0.12em puts the stroke at about a tenth of the letter, which is what the toppers in the market
   // measure. Below that it is a hairline; above it the counters in a, p and B start closing up.
   const [stroke, setStroke] = useState(0.12);
@@ -174,6 +196,7 @@ function App() {
   const [legLen, setLL]     = useState(0.42);
   const [bury, setBury]     = useState(0.21);   // half the leg in the cake, half of it showing
   const [thickness, setTh]  = useState(0.063);
+  const [minDetail, setMD]  = useState(1);   // mm; the thinnest the cutter will hold
   const [bridge, setBridge] = useState(true);
   const [finish, setFinish] = useState('gold');
 
@@ -186,12 +209,14 @@ function App() {
    *
    * `topperShapes` sizes by height, so this measures the word at height 1 and divides — the aspect
    * ratio is a property of the text and the font, and one build is enough to learn it. */
-  /* ⚠️ ONE number, and it is physical: the span across the cake divided by the sheet thickness.
+  /* ⚠️ THE NUMBER THAT DECIDES EVERYTHING, so it is a control and not a constant.
    *
-   * Nothing narrower than the sheet is thick should be cut, so `fitAspect` is exactly that ratio and
-   * the module stacks rows until the thinnest stroke clears it. The threshold I had before was 12mm
-   * of letter height, which I invented — this one is measurable with a caliper. */
-  const fitAspect = (CAKE_R * 2 * span * MM_PER_UNIT) / (thickness * MM_PER_UNIT);
+   * `fitAspect` is the span across the cake divided by the smallest detail worth cutting, and the
+   * module stacks rows until the thinnest stroke clears it. Two earlier versions of this threshold
+   * were things I asserted: first "12mm of letter height", then "nothing narrower than the sheet is
+   * thick". Neither came from anywhere. 1mm is the usual quoted floor for laser-cut 3mm acrylic, and
+   * it is a slider because it belongs to whoever is actually having these cut. */
+  const fitAspect = (CAKE_R * 2 * span * MM_PER_UNIT) / Math.max(0.1, minDetail);
 
   /* One probe at height 1, and EVERY size read off it.
    *
@@ -227,7 +252,7 @@ function App() {
   }, [text, height, weight, bar, barThick, legCount, legLen, bridge, rows, lineGap, face, stroke, fitAspect]);
 
   // One test, both faces: is the narrowest acrylic in the design at least as wide as the sheet?
-  const thin = report.feature > 0 && report.feature < thickness;
+  const thin = report.feature > 0 && report.feature * MM_PER_UNIT < minDetail;
 
   const slider = (label, v, set, min, max, step, fmt = x => x.toFixed(2)) => (
     <div style={row}>
@@ -260,7 +285,7 @@ function App() {
             {Object.entries(FACES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
-        {face !== 'block' && slider('Stroke', stroke, setStroke, 0.05, 0.45, 0.005,
+        {isMono(face) && slider('Stroke', stroke, setStroke, 0.05, 0.45, 0.005,
           /* ⚠️ Measured, not computed as stroke x height. `height` is the whole stacked BLOCK —
              over two ems once there are two rows — so the arithmetic version read 6.3mm beside a
              panel saying 2.6mm for the same stroke. One of those was measured; use that one. */
@@ -270,6 +295,7 @@ function App() {
         {slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05)}
         {slider('Weight', weight, setW, 0, 0.04, 0.002, x => x.toFixed(3))}
         {slider('Thickness', thickness, setTh, 0.004, 0.16, 0.002, x => mm(x))}
+        {slider('Min detail', minDetail, setMD, 0.4, 4, 0.1, x => `${x.toFixed(1)}mm`)}
 
         <div style={{ ...row, marginTop: 12 }}>
           <span style={lab}>Bar</span>
@@ -313,13 +339,13 @@ function App() {
               number that decides whether a phrase needs stacking, so it is stated, not implied. */}
           <div style={{ marginTop: 2, color: thin ? '#8A5A1E' : '#8a8a8a' }}>
             {report.rows.length > 1 ? report.rows.join(' / ') : '\u00a0'}
-            {thin && ` — thinner than the ${mm(thickness)} sheet; widen the stroke or the span`}
+            {thin && ` — under the ${minDetail.toFixed(1)}mm the cutter can hold`}
           </div>
         </div>
       </div>
 
       <div style={{ flex: 1 }}>
-        <Canvas shadows camera={{ position: [0, 1.75, 5.1], fov: 32 }} gl={{ preserveDrawingBuffer: true }}>
+        <Canvas shadows camera={{ position: [0, 1.95, 6.2], fov: 32 }} gl={{ preserveDrawingBuffer: true }}>
           <color attach="background" args={['#EDEAE3']} />
           <SceneLights />
           <LocalEnv />
@@ -328,7 +354,7 @@ function App() {
                   legCount={legCount} legLen={legLen} thickness={thickness} bridge={bridge} finish={finish}
                   cakeTop={0.55} bury={Math.min(bury, legLen)} rows={rows} lineGap={lineGap}
                   face={face} stroke={stroke} fitAspect={fitAspect} />
-          <OrbitControls target={[0, 0.62, 0]} />
+          <OrbitControls target={[0, 0.9, 0]} />
         </Canvas>
       </div>
     </div>

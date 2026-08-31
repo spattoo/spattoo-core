@@ -67,8 +67,8 @@ export function topperShapes(font, text, {
    * Rows are laid out at size 1 with each row centred on its own outline, then the whole block is
    * scaled together — so `height` keeps meaning the height of the finished object and every caller
    * that sized a single line still gets what it asked for. */
-  const rows = lines === 'auto' ? autoRows(font, clean, fitAspect, maxLines, stroke)
-                                : buildRows(font, splitRows(font, clean, lines), stroke);
+  const rows = lines === 'auto' ? autoRows(font, clean, fitAspect, maxLines, stroke, weight)
+                                : buildRows(font, splitRows(font, clean, lines), stroke, weight);
   if (!rows.length) return EMPTY;
 
   // Centre each row on itself and drop it a line — ragged rows read as centred, which is how these
@@ -97,8 +97,8 @@ export function topperShapes(font, text, {
   const tx = p => ({ x: (p.x - cx) * scale, y: (p.y - cy) * scale });
 
   const glyphs = glyphOutlines.map(g => ({
-    outer: offsetRing(g.outer.map(tx), weight * scale),
-    holes: g.holes.map(h => offsetRing(h.map(tx), -weight * scale)),
+    outer: g.outer.map(tx),
+    holes: g.holes.map(h => h.map(tx)),
   }));
 
   const width = gw * scale;
@@ -187,11 +187,11 @@ export function topperShapes(font, text, {
  * Fewest rows that clear the bar, and it stops early when there are no more words to break on, so a
  * long single word stays on one line rather than being chopped.
  */
-function autoRows(font, clean, fitAspect, maxLines, stroke) {
+function autoRows(font, clean, fitAspect, maxLines, stroke, weight) {
   const cap = Math.max(1, Math.round(maxLines) || 1);
   let best = [];
   for (let n = 1; n <= cap; n++) {
-    const rows = buildRows(font, splitRows(font, clean, n), stroke);
+    const rows = buildRows(font, splitRows(font, clean, n), stroke, weight);
     if (!rows.length) break;
     if (rows.length < n) return best.length ? best : rows;   // out of words to break on
     best = rows;
@@ -207,25 +207,60 @@ function autoRows(font, clean, fitAspect, maxLines, stroke) {
 // need to measure it. Rows of nothing but spaces produce no glyphs and are dropped.
 /* The narrowest piece of acrylic in the design, in ems.
  *
- * Exact for a monoline — the stroke IS the width between the two cuts. For an outline face there is
- * no cheap exact answer (the true minimum is the thinnest stem, which needs the outline walked), and
- * a fifth of the cap height is what a bold sans stem measures, so that is the estimate. Called out
- * as an estimate rather than dressed up, because the number decides whether a design ships. */
-const STEM_OF_CAP = 0.2;
+ * Exact for a monoline — the stroke IS the width between the two cuts.
+ *
+ * ⚠️ For an outline face this was a fifth of the cap height, which I asserted was "what a bold sans
+ * stem measures". Measured, it is wrong for every font tried, including the bold sans: helvetiker
+ * comes out at 0.073, Great Vibes at 0.031, Pinyon Script at 0.021. Guessing it 3 to 10 times too
+ * fat means a hairline script sails past the check that exists to catch hairlines.
+ *
+ * So it is measured from the outline that was already built. A ribbon of width w and length L has
+ * area ~ wL and perimeter ~ 2L, so 2A/P is its width — exact for a ring (an 'o' gives its wall
+ * thickness), conservative for a blob, and it costs one pass over points already in memory. The
+ * thinnest GLYPH decides, because the topper breaks wherever it is thinnest and not on average.
+ */
 function featureEm(rows, font, stroke) {
   if (isCentreline(font)) return Math.max(1e-4, stroke || 0.1);
-  return Math.max(...rows.map(r => r.capEm)) * STEM_OF_CAP;
+  let min = Infinity;
+  for (const r of rows) for (const g of r.glyphs) {
+    const w = strokeWidth(g);
+    if (w > 0 && w < min) min = w;
+  }
+  return Number.isFinite(min) ? min : Math.max(...rows.map(r => r.capEm)) * 0.1;
 }
 
-function buildRows(font, rowText, stroke) {
+// 2 x area / perimeter, counting holes on both sides so a counter thins the letter rather than
+// fattening it.
+function strokeWidth(part) {
+  let a = ringArea(part.outer), p = ringPerimeter(part.outer);
+  for (const h of part.holes ?? []) { a -= ringArea(h); p += ringPerimeter(h); }
+  return p > 0 ? (2 * a) / p : 0;
+}
+
+function ringArea(r) {
+  let a = 0;
+  for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p.x * q.y - q.x * p.y; }
+  return Math.abs(a) / 2;
+}
+
+function ringPerimeter(r) {
+  let l = 0;
+  for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; l += Math.hypot(q.x - p.x, q.y - p.y); }
+  return l;
+}
+
+function buildRows(font, rowText, stroke, weight = 0) {
   const rows = [];
   for (const text of rowText) {
-    const o = isCentreline(font) ? strokeOutlines(font, text, stroke)
-                                 : font.generateShapes(text, 1).map(sh => ({
+    let o = isCentreline(font) ? strokeOutlines(font, text, stroke)
+                               : font.generateShapes(text, 1).map(sh => ({
       outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y })),
       holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y }))),
     }));
     if (!o.length) continue;
+    // Applied HERE, in ems, so `featureEm` and the row-count rule both see the letters as they will
+    // actually be cut. Applied after the fact — as it was — they measure a design that never ships.
+    if (weight) o = o.map(g => ({ outer: offsetRing(g.outer, weight), holes: g.holes.map(h => offsetRing(h, -weight)) }));
     const b = boundsOf(o);
     rows.push({ text, glyphs: o, capEm: b.y1 - b.y0, wEm: b.x1 - b.x0, dx: -(b.x0 + b.x1) / 2 });
   }
@@ -406,15 +441,10 @@ function advanceOf(font, str) {
   return w;
 }
 
-// The box around a set of outlines, in whatever units they are already in.
-function boundsOf(outlines) {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const g of outlines) for (const p of g.outer) {
-    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
-    if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
-  }
-  return { x0, y0, x1, y1 };
-}
+// The box around a set of outlines, in whatever units they are already in. Deferred to `bbox`
+// rather than walking the points again — the second copy of that walk is what check:dup caught, and
+// it was mine.
+const boundsOf = (outlines) => bbox(outlines.flatMap(g => g.outer));
 
 /* ── How many separate bits of acrylic is this? ──────────────────────────────────────────────────
  *
@@ -571,9 +601,22 @@ function ringsTouch(a, b) {
  * deliberately so: this exists to close hairline gaps between letters, which is a small nudge. The
  * connectivity count is what says whether the nudge was enough, so an approximation that is
  * MEASURED beats an exact one that is trusted. */
+/* Push a ring outward by `d` — outward meaning AWAY FROM ITS OWN INTERIOR, whichever way it winds.
+ *
+ * ⚠️ The normal here is the right-hand one relative to the direction of travel, which points out of
+ * a counter-clockwise ring and INTO a clockwise one. Helvetiker winds every contour the same way, so
+ * the block-font tests never saw it; Great Vibes does not, and the result was letters that shrank
+ * when asked to thicken. Weight then read as doing nothing while quietly making the piece count
+ * worse — the one control offered as the remedy for a hairline, breaking the thing it was for.
+ *
+ * The signed area says which way the ring winds, so the sign is corrected rather than assumed. */
 function offsetRing(ring, d) {
   if (!d) return ring;
   const n = ring.length;
+  let twice = 0;
+  for (let i = 0; i < n; i++) { const p = ring[i], q = ring[(i + 1) % n]; twice += p.x * q.y - q.x * p.y; }
+  const sign = twice < 0 ? -1 : 1;
+  d *= sign;
   return ring.map((p, i) => {
     const prev = ring[(i - 1 + n) % n], next = ring[(i + 1) % n];
     const n1 = norm(p.x - prev.x, p.y - prev.y), n2 = norm(next.x - p.x, next.y - p.y);

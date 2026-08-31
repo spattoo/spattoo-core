@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { topperShapes, pieceCount, components, bridgeLoose } from './topperShape.js';
+import greatVibes from './typefaces/great-vibes.json';
 
 // ── An acrylic topper has to be ONE piece ────────────────────────────────────────────────────────
 //
@@ -332,17 +333,81 @@ describe('auto — the caller does not have to know rows exist', () => {
     expect(at('Bartholomewwwwwwwwww').rows).toHaveLength(1);
   });
 
-  it('actually clears the ratio it is aiming at', () => {
-    // The rule is width : letter height, which is what survives not knowing the cake's size.
-    const t = at('Happy Birthday', { fitAspect: 7 });
-    expect(t.width / t.capHeight).toBeLessThanOrEqual(7);
-    // And a laxer bar leaves it on one line, so the number is doing the deciding.
-    expect(at('Happy Birthday', { fitAspect: 99 }).rows).toHaveLength(1);
+  it('clears the ratio it aims at, measured on the NARROWEST acrylic', () => {
+    /* ⚠️ On `feature`, not on `capHeight`. The rule used to be letter height and this test was
+     * written against it; both were wrong for the same reason — a script's box is mostly loops, so
+     * the letters read tall while the stroke that gets cut is a hairline. */
+    const t = at('Happy Birthday', { fitAspect: 60 });
+    expect(t.width / t.feature).toBeLessThanOrEqual(60);
+
+    /* And when the bar CANNOT be met it gives its best rather than throwing or giving up: two words
+     * break into two rows and no further, so 40 is simply unreachable for this phrase. Silently
+     * returning the one-row version would be the dangerous answer — the caller would ship a hairline
+     * believing the check had passed. */
+    const hard = at('Happy Birthday', { fitAspect: 40 });
+    expect(hard.rows).toHaveLength(2);
+    expect(hard.width / hard.feature).toBeLessThan(t.width / t.feature + 1e-6);
+
+    // The bar is doing the deciding, in both directions: slack enough and it stays on one row.
+    const one = at('Happy Birthday', { lines: 1 });
+    expect(at('Happy Birthday', { fitAspect: one.width / one.feature + 1 }).rows).toHaveLength(1);
+    expect(at('Happy Birthday', { fitAspect: one.width / one.feature - 1 }).rows.length)
+      .toBeGreaterThan(1);
+  });
+
+  it('measures the thinnest stroke rather than guessing it from the cap', () => {
+    /* The estimate this replaced was a fifth of the cap, asserted as "what a bold sans stem
+     * measures". It is wrong for the bold sans too — by a factor of nearly three — and a hairline
+     * script would have sailed past the check that exists to catch hairlines. */
+    const t = at('Happy Birthday', { lines: 1 });
+    expect(t.feature).toBeGreaterThan(0);
+    expect(t.feature).toBeLessThan(t.capHeight * 0.15);
+
+    // An 'o' is a ring, and 2A/P is exactly a ring's wall thickness — so the number is a width,
+    // not a proxy that happens to sort correctly.
+    const o = at('o', { lines: 1 });
+    expect(o.feature).toBeGreaterThan(0);
+    expect(o.feature).toBeLessThan(o.capHeight / 2);
   });
 
   it('still does what it is told when told', () => {
     expect(at('Happy Birthday', { lines: 1 }).rows).toHaveLength(1);
     expect(at('Amelia', { lines: 2 }).rows).toHaveLength(1);        // one word, nothing to break
     expect(at('Happy\nBirthday', { lines: 1 }).rows).toHaveLength(2);  // the newline still wins
+  });
+});
+
+describe('weight — the remedy offered for a hairline', () => {
+  /* ⚠️ Tested against a SCRIPT, because the bug this catches is invisible in a block font.
+   *
+   * `offsetRing` takes the right-hand normal to the direction of travel, which points out of a
+   * counter-clockwise ring and into a clockwise one. Helvetiker winds every contour the same way, so
+   * every test here passed while Great Vibes — which does not — had letters SHRINK when asked to
+   * thicken. Weight read as doing nothing and quietly raised the piece count: the one control the
+   * docs point at for a hairline, breaking the exact thing it exists to fix.
+   */
+  const SCRIPT = new FontLoader().parse(greatVibes);
+
+  it('thickens the thinnest stroke, whichever way a contour winds', () => {
+    const at = (w) => topperShapes(SCRIPT, 'Happy Birthday', { height: 1, weight: w, lines: 1 });
+    const [a, b, c] = [at(0), at(0.004), at(0.01)];
+    expect(b.feature).toBeGreaterThan(a.feature);
+    expect(c.feature).toBeGreaterThan(b.feature);
+  });
+
+  it('never breaks a design apart by thickening it', () => {
+    // Fattening strokes can only ever make letters meet. A rising count means some ring went the
+    // wrong way, which is exactly how the winding bug announced itself.
+    const at = (w) => pieceCount(topperShapes(SCRIPT, 'Happy Birthday', { height: 1, weight: w, lines: 1 }).parts);
+    const base = at(0);
+    for (const w of [0.004, 0.008, 0.012]) expect(at(w)).toBeLessThanOrEqual(base);
+  });
+
+  it('is measured on the letters as they will be cut, not before', () => {
+    // The weight used to be applied after the rows were measured, so `feature` and the row-count
+    // rule both judged a design that never ships.
+    const thin = topperShapes(SCRIPT, 'Happy Birthday', { height: 1, weight: 0, lines: 1 });
+    const fat = topperShapes(SCRIPT, 'Happy Birthday', { height: 1, weight: 0.02, lines: 1 });
+    expect(fat.feature / thin.feature).toBeGreaterThan(1.2);
   });
 });
