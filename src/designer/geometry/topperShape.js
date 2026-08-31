@@ -47,6 +47,7 @@ export function topperShapes(font, text, {
   nest = true,              // pull stacked rows together until their letterforms actually meet
   minGap = 0.45,            // how far they may be pulled before the rows read as one another
   stroke = 0.1,             // centreline faces only: the monoline's width, in ems
+  tracking = 0,             // letter fit, in ems — NEGATIVE tightens until the strokes meet
   fitAspect = 28,           // 'auto' stacks until width : narrowest-acrylic is no worse than this
   maxLines = 3,
 } = {}) {
@@ -69,8 +70,8 @@ export function topperShapes(font, text, {
    * Rows are laid out at size 1 with each row centred on its own outline, then the whole block is
    * scaled together — so `height` keeps meaning the height of the finished object and every caller
    * that sized a single line still gets what it asked for. */
-  const rows = lines === 'auto' ? autoRows(font, clean, fitAspect, maxLines, stroke, weight)
-                                : buildRows(font, splitRows(font, clean, lines), stroke, weight);
+  const rows = lines === 'auto' ? autoRows(font, clean, fitAspect, maxLines, stroke, weight, tracking)
+                                : buildRows(font, splitRows(font, clean, lines), stroke, weight, tracking);
   if (!rows.length) return EMPTY;
 
   /* ── ROWS THAT MEET EACH OTHER, rather than rows that get stapled together ─────────────────────
@@ -238,11 +239,11 @@ function rowsMeet(upper, lower, gap) {
  * Fewest rows that clear the bar, and it stops early when there are no more words to break on, so a
  * long single word stays on one line rather than being chopped.
  */
-function autoRows(font, clean, fitAspect, maxLines, stroke, weight) {
+function autoRows(font, clean, fitAspect, maxLines, stroke, weight, tracking) {
   const cap = Math.max(1, Math.round(maxLines) || 1);
   let best = [];
   for (let n = 1; n <= cap; n++) {
-    const rows = buildRows(font, splitRows(font, clean, n), stroke, weight);
+    const rows = buildRows(font, splitRows(font, clean, n), stroke, weight, tracking);
     if (!rows.length) break;
     if (rows.length < n) return best.length ? best : rows;   // out of words to break on
     best = rows;
@@ -300,14 +301,11 @@ function ringPerimeter(r) {
   return l;
 }
 
-function buildRows(font, rowText, stroke, weight = 0) {
+function buildRows(font, rowText, stroke, weight = 0, tracking = 0) {
   const rows = [];
   for (const text of rowText) {
-    let o = isCentreline(font) ? strokeOutlines(font, text, stroke)
-                               : font.generateShapes(text, 1).map(sh => ({
-      outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y })),
-      holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y }))),
-    }));
+    let o = isCentreline(font) ? strokeOutlines(font, text, stroke, tracking)
+                               : outlineRow(font, text, tracking);
     if (!o.length) continue;
     // Applied HERE, in ems, so `featureEm` and the row-count rule both see the letters as they will
     // actually be cut. Applied after the fact — as it was — they measure a design that never ships.
@@ -316,6 +314,42 @@ function buildRows(font, rowText, stroke, weight = 0) {
     rows.push({ text, glyphs: o, capEm: b.y1 - b.y0, wEm: b.x1 - b.x0, dx: -(b.x0 + b.x1) / 2 });
   }
   return rows;
+}
+
+/* ── Setting a row of outlines, one glyph at a time, so the FIT is a control ─────────────────────
+ *
+ * ⚠️ THE JOIN BETWEEN TWO LETTERS IS NOT A BRIDGE PROBLEM.
+ *
+ * A script whose "h" and "d" do not quite meet got a straight 3mm rectangle bolted across the gap,
+ * and it read exactly like what it was: a bar laid over a curve. The bridge was doing its job — the
+ * mistake was needing one. These faces are drawn for print, where letters merely have to LOOK
+ * joined; cut in acrylic they have to actually touch, and the fix a type designer would reach for is
+ * to tighten the fit until they do.
+ *
+ * `generateShapes` lays out a whole string and gives no way in, so the row is set glyph by glyph
+ * instead. That costs nothing and loses nothing: three.js applies NO kerning — `createPaths` advances
+ * by `glyph.ha * scale` and nothing else — so this is byte-identical to the whole-string call at
+ * tracking 0, and every negative step from there closes the gaps evenly.
+ */
+function outlineRow(font, text, tracking) {
+  const out = [];
+  const res = font.data?.resolution || 1000;
+  let pen = 0;
+  for (const ch of String(text)) {
+    const g = font.data?.glyphs?.[ch] ?? font.data?.glyphs?.['?'];
+    const adv = (g?.ha ?? 0) / res;
+    if (ch !== ' ' && g?.o) {
+      for (const sh of font.generateShapes(ch, 1)) {
+        out.push({
+          outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x + pen, y: p.y })),
+          holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x + pen, y: p.y }))),
+        });
+      }
+    }
+    // A space keeps its full advance: tightening the FIT of a word should not weld two words together.
+    pen += adv + (ch === ' ' ? 0 : tracking);
+  }
+  return out;
 }
 
 /* ── Monoline scripts, from the faces the cream pen already uses ─────────────────────────────────
@@ -341,7 +375,7 @@ const isCentreline = (font) => !!font && !font.generateShapes && !!font.glyphs;
 const glyphOf = (face, ch) =>
   face.glyphs[ch] || face.glyphs[ch.toUpperCase?.()] || face.glyphs[ch.toLowerCase?.()] || null;
 
-function strokeOutlines(face, text, width) {
+function strokeOutlines(face, text, width, tracking = 0) {
   const em = face.em || 1000;
   const r = Math.max(1e-4, (width || 0.1) / 2) * em;    // half-width, in the face's own units
   const out = [];
@@ -354,7 +388,7 @@ function strokeOutlines(face, text, width) {
       const ring = ribbon(stroke.map(([x, y]) => ({ x: x + penX, y })), r);
       if (ring.length > 2) out.push({ outer: ring.map(p => ({ x: p.x / em, y: p.y / em })), holes: [] });
     }
-    penX += g.a;
+    penX += g.a + tracking * em;
   }
   return out;
 }

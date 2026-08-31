@@ -516,3 +516,44 @@ describe('bridging along the shortest path, not straight down', () => {
     expect(mid).toBeLessThanOrEqual(Math.max(...sx) + 0.02);
   });
 });
+
+describe('fit — letters that meet, instead of a bar bolted across the gap', () => {
+  /* ⚠️ The first sweep of this concluded tracking did nothing, and stopped at -0.05.
+   *
+   * A script's "h" and "d" not quite meeting got a straight 3mm rectangle laid across the gap, which
+   * read exactly like what it was. Tightening the fit is what a type designer would reach for, and
+   * it works — at about -0.16em, three times further out than I looked before giving up on it.
+   */
+  const SCRIPT = new FontLoader().parse(greatVibes);
+  const at = (tracking) => {
+    const p = topperShapes(SCRIPT, 'Happy Birthday', { height: 1, tracking });
+    return topperShapes(SCRIPT, 'Happy Birthday', { height: 1 / p.width, tracking });
+  };
+
+  it('joins the word to itself with no bar and no bridges', () => {
+    expect(bridgeLoose(at(0).parts, { width: 0.02 }).length).toBeGreaterThan(0);
+    expect(bridgeLoose(at(-0.15).parts, { width: 0.02 }).length).toBe(0);
+    expect(pieceCount(at(-0.15).parts)).toBe(1);
+  });
+
+  it('changes nothing at all at fit 0', () => {
+    /* The row is set glyph by glyph now rather than by generateShapes, and that had better be the
+     * same picture: three.js applies no kerning — createPaths advances by glyph.ha and nothing else
+     * — so tracking 0 must be byte-identical to the old path, or every existing element shifts. */
+    const a = topperShapes(SCRIPT, 'Happy Birthday', { height: 1, tracking: 0 });
+    const b = topperShapes(SCRIPT, 'Happy Birthday', { height: 1 });
+    expect(a.width).toBeCloseTo(b.width, 9);
+    expect(a.parts.length).toBe(b.parts.length);
+    expect(a.parts[0].outer[0].x).toBeCloseTo(b.parts[0].outer[0].x, 9);
+  });
+
+  it('never welds two words into one', () => {
+    // Tightening the fit of a WORD must not close the space between words, or "Happy Birthday"
+    // becomes "HappyBirthday" at the fit that makes its letters touch.
+    const tight = topperShapes(SCRIPT, 'Happy Birthday', { height: 1, tracking: -0.2, lines: 1 });
+    const loose = topperShapes(SCRIPT, 'Happy Birthday', { height: 1, tracking: 0, lines: 1 });
+    const words = topperShapes(SCRIPT, 'HappyBirthday', { height: 1, tracking: -0.2, lines: 1 });
+    expect(tight.width).toBeLessThan(loose.width);
+    expect(tight.width).toBeGreaterThan(words.width);
+  });
+});

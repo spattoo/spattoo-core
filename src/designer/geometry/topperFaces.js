@@ -19,6 +19,24 @@ import creamFonts from './creamFonts.json';
  *
  * Reached by KEY, never by name. A new face is a row here and nothing else.
  *
+ * ── `fit`, and why it is not zero ──
+ *
+ * These faces are drawn for PRINT, where letters only have to LOOK joined. Cut in acrylic they have
+ * to actually touch, and at their natural fit they do not: a script came out with a straight 3mm
+ * rectangle bolted across the gap between two letters, which read exactly like what it was.
+ *
+ * `fit` is the tracking, in ems, at which the face joins ITSELF — measured, per face, as the
+ * loosest value at which both a phrase and a name cut as one piece with no bridges at all and no
+ * base bar. It is negative because letters have to overlap, which is what the toppers in the shops
+ * do: look at one and the strokes run into each other.
+ *
+ * Measured, not guessed. My first sweep stopped at -0.05 and concluded tracking did nothing; the
+ * answer for every outline face is around -0.16, three times further out than I looked.
+ *
+ * `null` means the face never joins at any fit — Allure's tittle floats above its letter and no
+ * amount of horizontal tightening will ever reach it, so it needs the bar or a bridge and there is
+ * no number that changes that.
+ *
  * ⚠️ BUNDLE COST, and why `loadTopperFace` is async for a lookup that could have been a property.
  *
  * The four outline faces are ~370KB of JSON. Imported statically they land in the main bundle and
@@ -36,15 +54,18 @@ import creamFonts from './creamFonts.json';
 const parsed = new Map();
 
 export const TOPPER_FACES = {
-  great_vibes:      { label: 'Great Vibes',    kind: 'outline',    licence: 'OFL 1.1' },
-  parisienne:       { label: 'Parisienne',     kind: 'outline',    licence: 'OFL 1.1' },
-  pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    licence: 'OFL 1.1' },
-  dancing_script:   { label: 'Dancing Script', kind: 'outline',    licence: 'OFL 1.1' },
-  ems_allure:       { label: 'Allure',         kind: 'centreline', licence: 'public domain' },
-  ems_felix:        { label: 'Felix',          kind: 'centreline', licence: 'public domain' },
-  ems_elfin:        { label: 'Elfin',          kind: 'centreline', licence: 'public domain' },
-  hershey_script_1: { label: 'Cursive',        kind: 'centreline', licence: 'public domain' },
+  great_vibes:      { label: 'Great Vibes',    kind: 'outline',    fit: -0.15, licence: 'OFL 1.1' },
+  parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.16, licence: 'OFL 1.1' },
+  pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.17, licence: 'OFL 1.1' },
+  dancing_script:   { label: 'Dancing Script', kind: 'outline',    fit: -0.29, licence: 'OFL 1.1' },
+  ems_allure:       { label: 'Allure',         kind: 'centreline', fit: null,  licence: 'public domain' },
+  ems_felix:        { label: 'Felix',          kind: 'centreline', fit: -0.31, licence: 'public domain' },
+  ems_elfin:        { label: 'Elfin',          kind: 'centreline', fit: -0.39, licence: 'public domain' },
+  hershey_script_1: { label: 'Cursive',        kind: 'centreline', fit: -0.36, licence: 'public domain' },
 };
+
+// The fit a face wants, or 0 for one that never joins — a caller should not have to know which.
+export const faceFit = (key) => TOPPER_FACES[key]?.fit ?? 0;
 
 export const DEFAULT_TOPPER_FACE = 'great_vibes';
 
