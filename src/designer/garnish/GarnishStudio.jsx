@@ -53,7 +53,12 @@ const ShapeIcon = ({ kind, color }) => {
   const st = { fill: 'none', stroke: color, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (
     <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-      {kind === 'triangle' && <path d="M13 4 L22 20 L4 20 Z" {...st} />}
+      {/* The icon is the shape it makes — a spike, not an equilateral triangle. An icon that
+          disagrees with its result teaches the wrong thing before the first tap. */}
+      {kind === 'triangle' && <path d="M13 3 L18 21 L8 21 Z" {...st} />}
+      {kind === 'heart' && (
+        <path d="M13 21 C4 14.5 4.5 7 9 6.2 C11 5.8 12.4 7 13 8.4 C13.6 7 15 5.8 17 6.2 C21.5 7 22 14.5 13 21 Z" {...st} />
+      )}
       {kind === 'square'   && <rect x="5" y="5" width="16" height="16" rx="1.5" {...st} />}
       {kind === 'circle'   && <circle cx="13" cy="13" r="8.5" {...st} />}
       {kind === 'strip'    && <rect x="3" y="9" width="20" height="8" rx="1.5" {...st} />}
@@ -61,11 +66,34 @@ const ShapeIcon = ({ kind, color }) => {
   );
 };
 
+/* ⚠️ A GARNISH TRIANGLE IS A SPIKE, not an equilateral one. Look at the reference cakes: the panels
+ * standing round the rim are tall and narrow, because that is what reads from the side of a cake and
+ * what survives being stood upright. An equilateral triangle is the geometric default and the wrong
+ * default here — the shape a baker wants is the one their cake wants. */
+const spike = (halfWidth, height) => {
+  const cx = PLATE / 2, cy = PLATE / 2;
+  return [[cx, cy - height], [cx + halfWidth, cy + height * 0.7], [cx - halfWidth, cy + height * 0.7]];
+};
+
+/* A heart from the classic parametric curve, sampled and flipped for screen coordinates (y grows
+ * downward on a canvas). Sampled at 40 points: enough that the lobes read as curves at plate size,
+ * few enough that the path stays small — and the paths are what gets stored and turned into a guide. */
+const heart = (scale) => {
+  const cx = PLATE / 2, cy = PLATE / 2;
+  return Array.from({ length: 40 }, (_, i) => {
+    const t = (i / 40) * Math.PI * 2;
+    const x = 16 * Math.sin(t) ** 3;
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    return [cx + x * scale, cy - y * scale];
+  });
+};
+
 export const SHAPES = [
-  { key: 'triangle', label: 'Triangle', make: () => polygon(3, PLATE * 0.3) },
+  { key: 'triangle', label: 'Triangle', make: () => spike(PLATE * 0.11, PLATE * 0.3) },
   { key: 'square',   label: 'Square',   make: () => polygon(4, PLATE * 0.28, -Math.PI / 4) },
   // 48 sides reads as a circle at any size the plate can show, and stays a short path to store.
   { key: 'circle',   label: 'Circle',   make: () => polygon(48, PLATE * 0.28) },
+  { key: 'heart',    label: 'Heart',    make: () => heart(PLATE * 0.017) },
   { key: 'strip',    label: 'Strip',    make: () => {
       const w = PLATE * 0.34, h = PLATE * 0.12, cx = PLATE / 2, cy = PLATE / 2;
       return [[cx - w, cy - h], [cx + w, cy - h], [cx + w, cy + h], [cx - w, cy + h]];
