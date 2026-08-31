@@ -1815,6 +1815,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // `medium` is what is in the bag — cream or chocolate. It is a KEY into MEDIA (see pipingMedia.js),
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
+  const [pendingGarnish, setPendingGarnish] = useState(null);
   // Kept on the DESIGNER, not inside the studio, so closing and reopening does not lose the chocolate
   // a baker just chose — the same reason penStyle lives out here.
   const [garnishColor, setGarnishColor] = useState('#4A2C1B');
@@ -10365,8 +10366,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           confirmation and a hunt for where it went. */}
       {garnishStudio && (
         <GarnishStudio
-          onCancel={() => setGarnishStudio(false)}
+          onCancel={() => { setGarnishStudio(false); setPendingGarnish(null); }}
           apiClient={apiClient}
+          openWith={pendingGarnish}
           color={garnishColor}
           rope={garnishRope}
           onRopeChange={setGarnishRope}
@@ -10380,6 +10382,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             addGarnish({ ...piece, id });
             setSelectedGarnishId(id);
             setGarnishStudio(false);
+            setPendingGarnish(null);
           }}
         />
       )}
@@ -10391,6 +10394,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <UploadsPanel
           apiClient={apiClient}
           elementTypes={elementTypes}
+          /* Opening a kept piece hands it to the studio rather than dropping it on the cake: it needs
+             a where and a how, and those questions belong on the screen that asks them. */
+          onOpenGarnish={g => { setPendingGarnish(g); setUploadsOpen(false); setGarnishStudio(true); }}
           // Choosing FOR A FRAME is a different act from placing on the cake, so the panel is told
           // which one it is and the caller supplies the meaning of a tap. The panel itself has no idea
           // what a photo frame is — no branch, no second grid.

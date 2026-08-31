@@ -38,7 +38,7 @@ function DotsGlyph({ size = 16 }) {
   );
 }
 
-export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose,
+export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onOpenGarnish = null, onClose,
                                       // Forwarded to Panel. Only set by a caller that is itself
                                       // above Z.panel — see Z.overStudio.
                                       zIndex }) {
@@ -65,6 +65,25 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     () => elementTypes.find(t => t.default_for_uploads) ?? null,
     [elementTypes],
   );
+
+  /* ⚠️ TWO SECTIONS, SPLIT BY WHAT A THING DOES — not by what it is made of. A picture lands as a
+     flat sticker; a piece is an object with thickness that can stand upright and be pushed into the
+     buttercream. Someone tapping one expecting the other is the confusion this prevents.
+
+     Deliberately NOT a section per material: a fondant piece and a chocolate piece behave identically
+     on a cake, so material multiplies sections without changing anything a customer can feel. It
+     belongs on the tile, not in the filing.
+
+     And a section appears only when it holds something — an empty "Pieces" heading on a first visit
+     reads as something missing rather than something not yet made. */
+  const [pieces, setPieces] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    apiClient?.fetchGarnishes?.()
+      .then(rows => { if (alive) setPieces(rows ?? []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient]);
 
   const load = () => apiClient?.fetchUploads?.()
     .then(rows => setUploads(Array.isArray(rows) ? rows : []))
@@ -331,6 +350,28 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
             </div>
           )}
 
+          {pieces.length > 0 && onOpenGarnish && (
+            <>
+              <div style={S.sectionHead}>Pieces you have drawn</div>
+              <div style={{ ...S.grid, marginBottom: 18 }}>
+                {pieces.map(g => (
+                  <div key={g.id} style={S.card}>
+                    {/* Tapping opens the STUDIO with the piece loaded, rather than dropping it on the
+                        cake: a piece needs a where and a how, and those questions live there. */}
+                    <button type="button" onClick={() => onOpenGarnish(g)} title={g.name}
+                      style={{ ...S.thumbWrap, cursor: 'pointer', border: 'none', padding: 0, width: '100%' }}>
+                      {g.thumbUrl
+                        ? <img src={g.thumbUrl} alt={g.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        : <span style={{ fontSize: 11, color: '#8a8a8a' }}>{g.name}</span>}
+                    </button>
+                    <div style={S.name}>{g.name}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={S.sectionHead}>Pictures you have uploaded</div>
+            </>
+          )}
+
           {uploads?.length > 0 && (
             <div style={S.grid}>
               {uploads.map(u => {
@@ -400,6 +441,8 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 const S = {
   uploadBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '11px 0', marginBottom: 14, borderRadius: 10, border: '1.5px dashed #cfcdd6', background: '#faf9fb', color: '#444', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' },
   grid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 },
+  sectionHead: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 1,
+                 textTransform: 'uppercase', margin: '2px 0 8px' },
   card:  { display: 'flex', flexDirection: 'column', gap: 6 },
   thumbWrap: { position: 'relative' },
   thumbBtn: { width: '100%', padding: 0, border: '1.5px solid #e2e0e6', borderRadius: 11, background: '#faf9fb', cursor: 'pointer', overflow: 'hidden', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' },

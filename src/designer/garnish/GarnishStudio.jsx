@@ -35,7 +35,7 @@ export const piecePaths = strokes => strokes.flatMap(s => [s.path, ...s.fills]);
  * the letter-blocks card made and was caught on within the hour. */
 export default function GarnishStudio({
   initialName = '', color = INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
-  apiClient = null, onSave, onCancel,
+  apiClient = null, openWith = null, onSave, onCancel,
 }) {
   const ROPE = ropeProp;
   const ref = useRef(null);
@@ -88,6 +88,11 @@ export default function GarnishStudio({
     // ⚠️ colour and ROPE are dependencies too: without them the plate keeps the shade and the line
     // width it was first painted with, and the controls appear to do nothing until the next stroke.
   }, [strokes, trail, drawing, color, ROPE]);
+
+  /* Opened FROM a kept piece: load it once, so the studio starts on the drawing rather than on a
+     blank plate. Keyed on the piece's id so choosing a different one reloads, and re-renders in
+     between do not stamp on edits the baker has since made. */
+  useEffect(() => { if (openWith) openSaved(openWith); /* eslint-disable-next-line */ }, [openWith?.id]);
 
   useEffect(() => {
     let alive = true;
