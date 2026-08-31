@@ -56,13 +56,15 @@ export function garnishPlacement(params, cake, piece = { w: 0.6, h: 0.5 }) {
    * standing garnish is meant to be seen: square-on from where the customer is looking, which for a
    * piece at angle θ means turning to face away from the middle. Storing an absolute yaw instead
    * means every piece has to be re-aimed by hand after it is moved round the cake. */
-  /* ⚠️ π/2 − θ, NOT −θ. The piece is built in the XY plane, so its face looks along +Z. A turn of φ
-   * about Y sends +Z to (sin φ, 0, cos φ); pointing that outward along (cos θ, 0, sin θ) gives
-   * φ = π/2 − θ. The first version used −θ, which is the same DIFFERENCE between any two angles and
-   * therefore passed a test comparing two placements — every standing garnish stood edge-on to the
-   * room, a sliver. A relative assertion cannot see an absolute error; the test below now checks the
-   * face direction itself. */
-  const facing = Math.PI / 2 - p.theta;
+  /* ⚠️ IT KEEPS FACING THE FRONT; IT DOES NOT AIM ITSELF. The piece is built in the XY plane, so its
+   * face already looks along +Z — the way the customer is looking — and a yaw of 0 is front-on.
+   *
+   * It used to turn to face outward from the middle (π/2 − θ), which is defensible on paper and wrong
+   * in the hand: dragging a piece round the cake SPUN it, so the thing being positioned kept changing
+   * which way it pointed while you positioned it. Most pieces are meant to be seen from the front, and
+   * the ones that are not are a deliberate choice — which is what `yaw` is for. Aiming automatically
+   * took that choice away and charged for it with a moving target. */
+  const facing = 0;
 
   const scaled = { w: (piece.w ?? 0.6) * p.scale, h: (piece.h ?? 0.5) * p.scale };
 

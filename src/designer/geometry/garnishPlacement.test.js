@@ -40,22 +40,22 @@ describe('where a garnish sits', () => {
    * two placements and asserted the difference — which is identical whether the formula is −θ or
    * π/2 − θ. It passed while every standing garnish stood EDGE-ON to the room, a sliver, and only a
    * render showed it. A relative assertion cannot see an absolute error. */
-  it('turns its face outward, away from the middle of the cake', () => {
+  it('keeps facing the front wherever it is moved to', () => {
     for (const theta of [0, 0.8, Math.PI / 2, 2.7, -1.2]) {
       const { rotation } = garnishPlacement({ theta }, CAKE, PIECE);
       const phi = rotation[1];
-      // the piece is built in the XY plane, so its face looks along +Z; a Y-turn of φ sends that to:
+      // the piece is built in the XY plane, so its face looks along +Z; a Y-turn of φ sends it to:
       const face = [Math.sin(phi), Math.cos(phi)];
-      const outward = [Math.cos(theta), Math.sin(theta)];
-      expect(face[0]).toBeCloseTo(outward[0], 6);
-      expect(face[1]).toBeCloseTo(outward[1], 6);
+      expect(face[0]).toBeCloseTo(0, 6);       // nothing sideways …
+      expect(face[1]).toBeCloseTo(1, 6);       // … it looks straight at the customer
     }
   });
 
-  it('adds the customer yaw on top of that, rather than replacing it', () => {
-    const plain = garnishPlacement({ theta: 1 }, CAKE, PIECE);
-    const eased = garnishPlacement({ theta: 1, yaw: 0.3 }, CAKE, PIECE);
-    expect(eased.rotation[1] - plain.rotation[1]).toBeCloseTo(0.3, 6);
+  /* ⚠️ MOVING A PIECE MUST NOT TURN IT — the fault this replaced. Turning is `yaw` and nothing else,
+   * so the same yaw means the same angle wherever the piece sits. */
+  it('turns only by the yaw the customer asked for', () => {
+    expect(garnishPlacement({ theta: 1, yaw: 0.3 }, CAKE, PIECE).rotation[1]).toBeCloseTo(0.3, 6);
+    expect(garnishPlacement({ theta: 2, yaw: 0.3 }, CAKE, PIECE).rotation[1]).toBeCloseTo(0.3, 6);
   });
 
   /* ⚠️ A DRAG RETURNS ONLY WHAT IT CHANGES. Anything else it hands back would overwrite a setting
