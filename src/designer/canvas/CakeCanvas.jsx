@@ -17,6 +17,7 @@ import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
+import Garnishes from './Garnishes.jsx';
 import FinishHandles from './FinishHandles.jsx';
 import { printExposure } from '../shared/printExposure.js';
 import SelectionBox from './SelectionBox.jsx';
@@ -2291,6 +2292,7 @@ function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
+  selectedGarnishId = null, onGarnishSelect = null,
   orbitRef,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
@@ -2467,6 +2469,7 @@ function CakeScene({
           onPipingInstanceMove, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
+          selectedGarnishId, onGarnishSelect,
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
@@ -2558,10 +2561,11 @@ const NOOP = () => {};
 // are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
 // its own, and it is what every board-level finish is placed against.
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writings = [], piping = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], boardGrass = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
+    selectedGarnishId = null, onGarnishSelect = NOOP,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
     onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
@@ -2855,6 +2859,15 @@ function CakeContent({ config, scene, edit = null }) {
         tierData={tierData}
         board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 } : undefined}
         onAddStroke={onAddStroke}
+      />
+
+      {/* Chocolate garnishes: pieces piped in the studio and placed here. Always drawn — they are
+          part of the cake, not a mode. */}
+      <Garnishes
+        garnishes={garnishes}
+        tierData={tierData}
+        selectedId={selectedGarnishId}
+        onSelect={onGarnishSelect}
       />
 
       {bottomTier && texts.map(t => {
@@ -3270,6 +3283,8 @@ export default function CakeCanvas({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
+  // Chocolate garnishes — placed pieces from the garnish studio.
+  selectedGarnishId = null, onGarnishSelect = null,
   autoRotate = false,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
@@ -3423,6 +3438,11 @@ export default function CakeCanvas({
         selectedAgeId={selectedAgeId}
         onAgeSelect={i => { if (!pointerRef.current.dragged) onAgeSelect?.(i); }}
         onAgeMove={onAgeMove}
+        selectedGarnishId={selectedGarnishId}
+        onGarnishSelect={id => {
+          // Guarded like the age topper: a drag that happens to end on the piece must not select it.
+          if (!pointerRef.current.dragged) onGarnishSelect?.(id);
+        }}
         onTextContentChange={onTextContentChange}
         textToolbar={textToolbar}
         orbitRef={orbitRef}

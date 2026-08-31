@@ -36,11 +36,20 @@ describe('where a garnish sits', () => {
   /* ⚠️ FACING IS RELATIVE TO WHERE IT STANDS. A standing garnish should present itself square-on
    * from outside, so moving it round the cake must re-aim it — otherwise every piece needs turning
    * by hand after every move. */
-  it('re-aims itself as it moves round the cake', () => {
-    const a = garnishPlacement({ theta: 0 }, CAKE, PIECE);
-    const b = garnishPlacement({ theta: Math.PI / 2 }, CAKE, PIECE);
-    expect(a.rotation[1]).not.toBeCloseTo(b.rotation[1]);
-    expect(b.rotation[1] - a.rotation[1]).toBeCloseTo(-Math.PI / 2, 5);
+  /* ⚠️ CHECK THE DIRECTION IT FACES, NOT JUST THAT IT CHANGED. The first version of this compared
+   * two placements and asserted the difference — which is identical whether the formula is −θ or
+   * π/2 − θ. It passed while every standing garnish stood EDGE-ON to the room, a sliver, and only a
+   * render showed it. A relative assertion cannot see an absolute error. */
+  it('turns its face outward, away from the middle of the cake', () => {
+    for (const theta of [0, 0.8, Math.PI / 2, 2.7, -1.2]) {
+      const { rotation } = garnishPlacement({ theta }, CAKE, PIECE);
+      const phi = rotation[1];
+      // the piece is built in the XY plane, so its face looks along +Z; a Y-turn of φ sends that to:
+      const face = [Math.sin(phi), Math.cos(phi)];
+      const outward = [Math.cos(theta), Math.sin(theta)];
+      expect(face[0]).toBeCloseTo(outward[0], 6);
+      expect(face[1]).toBeCloseTo(outward[1], 6);
+    }
   });
 
   it('adds the customer yaw on top of that, rather than replacing it', () => {

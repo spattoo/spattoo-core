@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
+import { GARNISH_DEFAULTS } from '../geometry/garnishPlacement.js';
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
@@ -45,6 +46,11 @@ const DEFAULT_DESIGN = {
   stickers: [],
   writings: [],    // cream-pen messages piped on the cake (see CreamWriting) — one per placement
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
+  /* Chocolate garnishes: pieces piped OFF the cake in the garnish studio, set, and placed on it —
+     lying or standing. Each carries its own `paths` rather than a reference to a library row, so a
+     saved design keeps rendering after the baker deletes the garnish from their library. A design
+     is a record of a cake, not a query against someone's current collection. */
+  garnishes: [],
 };
 
 // The cake a shape STARTS you with — the ONE definition of "new cake, shape X". `New` resets the design
@@ -146,6 +152,7 @@ export function toCanvasConfig(design) {
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
+    garnishes: design.garnishes ?? [],
   };
 }
 
@@ -305,6 +312,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     stickers: migrateTopperToSticker(templateDesign),
     writings: normalizeWritings(templateDesign),
     piping:   templateDesign.piping ?? [],
+    garnishes: templateDesign.garnishes ?? [],
     // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
     boardGrass: templateDesign.boardGrass ?? null,
@@ -1302,6 +1310,28 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   // Freehand cream-pen strokes. addStroke appends a finished stroke (seeding defaults);
   // removeStroke undoes the last; clearPiping wipes them all.
+  /* ── Chocolate garnishes ───────────────────────────────────────────────────────────────────────
+     Placed pieces, each { id, name, paths, rope, plate, theta, radius, yaw, mode, scale }. The
+     placement keys are read by garnishPlacement.js, which is the ONE thing that decides where a
+     piece goes — see the movable contract's first law. */
+  function addGarnish(g) {
+    setDesign(prev => ({
+      ...prev,
+      garnishes: [...(prev.garnishes ?? []), { ...GARNISH_DEFAULTS, id: crypto.randomUUID(), ...g }],
+    }));
+  }
+  /* ⚠️ MERGES, never replaces. The drag hands back only the keys it changed (theta, radius) — see
+     garnishDragTo — so anything else the customer set must survive the move. */
+  function updateGarnish(id, patch) {
+    setDesign(prev => ({
+      ...prev,
+      garnishes: (prev.garnishes ?? []).map(g => (g.id === id ? { ...g, ...patch } : g)),
+    }));
+  }
+  function removeGarnish(id) {
+    setDesign(prev => ({ ...prev, garnishes: (prev.garnishes ?? []).filter(g => g.id !== id) }));
+  }
+
   function addStroke(stroke) {
     setDesign(prev => ({ ...prev, piping: [...prev.piping, { ...DEFAULT_STROKE, id: crypto.randomUUID(), ...stroke }] }));
   }
@@ -1375,6 +1405,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
     addStroke, updateStrokePoints, removeStroke, clearPiping,
+    addGarnish, updateGarnish, removeGarnish,
     resetDesign,
     addStickerBatch,
     loadDesign,

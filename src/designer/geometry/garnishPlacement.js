@@ -52,7 +52,13 @@ export function garnishPlacement(params, cake, piece = { w: 0.6, h: 0.5 }) {
    * standing garnish is meant to be seen: square-on from where the customer is looking, which for a
    * piece at angle θ means turning to face away from the middle. Storing an absolute yaw instead
    * means every piece has to be re-aimed by hand after it is moved round the cake. */
-  const facing = -p.theta;
+  /* ⚠️ π/2 − θ, NOT −θ. The piece is built in the XY plane, so its face looks along +Z. A turn of φ
+   * about Y sends +Z to (sin φ, 0, cos φ); pointing that outward along (cos θ, 0, sin θ) gives
+   * φ = π/2 − θ. The first version used −θ, which is the same DIFFERENCE between any two angles and
+   * therefore passed a test comparing two placements — every standing garnish stood edge-on to the
+   * room, a sliver. A relative assertion cannot see an absolute error; the test below now checks the
+   * face direction itself. */
+  const facing = Math.PI / 2 - p.theta;
 
   const scaled = { w: (piece.w ?? 0.6) * p.scale, h: (piece.h ?? 0.5) * p.scale };
 
