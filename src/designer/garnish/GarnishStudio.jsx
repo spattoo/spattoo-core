@@ -50,8 +50,13 @@ const polygon = (n, r, rot = -Math.PI / 2) =>
  * recognised without either. And drawing them as chocolate ropes — round caps, the piece's own colour,
  * a stroke rather than a fill — means the button shows what you are about to get instead of a generic
  * geometric glyph. It also tracks the chosen colour, so a white-chocolate piece has white buttons. */
-const ShapeIcon = ({ kind, color }) => {
-  const st = { fill: 'none', stroke: color, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
+/* ⚠️ A FIXED CHOCOLATE, NOT THE PIECE'S COLOUR. These were tinted with whatever colour was chosen,
+ * on the theory that a white-chocolate piece deserves white buttons. Wrong: this is a palette of
+ * TOOLS, and a tool does not restyle itself according to what you last made with it. Turning every
+ * shape button purple because one triangle is purple says the buttons are a preview when they are a
+ * menu. */
+const ShapeIcon = ({ kind }) => {
+  const st = { fill: 'none', stroke: INK, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (
     <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
       {/* The icon is the shape it makes — a spike, not an equilateral triangle. An icon that
@@ -143,7 +148,26 @@ export default function GarnishStudio({
   const drawing = trail.length > 0;
 
   const last = strokes[strokes.length - 1] ?? null;
-  const canFill = !!last?.ring;
+  /* ⚠️ THE COLOUR PICKER BELONGS TO THE PARENT, so the studio cannot intercept the click — it can
+     only notice that the prop changed. When something is picked, that choice was made FOR the picked
+     shape and is stamped onto it; with nothing picked it is the colour new shapes will take. This is
+     per-region colour: white chocolate inside dark is two shapes carrying two colours, not one piece
+     forced to choose. A shape with no colour of its own follows the piece, so nothing already drawn
+     freezes at whatever the picker happened to say when it was made. */
+  const lastColor = useRef(color);
+  useEffect(() => {
+    const changed = lastColor.current !== color;
+    lastColor.current = color;
+    if (!changed || picked == null) return;
+    setStrokes(all => all.map((s2, i) => (i === picked ? { ...s2, color } : s2)));
+  }, [color, picked]);
+
+  const subject = picked != null ? strokes[picked] : last;
+  const canFill = !!subject?.ring;
+  /* The colour of the thing being worked on — the picked shape if there is one, otherwise the colour
+     new shapes will take. This is per-region colour: white chocolate inside dark is two shapes with
+     two colours, not one piece with a compromise. */
+  const subjectColor = subject?.color ?? color;
 
   // ── Draw ──────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -157,12 +181,12 @@ export default function GarnishStudio({
     x.fillStyle = SURFACE; x.fillRect(0, 0, w, h);
 
     const k = w / PLATE;                            // plate units → css pixels
-    const line = (pts, width, colour = INK) => {
+    const line = (pts, width, colour = color) => {
       if (!pts || pts.length < 2) return;
       x.beginPath();
       pts.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
       x.lineWidth = width * k; x.lineCap = 'round'; x.lineJoin = 'round';
-      x.strokeStyle = colour === INK ? color : colour;
+      x.strokeStyle = colour;
       x.stroke();
     };
 
@@ -171,13 +195,16 @@ export default function GarnishStudio({
          somebody design a solid panel while looking at a wireframe of it, so every judgement made
          here would be about something they are not getting. Holes punched with evenodd — the same
          "a ring inside a ring is a hole" rule the geometry uses. */
-      for (const panel of panelsFrom(strokes.filter(s2 => s2.ring).map(s2 => s2.ring))) {
+      const rings = strokes.filter(s2 => s2.ring);
+      for (const panel of panelsFrom(rings.map(s2 => s2.ring)).map(pn => ({
+        ...pn, color: rings.find(s2 => s2.ring === pn.outline)?.color ?? color,
+      }))) {
         x.beginPath();
         for (const ring of [panel.outline, ...panel.holes]) {
           ring.forEach(([a2, b2], i) => (i ? x.lineTo(a2 * k, b2 * k) : x.moveTo(a2 * k, b2 * k)));
           x.closePath();
         }
-        x.fillStyle = color;
+        x.fillStyle = panel.color ?? color;
         x.fill('evenodd');
       }
       // An open stroke has no inside and cannot be cut, so it stays a line — which is also the
@@ -185,8 +212,9 @@ export default function GarnishStudio({
       for (const s2 of strokes) if (!s2.ring) line(s2.path, ROPE + 2);
     } else {
       for (const s2 of strokes) {
-        for (const f of s2.fills) line(f, ROPE);
-        line(s2.path, ROPE + 2);                    // the outline sits over its own fill
+        const c2 = s2.color ?? color;               // each shape keeps its own chocolate
+        for (const f of s2.fills) line(f, ROPE, c2);
+        line(s2.path, ROPE + 2, c2);                // the outline sits over its own fill
       }
     }
     if (picked != null && strokes[picked]) {
@@ -225,6 +253,8 @@ export default function GarnishStudio({
     strokes: strokes.map(s2 => ({
       path: s2.path.map(([x, y]) => [+x.toFixed(1), +y.toFixed(1)]),
       fill: s2.fillPattern && s2.fillPattern !== 'none' ? s2.fillPattern : null,
+      // Only when it differs from the piece's, so a single-colour drawing stays as small as before.
+      color: s2.color && s2.color !== color ? s2.color : undefined,
     })),
   });
 
@@ -333,11 +363,30 @@ export default function GarnishStudio({
     setStrokes(s2 => { setPicked(s2.length); return [...s2, { path, ring: path, closed: true, gap: 0, area: 0, fills: [] }]; });
   }
 
+  /* ⚠️ COLOUR IS A GROUPING, because one mesh can wear one material. A two-tone piece therefore
+     travels as PARTS — the shapes gathered by the chocolate they are made of — and the cake builds
+     one mesh per part inside a single shared frame. `paths`, `rings` and `color` still travel beside
+     them: every piece already saved was written before parts existed, and must go on rendering. */
+  const partsOf = list => {
+    const by = new Map();
+    for (const s2 of list) {
+      const c = s2.color ?? color;
+      if (!by.has(c)) by.set(c, []);
+      by.get(c).push(s2);
+    }
+    return [...by.entries()].map(([c, group]) => ({
+      color: c,
+      paths: piecePaths(group),
+      rings: group.filter(s2 => s2.ring).map(s2 => s2.ring),
+    }));
+  };
+
   function addToCake() {
     onSave?.({
       name: name.trim() || 'Chocolate piece', paths: piecePaths(strokes),
       // The closed rings travel too: a cut piece is built from regions, not from the swept paths.
       rings: strokes.filter(s2 => s2.ring).map(s2 => s2.ring),
+      parts: partsOf(strokes),
       kind, rope: ROPE, plate: PLATE, color, zone, mode,
     });
   }
@@ -351,7 +400,7 @@ export default function GarnishStudio({
       const fills = s2.fill && ring
         ? fillShape(ring, { pattern: s2.fill, spacing: ROPE * 2.2, inset: ROPE * 0.5, ropeWidth: ROPE, seed: i + 3 })
         : [];
-      return { path: s2.path, ring, fills, fillPattern: s2.fill ?? 'none' };
+      return { path: s2.path, ring, fills, fillPattern: s2.fill ?? 'none', color: s2.color };
     }));
     setName(g.name ?? '');
   }
@@ -432,9 +481,14 @@ export default function GarnishStudio({
   }
 
   // ── Fill the last stroke ──────────────────────────────────────────────────────────────────────
+  /* ⚠️ ACTIONS ACT ON WHAT IS PICKED. Fill used to apply to the LAST shape drawn, which was fine
+     while nothing could be selected and wrong the moment something could: choosing a shape and then
+     choosing a fill filled a different shape. Whatever is picked is the subject; with nothing picked
+     the last shape is still the sensible default, because that is what a fresh drawing means. */
   function applyFill(pattern) {
+    const target = picked != null ? picked : strokes.length - 1;
     setStrokes(all => all.map((s, i) => {
-      if (i !== all.length - 1 || !s.ring) return s;
+      if (i !== target || !s.ring) return s;
       const fills = pattern === 'none' ? [] : fillShape(s.ring, {
         pattern, spacing: ROPE * 2.2, inset: ROPE * 0.5, ropeWidth: ROPE, seed: i + 3,
       });
@@ -517,16 +571,16 @@ export default function GarnishStudio({
           )}
 
           <div>
-            <span style={labelStyle}>How it is made</span>
+            <span style={labelStyle}>How the whole piece is made</span>
             <div style={{ marginTop: 5 }}>
-              <Segmented label="How the piece is made" isMobile={isMobile} tone={color}
+              <Segmented label="How the piece is made" isMobile={isMobile}
                 items={[{ id: 'piped', label: 'Piped' }, { id: 'cut', label: 'Cut' }]}
                 value={kind} onChange={setKind} />
             </div>
             <div style={{ fontSize: 10, color: '#999', marginTop: 4, lineHeight: 1.4 }}>
               {kind === 'piped'
-                ? 'A nozzle laying a line of chocolate.'
-                : 'Spread thin, set, then cut. A shape inside another is punched out.'}
+                ? 'A nozzle laying a line of chocolate. Applies to every shape here.'
+                : 'Spread thin, set, then cut, and a shape inside another is punched out. Applies to every shape here.'}
             </div>
           </div>
 
@@ -539,7 +593,7 @@ export default function GarnishStudio({
                   style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
                            padding: 0, borderRadius: 10, cursor: 'pointer',
                            border: '1.5px solid #E0DDD8', background: '#fff' }}>
-                  <ShapeIcon kind={sh.key} color={color} />
+                  <ShapeIcon kind={sh.key} />
                 </button>
               ))}
             </div>
@@ -558,7 +612,8 @@ export default function GarnishStudio({
                   style={{ ...miniBtn, color: '#A33', borderColor: '#E0C9C9' }}>Remove</button>
               </div>
               <div style={{ fontSize: 10, color: '#8899aa', marginTop: 5, lineHeight: 1.4 }}>
-                Drag it to move it, or drag the blue dot at its corner to resize.
+                Drag it to move it, or drag the blue dot at its corner to resize. Colour and fill
+                land on this shape alone.
               </div>
             </div>
           )}

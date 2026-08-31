@@ -30,7 +30,13 @@ import { buildPipingStroke } from './creamPen.js';
  * Returns `{ geometry, size, ropeWorld }` — geometry centred on x, resting on y = 0, or `null` when
  * there is nothing to build.
  */
-export function buildGarnishGeometry(paths, { rope = 6, plateSize = 420, worldSize = 0.9 } = {}) {
+/* ⚠️ `frame` IS WHAT KEEPS A TWO-TONE PIECE FROM COLLAPSING INTO A PILE. A piece with more than one
+ * chocolate is built as one geometry per colour, and each of those would otherwise centre itself on
+ * its OWN bounds — so a white circle drawn in the corner of a dark triangle would come out sitting
+ * dead centre on top of it, every part stacked at the same origin with their relative positions
+ * thrown away. Pass the whole piece's bounds and every part is placed in the same frame.
+ * (The SCALE is safe either way: `k` comes from the plate, not from the drawing's extent.) */
+export function buildGarnishGeometry(paths, { rope = 6, plateSize = 420, worldSize = 0.9, frame = null } = {}) {
   if (!paths?.length) return null;
 
   // Studio pixels → cake units. Everything scales together, so a garnish drawn large and one drawn
@@ -51,16 +57,20 @@ export function buildGarnishGeometry(paths, { rope = 6, plateSize = 420, worldSi
 
   const merged = mergeGeometries(parts);
   merged.computeBoundingBox();
-  const bb = merged.boundingBox;
+  /* ⚠️ CLONED BEFORE THE TRANSLATE BELOW. `BufferGeometry.translate` moves the bounding box with the
+     vertices, so a caller collecting several parts' boxes to build a shared frame would be unioning
+     boxes that had each already been re-centred — every one of them sitting at the origin, and the
+     frame therefore meaningless. This is the piece's extent WHERE IT WAS DRAWN. */
+  const bounds = frame ?? merged.boundingBox.clone();
   const size = {
-    w: bb.max.x - bb.min.x,
-    h: bb.max.y - bb.min.y,
-    d: bb.max.z - bb.min.z,
+    w: bounds.max.x - bounds.min.x,
+    h: bounds.max.y - bounds.min.y,
+    d: bounds.max.z - bounds.min.z,
   };
   // Bottom-centre origin: x centred, y resting on zero. See the note above — this is what lets a
   // standing piece turn about the point where it touches the cake.
-  merged.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
-  return { geometry: merged, size, ropeWorld };
+  merged.translate(-(bounds.min.x + bounds.max.x) / 2, -bounds.min.y, -(bounds.min.z + bounds.max.z) / 2);
+  return { geometry: merged, size, bounds, ropeWorld };
 }
 
 /* Merging by hand rather than pulling in three's BufferGeometryUtils for twenty lines.

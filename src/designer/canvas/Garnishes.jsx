@@ -51,6 +51,22 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
      that change the MESH — moving or turning a piece changes where it is drawn, not what it is. */
   const built = useMemo(() => {
     const world = (cake.radius ?? 1.2) * 0.75 * (g.scale ?? 1);
+    /* ⚠️ ONE MESH WEARS ONE MATERIAL, so a piece made of two chocolates is several meshes — one per
+       colour. They are built TWICE: once to learn the whole piece's bounds, then again inside that
+       shared frame. Without the second pass each part centres on itself, and a white circle drawn in
+       the corner of a dark triangle lands dead centre on top of it. `parts` is absent on every piece
+       placed before this existed, and those still take the single-colour path below. */
+    if (g.parts?.length > 1) {
+      const raw = g.parts.map(pt => buildPart(pt, g, world)).filter(Boolean);
+      if (!raw.length) return null;
+      const frame = new THREE.Box3();
+      for (const r of raw) frame.union(r.built.bounds);
+      const framed = g.parts.map(pt => {
+        const r = buildPart(pt, g, world, frame);
+        return r && { geometry: r.built.geometry, color: pt.color };
+      }).filter(Boolean);
+      return { geometry: framed[0].geometry, size: sizeOf(frame), pieces: framed };
+    }
     /* ⚠️ TWO WAYS OF BEING MADE, TWO GEOMETRIES. A piped piece is its paths swept into ropes; a cut
        one is its regions extruded into a slab with the inner rings punched out. Rendering a cut piece
        as rope would show a wireframe of a solid panel — which is the shape a baker asked for, made
@@ -63,7 +79,7 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
       return panel ? buildPanelGeometry([panel.outline, ...panel.holes], { scale }) : null;
     }
     return buildGarnishGeometry(g.paths, { rope: g.rope ?? 6, plateSize: g.plate ?? 420, worldSize: world });
-  }, [g.kind, g.rings, g.paths, g.rope, g.plate, g.scale, cake.radius]);
+  }, [g.kind, g.rings, g.paths, g.parts, g.rope, g.plate, g.scale, cake.radius]);
 
   /* ⚠️ THE SAME HOOK EVERY OTHER DRAGGED DECORATION USES. Press, drag, tap-versus-drag and orbit
      suppression are one shared behaviour — AgeNumber and CreamWriting were two copies of it before
@@ -93,11 +109,16 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
   const place = garnishPlacement(g, cake, built.size);
   const medium = mediumOf(g.medium ?? 'chocolate');
 
+  /* Every part shares the piece's placement and its grab handlers — they are one garnish that happens
+     to be made of two chocolates, so a press anywhere on it drags the whole thing. */
+  const pieces = built.pieces ?? [{ geometry: built.geometry, color: g.color }];
+
   return (
+    <group position={place.position} rotation={place.rotation}>
+    {pieces.map((pc, i) => (
     <mesh
-      geometry={built.geometry}
-      position={place.position}
-      rotation={place.rotation}
+      key={i}
+      geometry={pc.geometry}
       castShadow
       {...grabProps}
     >
@@ -120,7 +141,7 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
 
            So the lacquer comes DOWN rather than up, and the env boost with it. `Shine` on the card
            still opens it back up for anyone who wants a wet-looking piece. */
-        {...medium.material({ softness: g.gloss ?? 0.45 }, g.color ?? '#4A2C1B')}
+        {...medium.material({ softness: g.gloss ?? 0.45 }, pc.color ?? g.color ?? '#4A2C1B')}
         clearcoat={0.25}
         clearcoatRoughness={0.5}
         envMapIntensity={0.6}
@@ -128,5 +149,25 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
         emissiveIntensity={selected ? 0.06 : 0}
       />
     </mesh>
+    ))}
+    </group>
   );
 }
+
+/* One colour's worth of a piece. `frame` is the whole piece's bounds — see the note at the call. */
+function buildPart(part, g, world, frame = null) {
+  if (g.kind === 'cut' && part.rings?.length) {
+    const scale = world / (g.plate ?? 420);
+    const [panel] = panelsFrom(part.rings);
+    const built = panel && buildPanelGeometry([panel.outline, ...panel.holes], { scale, frame });
+    return built ? { built } : null;
+  }
+  const built = buildGarnishGeometry(part.paths, {
+    rope: g.rope ?? 6, plateSize: g.plate ?? 420, worldSize: world, frame,
+  });
+  return built ? { built } : null;
+}
+
+const sizeOf = box => ({
+  w: box.max.x - box.min.x, h: box.max.y - box.min.y, d: box.max.z - box.min.z,
+});

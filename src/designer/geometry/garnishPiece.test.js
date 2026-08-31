@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { describe, it, expect } from 'vitest';
 import { buildGarnishGeometry, garnishTransform, insertionDepth } from './garnishPiece.js';
 
@@ -67,5 +68,23 @@ describe('sitting where it was put', () => {
     const t = garnishTransform('lie', { rope: 0.02, surfaceY: 1.4 });
     expect(t.y).toBeGreaterThan(1.4);
     expect(t.rotation[0]).toBeCloseTo(-Math.PI / 2);
+  });
+});
+
+// ── A two-tone piece: one geometry per colour, all in one frame ───────────────────────────────────
+// Two shapes far apart, built as separate colour parts. In one shared frame they must keep the gap
+// between them; centred on themselves they would both land on the origin.
+const left  = [[[20, 200], [60, 200], [60, 240], [20, 240], [20, 200]]];
+const right = [[[360, 200], [400, 200], [400, 240], [360, 240], [360, 200]]];
+const cx = g => { g.computeBoundingBox(); return (g.boundingBox.min.x + g.boundingBox.max.x) / 2; };
+
+describe('a two-tone piece keeps its parts where they were drawn', () => {
+  it('separates them in a shared frame, and stacks them without one', () => {
+    const a = buildGarnishGeometry(left, {}), b = buildGarnishGeometry(right, {});
+    expect(Math.abs(cx(a.geometry) - cx(b.geometry))).toBeLessThan(0.01);   // the bug: both centred
+
+    const frame = new THREE.Box3().union(a.bounds).union(b.bounds);
+    const fa = buildGarnishGeometry(left, { frame }), fb = buildGarnishGeometry(right, { frame });
+    expect(cx(fb.geometry) - cx(fa.geometry)).toBeGreaterThan(0.5);         // the fix: still apart
   });
 });

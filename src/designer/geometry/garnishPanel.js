@@ -33,7 +33,9 @@ const toVec2 = ring => ring.map(([x, y]) => new THREE.Vector2(x, y));
  *
  * Returns `{ geometry, size }`, or `null` when there is nothing to cut.
  */
-export function buildPanelGeometry(rings, { scale = 1, thickness = PANEL_THICKNESS } = {}) {
+/* `frame` as in `garnishPiece.js`, and for the same reason: a two-tone panel is several slabs that
+ * must be placed in ONE frame, or each centres on itself and the inlay lands on top of its host. */
+export function buildPanelGeometry(rings, { scale = 1, thickness = PANEL_THICKNESS, frame = null } = {}) {
   const closed = (rings ?? []).filter(r => Array.isArray(r) && r.length >= 4);
   if (!closed.length) return null;
 
@@ -58,13 +60,13 @@ export function buildPanelGeometry(rings, { scale = 1, thickness = PANEL_THICKNE
   });
 
   geometry.computeBoundingBox();
-  const bb = geometry.boundingBox;
+  const bb = frame ?? geometry.boundingBox.clone();   // cloned: see garnishPiece.js
   const size = { w: bb.max.x - bb.min.x, h: bb.max.y - bb.min.y, d: bb.max.z - bb.min.z };
 
   /* Bottom-centre origin, the same convention the piped piece uses — a standing panel turns about the
    * point where it meets the cake, and every caller can assume one rule rather than two. */
   geometry.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
-  return { geometry, size };
+  return { geometry, size, bounds: bb };
 }
 
 /**
