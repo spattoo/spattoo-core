@@ -144,19 +144,31 @@ const val = { fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 42, textAl
 
 function App() {
   const [text, setText]     = useState('Amelia');
-  // 0.45 against a 1.6-radius cake: 'Amelia' lands about 1.9 wide inside a 3.2 board, which is
-  // roughly how a real topper is proportioned. At 1.0 it was 4.27 wide — a topper bigger than the
-  // cake, which flatters the letterforms and tells you nothing about how it will actually read.
-  const [height, setH]      = useState(0.70);
+  const [span, setSpan]     = useState(0.55);   // share of the cake's width, NOT a letter height
   const [weight, setW]      = useState(0);
   const [bar, setBar]       = useState(true);
-  const [barThick, setBT]   = useState(0.09);
+  const [barRatio, setBR]   = useState(0.13);   // a share of the letter height, so it scales with it
   const [legCount, setLC]   = useState(2);
   const [legLen, setLL]     = useState(0.42);
   const [bury, setBury]     = useState(0.21);   // half the leg in the cake, half of it showing
   const [thickness, setTh]  = useState(0.063);
   const [bridge, setBridge] = useState(true);
   const [finish, setFinish] = useState('gold');
+
+  /* ⚠️ SIZED BY HOW MUCH OF THE CAKE IT CROSSES, and the letter height falls out of that.
+   *
+   * A shop does not sell you 33mm letters, it sells you a topper for a 6-inch cake — look at any of
+   * them and the word spans somewhere around half the top, whatever the name. Driving this off a
+   * letter height instead made "Amelia" 142mm on a 152mm cake: correct arithmetic, and a topper the
+   * width of the whole cake, because a long name at a fixed letter height simply keeps growing.
+   *
+   * `topperShapes` sizes by height, so this measures the word at height 1 and divides — the aspect
+   * ratio is a property of the text and the font, and one build is enough to learn it. */
+  const height = useMemo(() => {
+    const w1 = topperShapes(FONT, text, { height: 1, weight }).width;
+    return w1 > 0 ? (CAKE_R * 2 * span) / w1 : 0.5;
+  }, [text, weight, span]);
+  const barThick = height * barRatio;
 
   // The same call the mesh makes, so the reported count is the picture's count.
   const report = useMemo(() => {
@@ -193,7 +205,7 @@ function App() {
                style={{ width: '100%', padding: '8px 10px', fontSize: 14, fontFamily: 'inherit',
                         border: '1.5px solid #D8E0DA', borderRadius: 8, marginBottom: 14 }} />
 
-        {slider('Height', height, setH, 0.2, 1.4, 0.025, x => mm(x))}
+        {slider('Across cake', span, setSpan, 0.2, 1, 0.01, x => `${Math.round(x * 100)}%`)}
         {slider('Weight', weight, setW, 0, 0.04, 0.002, x => x.toFixed(3))}
         {slider('Thickness', thickness, setTh, 0.004, 0.16, 0.002, x => mm(x))}
 
@@ -202,7 +214,7 @@ function App() {
           <input type="checkbox" checked={bar} onChange={e => setBar(e.target.checked)} />
           <span style={{ fontSize: 11, color: '#8a8a8a' }}>a base the letters sit on</span>
         </div>
-        {bar && slider('· thickness', barThick, setBT, 0.03, 0.2, 0.005, x => x.toFixed(3))}
+        {bar && slider('· thickness', barRatio, setBR, 0.05, 0.3, 0.01, x => mm(height * x))}
 
         {slider('Legs', legCount, setLC, 0, 4, 1, x => String(x))}
         {legCount > 0 && slider('· length', legLen, setLL, 0.15, 0.9, 0.02, x => mm(x))}
@@ -232,14 +244,14 @@ function App() {
             ? ' — cuts as one topper.'
             : ' — the red parts would arrive loose. Turn on Bridge, add the Bar, or raise Weight.'}
           <div style={{ marginTop: 4, color: report.width > CAKE_R * 2 ? '#8A5A1E' : '#8a8a8a' }}>
-            {mm(report.width)} wide × {mm(height)} tall
+            {mm(report.width)} wide × {mm(height)} letters
             {report.width > CAKE_R * 2 && ' — wider than the cake'}
           </div>
         </div>
       </div>
 
       <div style={{ flex: 1 }}>
-        <Canvas shadows camera={{ position: [0, 2.1, 6.6], fov: 32 }} gl={{ preserveDrawingBuffer: true }}>
+        <Canvas shadows camera={{ position: [0, 1.75, 5.1], fov: 32 }} gl={{ preserveDrawingBuffer: true }}>
           <color attach="background" args={['#EDEAE3']} />
           <SceneLights />
           <LocalEnv />
@@ -247,7 +259,7 @@ function App() {
           <Topper text={text} height={height} weight={weight} bar={bar} barThick={barThick}
                   legCount={legCount} legLen={legLen} thickness={thickness} bridge={bridge} finish={finish}
                   cakeTop={0.55} bury={Math.min(bury, legLen)} />
-          <OrbitControls target={[0, 0.6, 0]} />
+          <OrbitControls target={[0, 0.62, 0]} />
         </Canvas>
       </div>
     </div>
