@@ -63,11 +63,10 @@ const FINISHES = {
   white:  { label: 'Gloss white',   color: '#f2f0ec', metalness: 0.1,  roughness: 0.08 },
 };
 
-function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop, bury }) {
+function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop, bury, rows, lineGap }) {
   const { geos, groups, standY } = useMemo(() => {
     const t = topperShapes(FONT, text, {
-      height,
-      weight,
+      height, weight, lines: rows, lineGap,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
@@ -98,7 +97,7 @@ function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickne
     const lowest = Math.min(...parts.flatMap(p => p.outer.map(q => q.y)));
     const foot = t.legs.length ? lowest : t.baselineY;
     return { geos, groups: grouped, standY: foot + (t.legs.length ? bury : 0) };
-  }, [text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, bury]);
+  }, [text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, bury, rows, lineGap]);
 
   const f = FINISHES[finish];
   return (
@@ -145,6 +144,11 @@ const val = { fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 42, textAl
 function App() {
   const [text, setText]     = useState('Amelia');
   const [span, setSpan]     = useState(0.55);   // share of the cake's width, NOT a letter height
+  const [rows, setRows]     = useState(1);
+  // 1.2, not 1.0: helvetiker's cap is 0.72em and its descender reaches -0.21, so at 1.0 the 'p'
+  // of Happy hangs 0.07em INTO the B of Birthday. That overlap is what makes it one piece, which
+  // is a real trade and worth reaching for deliberately — not something to ship as the default.
+  const [lineGap, setLG]    = useState(1.2);
   const [weight, setW]      = useState(0);
   const [bar, setBar]       = useState(true);
   const [barRatio, setBR]   = useState(0.13);   // a share of the letter height, so it scales with it
@@ -165,22 +169,22 @@ function App() {
    * `topperShapes` sizes by height, so this measures the word at height 1 and divides — the aspect
    * ratio is a property of the text and the font, and one build is enough to learn it. */
   const height = useMemo(() => {
-    const w1 = topperShapes(FONT, text, { height: 1, weight }).width;
+    const w1 = topperShapes(FONT, text, { height: 1, weight, lines: rows, lineGap }).width;
     return w1 > 0 ? (CAKE_R * 2 * span) / w1 : 0.5;
-  }, [text, weight, span]);
+  }, [text, weight, span, rows, lineGap]);
   const barThick = height * barRatio;
 
   // The same call the mesh makes, so the reported count is the picture's count.
   const report = useMemo(() => {
     const t = topperShapes(FONT, text, {
-      height, weight,
+      height, weight, lines: rows, lineGap,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
-    if (!t.parts?.length) return { n: 0, width: 0 };
+    if (!t.parts?.length) return { n: 0, width: 0, cap: 0, rows: [] };
     const parts = bridge ? [...t.parts, ...bridgeLoose(t.parts, { width: height * 0.022 })] : t.parts;
-    return { n: components(parts).length, width: t.width };
-  }, [text, height, weight, bar, barThick, legCount, legLen, bridge]);
+    return { n: components(parts).length, width: t.width, cap: t.capHeight, rows: t.rows };
+  }, [text, height, weight, bar, barThick, legCount, legLen, bridge, rows, lineGap]);
 
   const slider = (label, v, set, min, max, step, fmt = x => x.toFixed(2)) => (
     <div style={row}>
@@ -206,6 +210,8 @@ function App() {
                         border: '1.5px solid #D8E0DA', borderRadius: 8, marginBottom: 14 }} />
 
         {slider('Across cake', span, setSpan, 0.2, 1, 0.01, x => `${Math.round(x * 100)}%`)}
+        {slider('Rows', rows, setRows, 1, 3, 1, x => String(x))}
+        {rows > 1 && slider('· gap', lineGap, setLG, 0.7, 1.6, 0.05)}
         {slider('Weight', weight, setW, 0, 0.04, 0.002, x => x.toFixed(3))}
         {slider('Thickness', thickness, setTh, 0.004, 0.16, 0.002, x => mm(x))}
 
@@ -244,8 +250,14 @@ function App() {
             ? ' — cuts as one topper.'
             : ' — the red parts would arrive loose. Turn on Bridge, add the Bar, or raise Weight.'}
           <div style={{ marginTop: 4, color: report.width > CAKE_R * 2 ? '#8A5A1E' : '#8a8a8a' }}>
-            {mm(report.width)} wide × {mm(height)} letters
+            {mm(report.width)} wide, {mm(report.cap)} letters
             {report.width > CAKE_R * 2 && ' — wider than the cake'}
+          </div>
+          {/* Below about 12mm the strokes are thinner than the sheet they are cut from. That is the
+              number that decides whether a phrase needs stacking, so it is stated, not implied. */}
+          <div style={{ marginTop: 2, color: report.cap * MM_PER_UNIT < 12 ? '#8A5A1E' : '#8a8a8a' }}>
+            {report.rows.length > 1 ? report.rows.join(' / ') : '\u00a0'}
+            {report.cap * MM_PER_UNIT < 12 && ' — letters thinner than the sheet; add a row'}
           </div>
         </div>
       </div>
@@ -258,7 +270,7 @@ function App() {
           <Cake />
           <Topper text={text} height={height} weight={weight} bar={bar} barThick={barThick}
                   legCount={legCount} legLen={legLen} thickness={thickness} bridge={bridge} finish={finish}
-                  cakeTop={0.55} bury={Math.min(bury, legLen)} />
+                  cakeTop={0.55} bury={Math.min(bury, legLen)} rows={rows} lineGap={lineGap} />
           <OrbitControls target={[0, 0.62, 0]} />
         </Canvas>
       </div>

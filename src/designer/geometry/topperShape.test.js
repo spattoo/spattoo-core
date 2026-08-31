@@ -200,3 +200,111 @@ describe('bridgeLoose — making an i-dot part of the topper', () => {
     expect(pieceCount([...parts, ...bridgeLoose(parts, { width: 0.02 })])).toBe(1);
   });
 });
+
+describe('stacking — the reason a phrase can exist at all', () => {
+  // Sized to the cake, at a fixed span, letters shrink as the phrase grows. That is the whole
+  // argument for rows, and it is checked as an inequality rather than described in a comment.
+  const atSpan = (text, opts) => {
+    const probe = topperShapes(FONT, text, { height: 1, ...opts });
+    return topperShapes(FONT, text, { height: 1 / probe.width, ...opts });  // one unit wide
+  };
+
+  it('makes the letters BIGGER for the same width across the cake', () => {
+    const one = atSpan('Happy Birthday');
+    const two = atSpan('Happy Birthday', { lines: 2 });
+    expect(two.rows).toHaveLength(2);
+    expect(one.width).toBeCloseTo(two.width, 6);          // same span, by construction
+    expect(two.capHeight).toBeGreaterThan(one.capHeight * 1.5);
+  });
+
+  it('breaks where the WIDEST row is narrowest', () => {
+    /* ⚠️ Asserted as the property, because guessing the answer got it backwards.
+     *
+     * "Happy" / "1st Birthday" looks like the tidy split and it is the WORSE one: its long row runs
+     * 8.01 ems against 6.70 for "Happy 1st" / "Birthday", so it sets smaller on the same cake. The
+     * rule is not "balance the word counts" and not "put the short word on top" — it is minimise the
+     * widest row, and the only honest way to test it is to price the alternative and compare. */
+    const chosen = atSpan('Happy 1st Birthday', { lines: 2 }).rows;
+    expect(chosen).toHaveLength(2);
+    const widest = (rows) => Math.max(...rows.map(r => topperShapes(FONT, r, { height: 1 }).width));
+    for (const alt of [['Happy', '1st Birthday'], ['Happy 1st Birthday']]) {
+      if (alt.join(' ') === chosen.join(' ')) continue;
+      expect(widest(chosen)).toBeLessThanOrEqual(widest(alt));
+    }
+    // And it really does set larger than the same phrase on one line.
+    expect(atSpan('Happy 1st Birthday', { lines: 2 }).capHeight)
+      .toBeGreaterThan(atSpan('Happy 1st Birthday').capHeight);
+  });
+
+  it('lets the author override the balance with a newline', () => {
+    // Somebody deciding where their own phrase breaks beats any rule, so an explicit break wins
+    // even when it is the worse split.
+    expect(topperShapes(FONT, 'Happy 1st\nBirthday', { lines: 2 }).rows)
+      .toEqual(['Happy 1st', 'Birthday']);
+    expect(topperShapes(FONT, 'Happy\nBirthday').rows).toHaveLength(2);   // without asking for lines
+  });
+
+  it('never asks for more rows than there are words', () => {
+    expect(topperShapes(FONT, 'Amelia', { lines: 3 }).rows).toEqual(['Amelia']);
+    expect(topperShapes(FONT, 'Happy Birthday', { lines: 9 }).rows).toHaveLength(2);
+  });
+
+  it('is as tall as the block and as wide as the WIDEST row', () => {
+    const t = topperShapes(FONT, 'Happy\nBirthday', { height: 1 });
+    expect(t.height).toBeCloseTo(1, 6);
+    const rowWidth = (r) => topperShapes(FONT, r, { height: t.capHeight }).width;
+    // Not the sum of the rows — a stacked topper is no wider than its longest line.
+    expect(t.width).toBeLessThan(rowWidth('Happy') + rowWidth('Birthday'));
+    expect(t.width).toBeGreaterThan(t.capHeight);
+  });
+
+  it('puts the bar under the BOTTOM row, not through the middle', () => {
+    // ⚠️ At y = 0 the bar lands on the TOP row's baseline — a stripe across the middle of the
+    // topper, joined to the words above it and holding up nothing. The whole object hangs here.
+    const t = topperShapes(FONT, 'Happy\nBirthday', { height: 1, baseline: { thickness: 0.08 } });
+    const bar = t.parts.find(p => p.kind === 'baseline');
+    const barTop = Math.max(...bar.outer.map(p => p.y));
+    const glyphs = t.parts.filter(p => p.kind === 'glyph');
+    const lowest = Math.min(...glyphs.flatMap(p => p.outer.map(q => q.y)));
+    expect(barTop).toBeLessThan(0);                        // below the block's centre
+    expect(barTop).toBeGreaterThan(lowest);                // and biting up into the bottom row
+  });
+
+  it('stands on legs that reach the bottom row', () => {
+    const { parts, legs } = topperShapes(FONT, 'Happy\nBirthday',
+      { height: 1, baseline: { thickness: 0.08 }, legs: { count: 2, length: 0.3 } });
+    expect(legs).toHaveLength(2);
+    const barBottom = Math.min(...parts.find(p => p.kind === 'baseline').outer.map(p => p.y));
+    for (const l of legs) expect(Math.min(...l.outer.map(p => p.y))).toBeLessThan(barBottom);
+  });
+
+  it('two rows of a block font are loose until they are bridged', () => {
+    // Rows do not touch each other, so a bar under the bottom one leaves the whole top row floating
+    // — a bag of letters, and the failure is invisible in a preview. On a script the rows interlock
+    // and this is where lineGap earns its keep; on a block font the stems are what save it.
+    const t = topperShapes(FONT, 'Happy\nBirthday', { height: 1, baseline: { thickness: 0.08 } });
+    expect(pieceCount(t.parts)).toBeGreaterThan(1);
+    expect(pieceCount([...t.parts, ...bridgeLoose(t.parts, { width: 0.02 })])).toBe(1);
+  });
+
+  it('trades stack height for letter size, but only at a fixed HEIGHT', () => {
+    // Held to one block height, closing the rows up leaves more of it for the letters.
+    const wide = topperShapes(FONT, 'Happy\nBirthday', { height: 1, lineGap: 1.4 });
+    const tight = topperShapes(FONT, 'Happy\nBirthday', { height: 1, lineGap: 0.8 });
+    expect(tight.capHeight).toBeGreaterThan(wide.capHeight);
+
+    /* ⚠️ And NOT at a fixed span, which is how a topper is really sized.
+     *
+     * Worth pinning down because the opposite is the intuitive guess and it is wrong: once the width
+     * across the cake is fixed, the letter size follows from the widest ROW's aspect and nothing
+     * else. Tightening the gap does not buy a bigger letter — it makes the object stand shorter and
+     * brings the rows close enough to touch. Both real effects, neither of them the letter size. */
+    const atSpanGap = (g) => {
+      const probe = topperShapes(FONT, 'Happy\nBirthday', { height: 1, lineGap: g });
+      return topperShapes(FONT, 'Happy\nBirthday', { height: 1 / probe.width, lineGap: g });
+    };
+    const a = atSpanGap(0.8), b = atSpanGap(1.4);
+    expect(a.capHeight).toBeCloseTo(b.capHeight, 6);
+    expect(a.height).toBeLessThan(b.height);
+  });
+});

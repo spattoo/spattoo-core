@@ -42,15 +42,53 @@ export function topperShapes(font, text, {
   weight = 0,
   baseline = null,          // { thickness, overhang } — a bar under the word, or null for none
   legs = null,              // { count, width, length, inset } — prongs below, or null for none
+  lines = 1,                // stack the words over this many rows; '\n' in the text always wins
+  lineGap = 1,              // baseline to baseline, in ems
 } = {}) {
-  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
-  if (!font || !clean) return { shapes: [], glyphs: [], width: 0, height: 0, baselineY: 0, legs: [] };
+  const clean = String(text ?? '')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .trim();
+  const EMPTY = { shapes: [], parts: [], glyphs: [], width: 0, height: 0, baselineY: 0, legs: [],
+                  rows: [], rowHeight: 0, capHeight: 0 };
+  if (!font || !clean) return EMPTY;
 
-  const raw = font.generateShapes(clean, 1);          // unit em
-  const glyphOutlines = raw.map(sh => ({
-    outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y })),
-    holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y }))),
-  }));
+  /* ── STACKING, and why it is not a nicety ────────────────────────────────────────────────────
+   *
+   * A topper is sized by how much of the CAKE it crosses, so at a fixed span the letters shrink as
+   * the phrase gets longer: on a 6-inch cake "Amelia" sets at 20mm, "Happy Birthday" at 11mm, and
+   * "Happy 1st Birthday" at 8.8mm — thinner than the 3mm sheet it is cut from, which is a comb, not
+   * a topper. Two rows roughly double the letter for the same span, which is why every real
+   * "Happy Birthday" topper is stacked.
+   *
+   * Rows are laid out at size 1 with each row centred on its own outline, then the whole block is
+   * scaled together — so `height` keeps meaning the height of the finished object and every caller
+   * that sized a single line still gets what it asked for. */
+  const rowText = splitRows(font, clean, lines);
+  const rows = [];
+  for (let i = 0; i < rowText.length; i++) {
+    const raw = font.generateShapes(rowText[i], 1);   // unit em, baseline at y = 0
+    const o = raw.map(sh => ({
+      outer: sh.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y })),
+      holes: (sh.holes ?? []).map(h => h.getPoints(CURVE_SEG).map(p => ({ x: p.x, y: p.y }))),
+    }));
+    if (!o.length) continue;                          // a row of nothing but spaces
+    const b = boundsOf(o);
+    rows.push({ text: rowText[i], glyphs: o, capEm: b.y1 - b.y0, dx: -(b.x0 + b.x1) / 2 });
+  }
+  if (!rows.length) return EMPTY;
+
+  // Centre each row on itself and drop it a line — ragged rows read as centred, which is how these
+  // are set, and it costs nothing to do it here rather than making every caller do it.
+  const glyphOutlines = [];
+  for (let i = 0; i < rows.length; i++) {
+    const { dx } = rows[i], dy = -i * lineGap;
+    const shift = p => ({ x: p.x + dx, y: p.y + dy });
+    rows[i].baselineEm = dy;
+    for (const g of rows[i].glyphs) {
+      glyphOutlines.push({ outer: g.outer.map(shift), holes: g.holes.map(h => h.map(shift)) });
+    }
+  }
 
   // Size by HEIGHT with the aspect kept, the same bargain glyphShape makes: every topper of a given
   // setting stands the same tall and simply grows wider with more letters, so a baker's "Emma" and
@@ -71,7 +109,7 @@ export function topperShapes(font, text, {
   }));
 
   const width = gw * scale;
-  const halfH = height / 2;
+  const capHeight = Math.max(...rows.map(r => r.capEm)) * scale;
   const parts = glyphs.map(g => ({ outer: g.outer, holes: g.holes, kind: 'glyph' }));
 
   /* The bar, and WHERE IT SITS IS THE WHOLE THING.
@@ -87,7 +125,9 @@ export function topperShapes(font, text, {
    *
    * It then bites UP into the letters rather than meeting them edge to edge. A bar that merely
    * touches is a butt joint at the one place the whole object hangs from. */
-  const typographicBaseline = (0 - cy) * scale;
+  // ⚠️ The LAST row's baseline. The bar goes under the bottom line; put it at y = 0 and a stacked
+  // topper gets a bar through its middle, joined to the top row and to nothing that stands on it.
+  const typographicBaseline = (rows[rows.length - 1].baselineEm - cy) * scale;
   let baselineY = typographicBaseline;
   if (baseline) {
     const t = Math.max(1e-4, baseline.thickness ?? height * 0.08);
@@ -121,7 +161,91 @@ export function topperShapes(font, text, {
     return s;
   });
 
-  return { shapes, parts, glyphs, width, height, baselineY, legs: legShapes };
+  return {
+    shapes, parts, glyphs, width, height, baselineY, legs: legShapes,
+    rows: rows.map(r => r.text), rowHeight: lineGap * scale, capHeight,
+  };
+}
+
+/* ── Where the line breaks go ────────────────────────────────────────────────────────────────────
+ *
+ * An explicit '\n' always wins: the author typed it, and no balancing rule beats somebody deciding
+ * that "Happy" belongs above "Birthday". `lines` is the fallback for the common case where they just
+ * asked for two rows and expect it to look right.
+ *
+ * Balanced by the WIDEST row, not by even word counts. A topper is sized to the cake by its widest
+ * row, so minimising that maximum is the same thing as making the letters as big as they can be —
+ * which is the entire reason for stacking. Splitting "Happy 1st Birthday" evenly by words gives
+ * "Happy 1st" / "Birthday"; by width it gives "Happy" / "1st Birthday", and the second sets larger.
+ *
+ * Breaks only at spaces. A hyphenated word is one word; a topper that breaks a name in half is worse
+ * than a topper with small letters.
+ */
+function splitRows(font, clean, lines) {
+  if (clean.includes('\n')) return clean.split('\n').filter(Boolean);
+  const words = clean.split(' ').filter(Boolean);
+  const n = Math.max(1, Math.min(Math.round(lines) || 1, words.length));
+  if (n === 1) return [words.join(' ')];
+
+  const wordW = words.map(w => advanceOf(font, w));
+  const spaceW = advanceOf(font, ' ');
+  const m = words.length;
+  const seg = (i, j) => {
+    let w = 0;
+    for (let k = i; k < j; k++) w += wordW[k] + (k > i ? spaceW : 0);
+    return w;
+  };
+
+  // best(l, i): the narrowest possible WIDEST row, setting words[i..] in l rows.
+  const memo = new Map();
+  const best = (l, i) => {
+    if (l === 1) return seg(i, m);
+    const key = `${l}:${i}`;
+    if (memo.has(key)) return memo.get(key);
+    let v = Infinity;
+    for (let j = i + 1; j <= m - (l - 1); j++) v = Math.min(v, Math.max(seg(i, j), best(l - 1, j)));
+    memo.set(key, v);
+    return v;
+  };
+
+  const out = [];
+  let i = 0;
+  for (let l = n; l > 1; l--) {
+    const target = best(l, i);
+    let j = i + 1;
+    while (j < m - (l - 2) && Math.max(seg(i, j), best(l - 1, j)) > target + 1e-9) j++;
+    out.push(words.slice(i, j).join(' '));
+    i = j;
+  }
+  out.push(words.slice(i).join(' '));
+  return out;
+}
+
+/* How wide a string sets, WITHOUT building its outlines.
+ *
+ * The balancer tries every break position, and generating shapes for each candidate would be dozens
+ * of outline builds to answer a question the font already knows: `ha` is the advance width three.js
+ * itself sums when it lays the text out. Same number, no geometry. */
+function advanceOf(font, str) {
+  const d = font?.data;
+  if (!d?.glyphs) return String(str).length;          // a font we cannot measure: fall back to count
+  const s = 1 / (d.resolution || 1000);
+  let w = 0;
+  for (const ch of String(str)) {
+    const g = d.glyphs[ch] ?? d.glyphs['?'];
+    if (g) w += (g.ha ?? 0) * s;
+  }
+  return w;
+}
+
+// The box around a set of outlines, in whatever units they are already in.
+function boundsOf(outlines) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const g of outlines) for (const p of g.outer) {
+    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+    if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+  }
+  return { x0, y0, x1, y1 };
 }
 
 /* ── How many separate bits of acrylic is this? ──────────────────────────────────────────────────
