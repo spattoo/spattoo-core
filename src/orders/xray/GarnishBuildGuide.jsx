@@ -21,6 +21,11 @@ export default function GarnishBuildGuide({ garnish, cakeDiameterMm = null, anim
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <GuideDiagram guide={guide} animate={animate} />
+      {guide.kind === 'cut' && (
+        <div style={{ fontSize: 11.5, color: '#7A5A2E', marginTop: -4 }}>
+          The dot is where the knife goes in; cut the outline first, then punch the circles.
+        </div>
+      )}
       <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
         {guide.steps.map((s, i) => (
           <li key={i} style={{ fontSize: 13, lineHeight: 1.5, color: '#333' }}>{s}</li>
@@ -44,14 +49,19 @@ function GuideDiagram({ guide, animate }) {
   const pad = unit * 3.4;
   const view = `${box.x0 - pad} ${box.y0 - pad} ${w + pad * 2} ${h + pad * 2}`;
 
-  const drawing = useProgressiveDraw(animate, guide.strokes.length);
+  /* Both kinds animate, because both ARE a sequence — the piped one is the nozzle's, the cut one is
+     the knife's: round the outline, then each hole. */
+  const drawing = useProgressiveDraw(animate, guide.order ?? guide.strokes.length);
 
   return (
     <svg viewBox={view} role="img"
       aria-label={guide.kind === 'cut'
         ? `Cutting template: ${guide.panels.length} piece${guide.panels.length > 1 ? 's' : ''}`
         : `Piping order: ${guide.strokes.length} stroke${guide.strokes.length > 1 ? 's' : ''}`}
-      style={{ width: '100%', maxWidth: 420, background: '#FCFBF9', borderRadius: 10,
+      /* ⚠️ BOUNDED IN BOTH DIRECTIONS. Width alone is not a size for a tall piece: a spike is three
+         times as high as it is wide, so a 420-wide box made a diagram over a thousand pixels tall
+         that pushed the steps — the actual instructions — off the screen entirely. */
+      style={{ width: '100%', maxWidth: 420, maxHeight: 340, background: '#FCFBF9', borderRadius: 10,
                border: '1px solid #ECE7E0' }}>
 
       {/* The finished piece, faintly — so the numbered strokes read as marks ON something rather
@@ -59,14 +69,30 @@ function GuideDiagram({ guide, animate }) {
       {guide.kind === 'cut'
         ? guide.panels.map((p, i) => (
             <g key={i}>
+              {/* ⚠️ FILLED ONLY, NEVER STROKED. Stroking the combined shape draws a SOLID edge round
+                  every hole as well as the outline, directly under the dashes that are meant to
+                  distinguish them — so the two lines that say "cut" and "punch" came out looking
+                  identical, which is the one thing this diagram exists to prevent. */}
               <path d={`${p.outline} ${p.holes.join(' ')}`} fillRule="evenodd"
-                fill="#EDE4D8" stroke="#8A7457" strokeWidth={unit * 0.3} />
+                fill="#EDE4D8" stroke="none"
+                style={cutStep(drawing, i) ? undefined : DIM} />
+              <path d={p.outline} fill="none" stroke="#8A7457" strokeWidth={unit * 0.3}
+                style={cutStep(drawing, i) ? undefined : DIM} />
               {/* ⚠️ A HOLE IS A CUT, AND THE OUTLINE ALONE DOES NOT SAY SO. Drawn solid it reads as a
                   circle printed on the panel — something to pipe, or ignore. The dashes say
                   "cut here", which is the same convention a paper pattern uses. */}
               {p.holes.map((d, k) => (
                 <path key={k} d={d} fill="none" stroke="#8A7457" strokeWidth={unit * 0.26}
-                  strokeDasharray={`${unit * 0.8} ${unit * 0.6}`} />
+                  strokeDasharray={`${unit * 0.8} ${unit * 0.6}`}
+                  style={cutStep(drawing, i + k + 1) ? undefined : DIM} />
+              ))}
+
+              {/* Where the knife goes in, and which way round. The holes get their own dots: they
+                  are separate cuts, made after the outline. */}
+              <circle cx={p.start[0]} cy={p.start[1]} r={unit * 0.55} fill="#7A5A2E" />
+              <Arrow at={p.start} angle={p.heading} size={unit * 1.15} color="#7A5A2E" />
+              {p.holeStarts.map(([hx, hy], k) => (
+                <circle key={k} cx={hx} cy={hy} r={unit * 0.4} fill="#7A5A2E" />
               ))}
             </g>
           ))
@@ -121,10 +147,14 @@ function GuideDiagram({ guide, animate }) {
 
 /* An arrowhead as a triangle, because a stroke-based one needs a marker definition per colour and
  * markers are the first thing to be lost when SVG is rasterised into the printed sheet. */
-function Arrow({ at: [x, y], angle, size }) {
+function Arrow({ at: [x, y], angle, size, color = '#1F5F3F' }) {
   const p = (d, a) => `${x + Math.cos(angle + a) * d},${y + Math.sin(angle + a) * d}`;
-  return <polygon points={`${x},${y} ${p(size, 2.5)} ${p(size, -2.5)}`} fill="#1F5F3F" />;
+  return <polygon points={`${x},${y} ${p(size, 2.5)} ${p(size, -2.5)}`} fill={color} />;
 }
+
+const DIM = { opacity: 0.12, transition: 'opacity .25s' };
+/* Has the animation reached this step? `null` means it is not running — everything shows. */
+const cutStep = (at, i) => at == null || i <= at;
 
 /* ⚠️ REDUCED MOTION IS NOT A PREFERENCE TO BE WEIGHED HERE — it is a request from someone for whom
  * movement is a problem, and the diagram is complete without it. Checked once at mount and again if

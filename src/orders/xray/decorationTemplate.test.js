@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { decorationWidthMm, tierInchFor, templateLayout } from './decorationTemplate.js';
+import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
+// Laying a true size onto A4 is now shared with the chocolate template — same page, same ruler.
+import { templateLayout } from './templateSheet.js';
 
 // The baker CUTS FONDANT to this number. A confident wrong size is worse than no template at all,
 // so every path that cannot produce a real measurement must produce null instead of a default.

@@ -58,6 +58,21 @@ describe('the build guide is derived from the paths', () => {
     expect(g.lifts).toBe(0);                   // a lift is a piping idea; a cut piece has none
   });
 
+  /* ⚠️ Cutting IS a motion — the knife enters somewhere and travels round, and the holes come after.
+     Given no start mark, the guide told a baker the shape and not where to begin. */
+  it('says where to start cutting and which way to go', () => {
+    const g = garnishGuide({ kind: 'cut', paths: [square], rings: [square] });
+    expect(g.panels[0].start).toEqual(square[0]);
+    expect(Number.isFinite(g.panels[0].heading)).toBe(true);
+  });
+
+  it('counts the outline and each hole as steps in the order of work', () => {
+    const hole = [[40, 40], [60, 40], [60, 60], [40, 60], [40, 40]];
+    const g = garnishGuide({ kind: 'cut', paths: [square], rings: [square, hole] });
+    expect(g.order).toBe(2);                   // cut the outline, then punch the one hole
+    expect(g.panels[0].holeStarts).toHaveLength(1);
+  });
+
   it('counts the holes a cut panel needs punched', () => {
     const hole = [[40, 40], [60, 40], [60, 60], [40, 60], [40, 40]];
     const g = garnishGuide({ kind: 'cut', paths: [square], rings: [square, hole] });

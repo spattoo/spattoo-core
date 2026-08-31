@@ -4,6 +4,7 @@ import { strengthColor } from './report.js';
 import { loadImage } from '../framePhoto.js';
 import { corsUrl } from '../../designer/utils/assetUrl.js';
 import { dietTone, hasAllergen, dietaryLine, restrictions } from '../dietary.js';
+import { garnishGuide } from '../../designer/geometry/garnishGuide.js';
 
 // ── The X-Ray report, as a sheet of paper ────────────────────────────────────────────────────────
 // The screen version of this report is read at a desk. THIS one is carried to a bench, put down next
@@ -789,6 +790,124 @@ function drawStageGrid(sheet, img) {
     sheet.margin, sheet.y, { size: mm(3.0), weight: 600, color: MUTED }) + mm(2);
 }
 
+/* ── Chocolate garnishes on the printed sheet ───────────────────────────────────────────────────
+ *
+ * ⚠️ THE SHEET IS THE POINT OF THIS GUIDE, not a copy of the screen. A baker prints the X-ray and
+ * works from paper with their hands full — the screen version is the preview. So the diagram is
+ * drawn here at full fidelity: the piece, each stroke numbered in piping order, a dot where it
+ * starts and an arrow where it ends.
+ *
+ * ⚠️ AND IT DOES NOT GO UNDER THE "Written by AI" LINE. This guide is derived from the piece's own
+ * stored paths; on paper there is no tooltip to explain the difference later, so the two kinds of
+ * guide get two headings and the provenance is stated with each.
+ */
+function drawGarnishGuides(sheet, garnishes) {
+  const guides = (garnishes ?? []).map(g => ({ g, guide: garnishGuide(g, { cakeDiameterMm: g.cakeDiameterMm }) }))
+    .filter(x => x.guide);
+  if (!guides.length) return;
+
+  sheet.heading('Chocolate garnishes — how to make them', '#4A2C1B');
+  sheet.y += sheet.text('Taken from the drawing itself — the numbers are the order it was piped in.',
+    sheet.margin, sheet.y, { size: mm(3.2), weight: 700, color: MUTED }) + mm(1.5);
+
+  for (const { g, guide } of guides) {
+    /* ⚠️ RESERVE WHAT WILL ACTUALLY BE DRAWN. A fixed reservation was fine for the filigree and ran
+       a tall piece straight off the bottom of the page — a spike is three times as high as it is
+       wide, and the printed sheet has no scrollbar to reveal the rest. The heading, the diagram and
+       a couple of steps have to break as one block or the page break lands mid-instruction. */
+    sheet.space(diagramBox(sheet, guide).h + mm(26));
+    sheet.y += sheet.text(g.name || 'Chocolate piece', sheet.margin, sheet.y, { size: mm(4.4), weight: 800 });
+    sheet.y += sheet.text(
+      `${g.zone === 'board' ? 'On the board' : 'On the top tier'}, ${g.mode === 'stand' ? 'standing up' : 'lying flat'}`
+      + (guide.widthMm ? ` · ${guide.widthMm} × ${guide.heightMm} mm` : ''),
+      sheet.margin, sheet.y, { size: mm(3.2), weight: 600, color: MUTED }) + mm(2);
+
+    sheet.y += drawGuideDiagram(sheet, guide) + mm(3);
+
+    for (const [i, step] of guide.steps.entries()) {
+      sheet.space(mm(10));
+      sheet.text(`${i + 1}.`, sheet.margin, sheet.y, { size: mm(3.4), weight: 800 });
+      sheet.y += sheet.text(step, sheet.margin + mm(7), sheet.y,
+        { size: mm(3.4), weight: 500, maxW: sheet.contentW - mm(7) }) + mm(1.5);
+    }
+    sheet.y += mm(4);
+  }
+}
+
+/* The diagram, on canvas. The DATA is shared with the screen (`garnishGuide`) — only the drawing
+ * differs, because one medium is SVG and the other a 2D context. Returns the height used. */
+/* How much room the diagram needs, asked before the page break is decided and again when drawing —
+ * one answer, so the reservation and the drawing cannot disagree. */
+function diagramBox(sheet, guide) {
+  const boxW = Math.min(sheet.contentW, mm(90));
+  const aspect = (guide.size.w / guide.size.h) || 1;
+  const boxH = Math.min(mm(75), boxW / aspect);
+  const w = Math.min(boxW, boxH * aspect);
+  return { w, h: w / aspect };
+}
+
+function drawGuideDiagram(sheet, guide) {
+  const ctx = sheet.ctx;
+  const { w: drawW, h: drawH } = diagramBox(sheet, guide);
+  const x0 = sheet.margin, y0 = sheet.y;
+
+  const k = drawW / guide.size.w;
+  const px = x => x0 + (x - guide.box.x0) * k;
+  const py = y => y0 + (y - guide.box.y0) * k;
+  const unit = Math.max(drawW, drawH) / 26;
+
+  const trace = pts => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(px(x), py(y)) : ctx.moveTo(px(x), py(y))));
+  };
+  const dot = ([x, y], r, color) => {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px(x), py(y), r, 0, Math.PI * 2); ctx.fill();
+  };
+  const arrow = ([x, y], angle, size, color) => {
+    const ax = px(x), ay = py(y);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax + Math.cos(angle + 2.5) * size, ay + Math.sin(angle + 2.5) * size);
+    ctx.lineTo(ax + Math.cos(angle - 2.5) * size, ay + Math.sin(angle - 2.5) * size);
+    ctx.fill();
+  };
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (guide.kind === 'cut') {
+    for (const panel of guide.panels) {
+      trace(panel.points); ctx.closePath();
+      ctx.fillStyle = '#EDE4D8'; ctx.fill();
+      ctx.strokeStyle = '#8A7457'; ctx.lineWidth = Math.max(1, unit * 0.3); ctx.stroke();
+      // Solid means cut, dashed means punch — two tools, and they must not look alike on paper.
+      ctx.setLineDash([unit * 0.8, unit * 0.6]);
+      for (const hole of panel.holePoints) { trace(hole); ctx.closePath(); ctx.stroke(); }
+      ctx.setLineDash([]);
+      dot(panel.start, unit * 0.55, '#7A5A2E');
+      arrow(panel.start, panel.heading, unit * 1.15, '#7A5A2E');
+      for (const hs of panel.holeStarts) dot(hs, unit * 0.4, '#7A5A2E');
+    }
+  } else {
+    for (const st of guide.strokes) {
+      // An edge under every stroke: white chocolate is nearly the colour of paper.
+      trace(st.points);
+      ctx.strokeStyle = '#B3A794'; ctx.lineWidth = Math.max(1, unit * 0.95); ctx.stroke();
+      ctx.strokeStyle = st.color;  ctx.lineWidth = Math.max(1, unit * 0.7);  ctx.stroke();
+    }
+    for (const st of guide.strokes) {
+      dot(st.start, unit * 0.55, '#1F5F3F');
+      arrow(st.end, st.heading, unit * 1.15, '#1F5F3F');
+      ctx.fillStyle = '#1F5F3F';
+      ctx.font = `800 ${Math.max(8, unit * 1.9)}px Helvetica, Arial, sans-serif`;
+      ctx.fillText(String(st.n), px(st.start[0]) + unit * 1.1, py(st.start[1]) - unit * 2.4);
+    }
+  }
+
+  return drawH + mm(2);
+}
+
 function drawDecorationSteps(sheet, decorationSteps, photo, meta, stageImages) {
   // Same shape from both sources: { <key>: { guide, … } }. An element-backed guide is keyed by
   // element id, a photo one by the decoration's id within the spec — the sheet does not care which.
@@ -879,6 +998,8 @@ export async function renderXrayPages({ order, report, baker, conflicts, spec, d
   drawColors(sheet, report.colors);
   drawPiping(sheet, { elements: report.elements, freehand: report.freehand });
   drawDecorationSteps(sheet, decorationSteps, photo, decorationMeta, stageImages);
+  // After the model-written guides, with its own heading: derived, and it says so.
+  drawGarnishGuides(sheet, report.garnishes);
   drawFooters(sheet, { order });
 
   return sheet.pages;

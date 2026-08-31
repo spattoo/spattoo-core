@@ -78,7 +78,11 @@ export function garnishGuide(g, { cakeDiameterMm = null } = {}) {
     const arrow = closed ? along(p, 0.9) : { at: p[p.length - 1], heading: heading(p) };
     return {
       n: i + 1,
+      /* ⚠️ BOTH FORMS, BECAUSE THIS IS DRAWN IN TWO MEDIA. The screen is SVG and wants path data; the
+         printed sheet is a canvas and wants points. Deriving one from the other at the far end means
+         parsing path strings back into numbers, which is how the two renderings start to disagree. */
       d: svgPath(p),
+      points: p,
       start: p[0],
       end: arrow.at,
       // The direction of travel there, for an arrowhead that points the way the hand was going.
@@ -93,7 +97,17 @@ export function garnishGuide(g, { cakeDiameterMm = null } = {}) {
         n: i + 1,
         outline: svgPath(pn.outline),
         holes: pn.holes.map(svgPath),
+        points: pn.outline,                       // for the canvas — see the note on strokes above
+        holePoints: pn.holes,
         holeCount: pn.holes.length,
+        /* ⚠️ CUTTING IS A MOTION TOO. This was given no start mark and no direction on the reasoning
+           that "spread, set, cut" is not a movement the way piping is — which is wrong about the
+           only part that matters at the bench. The knife begins somewhere, travels round the
+           outline, and the holes are punched after. That is a traversal, and it is what a baker
+           needs told: where to enter the shape, and which line is cut before which. */
+        start: pn.outline[0],
+        heading: heading(pn.outline),
+        holeStarts: pn.holes.map(h => h[0]),
       }))
     : [];
 
@@ -102,6 +116,11 @@ export function garnishGuide(g, { cakeDiameterMm = null } = {}) {
     strokes,
     panels,
     lifts: kind === 'piped' ? liftCount(paths) : 0,
+    /* The order of work, in both kinds — what the diagram animates. For a piped piece that is the
+       strokes; for a cut one it is the outline first, then each hole. */
+    order: kind === 'piped'
+      ? strokes.length
+      : panels.reduce((n, pn) => n + 1 + pn.holeCount, 0),
     box,
     size: { w: box.x1 - box.x0, h: box.y1 - box.y0 },
     widthMm:  mmPerPlate ? round((box.x1 - box.x0) * mmPerPlate) : null,

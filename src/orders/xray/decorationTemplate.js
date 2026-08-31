@@ -1,5 +1,11 @@
 import { buildA4Pdf, downloadPdf } from '../pdf.js';
 import { corsUrl } from '../../designer/utils/assetUrl.js';
+/* ⚠️ SHARED WITH THE CHOCOLATE TEMPLATE, not copied. Both print a physical sheet and both live or die
+ * on the same ruler bar; two copies of it is two places for the page geometry to drift, and a
+ * template whose ruler is wrong is worse than one with no ruler at all. */
+import {
+  A4_W_MM, MARGIN_MM, templateLayout, drawTemplateHeader, drawRuler, fitScale,
+} from './templateSheet.js';
 
 // ── The printable template ───────────────────────────────────────────────────────────────────────
 // A cut-out guide at ACTUAL SIZE, so a baker can lay fondant over it and cut around the shape.
@@ -14,8 +20,6 @@ import { corsUrl } from '../../designer/utils/assetUrl.js';
 // numbers the X-Ray already holds, and the picture is the reference photo the order already has.
 
 const MM_PER_INCH = 25.4;
-const A4_W_MM = 210, A4_H_MM = 297;
-const MARGIN_MM = 15;
 
 // The decoration's real width, in millimetres.
 //
@@ -40,24 +44,6 @@ export function tierInchFor(tinPlan, tierIndex) {
   return t?.tinInch ?? null;
 }
 
-// Fit the decoration's true size onto the printable area WITHOUT scaling it — that is the whole
-// point. Returns the draw box in mm, or null when it genuinely cannot be printed at size.
-//
-// A decoration wider than the page is a real outcome (a 9-inch topper on A4 portrait), and the
-// honest response is to say so rather than to shrink it and hand the baker a template that lies.
-export function templateLayout(widthMm, aspect) {
-  if (!widthMm || !Number.isFinite(aspect) || aspect <= 0) return null;
-  const heightMm = widthMm / aspect;
-  const availW = A4_W_MM - MARGIN_MM * 2;
-  const availH = A4_H_MM - MARGIN_MM * 2 - 25;   // 25mm reserved for the caption block
-  if (widthMm > availW || heightMm > availH) return { widthMm, heightMm, tooLarge: true };
-  return {
-    widthMm, heightMm, tooLarge: false,
-    xMm: (A4_W_MM - widthMm) / 2,
-    yMm: MARGIN_MM + 20,
-  };
-}
-
 // Draw and download. `crop` is the same padded box the on-screen close-up uses, so the printed
 // shape is the one the baker was just looking at.
 export async function downloadDecorationTemplate({ photoUrl, bbox, widthMm, title, order }) {
@@ -78,27 +64,11 @@ export async function downloadDecorationTemplate({ photoUrl, bbox, widthMm, titl
     const pxPerMm = W / A4_W_MM;                 // buildA4Pdf gives a true-scale A4 canvas
     const mm = (v) => v * pxPerMm;
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.fillStyle = '#2C2A26';
-    ctx.font = `700 ${mm(5)}px sans-serif`;
-    ctx.fillText(title || 'Decoration', mm(MARGIN_MM), mm(MARGIN_MM + 4));
-
-    ctx.fillStyle = '#6b6459';
-    ctx.font = `500 ${mm(3.4)}px sans-serif`;
-    ctx.fillText(
-      layout.tooLarge
-        ? `Actual size ${fmt(layout.widthMm)} × ${fmt(layout.heightMm)} cm — too large for A4, shown scaled. Measure, do not trace.`
-        : `Printed at ACTUAL SIZE — ${fmt(layout.widthMm)} cm wide. Print at 100%, no page scaling.`,
-      mm(MARGIN_MM), mm(MARGIN_MM + 11),
-    );
+    drawTemplateHeader(ctx, W, { title: title || 'Decoration', layout });
 
     // Too large to print true-size: fit it instead, and the caption above already says the drawing
     // is not to scale. Silently shrinking without saying so is the one thing this must never do.
-    const availW = A4_W_MM - MARGIN_MM * 2;
-    const availH = A4_H_MM - MARGIN_MM * 2 - 25;
-    const scale = layout.tooLarge ? Math.min(availW / layout.widthMm, availH / layout.heightMm) : 1;
+    const scale = fitScale(layout);
     const dw = layout.widthMm * scale, dh = layout.heightMm * scale;
     const dx = (A4_W_MM - dw) / 2, dy = MARGIN_MM + 20;
 
@@ -112,23 +82,7 @@ export async function downloadDecorationTemplate({ photoUrl, bbox, widthMm, titl
     ctx.strokeRect(mm(dx), mm(dy), mm(dw), mm(dh));
     ctx.setLineDash([]);
 
-    // A printed ruler. If the page came out of the printer scaled — the single most likely way this
-    // sheet goes wrong, and one the baker cannot otherwise detect — holding a ruler to this bar
-    // shows it immediately.
-    const barY = dy + dh + 12;
-    ctx.strokeStyle = '#2C2A26';
-    ctx.lineWidth = Math.max(1, mm(0.4));
-    ctx.beginPath();
-    ctx.moveTo(mm(MARGIN_MM), mm(barY));
-    ctx.lineTo(mm(MARGIN_MM + 50), mm(barY));
-    for (let i = 0; i <= 5; i++) {
-      ctx.moveTo(mm(MARGIN_MM + i * 10), mm(barY - 2));
-      ctx.lineTo(mm(MARGIN_MM + i * 10), mm(barY + 2));
-    }
-    ctx.stroke();
-    ctx.fillStyle = '#6b6459';
-    ctx.font = `600 ${mm(3)}px sans-serif`;
-    ctx.fillText('5 cm — check with a ruler', mm(MARGIN_MM + 54), mm(barY + 1.2));
+    drawRuler(ctx, W, dy + dh + 12);
   });
 
   downloadPdf(blob, `decoration-template-${slug(title)}.pdf`);
