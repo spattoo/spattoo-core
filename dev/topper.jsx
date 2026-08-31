@@ -178,7 +178,9 @@ const lab = { fontSize: 11, fontWeight: 800, color: '#6E8577', width: 74, letter
 const val = { fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 42, textAlign: 'right' };
 
 function App() {
-  const [text, setText]     = useState('Amelia');
+  // The phrase, not a name: it stacks, it nests, and it is the case every decision here was
+  // argued over. A single name opens on the one setting that exercises none of them.
+  const [text, setText]     = useState('Happy Birthday');
   const [face, setFace]     = useState('great_vibes');
   // 0.12em puts the stroke at about a tenth of the letter, which is what the toppers in the market
   // measure. Below that it is a hairline; above it the counters in a, p and B start closing up.
