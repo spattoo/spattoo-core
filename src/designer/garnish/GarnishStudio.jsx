@@ -26,6 +26,35 @@ export const PLATE = 420;          // the studio's own square, in its own units
 const INK = '#4A2C1B';
 const SURFACE = '#F6F4F0';
 
+/* ── Ready-made shapes ───────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE REFERENCE GARNISHES ARE GEOMETRIC, and a hand cannot draw a clean triangle with a mouse.
+ * Auto-correct tidies a wobble; it cannot invent the straight edges and equal angles those cut panels
+ * are made of. Picking the shape is the honest route to them.
+ *
+ * Each is inserted as ONE CLOSED PATH, which makes it a region the moment it lands — so it can be
+ * filled straight away, by the same rule that has always applied to a shape drawn in one loop.
+ *
+ * Sized to a fraction of the plate rather than in absolute units, so they stay proportionate if the
+ * plate is ever resized, and centred because that is where the eye is.
+ */
+const polygon = (n, r, rot = -Math.PI / 2) =>
+  Array.from({ length: n }, (_, i) => {
+    const a2 = rot + (i / n) * Math.PI * 2;
+    return [PLATE / 2 + Math.cos(a2) * r, PLATE / 2 + Math.sin(a2) * r];
+  });
+
+export const SHAPES = [
+  { key: 'triangle', label: 'Triangle', make: () => polygon(3, PLATE * 0.3) },
+  { key: 'square',   label: 'Square',   make: () => polygon(4, PLATE * 0.28, -Math.PI / 4) },
+  // 48 sides reads as a circle at any size the plate can show, and stays a short path to store.
+  { key: 'circle',   label: 'Circle',   make: () => polygon(48, PLATE * 0.28) },
+  { key: 'strip',    label: 'Strip',    make: () => {
+      const w = PLATE * 0.34, h = PLATE * 0.12, cx = PLATE / 2, cy = PLATE / 2;
+      return [[cx - w, cy - h], [cx + w, cy - h], [cx + w, cy + h], [cx - w, cy + h]];
+    } },
+];
+
 /** Every polyline in the piece, outlines and fills together — what gets saved and what gets built
  *  into geometry. Order is piping order, so a build guide can read it as instructions. */
 export const piecePaths = strokes => strokes.flatMap(s => [s.path, ...s.fills]);
@@ -134,6 +163,13 @@ export default function GarnishStudio({
       setSaving(false);
       addToCake();
     }
+  }
+
+  /* A shape arrives as a finished stroke: closed, so `ring` is set and the fill controls apply to it
+     immediately — the same shape as anything drawn in one gesture. */
+  function addShape(shape) {
+    const path = shape.make();
+    setStrokes(s2 => [...s2, { path, ring: [...path, path[0]], closed: true, gap: 0, area: 0, fills: [] }]);
   }
 
   function addToCake() {
@@ -261,6 +297,23 @@ export default function GarnishStudio({
               <div style={{ marginTop: 5 }}>{colorControl}</div>
             </div>
           )}
+
+          <div>
+            <span style={labelStyle}>Add a shape</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
+              {SHAPES.map(sh => (
+                <button key={sh.key} type="button" onClick={() => addShape(sh)}
+                  style={{ padding: '7px 11px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
+                           fontSize: 11.5, fontWeight: 800, border: '1.5px solid #E0DDD8',
+                           background: '#fff', color: '#4a4a4a' }}>
+                  {sh.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: '#999', marginTop: 4, lineHeight: 1.4 }}>
+              Lands closed, so you can fill it straight away.
+            </div>
+          </div>
 
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={autoShape} onChange={e => setAutoShape(e.target.checked)}
