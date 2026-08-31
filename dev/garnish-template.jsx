@@ -1,13 +1,8 @@
-import { newA4Canvas } from '../src/orders/pdf.js';
-import { drawGarnishTemplate } from '../src/orders/xray/garnishTemplate.js';
-import { templateLayout } from '../src/orders/xray/templateSheet.js';
-import { garnishGuide } from '../src/designer/geometry/garnishGuide.js';
 import { renderXrayPages } from '../src/orders/xray/xrayPdf.js';
 
-/* ⚠️ A TEMPLATE IS A PHYSICAL MEASURING INSTRUMENT. "The code ran" is not evidence the sheet is
- * right — a hole drawn like the outline, a ruler bar the wrong length or a piece off the page all
- * pass every test and are obvious the moment the page is looked at. Both printed artefacts render
- * here into visible canvases at true A4 proportions. */
+/* ⚠️ "THE CODE RAN" IS NOT EVIDENCE THE PAGE IS RIGHT. A piece running off the bottom, or a diagram
+ * that swallows its own instructions, passes every test and is obvious the moment the sheet is
+ * looked at. `renderXrayPages` returns canvases, so the printed page renders here as it prints. */
 
 const arc = (cx, cy, r, n = 26) => Array.from({ length: n }, (_, i) => {
   const a = (i / (n - 1)) * Math.PI * 2;
@@ -30,17 +25,7 @@ const FILIGREE = {
 const root = document.getElementById('root');
 const label = t => { const h = document.createElement('h3'); h.textContent = t; root.append(h); };
 
-// 1. The cutting template, at true A4.
-label('Cutting template (A4, true size)');
-{
-  const guide = garnishGuide(PANEL, { cakeDiameterMm: 180 });
-  const layout = templateLayout(guide.widthMm, guide.size.w / guide.size.h);
-  const c = newA4Canvas();
-  drawGarnishTemplate(c.getContext('2d'), c.width, { guide, layout, title: PANEL.name });
-  root.append(c);
-}
-
-// 2. The X-ray sheet itself, so the garnish section can be read as it prints.
+// The X-ray sheet itself, so the garnish section can be read as it prints.
 label('X-ray sheet — the garnish section');
 const report = {
   tins: { tiers: [] }, colors: [], elements: [], freehand: [], checklist: [], checklistTotal: 0,

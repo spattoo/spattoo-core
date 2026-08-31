@@ -3,7 +3,6 @@ import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
 import GarnishBuildGuide from './GarnishBuildGuide.jsx';
-import { canTemplate, downloadGarnishTemplate } from './garnishTemplate.js';
 
 // ── How to make the decorations ──────────────────────────────────────────────────────────────────
 // The nozzle sections answer "which tip pipes this border". This answers the other half: how a
@@ -91,38 +90,9 @@ function GarnishGuides({ garnishes, s }) {
               </span>
             </div>
             <GarnishBuildGuide garnish={g} cakeDiameterMm={g.cakeDiameterMm ?? null} />
-            <GarnishTemplateButton garnish={g} />
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/* ⚠️ ONLY A CUT PIECE GETS A TEMPLATE, and only once the cake size is known. A filigree is piped
- * along a line, not cut to one, so a cutting template would invite the wrong technique entirely; and
- * a template printed at a guessed size is worse than none, because the baker cuts to it. Both
- * conditions live in `canTemplate`, so the button simply is not there rather than failing when
- * pressed. */
-function GarnishTemplateButton({ garnish }) {
-  const [err, setErr] = useState(null);
-  if (!canTemplate(garnish)) return null;
-
-  return (
-    <div style={{ marginTop: 10 }}>
-      <button type="button"
-        onClick={() => downloadGarnishTemplate({
-          garnish, cakeDiameterMm: garnish.cakeDiameterMm, title: garnish.name || 'Chocolate panel',
-        }).catch(e => setErr(e.message || 'Could not build the template.'))}
-        style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #D8CFC2',
-                 background: '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
-                 cursor: 'pointer' }}>
-        Print the cutting template
-      </button>
-      <div style={{ fontSize: 10.5, color: '#999', marginTop: 4 }}>
-        Actual size on A4 — cut the solid line, punch the dashed circles.
-      </div>
-      {err && <div style={{ fontSize: 11, color: '#A33', marginTop: 4 }}>{err}</div>}
     </div>
   );
 }

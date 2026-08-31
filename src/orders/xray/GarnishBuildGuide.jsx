@@ -49,14 +49,26 @@ function GuideDiagram({ guide, animate }) {
   const pad = unit * 3.4;
   const view = `${box.x0 - pad} ${box.y0 - pad} ${w + pad * 2} ${h + pad * 2}`;
 
-  /* Both kinds animate, because both ARE a sequence — the piped one is the nozzle's, the cut one is
-     the knife's: round the outline, then each hole. */
-  const drawing = useProgressiveDraw(animate, guide.order ?? guide.strokes.length);
+  /* Every line that gets drawn, in the order it is made. For a piped piece that is the strokes; for
+     a cut one it is each outline followed by its holes — because cutting is a sequence too. */
+  /* ⚠️ A DASHED LINE CANNOT BE DRAWN BY A DASH TRICK — a path has ONE `stroke-dasharray`, and the
+     progressive draw needs it. Animating the punch lines the same way as the cut line silently
+     turned them solid for the whole of the animation, collapsing the one distinction this diagram
+     exists to make. So they FADE IN in their turn instead: a different motion for a different
+     action, which is honest anyway — the outline is traced, a hole is punched in one go. */
+  const timeline = guide.kind === 'cut'
+    ? guide.panels.flatMap(p => [
+        { d: p.outline, color: '#8A7457', mode: 'draw' },
+        ...p.holes.map(d => ({ d, color: '#8A7457', mode: 'reveal', dashed: true })),
+      ])
+    : guide.strokes.map(st => ({ d: st.d, color: st.color, wide: true, mode: 'draw' }));
+
+  const anim = useDrawAnimation(animate, timeline.length);
 
   return (
     <svg viewBox={view} role="img"
       aria-label={guide.kind === 'cut'
-        ? `Cutting template: ${guide.panels.length} piece${guide.panels.length > 1 ? 's' : ''}`
+        ? `Cutting order: ${guide.panels.length} piece${guide.panels.length > 1 ? 's' : ''}`
         : `Piping order: ${guide.strokes.length} stroke${guide.strokes.length > 1 ? 's' : ''}`}
       /* ⚠️ BOUNDED IN BOTH DIRECTIONS. Width alone is not a size for a tall piece: a spike is three
          times as high as it is wide, so a 420-wide box made a diagram over a thousand pixels tall
@@ -64,82 +76,59 @@ function GuideDiagram({ guide, animate }) {
       style={{ width: '100%', maxWidth: 420, maxHeight: 340, background: '#FCFBF9', borderRadius: 10,
                border: '1px solid #ECE7E0' }}>
 
-      {/* The finished piece, faintly — so the numbered strokes read as marks ON something rather
-          than as a diagram floating in space. */}
+      {anim.css && <style>{anim.css}</style>}
+
+      {/* The finished piece, faintly, under everything — so the drawing reads as marks ON something,
+          and so the animation has a shape to grow into rather than appearing out of nothing. */}
       {guide.kind === 'cut'
         ? guide.panels.map((p, i) => (
-            <g key={i}>
-              {/* ⚠️ FILLED ONLY, NEVER STROKED. Stroking the combined shape draws a SOLID edge round
-                  every hole as well as the outline, directly under the dashes that are meant to
-                  distinguish them — so the two lines that say "cut" and "punch" came out looking
-                  identical, which is the one thing this diagram exists to prevent. */}
-              <path d={`${p.outline} ${p.holes.join(' ')}`} fillRule="evenodd"
-                fill="#EDE4D8" stroke="none"
-                style={cutStep(drawing, i) ? undefined : DIM} />
-              <path d={p.outline} fill="none" stroke="#8A7457" strokeWidth={unit * 0.3}
-                style={cutStep(drawing, i) ? undefined : DIM} />
-              {/* ⚠️ A HOLE IS A CUT, AND THE OUTLINE ALONE DOES NOT SAY SO. Drawn solid it reads as a
-                  circle printed on the panel — something to pipe, or ignore. The dashes say
-                  "cut here", which is the same convention a paper pattern uses. */}
-              {p.holes.map((d, k) => (
-                <path key={k} d={d} fill="none" stroke="#8A7457" strokeWidth={unit * 0.26}
-                  strokeDasharray={`${unit * 0.8} ${unit * 0.6}`}
-                  style={cutStep(drawing, i + k + 1) ? undefined : DIM} />
-              ))}
-
-              {/* Where the knife goes in, and which way round. The holes get their own dots: they
-                  are separate cuts, made after the outline. */}
-              <circle cx={p.start[0]} cy={p.start[1]} r={unit * 0.55} fill="#7A5A2E" />
-              <Arrow at={p.start} angle={p.heading} size={unit * 1.15} color="#7A5A2E" />
-              {p.holeStarts.map(([hx, hy], k) => (
-                <circle key={k} cx={hx} cy={hy} r={unit * 0.4} fill="#7A5A2E" />
-              ))}
-            </g>
+            <path key={i} d={`${p.outline} ${p.holes.join(' ')}`} fillRule="evenodd"
+              fill="#F3EEE6" stroke="none" />
           ))
-        : guide.strokes.map(s => (
-            <path key={`ghost-${s.n}`} d={s.d} fill="none" stroke="#EDE7DF"
+        : guide.strokes.map(st => (
+            <path key={`ghost-${st.n}`} d={st.d} fill="none" stroke="#EDE7DF"
               strokeWidth={unit * 1.5} strokeLinecap="round" strokeLinejoin="round" />
           ))}
 
-      {guide.kind === 'piped' && guide.strokes.map((s, i) => (
-        <g key={s.n}>
-          {/* ⚠️ AN EDGE UNDER EVERY STROKE, BECAUSE WHITE CHOCOLATE IS NEARLY THE COLOUR OF PAPER.
-              Drawn as bare colour, a white or pale piece all but disappeared against the plate — the
-              guide showed a stroke count and no visible stroke. The outline is what a piped rope has
-              anyway, so it costs nothing on a dark piece and rescues a pale one. */}
-          <path d={s.d} fill="none" stroke="#B3A794" strokeWidth={unit * 0.95}
+      {/* ⚠️ THE LINE IS DRAWN ALONG ITS OWN LENGTH, which is what makes this a build guide rather than
+          a picture that fades in. `pathLength="100"` is the trick that makes it possible without
+          measuring anything: it tells SVG to treat every path as 100 units long whatever its real
+          length, so one dash rule animates every stroke, and no layout read is needed. */}
+      {timeline.map((t, i) => (
+        <g key={i}>
+          {t.wide && (
+            <path d={t.d} fill="none" stroke="#B3A794" strokeWidth={unit * 0.95} pathLength="100"
+              strokeLinecap="round" strokeLinejoin="round" className={anim.cls(i, t.mode)} />
+          )}
+          <path d={t.d} fill="none" stroke={t.color} pathLength="100"
+            strokeWidth={t.wide ? unit * 0.7 : unit * 0.3}
             strokeLinecap="round" strokeLinejoin="round"
-            style={drawing == null || i <= drawing
-              ? undefined
-              : { opacity: 0.12, transition: 'opacity .25s' }} />
-          <path d={s.d} fill="none" stroke={s.color} strokeWidth={unit * 0.7}
-            strokeLinecap="round" strokeLinejoin="round"
-            /* ⚠️ THE DASH TRICK NEEDS A LENGTH IT CANNOT KNOW IN SVG MARKUP, so the whole path is
-               hidden until its turn and then revealed. Cruder than growing along the line and it
-               degrades to the finished diagram, which is the point: nothing here is load-bearing. */
-            style={drawing == null || i <= drawing
-              ? undefined
-              : { opacity: 0.12, transition: 'opacity .25s' }} />
-
-          {/* Start: a filled dot. End: an arrowhead pointing the way the hand was going. */}
-          <circle cx={s.start[0]} cy={s.start[1]} r={unit * 0.55} fill="#1F5F3F" />
-          <Arrow at={s.end} angle={s.heading} size={unit * 1.15} />
-
-          {/* The number sits BESIDE the start, not on it — on it and the dot is unreadable, which is
-              the one mark that says where to begin. */}
-          <text x={s.start[0] + unit * 1.1} y={s.start[1] - unit * 0.9}
-            fontSize={unit * 1.9} fontWeight="800" fill="#1F5F3F"
-            stroke="#FCFBF9" strokeWidth={unit * 0.5} paintOrder="stroke">{s.n}</text>
+            className={anim.cls(i, t.mode)}
+            style={t.dashed ? { strokeDasharray: `${unit * 0.8} ${unit * 0.6}` } : undefined} />
         </g>
       ))}
 
-      {/* ⚠️ NUMBERED ONLY WHEN THERE IS SOMETHING TO ORDER. A lone "1" beside a single panel is a
-          mark that means nothing and invites the reader to hunt for a 2. Several pieces cut from one
-          sheet do need telling apart. */}
-      {guide.kind === 'cut' && guide.panels.length > 1 && guide.panels.map((p, i) => (
-        <text key={p.n} x={box.x0 + unit + i * unit * 2.4} y={box.y0 + unit * 2}
-          fontSize={unit * 1.8} fontWeight="800" fill="#7A5A2E"
-          stroke="#FCFBF9" strokeWidth={unit * 0.45} paintOrder="stroke">{p.n}</text>
+      {guide.kind === 'piped' && guide.strokes.map(st => (
+        <g key={st.n}>
+          {/* Start: a filled dot. End: an arrowhead pointing the way the hand was going. */}
+          <circle cx={st.start[0]} cy={st.start[1]} r={unit * 0.55} fill="#1F5F3F" />
+          <Arrow at={st.end} angle={st.heading} size={unit * 1.15} />
+          {/* The number sits BESIDE the start, not on it — on it and the dot is unreadable, which is
+              the one mark that says where to begin. */}
+          <text x={st.start[0] + unit * 1.1} y={st.start[1] - unit * 0.9}
+            fontSize={unit * 1.9} fontWeight="800" fill="#1F5F3F"
+            stroke="#FCFBF9" strokeWidth={unit * 0.5} paintOrder="stroke">{st.n}</text>
+        </g>
+      ))}
+
+      {guide.kind === 'cut' && guide.panels.map((p, i) => (
+        <g key={i}>
+          <circle cx={p.start[0]} cy={p.start[1]} r={unit * 0.55} fill="#7A5A2E" />
+          <Arrow at={p.start} angle={p.heading} size={unit * 1.15} color="#7A5A2E" />
+          {p.holeStarts.map(([hx, hy], k) => (
+            <circle key={k} cx={hx} cy={hy} r={unit * 0.4} fill="#7A5A2E" />
+          ))}
+        </g>
       ))}
     </svg>
   );
@@ -152,32 +141,57 @@ function Arrow({ at: [x, y], angle, size, color = '#1F5F3F' }) {
   return <polygon points={`${x},${y} ${p(size, 2.5)} ${p(size, -2.5)}`} fill={color} />;
 }
 
-const DIM = { opacity: 0.12, transition: 'opacity .25s' };
-/* Has the animation reached this step? `null` means it is not running — everything shows. */
-const cutStep = (at, i) => at == null || i <= at;
+const STEP_S = 0.9;      // how long one stroke takes to draw
+const HOLD_S = 1.6;      // the finished piece, held, before it starts over
 
-/* ⚠️ REDUCED MOTION IS NOT A PREFERENCE TO BE WEIGHED HERE — it is a request from someone for whom
- * movement is a problem, and the diagram is complete without it. Checked once at mount and again if
- * the setting changes, and when it is set the animation never starts at all. */
-function useProgressiveDraw(animate, count) {
-  const [i, setI] = useState(null);
+/* ── The progressive draw ────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ IT LOOPS, AND THAT IS THE WHOLE POINT. The first attempt ran once on mount and stopped: by the
+ * time anyone had scrolled to the guide it had finished, so the feature existed and was never seen.
+ * A build guide is looked at while the hands are busy — it has to be running whenever you look up.
+ *
+ * ⚠️ AND IT IS NOT LOAD-BEARING. The numbers, dots and arrows carry the order on their own, so with
+ * motion reduced or CSS unavailable the diagram is complete and merely still. Keyframes are
+ * generated per stroke because each one owns a WINDOW of one shared cycle — that is what makes them
+ * draw in sequence and restart together rather than each looping on its own clock.
+ */
+function useDrawAnimation(animate, count) {
+  const [on, setOn] = useState(false);
 
   useEffect(() => {
-    if (!animate || count < 2) return undefined;
+    if (!animate || count < 1) return undefined;
     const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (mq?.matches) return undefined;
-
-    setI(0);
-    let n = 0;
-    const t = setInterval(() => {
-      n += 1;
-      setI(n);
-      if (n >= count - 1) { clearInterval(t); setI(null); }   // ends on the finished diagram
-    }, 700);
-    return () => clearInterval(t);
+    if (mq?.matches) { setOn(false); return undefined; }
+    setOn(true);
+    const listen = e => setOn(!e.matches);
+    mq?.addEventListener?.('change', listen);
+    return () => mq?.removeEventListener?.('change', listen);
   }, [animate, count]);
 
-  return i;
+  if (!on) return { css: null, cls: () => undefined };
+
+  const cycle = count * STEP_S + HOLD_S;
+  const rules = ['.gbg-draw { stroke-dasharray: 100; }'];
+  for (let i = 0; i < count; i++) {
+    const from = ((i * STEP_S) / cycle) * 100;
+    const to = (((i + 1) * STEP_S) / cycle) * 100;
+    rules.push(
+      // Traced along its length: the line the tool follows.
+      `@keyframes gbg-k${i} {`
+      + ` 0%, ${from.toFixed(2)}% { stroke-dashoffset: 100 }`
+      + ` ${to.toFixed(2)}%, 100% { stroke-dashoffset: 0 } }`,
+      `.gbg-d${i} { animation: gbg-k${i} ${cycle.toFixed(2)}s linear infinite; }`,
+      // Appears in one go: a hole is punched, not traced — and its dashes are not ours to spend.
+      `@keyframes gbg-r${i} {`
+      + ` 0%, ${from.toFixed(2)}% { opacity: 0 }`
+      + ` ${to.toFixed(2)}%, 100% { opacity: 1 } }`,
+      `.gbg-r${i} { animation: gbg-r${i} ${cycle.toFixed(2)}s linear infinite; }`,
+    );
+  }
+  return {
+    css: rules.join('\n'),
+    cls: (i, mode) => (mode === 'reveal' ? `gbg-r${i}` : `gbg-draw gbg-d${i}`),
+  };
 }
 
 function Facts({ guide }) {

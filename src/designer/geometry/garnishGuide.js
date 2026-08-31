@@ -130,9 +130,17 @@ export function garnishGuide(g, { cakeDiameterMm = null } = {}) {
   };
 }
 
-/* The words beside the diagram. Deliberately few: the diagram carries the shape and the order, and a
- * paragraph restating it in prose is what a baker skips. What words are good for is the part the
- * picture cannot show — temper, thickness, setting time, and how to get the piece off the sheet. */
+/* The words beside the diagram.
+ *
+ * ⚠️ TECHNIQUE, NOT MEASUREMENT. The diagram already carries the shape, the size and the order; what
+ * it cannot show is the part that actually decides whether the piece works — temper, consistency,
+ * when to move and when to wait. A guide that spends its words restating dimensions is telling a
+ * baker what they can already see and leaving out what they came for.
+ *
+ * ⚠️ AND TEMPER IS THE WHOLE CRAFT. Untempered chocolate sets dull, streaks white within a day and
+ * snaps softly instead of cleanly — the single difference between a garnish that looks bought and
+ * one that looks homemade, and it is decided before a line is piped. The temperatures differ by
+ * chocolate, so they are stated rather than left as "temper it". */
 function steps({ kind, strokes, panels, g }) {
   const colours = [...new Set(strokes.map(s => s.color))];
   const twoTone = colours.length > 1;
@@ -140,30 +148,49 @@ function steps({ kind, strokes, panels, g }) {
   if (kind === 'cut') {
     const holes = panels.reduce((n, p) => n + p.holeCount, 0);
     return [
-      'Temper the chocolate and spread it thin on acetate or parchment — about 2 mm.',
+      TEMPER,
+      'Pour onto acetate and spread with a palette knife to about 2 mm — thin enough to cut, thick '
+      + 'enough not to shatter when you lift it.',
       twoTone
-        ? 'Two chocolates: spread and set the first, then the second beside it where the template shows.'
+        ? 'Two chocolates: set the first, then spread the second beside it. Do not let them run '
+          + 'together while either is wet.'
         : null,
-      'Leave it until it is set but not brittle. It should still cut cleanly rather than snap.',
-      `Cut the outline${panels.length > 1 ? `s — ${panels.length} pieces` : ''} against the template.`,
-      holes ? `Punch ${holes} hole${holes > 1 ? 's' : ''} where marked.` : null,
-      'Chill until firm, then lift it off the sheet with a palette knife.',
+      'Wait until it has lost its wet shine and is firm but still yields to a fingernail. Cut it '
+      + 'fully set and it snaps; cut it too soon and the edge drags.',
+      `Cut the outline${panels.length > 1 ? `s — ${panels.length} pieces` : ''} with a warmed knife, `
+      + 'wiped between cuts. Press straight down rather than dragging.',
+      holes ? `Punch ${holes} hole${holes > 1 ? 's' : ''} with a warmed round cutter.` : null,
+      'Chill briefly, then slide a palette knife under the whole sheet at once — lifting a corner '
+      + 'first is how a thin panel cracks.',
     ].filter(Boolean);
   }
 
   return [
-    'Temper the chocolate and fill a paper cone or a fine piping bag.',
-    'Work on parchment or acetate, not on the cake — the piece is made flat and placed once it sets.',
+    TEMPER,
+    'Fill a paper cone and snip the tip small. A cone gives finer control than a bag, and you can '
+    + 'open the tip further but never close it again.',
+    'Work on parchment or acetate, never on the cake — the piece is made flat, set, then placed.',
     twoTone
-      ? `Two chocolates: pipe all of one colour, then the other. The numbers are the order within each.`
+      ? 'Two chocolates: pipe all of one colour and let it set before starting the other, or they '
+        + 'bleed at the joins.'
       : null,
-    `Pipe the strokes in the order numbered: start at each dot, follow the line, finish at the arrow.`,
+    'Pipe in the order numbered: start at each dot, follow the line, finish at the arrow.',
+    'Keep the tip just clear of the surface and let the chocolate fall into place — dragging the tip '
+    + 'along the parchment gives a flat, ragged line.',
     strokes.length > 1
-      ? `Lift the nozzle between strokes — ${strokes.length} strokes means ${strokes.length} separate lines, not one continuous run.`
+      ? `Lift between strokes: ${strokes.length} strokes means ${strokes.length} separate lines, not `
+        + 'one continuous run. Stop the pressure before you lift or the end tails.'
       : null,
-    'Leave it to set completely before lifting it, then place it on the cake.',
+    'Leave it to set at room temperature, not in the fridge — cold sets it dull and sweats it when '
+    + 'it comes out. Lift it only when it releases cleanly.',
   ].filter(Boolean);
 }
+
+/* ⚠️ THE NUMBERS ARE THE CRAFT, so they are stated. "Temper it" is advice a baker who needs this
+ * guide cannot act on, and the three chocolates behave differently enough that one range would be
+ * wrong for two of them. */
+const TEMPER = 'Temper the chocolate: melt to 45°C, cool to 27°C, work at 31°C for dark — 30°C for '
+  + 'milk, 29°C for white. Untempered chocolate sets dull, streaks within a day and snaps softly.';
 
 function bounds(paths) {
   const pts = paths.flat();
