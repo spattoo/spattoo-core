@@ -190,6 +190,11 @@ export default function GarnishStudio({
       }
     }
     if (picked != null && strokes[picked]) {
+        const [hx, hy] = handleAt(strokes[picked]);
+      x.beginPath();
+      x.arc(hx * k, hy * k, ROPE * 1.6 * k, 0, Math.PI * 2);
+      x.fillStyle = '#2b5ac8'; x.fill();
+      x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.stroke();
       // A thin halo, not a box: the shapes are not rectangles and a box round a triangle points at
       // empty corners rather than at the thing selected.
       line(strokes[picked].ring ?? strokes[picked].path, 1.6, 'rgba(40,90,200,0.9)');
@@ -286,6 +291,16 @@ export default function GarnishStudio({
     fills: s2.fills.map(fl => fl.map(f)),
   });
 
+  /* ⚠️ A CORNER YOU DRAG, because that is how resizing works everywhere else and it is what a hand
+     reaches for. Bigger/Smaller buttons in a side panel are a workaround for a missing handle: they
+     make you look away from the thing you are sizing and they only move in fixed steps. The buttons
+     stay, for fine adjustment, but they are no longer the only way. */
+  const boundsOf = s2 => {
+    const xs = s2.path.map(q => q[0]), ys = s2.path.map(q => q[1]);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  };
+  const handleAt = s2 => { const b = boundsOf(s2); return [b.x1, b.y1]; };
+
   const centroidOf = s2 => {
     const pts = s2.path;
     return [pts.reduce((a2, q) => a2 + q[0], 0) / pts.length,
@@ -353,6 +368,19 @@ export default function GarnishStudio({
   function down(e) {
     ref.current.setPointerCapture(e.pointerId);
     const pt = at(e);
+
+    /* ⚠️ THE HANDLE IS TESTED FIRST. It sits ON the shape's own corner, so running the shapes first
+       would swallow every press on it and the handle would never do anything. */
+    if (picked != null && strokes[picked]) {
+      const h = handleAt(strokes[picked]);
+      if (Math.hypot(h[0] - pt[0], h[1] - pt[1]) <= ROPE * 4) {
+        const [cx, cy] = centroidOf(strokes[picked]);
+        dragRef.current = { idx: picked, resize: true, cx, cy,
+                            from: Math.max(1e-6, Math.hypot(pt[0] - cx, pt[1] - cy)) };
+        return;
+      }
+    }
+
     const hit = hitStroke(pt);
     if (hit != null) { setPicked(hit); dragRef.current = { idx: hit, last: pt }; return; }
     setPicked(null);
@@ -361,6 +389,17 @@ export default function GarnishStudio({
   function move(e) {
     const pt = at(e);
     const d = dragRef.current;
+    if (d?.resize) {
+      // Scaled about the shape's own centre, so dragging the corner grows it where it stands rather
+      // than sliding it across the plate — the rule the Bigger/Smaller buttons already follow.
+      const now = Math.max(1e-6, Math.hypot(pt[0] - d.cx, pt[1] - d.cy));
+      const mul = now / d.from;
+      d.from = now;
+      setStrokes(all => all.map((s2, i) => (i === d.idx
+        ? mapStroke(s2, ([x, y]) => [d.cx + (x - d.cx) * mul, d.cy + (y - d.cy) * mul])
+        : s2)));
+      return;
+    }
     if (d) {
       const dx = pt[0] - d.last[0], dy = pt[1] - d.last[1];
       d.last = pt;
@@ -519,7 +558,7 @@ export default function GarnishStudio({
                   style={{ ...miniBtn, color: '#A33', borderColor: '#E0C9C9' }}>Remove</button>
               </div>
               <div style={{ fontSize: 10, color: '#8899aa', marginTop: 5, lineHeight: 1.4 }}>
-                Drag it on the plate to move it.
+                Drag it to move it, or drag the blue dot at its corner to resize.
               </div>
             </div>
           )}
