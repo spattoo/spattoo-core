@@ -3,6 +3,7 @@ import { Panel } from '../../shared/Panel.jsx';
 import Segmented from '../../shared/Segmented.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
+import { snapStroke } from '../geometry/strokeSnap.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
 
 // ── Piping a chocolate garnish, off the cake ─────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ export default function GarnishStudio({
   const [name, setName] = useState(initialName);
   /* Where it goes and how it sits, decided HERE rather than after the fact. The piece is finished
      when it leaves this screen, and "where does it live" is the last question about it. */
+  const [autoShape, setAutoShape] = useState(true);
   const [zone, setZone] = useState('top');
   const [mode, setMode] = useState('stand');
   /* ⚠️ THE LIBRARY IS OPTIONAL, and its absence must not break the studio. `apiClient` may not carry
@@ -169,7 +171,23 @@ export default function GarnishStudio({
   function up() {
     const tidy = tidyDrawn(trail, { minStep: 3, tolerance: 3 });
     setTrail([]);
-    if (tidy) setStrokes(s => [...s, { ...tidy, fills: [] }]);
+    if (!tidy) return;
+
+    /* ⚠️ THE PEN'S OWN SNAPPER, not a second one. `snapStroke` already tidies a near-circle into a
+       circle and a near-straight run into a straight line, and it is the difference between a wobbly
+       hand-drawn triangle and something that looks cut. It works in 3D with a plane normal, so the
+       plate maps to y = 0 and back — reusing it beats writing a flat version that would drift from
+       the original the first time either changed.
+
+       Applied ONCE, here, to the points that get stored — exactly as the pen does it. A tidy-up that
+       ran on every render would re-tidy an already-tidy line and creep. */
+    let path = tidy.path;
+    if (autoShape) {
+      const snapped = snapStroke(path.map(([x, y]) => [x, 0, y]), { normal: [0, 1, 0] });
+      if (snapped?.points?.length > 1) path = snapped.points.map(([x, , z]) => [x, z]);
+    }
+    const ring = tidy.closed && path.length > 2 ? [...path.slice(0, -1), path[0]] : tidy.ring;
+    setStrokes(s2 => [...s2, { ...tidy, path, ring, fills: [] }]);
   }
 
   // ── Fill the last stroke ──────────────────────────────────────────────────────────────────────
@@ -243,6 +261,19 @@ export default function GarnishStudio({
               <div style={{ marginTop: 5 }}>{colorControl}</div>
             </div>
           )}
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={autoShape} onChange={e => setAutoShape(e.target.checked)}
+              style={{ marginTop: 2, accentColor: color }} />
+            <span>
+              <span style={{ ...labelStyle, textTransform: 'none', fontSize: 11.5, letterSpacing: 0 }}>
+                Auto-correct shape
+              </span>
+              <span style={{ display: 'block', fontSize: 10.5, color: '#999', lineHeight: 1.4 }}>
+                Tidies a near-circle into a circle, and a near-straight run into a straight line.
+              </span>
+            </span>
+          </label>
 
           <label style={{ display: 'block' }}>
             <span style={labelStyle}>Line thickness</span>
