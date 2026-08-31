@@ -63,15 +63,15 @@ const FINISHES = {
   white:  { label: 'Gloss white',   color: '#f2f0ec', metalness: 0.1,  roughness: 0.08 },
 };
 
-function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop }) {
-  const { geos, groups, baselineY } = useMemo(() => {
+function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, finish, cakeTop, bury }) {
+  const { geos, groups, standY } = useMemo(() => {
     const t = topperShapes(FONT, text, {
       height,
       weight,
       baseline: bar ? { thickness: barThick } : null,
       legs: legCount > 0 ? { count: legCount, length: legLen } : null,
     });
-    if (!t.parts?.length) return { geos: [], groups: [], baselineY: 0 };
+    if (!t.parts?.length) return { geos: [], groups: [], standY: 0 };
     const parts = bridge ? [...t.parts, ...bridgeLoose(t.parts, { width: height * 0.022 })] : t.parts;
     const grouped = components(parts);
     const loose = new Set(grouped.slice(1).flat());
@@ -85,17 +85,24 @@ function Topper({ text, height, weight, bar, barThick, legCount, legLen, thickne
       g.translate(0, 0, -thickness / 2);
       return { geo: g, loose: loose.has(i), kind: p.kind };
     });
-    return { geos, groups: grouped, baselineY: t.baselineY };
-  }, [text, height, weight, bar, barThick, legCount, legLen, thickness, bridge]);
+    /* ⚠️ WHAT TOUCHES THE ICING is the bottom of the LEGS, not the bar.
+     *
+     * The legs are the stand. Sitting the bar's underside on the cake buries them completely and the
+     * word looks glued to the surface — which is what the first version did, and it is wrong twice
+     * over: it hides the part a baker has to push in, and it hides whether the prongs are long
+     * enough to hold anything up.
+     *
+     * So the lowest point of the whole object goes `bury` BELOW the icing, leaving the rest of the
+     * leg showing. With no legs there is nothing to stand on and the baseline meets the surface,
+     * which is also how a topper with no legs is actually used — laid against the cake. */
+    const lowest = Math.min(...parts.flatMap(p => p.outer.map(q => q.y)));
+    const foot = t.legs.length ? lowest : t.baselineY;
+    return { geos, groups: grouped, standY: foot + (t.legs.length ? bury : 0) };
+  }, [text, height, weight, bar, barThick, legCount, legLen, thickness, bridge, bury]);
 
   const f = FINISHES[finish];
   return (
-    /* ⚠️ Planted by its BASELINE, not by a fraction of its height.
-     * `baselineY` is where the bar's underside sits in the word's own coordinates, so subtracting it
-     * puts that underside exactly on the icing — and leaves the legs where they belong, buried in
-     * the cake. Positioning by height instead moves the word every time the size slider does, and at
-     * small sizes sinks the whole thing inside the sponge, which is how the first render came out. */
-    <group position={[0, cakeTop - baselineY, 0]}>
+    <group position={[0, cakeTop - standY, 0]}>
       {geos.map(({ geo, loose }, i) => (
         <mesh key={i} geometry={geo} castShadow>
           {loose
@@ -146,6 +153,7 @@ function App() {
   const [barThick, setBT]   = useState(0.09);
   const [legCount, setLC]   = useState(2);
   const [legLen, setLL]     = useState(0.42);
+  const [bury, setBury]     = useState(0.21);   // half the leg in the cake, half of it showing
   const [thickness, setTh]  = useState(0.063);
   const [bridge, setBridge] = useState(true);
   const [finish, setFinish] = useState('gold');
@@ -197,7 +205,8 @@ function App() {
         {bar && slider('· thickness', barThick, setBT, 0.03, 0.2, 0.005, x => x.toFixed(3))}
 
         {slider('Legs', legCount, setLC, 0, 4, 1, x => String(x))}
-        {legCount > 0 && slider('· length', legLen, setLL, 0.15, 0.9, 0.02)}
+        {legCount > 0 && slider('· length', legLen, setLL, 0.15, 0.9, 0.02, x => mm(x))}
+        {legCount > 0 && slider('· buried', bury, setBury, 0, Math.min(0.9, legLen), 0.01, x => mm(x))}
 
         <div style={{ ...row, marginTop: 12 }}>
           <span style={lab}>Bridge</span>
@@ -237,7 +246,7 @@ function App() {
           <Cake />
           <Topper text={text} height={height} weight={weight} bar={bar} barThick={barThick}
                   legCount={legCount} legLen={legLen} thickness={thickness} bridge={bridge} finish={finish}
-                  cakeTop={0.55} />
+                  cakeTop={0.55} bury={Math.min(bury, legLen)} />
           <OrbitControls target={[0, 0.6, 0]} />
         </Canvas>
       </div>
