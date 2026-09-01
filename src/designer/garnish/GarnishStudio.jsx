@@ -612,6 +612,11 @@ export default function GarnishStudio({
       </p>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        {/* ⚠️ THE PLATE AND THE SHAPES ARE ONE COLUMN. Their shared wrapper was lost while moving
+            the rail, so the shape row became a THIRD item in the row — sitting beside the plate,
+            pushing the settings column into a corner, and leaving a field of white space where the
+            column used to be. Nothing errored; the layout simply came apart. */}
+        <div>
         {/* ⚠️ UNDO SITS WITH THE DRAWING. It was at the bottom of the settings column, a long way from
             the plate and below several controls that have nothing to do with it — so the one action
             you reach for the instant a stroke goes wrong was the furthest thing from where your hand
@@ -696,20 +701,22 @@ export default function GarnishStudio({
             the hand and, on a phone, often below the fold. Icons because two words at that size were
             the largest thing on the screen after the drawing itself. Hidden until there is something
             to undo, so an empty plate offers nothing that would do nothing. */}
-        {!!strokeCount && (
-          <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
-            <PlateButton label="Undo the last stroke"
+        {/* ⚠️ ALWAYS PRESENT, DISABLED WHEN THERE IS NOTHING TO UNDO. Hidden until the first stroke
+            they were reported missing twice — and both reports were right, because a control that
+            appears only once you have already needed it teaches nobody it exists. A greyed button
+            says "this is where undo lives"; an absent one says the tool has no undo. */}
+        <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6, zIndex: 4 }}>
+            <PlateButton label="Undo the last stroke" disabled={!strokeCount}
               onClick={() => { setStrokes(s2 => s2.slice(0, -1)); setPicked(null); }}>
               <path d="M4 9h9a5 5 0 1 1 0 10h-3" />
               <polyline points="7.5 5 3.5 9 7.5 13" />
             </PlateButton>
-            <PlateButton label="Clear the plate" danger
+            <PlateButton label="Clear the plate" danger disabled={!strokeCount}
               onClick={() => { setStrokes([]); setPicked(null); }}>
               <polyline points="4 6 20 6" />
               <path d="M9 6V4h6v2M6.5 6l1 14h9l1-14" />
             </PlateButton>
-          </div>
-        )}
+        </div>
 
         </div>
 
@@ -731,6 +738,7 @@ export default function GarnishStudio({
           <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
             Lands closed, so you can fill it straight away.
           </div>
+        </div>
         </div>
 
         {/* Everything decided once and left: fill, placement, the library, the name. */}
@@ -892,11 +900,12 @@ const miniBtn = { padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontF
 
 /* A control that sits ON the drawing: small, quiet, and out of the way of the piece being made. The
  * label is the accessible name — an icon with no name is a button nobody can describe. */
-function PlateButton({ label, onClick, danger, children }) {
+function PlateButton({ label, onClick, danger, disabled, children }) {
   return (
-    <button type="button" onClick={onClick} aria-label={label} title={label}
+    <button type="button" onClick={onClick} aria-label={label} title={label} disabled={disabled}
       style={{
-        width: 34, height: 34, borderRadius: 9, cursor: 'pointer', display: 'grid',
+        width: 34, height: 34, borderRadius: 9, display: 'grid',
+        cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
         placeItems: 'center', background: 'rgba(255,255,255,0.92)',
         border: `1.5px solid ${danger ? '#E4CFCF' : '#DED8CE'}`,
       }}>
