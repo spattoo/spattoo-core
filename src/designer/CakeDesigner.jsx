@@ -9026,9 +9026,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <span style={s.templateBadge}>Premium</span>
                   )}
                 </div>
-                <div style={{ fontSize: 9, color: '#888', textAlign: 'center' }}>
-                  {t.tier_count}-tier
-                </div>
+                {/* No "1-tier" caption. The thumbnail already shows how many tiers there are, and on
+                    a grid of nine cakes it was nine repetitions of a word doing no work — the count
+                    is still there for anyone who wants it, in the enlarged preview on hover. */}
               </div>
             ))
             }
