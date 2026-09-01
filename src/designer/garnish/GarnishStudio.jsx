@@ -134,7 +134,10 @@ export default function GarnishStudio({
      a cutting template. A property of the PIECE, not of a stroke: nobody pipes half a garnish and
      cuts the other half. */
   const [kind, setKind] = useState('piped');
-  const [tidyMode, setTidyMode] = useState('crisp');   // 'crisp' | 'soft' | 'raw'
+  /* ⚠️ SOFT IS THE DEFAULT, because piping is. A nozzle laying chocolate makes rounded corners; the
+     crisp edges belong to a knife, which is the other technique on this panel. Defaulting to crisp
+     meant the common case arrived looking like the uncommon one and had to be corrected every time. */
+  const [tidyMode, setTidyMode] = useState('soft');   // 'crisp' | 'soft' | 'raw'
   /* Which stroke the hands are on. A shape lands centred, so a piece made of several — which is what
      the reference garnishes are — is unusable until they can be moved apart. */
   const [picked, setPicked] = useState(null);
@@ -826,16 +829,34 @@ export default function GarnishStudio({
               <span style={labelStyle}>
                 {picked != null ? 'Fill the shape you picked' : 'Fill the shape'}
               </span>
-              <div style={{ marginTop: 5 }}>
-                <Segmented
-                  label="Fill the shape"
-                  isMobile={isMobile}
-                  items={[{ id: 'none', label: 'None' },
-                          ...Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))]}
-                  value={subject?.fillPattern ?? 'none'}
-                  onChange={applyFill}
-                  tone={INK}
-                />
+              {/* ⚠️ SHOW THE FILL, DO NOT NAME IT. "Woven" and "Scribble" are words for something
+                  only the eye can judge, and this is a visual tool — a baker picking a fill wants to
+                  see what the chocolate will do, not read a label and find out afterwards. The
+                  samples are cut by the REAL generator on a square, so a swatch cannot promise
+                  something the fill does not deliver. */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
+                {FILL_SAMPLES.map(({ id, label, paths }) => {
+                  const on = (subject?.fillPattern ?? 'none') === id;
+                  return (
+                    <button key={id} type="button" onClick={() => applyFill(id)}
+                      aria-pressed={on} title={label} aria-label={label}
+                      style={{ width: 52, height: 52, padding: 3, borderRadius: 10, cursor: 'pointer',
+                               background: '#fff',
+                               border: `2px solid ${on ? INK : '#E3DFD8'}` }}>
+                      <svg viewBox="0 0 100 100" width="100%" height="100%">
+                        <rect x="6" y="6" width="88" height="88" rx="7" fill="#F7F4EF" />
+                        {paths.map((d, i) => (
+                          <path key={i} d={d} fill="none" stroke={subjectColor} strokeWidth={7}
+                            strokeLinecap="round" strokeLinejoin="round" />
+                        ))}
+                        {id === 'none' && (
+                          <rect x="12" y="12" width="76" height="76" rx="5" fill="none"
+                            stroke={subjectColor} strokeWidth={7} />
+                        )}
+                      </svg>
+                    </button>
+                  );
+                })}
               </div>
               {!fillWorthwhile(fillRing) && (
                 <div style={{ fontSize: 10.5, color: '#9A6A2F', marginTop: 5, lineHeight: 1.45 }}>
@@ -1013,6 +1034,20 @@ function shade(colour, amount) {
 
 /* Plate units: a press that wanders less than this was a tap, not a stroke. */
 const TAP_SLOP = 6;
+
+/* The fill swatches, cut ONCE by the real `fillShape` on a square. Generating them per render would
+ * re-cut every pattern on every keystroke, and hand-drawing approximations would let a swatch promise
+ * something the fill does not do — which is the whole failure a preview exists to prevent. */
+const SAMPLE_RING = [[14, 14], [86, 14], [86, 86], [14, 86], [14, 14]];
+const FILL_SAMPLES = [
+  { id: 'none', label: 'No fill — the outline only', paths: [] },
+  ...Object.entries(FILL_PATTERNS).map(([id, f]) => ({
+    id,
+    label: f.label,
+    paths: fillShape(SAMPLE_RING, { pattern: id, spacing: 15, inset: 4, ropeWidth: 7, seed: 5 })
+      .map(pts => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')),
+  })),
+];
 
 const labelStyle = { display: 'block', fontSize: 10, fontWeight: 800, color: '#888',
                      letterSpacing: 1, textTransform: 'uppercase' };
