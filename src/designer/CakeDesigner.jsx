@@ -8857,7 +8857,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Templates flyout ── */}
         {templatesOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : {}) }}>
+          /* ⚠️ WIDER than the shared rail flyout, and only this one.
+           *
+           * s.flyout is 200px — right for the Elements list, which is small chips, and wrong for
+           * templates, which are 180px-wide thumbnails. At 200 the grid can only ever draw one
+           * column. 560 starting at RAIL_CENTRE (72) ends at 632, so a 1280 viewport keeps 648px of
+           * cake behind it and a 1024 laptop keeps 392 — a browsing overlay may cover the cake while
+           * you choose, which is what it is for.
+           *
+           * Overridden here rather than in s.flyout because Elements shares that style and does not
+           * want the width. */
+          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : { width: 560 }) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -8910,7 +8920,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!templatesLoading && templates.length === 0 && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
-            <div style={isMobile ? s.templateGrid : null}>
+            <div style={s.templateGrid}>
             {templates
               .filter(t => {
                 const q = tmplSearch.trim().toLowerCase();
@@ -8930,7 +8940,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 return true;
               })
               .map(t => (
-              <div key={t.id} style={{ ...s.templateCard, ...(isMobile ? { flex: '0 0 calc(50% - 5px)', position: 'relative' } : {}) }}
+              /* `position: relative` on both now: it anchors the enlarged preview, and that is not a
+                 phone-only need. The width came off — a grid track decides it. */
+              <div key={t.id} style={{ ...s.templateCard, position: 'relative' }}
                 // Desktop only: touch has no hover, and the two substitutes both break here —
                 // long-press fights the panel's own scrolling, and tap already loads the template.
                 // Mobile gets the explicit ⤢ button below instead.
@@ -11298,8 +11310,17 @@ const s = {
     position: 'absolute', top: 6, right: 8,
     fontSize: 11, color: '#333', fontWeight: 800,
   },
+  /* ⚠️ A GRID that counts its own columns, and it runs on desktop too.
+   *
+   * This was `display: flex` applied only when `isMobile`, so a phone got two columns and a desktop
+   * got none — every template stacked in a single 200px lane, which is a worse use of a large screen
+   * than of a small one. `auto-fill` + `minmax` means the count follows the width instead of being
+   * asserted per breakpoint: two columns on a phone, three in the widened flyout, without either
+   * number appearing anywhere. */
   templateGrid: {
-    display: 'flex', flexWrap: 'wrap', gap: 10,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
+    gap: 10,
   },
   // Enlarged thumbnail. pointerEvents none on desktop so it can never sit between the cursor and
   // the card it belongs to — that would fire mouseleave and make the preview flicker itself away.
