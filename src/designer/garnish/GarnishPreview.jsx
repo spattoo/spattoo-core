@@ -67,16 +67,20 @@ export default function GarnishPreview({ strokes, kind, color, rope, plate, glos
     <div style={{ width: side, height: isMobile ? 190 : 200, borderRadius: 14,
                   border: '1px solid #E3DFD8', overflow: 'hidden', background: '#F7F4EF' }}>
       {built ? (
-        <Canvas camera={{ position: [0, 0.9, 2.4], fov: 32 }} dpr={[1, 2]} shadows={false}>
+        <Canvas camera={{ position: [0, 0.35, 2.5], fov: 30 }} dpr={[1, 2]} shadows={false}>
           <Suspense fallback={null}>
             {/* The cake's own environment, so the reflections are the ones the piece will actually
                 catch rather than a lighting rig invented for this panel. */}
             <SafeEnvironment {...envProps()} />
             <ambientLight intensity={0.5} />
             <directionalLight position={[2, 3, 2]} intensity={1.1} />
-            {/* Lying flat and tipped towards the viewer: a garnish is judged by the light running
-                along it, and edge-on a thin piece shows almost nothing. */}
-            <group rotation={[-Math.PI / 2.6, 0, 0]} position={[0, -0.35, 0]}>
+            {/* ⚠️ BARELY TILTED, AND THAT IS THE WHOLE JUDGEMENT. Tipped back 69° to catch the light,
+                a triangle foreshortens into a rounded blob — so the panel stopped answering "how will
+                this look" and started asking "what is this?". The point of comparison is the
+                MATERIAL, and the shape must stay recognisably the one on the plate above it or the
+                two cannot be compared at all. 15° is enough for the highlight to run along a rope
+                and little enough to leave the outline honest. */}
+            <group rotation={[-Math.PI / 12, 0, 0]} position={[0, -0.05, 0]}>
               {built.map((p, i) => (
                 <mesh key={i} geometry={p.geometry}>
                   <meshPhysicalMaterial side={THREE.DoubleSide}
