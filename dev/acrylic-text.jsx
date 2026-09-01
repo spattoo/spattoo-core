@@ -72,7 +72,12 @@ const seg = (opts, value, onPick) => (
 );
 
 function App() {
-  const [env, setEnv] = useState(0.45);
+  const [env, setEnv]   = useState(0.45);
+  const [sheet, setSh]  = useState(0.030);   // extrusion depth, in scene units
+  // Seeded FROM the registry, so this page shows what actually ships rather than its own taste.
+  const [rough, setRg]  = useState(TOPPER_FINISHES.gold.roughness);
+  const [envI, setEnvI] = useState(TOPPER_FINISHES.gold.envIntensity);
+  const [metal, setMt]  = useState(TOPPER_FINISHES.gold.metalness);
   const [w, setW] = useState({
     id: 1, style: 'acrylic', text: 'Ava', font: 'great_vibes',
     tracking: faceFit('great_vibes'), acrylicFinish: 'gold',
@@ -81,6 +86,12 @@ function App() {
   });
   const set = (c) => setW(p => ({ ...p, ...c }));
   const Renderer = w.style === 'acrylic' ? AcrylicWriting : CreamWriting;
+  /* ⚠️ Overriding the finish from the page, so roughness and env share can be JUDGED rather than
+   * argued about. These are TOPPER_FINISHES values — whatever settles here belongs back in that
+   * registry (and therefore in the DB overlay), not as constants in a renderer. */
+  TOPPER_FINISHES[w.acrylicFinish ?? 'gold'].roughness = rough;
+  TOPPER_FINISHES[w.acrylicFinish ?? 'gold'].envIntensity = envI;
+  TOPPER_FINISHES[w.acrylicFinish ?? 'gold'].metalness = metal;
 
   return (
     <div style={{ height: '100%', display: 'flex' }}>
@@ -130,6 +141,26 @@ function App() {
                  onChange={e => set({ fit: +e.target.value })} style={{ flex: 1, accentColor: '#3D5A44' }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 34, textAlign: 'right' }}>
             {Math.round(w.fit * 100)}%</span></div>
+        <div style={row}><span style={lab}>Sheet</span>
+          <input type="range" min={0.012} max={0.10} step={0.004} value={sheet}
+                 onChange={e => setSh(+e.target.value)} style={{ flex: 1, accentColor: '#3D5A44' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 46, textAlign: 'right' }}>
+            {(sheet * 47.6).toFixed(1)}mm</span></div>
+        <div style={row}><span style={lab}>Roughness</span>
+          <input type="range" min={0.02} max={0.6} step={0.02} value={rough}
+                 onChange={e => setRg(+e.target.value)} style={{ flex: 1, accentColor: '#3D5A44' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 46, textAlign: 'right' }}>
+            {rough.toFixed(2)}</span></div>
+        <div style={row}><span style={lab}>Shine</span>
+          <input type="range" min={0.4} max={4} step={0.1} value={envI}
+                 onChange={e => setEnvI(+e.target.value)} style={{ flex: 1, accentColor: '#3D5A44' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 46, textAlign: 'right' }}>
+            {envI.toFixed(1)}</span></div>
+        <div style={row}><span style={lab}>Metalness</span>
+          <input type="range" min={0} max={1} step={0.05} value={metal}
+                 onChange={e => setMt(+e.target.value)} style={{ flex: 1, accentColor: '#3D5A44' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#3D5A44', width: 46, textAlign: 'right' }}>
+            {metal.toFixed(2)}</span></div>
         <div style={row}><span style={lab}>Room</span>
           <input type="range" min={0} max={1.5} step={0.05} value={env}
                  onChange={e => setEnv(+e.target.value)} style={{ flex: 1, accentColor: '#3D5A44' }} />
@@ -143,17 +174,17 @@ function App() {
         )}
       </div>
       <div style={{ flex: 1 }}>
-        <Canvas shadows camera={{ position: [0, 2.6, 7.0], fov: 32 }}>
+        <Canvas shadows camera={{ position: [0, 2.9, 8.4], fov: 32 }}>
           <color attach="background" args={['#EDEAE3']} />
           <SceneLights shadows />
           <LocalEnv intensity={env} />
           <Cake />
           <Renderer
-            writing={w} topY={TOP_Y} topRadius={1.6} shape="round" width={3.2} depth={3.2}
+            writing={{ ...w, sheet }} topY={TOP_Y} topRadius={1.6} shape="round" width={3.2} depth={3.2}
             shp={{ kind: 'circle', radius: 1.6 }} tiers={TIERS}
             boardRadius={BOARD.radius} boardY={0.1} boardShp={BOARD}
             onMove={m => set(m)} onClick={() => {}} onOrbitEnable={() => {}} />
-          <OrbitControls target={[0, 1.1, 0]} />
+          <OrbitControls target={[0, 1.45, 0]} />
         </Canvas>
       </div>
     </div>

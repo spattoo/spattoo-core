@@ -6,6 +6,18 @@
  * white are pigmented acrylic with a clear gloss over them, so they keep a diffuse colour and take a
  * sharp specular highlight instead of an image of the room.
  *
+ * ⚠️ NOT metalness 1, and that is the difference between gold and dark olive.
+ *
+ * A material at metalness 1 has NO DIFFUSE AT ALL — it is only a reflection, so it shows whatever
+ * the environment happens to hold in the mirror direction and the lights cannot touch it. Face-on
+ * against a cake wall that direction is behind the camera, which in a room is dim, and the piece
+ * came out brown. Raising the environment's share did almost nothing, because the problem was never
+ * how much room there was to reflect — it was that reflection was the ONLY thing the surface had.
+ *
+ * At 0.7 the gold keeps its mirror character and gains a diffuse the directional lights can light,
+ * so it reads as gold from the front the way the real thing does. Physically it is also the more
+ * honest description: these are metallised plastics, not lumps of metal.
+ *
  * ⚠️ ALL OPAQUE, and that is a deliberate saving. Real acrylic is often transparent, and modelling
  * that means `transmission`, which makes the renderer draw the scene again behind every topper. The
  * preview showed that mirror reads convincingly as acrylic without it, so clear acrylic is not built
@@ -16,11 +28,11 @@
  * withdraw one without a deploy. Reached by KEY — a new finish is a row, never a branch.
  */
 export const TOPPER_FINISHES = {
-  gold:   { label: 'Mirror gold',   color: '#d4af37', metalness: 1,    roughness: 0.12, envIntensity: 1.4 },
-  silver: { label: 'Mirror silver', color: '#cfd4d8', metalness: 1,    roughness: 0.10, envIntensity: 1.4 },
-  rose:   { label: 'Rose gold',     color: '#e0a899', metalness: 1,    roughness: 0.14, envIntensity: 1.4 },
-  black:  { label: 'Gloss black',   color: '#141414', metalness: 0.35, roughness: 0.06, envIntensity: 1.1 },
-  white:  { label: 'Gloss white',   color: '#f2f0ec', metalness: 0.10, roughness: 0.08, envIntensity: 0.9 },
+  gold:   { label: 'Mirror gold',   color: '#d9b642', metalness: 0.70, roughness: 0.28, envIntensity: 2.0 },
+  silver: { label: 'Mirror silver', color: '#d5dade', metalness: 0.75, roughness: 0.22, envIntensity: 2.0 },
+  rose:   { label: 'Rose gold',     color: '#e3ab9c', metalness: 0.70, roughness: 0.30, envIntensity: 2.0 },
+  black:  { label: 'Gloss black',   color: '#141414', metalness: 0.35, roughness: 0.06, envIntensity: 1.4 },
+  white:  { label: 'Gloss white',   color: '#f2f0ec', metalness: 0.10, roughness: 0.08, envIntensity: 1.0 },
 };
 
 export const DEFAULT_TOPPER_FINISH = 'gold';

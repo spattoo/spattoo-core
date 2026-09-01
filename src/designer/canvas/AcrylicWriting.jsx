@@ -82,7 +82,11 @@ export default function AcrylicWriting({
   const standing = surface !== 'side';
   const cfg = {
     tracking: writing.tracking ?? faceFit(writing.font),
-    thickness: writing.sheet ?? 0.055,
+    /* ⚠️ A flat plaque is THINNER than a standing topper, and that is structural rather than
+     * cosmetic. Standing, the sheet is what holds the word up and pushes into the icing — 3mm. Lying
+     * against a wall it carries nothing, and at 3mm the visible edge is as wide as the strokes are,
+     * which reads as bent rod instead of cut sheet. ~1.4mm for a plaque. */
+    thickness: writing.sheet ?? (standing ? 0.063 : 0.030),
     weight: writing.weight ?? 0,
     stroke: writing.stroke ?? 0.12,
     bar: standing && (writing.bar ?? true),
