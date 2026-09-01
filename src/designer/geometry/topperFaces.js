@@ -77,8 +77,16 @@ export const TOPPER_FACES = {
   hershey_script_1: { label: 'Cursive',        kind: 'centreline', fit: -0.04, licence: 'public domain' },
 };
 
-// The fit a face wants. 0 for anything unknown, so a caller never has to special-case one.
-export const faceFit = (key) => TOPPER_FACES[key]?.fit ?? 0;
+/* ⚠️ ONE resolution for an unknown key, used by everything that takes one.
+ *
+ * `loadTopperFace` substituted the default face while `faceFit` returned 0, so a design carrying a
+ * face an admin had withdrawn rendered the right LETTERS at the wrong SPACING — set as drawn, with a
+ * bridge across every gap, and nothing to say why. Caught by a test that meant to assert something
+ * else. Both go through here now, so a fallback is one decision rather than each caller's guess. */
+const resolveFace = (key) => (TOPPER_FACES[key] ? key : DEFAULT_TOPPER_FACE);
+
+// The fit a face wants — the default face's, for a key that is no longer on the list.
+export const faceFit = (key) => TOPPER_FACES[resolveFace(key)].fit ?? 0;
 
 export const DEFAULT_TOPPER_FACE = 'great_vibes';
 
@@ -97,7 +105,7 @@ const OUTLINE_JSON = {
  * are already in the cream pen's bundle.
  */
 export async function loadTopperFace(key) {
-  const k = TOPPER_FACES[key] ? key : DEFAULT_TOPPER_FACE;
+  const k = resolveFace(key);
   if (parsed.has(k)) return parsed.get(k);
 
   let font;

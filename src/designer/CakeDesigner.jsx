@@ -75,7 +75,8 @@ import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
 import ShapePicker from './controls/ShapePicker.jsx';
 import TierShapeControls, { hasShapeControls } from './controls/TierShapeControls.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
-import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
+import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit, loadTopperFace } from './geometry/topperFaces.js';
+import { topperShapes } from './geometry/topperShape.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
@@ -478,7 +479,13 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
 function writingStyleSwitch(w, style) {
   if (style === (w.style ?? 'cream')) return {};
   if (style === 'acrylic') {
-    const font = TOPPER_FACES[w.font] ? w.font : DEFAULT_TOPPER_FACE;
+    /* ⚠️ Only an OUTLINE face is carried across, and a centreline one is not — even though it is
+     * valid in both lists. Allure as PIPED CREAM is a delicate script; Allure cut from acrylic is a
+     * monoline swept at a fixed width, and at a name's size that comes out as a fat blob nobody
+     * asked for. It was the default cream font, so every message switching Look landed on it. They
+     * stay on the menu because a monoline topper is a real product — just not what "keep my font"
+     * should mean when the two are barely the same letterform. */
+    const font = TOPPER_FACES[w.font]?.kind === 'outline' ? w.font : DEFAULT_TOPPER_FACE;
     return { style, font, tracking: faceFit(font) };
   }
   return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT };
@@ -546,6 +553,49 @@ function FinishTierPicker({ tiers, tier, onPick }) {
 
 // Cream-pen font swatch — renders the font's own single-stroke shapes (not a system face)
 // so bakers pick by the real piped look. The centerline path is stroked with round caps.
+/* ── A font button that shows the face it names ──────────────────────────────────────────────────
+ *
+ * ⚠️ `creamFontPreview` only knows the CREAM faces. Pointed at an acrylic key it falls back, so all
+ * eight acrylic buttons drew the same script and the picker was decoration — you could not tell
+ * Great Vibes from Pinyon without choosing one and looking at the cake.
+ *
+ * So the preview is built from the SAME geometry the cake is cut from: topperShapes on "Abc",
+ * flattened to one SVG path. It cannot disagree with what you get, because it is what you get.
+ * Async because an outline face is fetched on demand; until it arrives the button shows its name,
+ * which is still more use than the wrong picture.
+ */
+function AcrylicFontButton({ fontKey, label, selected, onClick }) {
+  const [prev, setPrev] = useState(null);
+  useEffect(() => {
+    let live = true;
+    loadTopperFace(fontKey).then(font => {
+      const t = topperShapes(font, 'Abc', { height: 1, lines: 1, stroke: 0.12, tracking: faceFit(fontKey) });
+      if (!live || !t.parts?.length) return;
+      const ring = (r) => r.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(3)} ${(-q.y).toFixed(3)}`).join('') + 'Z';
+      setPrev({
+        d: t.parts.map(p => ring(p.outer) + (p.holes ?? []).map(ring).join('')).join(' '),
+        w: t.width, h: t.height,
+      });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [fontKey]);
+
+  const active = selected ? '#1a1a1a' : '#999999';
+  return (
+    <button onClick={onClick} title={label}
+      style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer',
+        border: `1.5px solid ${active}`, background: selected ? '#F2F1EE' : '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: 34 }}>
+      {prev
+        ? <svg width={54} height={22} viewBox={`${-prev.w / 2} ${-prev.h / 2} ${prev.w} ${prev.h}`}
+               style={{ display: 'block', overflow: 'visible' }}>
+            <path d={prev.d} fill={active} fillRule="evenodd" />
+          </svg>
+        : <span style={{ fontSize: 9, fontWeight: 800, color: active }}>{label}</span>}
+    </button>
+  );
+}
+
 function CreamFontButton({ fontKey, label, selected, onClick }) {
   const { d, width, height } = useMemo(() => creamFontPreview(fontKey, 'Abc'), [fontKey]);
   const sw = Math.max(width, height) * 0.05;   // bead ≈ 5% of glyph extent
@@ -7146,11 +7196,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {(w.style === 'acrylic'
             ? Object.entries(TOPPER_FACES).map(([key, f]) => ({ key, label: f.label }))
             : CREAM_FONTS
-          ).map(f => (
-            <CreamFontButton key={f.key} fontKey={f.key} label={f.label}
-              selected={w.font === f.key}
-              onClick={() => setWriting({ font: f.key, ...(w.style === 'acrylic' ? { tracking: faceFit(f.key) } : {}) })} />
-          ))}
+          ).map(f => {
+            const Btn = w.style === 'acrylic' ? AcrylicFontButton : CreamFontButton;
+            return (
+              <Btn key={f.key} fontKey={f.key} label={f.label}
+                selected={w.font === f.key}
+                onClick={() => setWriting({ font: f.key, ...(w.style === 'acrylic' ? { tracking: faceFit(f.key) } : {}) })} />
+            );
+          })}
         </div>
 
         {/* An acrylic finish is a MATERIAL, not a colour — mirror gold is nothing but its
@@ -7171,6 +7224,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </>}
 
+{/* ⚠️ CREAM ONLY. Colour/Gold/Silver tint piped icing; an acrylic finish is a MATERIAL chosen
+            above, and showing both put two colour controls on one card where only one did anything. */}
+        {w.style !== 'acrylic' && <>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>
           {[
@@ -7200,6 +7256,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {writingColorOpen && (
           <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={152} />
         )}
+        </>}
 
         {/* ── Draw or slide ────────────────────────────────────────────────────────────────────
             One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
