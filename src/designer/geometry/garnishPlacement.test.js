@@ -199,3 +199,41 @@ describe('a garnish lying flat is centred on its anchor', () => {
     expect(Math.hypot(mid.x, mid.z)).toBeLessThanOrEqual(cake.radius);
   });
 });
+
+// ── Which tier a garnish sits on ─────────────────────────────────────────────────────────────────
+//
+// ⚠️ ABSENT MEANS THE TOP, NOT TIER ZERO. Every piece placed before tiers were understood was nailed
+// to the top tier; defaulting a missing `tierIndex` to zero would silently move all of them down the
+// cake — a saved order is a record of what somebody bought, not a thing to reinterpret.
+describe('a garnish knows its tier', () => {
+  const tiers = [
+    { radius: 1.4, baseY: 0.1, height: 0.5 },
+    { radius: 1.1, baseY: 0.6, height: 0.45 },
+    { radius: 0.8, baseY: 1.05, height: 0.4 },
+  ];
+  const surfaceOf = i => ({ radius: tiers[i].radius, topY: tiers[i].baseY + tiers[i].height });
+  const resolve = g => (Number.isInteger(g.tierIndex)
+    ? Math.max(0, Math.min(tiers.length - 1, g.tierIndex))
+    : tiers.length - 1);
+
+  it('defaults to the top when it has never been asked', () => {
+    expect(resolve({})).toBe(2);
+    expect(resolve({ tierIndex: null })).toBe(2);
+  });
+
+  it('sits on the tier it was given', () => {
+    expect(surfaceOf(resolve({ tierIndex: 0 })).topY).toBeCloseTo(0.6, 6);
+    expect(surfaceOf(resolve({ tierIndex: 1 })).topY).toBeCloseTo(1.05, 6);
+  });
+
+  /* A tier can be removed from under a piece. Clamping keeps it on the cake rather than dropping it
+     into space, which is the same rule every other placement here follows. */
+  it('clamps to a tier that still exists', () => {
+    expect(resolve({ tierIndex: 9 })).toBe(2);
+    expect(resolve({ tierIndex: -3 })).toBe(0);
+  });
+
+  it('reaches further out on a wider tier, so the rim clamp means the same thing everywhere', () => {
+    expect(surfaceOf(0).radius).toBeGreaterThan(surfaceOf(2).radius);
+  });
+});

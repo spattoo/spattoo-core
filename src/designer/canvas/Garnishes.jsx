@@ -25,19 +25,31 @@ export default function Garnishes({
 }) {
   const top = tierData[tierData.length - 1];
   if (!top || !garnishes.length) return null;
-
-  const cake = { radius: top.radius, topY: top.baseY + top.height, boardY: 0.1 };
   const bottom = tierData[0] ?? top;
+
+  /* ⚠️ A GARNISH BELONGS TO A TIER, and until now every one of them was nailed to the TOP. On a
+     single-tier cake nobody noticed; on three tiers it made two thirds of the cake unusable for
+     chocolate work, and the reference pieces — a fan of petals stepping down a tiered cake — could
+     not be built at all. `tierIndex` is what stickers already use, so a garnish now answers the same
+     question the same way rather than assuming.
+     ⚠️ Absent means the TOP, not tier zero: every piece placed before this was on the top tier, and
+     defaulting to the bottom would silently move each of them down the cake. */
+  const surfaceFor = (g) => {
+    if (g.zone === 'board') {
+      /* ⚠️ THE BOARD IS ITS OWN SURFACE, at its own height and its own reach. Handing a board piece a
+         tier's numbers leaves it floating above the cake at the tier's edge. */
+      return { radius: (bottom.radius ?? top.radius) * 1.35, topY: 0.1, boardY: 0.1 };
+    }
+    const i = Number.isInteger(g.tierIndex) ? g.tierIndex : tierData.length - 1;
+    const t = tierData[Math.max(0, Math.min(tierData.length - 1, i))] ?? top;
+    return { radius: t.radius, topY: t.baseY + t.height, boardY: 0.1 };
+  };
+
   return (
     <>
       {garnishes.map(g => (
-        /* ⚠️ THE BOARD IS ITS OWN SURFACE, at its own height and its own reach. Handing a board piece
-           the tier's numbers leaves it floating above the cake at the tier's edge — it is on the
-           board, so the board is what it must be measured against. */
         <Garnish key={g.id} g={g} onSelect={onSelect} onMove={onMove}
-          cake={g.zone === 'board'
-            ? { radius: (bottom.radius ?? top.radius) * 1.35, topY: 0.1, boardY: 0.1 }
-            : cake}
+          cake={surfaceFor(g)}
           onOrbitEnable={onOrbitEnable} selected={selectedId === g.id} />
       ))}
     </>

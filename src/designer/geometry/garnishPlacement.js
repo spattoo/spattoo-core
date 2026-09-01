@@ -25,6 +25,9 @@ export const GARNISH_DEFAULTS = {
   radius: 0.55,      // fraction of the tier radius, 0 = centre
   yaw: 0,            // the piece's own turn about vertical, on top of facing outward
   mode: 'stand',     // 'stand' | 'lie'
+  /* Which tier it sits on. Absent means the TOP — see Garnishes.jsx: every piece placed before tiers
+     were understood was on the top, and defaulting to zero would move all of them down the cake. */
+  tierIndex: null,
   scale: 1,
 };
 

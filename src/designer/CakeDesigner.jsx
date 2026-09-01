@@ -7339,8 +7339,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      (each design carries its own paths), but the card should not invite the idea either. */
   function renderGarnishBody(g) {
     if (!g) return null;
+    const tiers = design.tiers ?? [];
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* ⚠️ ONLY WHEN THERE IS A CHOICE. On a one-tier cake a tier chooser is a control with a
+            single answer, and it pushes everything a baker actually came for further down. */}
+        {tiers.length > 1 && g.zone !== 'board' && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>
+              Which tier
+            </div>
+            <Segmented
+              label="Which tier the garnish sits on"
+              items={tiers.map((_, i) => ({
+                id: String(i),
+                // Bottom-up, the way a baker stacks and talks about them.
+                label: i === 0 ? 'Base' : i === tiers.length - 1 ? 'Top' : `Tier ${i + 1}`,
+              }))}
+              value={String(Number.isInteger(g.tierIndex) ? g.tierIndex : tiers.length - 1)}
+              onChange={v => updateGarnish(g.id, { tierIndex: Number(v) })}
+            />
+          </div>
+        )}
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
             How it sits
