@@ -1758,7 +1758,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -7362,6 +7362,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
           Drag it on the cake to move it round.
+        </div>
+
+        {/* ⚠️ A FAN IS GENERATED, NOT NUDGED. The eye catches a two-degree error immediately on a
+            repeated shape, so an arc of five placed by hand never looks deliberate however long you
+            spend on it — which is the whole reason the reference cakes look made rather than
+            arranged. Offered as counts rather than a slider because a fan is 3 or 5 pieces; a
+            continuous control would invite fiddling with a number nobody has an opinion about. */}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.4,
+                        textTransform: 'uppercase', marginBottom: 5 }}>Fan it out</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[3, 5, 7].map(n => (
+              <button key={n} onClick={() => fanGarnish(g.id, { count: n, spread: 0.55 + n * 0.09 })}
+                title={`${n} pieces, evenly spread and splayed from where this one sits`}
+                style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                         border: '1.5px solid #DDD7CD', background: '#fff',
+                         fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>{n}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10.5, color: '#999', marginTop: 4, lineHeight: 1.45 }}>
+            Repeats this piece round an arc, centred where it sits now. One undo takes it back.
+          </div>
         </div>
 
         {/* ⚠️ DUPLICATION LIVES ON THE CAKE, not in the studio. The reference pieces — three or five

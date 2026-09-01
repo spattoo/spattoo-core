@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
-import { GARNISH_DEFAULTS } from '../geometry/garnishPlacement.js';
+import { GARNISH_DEFAULTS, fanPlacements } from '../geometry/garnishPlacement.js';
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
@@ -1364,6 +1364,30 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     });
   }
 
+  /* ⚠️ THE ORIGINAL MOVES INTO THE MIDDLE OF THE ARC rather than staying put with copies added to
+   * one side — a fan is symmetric about where the piece was aimed, and asking for five otherwise
+   * sends the whole arrangement off to the right of it. So the piece that was there is PATCHED, not
+   * left alone, and the rest are new rows.
+   *
+   * ⚠️ AND IT IS ONE ACTION, so one undo takes it back. Five separate duplicates would be five
+   * presses of undo to recover from an arc that came out wrong — which is what makes people leave a
+   * bad arrangement alone rather than try a different one. */
+  function fanGarnish(id, { count = 3, spread = 1.0 } = {}) {
+    setDesign(prev => {
+      const original = (prev.garnishes ?? []).find(g => g.id === id);
+      if (!original) return prev;
+      const seats = fanPlacements(original, count, spread);
+      const [first, ...rest] = seats;
+      return {
+        ...prev,
+        garnishes: [
+          ...prev.garnishes.map(g => (g.id === id ? { ...g, ...first } : g)),
+          ...rest.map(seat => ({ ...original, id: crypto.randomUUID(), ...seat })),
+        ],
+      };
+    });
+  }
+
   function removeGarnish(id) {
     setDesign(prev => ({ ...prev, garnishes: (prev.garnishes ?? []).filter(g => g.id !== id) }));
   }
@@ -1461,7 +1485,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
     addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping,
-    addGarnish, updateGarnish, duplicateGarnish, removeGarnish,
+    addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish,
     resetDesign,
     addStickerBatch,
     loadDesign,

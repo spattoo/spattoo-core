@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { movableContract } from './movableContract.js';
-import { GARNISH_DEFAULTS, garnishPlacement, garnishDragTo, clampRadius } from './garnishPlacement.js';
+import { GARNISH_DEFAULTS, garnishPlacement, garnishDragTo, clampRadius, fanPlacements } from './garnishPlacement.js';
 
 const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
 const PIECE = { w: 0.6, h: 0.5 };
@@ -122,5 +122,40 @@ describe('the angle a duplicate steps round by', () => {
   it('does not blow up on a piece at the very centre', () => {
     expect(Number.isFinite(step(0))).toBe(true);
     expect(step(0)).toBe(2);
+  });
+});
+
+describe('fanning one piece round an arc', () => {
+  const base = { theta: 1, yaw: 0.2 };
+
+  it('returns as many placements as asked for, including the original', () => {
+    expect(fanPlacements(base, 5, 1.2)).toHaveLength(5);
+  });
+
+  /* ⚠️ SYMMETRIC ABOUT WHERE THE PIECE ALREADY SITS. Fanned from one end, asking for five sends the
+     whole arrangement off to one side of where it was aimed. */
+  it('centres the arc on the piece that was already there', () => {
+    const f = fanPlacements(base, 5, 1.2);
+    expect(f[2].theta).toBeCloseTo(1, 6);
+    expect(f[0].theta).toBeCloseTo(1 - 0.6, 6);
+    expect(f[4].theta).toBeCloseTo(1 + 0.6, 6);
+  });
+
+  it('spaces them evenly, which is the point of generating rather than nudging', () => {
+    const f = fanPlacements(base, 4, 1.2).map(p => p.theta);
+    const gaps = f.slice(1).map((t, i) => t - f[i]);
+    for (const g of gaps) expect(g).toBeCloseTo(gaps[0], 9);
+  });
+
+  /* ⚠️ A ROW IS NOT A FAN. Spread the angle round the cake alone and every copy still faces the same
+     way — five pieces in a line that happens to curve. */
+  it('turns each piece with the arc so they splay', () => {
+    const f = fanPlacements(base, 3, 1.0);
+    expect(f[0].yaw).toBeLessThan(f[1].yaw);
+    expect(f[1].yaw).toBeLessThan(f[2].yaw);
+  });
+
+  it('refuses to make a fan of one', () => {
+    expect(fanPlacements(base, 1, 1).length).toBe(2);
   });
 });

@@ -115,3 +115,37 @@ export function garnishDragTo(params, cake, u, v) {
      reason; follow it rather than inventing a second convention. */
   return { theta: u * Math.PI * 2, radius: clampRadius(v) };
 }
+
+// ── A fan: one piece, repeated round an arc ──────────────────────────────────────────────────────
+//
+// The reference cakes do not place three unrelated garnishes; they place ONE piece several times at
+// even angles, which is why the result looks deliberate. A hand-placed arc of five never comes out
+// even — the eye catches a two-degree error immediately on a repeated shape — so the arrangement is
+// generated rather than nudged.
+//
+// ⚠️ THE YAW TURNS WITH THE ARC, and this is what separates a fan from a row. Spread only the angle
+// round the cake and every copy still faces the same way, so five pieces read as five pieces in a
+// line that happens to curve. Turning each one by its own share of the spread makes them splay from
+// a common centre, which is the shape a fan actually is.
+//
+// ⚠️ THE ORIGINAL IS INCLUDED AND MOVES. A fan is symmetric about where the piece already sits, so
+// the piece that was there ends up as the MIDDLE of the arc rather than one end of it — otherwise
+// asking for five sends the whole arrangement off to one side of where it was aimed.
+
+/**
+ * base    the placed garnish being repeated — `{ theta, yaw, … }`
+ * count   how many pieces the fan ends up with, including the original (2 or more)
+ * spread  the total angle the arc covers, in radians
+ *
+ * Returns `count` placement patches, in order round the arc.
+ */
+export function fanPlacements(base, count, spread) {
+  const n = Math.max(2, Math.round(count));
+  const theta0 = base?.theta ?? 0;
+  const yaw0 = base?.yaw ?? 0;
+  // Evenly across the arc, centred on where the piece already sits: -spread/2 … +spread/2.
+  return Array.from({ length: n }, (_, i) => {
+    const t = n === 1 ? 0 : (i / (n - 1)) - 0.5;     // -0.5 … +0.5
+    return { theta: theta0 + spread * t, yaw: yaw0 + spread * t };
+  });
+}
