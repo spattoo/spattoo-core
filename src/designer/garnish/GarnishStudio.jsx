@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Panel } from '../../shared/Panel.jsx';
 import Segmented from '../../shared/Segmented.jsx';
+import GarnishPreview from './GarnishPreview.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
@@ -584,6 +585,20 @@ export default function GarnishStudio({
             </PlateButton>
           </div>
         )}
+
+        {/* ⚠️ WITH THE PLATE, IN THE SAME COLUMN — INVARIANTS #11, and it took two goes. As a third
+            column beside the plate it pushed the controls onto a row of their own, so the fill
+            options were no longer visible with the drawing — fixing one pairing by breaking another.
+            Directly under the plate, the drawing and what it will actually look like are inches
+            apart, and the controls stay where they were. */}
+        <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
+          <GarnishPreview strokes={strokes} kind={kind} color={color} rope={ROPE} plate={PLATE}
+            isMobile={isMobile} />
+          <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5, maxWidth: 190 }}>
+            <strong style={{ color: '#555' }}>In chocolate.</strong> The plate is flat ink; this is
+            the piece as it will look on the cake, in the same light and the same material.
+          </div>
+        </div>
 
         </div>
 

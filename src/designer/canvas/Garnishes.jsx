@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildGarnishGeometry } from '../geometry/garnishPiece.js';
 import { buildPanelGeometry, panelsFrom } from '../geometry/garnishPanel.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
-import { mediumOf } from '../geometry/pipingMedia.js';
+import { garnishMaterialProps } from '../geometry/garnishMaterial.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { planeHit } from '../utils/raycasting.js';
 
@@ -107,7 +107,6 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
   if (!built) return null;
 
   const place = garnishPlacement(g, cake, built.size);
-  const medium = mediumOf(g.medium ?? 'chocolate');
 
   /* Every part shares the piece's placement and its grab handlers — they are one garnish that happens
      to be made of two chocolates, so a press anywhere on it drags the whole thing. */
@@ -129,6 +128,8 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
           and a filigree is a thin rope whose highlight is a narrow line — it needs the harder
           finish to catch anything at all. And `envMapIntensity` was left at 1, so the piece
           reflected the scene far more weakly than the cake beside it. */}
+      {/* ⚠️ SHARED WITH THE STUDIO PREVIEW — see geometry/garnishMaterial.js. Two copies of these
+          numbers is how the studio starts lying about what the cake will look like. */}
       <meshPhysicalMaterial
         side={THREE.DoubleSide}
         /* ⚠️ A THIN ROPE IS ALMOST ALL GRAZING ANGLE, which is why the drip's settings wash a garnish
@@ -141,10 +142,7 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
 
            So the lacquer comes DOWN rather than up, and the env boost with it. `Shine` on the card
            still opens it back up for anyone who wants a wet-looking piece. */
-        {...medium.material({ softness: g.gloss ?? 0.45 }, pc.color ?? g.color ?? '#4A2C1B')}
-        clearcoat={0.25}
-        clearcoatRoughness={0.5}
-        envMapIntensity={0.6}
+        {...garnishMaterialProps({ medium: g.medium, gloss: g.gloss, color: pc.color ?? g.color })}
         emissive={selected ? '#ffffff' : '#000000'}
         emissiveIntensity={selected ? 0.06 : 0}
       />
