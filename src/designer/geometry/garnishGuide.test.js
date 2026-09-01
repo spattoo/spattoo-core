@@ -110,6 +110,26 @@ describe('the build guide is derived from the paths', () => {
     expect(g.heightMm).toBeCloseTo(g.widthMm, 1);      // it is a square
   });
 
+  /* ⚠️ A line growing on its own says something is being drawn and nothing about what to DO. */
+  it('gives every step of the animation its own sentence', () => {
+    const g = garnishGuide({ kind: 'piped', paths: [L(0, 0, 50, 0), L(0, 20, 50, 20), L(0, 40, 50, 40)] });
+    expect(g.beats).toHaveLength(3);
+    /* ⚠️ DISTINCT, not merely present. Repeating "start at the dot, finish at the arrow" for every
+       stroke teaches nothing after the first — that is a counter, not a narration. */
+    expect(new Set(g.beats.map(b => b.caption)).size).toBe(3);
+    expect(g.beats[0].caption).toMatch(/cone/i);          // the first carries the setup
+    expect(g.beats[2].caption).toMatch(/set/i);           // the last carries the finish
+  });
+
+  it('narrates a cut piece as cutting and punching, never as piping', () => {
+    const hole = [[40, 40], [60, 40], [60, 60], [40, 60], [40, 40]];
+    const g = garnishGuide({ kind: 'cut', paths: [square], rings: [square, hole] });
+    expect(g.beats.map(b => b.caption).join(' ').toLowerCase()).not.toContain('pipe');
+    expect(g.beats[0].caption).toMatch(/cut/i);
+    expect(g.beats[1].caption).toMatch(/punch/i);
+    expect(g.beats).toHaveLength(g.order);          // one sentence per step of the motion
+  });
+
   it('has nothing to say about a piece with no paths', () => {
     expect(garnishGuide({ kind: 'piped', paths: [] })).toBeNull();
     expect(garnishGuide(null)).toBeNull();

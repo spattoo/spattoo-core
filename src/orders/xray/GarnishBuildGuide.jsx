@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { garnishGuide } from '../../designer/geometry/garnishGuide.js';
 
 // ── The build guide for a chocolate garnish ──────────────────────────────────────────────────────
@@ -18,25 +18,46 @@ export default function GarnishBuildGuide({ garnish, cakeDiameterMm = null, anim
   const guide = garnishGuide(garnish, { cakeDiameterMm });
   if (!guide) return null;
 
+  return <GuideBody guide={guide} animate={animate} />;
+}
+
+function GuideBody({ guide, animate }) {
+  const clock = useDrawClock(animate, guide.beats.length);
+
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <GuideDiagram guide={guide} animate={animate} />
-      {guide.kind === 'cut' && (
-        <div style={{ fontSize: 11.5, color: '#7A5A2E', marginTop: -4 }}>
-          The dot is where the knife goes in; cut the outline first, then punch the circles.
-        </div>
-      )}
-      <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
-        {guide.steps.map((s, i) => (
-          <li key={i} style={{ fontSize: 13, lineHeight: 1.5, color: '#333' }}>{s}</li>
-        ))}
-      </ol>
+    <div style={{ display: 'grid', gap: 12 }}>
+      <GuideDiagram guide={guide} clock={clock} />
+
+      {/* ⚠️ THE CAPTION IS THE POINT OF THE ANIMATION. A line growing on its own says that something
+          is being drawn and nothing about what to do; the sentence is what makes it a guide. It sits
+          directly under the drawing, changes with each step, and holds a fixed height so the page
+          does not jump as the words change length. */}
+      <div style={{ minHeight: 40, display: 'flex', alignItems: 'start' }}>
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, fontWeight: 600,
+                    color: guide.kind === 'cut' ? '#7A5A2E' : '#1F5F3F' }}>
+          {clock.beat != null
+            ? guide.beats[clock.beat]?.caption
+            : guide.beats.map(b => b.caption).join(' ')}
+        </p>
+      </div>
+
+      <details>
+        <summary style={{ fontSize: 12.5, fontWeight: 700, color: '#666', cursor: 'pointer' }}>
+          The whole method, in full
+        </summary>
+        <ol style={{ margin: '10px 0 0', paddingLeft: 18, display: 'grid', gap: 6 }}>
+          {guide.steps.map((st, i) => (
+            <li key={i} style={{ fontSize: 13, lineHeight: 1.5, color: '#333' }}>{st}</li>
+          ))}
+        </ol>
+      </details>
+
       <Facts guide={guide} />
     </div>
   );
 }
 
-function GuideDiagram({ guide, animate }) {
+function GuideDiagram({ guide, clock }) {
   const { box } = guide;
   const w = Math.max(1, box.x1 - box.x0), h = Math.max(1, box.y1 - box.y0);
   /* Marks scale with the piece, so a small garnish does not get numbers larger than itself and a
@@ -63,8 +84,6 @@ function GuideDiagram({ guide, animate }) {
       ])
     : guide.strokes.map(st => ({ d: st.d, color: st.color, wide: true, mode: 'draw' }));
 
-  const anim = useDrawAnimation(animate, timeline.length);
-
   return (
     <svg viewBox={view} role="img"
       aria-label={guide.kind === 'cut'
@@ -75,8 +94,6 @@ function GuideDiagram({ guide, animate }) {
          that pushed the steps — the actual instructions — off the screen entirely. */
       style={{ width: '100%', maxWidth: 420, maxHeight: 340, background: '#FCFBF9', borderRadius: 10,
                border: '1px solid #ECE7E0' }}>
-
-      {anim.css && <style>{anim.css}</style>}
 
       {/* The finished piece, faintly, under everything — so the drawing reads as marks ON something,
           and so the animation has a shape to grow into rather than appearing out of nothing. */}
@@ -98,13 +115,15 @@ function GuideDiagram({ guide, animate }) {
         <g key={i}>
           {t.wide && (
             <path d={t.d} fill="none" stroke="#B3A794" strokeWidth={unit * 0.95} pathLength="100"
-              strokeLinecap="round" strokeLinejoin="round" className={anim.cls(i, t.mode)} />
+              strokeLinecap="round" strokeLinejoin="round" style={clock.style(i, t.mode)} />
           )}
           <path d={t.d} fill="none" stroke={t.color} pathLength="100"
             strokeWidth={t.wide ? unit * 0.7 : unit * 0.3}
             strokeLinecap="round" strokeLinejoin="round"
-            className={anim.cls(i, t.mode)}
-            style={t.dashed ? { strokeDasharray: `${unit * 0.8} ${unit * 0.6}` } : undefined} />
+            style={{
+              ...(t.dashed ? { strokeDasharray: `${unit * 0.8} ${unit * 0.6}` } : null),
+              ...clock.style(i, t.mode),
+            }} />
         </g>
       ))}
 
@@ -141,56 +160,56 @@ function Arrow({ at: [x, y], angle, size, color = '#1F5F3F' }) {
   return <polygon points={`${x},${y} ${p(size, 2.5)} ${p(size, -2.5)}`} fill={color} />;
 }
 
-const STEP_S = 0.9;      // how long one stroke takes to draw
-const HOLD_S = 1.6;      // the finished piece, held, before it starts over
+/* ⚠️ SLOW ENOUGH TO FOLLOW WITH YOUR HANDS BUSY. At under a second a stroke the drawing was a
+ * flicker — technically an animation and useless as an instruction, since a baker glancing up from
+ * the bench has to find the line, read the caption and look back down. */
+const STEP_MS = 2200;      // one stroke, drawn
+const HOLD_MS = 3000;      // the finished piece, held, before it starts over
 
-/* ── The progressive draw ────────────────────────────────────────────────────────────────────────
+/* ── The clock ───────────────────────────────────────────────────────────────────────────────────
  *
- * ⚠️ IT LOOPS, AND THAT IS THE WHOLE POINT. The first attempt ran once on mount and stopped: by the
- * time anyone had scrolled to the guide it had finished, so the feature existed and was never seen.
- * A build guide is looked at while the hands are busy — it has to be running whenever you look up.
+ * ⚠️ ONE CLOCK DRIVES BOTH THE DRAWING AND THE WORDS. The first version animated the paths with CSS
+ * keyframes, which would have needed a second, separate timer to change the caption — two clocks
+ * that drift apart, so the sentence ends up describing the stroke before or after the one actually
+ * being drawn. That is worse than no sentence at all.
  *
- * ⚠️ AND IT IS NOT LOAD-BEARING. The numbers, dots and arrows carry the order on their own, so with
- * motion reduced or CSS unavailable the diagram is complete and merely still. Keyframes are
- * generated per stroke because each one owns a WINDOW of one shared cycle — that is what makes them
- * draw in sequence and restart together rather than each looping on its own clock.
+ * ⚠️ AND IT IS NOT LOAD-BEARING. With motion reduced the beat is null: every line shows complete and
+ * the captions run together as a paragraph, so nothing is available only to someone who waits.
  */
-function useDrawAnimation(animate, count) {
-  const [on, setOn] = useState(false);
+function useDrawClock(animate, count) {
+  const [t, setT] = useState(null);
+  const raf = useRef(0);
 
   useEffect(() => {
     if (!animate || count < 1) return undefined;
     const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (mq?.matches) { setOn(false); return undefined; }
-    setOn(true);
-    const listen = e => setOn(!e.matches);
-    mq?.addEventListener?.('change', listen);
-    return () => mq?.removeEventListener?.('change', listen);
+    if (mq?.matches) return undefined;
+
+    const cycle = count * STEP_MS + HOLD_MS;
+    const started = performance.now();
+    const tick = now => {
+      setT(((now - started) % cycle) / STEP_MS);        // measured in steps, not seconds
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
   }, [animate, count]);
 
-  if (!on) return { css: null, cls: () => undefined };
+  if (t == null) return { beat: null, style: () => undefined };
 
-  const cycle = count * STEP_S + HOLD_S;
-  const rules = ['.gbg-draw { stroke-dasharray: 100; }'];
-  for (let i = 0; i < count; i++) {
-    const from = ((i * STEP_S) / cycle) * 100;
-    const to = (((i + 1) * STEP_S) / cycle) * 100;
-    rules.push(
-      // Traced along its length: the line the tool follows.
-      `@keyframes gbg-k${i} {`
-      + ` 0%, ${from.toFixed(2)}% { stroke-dashoffset: 100 }`
-      + ` ${to.toFixed(2)}%, 100% { stroke-dashoffset: 0 } }`,
-      `.gbg-d${i} { animation: gbg-k${i} ${cycle.toFixed(2)}s linear infinite; }`,
-      // Appears in one go: a hole is punched, not traced — and its dashes are not ours to spend.
-      `@keyframes gbg-r${i} {`
-      + ` 0%, ${from.toFixed(2)}% { opacity: 0 }`
-      + ` ${to.toFixed(2)}%, 100% { opacity: 1 } }`,
-      `.gbg-r${i} { animation: gbg-r${i} ${cycle.toFixed(2)}s linear infinite; }`,
-    );
-  }
+  const past = t >= count;                              // the hold at the end of the cycle
+  const beat = past ? count - 1 : Math.floor(t);
+  const within = past ? 1 : t - Math.floor(t);
   return {
-    css: rules.join('\n'),
-    cls: (i, mode) => (mode === 'reveal' ? `gbg-r${i}` : `gbg-draw gbg-d${i}`),
+    beat,
+    style: (i, mode) => {
+      const done = past || i < beat;
+      if (mode === 'reveal') return { opacity: done ? 1 : i === beat ? within : 0 };
+      /* Traced along its own length. `pathLength="100"` on the path is what lets one rule fit every
+         stroke whatever its real length — no measuring, no layout read. */
+      const shown = done ? 100 : i === beat ? within * 100 : 0;
+      return { strokeDasharray: 100, strokeDashoffset: 100 - shown };
+    },
   };
 }
 
@@ -198,9 +217,10 @@ function Facts({ guide }) {
   const items = [
     guide.kind === 'piped' ? ['Strokes', guide.strokes.length] : ['Pieces', guide.panels.length],
     guide.kind === 'piped' ? ['Lifts', guide.lifts] : null,
-    guide.widthMm ? ['Size', `${guide.widthMm} × ${guide.heightMm} mm`] : null,
-    guide.kind === 'piped' && guide.ropeMm ? ['Nozzle', `about ${guide.ropeMm} mm`] : null,
   ].filter(Boolean);
+  /* ⚠️ NO SIZE. It was shown in millimetres and it is not ours to state — how big the piece should
+     be depends on the cake in front of the baker, and a number here reads as a specification to hit.
+     What this guide is for is the technique. */
 
   return (
     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
@@ -211,12 +231,6 @@ function Facts({ guide }) {
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{v}</div>
         </div>
       ))}
-      {!guide.widthMm && (
-        /* Said plainly rather than guessed: a template cut to an assumed size does not fit. */
-        <div style={{ fontSize: 11, color: '#9A6A2F', alignSelf: 'end' }}>
-          Size shown once the cake size is set.
-        </div>
-      )}
     </div>
   );
 }

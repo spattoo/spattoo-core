@@ -111,10 +111,47 @@ export function garnishGuide(g, { cakeDiameterMm = null } = {}) {
       }))
     : [];
 
+  /* ⚠️ THE ANIMATION HAS TO NARRATE, or it is decoration. A line growing on its own tells a baker
+   * that something is being drawn and nothing about what to DO — the words are what make it a guide.
+   * So every step of the motion carries its own sentence, shown as that step plays, and each one
+   * names the action and the thing that goes wrong if you get it wrong. The full list below stays as
+   * the reference to read once; this is what you glance at with your hands full. */
+  /* ⚠️ EACH BEAT SAYS SOMETHING DIFFERENT, or it is a counter rather than a narration. Repeating
+   * "start at the dot, finish at the arrow" for every stroke teaches nothing after the first: the
+   * first beat carries the setup, the last carries the finish, and the ones between say only what
+   * changes — which is what somebody following along actually needs. */
+  const beats = kind === 'cut'
+    ? panels.flatMap((pn, i) => [
+        {
+          caption: i === 0
+            ? 'Spread the tempered chocolate 2 mm thin and let it firm up. Then cut the outline from '
+              + 'the dot, one way round, pressing straight down.'
+            : `Cut piece ${i + 1} the same way, from its dot.`,
+        },
+        ...pn.holes.map((_, k) => ({
+          caption: k === 0
+            ? 'Now punch the hole with a warmed cutter — straight down in one go, not twisted.'
+            : `And the next hole, ${k + 2} of ${pn.holeCount}.`,
+        })),
+      ])
+    : strokes.map((st, i) => {
+        const shape = st.closed ? 'close it back on the dot' : 'stop the pressure before the arrow';
+        if (i === 0) {
+          return { caption: `Fill a paper cone with tempered chocolate. Pipe stroke 1 from the dot — `
+                          + `keep the tip just clear of the parchment and ${shape}.` };
+        }
+        if (i === strokes.length - 1) {
+          return { caption: `Lift, and pipe the last stroke from its dot — ${shape}. `
+                          + 'Then leave it to set at room temperature.' };
+        }
+        return { caption: `Lift the cone clear, then pipe stroke ${st.n} from its dot and ${shape}.` };
+      });
+
   return {
     kind,
     strokes,
     panels,
+    beats,
     lifts: kind === 'piped' ? liftCount(paths) : 0,
     /* The order of work, in both kinds — what the diagram animates. For a piped piece that is the
        strokes; for a cut one it is the outline first, then each hole. */

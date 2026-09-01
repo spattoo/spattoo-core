@@ -4,6 +4,7 @@ import Segmented from '../../shared/Segmented.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
+import { snapPolygon } from '../geometry/snapPolygon.js';
 import { pointInRing } from '../geometry/regions.js';
 import { panelsFrom } from '../geometry/garnishPanel.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
@@ -135,6 +136,7 @@ export default function GarnishStudio({
   /* Which stroke the hands are on. A shape lands centred, so a piece made of several — which is what
      the reference garnishes are — is unusable until they can be moved apart. */
   const [picked, setPicked] = useState(null);
+  const [colorOpen, setColorOpen] = useState(false);
   const dragRef = useRef(null);
   const [zone, setZone] = useState('top');
   const [mode, setMode] = useState('stand');
@@ -473,8 +475,18 @@ export default function GarnishStudio({
        ran on every render would re-tidy an already-tidy line and creep. */
     let path = tidy.path;
     if (autoShape) {
-      const snapped = snapStroke(path.map(([x, y]) => [x, 0, y]), { normal: [0, 1, 0] });
-      if (snapped?.points?.length > 1) path = snapped.points.map(([x, , z]) => [x, z]);
+      /* ⚠️ POLYGONS FIRST, because `snapStroke` only knows CIRCLE and LINE — a hand-drawn triangle is
+         neither, so the tick was on and the drawing came out exactly as wobbly as it went in. That is
+         worse than having no correction at all: the tool says it tried. `snapPolygon` refuses
+         anything that is not a polygon, so a swirl or a letter still falls through to the snapper
+         below and is judged there. */
+      const poly = tidy.closed ? snapPolygon(path) : null;
+      if (poly) {
+        path = poly.points;
+      } else {
+        const snapped = snapStroke(path.map(([x, y]) => [x, 0, y]), { normal: [0, 1, 0] });
+        if (snapped?.points?.length > 1) path = snapped.points.map(([x, , z]) => [x, z]);
+      }
     }
     const ring = tidy.closed && path.length > 2 ? [...path.slice(0, -1), path[0]] : tidy.ring;
     setStrokes(s2 => [...s2, { ...tidy, path, ring, fills: [] }]);
@@ -544,7 +556,7 @@ export default function GarnishStudio({
             the plate and below several controls that have nothing to do with it — so the one action
             you reach for the instant a stroke goes wrong was the furthest thing from where your hand
             already was. */}
-        <div>
+        <div style={{ position: 'relative' }}>
         <canvas
           ref={ref}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
@@ -553,20 +565,49 @@ export default function GarnishStudio({
             border: '1px solid #E3DFD8', display: 'block', touchAction: 'none', cursor: 'crosshair',
           }}
         />
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button onClick={() => { setStrokes(s2 => s2.slice(0, -1)); setPicked(null); }}
-            disabled={!strokeCount} style={btn(false, !strokeCount)}>Undo</button>
-          <button onClick={() => { setStrokes([]); setPicked(null); }}
-            disabled={!strokeCount} style={btn(false, !strokeCount)}>Clear</button>
-        </div>
+        {/* ⚠️ ON THE PLATE, NOT UNDER IT. Undo is reached for the instant a stroke goes wrong, so it
+            belongs where the mistake just happened — below the drawing it is a round trip away from
+            the hand and, on a phone, often below the fold. Icons because two words at that size were
+            the largest thing on the screen after the drawing itself. Hidden until there is something
+            to undo, so an empty plate offers nothing that would do nothing. */}
+        {!!strokeCount && (
+          <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
+            <PlateButton label="Undo the last stroke"
+              onClick={() => { setStrokes(s2 => s2.slice(0, -1)); setPicked(null); }}>
+              <path d="M4 9h9a5 5 0 1 1 0 10h-3" />
+              <polyline points="7.5 5 3.5 9 7.5 13" />
+            </PlateButton>
+            <PlateButton label="Clear the plate" danger
+              onClick={() => { setStrokes([]); setPicked(null); }}>
+              <polyline points="4 6 20 6" />
+              <path d="M9 6V4h6v2M6.5 6l1 14h9l1-14" />
+            </PlateButton>
+          </div>
+        )}
 
         </div>
 
         <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* ⚠️ A PICKER OPEN BY DEFAULT COSTS EVERY OTHER CONTROL ITS PLACE. The wheel, the hue bar
+              and fifteen swatches took the top third of the column, which is why the fill options —
+              the thing this studio is FOR — ended up below the fold. Colour is chosen once and then
+              left; the shape is worked on continuously. So it collapses to the colour itself, which
+              doubles as the readout: you can see what is selected without opening anything. */}
           {colorControl && (
             <div>
-              <span style={labelStyle}>Chocolate colour</span>
-              <div style={{ marginTop: 5 }}>{colorControl}</div>
+              <button type="button" onClick={() => setColorOpen(o => !o)}
+                aria-expanded={colorOpen}
+                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 10px 6px 6px',
+                         borderRadius: 10, border: '1.5px solid #E3DFD8', background: '#fff',
+                         cursor: 'pointer', fontFamily: 'inherit' }}>
+                <span style={{ width: 26, height: 26, borderRadius: '50%', background: subjectColor,
+                               border: '1.5px solid rgba(0,0,0,0.16)' }} />
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#333' }}>
+                  {picked != null ? 'Colour of this shape' : 'Chocolate colour'}
+                </span>
+                <span style={{ fontSize: 10, color: '#999' }}>{colorOpen ? '▲' : '▼'}</span>
+              </button>
+              {colorOpen && <div style={{ marginTop: 8 }}>{colorControl}</div>}
             </div>
           )}
 
@@ -583,6 +624,50 @@ export default function GarnishStudio({
                 : 'Spread thin, set, then cut, and a shape inside another is punched out. Applies to every shape here.'}
             </div>
           </div>
+
+          {/* ⚠️ FILL IS WHY THIS STUDIO EXISTS, so it sits with the shape it acts on rather than at
+              the bottom of the column. It was below the placement controls, the library and the name
+              field — past everything — and a baker looking for it had no reason to believe it was
+              there at all. Placement matters once, at the end; fill is worked on while drawing. */}
+          {kind === 'cut' ? (
+            /* ⚠️ A CUT PANEL IS SOLID BY DEFINITION, so a fill choice on it would be a control with
+               nothing to do. The lacy patterns are a piping technique — passes of a nozzle — and mean
+               nothing to a knife. */
+            <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5 }}>
+              A cut piece is solid chocolate. Draw a shape inside another to punch it out.
+            </div>
+          ) : canFill ? (
+            <div>
+              {/* ⚠️ NAMED FOR WHAT IT ACTS ON. It said "the last shape" long after it had started
+                  acting on the PICKED one, so the label described behaviour that no longer existed —
+                  and a baker who had just picked a shape had every reason to distrust it. */}
+              <span style={labelStyle}>
+                {picked != null ? 'Fill the shape you picked' : 'Fill the shape'}
+              </span>
+              <div style={{ marginTop: 5 }}>
+                <Segmented
+                  label="Fill the shape"
+                  isMobile={isMobile}
+                  items={[{ id: 'none', label: 'None' },
+                          ...Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))]}
+                  value={subject?.fillPattern ?? 'none'}
+                  onChange={applyFill}
+                  tone={INK}
+                />
+              </div>
+              {!fillWorthwhile(subject?.ring) && (
+                <div style={{ fontSize: 10.5, color: '#9A6A2F', marginTop: 5, lineHeight: 1.45 }}>
+                  That reads more like a line than a shape — a fill will come out as dashes.
+                </div>
+              )}
+            </div>
+          ) : strokeCount ? (
+            <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5 }}>
+              {picked != null
+                ? 'That shape is open, so there is nothing to fill. Pick a closed one, or draw a shape that joins up.'
+                : 'That stroke is open, so there is nothing to fill — which is how veins, swirls and letters are piped. Draw a shape that joins up to fill it.'}
+            </div>
+          ) : null}
 
           <div>
             <span style={labelStyle}>Add a shape</span>
@@ -626,7 +711,9 @@ export default function GarnishStudio({
                 Auto-correct shape
               </span>
               <span style={{ display: 'block', fontSize: 10.5, color: '#999', lineHeight: 1.4 }}>
-                Tidies a near-circle into a circle, and a near-straight run into a straight line.
+                Straightens a drawn triangle or square onto its corners, tidies a near-circle into a
+                circle, and a near-straight run into a straight line. A swirl or a letter is left as
+                you drew it.
               </span>
             </span>
           </label>
@@ -694,41 +781,6 @@ export default function GarnishStudio({
                        border: '1.5px solid #E0DDD8', fontFamily: 'inherit' }} />
           </label>
 
-          {/* ⚠️ Only when the last stroke closed. An open stroke — a vein, a swirl, a letter — has no
-              inside, and a dead control is worse than an absent one, so the reason is stated. */}
-          {kind === 'cut' ? (
-            /* ⚠️ A CUT PANEL IS SOLID BY DEFINITION, so a fill choice on it would be a control with
-               nothing to do. The lacy patterns are a piping technique — passes of a nozzle — and mean
-               nothing to a knife. */
-            <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5 }}>
-              A cut piece is solid chocolate. Draw a shape inside another to punch it out.
-            </div>
-          ) : canFill ? (
-            <div>
-              <span style={labelStyle}>Fill the last shape</span>
-              <div style={{ marginTop: 5 }}>
-                <Segmented
-                  label="Fill the last shape"
-                  isMobile={isMobile}
-                  items={[{ id: 'none', label: 'None' },
-                          ...Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))]}
-                  value={last.fillPattern ?? 'none'}
-                  onChange={applyFill}
-                  tone={INK}
-                />
-              </div>
-              {!fillWorthwhile(last.ring) && (
-                <div style={{ fontSize: 10.5, color: '#9A6A2F', marginTop: 5, lineHeight: 1.45 }}>
-                  That reads more like a line than a shape — a fill will come out as dashes.
-                </div>
-              )}
-            </div>
-          ) : strokeCount ? (
-            <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5 }}>
-              That stroke is open, so there is nothing to fill — which is how veins, swirls and
-              letters are piped. Draw a shape that joins up to fill it.
-            </div>
-          ) : null}
 
           <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.6 }} data-readout>
             {strokeCount
@@ -746,6 +798,23 @@ export default function GarnishStudio({
 const miniBtn = { padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
                   fontSize: 11.5, fontWeight: 800, border: '1.5px solid #DDD8D0', background: '#fff',
                   color: '#1a1a1a' };
+
+/* A control that sits ON the drawing: small, quiet, and out of the way of the piece being made. The
+ * label is the accessible name — an icon with no name is a button nobody can describe. */
+function PlateButton({ label, onClick, danger, children }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+      style={{
+        width: 34, height: 34, borderRadius: 9, cursor: 'pointer', display: 'grid',
+        placeItems: 'center', background: 'rgba(255,255,255,0.92)',
+        border: `1.5px solid ${danger ? '#E4CFCF' : '#DED8CE'}`,
+      }}>
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none"
+        stroke={danger ? '#A33' : '#4A4A4A'} strokeWidth="1.9"
+        strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+    </button>
+  );
+}
 
 const labelStyle = { display: 'block', fontSize: 10, fontWeight: 800, color: '#888',
                      letterSpacing: 1, textTransform: 'uppercase' };
