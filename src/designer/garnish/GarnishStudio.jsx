@@ -616,7 +616,69 @@ export default function GarnishStudio({
             the plate and below several controls that have nothing to do with it — so the one action
             you reach for the instant a stroke goes wrong was the furthest thing from where your hand
             already was. */}
-        <div style={{ position: 'relative' }}>
+        {/* ⚠️ THE TOOLS LIVE ON THE PLATE'S EDGE, not in a settings column beside it. Colour, what
+            the piece is made of, and how thick the line is are all reached for WHILE drawing, with
+            the other hand — so they belong within a thumb's reach of the drawing, the way a phone
+            drawing app puts them. What is decided once and left — where it goes, how it sits, its
+            name — stays in the column. INVARIANTS #12. */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center',
+                      paddingTop: 2, position: 'relative' }}>
+          {colorControl && (
+            <>
+              {/* ⚠️ THE WHEEL IS THE LABEL. "Chocolate colour" beside a brown dot said what the dot
+                  already said, and spent a line of the rail doing it. A ring of hues with the current
+                  colour in the middle reads as "colour, and this is the one" at a glance. */}
+              <button type="button" onClick={() => setColorOpen(o => !o)} aria-expanded={colorOpen}
+                aria-label={picked != null ? 'Colour of this shape' : 'Chocolate colour'}
+                title={picked != null ? 'Colour of this shape' : 'Chocolate colour'}
+                style={{ width: 38, height: 38, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                         border: colorOpen ? '2px solid #1a1a1a' : '2px solid transparent',
+                         background: 'conic-gradient(#e5484d, #f5a524, #f5d90a, #46a758, #12a594, #0091ff, #8e4ec6, #e93d82, #e5484d)',
+                         display: 'grid', placeItems: 'center' }}>
+                <span style={{ width: 22, height: 22, borderRadius: '50%', background: subjectColor,
+                               border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(0,0,0,0.18)' }} />
+              </button>
+              {colorOpen && (
+                /* Floats OVER the plate rather than pushing it: opening a picker must not move the
+                   thing you are about to colour. */
+                <div style={{ position: 'absolute', top: 44, left: 0, zIndex: 5, width: 236,
+                              padding: 10, borderRadius: 12, background: '#fff',
+                              border: '1px solid #E3DFD8', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                  {colorControl}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Piped or cut sits with the colour: both answer "what is this made of". */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {[{ id: 'piped', label: 'Piped' }, { id: 'cut', label: 'Cut' }].map(o => (
+              <button key={o.id} type="button" onClick={() => setKind(o.id)}
+                aria-pressed={kind === o.id}
+                title={o.id === 'piped' ? 'A nozzle laying a line of chocolate. Applies to every shape here.'
+                                        : 'Spread thin, set, then cut. Applies to every shape here.'}
+                style={{ width: 46, padding: '6px 0', borderRadius: 8, cursor: 'pointer',
+                         fontFamily: 'inherit', fontSize: 11, fontWeight: 800,
+                         border: `1.5px solid ${kind === o.id ? '#1a1a1a' : '#E0DDD8'}`,
+                         background: kind === o.id ? '#1a1a1a' : '#fff',
+                         color: kind === o.id ? '#fff' : '#666' }}>{o.label}</button>
+            ))}
+          </div>
+
+          {/* ⚠️ VERTICAL, BESIDE THE DRAWING. A horizontal slider at the foot of a settings column is
+              a round trip from the hand and says nothing about the line getting fatter as you move
+              up it. Rotated and next to the plate, it reads the way it behaves. */}
+          <div style={{ height: 150, width: 38, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center' }}>
+            <input type="range" min={3} max={14} step={1} value={ROPE}
+              aria-label="Line thickness" title={`Line thickness: ${ROPE}`}
+              onChange={e => onRopeChange?.(Number(e.target.value))}
+              style={{ width: 140, transform: 'rotate(-90deg)', accentColor: color }} />
+          </div>
+        </div>
+
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
         <canvas
           ref={ref}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
@@ -646,44 +708,30 @@ export default function GarnishStudio({
         )}
 
         </div>
+        </div>
 
-        <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* ⚠️ A PICKER OPEN BY DEFAULT COSTS EVERY OTHER CONTROL ITS PLACE. The wheel, the hue bar
-              and fifteen swatches took the top third of the column, which is why the fill options —
-              the thing this studio is FOR — ended up below the fold. Colour is chosen once and then
-              left; the shape is worked on continuously. So it collapses to the colour itself, which
-              doubles as the readout: you can see what is selected without opening anything. */}
-          {colorControl && (
-            <div>
-              <button type="button" onClick={() => setColorOpen(o => !o)}
-                aria-expanded={colorOpen}
-                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 10px 6px 6px',
-                         borderRadius: 10, border: '1.5px solid #E3DFD8', background: '#fff',
-                         cursor: 'pointer', fontFamily: 'inherit' }}>
-                <span style={{ width: 26, height: 26, borderRadius: '50%', background: subjectColor,
-                               border: '1.5px solid rgba(0,0,0,0.16)' }} />
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#333' }}>
-                  {picked != null ? 'Colour of this shape' : 'Chocolate colour'}
-                </span>
-                <span style={{ fontSize: 10, color: '#999' }}>{colorOpen ? '▲' : '▼'}</span>
+        {/* ⚠️ DIRECTLY UNDER THE PLATE. A shape lands ON the drawing, so the buttons that add one
+            belong against it — in the settings column they were a scroll away from the thing they
+            change, which is the pairing INVARIANTS #11 is about. */}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {SHAPES.map(sh => (
+              <button key={sh.key} type="button" onClick={() => addShape(sh)} title={sh.label}
+                aria-label={sh.label}
+                style={{ width: 44, height: 44, display: 'flex', alignItems: 'center',
+                         justifyContent: 'center', padding: 0, borderRadius: 10, cursor: 'pointer',
+                         border: '1.5px solid #E0DDD8', background: '#fff' }}>
+                <ShapeIcon kind={sh.key} />
               </button>
-              {colorOpen && <div style={{ marginTop: 8 }}>{colorControl}</div>}
-            </div>
-          )}
-
-          <div>
-            <span style={labelStyle}>How the whole piece is made</span>
-            <div style={{ marginTop: 5 }}>
-              <Segmented label="How the piece is made" isMobile={isMobile}
-                items={[{ id: 'piped', label: 'Piped' }, { id: 'cut', label: 'Cut' }]}
-                value={kind} onChange={setKind} />
-            </div>
-            <div style={{ fontSize: 10, color: '#999', marginTop: 4, lineHeight: 1.4 }}>
-              {kind === 'piped'
-                ? 'A nozzle laying a line of chocolate. Applies to every shape here.'
-                : 'Spread thin, set, then cut, and a shape inside another is punched out. Applies to every shape here.'}
-            </div>
+            ))}
           </div>
+          <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+            Lands closed, so you can fill it straight away.
+          </div>
+        </div>
+
+        {/* Everything decided once and left: fill, placement, the library, the name. */}
+        <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {/* ⚠️ FILL IS WHY THIS STUDIO EXISTS, so it sits with the shape it acts on rather than at
               the bottom of the column. It was below the placement controls, the library and the name
@@ -732,23 +780,6 @@ export default function GarnishStudio({
             </div>
           ) : null}
 
-          <div>
-            <span style={labelStyle}>Add a shape</span>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
-              {SHAPES.map(sh => (
-                <button key={sh.key} type="button" onClick={() => addShape(sh)} title={sh.label}
-                  aria-label={sh.label}
-                  style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                           padding: 0, borderRadius: 10, cursor: 'pointer',
-                           border: '1.5px solid #E0DDD8', background: '#fff' }}>
-                  <ShapeIcon kind={sh.key} />
-                </button>
-              ))}
-            </div>
-            <div style={{ fontSize: 10, color: '#999', marginTop: 4, lineHeight: 1.4 }}>
-              Lands closed, so you can fill it straight away.
-            </div>
-          </div>
 
           {picked != null && strokes[picked] && (
             <div style={{ padding: '9px 11px', borderRadius: 10, background: '#F4F7FB', border: '1.5px solid #DCE6F5' }}>
@@ -781,12 +812,6 @@ export default function GarnishStudio({
             </span>
           </label>
 
-          <label style={{ display: 'block' }}>
-            <span style={labelStyle}>Line thickness</span>
-            <input type="range" min={3} max={14} step={1} value={ROPE}
-              onChange={e => onRopeChange?.(Number(e.target.value))}
-              style={{ width: '100%', marginTop: 4, accentColor: color }} />
-          </label>
 
           {/* ⚠️ SIDE IS NOT OFFERED, and that is a real limit rather than an oversight. A piece on a
               tier wall can only HUG it — standing has no meaning on a vertical surface, and a flat
