@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { writingPlaceAt, writingSurface } from '../geometry/surface.js';
-import { loadTopperFace, faceFit } from '../geometry/topperFaces.js';
+import { loadTopperFace } from '../geometry/topperFaces.js';
+import { acrylicCfg, acrylicFitAspect } from '../geometry/acrylicConfig.js';
 import AcrylicWord from './AcrylicWord.jsx';
 
 /* ── A typed message, cut from acrylic instead of piped in cream ─────────────────────────────────
@@ -26,7 +27,7 @@ import AcrylicWord from './AcrylicWord.jsx';
 export default function AcrylicWriting({
   writing, topY, topRadius, shape = 'round', width = 0, depth = 0, shp,
   tiers, boardRadius = 0, boardY = 0.1, boardShp,
-  onClick, onMove, onOrbitEnable,
+  onClick, onMove, onOrbitEnable, mmPerUnit,
 }) {
   const { camera, gl } = useThree();
   const {
@@ -80,21 +81,17 @@ export default function AcrylicWriting({
    * is a thing to lie against. Legs and the base bar go with standing: a flat piece has nothing to
    * push into and prongs would point at the customer. */
   const standing = surface !== 'side';
+  /* ⚠️ Every number comes from acrylicConfig, none from here. This component used to carry its own
+   * bar ratio, leg length, bury depth, bridge flag and line gap — so the studio could author all
+   * five, save, and change nothing. A renderer with a number of its own is a number an admin cannot
+   * reach. `mmPerUnit` is optional and only arrives where an order pins a real size; without one the
+   * nominal in acrylicConfig applies, and that nominal is an assumption written down rather than a
+   * conversion the designer actually has. */
   const cfg = {
-    tracking: writing.tracking ?? faceFit(writing.font),
-    /* ⚠️ A flat plaque is THINNER than a standing topper, and that is structural rather than
-     * cosmetic. Standing, the sheet is what holds the word up and pushes into the icing — 3mm. Lying
-     * against a wall it carries nothing, and at 3mm the visible edge is as wide as the strokes are,
-     * which reads as bent rod instead of cut sheet. ~1.4mm for a plaque. */
-    thickness: writing.sheet ?? (standing ? 0.063 : 0.030),
-    weight: writing.weight ?? 0,
-    stroke: writing.stroke ?? 0.12,
-    bar: standing && (writing.bar ?? true),
-    barRatio: 0.13,
-    legs: standing ? (writing.legs ?? 2) : 0,
-    legLen: 0.42, bury: 0.21,
-    bridge: true,
+    ...acrylicCfg(writing, { standing }),
+    fitAspect: acrylicFitAspect(writing, maxW, mmPerUnit),
   };
+
   const finish = writing.finish === 'silver' ? 'silver' : (writing.acrylicFinish ?? writing.finish ?? 'gold');
   const grabH = Math.max(0.2, maxW * 0.4);
 

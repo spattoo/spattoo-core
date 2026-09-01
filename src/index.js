@@ -87,6 +87,9 @@ export { TOPPER_FACES, DEFAULT_TOPPER_FACE, loadTopperFace, isMonoline, faceFit 
 export { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, topperFinish, applyTopperFinishConfig } from './designer/geometry/topperFinishes.js';
 // ONE renderer for both places a topper goes — standing on the top, or lying flat on the side.
 export { default as AcrylicWord } from './designer/canvas/AcrylicWord.jsx';
+// Every acrylic number in one place — the seam a catalogue row reaches the cake through.
+export { ACRYLIC_DEFAULTS, acrylicCfg, acrylicFitAspect, writingFromAcrylicRow, acrylicFinishes,
+         NOMINAL_MM_PER_UNIT } from './designer/geometry/acrylicConfig.js';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).

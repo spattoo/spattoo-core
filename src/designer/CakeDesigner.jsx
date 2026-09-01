@@ -78,6 +78,7 @@ import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/cr
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit, loadTopperFace } from './geometry/topperFaces.js';
 import { topperShapes } from './geometry/topperShape.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
+import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
@@ -4191,7 +4192,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Decorations and absent when picked from Tools — the same optional-row contract addGrass has had
   // since the registry was written, so both paths run one function and cannot drift.
   function addWritingFromRow(el) {
-    const tuned = el?.placement_config?.writing ?? {};
+    /* ⚠️ A row may author either material. `placement_config.acrylic` is what the Acrylic Topper
+     * Studio writes, and until this it was written and never read — an admin could set the face,
+     * fit, sheet, bar, legs and the finishes on offer, press Save, and change nothing on any cake.
+     * Translated by writingFromAcrylicRow so the studio's nesting is read in ONE place. */
+    const acrylic = el?.placement_config?.acrylic;
+    const tuned = acrylic
+      ? writingFromAcrylicRow(acrylic)
+      : (el?.placement_config?.writing ?? {});
     const id = addWriting({ font: DEFAULT_CREAM_FONT, ...tuned });
     focusEditor('decoration');
     selectExclusive({ type: 'writing', id });
@@ -7212,7 +7220,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {w.style === 'acrylic' && <>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Finish</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {Object.entries(TOPPER_FINISHES).map(([k, f]) => (
+            {/* Only the finishes this element offers. A row authoring gold and black should not
+                show rose — the studio's list is a decision, not a suggestion. */}
+            {acrylicFinishes(w).map(k => TOPPER_FINISHES[k] && [k, TOPPER_FINISHES[k]]).filter(Boolean).map(([k, f]) => (
               <button key={k} onClick={() => setWriting({ acrylicFinish: k })}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, cursor: 'pointer',
                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, background: '#fff',
