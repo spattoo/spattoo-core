@@ -134,10 +134,14 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
   if (!design) return null;
   // Two different things are being gated, and only one is a plan feature.
   //
-  // A DESIGNED order's X-Ray costs us nothing to produce, so it stays what it has always been:
-  // a Blaze+ hook (xray_reports). A PHOTO order's was PAID FOR with credits, on any plan — gating
-  // it again would take a baker's credits and then withhold what they bought, which is the worst
-  // thing this feature could do.
+  // ⚠️ X-RAY IS ON EVERY PLAN. It was a Blaze+ hook once and this comment went on saying so long
+  // after that stopped being true — while Pricing.tsx told every visitor the opposite, which is the
+  // version that is correct. What differs by plan is the CREDIT allowance for the AI work (reading
+  // a photo, working out how a decoration was made); a designed cake's X-Ray costs nothing to
+  // produce and is free to everyone.
+  //
+  // A PHOTO order's was PAID FOR with credits, on any plan — gating it again would take a baker's
+  // credits and then withhold what they bought, which is the worst thing this feature could do.
   if (!fromPhoto && !enabled) return null;
   return (
     <>
@@ -227,8 +231,8 @@ function PhotoXrayLauncher({ order, apiClient, variant }) {
   const [spec, setSpec] = useState(null);
 
   // NOT gated on xray_reports. Reading a photo costs real money and is metered by CREDITS, which
-  // every plan has — so every plan can buy one. Gating it on the Blaze entitlement as well was
-  // what left a Flame baker holding an allowance they could not spend on anything.
+  // every plan has — so every plan can buy one. Gating it on a plan entitlement as well was what
+  // left a Flame baker holding an allowance they could not spend on anything.
   const { stale } = resolveXraySpec(order);
   if (!apiClient?.createXraySpec) return null;    // host hasn't wired it → no dead button
   if (order?.design_snapshot) return null;        // designed: X-Ray reads it directly

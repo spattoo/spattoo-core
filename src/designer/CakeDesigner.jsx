@@ -2130,8 +2130,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [printStudioOpen,     setPrintStudioOpen]     = useState(false);
-  // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked, matching how xray_reports is
-  // handled a few files over — one convention for "your plan does not include this" beats two.
+  // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked — one convention for "your
+  // plan does not include this" beats two. (This used to cite xray_reports as the precedent; X-Ray
+  // is on every plan and is not an example of anything being gated.)
   const [printStudioEnabled,  setPrintStudioEnabled]  = useState(false);
   // Reels. Two entitlements, because "may record" and "whose name is on it" are different questions
   // — see spattoo-docs/plans/reel-for-bakers.md §2e.
