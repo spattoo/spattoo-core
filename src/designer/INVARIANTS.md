@@ -307,6 +307,65 @@ invisible; a crash is not. (Worth fixing at the source; until then, know which y
 anchoring half is not, so a gate would pass the exact bug that caused this rule to exist. Check it by
 looking — see Verification.
 
+## 11. A control and what it changes must be VISIBLE AT THE SAME TIME — RULE IS ON
+**PROJECT-WIDE** (like #1/#3/#6/#7/#9). This is the single most repeated correction in this project.
+It has been raised on the photo editor, on the garnish studio twice, and on the X-ray build guide,
+each time as a fresh bug and each time it was the same rule. Writing it down is the fix; the
+individual repairs were not.
+
+**The rule.** If moving a control changes something on screen, the person must be able to see BOTH
+without scrolling, without switching tabs, and without remembering what the other one looked like.
+Anything else asks them to hold a picture in their head and compare it to the screen, which is
+exactly the thing a screen is for.
+
+⚠️ **"It is on the page" is not the same as "it can be seen".** Every one of these shipped, and every
+one was reported:
+
+| What was built | What it did to the person using it |
+|---|---|
+| Brightness sliders below the photo | Drag, scroll up, look, scroll down. The control and its effect were never both in view. |
+| Fill options at the bottom of the studio column, past the library and the name field | A baker had no reason to believe the feature existed at all. |
+| The step caption UNDER the animation it describes | You can watch the drawing or read the words. Not both — which is the whole point of a narrated guide. |
+| Colour picker open by default, taking the top third of the column | It pushed the control the studio exists for below the fold. |
+
+**What to do instead**, in order of preference:
+
+1. **Side by side** — control beside effect. The default for anything wide enough.
+2. **Effect first, then control** — put the words ABOVE the picture they describe, and the picture
+   above the settings that change it. Reading order is top-down; the thing being explained should
+   arrive before the explanation of how to change it.
+3. **Tabs or an accordion** — only when 1 and 2 genuinely do not fit. Tabs mean one thing is always
+   hidden, so they are a last resort and never the first idea.
+
+⚠️ **Text that narrates a moving thing goes BESIDE it or BEFORE it, never after.** Below, the reader
+has to look down, look back, and by then the motion has moved on.
+
+**No gate protects this** and one could not: whether two things are visible together depends on
+viewport, content length and what the person is doing. Check it by **looking at the real screen at
+phone width**, which is what Verification already says and what would have caught every row above.
+
+## 12. Layout follows USE, not the order the code was written — RULE IS ON
+**PROJECT-WIDE.** A settings column tends to end up in the order its features were built, which is a
+record of our history and nothing to do with the job in front of the person using it.
+
+**Order the surface by how often a control is touched, and put related ones together.** In the
+garnish studio the true order is: draw → pick a shape → fill it → colour it → say where it goes →
+name it. It shipped as: colour → how it is made → shapes → thickness → where it goes → library →
+name → **fill**. Fill is why the studio exists and it was last, because it was built last.
+
+Three questions to ask before laying anything out:
+
+- **How often is this touched?** Constantly while working (fill, undo) beats once at the end
+  (placement, naming). Frequent goes higher and nearer the work.
+- **Where are the hands already?** Undo belongs ON the drawing, not below it — it is reached for the
+  instant a stroke goes wrong. A control that acts on something should sit next to that thing.
+- **What is set once and left?** Colour, name, placement. These can collapse, and a collapsed control
+  that shows its current value costs one line instead of a third of the column.
+
+⚠️ **A label must name what the control acts on.** "Fill the last shape" kept its name for weeks after
+it had started acting on the PICKED shape — so it described behaviour that no longer existed, and
+anyone who had just picked a shape had every reason to distrust it.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —

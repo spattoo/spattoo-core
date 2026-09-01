@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { garnishGuide } from '../../designer/geometry/garnishGuide.js';
+import { useNarrow } from '../../shared/useNarrow.js';
 
 // ── The build guide for a chocolate garnish ──────────────────────────────────────────────────────
 //
@@ -23,22 +24,36 @@ export default function GarnishBuildGuide({ garnish, cakeDiameterMm = null, anim
 
 function GuideBody({ guide, animate }) {
   const clock = useDrawClock(animate, guide.beats.length);
+  const isMobile = useNarrow();
+
+  const caption = (
+    <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, fontWeight: 600,
+                color: guide.kind === 'cut' ? '#7A5A2E' : '#1F5F3F' }}>
+      {clock.beat != null
+        ? guide.beats[clock.beat]?.caption
+        : guide.beats.map(b => b.caption).join(' ')}
+    </p>
+  );
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <GuideDiagram guide={guide} clock={clock} />
-
-      {/* ⚠️ THE CAPTION IS THE POINT OF THE ANIMATION. A line growing on its own says that something
-          is being drawn and nothing about what to do; the sentence is what makes it a guide. It sits
-          directly under the drawing, changes with each step, and holds a fixed height so the page
-          does not jump as the words change length. */}
-      <div style={{ minHeight: 40, display: 'flex', alignItems: 'start' }}>
-        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, fontWeight: 600,
-                    color: guide.kind === 'cut' ? '#7A5A2E' : '#1F5F3F' }}>
-          {clock.beat != null
-            ? guide.beats[clock.beat]?.caption
-            : guide.beats.map(b => b.caption).join(' ')}
-        </p>
+      {/* ⚠️ THE WORDS AND THE DRAWING MUST BE SEEN TOGETHER — INVARIANTS #11. The caption sat UNDER
+          the animation, so you could watch the line being drawn or read what it meant, never both:
+          look down to read, look back, and the motion has moved on. That defeats the entire point of
+          narrating it. Beside it where there is room; ABOVE it on a phone, so the instruction arrives
+          before the thing it describes rather than after. Never below. */}
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+                    gap: isMobile ? 8 : 16, alignItems: isMobile ? 'stretch' : 'center' }}>
+        {isMobile && <div style={{ minHeight: 58 }}>{caption}</div>}
+        <div style={{ flex: '0 1 auto', minWidth: 0 }}>
+          <GuideDiagram guide={guide} clock={clock} />
+        </div>
+        {!isMobile && (
+          /* A fixed height so the panel does not jump as the sentences change length. */
+          <div style={{ flex: '1 1 200px', minHeight: 76, display: 'flex', alignItems: 'center' }}>
+            {caption}
+          </div>
+        )}
       </div>
 
       <details>

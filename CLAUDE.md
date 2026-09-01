@@ -83,6 +83,13 @@ screenshot of something broken that looks fine. Use real pointer or keyboard inp
 
 ---
 
+- **A control and what it changes must be visible at the same time** (INVARIANTS #11). The most
+  repeated correction in this project. Side by side first; effect above control second; tabs last.
+  Narrating text goes BESIDE or BEFORE the thing it narrates, never below it.
+- **Lay a surface out by how often each control is used** (INVARIANTS #12), not by the order the
+  features were built. What is touched constantly goes near the work; what is set once and left can
+  collapse. A label names what the control actually acts on.
+
 ## Designer work
 
 Read `src/designer/INVARIANTS.md` first — placement modes, zones, the one-renderer rule, right-side
