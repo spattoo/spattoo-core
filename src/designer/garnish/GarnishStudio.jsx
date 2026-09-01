@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Panel } from '../../shared/Panel.jsx';
 import Segmented from '../../shared/Segmented.jsx';
-import GarnishPreview from './GarnishPreview.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
@@ -184,6 +183,36 @@ export default function GarnishStudio({
     x.fillStyle = SURFACE; x.fillRect(0, 0, w, h);
 
     const k = w / PLATE;                            // plate units → css pixels
+    /* ⚠️ THE PLATE IS THE ONLY SURFACE, so the chocolate has to be ON it. There was a second panel
+       below showing the piece rendered in 3D — the same art twice, which read as two different
+       drawings and invited the question "why is one corrected and one not?" when in fact both were.
+       One area is enough, and it should be the one the hand is already on.
+
+       A piped rope is round, so it is drawn in three passes rather than as flat ink: a dark rim, the
+       chocolate itself, and a highlight offset towards the light. That is what makes it read as a
+       tube with a wet finish instead of a marker line. It is an approximation — a canvas has no
+       material — but it is an approximation IN THE RIGHT DIRECTION, which flat ink was not. */
+    const rope = (pts, width, colour = color) => {
+      if (!pts || pts.length < 2) return;
+      const path = () => {
+        x.beginPath();
+        pts.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
+      };
+      x.lineCap = 'round'; x.lineJoin = 'round';
+
+      path(); x.lineWidth = width * k;        x.strokeStyle = shade(colour, -0.45); x.stroke();
+      path(); x.lineWidth = width * k * 0.78; x.strokeStyle = colour;               x.stroke();
+
+      // The highlight runs ALONG the rope, offset towards the light — a thin bright line, because a
+      // narrow tube catches a narrow highlight. Wider and it reads as a second, paler stroke.
+      x.save();
+      x.translate(-width * k * 0.16, -width * k * 0.16);
+      path(); x.lineWidth = Math.max(0.6, width * k * 0.2);
+      x.strokeStyle = shade(colour, 0.5); x.globalAlpha = 0.75; x.stroke();
+      x.restore();
+      x.globalAlpha = 1;
+    };
+    // Flat, for the marks that are NOT chocolate — the selection outline and the resize handle.
     const line = (pts, width, colour = color) => {
       if (!pts || pts.length < 2) return;
       x.beginPath();
@@ -209,15 +238,19 @@ export default function GarnishStudio({
         }
         x.fillStyle = panel.color ?? color;
         x.fill('evenodd');
+        // A cut panel is a SLAB, so it has an edge. Without one it reads as paper, not chocolate.
+        x.strokeStyle = shade(panel.color ?? color, -0.4);
+        x.lineWidth = Math.max(1, 2 * k * 1.2);
+        x.stroke();
       }
       // An open stroke has no inside and cannot be cut, so it stays a line — which is also the
       // honest signal that it will not become part of the panel.
-      for (const s2 of strokes) if (!s2.ring) line(s2.path, ROPE + 2);
+      for (const s2 of strokes) if (!s2.ring) rope(s2.path, ROPE + 2);
     } else {
       for (const s2 of strokes) {
         const c2 = s2.color ?? color;               // each shape keeps its own chocolate
-        for (const f of s2.fills) line(f, ROPE, c2);
-        line(s2.path, ROPE + 2, c2);                // the outline sits over its own fill
+        for (const f of s2.fills) rope(f, ROPE, c2);
+        rope(s2.path, ROPE + 2, c2);                // the outline sits over its own fill
       }
     }
     if (picked != null && strokes[picked]) {
@@ -231,7 +264,7 @@ export default function GarnishStudio({
       line(strokes[picked].ring ?? strokes[picked].path, 1.6, 'rgba(40,90,200,0.9)');
     }
     // Wet, still being piped: lighter, so in-progress reads differently from finished.
-    if (drawing) line(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
+    if (drawing) rope(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
     // ⚠️ colour and ROPE are dependencies too: without them the plate keeps the shade and the line
     // width it was first painted with, and the controls appear to do nothing until the next stroke.
   }, [strokes, trail, drawing, color, ROPE, picked, kind]);
@@ -586,20 +619,6 @@ export default function GarnishStudio({
           </div>
         )}
 
-        {/* ⚠️ WITH THE PLATE, IN THE SAME COLUMN — INVARIANTS #11, and it took two goes. As a third
-            column beside the plate it pushed the controls onto a row of their own, so the fill
-            options were no longer visible with the drawing — fixing one pairing by breaking another.
-            Directly under the plate, the drawing and what it will actually look like are inches
-            apart, and the controls stay where they were. */}
-        <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
-          <GarnishPreview strokes={strokes} kind={kind} color={color} rope={ROPE} plate={PLATE}
-            isMobile={isMobile} />
-          <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5, maxWidth: 190 }}>
-            <strong style={{ color: '#555' }}>In chocolate.</strong> The plate is flat ink; this is
-            the piece as it will look on the cake, in the same light and the same material.
-          </div>
-        </div>
-
         </div>
 
         <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -829,6 +848,17 @@ function PlateButton({ label, onClick, danger, children }) {
         strokeLinecap="round" strokeLinejoin="round">{children}</svg>
     </button>
   );
+}
+
+/* Lighten or darken a colour, for the rim and the highlight of a rope. Works on the hex the picker
+ * gives and on the rgba() the in-progress trail uses, which is the only other thing drawn here. */
+function shade(colour, amount) {
+  const m = /^#([0-9a-f]{6})$/i.exec(colour ?? '');
+  if (!m) return colour;                       // rgba() and anything else: left alone rather than guessed
+  const n = parseInt(m[1], 16);
+  const mix = (c) => Math.round(amount < 0 ? c * (1 + amount) : c + (255 - c) * amount);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix);
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 const labelStyle = { display: 'block', fontSize: 10, fontWeight: 800, color: '#888',
