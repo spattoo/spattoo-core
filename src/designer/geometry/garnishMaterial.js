@@ -25,10 +25,21 @@ export const GARNISH_INK = '#4A2C1B';
  * re-state them, which is the same drift by another route.
  */
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
+  const g = gloss ?? GARNISH_GLOSS_DEFAULT;
   return {
-    ...mediumOf(medium).material({ softness: gloss ?? GARNISH_GLOSS_DEFAULT }, color ?? GARNISH_INK),
-    clearcoat: 0.25,
-    clearcoatRoughness: 0.5,
-    envMapIntensity: 0.6,
+    ...mediumOf(medium).material({ softness: g }, color ?? GARNISH_INK),
+    /* ⚠️ THE LACQUER FOLLOWS THE SLIDER. These three were FIXED constants spread AFTER the medium's
+     * own material, so they overwrote whatever Shine had just decided — the control moved, the
+     * numbers underneath changed, and the render used the constants regardless. Shine at 1.00 looked
+     * exactly like Shine at 0.
+     *
+     * They are still held DOWN relative to a drip, and that part was right: a thin rope is almost all
+     * grazing angle, and Fresnel makes a clearcoat reflect hardest there, so a full-strength coat
+     * covers the whole piece in white-ish reflection and buries the chocolate — which is why raising
+     * the gloss twice made it worse. The fix is to let the slider move within a range that suits a
+     * rope, not to pin it to one end of that range. */
+    clearcoat: 0.12 + g * 0.55,
+    clearcoatRoughness: 0.7 - g * 0.5,
+    envMapIntensity: 0.45 + g * 0.75,
   };
 }
