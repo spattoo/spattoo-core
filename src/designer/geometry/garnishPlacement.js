@@ -75,12 +75,28 @@ export function garnishPlacement(params, cake, piece = { w: 0.6, h: 0.5 }) {
       anchors: footprint(x, z, scaled.w, 0, facing + p.yaw, cake.topY, scaled.h),
     };
   }
-  // Lying flat: the piece's own "up" becomes the surface normal, and it rests ON the surface by a
-  // rope's radius rather than half-sunk in it.
+  /* Lying flat: the piece's own "up" becomes the surface normal, and it rests ON the surface by a
+     rope's radius rather than half-sunk in it.
+
+     ⚠️ AND IT MUST BE CENTRED ON ITS ANCHOR, WHICH IT WAS NOT. The geometry has a BOTTOM-CENTRE
+     origin — right for a standing piece, which has to turn about the point where it meets the cake.
+     Laid flat, that same origin puts the anchor at the piece's EDGE: the mesh extends its whole
+     height away from where the design says it is. `footprint` below has always described a rectangle
+     CENTRED on (x, z), so the mesh and the contract disagreed about where the piece was — the rim
+     clamp kept the anchor on the cake while the piece itself hung off it, and a piece far enough out
+     simply vanished over the edge. A small piece near the middle looked fine, which is why this
+     survived: two pieces rendered correctly and the third was gone.
+
+     Where does it extend? With Euler order XYZ the world vector is Rx·Ry·Rz·v, so the piece's local
+     +Y goes Rz(yaw) → (−sin, cos, 0), then Rx(−90°) → (−sin yaw, 0, −cos yaw). Stepping the anchor
+     back by half a height along that direction puts the piece's middle on (x, z), which is what
+     everything else already assumed. */
+  const half = scaled.h / 2;
+  const yaw = facing + p.yaw;
   return {
-    position: [x, cake.topY + rope, z],
-    rotation: [-Math.PI / 2, 0, facing + p.yaw],
-    anchors: footprint(x, z, scaled.w, scaled.h, facing + p.yaw, cake.topY, 0),
+    position: [x + half * Math.sin(yaw), cake.topY + rope, z + half * Math.cos(yaw)],
+    rotation: [-Math.PI / 2, 0, yaw],
+    anchors: footprint(x, z, scaled.w, scaled.h, yaw, cake.topY, 0),
   };
 }
 

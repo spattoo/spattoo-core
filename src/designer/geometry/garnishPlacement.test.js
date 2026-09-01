@@ -159,3 +159,43 @@ describe('fanning one piece round an arc', () => {
     expect(fanPlacements(base, 1, 1).length).toBe(2);
   });
 });
+
+// ── A lying piece sits where the design says it does ─────────────────────────────────────────────
+//
+// ⚠️ THE MESH AND THE CONTRACT MUST AGREE ABOUT WHERE A PIECE IS. The geometry has a bottom-centre
+// origin — right for a standing piece, which turns about the point where it meets the cake — but laid
+// flat that puts the anchor at the piece's EDGE while `footprint` describes a rectangle centred on
+// it. The rim clamp then kept the anchor on the cake while the piece itself hung off, and a piece far
+// enough out vanished over the edge. Small pieces near the middle looked fine, which is how it hid.
+describe('a garnish lying flat is centred on its anchor', () => {
+  const cake = { radius: 1.2, topY: 1, boardY: 0.1 };
+  const piece = { w: 0.6, h: 0.5 };
+
+  // Where the mesh's middle actually lands: the origin, stepped half a height along the direction
+  // the piece extends. See the derivation in garnishPlacement.js.
+  const meshCentre = (place, yaw, h) => ({
+    x: place.position[0] - (h / 2) * Math.sin(yaw),
+    z: place.position[2] - (h / 2) * Math.cos(yaw),
+  });
+
+  for (const yaw of [0, 0.4, 1.6, -2.2, Math.PI]) {
+    it(`agrees with its own footprint at yaw ${yaw.toFixed(1)}`, () => {
+      const g = { mode: 'lie', theta: 0.7, radius: 0.6, yaw, scale: 1 };
+      const place = garnishPlacement(g, cake, piece);
+      const mid = meshCentre(place, yaw, piece.h);
+      const box = place.anchors.reduce(
+        (a, p) => ({ x: a.x + p.x / place.anchors.length, z: a.z + p.z / place.anchors.length }),
+        { x: 0, z: 0 },
+      );
+      expect(mid.x).toBeCloseTo(box.x, 6);
+      expect(mid.z).toBeCloseTo(box.z, 6);
+    });
+  }
+
+  it('keeps the piece on the cake, not just its anchor', () => {
+    const g = { mode: 'lie', theta: 0, radius: 1, yaw: 0, scale: 1 };
+    const place = garnishPlacement(g, cake, piece);
+    const mid = meshCentre(place, 0, piece.h);
+    expect(Math.hypot(mid.x, mid.z)).toBeLessThanOrEqual(cake.radius);
+  });
+});
