@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Panel } from '../../shared/Panel.jsx';
 import Segmented from '../../shared/Segmented.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
@@ -8,6 +8,7 @@ import { snapPolygon } from '../geometry/snapPolygon.js';
 import { pointInRing } from '../geometry/regions.js';
 import { panelsFrom } from '../geometry/garnishPanel.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
+import { findRegions } from '../geometry/regions.js';
 
 // ── Piping a chocolate garnish, off the cake ─────────────────────────────────────────────────────
 //
@@ -165,7 +166,23 @@ export default function GarnishStudio({
   }, [color, picked]);
 
   const subject = picked != null ? strokes[picked] : last;
-  const canFill = !!subject?.ring;
+
+  /* ⚠️ NOBODY DRAWS A SHAPE IN ONE GESTURE. A leaf is five strokes that meet; a triangle is three
+     lines. Asking each stroke on its own whether IT closed is why a perfectly closed drawing was
+     told "that stroke is open, so there is nothing to fill" — the shape was closed, no single stroke
+     was, and the studio could only see strokes. `findRegions` welds the endpoints and returns the
+     CYCLES, which is what a fillable shape actually is. It is recomputed from the outlines only,
+     never from generated fill passes, or the fill would weld to itself and every shape would look
+     closed. */
+  const regions = useMemo(
+    () => findRegions(strokes.map(s2 => s2.path)).regions,
+    [strokes],
+  );
+  const targetIndex = picked != null ? picked : strokes.length - 1;
+  const regionOf = i => regions.find(r => r.paths.includes(i)) ?? null;
+  // A ring of its own, or one it forms together with its neighbours.
+  const fillRing = subject?.ring ?? regionOf(targetIndex)?.ring ?? null;
+  const canFill = !!fillRing;
   /* The colour of the thing being worked on — the picked shape if there is one, otherwise the colour
      new shapes will take. This is per-region colour: white chocolate inside dark is two shapes with
      two colours, not one piece with a compromise. */
@@ -532,13 +549,22 @@ export default function GarnishStudio({
      choosing a fill filled a different shape. Whatever is picked is the subject; with nothing picked
      the last shape is still the sensible default, because that is what a fresh drawing means. */
   function applyFill(pattern) {
-    const target = picked != null ? picked : strokes.length - 1;
-    setStrokes(all => all.map((s, i) => {
-      if (i !== target || !s.ring) return s;
-      const fills = pattern === 'none' ? [] : fillShape(s.ring, {
-        pattern, spacing: ROPE * 2.2, inset: ROPE * 0.5, ropeWidth: ROPE, seed: i + 3,
-      });
-      return { ...s, fills, fillPattern: pattern };
+    const target = targetIndex;
+    const ring = fillRing;
+    if (!ring) return;
+    /* ⚠️ THE WHOLE REGION IS CLEARED, not just the stroke that carries the fill. A region's passes
+       hang off ONE of its strokes — an arbitrary one — so clearing only the target would leave a
+       filled shape that says it is empty, and refilling would stack a second set of passes on the
+       first. */
+    const members = regionOf(target)?.paths ?? [target];
+    const fills = pattern === 'none' ? [] : fillShape(ring, {
+      pattern, spacing: ROPE * 2.2, inset: ROPE * 0.5, ropeWidth: ROPE, seed: target + 3,
+    });
+    setStrokes(all => all.map((s2, i) => {
+      if (!members.includes(i)) return s2;
+      // The passes live on the stroke that was picked; the rest of the region just records the
+      // pattern, so the control reads back the same answer whichever of them is selected next.
+      return { ...s2, fills: i === target ? fills : [], fillPattern: pattern };
     }));
   }
 
@@ -689,7 +715,7 @@ export default function GarnishStudio({
                   tone={INK}
                 />
               </div>
-              {!fillWorthwhile(subject?.ring) && (
+              {!fillWorthwhile(fillRing) && (
                 <div style={{ fontSize: 10.5, color: '#9A6A2F', marginTop: 5, lineHeight: 1.45 }}>
                   That reads more like a line than a shape — a fill will come out as dashes.
                 </div>
@@ -697,9 +723,12 @@ export default function GarnishStudio({
             </div>
           ) : strokeCount ? (
             <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5 }}>
-              {picked != null
-                ? 'That shape is open, so there is nothing to fill. Pick a closed one, or draw a shape that joins up.'
-                : 'That stroke is open, so there is nothing to fill — which is how veins, swirls and letters are piped. Draw a shape that joins up to fill it.'}
+              {/* ⚠️ SAYS WHAT IS ACTUALLY WRONG. It used to say "that STROKE is open", which was
+                  true and useless: a shape drawn in five strokes has no closed stroke in it, and the
+                  drawing in front of the baker was plainly closed. What is missing is a JOIN. */}
+              This is not closed yet, so there is nothing to fill — which is how veins, swirls and
+              letters are piped. Bring the ends together and the whole shape becomes fillable, however
+              many strokes it took.
             </div>
           ) : null}
 

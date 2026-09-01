@@ -82,3 +82,36 @@ describe('nesting', () => {
     expect(isInside(across, outer)).toBe(false);
   });
 });
+
+// ── The case the studio was getting wrong ────────────────────────────────────────────────────────
+//
+// ⚠️ A SHAPE DRAWN IN SEVERAL STROKES IS STILL A SHAPE. The studio asked each stroke whether IT had
+// closed, so a leaf drawn in five strokes — or a triangle drawn as three lines — was told "that
+// stroke is open, so there is nothing to fill" while a plainly closed drawing sat on the plate. The
+// shape was closed; no single stroke was; and fill could only see strokes.
+describe('a shape drawn as separate strokes is one fillable region', () => {
+  const edge = (a, b, n = 12) => Array.from({ length: n }, (_, i) => [
+    a[0] + (b[0] - a[0]) * (i / (n - 1)), a[1] + (b[1] - a[1]) * (i / (n - 1)),
+  ]);
+  const A = [210, 70], B = [340, 320], C = [80, 320];
+
+  it('finds one region across three separate strokes', () => {
+    const { regions, openPaths } = findRegions([edge(A, B), edge(B, C), edge(C, A)]);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].paths.sort()).toEqual([0, 1, 2]);
+    expect(openPaths).toEqual([]);
+  });
+
+  // The hand does not land exactly on the previous endpoint — that is the whole reason for the weld.
+  it('still finds it when the ends only nearly meet', () => {
+    const nudge = ([x, y]) => [x + 4, y - 3];
+    const { regions } = findRegions([edge(A, B), edge(nudge(B), C), edge(C, nudge(A))]);
+    expect(regions).toHaveLength(1);
+  });
+
+  it('leaves genuinely open strokes out of it', () => {
+    const { regions, openPaths } = findRegions([edge(A, B), edge(B, C)]);
+    expect(regions).toHaveLength(0);
+    expect(openPaths).toEqual([0, 1]);        // two lines meeting at a point enclose nothing
+  });
+});
