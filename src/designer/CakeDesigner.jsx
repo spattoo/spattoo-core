@@ -75,6 +75,8 @@ import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
 import ShapePicker from './controls/ShapePicker.jsx';
 import TierShapeControls, { hasShapeControls } from './controls/TierShapeControls.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
+import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
+import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
@@ -463,6 +465,23 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
       )}
     </div>
   );
+}
+
+/* Switching material, keeping the message.
+ *
+ * ⚠️ The two font lists only PARTLY overlap. The four centreline faces (Allure, Felix, Elfin,
+ * Cursive) are in both; the outline scripts are acrylic-only and Nixish, Osmotron, Clean, Tech,
+ * Gothic and Serif are cream-only. Carrying a font across blind leaves the message set in a face the
+ * new material cannot render, which comes out as a silent fallback rather than an error — so the
+ * font moves to that material's default whenever it is not valid in both.
+ */
+function writingStyleSwitch(w, style) {
+  if (style === (w.style ?? 'cream')) return {};
+  if (style === 'acrylic') {
+    const font = TOPPER_FACES[w.font] ? w.font : DEFAULT_TOPPER_FACE;
+    return { style, font, tracking: faceFit(font) };
+  }
+  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT };
 }
 
 // Texts colour picker — the wheel plus a "Metallic" toggle that turns the chosen
@@ -7105,13 +7124,52 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <span style={{ fontSize: 12, fontWeight: 800, color: '#666' }}>CAPITAL LETTERS</span>
         </label>
 
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-          {CREAM_FONTS.map(f => (
-            <CreamFontButton key={f.key} fontKey={f.key} label={f.label}
-              selected={w.font === f.key} onClick={() => setWriting({ font: f.key })} />
+        {/* ── What it is made of ────────────────────────────────────────────────
+            Cream is piped; acrylic is cut from a sheet and stands or lies against the wall. The
+            message survives the switch — same text, same surface, same place — because they are one
+            object in two materials. */}
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Look</div>
+        <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
+          {[{ k: 'cream', label: 'Piped cream' }, { k: 'acrylic', label: 'Acrylic' }].map(st => (
+            <button key={st.k}
+              onClick={() => setWriting(writingStyleSwitch(w, st.k))}
+              style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
+                background: (w.style ?? 'cream') === st.k ? '#1a1a1a' : 'transparent',
+                color: (w.style ?? 'cream') === st.k ? '#fff' : '#1a1a1a' }}>
+              {st.label}
+            </button>
           ))}
         </div>
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {(w.style === 'acrylic'
+            ? Object.entries(TOPPER_FACES).map(([key, f]) => ({ key, label: f.label }))
+            : CREAM_FONTS
+          ).map(f => (
+            <CreamFontButton key={f.key} fontKey={f.key} label={f.label}
+              selected={w.font === f.key}
+              onClick={() => setWriting({ font: f.key, ...(w.style === 'acrylic' ? { tracking: faceFit(f.key) } : {}) })} />
+          ))}
+        </div>
+
+        {/* An acrylic finish is a MATERIAL, not a colour — mirror gold is nothing but its
+            reflections, gloss black is pigment under clear. So the wheel is replaced rather than
+            recoloured; there is no arbitrary hue to pick. */}
+        {w.style === 'acrylic' && <>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Finish</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {Object.entries(TOPPER_FINISHES).map(([k, f]) => (
+              <button key={k} onClick={() => setWriting({ acrylicFinish: k })}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, background: '#fff',
+                  border: `2px solid ${(w.acrylicFinish ?? 'gold') === k ? '#1a1a1a' : '#e2ddd6'}` }}>
+                <span style={{ width: 14, height: 14, borderRadius: 4, background: f.color, border: '1px solid #00000022' }} />
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </>}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>

@@ -198,6 +198,11 @@ const DEFAULT_STROKE = {
 
 // Cream-pen writing defaults — created the first time the user types a message.
 const DEFAULT_WRITING = {
+  /* The material this message is made of. 'cream' is the default and the ONLY value every existing
+     saved design has, so an absent key must keep meaning cream — a message that silently became
+     acrylic on load would rewrite cakes people had already ordered. */
+  style: 'cream',            // 'cream' | 'acrylic'
+  acrylicFinish: 'gold',     // acrylic only: a key into TOPPER_FINISHES, not a colour
   text: '', font: 'ems_allure', color: '#ffffff',
   thickness: 0.03, fit: 0.8, softness: 0.7,
   curve: 0, lineSpacing: 1.4,

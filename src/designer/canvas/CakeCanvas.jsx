@@ -15,6 +15,7 @@ import CakeTier from './CakeTier';
 import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
+import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import Garnishes from './Garnishes.jsx';
@@ -2815,8 +2816,14 @@ function CakeContent({ config, scene, edit = null }) {
           nothing (it is a card waiting to be typed into), which is why the text guard is per-item
           rather than around the map. Orbit is keyed per id so dragging one message does not free the
           camera for another. */}
-      {topTier && board && writings.map(w => w?.text?.trim() ? (
-        <CreamWriting
+      {topTier && board && writings.map(w => {
+        if (!w?.text?.trim()) return null;
+        /* ⚠️ Dispatched on the message's own `style` KEY, never on its surface or its font. Cream and
+           acrylic are the same message in two materials — same text, same placement, same drag — so
+           switching Look keeps what was typed and where it was put. */
+        const Renderer = w.style === 'acrylic' ? AcrylicWriting : CreamWriting;
+        return (
+        <Renderer
           key={w.id}
           writing={w}
           topY={stackY}
@@ -2834,7 +2841,8 @@ function CakeContent({ config, scene, edit = null }) {
           onOrbitEnable={orbitEnableFor(`__writing__${w.id}`)}
           selected={selectedWritingId === w.id}
         />
-      ) : null)}
+        );
+      })}
 
       {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
           highest tier. Each block is its own placement, so the arrangement IS the data — see

@@ -87,6 +87,12 @@ function LocalEnv() {
   useMemo(() => {
     const pmrem = new THREE.PMREMGenerator(gl);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    /* ⚠️ 0.45, and this is the number that makes a shadow possible.
+     *
+     * At full strength the room lights the icing so evenly that a cast shadow is invisible. Turning
+     * it down globally is what works: the metal keeps enough to reflect (mirror gold with nothing to
+     * reflect renders BLACK) and the directional regains enough contrast to leave a mark. */
+    scene.environmentIntensity = 0.45;
     return () => pmrem.dispose();
   }, [scene, gl]);
   return null;
@@ -122,22 +128,12 @@ function Cake({ r = CAKE_R, h = CAKE_H }) {
   return (
     <mesh position={[0, h / 2, 0]} receiveShadow>
       <cylinderGeometry args={[r, r, h, 96]} />
-{/* ⚠️ THE SHADOW IS CAST BUT BARELY LANDS, and it is not the plumbing.
+{/* The shadow lands now — see the environmentIntensity note in LocalEnv.
        *
-       * Proven by removing the environment for one frame: the topper's shadow was there on the icing,
-       * sharp and obvious, and had been the whole time. What hides it is contrast — this cake is lit
-       * by ambient 0.45 plus two directionals totalling 1.5, so losing the one that casts leaves a
-       * barely-darker patch on an already blown-out white surface.
-       *
-       * Things I tried that did NOT fix it, recorded so nobody repeats them: adding a fourth
-       * shadow-casting light (SceneLights already takes `shadows`), and dimming the cake's
-       * envMapIntensity to 0.22 and then 0.06 — the material is live (turning it red proved that) and
-       * the brightness simply is not coming from the environment.
-       *
-       * Left alone deliberately. The standoff is verified as GEOMETRY — half of an 83.8mm word on a
-       * 76.2mm radius stands 11.5mm proud, which matches the arithmetic — and how strongly that reads
-       * is a question about the designer's real lighting rig, not something to tune from a harness
-       * whose cake is a stand-in cylinder. */}
+       * It took three passes to find, and none of them were where I looked: not a missing light
+       * (SceneLights already takes `shadows`), not this material's envMapIntensity (dimming it to
+       * 0.22 and then 0.06 changed nothing). Removing the environment for one frame showed the
+       * shadow sharp and always present — the fault was the whole scene's fill, not any one part. */}
       <meshStandardMaterial color="#f3ece2" roughness={0.85} />
     </mesh>
   );

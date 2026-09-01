@@ -566,3 +566,44 @@ export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSide
   const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
   return surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z };
 }
+
+/* ── Where a typed message actually sits ─────────────────────────────────────────────────────────
+ *
+ * One resolution, shared by every material a message can be made of — piped cream today, cut acrylic
+ * now, whatever comes next. It was inline in CreamWriting.jsx, which was fine while cream was the
+ * only kind; a second renderer copying it is how two decorations start disagreeing about where the
+ * same message is.
+ *
+ * ⚠️ THE TIER COMES FROM THE HEIGHT, never from a stored key. Dragging a message up the cake crosses
+ * tiers and the radius has to follow it — a stored `sideTier` was tried and reverted because it
+ * clamped the drag to one wall and took away something bakers were already doing. That rule now
+ * applies to every material by construction rather than by each one remembering it.
+ */
+export function writingSurface({
+  writing, tiers, topY, topRadius, shape = 'round', width = 0, depth = 0, boardRadius = 0,
+}) {
+  const surface = writing?.surface ?? 'top';
+  const fit     = writing?.fit ?? 0.8;
+  const isRect  = shape === 'rect';
+
+  const bottom    = tiers?.[0];
+  const cakeBaseR = bottom ? (bottom.shape === 'rect' ? Math.max(bottom.width, bottom.depth) / 2 : bottom.radius) : topRadius;
+  const sideY     = writing?.sideY ?? (bottom ? bottom.baseY + bottom.height / 2 : topY / 2);
+  const sideTier  = tiers?.find(t => sideY >= t.baseY && sideY <= t.baseY + t.height) ?? bottom;
+  const sideRect  = (sideTier?.shape ?? shape) === 'rect';
+  const sideR     = sideTier ? (sideRect ? sideTier.depth / 2 : sideTier.radius) : topRadius;
+  const sideH     = sideTier?.height ?? 1;
+  const sideFaceW = sideRect ? (sideTier?.width ?? width) : sideR * 2.0;
+
+  let maxW, maxH;
+  if (surface === 'side')       { maxW = sideFaceW * fit; maxH = sideH * fit; }
+  else if (surface === 'board') { maxW = maxH = (boardRadius || topRadius) * 0.9 * fit; }
+  else                          { maxW = (isRect ? width : 2 * topRadius) * fit; maxH = (isRect ? depth : 2 * topRadius) * fit; }
+
+  const minSideY = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
+  return {
+    surface, fit, bottom, cakeBaseR, sideY, sideTier, sideRect, sideR, sideH, sideFaceW,
+    maxW, maxH, minSideY, maxSideY,
+    wrapRadius: surface === 'side' && !sideRect ? sideR + 0.006 : 0,
+  };
+}
