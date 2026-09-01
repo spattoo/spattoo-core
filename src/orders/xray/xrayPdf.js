@@ -816,7 +816,7 @@ function drawGarnishGuides(sheet, garnishes) {
        wide, and the printed sheet has no scrollbar to reveal the rest. The heading, the diagram and
        a couple of steps have to break as one block or the page break lands mid-instruction. */
     sheet.space(diagramBox(sheet, guide).h + mm(26));
-    sheet.y += sheet.text(g.name || 'Chocolate piece', sheet.margin, sheet.y, { size: mm(4.4), weight: 800 });
+    sheet.y += sheet.text(g.name || 'Chocolate garnish', sheet.margin, sheet.y, { size: mm(4.4), weight: 800 });
     sheet.y += sheet.text(
       `${g.zone === 'board' ? 'On the board' : 'On the top tier'}, ${g.mode === 'stand' ? 'standing up' : 'lying flat'}`
       + (guide.widthMm ? ` · ${guide.widthMm} × ${guide.heightMm} mm` : ''),

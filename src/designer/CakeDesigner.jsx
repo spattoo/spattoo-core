@@ -10545,7 +10545,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
       )}
 
-      {/* Pipe a chocolate garnish. Saving drops the piece straight onto the cake and selects it, so
+      {/* Chocolate garnish studio. Saving drops the piece straight onto the cake and selects it, so
           the next thing the customer sees is their own piece with its card open — rather than a
           confirmation and a hunt for where it went. */}
       {garnishStudio && (

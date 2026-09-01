@@ -6,6 +6,8 @@ import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
 import { snapPolygon } from '../geometry/snapPolygon.js';
 import { smoothPath } from '../geometry/smoothPath.js';
+// ⚠️ CREAM'S OWN LETTERFORMS. Chocolate writing is the same motion — see textCentrelines.
+import { textCentrelines, CREAM_FONTS, DEFAULT_CREAM_FONT } from '../geometry/creamText.js';
 import { pointInRing } from '../geometry/regions.js';
 import { panelsFrom } from '../geometry/garnishPanel.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
@@ -142,6 +144,9 @@ export default function GarnishStudio({
      the reference garnishes are — is unusable until they can be moved apart. */
   const [picked, setPicked] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
+  const [textOpen, setTextOpen] = useState(false);
+  const [textValue, setTextValue] = useState('');
+  const [textFont, setTextFont] = useState(DEFAULT_CREAM_FONT);
   const dragRef = useRef(null);
   const downRef = useRef(null);
   const [zone, setZone] = useState('top');
@@ -326,7 +331,7 @@ export default function GarnishStudio({
     setSaving(true);
     try {
       await apiClient?.saveGarnish?.({
-        name: name.trim() || 'Chocolate piece', payload: payloadOf(), thumbBase64: thumbnail(),
+        name: name.trim() || 'Chocolate garnish', payload: payloadOf(), thumbBase64: thumbnail(),
       });
     } catch (e) {
       // ⚠️ A FAILED SAVE STILL PLACES THE PIECE. The baker drew it; losing it because a network call
@@ -439,9 +444,30 @@ export default function GarnishStudio({
     }));
   };
 
+  /* ⚠️ LETTERS ARRIVE AS ORDINARY STROKES, one per glyph, and that is the whole design. Writing in
+     chocolate is the same act as writing in cream — a nozzle following a line — so it reuses cream's
+     centreline faces rather than a second layout (`textCentrelines`, shared with `buildCreamWriting`).
+     Landing them as strokes means everything already built applies for nothing: they can be filled,
+     coloured, softened, moved, resized, duplicated and fanned, and the X-ray build guide is correct
+     without a line of work — the strokes ARE the order to write them in, with a lift between each.
+     ⚠️ ONE STROKE PER GLYPH, never one for the whole word: true to how it is piped, and it is what
+     lets a bad "g" be fixed without redrawing "Birthday". */
+  function addText(text) {
+    const lines = textCentrelines({ text, font: textFont, fitW: PLATE * 0.72, fitH: PLATE * 0.34 });
+    if (!lines.length) return;
+    // Font units are y-UP and centred on the origin; the plate's y runs down, from its top-left.
+    const paths = lines.map(st => st.map(([x, y]) => [PLATE / 2 + x, PLATE / 2 - y]));
+    setStrokes(prev => [
+      ...prev,
+      ...paths.map(path => ({ path, raw: path, ring: null, closed: false, gap: 0, area: 0, fills: [] })),
+    ]);
+    setTextOpen(false);
+    setTextValue('');
+  }
+
   function addToCake() {
     onSave?.({
-      name: name.trim() || 'Chocolate piece', paths: piecePaths(strokes),
+      name: name.trim() || 'Chocolate garnish', paths: piecePaths(strokes),
       // The closed rings travel too: a cut piece is built from regions, not from the swept paths.
       rings: strokes.filter(s2 => s2.ring).map(s2 => s2.ring),
       parts: partsOf(strokes),
@@ -639,7 +665,7 @@ export default function GarnishStudio({
          passed it, so a stray click on the backdrop threw away a piece somebody had just spent five
          minutes piping. The ✕ and Cancel still close — deliberate exits stay one press away. */
       guardUnsaved={strokeCount > 0}
-      title="Pipe a chocolate garnish"
+      title="Chocolate garnish studio"
       width={720}
       flow="block"
       onClose={onCancel}
@@ -739,6 +765,47 @@ export default function GarnishStudio({
                          background: kind === o.id ? '#1a1a1a' : 'rgba(255,255,255,0.92)',
                          color: kind === o.id ? '#fff' : '#666' }}>{o.label}</button>
             ))}
+          </div>
+
+          {/* Writing in chocolate is a common job — a name, a date — and it is the same motion as
+              everything else on this plate, so it lives with the other tools rather than in a panel
+              of its own. */}
+          <div style={{ position: 'relative' }}>
+            <button type="button" onClick={() => setTextOpen(o => !o)} aria-expanded={textOpen}
+              aria-label="Write in chocolate" title="Write in chocolate"
+              style={{ width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
+                       display: 'grid', placeItems: 'center', fontFamily: 'serif',
+                       fontSize: 19, fontWeight: 700, color: '#4A4A4A',
+                       border: `1.5px solid ${textOpen ? '#1a1a1a' : 'rgba(0,0,0,0.10)'}`,
+                       background: 'rgba(255,255,255,0.92)' }}>A</button>
+            {textOpen && (
+              <div style={{ position: 'absolute', top: 44, left: 0, zIndex: 6, width: 240, padding: 10,
+                            borderRadius: 12, background: '#fff', border: '1px solid #E3DFD8',
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                <input autoFocus value={textValue} onChange={e => setTextValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addText(textValue); }}
+                  placeholder="Ava" aria-label="What to write"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, fontFamily: 'inherit',
+                           fontSize: 13, border: '1.5px solid #E3DFD8' }} />
+                <select value={textFont} onChange={e => setTextFont(e.target.value)}
+                  aria-label="Lettering style"
+                  style={{ width: '100%', marginTop: 6, padding: '7px 8px', borderRadius: 8,
+                           fontFamily: 'inherit', fontSize: 12.5, border: '1.5px solid #E3DFD8' }}>
+                  {CREAM_FONTS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+                <button type="button" onClick={() => addText(textValue)} disabled={!textValue.trim()}
+                  style={{ width: '100%', marginTop: 8, padding: '8px 0', borderRadius: 8,
+                           cursor: textValue.trim() ? 'pointer' : 'default', fontFamily: 'inherit',
+                           fontSize: 12.5, fontWeight: 800, border: '1.5px solid #DDD7CD',
+                           background: '#fff', opacity: textValue.trim() ? 1 : 0.5 }}>
+                  Add it
+                </button>
+                <div style={{ fontSize: 10, color: '#999', marginTop: 6, lineHeight: 1.45 }}>
+                  Each letter lands as its own stroke, so you can move, colour or fix one without
+                  redrawing the rest.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ⚠️ VERTICAL, BESIDE THE DRAWING. A horizontal slider at the foot of a settings column is
@@ -954,11 +1021,11 @@ export default function GarnishStudio({
             </details>
           )}
 
-          {/* ⚠️ ONLY WHEN THERE IS SOMETHING IN IT. An empty "My pieces" heading on a new baker's
+          {/* ⚠️ ONLY WHEN THERE IS SOMETHING IN IT. An empty "My garnishes" heading on a new baker's
               first visit reads as something missing rather than something not yet made. */}
           {saved.length > 0 && (
             <div>
-              <span style={labelStyle}>My pieces</span>
+              <span style={labelStyle}>My garnishes</span>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
                 {saved.slice(0, 12).map(g => (
                   <button key={g.id} type="button" title={g.name}

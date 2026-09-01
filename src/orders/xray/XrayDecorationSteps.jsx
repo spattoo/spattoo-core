@@ -83,7 +83,7 @@ function GarnishGuides({ garnishes, s }) {
         {garnishes.map((g, i) => (
           <div key={g.id ?? i} style={{ border: '1px solid #ECE7E0', borderRadius: 12, padding: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
-              {g.name || 'Chocolate piece'}
+              {g.name || 'Chocolate garnish'}
               <span style={{ fontWeight: 600, color: '#999', marginLeft: 8, fontSize: 12 }}>
                 {g.zone === 'board' ? 'on the board' : 'on the top tier'}
                 {g.mode === 'stand' ? ', standing up' : ', lying flat'}
