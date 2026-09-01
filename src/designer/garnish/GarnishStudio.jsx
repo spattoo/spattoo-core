@@ -5,6 +5,7 @@ import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
 import { snapPolygon } from '../geometry/snapPolygon.js';
+import { smoothPath } from '../geometry/smoothPath.js';
 import { pointInRing } from '../geometry/regions.js';
 import { panelsFrom } from '../geometry/garnishPanel.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
@@ -133,7 +134,7 @@ export default function GarnishStudio({
      a cutting template. A property of the PIECE, not of a stroke: nobody pipes half a garnish and
      cuts the other half. */
   const [kind, setKind] = useState('piped');
-  const [autoShape, setAutoShape] = useState(true);
+  const [tidyMode, setTidyMode] = useState('crisp');   // 'crisp' | 'soft' | 'raw'
   /* Which stroke the hands are on. A shape lands centred, so a piece made of several — which is what
      the reference garnishes are — is unusable until they can be moved apart. */
   const [picked, setPicked] = useState(null);
@@ -554,23 +555,10 @@ export default function GarnishStudio({
 
        Applied ONCE, here, to the points that get stored — exactly as the pen does it. A tidy-up that
        ran on every render would re-tidy an already-tidy line and creep. */
-    let path = tidy.path;
-    if (autoShape) {
-      /* ⚠️ POLYGONS FIRST, because `snapStroke` only knows CIRCLE and LINE — a hand-drawn triangle is
-         neither, so the tick was on and the drawing came out exactly as wobbly as it went in. That is
-         worse than having no correction at all: the tool says it tried. `snapPolygon` refuses
-         anything that is not a polygon, so a swirl or a letter still falls through to the snapper
-         below and is judged there. */
-      const poly = tidy.closed ? snapPolygon(path) : null;
-      if (poly) {
-        path = poly.points;
-      } else {
-        const snapped = snapStroke(path.map(([x, y]) => [x, 0, y]), { normal: [0, 1, 0] });
-        if (snapped?.points?.length > 1) path = snapped.points.map(([x, , z]) => [x, z]);
-      }
-    }
-    const ring = tidy.closed && path.length > 2 ? [...path.slice(0, -1), path[0]] : tidy.ring;
-    setStrokes(s2 => [...s2, { ...tidy, path, ring, fills: [] }]);
+    const next = tidyWith(trail, tidyMode);
+    if (!next) return;
+    // The raw points travel with the stroke, so the choice can be changed later — see tidyWith.
+    setStrokes(s2 => [...s2, { ...next, raw: trail, fills: [] }]);
   }
 
   // ── Fill the last stroke ──────────────────────────────────────────────────────────────────────
@@ -578,6 +566,47 @@ export default function GarnishStudio({
      while nothing could be selected and wrong the moment something could: choosing a shape and then
      choosing a fill filled a different shape. Whatever is picked is the subject; with nothing picked
      the last shape is still the sensible default, because that is what a fresh drawing means. */
+  /* ⚠️ ALWAYS FROM THE RAW POINTS, NEVER FROM THE LAST RESULT. Softening an already-softened stroke
+     melts it, and softening a crisped one gives a rounded polygon rather than a rounded drawing. So
+     every stroke keeps what the hand actually did and the tidy is re-derived from that — which is
+     also what lets the choice be CHANGED after the fact instead of being fixed the instant you lift
+     the pen. You only know which one you wanted once you have seen it. */
+  function tidyWith(raw, mode) {
+    const tidy = tidyDrawn(raw, { minStep: 3, tolerance: 3 });
+    if (!tidy) return null;
+    let path = tidy.path;
+
+    if (mode === 'crisp') {
+      /* ⚠️ POLYGONS FIRST, because `snapStroke` only knows CIRCLE and LINE — a hand-drawn triangle is
+         neither, so the tick was on and the drawing came out exactly as wobbly as it went in. */
+      const poly = tidy.closed ? snapPolygon(path) : null;
+      if (poly) path = poly.points;
+      else {
+        const snapped = snapStroke(path.map(([x, y]) => [x, 0, y]), { normal: [0, 1, 0] });
+        if (snapped?.points?.length > 1) path = snapped.points.map(([x, , z]) => [x, z]);
+      }
+    } else if (mode === 'soft') {
+      path = smoothPath(path, { passes: 3, closed: tidy.closed });
+    }
+
+    const ring = tidy.closed && path.length > 2 ? [...path.slice(0, -1), path[0]] : tidy.ring;
+    return { ...tidy, path, ring };
+  }
+
+  /* Re-tidy every stroke from its raw points. Fills regenerate, because passes cut for a sharp
+     outline no longer sit inside a softened one. */
+  function retidyAll(mode) {
+    setStrokes(all => all.map((s2, i) => {
+      const next = s2.raw ? tidyWith(s2.raw, mode) : null;
+      if (!next) return s2;
+      const pattern = s2.fillPattern && s2.fillPattern !== 'none' ? s2.fillPattern : null;
+      const fills = pattern && next.ring
+        ? fillShape(next.ring, { pattern, spacing: ROPE * 2.2, inset: ROPE * 0.5, ropeWidth: ROPE, seed: i + 3 })
+        : [];
+      return { ...s2, ...next, fills };
+    }));
+  }
+
   function applyFill(pattern) {
     const target = targetIndex;
     const ring = fillRing;
@@ -842,45 +871,66 @@ export default function GarnishStudio({
             </div>
           )}
 
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
-            <input type="checkbox" checked={autoShape} onChange={e => setAutoShape(e.target.checked)}
-              style={{ marginTop: 2, accentColor: color }} />
-            <span>
-              <span style={{ ...labelStyle, textTransform: 'none', fontSize: 11.5, letterSpacing: 0 }}>
-                Auto-correct shape
-              </span>
-              <span style={{ display: 'block', fontSize: 10.5, color: '#999', lineHeight: 1.4 }}>
-                Straightens a drawn triangle or square onto its corners, tidies a near-circle into a
-                circle, and a near-straight run into a straight line. A swirl or a letter is left as
-                you drew it.
-              </span>
-            </span>
-          </label>
+          {/* ⚠️ THREE CHOICES, NOT A TICK. Crisp and soft are OPPOSITE intents — one puts a wobbly
+              triangle onto its corners, the other rounds the corners of a drawn leaf — and a checkbox
+              can only ever mean one of them. Someone asking to soften their drawing had nothing to
+              press, and ticking "auto-correct" harder was never going to give it to them. Changing it
+              re-derives every stroke from the points the hand actually made. */}
+          <div>
+            <span style={labelStyle}>Tidy the drawing</span>
+            <div style={{ marginTop: 5 }}>
+              <Segmented label="Tidy the drawing" isMobile={isMobile}
+                items={[{ id: 'crisp', label: 'Crisp' }, { id: 'soft', label: 'Soft' },
+                        { id: 'raw', label: 'As drawn' }]}
+                value={tidyMode}
+                onChange={m => { setTidyMode(m); retidyAll(m); }} />
+            </div>
+            <div style={{ fontSize: 10, color: '#999', marginTop: 4, lineHeight: 1.4 }}>
+              {tidyMode === 'crisp'
+                ? 'Straightens a triangle or square onto its corners, and a near-circle into a circle.'
+                : tidyMode === 'soft'
+                  ? 'Rounds the corners, for a piece that should look piped rather than cut.'
+                  : 'Left exactly as your hand made it.'}
+            </div>
+          </div>
 
 
           {/* ⚠️ SIDE IS NOT OFFERED, and that is a real limit rather than an oversight. A piece on a
               tier wall can only HUG it — standing has no meaning on a vertical surface, and a flat
               piece has to curve to the wall or it floats at the tangent. That is new geometry, not a
               flag, so the option is absent rather than present and wrong. */}
+          {/* ⚠️ PLACEMENT IS A QUESTION ABOUT THE CAKE, NOT ABOUT THE PIECE. Sitting open beside the
+              plate it asked, while you were still drawing, where a thing you had not finished should
+              go — and it is answered again on the cake anyway, by dragging. So it folds away with its
+              answers on the summary line, and opens at the moment it actually matters. Present but
+              quiet: hiding it outright would make the defaults invisible, and a piece that arrives
+              standing on the board when you assumed flat on the cake is worse than one line of
+              chrome. */}
           {!!strokeCount && (
-            <>
-              <div>
-                <span style={labelStyle}>Where it goes</span>
-                <div style={{ marginTop: 5 }}>
-                  <Segmented label="Where the piece goes" isMobile={isMobile} tone={color}
-                    items={[{ id: 'top', label: 'On the cake' }, { id: 'board', label: 'On the board' }]}
-                    value={zone} onChange={setZone} />
+            <details style={{ border: '1px solid #EDE9E2', borderRadius: 10, padding: '8px 10px' }}>
+              <summary style={{ fontSize: 11.5, fontWeight: 700, color: '#666', cursor: 'pointer' }}>
+                When you place it: {zone === 'board' ? 'on the board' : 'on the cake'},{' '}
+                {mode === 'stand' ? 'standing' : 'lying flat'}
+              </summary>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                <div>
+                  <span style={labelStyle}>Where it goes</span>
+                  <div style={{ marginTop: 5 }}>
+                    <Segmented label="Where the piece goes" isMobile={isMobile} tone={color}
+                      items={[{ id: 'top', label: 'On the cake' }, { id: 'board', label: 'On the board' }]}
+                      value={zone} onChange={setZone} />
+                  </div>
+                </div>
+                <div>
+                  <span style={labelStyle}>How it sits</span>
+                  <div style={{ marginTop: 5 }}>
+                    <Segmented label="How the piece sits" isMobile={isMobile} tone={color}
+                      items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+                      value={mode} onChange={setMode} />
+                  </div>
                 </div>
               </div>
-              <div>
-                <span style={labelStyle}>How it sits</span>
-                <div style={{ marginTop: 5 }}>
-                  <Segmented label="How the piece sits" isMobile={isMobile} tone={color}
-                    items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
-                    value={mode} onChange={setMode} />
-                </div>
-              </div>
-            </>
+            </details>
           )}
 
           {/* ⚠️ ONLY WHEN THERE IS SOMETHING IN IT. An empty "My pieces" heading on a new baker's
