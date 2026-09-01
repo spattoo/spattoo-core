@@ -101,3 +101,26 @@ movableContract('chocolate_garnish', {
     },
   ],
 });
+
+// ── Duplicating a placed piece ───────────────────────────────────────────────────────────────────
+//
+// ⚠️ A COPY THAT LANDS ON ITS ORIGINAL LOOKS LIKE NOTHING HAPPENED, and pressing again quietly makes
+// a third. The step is an ANGLE, not a distance — which is what makes a repeated piece read as the
+// fan the reference cakes are built from — and it widens as the piece sits further out, because near
+// the middle a fixed angle barely moves it and at the rim it is a stride.
+describe('the angle a duplicate steps round by', () => {
+  const step = radius => 0.5 / Math.max(0.25, radius);
+
+  it('moves the copy off its original', () => {
+    expect(step(0.5)).toBeGreaterThan(0.2);
+  });
+
+  it('steps further round when the piece sits near the middle', () => {
+    expect(step(0.3)).toBeGreaterThan(step(0.9));
+  });
+
+  it('does not blow up on a piece at the very centre', () => {
+    expect(Number.isFinite(step(0))).toBe(true);
+    expect(step(0)).toBe(2);
+  });
+});

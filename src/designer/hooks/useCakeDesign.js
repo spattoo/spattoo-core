@@ -1336,6 +1336,34 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       garnishes: (prev.garnishes ?? []).map(g => (g.id === id ? { ...g, ...patch } : g)),
     }));
   }
+  /* ⚠️ A COPY MUST LAND VISIBLY SEPARATE, or it looks as though nothing happened and pressing again
+   * quietly makes a third. A garnish is placed in polar coordinates — an angle round the cake and a
+   * fraction out from the middle — so it steps round the RIM rather than sideways in x/z, which is
+   * the movement that keeps it on the cake at the same distance from the centre. Stickers de-overlap
+   * through a shared surface-aware seat; a garnish cannot use it, because that helper speaks x/z and
+   * theta/u for flat and wall surfaces and knows nothing about `radius`.
+   *
+   * ⚠️ THE STEP IS AN ANGLE, NOT A DISTANCE, which is what makes a repeated piece read as a fan: the
+   * reference cakes place three or five identical pieces at even angles round an arc. It scales with
+   * how far out the piece sits — near the middle a fixed angle would barely move it, and at the rim
+   * the same angle is a wide stride. */
+  function duplicateGarnish(id) {
+    setDesign(prev => {
+      const original = (prev.garnishes ?? []).find(g => g.id === id);
+      if (!original) return prev;
+      const radius = original.radius ?? GARNISH_DEFAULTS.radius ?? 0.5;
+      const step = 0.5 / Math.max(0.25, radius);        // radians — a wider arc the further out it sits
+      return {
+        ...prev,
+        garnishes: [...prev.garnishes, {
+          ...original,
+          id: crypto.randomUUID(),
+          theta: (original.theta ?? 0) + step,
+        }],
+      };
+    });
+  }
+
   function removeGarnish(id) {
     setDesign(prev => ({ ...prev, garnishes: (prev.garnishes ?? []).filter(g => g.id !== id) }));
   }
@@ -1433,7 +1461,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
     addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping,
-    addGarnish, updateGarnish, removeGarnish,
+    addGarnish, updateGarnish, duplicateGarnish, removeGarnish,
     resetDesign,
     addStickerBatch,
     loadDesign,

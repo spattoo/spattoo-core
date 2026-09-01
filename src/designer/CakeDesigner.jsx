@@ -1758,7 +1758,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -7364,12 +7364,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Drag it on the cake to move it round.
         </div>
 
+        {/* ⚠️ DUPLICATION LIVES ON THE CAKE, not in the studio. The reference pieces — three or five
+            identical petals fanned round an arc — differ only in ANGLE, which is placement, and
+            placement belongs to the cake. Arranging them in the studio would mean drawing the
+            arrangement flat and discovering it does not read the same standing up, and it would make
+            "what is this drawing?" stop having one answer. */}
+        <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => duplicateGarnish(g.id)}
+          style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                   border: '1.5px solid #DDD7CD', background: '#fff',
+                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
+          Duplicate
+        </button>
         <button onClick={() => { removeGarnish(g.id); setSelectedGarnishId(null); }}
           style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
                    border: '1.5px solid #E0C9C9', background: '#fff', color: '#A33',
                    fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
           Remove
         </button>
+        </div>
       </div>
     );
   }
