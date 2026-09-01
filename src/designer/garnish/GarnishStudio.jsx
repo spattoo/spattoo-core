@@ -281,14 +281,18 @@ export default function GarnishStudio({
       }
     }
     if (picked != null && strokes[picked]) {
-        const [hx, hy] = handleAt(strokes[picked]);
+        const [hx, hy] = handleAt();
       x.beginPath();
       x.arc(hx * k, hy * k, ROPE * 1.6 * k, 0, Math.PI * 2);
       x.fillStyle = '#2b5ac8'; x.fill();
       x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.stroke();
       // A thin halo, not a box: the shapes are not rectangles and a box round a triangle points at
       // empty corners rather than at the thing selected.
-      line(strokes[picked].ring ?? strokes[picked].path, 1.6, 'rgba(40,90,200,0.9)');
+      // The halo traces every stroke in the selection: on a word, outlining only the letter that
+      // happens to be first says the "B" is selected when the whole of "Ben" will move.
+      for (const m of membersOf(picked)) {
+        line(strokes[m].ring ?? strokes[m].path, 1.6, 'rgba(40,90,200,0.9)');
+      }
     }
     // Wet, still being piped: lighter, so in-progress reads differently from finished.
     if (drawing) rope(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
@@ -388,26 +392,37 @@ export default function GarnishStudio({
      reaches for. Bigger/Smaller buttons in a side panel are a workaround for a missing handle: they
      make you look away from the thing you are sizing and they only move in fixed steps. The buttons
      stay, for fine adjustment, but they are no longer the only way. */
-  const boundsOf = s2 => {
-    const xs = s2.path.map(q => q[0]), ys = s2.path.map(q => q[1]);
+  /* ⚠️ A WORD IS ONE THING TO THE HAND, EVEN THOUGH IT IS MANY STROKES. Letters are stored one per
+     glyph — true to how they are piped, and what lets a bad "g" be fixed alone — but selecting one
+     letter of "Happy Birthday" and dragging it off on its own is nobody's intention. Strokes added
+     together share a `group`, and everything acting on a selection acts on the whole group: move,
+     resize, remove. Picking a single drawn stroke is the same code with a group of one. */
+  const membersOf = i => {
+    const g = strokes[i]?.group;
+    return g == null ? [i] : strokes.map((s2, k) => (s2.group === g ? k : -1)).filter(k => k >= 0);
+  };
+
+  const boundsOfMany = idx => {
+    const pts = idx.flatMap(i => strokes[i]?.path ?? []);
+    if (!pts.length) return { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
     return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
   };
-  const handleAt = s2 => { const b = boundsOf(s2); return [b.x1, b.y1]; };
-
-  const centroidOf = s2 => {
-    const pts = s2.path;
-    return [pts.reduce((a2, q) => a2 + q[0], 0) / pts.length,
-            pts.reduce((a2, q) => a2 + q[1], 0) / pts.length];
+  // ONE handle for the whole selection — a word with a handle on every letter is unusable.
+  const handleAt = () => { const b = boundsOfMany(membersOf(picked)); return [b.x1, b.y1]; };
+  const centroidOfMany = idx => {
+    const b = boundsOfMany(idx);
+    return [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
   };
 
   /* Scale about the shape's OWN centre, not the plate's — resizing a piece must not also relocate it,
      which is what scaling about the origin does and is the sort of thing that reads as a bug. */
   function scalePicked(mul) {
-    setStrokes(all => all.map((s2, i) => {
-      if (i !== picked) return s2;
-      const [cx, cy] = centroidOf(s2);
-      return mapStroke(s2, ([x, y]) => [cx + (x - cx) * mul, cy + (y - cy) * mul]);
-    }));
+    const idx = membersOf(picked);
+    const [cx, cy] = centroidOfMany(idx);   // one centre for the group, or a word grows apart
+    setStrokes(all => all.map((s2, i) => (idx.includes(i)
+      ? mapStroke(s2, ([x, y]) => [cx + (x - cx) * mul, cy + (y - cy) * mul])
+      : s2)));
   }
 
   /* A shape arrives as a finished stroke: closed, so `ring` is set and the fill controls apply to it
@@ -457,10 +472,22 @@ export default function GarnishStudio({
     if (!lines.length) return;
     // Font units are y-UP and centred on the origin; the plate's y runs down, from its top-left.
     const paths = lines.map(st => st.map(([x, y]) => [PLATE / 2 + x, PLATE / 2 - y]));
-    setStrokes(prev => [
-      ...prev,
-      ...paths.map(path => ({ path, raw: path, ring: null, closed: false, gap: 0, area: 0, fills: [] })),
-    ]);
+    /* ⚠️ A SECOND WORD MUST NOT LAND ON THE FIRST. Both are centred on the plate, so without a step
+       the new one sits exactly over the old and reads as a single illegible scribble — which is
+       precisely what happened. Each word steps down and right by a line's height. */
+    const nth = new Set(strokes.map(s2 => s2.group).filter(Boolean)).size;
+    /* A line's height, not a nudge: a word spans most of the plate, so a small step still leaves the
+       two overlapping and unreadable. They stack the way written lines do. */
+    const dx = nth * PLATE * 0.03, dy = nth * PLATE * 0.22;
+    const group = `t${Date.now()}`;
+    setStrokes(prev => {
+      // Arrives SELECTED, so it can be dragged into place at once rather than hunted for.
+      setPicked(prev.length);
+      return [...prev, ...paths.map(path => {
+        const moved = path.map(([x, y]) => [x + dx, y + dy]);
+        return { path: moved, raw: moved, ring: null, closed: false, gap: 0, area: 0, fills: [], group };
+      })];
+    });
     setTextOpen(false);
     setTextValue('');
   }
@@ -506,10 +533,11 @@ export default function GarnishStudio({
     /* ⚠️ THE HANDLE IS TESTED FIRST. It sits ON the shape's own corner, so running the shapes first
        would swallow every press on it and the handle would never do anything. */
     if (picked != null && strokes[picked]) {
-      const h = handleAt(strokes[picked]);
+      const h = handleAt();
       if (Math.hypot(h[0] - pt[0], h[1] - pt[1]) <= ROPE * 4) {
-        const [cx, cy] = centroidOf(strokes[picked]);
-        dragRef.current = { idx: picked, resize: true, cx, cy,
+        const idx = membersOf(picked);
+        const [cx, cy] = centroidOfMany(idx);
+        dragRef.current = { idx, resize: true, cx, cy,
                             from: Math.max(1e-6, Math.hypot(pt[0] - cx, pt[1] - cy)) };
         return;
       }
@@ -527,8 +555,9 @@ export default function GarnishStudio({
        So: a press always begins a stroke. `up()` reads a press that never moved as a TAP and selects
        instead. Dragging an ALREADY-selected shape still moves it, because that case is caught above
        this line. */
-    if (picked != null && hitStroke(pt) === picked) {
-      dragRef.current = { idx: picked, last: pt };
+    /* Any letter of the picked word grabs the word — the group is the unit, not the glyph. */
+    if (picked != null && membersOf(picked).includes(hitStroke(pt) ?? -1)) {
+      dragRef.current = { idx: membersOf(picked), last: pt };
       return;
     }
     setTrail([pt]);
@@ -542,7 +571,7 @@ export default function GarnishStudio({
       const now = Math.max(1e-6, Math.hypot(pt[0] - d.cx, pt[1] - d.cy));
       const mul = now / d.from;
       d.from = now;
-      setStrokes(all => all.map((s2, i) => (i === d.idx
+      setStrokes(all => all.map((s2, i) => (d.idx.includes(i)
         ? mapStroke(s2, ([x, y]) => [d.cx + (x - d.cx) * mul, d.cy + (y - d.cy) * mul])
         : s2)));
       return;
@@ -550,7 +579,8 @@ export default function GarnishStudio({
     if (d) {
       const dx = pt[0] - d.last[0], dy = pt[1] - d.last[1];
       d.last = pt;
-      setStrokes(all => all.map((s2, i) => (i === d.idx ? mapStroke(s2, ([x, y]) => [x + dx, y + dy]) : s2)));
+      setStrokes(all => all.map((s2, i) => (d.idx.includes(i)
+        ? mapStroke(s2, ([x, y]) => [x + dx, y + dy]) : s2)));
       return;
     }
     if (drawing) setTrail(t => [...t, pt]);
@@ -949,7 +979,7 @@ export default function GarnishStudio({
               <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                 <button type="button" onClick={() => scalePicked(1.15)} style={miniBtn}>Bigger</button>
                 <button type="button" onClick={() => scalePicked(1 / 1.15)} style={miniBtn}>Smaller</button>
-                <button type="button" onClick={() => { setStrokes(a2 => a2.filter((_, i) => i !== picked)); setPicked(null); }}
+                <button type="button" onClick={() => { const idx = membersOf(picked); setStrokes(a2 => a2.filter((_, i) => !idx.includes(i))); setPicked(null); }}
                   style={{ ...miniBtn, color: '#A33', borderColor: '#E0C9C9' }}>Remove</button>
               </div>
               <div style={{ fontSize: 10, color: '#8899aa', marginTop: 5, lineHeight: 1.4 }}>
