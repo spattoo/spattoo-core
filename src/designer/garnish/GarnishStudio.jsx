@@ -621,9 +621,13 @@ export default function GarnishStudio({
             the other hand — so they belong within a thumb's reach of the drawing, the way a phone
             drawing app puts them. What is decided once and left — where it goes, how it sits, its
             name — stays in the column. INVARIANTS #12. */}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center',
-                      paddingTop: 2, position: 'relative' }}>
+        {/* ⚠️ THE RAIL FLOATS ON THE PLATE, IT DOES NOT TAKE ROOM FROM IT. Sitting beside the canvas
+            it stole 56px of the only thing that matters — and on a phone the drawing surface is
+            already the scarcest thing on the screen. Every phone drawing app overlays its tools for
+            this reason. The plate goes back to full width and the tools sit on top of it. */}
+        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 4, display: 'flex',
+                      flexDirection: 'column', gap: 10, alignItems: 'center' }}>
           {colorControl && (
             <>
               {/* ⚠️ THE WHEEL IS THE LABEL. "Chocolate colour" beside a brown dot said what the dot
@@ -642,7 +646,7 @@ export default function GarnishStudio({
               {colorOpen && (
                 /* Floats OVER the plate rather than pushing it: opening a picker must not move the
                    thing you are about to colour. */
-                <div style={{ position: 'absolute', top: 44, left: 0, zIndex: 5, width: 236,
+                <div style={{ position: 'absolute', top: 44, left: 0, zIndex: 6, width: 236,
                               padding: 10, borderRadius: 12, background: '#fff',
                               border: '1px solid #E3DFD8', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
                   {colorControl}
@@ -658,10 +662,10 @@ export default function GarnishStudio({
                 aria-pressed={kind === o.id}
                 title={o.id === 'piped' ? 'A nozzle laying a line of chocolate. Applies to every shape here.'
                                         : 'Spread thin, set, then cut. Applies to every shape here.'}
-                style={{ width: 46, padding: '6px 0', borderRadius: 8, cursor: 'pointer',
-                         fontFamily: 'inherit', fontSize: 11, fontWeight: 800,
-                         border: `1.5px solid ${kind === o.id ? '#1a1a1a' : '#E0DDD8'}`,
-                         background: kind === o.id ? '#1a1a1a' : '#fff',
+                style={{ width: 44, padding: '5px 0', borderRadius: 8, cursor: 'pointer',
+                         fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
+                         border: `1.5px solid ${kind === o.id ? '#1a1a1a' : 'rgba(0,0,0,0.10)'}`,
+                         background: kind === o.id ? '#1a1a1a' : 'rgba(255,255,255,0.92)',
                          color: kind === o.id ? '#fff' : '#666' }}>{o.label}</button>
             ))}
           </div>
@@ -669,16 +673,16 @@ export default function GarnishStudio({
           {/* ⚠️ VERTICAL, BESIDE THE DRAWING. A horizontal slider at the foot of a settings column is
               a round trip from the hand and says nothing about the line getting fatter as you move
               up it. Rotated and next to the plate, it reads the way it behaves. */}
-          <div style={{ height: 150, width: 38, display: 'flex', alignItems: 'center',
-                        justifyContent: 'center' }}>
+          <div style={{ height: 140, width: 38, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', borderRadius: 19,
+                        background: 'rgba(255,255,255,0.92)' }}>
             <input type="range" min={3} max={14} step={1} value={ROPE}
               aria-label="Line thickness" title={`Line thickness: ${ROPE}`}
               onChange={e => onRopeChange?.(Number(e.target.value))}
-              style={{ width: 140, transform: 'rotate(-90deg)', accentColor: color }} />
+              style={{ width: 124, transform: 'rotate(-90deg)', accentColor: color }} />
           </div>
         </div>
 
-        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
         <canvas
           ref={ref}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
@@ -707,7 +711,6 @@ export default function GarnishStudio({
           </div>
         )}
 
-        </div>
         </div>
 
         {/* ⚠️ DIRECTLY UNDER THE PLATE. A shape lands ON the drawing, so the buttons that add one
