@@ -366,6 +366,26 @@ Three questions to ask before laying anything out:
 it had started acting on the PICKED shape — so it described behaviour that no longer existed, and
 anyone who had just picked a shape had every reason to distrust it.
 
+## 13. Unsaved work is never dismissed by an accident — RULE IS ON
+**PROJECT-WIDE.** A backdrop click and Esc are for a panel somebody opened and does not want. They are
+NOT for a panel holding work: a stray click outside the garnish studio threw away a drawing that had
+taken five minutes, with no undo and no warning.
+
+⚠️ **THIS KEEPS HAPPENING, AND THE MECHANISM ALREADY EXISTS.** `Panel` takes `guardUnsaved` — pass it
+and Esc and the backdrop are ignored while it is true. Every occurrence of this bug has been a panel
+that simply never passed it. The fix is never new code; it is remembering that the panel has state.
+
+**The rule.** Any surface that can hold work the person has not committed — a drawing, a form part-
+filled, an upload mid-flight — passes `guardUnsaved` with the condition that says work exists
+(`strokeCount > 0`, `isDirty`, `text.trim()`). ⚠️ **The deliberate exits must stay one press away:** ✕
+and Cancel still close, because guarding everything is how people learn to fear the panel.
+
+⚠️ **"They can just redo it" is not an answer.** The work being small to rebuild is exactly why nobody
+warned them; the cost is the surprise, and the lesson they take is to distrust the tool.
+
+**No gate protects this** — whether a panel holds work is a question about meaning, not syntax. Ask it
+of every panel you add, and check it by opening yours and clicking the backdrop mid-task.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —

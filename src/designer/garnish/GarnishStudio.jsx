@@ -139,6 +139,7 @@ export default function GarnishStudio({
   const [picked, setPicked] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
   const dragRef = useRef(null);
+  const downRef = useRef(null);
   const [zone, setZone] = useState('top');
   const [mode, setMode] = useState('stand');
   /* ⚠️ THE LIBRARY IS OPTIONAL, and its absence must not break the studio. `apiClient` may not carry
@@ -470,6 +471,7 @@ export default function GarnishStudio({
   function down(e) {
     ref.current.setPointerCapture(e.pointerId);
     const pt = at(e);
+    downRef.current = pt;
 
     /* ⚠️ THE HANDLE IS TESTED FIRST. It sits ON the shape's own corner, so running the shapes first
        would swallow every press on it and the handle would never do anything. */
@@ -483,9 +485,22 @@ export default function GarnishStudio({
       }
     }
 
-    const hit = hitStroke(pt);
-    if (hit != null) { setPicked(hit); dragRef.current = { idx: hit, last: pt }; return; }
-    setPicked(null);
+    /* ⚠️ DRAWING IS THE DEFAULT. A PRESS NEVER SELECTS. This selected whatever lay under the press,
+       which made the studio single-stroke without ever saying so: once anything was on the plate, a
+       press near it grabbed that shape instead of starting a line, so a leaf drawn in five strokes
+       was impossible and the drawing simply stayed at one stroke.
+
+       It was reported as "I cannot continue the drawing", diagnosed correctly, and then dismissed as
+       a test-harness artefact when the harness reproduced it — the harness was right and I was not.
+       A repro that agrees with the report is evidence, not noise.
+
+       So: a press always begins a stroke. `up()` reads a press that never moved as a TAP and selects
+       instead. Dragging an ALREADY-selected shape still moves it, because that case is caught above
+       this line. */
+    if (picked != null && hitStroke(pt) === picked) {
+      dragRef.current = { idx: picked, last: pt };
+      return;
+    }
     setTrail([pt]);
   }
   function move(e) {
@@ -511,6 +526,21 @@ export default function GarnishStudio({
     if (drawing) setTrail(t => [...t, pt]);
   }
   function up() {
+    /* A press that never really moved was a tap: pick what is under it, and draw nothing. The slop is
+       generous because a finger never presses perfectly still — too tight and every tap leaves a
+       one-pixel blob of chocolate behind. */
+    const from = downRef.current;
+    downRef.current = null;
+    const moved = from && trail.length
+      ? Math.hypot(trail[trail.length - 1][0] - from[0], trail[trail.length - 1][1] - from[1])
+      : Infinity;
+    if (trail.length && moved <= TAP_SLOP) {
+      setPicked(hitStroke(from));            // null on bare plate, which deselects
+      setTrail([]);
+      dragRef.current = null;
+      return;
+    }
+
     if (dragRef.current) { dragRef.current = null; return; }
     const tidy = tidyDrawn(trail, { minStep: 3, tolerance: 3 });
     setTrail([]);
@@ -573,6 +603,10 @@ export default function GarnishStudio({
 
   return (
     <Panel
+      /* ⚠️ A DRAWING IS UNSAVED WORK. `Panel` has guarded dismissal built in and this simply never
+         passed it, so a stray click on the backdrop threw away a piece somebody had just spent five
+         minutes piping. The ✕ and Cancel still close — deliberate exits stay one press away. */
+      guardUnsaved={strokeCount > 0}
       title="Pipe a chocolate garnish"
       width={720}
       flow="block"
@@ -926,6 +960,9 @@ function shade(colour, amount) {
   const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix);
   return `rgb(${r}, ${g}, ${b})`;
 }
+
+/* Plate units: a press that wanders less than this was a tap, not a stroke. */
+const TAP_SLOP = 6;
 
 const labelStyle = { display: 'block', fontSize: 10, fontWeight: 800, color: '#888',
                      letterSpacing: 1, textTransform: 'uppercase' };

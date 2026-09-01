@@ -90,6 +90,10 @@ screenshot of something broken that looks fine. Use real pointer or keyboard inp
   features were built. What is touched constantly goes near the work; what is set once and left can
   collapse. A label names what the control actually acts on.
 
+- **Unsaved work is never dismissed by accident** (INVARIANTS #13). `Panel` already takes
+  `guardUnsaved` — every occurrence of this bug has been a panel that never passed it. Deliberate
+  exits (✕, Cancel) still close.
+
 ## Designer work
 
 Read `src/designer/INVARIANTS.md` first — placement modes, zones, the one-renderer rule, right-side
