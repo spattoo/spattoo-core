@@ -6,6 +6,7 @@ import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
 import { snapPolygon } from '../geometry/snapPolygon.js';
 import { smoothPath } from '../geometry/smoothPath.js';
+import { brushStroke } from '../geometry/brushStroke.js';
 // ⚠️ CREAM'S OWN LETTERFORMS. Chocolate writing is the same motion — see textCentrelines.
 import { textCentrelines, CREAM_FONTS, DEFAULT_CREAM_FONT } from '../geometry/creamText.js';
 import { pointInRing } from '../geometry/regions.js';
@@ -172,7 +173,12 @@ export default function GarnishStudio({
     const changed = lastColor.current !== color;
     lastColor.current = color;
     if (!changed || picked == null) return;
-    setStrokes(all => all.map((s2, i) => (i === picked ? { ...s2, color } : s2)));
+    /* ⚠️ A WORD IS ONE COLOUR. Letters are separate strokes, so colouring "Happy Birthday" one glyph
+       at a time is fourteen presses to reach the obvious result — and nobody wants a two-tone word by
+       default. The group is the unit here, as it is for move, resize and remove; a single drawn
+       stroke is a group of one, so a shape still takes colour on its own. */
+    const idx = membersOf(picked);
+    setStrokes(all => all.map((s2, i) => (idx.includes(i) ? { ...s2, color } : s2)));
   }, [color, picked]);
 
   const subject = picked != null ? strokes[picked] : last;
@@ -249,7 +255,28 @@ export default function GarnishStudio({
       x.stroke();
     };
 
-    if (kind === 'cut') {
+    if (kind === 'brushed') {
+      /* Filled, because a smear is a surface rather than a line — then the ridges the knife's edge
+         left, in a lighter shade of the same chocolate, which is most of what makes it read as a
+         smear rather than as a coloured shape. */
+      for (const s2 of strokes) {
+        if (!s2.brush) { rope(s2.path, ROPE + 2, s2.color ?? color); continue; }
+        const c2 = s2.color ?? color;
+        x.beginPath();
+        s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
+        x.closePath();
+        x.fillStyle = c2; x.fill();
+        x.strokeStyle = shade(c2, -0.3); x.lineWidth = Math.max(1, 1.6 * k); x.stroke();
+        for (const r of s2.brush.ridges) {
+          x.beginPath();
+          r.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
+          x.strokeStyle = shade(c2, 0.28);
+          x.lineWidth = Math.max(1, ROPE * 0.45 * k);
+          x.lineCap = 'round';
+          x.stroke();
+        }
+      }
+    } else if (kind === 'cut') {
       /* ⚠️ THE PLATE MUST SHOW WHAT THE CAKE WILL SHOW. Drawing a cut piece as outlines would let
          somebody design a solid panel while looking at a wireframe of it, so every judgement made
          here would be about something they are not getting. Holes punched with evenodd — the same
@@ -614,6 +641,23 @@ export default function GarnishStudio({
 
        Applied ONCE, here, to the points that get stored — exactly as the pen does it. A tidy-up that
        ran on every render would re-tidy an already-tidy line and creep. */
+    /* ⚠️ A BRUSHSTROKE IS FINISHED WHEN THE HAND LIFTS. Piped strokes accumulate into one drawing;
+       a smear is a single pull of the spatula, so the gesture IS the piece — its width comes from the
+       pressure, not from a nozzle setting, and there is no second stroke to add to it. The path is
+       kept as the stroke's spine so the build guide can still say which way the pull went. */
+    if (kind === 'brushed') {
+      const tidyB = tidyDrawn(trail, { minStep: 3, tolerance: 3 });
+      if (!tidyB) return;
+      const spine = smoothPath(tidyB.path, { passes: 2, closed: false });
+      const brush = brushStroke(spine, { width: ROPE * 7, seed: strokes.length + 1 });
+      if (!brush) return;
+      setStrokes(s2 => { setPicked(s2.length); return [...s2, {
+        path: spine, raw: trail, ring: brush.outline, closed: true, gap: 0, area: 0,
+        fills: [], brush,
+      }]; });
+      return;
+    }
+
     const next = tidyWith(trail, tidyMode);
     if (!next) return;
     // The raw points travel with the stroke, so the choice can be changed later — see tidyWith.
@@ -772,8 +816,15 @@ export default function GarnishStudio({
               </button>
               {colorOpen && (
                 /* Floats OVER the plate rather than pushing it: opening a picker must not move the
-                   thing you are about to colour. */
-                <div style={{ position: 'absolute', top: 44, left: 0, zIndex: 6, width: 236,
+                   thing you are about to colour.
+
+                   ⚠️ AND IT CLOSES ONCE A COLOUR IS CHOSEN. Left open it covers the drawing — so the
+                   one thing you opened it to judge is the one thing you cannot see, which is
+                   INVARIANTS #11 with the control sitting on top of its own effect. Closed on
+                   pointer-UP rather than on the colour changing, because dragging round the wheel
+                   changes the colour continuously and would snap the picker shut mid-drag. */
+                <div onPointerUp={() => setColorOpen(false)}
+                  style={{ position: 'absolute', top: 44, left: 0, zIndex: 6, width: 236,
                               padding: 10, borderRadius: 12, background: '#fff',
                               border: '1px solid #E3DFD8', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
                   {colorControl}
@@ -784,11 +835,15 @@ export default function GarnishStudio({
 
           {/* Piped or cut sits with the colour: both answer "what is this made of". */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[{ id: 'piped', label: 'Piped' }, { id: 'cut', label: 'Cut' }].map(o => (
+            {[{ id: 'piped', label: 'Piped' }, { id: 'cut', label: 'Cut' },
+              { id: 'brushed', label: 'Brush' }].map(o => (
               <button key={o.id} type="button" onClick={() => setKind(o.id)}
                 aria-pressed={kind === o.id}
-                title={o.id === 'piped' ? 'A nozzle laying a line of chocolate. Applies to every shape here.'
-                                        : 'Spread thin, set, then cut. Applies to every shape here.'}
+                title={o.id === 'piped'
+                  ? 'A nozzle laying a line of chocolate. Applies to every shape here.'
+                  : o.id === 'cut'
+                    ? 'Spread thin, set, then cut. Applies to every shape here.'
+                    : 'One pull of a spatula through coloured white chocolate. Each drag is its own piece.'}
                 style={{ width: 44, padding: '5px 0', borderRadius: 8, cursor: 'pointer',
                          fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
                          border: `1.5px solid ${kind === o.id ? '#1a1a1a' : 'rgba(0,0,0,0.10)'}`,

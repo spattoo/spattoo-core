@@ -83,7 +83,11 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
        one is its regions extruded into a slab with the inner rings punched out. Rendering a cut piece
        as rope would show a wireframe of a solid panel — which is the shape a baker asked for, made
        the wrong way. */
-    if (g.kind === 'cut' && g.rings?.length) {
+    /* ⚠️ A SET BRUSHSTROKE IS A SLAB, NOT A ROPE. It is chocolate smeared thin and peeled off
+       acetate, so physically it is the same object a cut piece is — an outline with a thickness —
+       and it must build the same way. Sweeping it as a piped path would give a fat line following
+       the spine and throw away the shape the spatula made, which is the entire piece. */
+    if ((g.kind === 'cut' || g.kind === 'brushed') && g.rings?.length) {
       const scale = world / (g.plate ?? 420);
       // Only the first panel: a piece is ONE piece of chocolate. Two separate outlines are two
       // garnishes, and quietly merging them would place something nobody made.
@@ -166,7 +170,7 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
 
 /* One colour's worth of a piece. `frame` is the whole piece's bounds — see the note at the call. */
 function buildPart(part, g, world, frame = null) {
-  if (g.kind === 'cut' && part.rings?.length) {
+  if ((g.kind === 'cut' || g.kind === 'brushed') && part.rings?.length) {
     const scale = world / (g.plate ?? 420);
     const [panel] = panelsFrom(part.rings);
     const built = panel && buildPanelGeometry([panel.outline, ...panel.holes], { scale, frame });
