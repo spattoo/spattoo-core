@@ -11,11 +11,20 @@ const widthAt = (b, x) => {
 describe('a chocolate brushstroke', () => {
   /* ⚠️ ASYMMETRY IS THE WHOLE TELL. A stroke tapering equally at both ends reads as a leaf or a
      petal; a real one is blunt where the spatula lands and runs out to a ragged point. */
-  it('is blunt where it starts and pulls out to a point', () => {
+  it('is blunt where it starts and thins towards the end', () => {
     const b = brushStroke(straight, { width: 60 });
     const start = widthAt(b, 30), end = widthAt(b, 290);
     expect(start).toBeGreaterThan(30);         // lands already wide
-    expect(end).toBeLessThan(start / 3);       // and runs dry
+    expect(end).toBeLessThan(start / 2);       // and runs thin
+  });
+
+  /* ⚠️ IT TEARS OFF, IT DOES NOT COME TO A POINT. Tapered to nothing the stroke ends in a needle — a
+     mathematical spike no chocolate has ever made. The layer thins until it cannot hold together and
+     rips, leaving a narrow but BLUNT, ragged end. */
+  it('ends bluntly, not in a needle', () => {
+    const b = brushStroke(straight, { width: 60 });
+    const tip = widthAt(b, 296);
+    expect(tip).toBeGreaterThan(6);            // still has width where it lets go
   });
 
   it('is broadest through the first half, not in the middle', () => {

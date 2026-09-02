@@ -1351,15 +1351,18 @@ const bez = (a, b, c, n = 22) => Array.from({ length: n }, (_, i) => {
 });
 
 const BRUSH_PRESETS = [
-  { key: 'straight', label: 'Straight pull', width: 7,
+  /* ⚠️ BROADER THAN A ROPE. These were sized like piped lines and came out as narrow bands; the
+     pieces on a brushstroke cake are a good fraction as wide as they are long, because a spatula is
+     wide. Width here is a multiple of the knife setting, so the slider still scales all of them. */
+  { key: 'straight', label: 'Straight pull', width: 11,
     spine: () => bez([0, 100], [0, 50], [0, 0]) },
-  { key: 'long',     label: 'Long taper',    width: 5.6,
+  { key: 'long',     label: 'Long taper',    width: 9,
     spine: () => bez([0, 130], [2, 60], [6, -10]) },
-  { key: 'sweep',    label: 'Curved sweep',  width: 6.6,
+  { key: 'sweep',    label: 'Curved sweep',  width: 10.5,
     spine: () => bez([0, 100], [26, 46], [8, -6]) },
-  { key: 'stub',     label: 'Short stub',    width: 8,
+  { key: 'stub',     label: 'Short stub',    width: 12,
     spine: () => bez([0, 52], [1, 26], [3, 0]) },
-  { key: 'wide',     label: 'Wide flat',     width: 11,
+  { key: 'wide',     label: 'Wide flat',     width: 16,
     spine: () => bez([0, 74], [0, 36], [0, 0]) },
   /* ⚠️ THE PIECE THE REFERENCES ARE ACTUALLY MADE OF — a broad blade pressed and dragged once, so it
      is nearly half as wide as it is long, with a clean sweep down one side, a torn edge down the

@@ -144,14 +144,16 @@ function turnRadius(pts, i) {
  * pressure curve, because that is what it is. */
 function halfWidth(t, width) {
   const w = width / 2;
-  if (t < 0.06) return w * lerp(0.72, 1, t / 0.06);      // the landing: blunt, already wide
-  if (t < 0.35) return w;                                 // full pressure
-  return w * Math.max(0.02, Math.pow(1 - (t - 0.35) / 0.65, 1.35));   // pulling out, running dry
+  /* ⚠️ NO SHOULDER. Holding full width and then tapering puts a corner where the two meet, and the
+   * stroke comes out as a bottle: straight sides, a neck, a blunt top. A spatula never does that —
+   * the chocolate starts being used up from the moment it lands, so the width falls STEADILY from
+   * the landing to the tear. One smooth curve, no flat section to step off. */
+  if (t < 0.1) return w * lerp(0.86, 1, t / 0.1);         // the landing, already broad
+  const TIP = 0.42;                                       // where the chocolate gives out
+  const u = (t - 0.1) / 0.9;
+  return w * lerp(1, TIP, Math.pow(u, 1.5));              // slow at first, then away
 }
 
-/* ⚠️ A WIDE BLADE DOES NOT RUN DRY THE SAME WAY. Pressed and dragged, it lays a broad slab with
- * nearly parallel sides and a blunt foot where it is snapped off the acetate — the pink reference
- * piece — rather than tapering to a point. Same generator, a different pressure curve. */
 export function bladeProfile(t, width) {
   const w = width / 2;
   if (t < 0.08) return w * lerp(0.82, 1, t / 0.08);
