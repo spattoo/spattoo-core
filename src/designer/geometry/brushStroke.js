@@ -72,10 +72,22 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) 
     right.push([pts[i][0] - nx * w, pts[i][1] - ny * w]);
   }
 
-  const outline = [...left, ...right.reverse()];
+  const outline = [...left, ...right.slice().reverse()];
   outline.push([...outline[0]]);
 
-  return { outline, ridges: ridgesAlong(pts, seg, total, width, rnd) };
+  /* ⚠️ THE BAND, NOT JUST THE OUTLINE, AND THIS IS WHAT MAKES A DOUBLING-BACK STROKE FILL.
+   * Left-plus-reversed-right is one polygon, and where a stroke turns back on itself that polygon
+   * CROSSES: it splits into two lobes with opposite winding, and under the non-zero rule the second
+   * cancels the first — so half the piece filled and half came out as an empty outline. Clamping the
+   * width to the turn stopped the whole shape vanishing but not this, because the crossing is real
+   * geometry, not an artefact of width.
+   *
+   * A swept band has no global winding to cancel: each cross-section quad is filled on its own and
+   * overlaps simply overdraw. It is also closer to the truth — a spatula lays chocolate down section
+   * by section; it does not trace an outline and pour. */
+  const band = left.map((l, i) => [l, right[i]]);
+
+  return { outline, band, ridges: ridgesAlong(pts, seg, total, width, rnd) };
 }
 
 /* The radius of the circle through this point and its neighbours — how tight the turn is here.

@@ -270,10 +270,30 @@ export default function GarnishStudio({
       for (const s2 of strokes) {
         if (!s2.brush) { rope(s2.path, ROPE + 2, s2.color ?? color); continue; }
         const c2 = s2.color ?? color;
+        /* Filled section by section — see `band` in brushStroke.js. One polygon of the whole
+           outline cancels itself wherever the stroke doubles back. */
+        x.fillStyle = c2;
+        const band = s2.brush.band;
+        if (band) {
+          for (let i = 0; i < band.length - 1; i++) {
+            const [l0, r0] = band[i], [l1, r1] = band[i + 1];
+            x.beginPath();
+            x.moveTo(l0[0] * k, l0[1] * k);
+            x.lineTo(l1[0] * k, l1[1] * k);
+            x.lineTo(r1[0] * k, r1[1] * k);
+            x.lineTo(r0[0] * k, r0[1] * k);
+            x.closePath();
+            x.fill();
+            /* ⚠️ AND STROKED IN ITS OWN COLOUR. Two abutting fills antialias against the background
+               along their shared edge, so a band of them shows a faint seam at every cross-section —
+               a ladder of pale lines across the piece. A hairline in the fill colour closes it. */
+            x.strokeStyle = c2; x.lineWidth = 1; x.stroke();
+          }
+        }
         x.beginPath();
         s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
         x.closePath();
-        x.fillStyle = c2; x.fill();
+        if (!band) x.fill();
 
         /* ⚠️ THE EDGE IS RAISED, AND THAT IS WHAT THE REFERENCE SHOWS. Chocolate dragged with a
            spatula banks up along the sides and thins in the middle, so a real stroke has a lip that
@@ -454,7 +474,9 @@ export default function GarnishStudio({
     ring: s2.ring ? s2.ring.map(f) : null,
     fills: s2.fills.map(fl => fl.map(f)),
     brush: s2.brush
-      ? { outline: s2.brush.outline.map(f), ridges: s2.brush.ridges.map(r => r.map(f)) }
+      ? { outline: s2.brush.outline.map(f),
+          band: s2.brush.band ? s2.brush.band.map(([l, r]) => [f(l), f(r)]) : undefined,
+          ridges: s2.brush.ridges.map(r => r.map(f)) }
       : undefined,
   });
 

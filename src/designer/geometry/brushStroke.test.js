@@ -61,6 +61,18 @@ describe('a chocolate brushstroke', () => {
     expect(Math.abs(area / 2)).toBeGreaterThan(1000);
   });
 
+  /* ⚠️ WHERE A STROKE DOUBLES BACK, ITS OUTLINE CROSSES — two lobes of opposite winding, and the
+     non-zero fill rule cancels one against the other. Half the piece filled and half came out as an
+     empty outline. The band is filled section by section instead, which cannot cancel. */
+  it('gives a band of cross-sections, not only an outline', () => {
+    const b = brushStroke(straight, { width: 60 });
+    expect(b.band).toHaveLength(straight.length);
+    expect(b.band[0]).toHaveLength(2);
+    // Each pair straddles the spine: the two sides are on opposite sides of the path point.
+    const [l, r] = b.band[5];
+    expect((l[1] - straight[5][1]) * (r[1] - straight[5][1])).toBeLessThan(0);
+  });
+
   it('has nothing to say about a gesture too short to be one', () => {
     expect(brushStroke([[0, 0]])).toBeNull();
     expect(brushStroke([[5, 5], [5, 5]])).toBeNull();
