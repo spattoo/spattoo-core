@@ -170,15 +170,23 @@ export default function GarnishStudio({
      freezes at whatever the picker happened to say when it was made. */
   const lastColor = useRef(color);
   useEffect(() => {
-    const changed = lastColor.current !== color;
+    const before = lastColor.current;       // the colour the unstamped strokes are still showing
+    const changed = before !== color;
     lastColor.current = color;
     if (!changed || picked == null) return;
     /* ⚠️ A WORD IS ONE COLOUR. Letters are separate strokes, so colouring "Happy Birthday" one glyph
        at a time is fourteen presses to reach the obvious result — and nobody wants a two-tone word by
        default. The group is the unit here, as it is for move, resize and remove; a single drawn
        stroke is a group of one, so a shape still takes colour on its own. */
+    /* ⚠️ AND EVERY OTHER PIECE KEEPS THE COLOUR IT HAD. A stroke with no colour of its own follows
+       the PIECE default — which is what lets a whole drawing be recoloured at once — but that means
+       moving the default while one shape is selected silently repaints every shape that has never
+       been given a colour. Two pieces changed when one was picked. So the others are frozen at the
+       colour they are currently showing, and only then does the picked one take the new one. */
     const idx = membersOf(picked);
-    setStrokes(all => all.map((s2, i) => (idx.includes(i) ? { ...s2, color } : s2)));
+    setStrokes(all => all.map((s2, i) => (idx.includes(i)
+      ? { ...s2, color }
+      : { ...s2, color: s2.color ?? before })));
   }, [color, picked]);
 
   const subject = picked != null ? strokes[picked] : last;
@@ -408,11 +416,19 @@ export default function GarnishStudio({
     return sum / 2;
   };
 
+  /* ⚠️ EVERY GEOMETRY THE STROKE OWNS, NOT JUST THE ONES IT STARTED WITH. A brushstroke carries its
+     smear — the generated outline and the knife's ridges — and those were left behind when the stroke
+     moved: the selection halo (drawn from `ring`) slid across the plate while the chocolate stayed
+     where it was, so dragging and resizing looked broken and the piece appeared to detach from its
+     own outline. Anything added to a stroke that holds points has to be transformed here too. */
   const mapStroke = (s2, f) => ({
     ...s2,
     path: s2.path.map(f),
     ring: s2.ring ? s2.ring.map(f) : null,
     fills: s2.fills.map(fl => fl.map(f)),
+    brush: s2.brush
+      ? { outline: s2.brush.outline.map(f), ridges: s2.brush.ridges.map(r => r.map(f)) }
+      : undefined,
   });
 
   /* ⚠️ A CORNER YOU DRAG, because that is how resizing works everywhere else and it is what a hand
