@@ -24,6 +24,45 @@ export const GARNISH_INK = '#4A2C1B';
  * studio preview, and anywhere else a piece is shown. Spread it; do not read values out of it and
  * re-state them, which is the same drift by another route.
  */
+/**
+ * What a colour LOOKS LIKE once the cake has rendered it.
+ *
+ * ⚠️ A FLAT FILL AND A LIT MATERIAL CANNOT AGREE BY COINCIDENCE. The studio draws ink on a canvas;
+ * the cake shades a surface. Tuning one to match the other by eye works until either is touched, and
+ * it was tuned twice here and drifted twice — a teal piece arriving as pale mint. Colour is the thing
+ * a baker picks deliberately, so a preview that is wrong about it is worse than no preview.
+ *
+ * The fix is not a better guess: it is that ONE function decides what a colour looks like, and both
+ * sides ask it. The cake asks by rendering with these material props; the studio asks by filling with
+ * this. They cannot drift, because there is nothing to keep in step.
+ *
+ * ⚠️ WHAT THE RENDERER ACTUALLY DOES TO A COLOUR: it lights the surface (which darkens it slightly
+ * under this rig) and then ADDS a specular reflection of the environment, which is white. That
+ * addition is the whole discrepancy — "the colour, plus a sheet of white". Both terms come from the
+ * same numbers the material is built from, so changing the material changes this in step.
+ *
+ * ⚠️ IT IS EXACT ONLY FACE-ON. A piece standing at an angle catches more environment, so a few per
+ * cent of drift remains — but drift of a few per cent is not the same kind of thing as mint versus
+ * teal, and the honest answer to the rest is to render the plate itself in 3D.
+ */
+export function asRendered(color, gloss) {
+  const m = /^#([0-9a-f]{6})$/i.exec(color ?? '');
+  if (!m) return color ?? GARNISH_INK;
+  const g = gloss ?? GARNISH_GLOSS_DEFAULT;
+
+  // The same two numbers the material is given, so the two can never be set independently.
+  const clearcoat = 0.06 + g * 0.30;
+  const env = 0.25 + g * 0.45;
+
+  const DIFFUSE = 0.94;                 // the rig's key + ambient, face-on
+  const white = Math.min(0.35, clearcoat * env * 0.9);
+
+  const n = parseInt(m[1], 16);
+  const mix = c => Math.round(Math.min(255, c * DIFFUSE * (1 - white) + 255 * white));
+  const [r, gg, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix);
+  return `rgb(${r}, ${gg}, ${b})`;
+}
+
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
   const g = gloss ?? GARNISH_GLOSS_DEFAULT;
   return {

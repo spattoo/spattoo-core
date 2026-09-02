@@ -411,6 +411,31 @@ it is a picture that happens to be nearby.
 **No gate protects this** — sameness is a judgement about meaning. Check it by putting your new
 control beside the existing one and asking whether they look like the same family.
 
+## 15. A preview and the thing previewed ask ONE function — RULE IS ON
+**PROJECT-WIDE, and it binds on every studio we build.** A studio draws on a canvas; the cake renders
+a lit material. Those two produce different pixels for the same colour, and the difference is not
+small: a teal piece previewed in the studio arrived on the cake as pale mint.
+
+⚠️ **THE ANSWER IS NEVER TO TUNE ONE TOWARDS THE OTHER.** That was tried twice here and drifted twice,
+because it is two sets of numbers maintained by hand with nothing keeping them in step. The fix is
+that **one function decides**, and both sides ask it: the cake asks by rendering with the material
+props it returns, the studio asks by filling with `asRendered()`. Then there is nothing left to keep
+in step.
+
+⚠️ **COLOUR IS NOT A DETAIL TO BE TRADED AWAY.** It is chosen deliberately, and a preview that is
+wrong about it is worse than no preview — the person believes it, designs around it, and finds out on
+the cake. "Close enough" is not available for the one property somebody picked on purpose, and
+offering to accept the difference is not an answer to be put to them.
+
+**What the renderer does to a colour**, and therefore what the shared function models: it lights the
+surface, which darkens it slightly, then ADDS a specular reflection of the environment, which is
+white. That addition is the whole discrepancy — *the colour, plus a sheet of white*.
+
+**Its limit is stated rather than hidden.** The shared function is exact face-on; a piece standing at
+an angle catches more environment and drifts by a few per cent. The honest end state is for a studio
+to render its own surface with the SAME renderer, which is what the next one should be built to do
+from the start.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —

@@ -98,6 +98,10 @@ screenshot of something broken that looks fine. Use real pointer or keyboard inp
   already uses for that job before drawing a new one; a generated preview must obey the same rules as
   the thing it previews.
 
+- **A preview and the thing previewed ask ONE function** (INVARIANTS #15). Never tune a 2D preview
+  towards a 3D render — share the function that decides what a colour looks like. Colour is chosen
+  deliberately; a preview that is wrong about it is worse than none.
+
 ## Designer work
 
 Read `src/designer/INVARIANTS.md` first — placement modes, zones, the one-renderer rule, right-side
