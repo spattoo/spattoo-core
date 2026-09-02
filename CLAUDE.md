@@ -94,6 +94,10 @@ screenshot of something broken that looks fine. Use real pointer or keyboard inp
   `guardUnsaved` — every occurrence of this bug has been a panel that never passed it. Deliberate
   exits (✕, Cancel) still close.
 
+- **An icon means the same thing everywhere** (INVARIANTS #14). Find the control this codebase
+  already uses for that job before drawing a new one; a generated preview must obey the same rules as
+  the thing it previews.
+
 ## Designer work
 
 Read `src/designer/INVARIANTS.md` first — placement modes, zones, the one-renderer rule, right-side

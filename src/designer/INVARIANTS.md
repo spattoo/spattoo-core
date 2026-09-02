@@ -386,6 +386,31 @@ warned them; the cost is the surprise, and the lesson they take is to distrust t
 **No gate protects this** — whether a panel holds work is a question about meaning, not syntax. Ask it
 of every panel you add, and check it by opening yours and clicking the backdrop mid-task.
 
+## 14. An icon means the same thing everywhere — RULE IS ON
+**PROJECT-WIDE.** A control that looks unlike every other control doing the same job reads as a
+different KIND of thing, and the person has to learn it separately. The garnish studio grew a rainbow
+conic-gradient wheel for choosing colour — a widget this product has nowhere else — while the
+swatches it opened were the plain colour circles used everywhere. Trigger and contents looked
+unrelated, and a baker had no reason to expect one to lead to the other.
+
+**The rule.** Before drawing an icon or a control, find the one this codebase already uses for that
+job and use it. ⚠️ **Look first, draw second** — the failure is never a deliberate choice to differ, it
+is not having checked.
+
+Established here already:
+- **Choosing a colour** — a plain filled circle of the current colour, thin neutral ring, green ring
+  when active. The swatch and the thing that opens the swatches are the same object.
+- **Undo / clear / close** — line icons on 24×24 viewBox, `strokeWidth` 1.9, round caps and joins.
+- **A tool that adds something** — its own outline drawn at the size it will land.
+
+⚠️ **A generated preview must obey the same rules as the thing it previews.** The brush preset icons
+were generated WITHOUT the width cap the plate applies, so four different gestures rendered as the
+same dark rectangle: a button face that does not follow the piece's own rule is not a preview of it,
+it is a picture that happens to be nearby.
+
+**No gate protects this** — sameness is a judgement about meaning. Check it by putting your new
+control beside the existing one and asking whether they look like the same family.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —

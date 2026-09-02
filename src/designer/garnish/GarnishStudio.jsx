@@ -966,13 +966,14 @@ export default function GarnishStudio({
               <button type="button" onClick={() => setColorOpen(o => !o)} aria-expanded={colorOpen}
                 aria-label={picked != null ? 'Colour of this shape' : 'Chocolate colour'}
                 title={picked != null ? 'Colour of this shape' : 'Chocolate colour'}
-                style={{ width: 38, height: 38, borderRadius: '50%', cursor: 'pointer', padding: 0,
-                         border: colorOpen ? '2px solid #1a1a1a' : '2px solid transparent',
-                         background: 'conic-gradient(#e5484d, #f5a524, #f5d90a, #46a758, #12a594, #0091ff, #8e4ec6, #e93d82, #e5484d)',
-                         display: 'grid', placeItems: 'center' }}>
-                <span style={{ width: 22, height: 22, borderRadius: '50%', background: subjectColor,
-                               border: '2px solid #fff', boxShadow: '0 0 0 1px rgba(0,0,0,0.18)' }} />
-              </button>
+                /* ⚠️ THE SAME CIRCLE THE PALETTE USES. A rainbow wheel is a control this product does
+                   not have anywhere else, so it read as a different KIND of thing — and the swatches
+                   it opens are plain colour circles, which made the trigger and its contents look
+                   unrelated. See INVARIANTS #14. */
+                style={{ width: 34, height: 34, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                         background: subjectColor,
+                         border: colorOpen ? '2.5px solid #2b6' : '1.5px solid rgba(0,0,0,0.18)',
+                         boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }} />
               {colorOpen && (
                 /* Floats OVER the plate rather than pushing it: opening a picker must not move the
                    thing you are about to colour.
@@ -1431,8 +1432,18 @@ const BRUSH_PRESETS = [
 
 /* The button faces, cut once by the real brush — the same argument as the fill swatches. */
 const BRUSH_ICONS = BRUSH_PRESETS.map(pr => {
-  const b = brushStroke(pr.spine(), {
-    width: pr.width * 6, seed: 3, blade: pr.blade, frayed: !pr.round, round: pr.round,
+  /* ⚠️ THE SAME WIDTH RULE THE PLATE USES. The icons were generated without the length cap, so every
+     wide preset came out broader than its own spine is long — four different gestures all rendering
+     as the same dark rectangle. A button face that does not obey the rule the piece obeys is not a
+     preview of it. */
+  const sp = pr.spine();
+  let slen = 0;
+  for (let i = 1; i < sp.length; i++) {
+    slen += Math.hypot(sp[i][0] - sp[i - 1][0], sp[i][1] - sp[i - 1][1]);
+  }
+  const b = brushStroke(sp, {
+    width: Math.min(pr.width * 6, slen * 0.42),
+    seed: 3, blade: pr.blade, frayed: !pr.round, round: pr.round,
   });
   const pts = b?.outline ?? [];
   const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
