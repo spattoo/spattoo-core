@@ -419,8 +419,16 @@ function drawTins(sheet, tins) {
     return;
   }
 
+  /* ⚠️ The BAKE-UP, on the paper as well as the screen.
+   *
+   * An order that is not a whole number of 250g steps bakes slightly OVER — a heavy cake can be
+   * trimmed and a light one cannot be added to. That is a decision somebody made, and this sheet is
+   * read at a bench hours later by someone who was not in the room. A line that quietly restated
+   * the ordered weight would be hiding it at exactly the moment it matters. */
+  const bakeUp = tins.bakedKg > tins.totalKg ? `  ·  bake ${tins.bakedKg} kg and trim` : '';
   sheet.y += sheet.text(
-    `${tins.totalKg} kg  ·  ${tins.tiers.length} tier${tins.tiers.length > 1 ? 's' : ''}`,
+    `${tins.totalKg} kg  ·  ${tins.tiers.length} tier${tins.tiers.length > 1 ? 's' : ''}` +
+    `  ·  ${tins.build.layers} layers, ${tins.build.layers - 1} filling${bakeUp}`,
     sheet.margin, sheet.y, { size: mm(3.2), color: MUTED, weight: 700 },
   );
   sheet.y += mm(3);
@@ -435,14 +443,20 @@ function drawTins(sheet, tins) {
     sheet.ctx.fillText(size, sheet.margin + mm(45), y + mm(1.5));
     sheet.font(mm(3.2), 400);
     sheet.ctx.fillStyle = MUTED;
-    sheet.ctx.fillText(`${t.weightKg} kg`, sheet.margin + mm(80), y + mm(1.5));
+    /* The height rides with the weight for the same reason it does on screen: it is what makes the
+       tin CHECKABLE. "9in round" can only be taken on trust; "9in round, finishes 5.6in tall" is
+       something a baker can hold against the cake in their head and disagree with. */
+    sheet.ctx.fillText(
+      `${t.weightKg} kg${t.heightIn ? `  ·  ${t.heightIn}″ tall` : ''}`,
+      sheet.margin + mm(80), y + mm(1.5),
+    );
     // What goes IN the tin. The sheet has never said, and a baker reading "7in round,
     // 1.54 kg" wants it at exactly this moment. Baking a tier in the wrong flavour is not
     // a blemish to patch — it is a remake.
     if (t.flavour) {
       sheet.font(mm(3.4), 700);
       sheet.ctx.fillStyle = INK;
-      sheet.ctx.fillText(t.flavour, sheet.margin + mm(105), y + mm(1.5));
+      sheet.ctx.fillText(t.flavour, sheet.margin + mm(122), y + mm(1.5));
     }
     sheet.rule(y + rowH - mm(1));
     sheet.y = y + rowH;

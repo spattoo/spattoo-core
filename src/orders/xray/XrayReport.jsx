@@ -458,6 +458,25 @@ export default function XrayReport({ order, apiClient, onClose }) {
                 ? <XrayTinDiagram tiers={tinPlan.tiers} />
                 : <div style={s.muted}>Add a weight to the order to size the tins.</div>}
 
+              {/* ⚠️ HOW the tins were arrived at, said out loud.
+               *
+               * A printed tin size is indistinguishable from a measured one — the doc's own warning
+               * — and these come from a build and a slicing that somebody chose. Naming them is what
+               * lets a baker disagree with the number instead of following it.
+               *
+               * The bake-up is here for the same reason: an order that is not a whole number of
+               * 250g steps bakes slightly OVER, because a heavy cake can be trimmed and a light one
+               * cannot be added to. That is a decision, and a sheet that quietly restated the
+               * ordered weight would be hiding it. */}
+              {tinPlan.totalKg && (
+                <div style={{ ...s.muted, marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <span>{tinPlan.build.layers} layers, {tinPlan.build.layers - 1} filling</span>
+                  {tinPlan.bakedKg > tinPlan.totalKg && (
+                    <span>· bake {tinPlan.bakedKg} kg for a {tinPlan.totalKg} kg cake, and trim</span>
+                  )}
+                </div>
+              )}
+
               {/* What goes IN each tin — the sheet never said, and it is the one mistake
                   here that cannot be patched afterwards. Under the diagram rather than
                   inside it: the diagram is about SIZE, and a flavour name is not a

@@ -27,9 +27,14 @@ function Labels({ t, midY }) {
       <text x={CX} y={midY - 2} textAnchor="middle" fontSize="13.5" fontWeight="800" fill="#3a352e" style={{ fontFamily: 'inherit' }}>
         {t.tinInch ? `${t.tinInch}″ ${t.shape}` : '—'}
       </text>
+      {/* ⚠️ The HEIGHT rides on the weight line rather than getting its own.
+       *
+       * It is the fact that makes the tin checkable — a baker who thinks 5.6 inches is wrong now has
+       * something to disagree with, where a bare "9 inch" could only be taken on trust. But the
+       * tiers stack in this diagram and a third line lands on the one below, so it shares. */}
       {t.weightKg != null && (
         <text x={CX} y={midY + 17} textAnchor="middle" fontSize="12.5" fontWeight="800" fill="#6b6459" style={{ fontFamily: 'inherit' }}>
-          {t.weightKg} kg
+          {t.weightKg} kg{t.heightIn ? ` · ${t.heightIn}″ tall` : ''}
         </text>
       )}
     </>
