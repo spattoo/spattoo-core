@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeTinPlan, footprintArea, diameterFor, spongeDensity, ANCHOR, CAKE_BUILD, BUILDS,
+  heightFor, enforceStep, MIN_TIER_STEP_IN, COMMON_TINS,
 } from './tinHelper.js';
 
 const round = (r, h) => ({ shape: 'round', radius: r, height: h });
@@ -71,14 +72,18 @@ describe('splitting the weight', () => {
    * the areas say 1.78, and that is the rounding, not the model. Rounding is tested on its own
    * below. */
   const RAW = { build: { ...CAKE_BUILD, quantumKg: 0 } };
-  it('gives equal real volumes equal weight, round against rect', () => {
-    /* ⚠️ THE MISSING PI. Round measured r²·h and rect measured w·d·h, so these two — which hold the
-     * same cake — split 0.96 / 3.04 instead of 2 / 2. Any cake mixing the families was wrong. */
-    const r = 1.2, h = 1.45;
+  it('measures round and rect on the same scale', () => {
+    /* ⚠️ THE MISSING PI. Round measured r²·h and rect measured w·d·h, so two tiers holding the same
+     * cake split 0.96 / 3.04 instead of 2 / 2. Any cake mixing the families was wrong.
+     *
+     * Asserted on footprintArea rather than through computeTinPlan, which is where the bug was and
+     * the only place it can be seen cleanly. The plan itself can no longer answer this: it used to
+     * be driven here by stacking two tiers of EQUAL footprint, and the two-inch step rule now
+     * forbids exactly that cake, so the weights it returns follow the stepped tins instead. Testing
+     * the invariant through a path that is entitled to override it tests the override. */
+    const r = 1.2;
     const side = Math.sqrt(Math.PI) * r;          // a square of exactly the circle's area
-    const { tiers } = computeTinPlan([round(r, h), rect(side, side, h)], 4, RAW);
-    expect(tiers[0].weightKg).toBeCloseTo(2, 1);
-    expect(tiers[1].weightKg).toBeCloseTo(2, 1);
+    expect(footprintArea(rect(side, side, 1.45))).toBeCloseTo(footprintArea(round(r, 1.45)), 3);
   });
 
   it('uses a heart\'s real footprint when splitting', () => {
@@ -272,5 +277,63 @@ describe('the named builds, calibrated against real cakes', () => {
     const asDesigned = computeTinPlan(single(1.2, 1.45), 3);
     expect(asDesigned.preset).toBeNull();
     expect(asDesigned.tiers[0].aspect).toBe(asDesigned.tiers[0].designAspect);
+  });
+});
+
+describe('tiers as a set, not one at a time', () => {
+  const two = (rTop) => [round(1.2, 1.45), round(rTop, 1.45)];
+  const single = (r, h) => [round(r, h)];
+
+  it('steps adjacent tiers by at least two inches', () => {
+    /* ⚠️ The defect this exists for: solved one at a time, a 4kg cake came back 8" + 7". Both
+     * figures are right for their own weight and the PAIR is wrong — a 7" tier on an 8" base leaves
+     * half an inch of ledge, with no room for a border. Nothing inside a single tier can see it. */
+    for (const kg of [3, 4, 5, 6, 8]) {
+      for (const rTop of [1.15, 1.05, 0.95, 0.8]) {
+        const { tiers } = computeTinPlan(two(rTop), kg, { preset: 'tall' });
+        expect(tiers[0].tinInch - tiers[1].tinInch).toBeGreaterThanOrEqual(MIN_TIER_STEP_IN);
+      }
+    }
+  });
+
+  it('never puts a taller tier on a shorter one', () => {
+    /* Narrowing the top to clear the step, while it keeps its drawn share of the batter, made it
+     * TALLER than its base — 9.3" on a 7.8" — and the 250g rounding put it over again even after
+     * the weight was re-split. Both repairs are load-bearing; this is the property they exist for. */
+    for (const kg of [3, 4, 5, 6, 8]) {
+      for (const preset of ['tall', 'standard']) {
+        for (const rTop of [1.15, 0.95, 0.8]) {
+          const { tiers } = computeTinPlan(two(rTop), kg, { preset });
+          expect(tiers[1].heightIn).toBeLessThanOrEqual(tiers[0].heightIn + 1e-6);
+        }
+      }
+    }
+  });
+
+  it('reports the height of the tin that gets greased, not of the exact solve', () => {
+    // 2kg solves to some fraction of an inch and snaps to a real tin; the same batter in a smaller
+    // tin stands taller. Reporting the height at the unsnapped diameter describes a tin nobody owns.
+    const { tiers } = computeTinPlan(single(1.2, 1.45), 2, { preset: 'tall' });
+    const t = tiers[0];
+    expect(t.heightIn).toBeCloseTo(heightFor(t.weightKg, t.tinInch, CAKE_BUILD, BUILDS.tall.anchor), 1);
+  });
+
+  it('still bakes the whole order after the weight is moved about', () => {
+    // Every repair above moves weight between tiers. None may lose or invent any.
+    for (const kg of [3, 4, 5, 7]) {
+      const p = computeTinPlan(two(0.95), kg, { preset: 'tall' });
+      const sum = p.tiers.reduce((s, t) => s + t.weightKg, 0);
+      expect(+sum.toFixed(3)).toBe(p.bakedKg);
+      expect(sum).toBeGreaterThanOrEqual(kg - 1e-9);
+    }
+  });
+
+  it('does not step a single tier, and does not step below the smallest tin', () => {
+    expect(computeTinPlan(single(1.2, 1.45), 2, { preset: 'tall' }).tiers[0].tinInch).toBeGreaterThan(0);
+    // Four tiers cannot all clear 2" inside the range of tins that exist; the floor holds.
+    const four = [round(1.2, 1.45), round(1.0, 1.45), round(0.8, 1.45), round(0.6, 1.45)];
+    for (const t of computeTinPlan(four, 6, { preset: 'tall' }).tiers) {
+      expect(t.tinInch).toBeGreaterThanOrEqual(COMMON_TINS[0]);
+    }
   });
 });

@@ -194,6 +194,64 @@ export const COMMON_TINS = Object.freeze([4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
 export const snapToCommon = (inch) =>
   COMMON_TINS.reduce((best, t) => (Math.abs(t - inch) < Math.abs(best - inch) ? t : best), COMMON_TINS[0]);
 
+/* ── Adjacent tiers step by at least this much ───────────────────────────────────────────────────
+ *
+ * ⚠️ A 7-inch tier on an 8-inch base is not a tiered cake. It leaves half an inch of ledge all the
+ * way round — no room for a border, a ribbon or a shell, and from the front the step reads as a
+ * mistake rather than a design. Every real two-tier steps by two inches or more.
+ *
+ * Solving each tier on its own could never see this: both answers are individually correct for their
+ * own weight, and the pair is wrong. The step is a property of the CAKE, so it is enforced after the
+ * tiers are solved, not inside the solve.
+ */
+export const MIN_TIER_STEP_IN = 2;
+
+/* The height a given weight fills a given tin to — the inverse of `diameterFor`.
+ *
+ * ⚠️ Needed because the tin a baker uses is not the diameter the solve returned. `diameterFor` gives
+ * an exact figure like 7.4″, which snaps to a 7″ tin, and the same batter in a smaller tin stands
+ * TALLER. Reporting the height at the exact diameter — which is what shipped — describes a tin
+ * nobody owns. Once a tier is also pushed down to clear the step below it, the gap stops being a
+ * rounding difference and becomes a whole inch of height.
+ *
+ * Algebraic, unlike diameterFor: with the diameter fixed the area is known, so the sponge height
+ * falls straight out. Filling contributes a fixed height regardless.
+ */
+export function heightFor(kg, diameterIn, build = CAKE_BUILD, anchor = ANCHOR) {
+  if (!(kg > 0) || !(diameterIn > 0)) return null;
+  const rhoS = spongeDensity(anchor);
+  const hFill = Math.max(0, (build.layers - 1) * build.fillingThicknessIn);
+  const A = areaOf(diameterIn);
+  const hSponge = Math.max(0, (kg * IN3_PER_L / A - hFill * build.fillingDensity) / rhoS);
+  return hSponge + hFill;
+}
+
+/* Push each tier down until it clears the one below it by MIN_TIER_STEP_IN.
+ *
+ * Bottom-first, and it only ever goes DOWN: the base is the tier whose size the customer effectively
+ * chose by ordering the weight, and growing it would make the cake bigger than what was ordered.
+ * Narrowing the top instead keeps the total right and makes it taller, which is what a baker does.
+ *
+ * The smallest tin anyone owns is the floor. A design that cannot be stepped inside that floor —
+ * four tiers, say — comes back with the step unmet on the tiers that ran out of room, and says so
+ * through `stepped` rather than silently returning sizes that do not exist.
+ */
+export function enforceStep(tins, minStep = MIN_TIER_STEP_IN) {
+  const floor = COMMON_TINS[0];
+  const out = [];
+  let ceiling = Infinity;
+  for (const tin of tins) {
+    if (tin == null) { out.push(null); continue; }
+    let pick = Math.min(tin, ceiling);
+    // Snap DOWN to a tin that exists, never up — up would breach the step we just made room for.
+    const owned = COMMON_TINS.filter(t => t <= pick + 1e-9);
+    pick = owned.length ? owned[owned.length - 1] : floor;
+    out.push(pick);
+    ceiling = pick - minStep;
+  }
+  return out;
+}
+
 /* Returns { totalKg, build, tiers: [{ index, label, weightKg, tinInch, exactInch, heightIn,
  *           layers, shape, square, aspect }] }
  *
@@ -226,9 +284,9 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   // Weights a baker can actually weigh out, summing to what was ordered.
   const weights = total != null ? apportion(vols.map(v => v / totalVol), total, build.quantumKg) : null;
 
-  const out = tiers.map((t, i) => {
+  // Pass 1 — each tier solved on its own terms.
+  const solved = tiers.map((t, i) => {
     const s = tierShape(t);
-    const square = s.kind === 'rect';
     const weight = weights ? weights[i] : null;
 
     // The design's own proportion: height over the diameter of a circle with the same footprint, so
@@ -236,15 +294,75 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
     const equivDia = 2 * Math.sqrt(areas[i] / Math.PI);
     const designAspect = (t?.height ?? 1) / equivDia;
     const aspect = (preset?.aspect ?? designAspect) * bias;
-
     const exact = weight != null ? diameterFor(weight, aspect, build, anchor) : null;
+    return { shape: s, weight, designAspect, aspect, exact,
+             wanted: exact != null ? snapToCommon(exact) : null };
+  });
+
+  /* Pass 2 — the tiers as a SET. A step is a relationship between two tiers, so it cannot be seen
+   * from inside one of them, and this is the only place that has them all. */
+  const finalTins = enforceStep(solved.map(s => s.wanted));
+
+  /* Pass 3 — RE-SPLIT the weight across the tins that were actually chosen.
+   *
+   * ⚠️ Without this the sheet asks for a top tier TALLER THAN ITS BASE. The first split comes from
+   * the drawn footprint; the tin then comes from the step rule, and once a tier is narrowed by a
+   * whole inch its drawn share of the batter has nowhere to go but up. Measured on a 5kg long cake:
+   * a 7.8" base under a 9.3" top.
+   *
+   * So the tins lead and the weight follows, which is also the order a baker works in — you own the
+   * tins, and you divide the batter between them. Share is the tin's own area times how tall that
+   * tier is drawn, with each height held to the tier below it: heights then come out in the same
+   * proportion as the drawing, and a cake can no longer widen as it goes up.
+   */
+  const heightShares = [];
+  let cap = Infinity;
+  for (let i = 0; i < n; i++) {
+    const h = Math.min(tiers[i]?.height ?? 1, cap);
+    heightShares.push(h);
+    cap = h;
+  }
+  const tinVols = finalTins.map((tin, i) => (tin != null ? areaOf(tin) : 0) * heightShares[i]);
+  const tinVolTotal = tinVols.reduce((s, v) => s + v, 0);
+  const finalWeights = total != null && tinVolTotal > 0
+    ? apportion(tinVols.map(v => v / tinVolTotal), total, build.quantumKg)
+    : weights;
+
+  /* Pass 4 — and the ROUNDING can still invert them. Sharing by volume gets the heights close, then
+   * quantising to 250g pushes one tier over: a 4kg long cake splits 2.56/1.44, rounds to 2.5/1.5,
+   * and the 60g the top gained is half an inch of height on a 6" tin. Close is not enough when the
+   * question is "is the top taller than the base", because that reads as a mistake at any margin.
+   *
+   * So: hand a quantum down until it is not. Always downward, so the total is untouched, and each
+   * move strictly reduces the gap — it cannot cycle. */
+  if (finalWeights && build.quantumKg > 0) {
+    const q = build.quantumKg;
+    const hAt = (i) => (finalTins[i] != null ? heightFor(finalWeights[i], finalTins[i], build, anchor) : 0);
+    for (let i = 1; i < n; i++) {
+      for (let guard = 0; guard < 64; guard++) {
+        if (!(hAt(i) > hAt(i - 1) + 1e-6) || finalWeights[i] <= q + 1e-9) break;
+        finalWeights[i] = +(finalWeights[i] - q).toFixed(3);
+        finalWeights[i - 1] = +(finalWeights[i - 1] + q).toFixed(3);
+      }
+    }
+  }
+
+  const out = tiers.map((t, i) => {
+    const { shape: s, designAspect, aspect, exact, wanted } = solved[i];
+    const square = s.kind === 'rect';
+    const tin = finalTins[i];
+    const weight = finalWeights ? finalWeights[i] : null;
+    // Height comes from the tin that will actually be greased — see heightFor.
+    const height = tin != null && weight != null ? heightFor(weight, tin, build, anchor) : null;
     return {
       index: i,
       label: n === 1 ? 'Single tier' : i === 0 ? 'Base tier' : i === n - 1 ? 'Top tier' : `Tier ${i + 1}`,
       weightKg: weight,
       exactInch: exact != null ? +exact.toFixed(1) : null,
-      tinInch: exact != null ? snapToCommon(exact) : null,
-      heightIn: exact != null ? +(aspect * exact).toFixed(1) : null,
+      tinInch: tin,
+      // Was this tier narrowed to clear the one below it, rather than being its own best answer?
+      stepped: wanted != null && tin != null && tin < wanted,
+      heightIn: height != null ? +height.toFixed(1) : null,
       layers: build.layers,
       aspect: +aspect.toFixed(3),
       designAspect: +designAspect.toFixed(3),
