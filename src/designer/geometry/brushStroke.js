@@ -52,13 +52,21 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) 
   const left = [], right = [];
   for (let i = 0; i < pts.length; i++) {
     const t = seg[i] / total;
-    const w = halfWidth(t, width) * (jitter ? lerp(0.86, 1, jitter[i]) : 1);
+    let w = halfWidth(t, width) * (jitter ? lerp(0.86, 1, jitter[i]) : 1);
 
     // Perpendicular to the direction of travel here.
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
     const dx = b[0] - a[0], dy = b[1] - a[1];
     const len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len, ny = dx / len;
+
+    /* ⚠️ A TIGHT TURN FOLDS THE INSIDE EDGE THROUGH ITSELF, and that is why a looping stroke
+       VANISHED. Offsetting a curve by more than its radius of curvature sends the inner edge past
+       the centre and out the other side: the outline becomes a bowtie, and a bowtie filled by the
+       non-zero rule cancels its own area — so the piece is not mis-shaped, it is simply gone. The
+       width is pulled in to what the turn can carry, which is also what really happens: a spatula
+       dragged round a tight curve lays a narrower band on the inside. */
+    w = Math.min(w, turnRadius(pts, i) * 0.9);
 
     left.push([pts[i][0] + nx * w, pts[i][1] + ny * w]);
     right.push([pts[i][0] - nx * w, pts[i][1] - ny * w]);
@@ -68,6 +76,19 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) 
   outline.push([...outline[0]]);
 
   return { outline, ridges: ridgesAlong(pts, seg, total, width, rnd) };
+}
+
+/* The radius of the circle through this point and its neighbours — how tight the turn is here.
+ * Infinite on a straight run, which the caller clamps against harmlessly. */
+function turnRadius(pts, i) {
+  const a = pts[Math.max(0, i - 2)], b = pts[i], c = pts[Math.min(pts.length - 1, i + 2)];
+  const ab = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const bc = Math.hypot(c[0] - b[0], c[1] - b[1]);
+  const ca = Math.hypot(a[0] - c[0], a[1] - c[1]);
+  // Twice the triangle's area, by the cross product — zero when the three are in a line.
+  const cross = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+  if (cross < 1e-6) return Infinity;
+  return (ab * bc * ca) / (2 * cross);
 }
 
 /* The width profile, as a fraction of the widest point.
@@ -94,7 +115,7 @@ function ridgesAlong(pts, seg, total, width, rnd) {
     for (let i = 0; i < pts.length; i++) {
       const t = seg[i] / total;
       if (t > stop) break;
-      const w = halfWidth(t, width);
+      const w = Math.min(halfWidth(t, width), turnRadius(pts, i) * 0.9);
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
       const dx = b[0] - a[0], dy = b[1] - a[1];
       const len = Math.hypot(dx, dy) || 1;

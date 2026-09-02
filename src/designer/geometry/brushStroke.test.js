@@ -44,6 +44,23 @@ describe('a chocolate brushstroke', () => {
     expect(a.outline).toEqual(b.outline);
   });
 
+  /* ⚠️ THE VANISHING LOOP. Offsetting a curve by more than its radius of curvature folds the inner
+     edge through the centre; the outline becomes a bowtie and a bowtie filled by the non-zero rule
+     cancels its own area — the piece is not mis-shaped, it is gone. */
+  it('survives a tight turn instead of folding through itself', () => {
+    const loop = Array.from({ length: 40 }, (_, i) => {
+      const a = (i / 39) * Math.PI * 1.7;
+      return [200 + Math.cos(a) * 45, 200 + Math.sin(a) * 45];      // radius well under the width
+    });
+    const b = brushStroke(loop, { width: 120 });
+    expect(b).not.toBeNull();
+    // Shoelace area: a bowtie cancels to near nothing, a real band does not.
+    const o = b.outline;
+    let area = 0;
+    for (let i = 0; i < o.length - 1; i++) area += o[i][0] * o[i + 1][1] - o[i + 1][0] * o[i][1];
+    expect(Math.abs(area / 2)).toBeGreaterThan(1000);
+  });
+
   it('has nothing to say about a gesture too short to be one', () => {
     expect(brushStroke([[0, 0]])).toBeNull();
     expect(brushStroke([[5, 5], [5, 5]])).toBeNull();

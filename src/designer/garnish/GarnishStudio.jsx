@@ -274,15 +274,42 @@ export default function GarnishStudio({
         s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
         x.closePath();
         x.fillStyle = c2; x.fill();
-        x.strokeStyle = shade(c2, -0.3); x.lineWidth = Math.max(1, 1.6 * k); x.stroke();
+
+        /* ⚠️ THE EDGE IS RAISED, AND THAT IS WHAT THE REFERENCE SHOWS. Chocolate dragged with a
+           spatula banks up along the sides and thins in the middle, so a real stroke has a lip that
+           catches the light and a slightly sunken centre. Drawn as evenly spaced light lines across
+           the whole width it read as STRIPES — a coloured shape with a pattern printed on it rather
+           than a thing with a surface.
+
+           So: a bright lip just inside the outline, a dark line at the very edge to seat it, and the
+           knife's striations kept faint underneath. The lip does most of the work; the striations
+           are texture, not the shape. */
+        x.save();
+        x.clip();                                   // keep every highlight inside the smear
         for (const r of s2.brush.ridges) {
           x.beginPath();
           r.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
-          x.strokeStyle = shade(c2, 0.28);
-          x.lineWidth = Math.max(1, ROPE * 0.45 * k);
+          x.strokeStyle = shade(c2, 0.16);
+          x.lineWidth = Math.max(1, ROPE * 0.3 * k);
           x.lineCap = 'round';
+          x.globalAlpha = 0.55;
           x.stroke();
         }
+        x.globalAlpha = 1;
+        // The banked-up lip, drawn INSIDE the clip so it hugs the edge it belongs to.
+        x.beginPath();
+        s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
+        x.closePath();
+        x.strokeStyle = shade(c2, 0.42);
+        x.lineWidth = Math.max(1.5, ROPE * 0.85 * k);
+        x.stroke();
+        x.restore();
+
+        // And the cut edge itself, which seats the piece against the plate.
+        x.beginPath();
+        s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
+        x.closePath();
+        x.strokeStyle = shade(c2, -0.35); x.lineWidth = Math.max(1, 1.4 * k); x.stroke();
       }
     } else if (kind === 'cut') {
       /* ⚠️ THE PLATE MUST SHOW WHAT THE CAKE WILL SHOW. Drawing a cut piece as outlines would let
