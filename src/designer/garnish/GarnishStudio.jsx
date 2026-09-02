@@ -279,7 +279,7 @@ export default function GarnishStudio({
            approximated: same generator, same result, and a plate drawn a minute ago behaves like one
            drawn now. Anything already on the plate when the fix shipped keeps working. */
         const band = s2.brush.band
-          ?? brushStroke(s2.path, { width: ROPE * 7, seed: 1 })?.band;
+          ?? brushStroke(s2.path, { width: ROPE * 14, seed: 1 })?.band;
         if (band) {
           for (let i = 0; i < band.length - 1; i++) {
             const [l0, r0] = band[i], [l1, r1] = band[i + 1];
@@ -602,7 +602,9 @@ export default function GarnishStudio({
     const dx = strokes.length * PLATE * 0.11 - PLATE * 0.16;
     const spine = raw.map(([x, y]) => [PLATE / 2 + dx + x * scale,
                                        PLATE * 0.78 - (Math.max(...ys) - y) * scale]);
-    const brush = brushStroke(spine, { width: ROPE * preset.width, seed: strokes.length + 1 });
+    const brush = brushStroke(spine, {
+      width: ROPE * preset.width, seed: strokes.length + 1, blade: preset.blade,
+    });
     if (!brush) return;
     setStrokes(s2 => { setPicked(s2.length); return [...s2, {
       path: spine, raw: spine, ring: brush.outline, closed: true, gap: 0, area: 0, fills: [], brush,
@@ -747,7 +749,10 @@ export default function GarnishStudio({
       const tidyB = tidyDrawn(trail, { minStep: 3, tolerance: 3 });
       if (!tidyB) return;
       const spine = smoothPath(tidyB.path, { passes: 2, closed: false });
-      const brush = brushStroke(spine, { width: ROPE * 7, seed: strokes.length + 1 });
+      /* ⚠️ A BLADE IS NOT A ROPE. Tied to the piping thickness the widest brushstroke was still a
+         band; the reference pieces are half as wide as they are long. The same slider now means
+         "how broad the knife is" in brush mode, over a range that can actually reach a petal. */
+      const brush = brushStroke(spine, { width: ROPE * 14, seed: strokes.length + 1 });
       if (!brush) return;
       setStrokes(s2 => { setPicked(s2.length); return [...s2, {
         path: spine, raw: trail, ring: brush.outline, closed: true, gap: 0, area: 0,
@@ -1002,7 +1007,8 @@ export default function GarnishStudio({
                         justifyContent: 'center', borderRadius: 19,
                         background: 'rgba(255,255,255,0.92)' }}>
             <input type="range" min={3} max={14} step={1} value={ROPE}
-              aria-label="Line thickness" title={`Line thickness: ${ROPE}`}
+              aria-label={kind === 'brushed' ? 'How broad the knife is' : 'Line thickness'}
+              title={kind === 'brushed' ? `Knife width: ${ROPE}` : `Line thickness: ${ROPE}`}
               onChange={e => onRopeChange?.(Number(e.target.value))}
               style={{ width: 124, transform: 'rotate(-90deg)', accentColor: color }} />
           </div>
@@ -1355,11 +1361,18 @@ const BRUSH_PRESETS = [
     spine: () => bez([0, 52], [1, 26], [3, 0]) },
   { key: 'wide',     label: 'Wide flat',     width: 11,
     spine: () => bez([0, 74], [0, 36], [0, 0]) },
+  /* ⚠️ THE PIECE THE REFERENCES ARE ACTUALLY MADE OF — a broad blade pressed and dragged once, so it
+     is nearly half as wide as it is long, with a clean sweep down one side, a torn edge down the
+     other and a blunt foot where it was snapped off the acetate. Everything else here is a PULL that
+     runs dry to a point; this is a SLAB, which is why it needs the blade profile rather than a wider
+     version of the same curve. */
+  { key: 'petal',    label: 'Wide petal',    width: 22, blade: true,
+    spine: () => bez([0, 92], [10, 46], [4, 0]) },
 ];
 
 /* The button faces, cut once by the real brush — the same argument as the fill swatches. */
 const BRUSH_ICONS = BRUSH_PRESETS.map(pr => {
-  const b = brushStroke(pr.spine(), { width: pr.width * 6, seed: 3 });
+  const b = brushStroke(pr.spine(), { width: pr.width * 6, seed: 3, blade: pr.blade });
   const pts = b?.outline ?? [];
   const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
   const x0 = Math.min(...xs), y0 = Math.min(...ys);

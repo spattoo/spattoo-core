@@ -33,7 +33,7 @@ function noise(seed) {
  *
  * Returns `{ outline, ridges }` — a closed polygon and the polylines running along it.
  */
-export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) {
+export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false } = {}) {
   let pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
   if (pts.length < 2) return null;
 
@@ -60,12 +60,18 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) 
   if (!(total > 0)) return null;
 
   const rnd = noise(seed);
+  /* ⚠️ ONE EDGE IS CLEAN, THE OTHER TEARS, and fraying both equally is why our pieces read as
+   * symmetrical leaves. A spatula has a flat side that sweeps a smooth curve and a trailing side
+   * where the chocolate rips away from the blade — the reference pieces show a long clean sweep on
+   * one side and a ragged, notched edge on the other. Jittering both alike loses the single feature
+   * that says a knife made this. */
   const jitter = frayed ? Array.from({ length: pts.length }, () => rnd()) : null;
+  const tear = frayed ? Array.from({ length: pts.length }, () => rnd()) : null;
 
   const left = [], right = [];
   for (let i = 0; i < pts.length; i++) {
     const t = seg[i] / total;
-    let w = (closed ? width / 2 : halfWidth(t, width)) * (jitter ? lerp(0.9, 1, jitter[i]) : 1);
+    let w = closed ? width / 2 : (blade ? bladeProfile(t, width) : halfWidth(t, width));
 
     /* Perpendicular to the direction of travel. On a ring the neighbours WRAP, or the first and last
        cross-sections face different ways and the join shows as a kink. */
@@ -83,8 +89,19 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) 
        dragged round a tight curve lays a narrower band on the inside. */
     w = Math.min(w, turnRadius(pts, i) * 0.9);
 
-    left.push([pts[i][0] + nx * w, pts[i][1] + ny * w]);
-    right.push([pts[i][0] - nx * w, pts[i][1] - ny * w]);
+    // The blade side: a clean sweep, barely varying.
+    const wl = w * (jitter ? lerp(0.985, 1, jitter[i]) : 1);
+    // The trailing side: torn, and it tears in notches rather than smoothly.
+    /* ⚠️ IRREGULAR, NOT A SAWTOOTH. Quantised to even steps the torn edge came out as a row of
+       identical notches — a decorative zigzag, which reads as machined rather than broken. Chocolate
+       tears in runs of different length and depth, so two scales are combined: a slow one that says
+       where the edge is generally full or thin, and a fast one that bites into it. */
+    const slow = tear ? tear[Math.floor(i / 7) % tear.length] : 0.5;
+    const fast = tear ? tear[i] : 0.5;
+    const bite = fast > 0.62 ? lerp(0.62, 0.92, fast) : lerp(0.94, 1.03, fast);
+    const wr = w * (tear ? bite * lerp(0.9, 1.03, slow) : 1);
+    left.push([pts[i][0] + nx * wl, pts[i][1] + ny * wl]);
+    right.push([pts[i][0] - nx * wr, pts[i][1] - ny * wr]);
   }
 
   const outline = [...left, ...right.slice().reverse()];
@@ -130,6 +147,16 @@ function halfWidth(t, width) {
   if (t < 0.06) return w * lerp(0.72, 1, t / 0.06);      // the landing: blunt, already wide
   if (t < 0.35) return w;                                 // full pressure
   return w * Math.max(0.02, Math.pow(1 - (t - 0.35) / 0.65, 1.35));   // pulling out, running dry
+}
+
+/* ⚠️ A WIDE BLADE DOES NOT RUN DRY THE SAME WAY. Pressed and dragged, it lays a broad slab with
+ * nearly parallel sides and a blunt foot where it is snapped off the acetate — the pink reference
+ * piece — rather than tapering to a point. Same generator, a different pressure curve. */
+export function bladeProfile(t, width) {
+  const w = width / 2;
+  if (t < 0.08) return w * lerp(0.82, 1, t / 0.08);
+  if (t < 0.72) return w * lerp(1, 0.93, (t - 0.08) / 0.64);
+  return w * lerp(0.93, 0.66, (t - 0.72) / 0.28);        // narrows a little, then stops flat
 }
 
 /* The knife's own edge, dragged along. Three or four inner lines that stop short of the end, because
