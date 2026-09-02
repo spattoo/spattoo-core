@@ -19,6 +19,26 @@
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
+/* The torn end. Walks from the left edge to the right one, pushing each point along the direction of
+ * travel by a random amount — so the piece finishes in fingers of different lengths rather than on a
+ * ruled line. Deeper in the middle, where the layer is thickest and lets go last. */
+function tipJag(pts, l, r, width, rnd) {
+  const n = 7;
+  const a = pts[Math.max(0, pts.length - 3)], b = pts[pts.length - 1];
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;                 // the way the hand was going
+  const reach = width * 0.42;                         // how far the longest finger runs on
+  const out = [];
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const mid = 1 - Math.abs(t - 0.5) * 1.6;          // longest near the middle
+    const grab = Math.max(0, mid) * lerp(0.25, 1, rnd()) * reach;
+    out.push([lerp(l[0], r[0], t) + ux * grab, lerp(l[1], r[1], t) + uy * grab]);
+  }
+  return out;
+}
+
 /* Deterministic wobble. A brushstroke's edge tears rather than curving cleanly, but the same drawing
  * must come back the same on every render and after a save — `Math.random()` here would make a piece
  * that changed shape each time the cake was opened. */
@@ -108,7 +128,17 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
     right.push([pts[i][0] - nx * wr, pts[i][1] - ny * wr]);
   }
 
-  const outline = [...left, ...right.slice().reverse()];
+  /* ⚠️ THE END OF A PULL IS RAGGED, NOT A STRAIGHT CUT. Left and right are joined by a single
+   * cross-section, so every piece finished with one flat horizontal edge — the same guillotine cut
+   * on all of them, which is the opposite of what chocolate does. It does not stop; it THINS until
+   * the layer breaks, and it breaks unevenly across the width, leaving fingers.
+   *
+   * So the tip is a jagged run between the two edges: points that reach past the last cross-section
+   * by varying amounts, deepest near the middle where the chocolate holds on longest. It is the same
+   * seeded noise as the torn edge, so the same drawing comes back the same. */
+  const tip = closed ? [] : tipJag(pts, left[left.length - 1], right[right.length - 1], width, rnd);
+
+  const outline = [...left, ...tip, ...right.slice().reverse()];
   outline.push([...outline[0]]);
 
   /* ⚠️ THE BAND, NOT JUST THE OUTLINE, AND THIS IS WHAT MAKES A DOUBLING-BACK STROKE FILL.
@@ -125,7 +155,7 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
   if (closed) band.push(band[0]);          // the last section joins back to the first
 
   // `width` travels with the piece: the ridges are drawn relative to it, not to a nozzle setting.
-  return { outline, band, closed, width, ridges: ridgesAlong(pts, seg, total, width, rnd, closed) };
+  return { outline, band, tip, closed, width, ridges: ridgesAlong(pts, seg, total, width, rnd, closed) };
 }
 
 /* The radius of the circle through this point and its neighbours — how tight the turn is here.

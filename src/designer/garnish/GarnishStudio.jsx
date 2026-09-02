@@ -290,6 +290,17 @@ export default function GarnishStudio({
             x.closePath(); x.fill();
             return;
           }
+          /* The torn end, as a fan from the last cross-section out to its fingers — the band's quads
+             stop at a straight slice, so without this the jag is an outline round nothing. */
+          const tp = s2.brush.tip;
+          if (tp?.length) {
+            const [lE, rE] = bd[bd.length - 1];
+            const run = [lE, ...tp, rE];
+            x.beginPath();
+            run.forEach(([a2, b2], i) => (i ? x.lineTo(a2 * k, b2 * k) : x.moveTo(a2 * k, b2 * k)));
+            x.closePath(); x.fill();
+            x.strokeStyle = x.fillStyle; x.lineWidth = 1; x.stroke();
+          }
           for (let i = 0; i < bd.length - 1; i++) {
             const [l0, r0] = bd[i], [l1, r1] = bd[i + 1];
             x.beginPath();
@@ -510,6 +521,7 @@ export default function GarnishStudio({
     brush: s2.brush
       ? { outline: s2.brush.outline.map(f),
           band: s2.brush.band ? s2.brush.band.map(([l, r]) => [f(l), f(r)]) : undefined,
+          tip: s2.brush.tip ? s2.brush.tip.map(f) : undefined,
           ridges: s2.brush.ridges.map(r => r.map(f)) }
       : undefined,
   });
@@ -620,35 +632,36 @@ export default function GarnishStudio({
 
   /* A preset lands the same way a pulled one does — the spine is canned, the smear is generated. */
   function addBrush(preset) {
-    const raw = preset.spine();
-    const ys = raw.map(q => q[1]);
-    const span = Math.max(1, Math.max(...ys) - Math.min(...ys));
-    const scale = (PLATE * 0.55) / span;
-    /* ⚠️ EACH ONE STEPS ACROSS. Centred, a second preset lands exactly on the first and reads as one
-       thicker piece — the same trap words fell into. Stepping sideways is right for brushstrokes
-       specifically, because a fan of them stands side by side. */
-    const dx = strokes.length * PLATE * 0.11 - PLATE * 0.16;
-    const spine = raw.map(([x, y]) => [PLATE / 2 + dx + x * scale,
-                                       PLATE * 0.78 - (Math.max(...ys) - y) * scale]);
-    /* ⚠️ THE SAME RULE AS A DRAWN ONE. A preset is a known gesture, so it was given a fixed width —
-       but that meant freehand and presets sized by different rules, and two rules for one idea is
-       how a tool starts feeling arbitrary. A spatula cannot lay a slab broader than the distance it
-       travelled, whoever decided the path. */
-    let plen = 0;
-    for (let i = 1; i < spine.length; i++) {
-      plen += Math.hypot(spine[i][0] - spine[i - 1][0], spine[i][1] - spine[i - 1][1]);
+    const group = `b${Date.now()}`;
+    const made = [];
+    for (const raw of ribbonSpines(preset)) {
+      const ys = raw.map(q => q[1]);
+      const span = Math.max(1, Math.max(...ys) - Math.min(...ys));
+      const scale = (PLATE * 0.55) / span;
+      const dx = strokes.length * PLATE * 0.11 - PLATE * 0.16;
+      const spine = raw.map(([x, y]) => [PLATE / 2 + dx + x * scale,
+                                         PLATE * 0.78 - (Math.max(...ys) - y) * scale]);
+      let plen = 0;
+      for (let i = 1; i < spine.length; i++) {
+        plen += Math.hypot(spine[i][0] - spine[i - 1][0], spine[i][1] - spine[i - 1][1]);
+      }
+      /* ⚠️ A FEATHERED PULL IS ONE GESTURE, SO ITS RIBBONS SHARE A GROUP — they move, resize and
+         colour as one piece, the way a word's letters do. Each is narrower than the whole, or the
+         ribbons overlap into a solid slab and the split tip disappears. */
+      const brush = brushStroke(spine, {
+        width: Math.min(ROPE * (preset.width / (preset.feather ? 1.35 : 1)), plen * 0.42),
+        seed: strokes.length + made.length + 1,
+        blade: preset.blade, frayed: !preset.round, round: preset.round,
+      });
+      if (brush) {
+        made.push({ path: spine, raw: spine, ring: brush.outline, closed: true, gap: 0, area: 0,
+                    fills: [], brush, group: preset.feather ? group : undefined });
+      }
     }
-    const brush = brushStroke(spine, {
-      width: Math.min(ROPE * preset.width, plen * 0.42),
-      seed: strokes.length + 1, blade: preset.blade,
-      frayed: !preset.round,          // a rounded piece was lifted, not torn
-      round: preset.round,
-    });
-    if (!brush) return;
-    setStrokes(s2 => { setPicked(s2.length); return [...s2, {
-      path: spine, raw: spine, ring: brush.outline, closed: true, gap: 0, area: 0, fills: [], brush,
-    }]; });
+    if (!made.length) return;
+    setStrokes(prev => { setPicked(prev.length); return [...prev, ...made]; });
   }
+
 
   function addToCake() {
     onSave?.({
@@ -1115,7 +1128,7 @@ export default function GarnishStudio({
                         stub squash into the same blob — five buttons showing one shape, which is
                         worse than no preview because it says the choices are identical. */}
                     <svg viewBox="0 0 100 100" width="100%" height="100%">
-                      <path d={pr.d} fill={INK} />
+                      {pr.ds.map((d, i) => <path key={i} d={d} fill={INK} />)}
                     </svg>
                   </button>
                 ))}
@@ -1285,7 +1298,10 @@ export default function GarnishStudio({
                 <div>
                   <span style={labelStyle}>Where it goes</span>
                   <div style={{ marginTop: 5 }}>
-                    <Segmented label="Where the piece goes" isMobile={isMobile} tone={color}
+                    {/* ⚠️ NO TONE. Tinted with the piece's colour, the SELECTED LABEL of a placement control turned
+                        teal along with the chocolate — chrome wearing the work's colour, which is the
+                        same mistake the shape icons made. A control is not a preview. INVARIANTS #14. */}
+                    <Segmented label="Where the piece goes" isMobile={isMobile}
                       items={[{ id: 'top', label: 'On the cake' }, { id: 'board', label: 'On the board' }]}
                       value={zone} onChange={setZone} />
                   </div>
@@ -1293,7 +1309,7 @@ export default function GarnishStudio({
                 <div>
                   <span style={labelStyle}>How it sits</span>
                   <div style={{ marginTop: 5 }}>
-                    <Segmented label="How the piece sits" isMobile={isMobile} tone={color}
+                    <Segmented label="How the piece sits" isMobile={isMobile}
                       items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
                       value={mode} onChange={setMode} />
                   </div>
@@ -1397,64 +1413,83 @@ const TAP_SLOP = 6;
  *
  * A preset is just a canned SPINE — the same `brushStroke` generates it, so there is no second code
  * path and a preview cannot promise something the real thing does not do. */
+/* A gesture's ribbons. One for an ordinary pull; for a feathered one, several fanned about the base
+ * and stopping at different lengths — which is what a spatula's edge leaves as the chocolate runs
+ * out, and why the tips on the reference cake look like a broom rather than a blade. */
+function ribbonSpines(pr) {
+  const base = pr.spine();
+  if (!pr.feather) return [base];
+  const n = pr.feather;
+  const [ax, ay] = base[0];
+  return Array.from({ length: n }, (_, i) => {
+    const t = n === 1 ? 0 : (i / (n - 1)) - 0.5;      // -0.5 … +0.5
+    /* ⚠️ THE RIBBONS MUST OVERLAP FOR MOST OF THE LENGTH. Fanned widely they separate all the way
+       down and read as several fingers rather than one stroke that frays — on the cake the piece is
+       solid at the foot and only opens near the tip. A narrow fan, with ribbons wide enough to
+       overlap, gives one body that splits at the end, which is what the chocolate does as it runs
+       out. */
+    const ang = t * 0.13;                              // a narrow fan, ~7° across
+    const shorten = 1 - Math.abs(t) * 0.2;             // outer ribbons run out sooner
+    const c = Math.cos(ang), s2 = Math.sin(ang);
+    return base.map(([x, y], k) => {
+      const dx = x - ax, dy = (y - ay) * shorten;
+      return [ax + dx * c - dy * s2, ay + dx * s2 + dy * c];
+    });
+  });
+}
+
 const bez = (a, b, c, n = 22) => Array.from({ length: n }, (_, i) => {
   const t = i / (n - 1), u = 1 - t;
   return [u * u * a[0] + 2 * u * t * b[0] + t * t * c[0],
           u * u * a[1] + 2 * u * t * b[1] + t * t * c[1]];
 });
 
+/* ⚠️ TAKEN FROM A REAL CAKE, not invented. The five shapes below are the ones on the white-chocolate
+ * brushstroke cake: a broad rounded petal, long feathered sweeps, a narrow sliver to fill between
+ * them, and a wide leaf. The earlier set was five variations on "a pull that tapers", which is why
+ * four of them looked the same however they were tuned — they WERE the same idea at different sizes.
+ *
+ * ⚠️ THE FEATHERED TIP IS THE SIGNATURE OF THIS TECHNIQUE. Look at the cake: the ends split into two
+ * or three separate points, like a broom. That is the spatula's edge leaving separate ribbons as the
+ * chocolate runs out, and it is what makes the pieces read as brushstrokes rather than leaves. It is
+ * built as what it is — several strokes from one gesture, fanned slightly and ending at different
+ * lengths — rather than as a notched outline, so they move and colour together like a word does. */
 const BRUSH_PRESETS = [
-  /* ⚠️ BROADER THAN A ROPE. These were sized like piped lines and came out as narrow bands; the
-     pieces on a brushstroke cake are a good fraction as wide as they are long, because a spatula is
-     wide. Width here is a multiple of the knife setting, so the slider still scales all of them. */
-  { key: 'straight', label: 'Straight pull', width: 11,
-    spine: () => bez([0, 100], [0, 50], [0, 0]) },
-  { key: 'long',     label: 'Long taper',    width: 9,
-    spine: () => bez([0, 130], [2, 60], [6, -10]) },
-  { key: 'sweep',    label: 'Curved sweep',  width: 10.5,
-    spine: () => bez([0, 100], [26, 46], [8, -6]) },
-  { key: 'stub',     label: 'Short stub',    width: 12,
-    spine: () => bez([0, 52], [1, 26], [3, 0]) },
-  { key: 'wide',     label: 'Wide flat',     width: 16,
-    spine: () => bez([0, 74], [0, 36], [0, 0]) },
-  /* ⚠️ THE PIECE THE REFERENCES ARE ACTUALLY MADE OF — a broad blade pressed and dragged once, so it
-     is nearly half as wide as it is long, with a clean sweep down one side, a torn edge down the
-     other and a blunt foot where it was snapped off the acetate. Everything else here is a PULL that
-     runs dry to a point; this is a SLAB, which is why it needs the blade profile rather than a wider
-     version of the same curve. */
-  /* The soft, blunt piece at the front of the reference cake: pressed and lifted almost straight
-     up, so it keeps its width and ends round rather than torn. */
-  { key: 'round',    label: 'Rounded petal', width: 15, blade: true, round: true,
+  { key: 'round',    label: 'Rounded petal',  width: 15, blade: true, round: true,
     spine: () => bez([0, 62], [6, 30], [2, 0]) },
-  { key: 'petal',    label: 'Wide petal',    width: 22, blade: true,
-    spine: () => bez([0, 92], [10, 46], [4, 0]) },
+  { key: 'feather',  label: 'Feathered pull', width: 9, feather: 3,
+    spine: () => bez([0, 100], [4, 50], [0, 0]) },
+  { key: 'fan',      label: 'Wide fan',       width: 13, feather: 4,
+    spine: () => bez([0, 86], [14, 42], [6, 0]) },
+  { key: 'sliver',   label: 'Narrow sliver',  width: 6,
+    spine: () => bez([0, 70], [3, 34], [1, 0]) },
+  { key: 'leaf',     label: 'Wide leaf',      width: 19, blade: true,
+    spine: () => bez([0, 88], [12, 44], [3, 0]) },
 ];
 
 /* The button faces, cut once by the real brush — the same argument as the fill swatches. */
 const BRUSH_ICONS = BRUSH_PRESETS.map(pr => {
-  /* ⚠️ THE SAME WIDTH RULE THE PLATE USES. The icons were generated without the length cap, so every
-     wide preset came out broader than its own spine is long — four different gestures all rendering
-     as the same dark rectangle. A button face that does not obey the rule the piece obeys is not a
-     preview of it. */
-  const sp = pr.spine();
-  let slen = 0;
-  for (let i = 1; i < sp.length; i++) {
-    slen += Math.hypot(sp[i][0] - sp[i - 1][0], sp[i][1] - sp[i - 1][1]);
-  }
-  const b = brushStroke(sp, {
-    width: Math.min(pr.width * 6, slen * 0.42),
-    seed: 3, blade: pr.blade, frayed: !pr.round, round: pr.round,
-  });
-  const pts = b?.outline ?? [];
+  /* ⚠️ THE SAME WIDTH RULE THE PLATE USES. Generated without the length cap, every wide preset came
+     out broader than its own spine is long and four gestures rendered as one dark rectangle. */
+  const parts = ribbonSpines(pr).map(sp => {
+    let l = 0;
+    for (let i = 1; i < sp.length; i++) l += Math.hypot(sp[i][0] - sp[i - 1][0], sp[i][1] - sp[i - 1][1]);
+    return brushStroke(sp, {
+      width: Math.min((pr.width / (pr.feather ? 1.35 : 1)) * 6, l * 0.42),
+      seed: 3, blade: pr.blade, frayed: !pr.round, round: pr.round,
+    });
+  }).filter(Boolean);
+  const pts = parts.flatMap(q => q.outline);
   const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
   const x0 = Math.min(...xs), y0 = Math.min(...ys);
   const w = Math.max(...xs) - x0, h = Math.max(...ys) - y0;
-  // ONE scale for both axes, so a wide flat stays wide and a long taper stays long.
   const f = 96 / Math.max(1, Math.max(w, h));
   const ox = (100 - w * f) / 2, oy = (100 - h * f) / 2;
   return {
     ...pr,
-    d: pts.map(([x, y], i) => `${i ? 'L' : 'M'}${(ox + (x - x0) * f).toFixed(1)} ${(oy + (y - y0) * f).toFixed(1)}`).join(' '),
+    ds: parts.map(q => q.outline
+      .map(([x, y], i) => `${i ? 'L' : 'M'}${(ox + (x - x0) * f).toFixed(1)} ${(oy + (y - y0) * f).toFixed(1)}`)
+      .join(' ')),
   };
 });
 
