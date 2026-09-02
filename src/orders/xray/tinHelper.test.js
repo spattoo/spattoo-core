@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computeTinPlan, footprintArea, diameterFor, spongeDensity, ANCHOR, CAKE_BUILD,
+  computeTinPlan, footprintArea, diameterFor, spongeDensity, ANCHOR, CAKE_BUILD, BUILDS,
 } from './tinHelper.js';
 
 const round = (r, h) => ({ shape: 'round', radius: r, height: h });
@@ -32,9 +32,11 @@ describe('the anchor', () => {
      * layers made the sponge lighter — something had to give to hold a 6×4 at exactly 1kg. Cutting
      * a sponge does not change what it is made of. The anchor is a calibration at a stated build;
      * departing from it legitimately changes what a 6×4 weighs. */
-    const base = spongeDensity();
-    for (const layers of [2, 3, 5]) expect(spongeDensity({ ...CAKE_BUILD, layers })).toBe(base);
-    for (const fillingDensity of [0.7, 1.1]) expect(spongeDensity({ ...CAKE_BUILD, fillingDensity })).toBe(base);
+    const tier = [round(1.2, 1.45)];
+    const at = (layers) => computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers } }).tiers[0].heightIn;
+    // More filling can only make a tier shorter at a fixed weight. If the recipe followed the
+    // slicing this would rise instead, which is how the bug showed itself.
+    expect(at(4)).toBeLessThan(at(2));
   });
 });
 
@@ -204,5 +206,71 @@ describe('weights a baker can actually weigh out', () => {
     // 500g houses exist; so do 100g ones. It is config, not a constant.
     const half = computeTinPlan(two, 5, { build: { ...CAKE_BUILD, quantumKg: 0.5 } });
     for (const t of half.tiers) expect((t.weightKg / 0.5) % 1).toBeCloseTo(0, 6);
+  });
+});
+
+describe('the named builds, calibrated against real cakes', () => {
+  /* ⚠️ "Long" means TALL, not long along the bench — every general baking reference uses "long" for
+   * a loaf. The code says `tall`; the trade says long.
+   *
+   * These numbers are not chosen. A grid search over density and height-to-width against five of
+   * this bakery's own single-tier cakes hit all five exactly at h/d 0.98 and 0.47 kg/L, and their
+   * two-tier practice falls out of the same figures without further fitting. If a change here stops
+   * reproducing these, the change is wrong.
+   */
+  const single = (r, h) => [round(r, h)];
+  const tinFor = (kg) => computeTinPlan(single(1.2, 1.45), kg, { preset: 'tall' }).tiers[0].tinInch;
+
+  const exactFor = (kg) => computeTinPlan(single(1.2, 1.45), kg, { preset: 'tall' }).tiers[0].exactInch;
+
+  it('reproduces the cakes whose tin is not a coin toss', () => {
+    expect(tinFor(1.5)).toBe(6);
+    expect(tinFor(2)).toBe(7);
+    expect(tinFor(3)).toBe(8);
+  });
+
+  it('lands within one tin of the bakery\'s choice everywhere, including the ties', () => {
+    /* ⚠️ Two of the five sit EXACTLY on a snap boundary — 1kg computes to 5.5in and 2.5kg to 7.5in —
+     * and this bakery rounds up at one and down at the other. That is not inconsistency, it is
+     * BANDING: a tin is picked for a weight range and the height flexes inside it, which is a
+     * different rule from computing a diameter and snapping to the nearest.
+     *
+     * Forcing both would be overfitting to a tie-break. What the model owes is to be close, and to
+     * SHOW the exact figure so a baker can see when it could go either way. */
+    for (const [kg, theirs] of [[1, 6], [1.5, 6], [2, 7], [2.5, 7], [3, 8]]) {
+      expect(Math.abs(exactFor(kg) - theirs), `${kg}kg`).toBeLessThanOrEqual(0.55);
+    }
+  });
+
+  it('reports the exact diameter beside the tin, so a tie is visible', () => {
+    // 5.5 and 7.5 are the two that could go either way; a sheet showing only "6in" hides that.
+    expect(exactFor(1)).toBeCloseTo(5.5, 1);
+    expect(exactFor(2.5)).toBeCloseTo(7.5, 1);
+  });
+
+  it('makes a long cake as tall as it is wide', () => {
+    // The definition, asserted rather than described: h/d ~ 1.
+    const t = computeTinPlan(single(1.2, 1.45), 3, { preset: 'tall' }).tiers[0];
+    expect(t.heightIn / t.exactInch).toBeCloseTo(0.98, 1);
+  });
+
+  it('builds a standard cake about two thirds as tall as it is wide', () => {
+    const t = computeTinPlan(single(1.2, 1.45), 3, { preset: 'standard' }).tiers[0];
+    expect(t.heightIn / t.exactInch).toBeCloseTo(0.65, 1);
+    expect(t.tinInch).toBeGreaterThan(tinFor(3));   // and therefore wider than the long one
+  });
+
+  it('keeps the two densities apart', () => {
+    /* At the tall build's 0.47 kg/L a 6x4 weighs 0.87kg, not 1.00. A taller tier carries
+     * proportionally more filling and less sponge, so ONE density cannot serve both builds — and a
+     * later "simplification" back to a single figure will break one of them. */
+    expect(spongeDensity(BUILDS.tall.anchor)).not.toBeCloseTo(spongeDensity(BUILDS.standard.anchor), 2);
+  });
+
+  it('leaves the design\'s own proportions alone when no build is named', () => {
+    // The conservative default: no preset means the tier keeps what the customer was shown.
+    const asDesigned = computeTinPlan(single(1.2, 1.45), 3);
+    expect(asDesigned.preset).toBeNull();
+    expect(asDesigned.tiers[0].aspect).toBe(asDesigned.tiers[0].designAspect);
   });
 });

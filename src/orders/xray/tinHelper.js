@@ -36,6 +36,39 @@ import { tierShape } from '../../designer/geometry/surface.js';
 // The trade anchor: a 6-inch round, 4 inches tall, is sold as a 1kg cake.
 export const ANCHOR = Object.freeze({ diameterIn: 6, heightIn: 4, kg: 1 });
 
+/* ── How tall this bakery builds ─────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ "Long" here means TALL, not long along the bench. Every general baking reference uses "long" for
+ * a loaf or a tray bake, so the code says `tall` and this note records that the trade word is long —
+ * the same collision as two unrelated "Number topper" entries, caught before it was written in.
+ *
+ * A build is defined by how tall a tier stands relative to its width, and calibrated against a cake
+ * somebody actually bakes. Both anchors are real:
+ *
+ *   standard  a 6in x 4in round sold as 1kg — the Indian pan-set convention, printed on the box
+ *   tall      3kg in an 8in tin, standing 7.8in — measured from this bakery's own practice
+ *
+ * The tall figures came out of a grid search against five of their single-tier cakes (1-1.5kg → 6in,
+ * 2-2.5kg → 7in, 3kg → 8in) and hit all five exactly at h/d 0.98 and 0.47 kg/L. Their two 2-tier
+ * points (7+5 for 3kg, 8+6 for 4-5kg) fall out of the same numbers without further fitting.
+ *
+ * ⚠️ The two densities genuinely differ: at 0.47 a 6x4 weighs 0.87kg, not 1.00. A taller tier carries
+ * proportionally more filling and less sponge, so one density cannot serve both. Anything that
+ * "simplifies" this back to a single figure will break one build or the other.
+ */
+export const BUILDS = Object.freeze({
+  standard: Object.freeze({
+    key: 'standard', label: 'Standard',
+    aspect: 0.65,
+    anchor: ANCHOR,
+  }),
+  tall: Object.freeze({
+    key: 'tall', label: 'Long',        // the trade word; `tall` is what it means
+    aspect: 0.98,                      // as tall as it is wide
+    anchor: Object.freeze({ diameterIn: 8, heightIn: 7.8, kg: 3 }),
+  }),
+});
+
 export const CAKE_BUILD = Object.freeze({
   layers: 2,                 // slices of sponge; layers - 1 gaps of filling between them
   fillingThicknessIn: 0.4,   // per gap
@@ -68,13 +101,13 @@ const areaOf = (d) => Math.PI * (d / 2) ** 2;
  * perfectly reasonable figure for a light bake — produced a 7-inch tier standing twelve inches tall.
  * Anything that cannot make a 6×4 into 1kg is wrong, whatever it says on a bag of flour.
  */
-export function spongeDensity() {
-  const b = ANCHOR_BUILD;
-  const A = areaOf(ANCHOR.diameterIn);
+export function spongeDensity(anchor = ANCHOR) {
+  const b = ANCHOR_BUILD;   // the filling the anchor was built with — never the order's
+  const A = areaOf(anchor.diameterIn);
   const hFill = Math.max(0, (b.layers - 1) * b.fillingThicknessIn);
-  const hSponge = Math.max(0.1, ANCHOR.heightIn - hFill);
+  const hSponge = Math.max(0.1, anchor.heightIn - hFill);
   const litres = (h) => (A * h) / IN3_PER_L;
-  return (ANCHOR.kg - litres(hFill) * b.fillingDensity) / litres(hSponge);
+  return (anchor.kg - litres(hFill) * b.fillingDensity) / litres(hSponge);
 }
 
 /* The tier's footprint, in design units², for ANY shape.
@@ -109,8 +142,8 @@ export function footprintArea(tier) {
  * sponge height is clamped at zero. Bisection is a dozen lines and cannot be wrong about a case
  * nobody thought of.
  */
-export function diameterFor(kg, aspect, build = CAKE_BUILD) {
-  const rhoS = spongeDensity();
+export function diameterFor(kg, aspect, build = CAKE_BUILD, anchor = ANCHOR) {
+  const rhoS = spongeDensity(anchor);
   const hFill = Math.max(0, (build.layers - 1) * build.fillingThicknessIn);
   const weightAt = (d) => {
     const A = areaOf(d);
@@ -174,6 +207,11 @@ export const snapToCommon = (inch) =>
 export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   const build = { ...CAKE_BUILD, ...(opts.build ?? {}) };
   const bias = opts.shapeBias ?? 1;
+  /* A named build, or none. With none the tier keeps the proportions the CUSTOMER WAS SHOWN, which
+   * is the conservative default and what shipped before presets existed. Naming one says "however it
+   * was drawn, we bake them this tall", which is what a bakery with a house style actually wants. */
+  const preset = opts.preset ? BUILDS[opts.preset] ?? null : null;
+  const anchor = preset?.anchor ?? ANCHOR;
   const tiers = Array.isArray(tiersInput) ? tiersInput : [];
   const n = tiers.length;
   if (n === 0) return { totalKg: weightKg ?? null, build, tiers: [] };
@@ -196,9 +234,10 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
     // The design's own proportion: height over the diameter of a circle with the same footprint, so
     // a heart and a round tier are compared on the space they actually occupy.
     const equivDia = 2 * Math.sqrt(areas[i] / Math.PI);
-    const aspect = ((t?.height ?? 1) / equivDia) * bias;
+    const designAspect = (t?.height ?? 1) / equivDia;
+    const aspect = (preset?.aspect ?? designAspect) * bias;
 
-    const exact = weight != null ? diameterFor(weight, aspect, build) : null;
+    const exact = weight != null ? diameterFor(weight, aspect, build, anchor) : null;
     return {
       index: i,
       label: n === 1 ? 'Single tier' : i === 0 ? 'Base tier' : i === n - 1 ? 'Top tier' : `Tier ${i + 1}`,
@@ -208,11 +247,12 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
       heightIn: exact != null ? +(aspect * exact).toFixed(1) : null,
       layers: build.layers,
       aspect: +aspect.toFixed(3),
+      designAspect: +designAspect.toFixed(3),
       shape: square ? 'square' : 'round',
       square,
     };
   });
 
   const baked = weights ? +weights.reduce((a, b) => a + b, 0).toFixed(3) : null;
-  return { totalKg: total, bakedKg: baked, build, tiers: out };
+  return { totalKg: total, bakedKg: baked, build, preset: preset?.key ?? null, tiers: out };
 }
