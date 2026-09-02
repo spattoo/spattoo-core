@@ -6,11 +6,10 @@ import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
 import { snapPolygon } from '../geometry/snapPolygon.js';
 import { smoothPath } from '../geometry/smoothPath.js';
-/* ⚠️ THE PLATE PAINTS WHAT THE CAKE WILL SHOW. See `asRendered` — one function decides what a colour
- * looks like and both sides ask it, so they cannot drift apart. INVARIANTS #15.
- * Called without a gloss: Shine is set on the CAKE, after the piece is placed, so the studio has no
- * business guessing it. The default is what a piece arrives with, which is what this previews. */
-import { asRendered } from '../geometry/garnishMaterial.js';
+/* ⚠️ THE PLATE PAINTS THE COLOUR THAT WAS CHOSEN, PLAINLY. The correction lives in the MATERIAL —
+ * `materialBase` hands the renderer a base that comes back as the chosen colour — because the render
+ * was the thing that was wrong, not the swatch. Washing the studio out to match a bad render made
+ * them agree about a colour nobody asked for. INVARIANTS #15. */
 import { brushStroke } from '../geometry/brushStroke.js';
 // ⚠️ CREAM'S OWN LETTERFORMS. Chocolate writing is the same motion — see textCentrelines.
 import { textCentrelines, CREAM_FONTS, DEFAULT_CREAM_FONT } from '../geometry/creamText.js';
@@ -274,7 +273,7 @@ export default function GarnishStudio({
          smear rather than as a coloured shape. */
       for (const s2 of strokes) {
         if (!s2.brush) { rope(s2.path, ROPE + 2, s2.color ?? color); continue; }
-        const c2 = asRendered(s2.color ?? color);
+        const c2 = (s2.color ?? color);
         /* ⚠️ ELEVATION IS NOT AN OUTLINE. A dark line drawn round a shape is a BORDER — it reads as a
            sticker, however thick it gets, and no amount of darkening it will ever say "this object
            stands off the surface". The reference piece has no outline at all: what makes it look like
@@ -395,10 +394,10 @@ export default function GarnishStudio({
           ring.forEach(([a2, b2], i) => (i ? x.lineTo(a2 * k, b2 * k) : x.moveTo(a2 * k, b2 * k)));
           x.closePath();
         }
-        x.fillStyle = asRendered(panel.color ?? color);
+        x.fillStyle = (panel.color ?? color);
         x.fill('evenodd');
         // A cut panel is a SLAB, so it has an edge. Without one it reads as paper, not chocolate.
-        x.strokeStyle = shade(asRendered(panel.color ?? color), -0.4);
+        x.strokeStyle = shade((panel.color ?? color), -0.4);
         x.lineWidth = Math.max(1, 2 * k * 1.2);
         x.stroke();
       }
@@ -407,7 +406,7 @@ export default function GarnishStudio({
       for (const s2 of strokes) if (!s2.ring) rope(s2.path, ROPE + 2);
     } else {
       for (const s2 of strokes) {
-        const c2 = asRendered(s2.color ?? color);               // each shape keeps its own chocolate
+        const c2 = (s2.color ?? color);               // each shape keeps its own chocolate
         for (const f of s2.fills) rope(f, ROPE, c2);
         rope(s2.path, ROPE + 2, c2);                // the outline sits over its own fill
       }

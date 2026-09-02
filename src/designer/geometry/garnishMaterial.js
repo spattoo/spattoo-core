@@ -46,8 +46,8 @@ export const GARNISH_INK = '#4A2C1B';
  * teal, and the honest answer to the rest is to render the plate itself in 3D.
  */
 export function asRendered(color, gloss) {
-  const m = /^#([0-9a-f]{6})$/i.exec(color ?? '');
-  if (!m) return color ?? GARNISH_INK;
+  const rgbIn = parseColour(color);
+  if (!rgbIn) return color ?? GARNISH_INK;
   const g = gloss ?? GARNISH_GLOSS_DEFAULT;
 
   // The same two numbers the material is given, so the two can never be set independently.
@@ -57,16 +57,62 @@ export function asRendered(color, gloss) {
   const DIFFUSE = 0.94;                 // the rig's key + ambient, face-on
   const white = Math.min(0.35, clearcoat * env * 0.9);
 
-  const n = parseInt(m[1], 16);
   const mix = c => Math.round(Math.min(255, c * DIFFUSE * (1 - white) + 255 * white));
-  const [r, gg, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix);
+  const [r, gg, b] = rgbIn.map(mix);
+  return `rgb(${r}, ${gg}, ${b})`;
+}
+
+/* ⚠️ BOTH FORMS, BECAUSE THESE TWO COMPOSE. `materialBase` returns `rgb(…)` and its result is fed
+ * straight back through `asRendered` to check the round trip; reading only `#hex` made that silently
+ * return its input unchanged — a test that looked like it passed while comparing a colour with
+ * itself. Anything that can be handed one of these can be handed the other. */
+function parseColour(v) {
+  const hex = /^#([0-9a-f]{6})$/i.exec(v ?? '');
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const m = /^rgb\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)\s*\)$/i.exec(v ?? '');
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/**
+ * The base colour to HAND THE MATERIAL so that what comes out is the colour that was chosen.
+ *
+ * ⚠️ THE PREVIEW WAS BEING MOVED TOWARDS THE RENDER, AND THAT WAS THE WRONG DIRECTION. Making the
+ * studio wash out until it matched the cake did make them agree — about a colour nobody asked for.
+ * What somebody picking teal expects is teal, in both places; the render is the thing that is wrong,
+ * not the swatch.
+ *
+ * So the correction goes into the MATERIAL instead: undo the lighting and the white the renderer is
+ * about to add, hand it the colour that lands on the chosen one, and let the studio paint the chosen
+ * colour plainly. Same shared model, applied where the error is made.
+ *
+ * ⚠️ IT CANNOT ALWAYS SUCCEED, and it does not pretend to. A very dark colour under a strong sheen
+ * would need a negative base to come back exact; there the clamp holds it at black and the piece
+ * renders a little lighter than asked. Better to be as close as the physics allows and say so than
+ * to move the swatch to meet it.
+ */
+export function materialBase(color, gloss) {
+  const rgbIn = parseColour(color);
+  if (!rgbIn) return color ?? GARNISH_INK;
+  const g = gloss ?? GARNISH_GLOSS_DEFAULT;
+  const clearcoat = 0.06 + g * 0.30;
+  const env = 0.25 + g * 0.45;
+  const DIFFUSE = 0.94;
+  const white = Math.min(0.35, clearcoat * env * 0.9);
+
+  const undo = c => Math.round(Math.max(0, Math.min(255, (c - 255 * white) / (DIFFUSE * (1 - white)))));
+  const [r, gg, b] = rgbIn.map(undo);
   return `rgb(${r}, ${gg}, ${b})`;
 }
 
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
   const g = gloss ?? GARNISH_GLOSS_DEFAULT;
   return {
-    ...mediumOf(medium).material({ softness: g }, color ?? GARNISH_INK),
+    /* ⚠️ PRE-COMPENSATED, so what the renderer produces is the colour that was chosen — see
+     * `materialBase`. Handing it the raw colour is what made a teal piece arrive as pale mint. */
+    ...mediumOf(medium).material({ softness: g }, materialBase(color ?? GARNISH_INK, g)),
     /* ⚠️ THE LACQUER FOLLOWS THE SLIDER. These three were FIXED constants spread AFTER the medium's
      * own material, so they overwrote whatever Shine had just decided — the control moved, the
      * numbers underneath changed, and the render used the constants regardless. Shine at 1.00 looked
