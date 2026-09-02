@@ -335,7 +335,13 @@ export default function GarnishStudio({
         x.beginPath();
         s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
         x.closePath();
-        x.strokeStyle = shade(c2, -0.35); x.lineWidth = Math.max(1, 1.4 * k); x.stroke();
+        /* ⚠️ A SET PIECE HAS A DEFINITE EDGE. The reference pieces read as objects because their rim
+           is dark and heavy — chocolate is a few millimetres thick and that thickness catches shadow
+           all the way round. A hairline made them look like printed shapes. */
+        x.strokeStyle = shade(c2, -0.42);
+        x.lineWidth = Math.max(2, ROPE * 0.4 * k);
+        x.lineJoin = 'round';
+        x.stroke();
       }
     } else if (kind === 'cut') {
       /* ⚠️ THE PLATE MUST SHOW WHAT THE CAKE WILL SHOW. Drawing a cut piece as outlines would let
@@ -604,6 +610,8 @@ export default function GarnishStudio({
                                        PLATE * 0.78 - (Math.max(...ys) - y) * scale]);
     const brush = brushStroke(spine, {
       width: ROPE * preset.width, seed: strokes.length + 1, blade: preset.blade,
+      frayed: !preset.round,          // a rounded piece was lifted, not torn
+      round: preset.round,
     });
     if (!brush) return;
     setStrokes(s2 => { setPicked(s2.length); return [...s2, {
@@ -758,8 +766,13 @@ export default function GarnishStudio({
       for (let i = 1; i < spine.length; i++) {
         len += Math.hypot(spine[i][0] - spine[i - 1][0], spine[i][1] - spine[i - 1][1]);
       }
+      /* ⚠️ AND THE BLADE ITSELF WAS TOO BROAD. Capping by the length only helped short flicks; a long
+         pull still came back four times wider than the line drawn, because the multiplier was set
+         from the PETAL preset — the widest piece in the set — rather than from what a hand expects
+         when it drags a cursor. Someone drawing a line expects a stroke near that line. The slider
+         opens it up to a petal when a petal is wanted. */
       const brush = brushStroke(spine, {
-        width: Math.min(ROPE * 14, len * 0.42), seed: strokes.length + 1,
+        width: Math.min(ROPE * 4, len * 0.42), seed: strokes.length + 1,
       });
       if (!brush) return;
       setStrokes(s2 => { setPicked(s2.length); return [...s2, {
@@ -1377,13 +1390,19 @@ const BRUSH_PRESETS = [
      other and a blunt foot where it was snapped off the acetate. Everything else here is a PULL that
      runs dry to a point; this is a SLAB, which is why it needs the blade profile rather than a wider
      version of the same curve. */
+  /* The soft, blunt piece at the front of the reference cake: pressed and lifted almost straight
+     up, so it keeps its width and ends round rather than torn. */
+  { key: 'round',    label: 'Rounded petal', width: 15, blade: true, round: true,
+    spine: () => bez([0, 62], [6, 30], [2, 0]) },
   { key: 'petal',    label: 'Wide petal',    width: 22, blade: true,
     spine: () => bez([0, 92], [10, 46], [4, 0]) },
 ];
 
 /* The button faces, cut once by the real brush — the same argument as the fill swatches. */
 const BRUSH_ICONS = BRUSH_PRESETS.map(pr => {
-  const b = brushStroke(pr.spine(), { width: pr.width * 6, seed: 3, blade: pr.blade });
+  const b = brushStroke(pr.spine(), {
+    width: pr.width * 6, seed: 3, blade: pr.blade, frayed: !pr.round, round: pr.round,
+  });
   const pts = b?.outline ?? [];
   const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
   const x0 = Math.min(...xs), y0 = Math.min(...ys);

@@ -33,7 +33,7 @@ function noise(seed) {
  *
  * Returns `{ outline, ridges }` — a closed polygon and the polylines running along it.
  */
-export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false } = {}) {
+export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false, round = false } = {}) {
   let pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
   if (pts.length < 2) return null;
 
@@ -71,7 +71,11 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
   const left = [], right = [];
   for (let i = 0; i < pts.length; i++) {
     const t = seg[i] / total;
-    let w = closed ? width / 2 : (blade ? bladeProfile(t, width) : halfWidth(t, width));
+    /* ⚠️ ROUNDED, NOT TORN. Lifted almost straight up rather than dragged off, a piece keeps its
+       width and ends in a curve — the soft blunt one at the front of the reference cake. */
+    let w = closed ? width / 2
+      : round ? (width / 2) * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, t - 0.55) / 0.45, 2)))
+      : blade ? bladeProfile(t, width) : halfWidth(t, width);
 
     /* Perpendicular to the direction of travel. On a ring the neighbours WRAP, or the first and last
        cross-sections face different ways and the join shows as a kink. */
