@@ -519,6 +519,25 @@ export default function GarnishStudio({
     setTextValue('');
   }
 
+  /* A preset lands the same way a pulled one does — the spine is canned, the smear is generated. */
+  function addBrush(preset) {
+    const raw = preset.spine();
+    const ys = raw.map(q => q[1]);
+    const span = Math.max(1, Math.max(...ys) - Math.min(...ys));
+    const scale = (PLATE * 0.55) / span;
+    /* ⚠️ EACH ONE STEPS ACROSS. Centred, a second preset lands exactly on the first and reads as one
+       thicker piece — the same trap words fell into. Stepping sideways is right for brushstrokes
+       specifically, because a fan of them stands side by side. */
+    const dx = strokes.length * PLATE * 0.11 - PLATE * 0.16;
+    const spine = raw.map(([x, y]) => [PLATE / 2 + dx + x * scale,
+                                       PLATE * 0.78 - (Math.max(...ys) - y) * scale]);
+    const brush = brushStroke(spine, { width: ROPE * preset.width, seed: strokes.length + 1 });
+    if (!brush) return;
+    setStrokes(s2 => { setPicked(s2.length); return [...s2, {
+      path: spine, raw: spine, ring: brush.outline, closed: true, gap: 0, area: 0, fills: [], brush,
+    }]; });
+  }
+
   function addToCake() {
     onSave?.({
       name: name.trim() || 'Chocolate garnish', paths: piecePaths(strokes),
@@ -700,6 +719,10 @@ export default function GarnishStudio({
      outline no longer sit inside a softened one. */
   function retidyAll(mode) {
     setStrokes(all => all.map((s2, i) => {
+      /* ⚠️ A BRUSHSTROKE IS NOT TIDIED. Its shape comes from the smear, not from the spine, so
+         re-deriving it through `tidyWith` would throw the generated outline away and leave a bare
+         line where the piece was — a control for one technique quietly destroying another's work. */
+      if (s2.brush) return s2;
       const next = s2.raw ? tidyWith(s2.raw, mode) : null;
       if (!next) return s2;
       const pattern = s2.fillPattern && s2.fillPattern !== 'none' ? s2.fillPattern : null;
@@ -942,6 +965,29 @@ export default function GarnishStudio({
             belong against it — in the settings column they were a scroll away from the thing they
             change, which is the pairing INVARIANTS #11 is about. */}
         <div style={{ marginTop: 10 }}>
+          {kind === 'brushed' ? (
+            <>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {BRUSH_ICONS.map(pr => (
+                  <button key={pr.key} type="button" onClick={() => addBrush(pr)}
+                    title={pr.label} aria-label={pr.label}
+                    style={{ width: 44, height: 52, padding: 4, borderRadius: 10, cursor: 'pointer',
+                             border: '1.5px solid #E0DDD8', background: '#fff' }}>
+                    {/* ⚠️ PROPORTIONS KEPT. Stretched to fill the button, a long taper and a short
+                        stub squash into the same blob — five buttons showing one shape, which is
+                        worse than no preview because it says the choices are identical. */}
+                    <svg viewBox="0 0 100 100" width="100%" height="100%">
+                      <path d={pr.d} fill={INK} />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: '#999', marginTop: 4, lineHeight: 1.4 }}>
+                Tap one, then turn and colour it. Or drag on the plate for a sweep of your own.
+              </div>
+            </>
+          ) : (
+          <>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {SHAPES.map(sh => (
               <button key={sh.key} type="button" onClick={() => addShape(sh)} title={sh.label}
@@ -956,6 +1002,8 @@ export default function GarnishStudio({
           <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
             Lands closed, so you can fill it straight away.
           </div>
+          </>
+          )}
         </div>
         </div>
 
@@ -966,7 +1014,14 @@ export default function GarnishStudio({
               the bottom of the column. It was below the placement controls, the library and the name
               field — past everything — and a baker looking for it had no reason to believe it was
               there at all. Placement matters once, at the end; fill is worked on while drawing. */}
-          {kind === 'cut' ? (
+          {kind === 'brushed' ? (
+            /* ⚠️ A SMEAR IS SOLID CHOCOLATE, so a fill choice on it is a control with nothing to do —
+               the lacy patterns are a piping technique and mean nothing to a spatula. The same
+               reasoning as a cut panel, for the same reason. */
+            <div style={{ fontSize: 11, color: '#8a8a8a', lineHeight: 1.5 }}>
+              A brushstroke is solid chocolate. Turn it and colour it; the ridges come from the pull.
+            </div>
+          ) : kind === 'cut' ? (
             /* ⚠️ A CUT PANEL IS SOLID BY DEFINITION, so a fill choice on it would be a control with
                nothing to do. The lacy patterns are a piping technique — passes of a nozzle — and mean
                nothing to a knife. */
@@ -1038,8 +1093,9 @@ export default function GarnishStudio({
                   style={{ ...miniBtn, color: '#A33', borderColor: '#E0C9C9' }}>Remove</button>
               </div>
               <div style={{ fontSize: 10, color: '#8899aa', marginTop: 5, lineHeight: 1.4 }}>
-                Drag it to move it, or drag the blue dot at its corner to resize. Colour and fill
-                land on this shape alone.
+                Drag it to move it, or drag the blue dot at its corner to resize.
+                {kind === 'brushed' ? ' Colour lands on this piece alone.'
+                                    : ' Colour and fill land on this shape alone.'}
               </div>
             </div>
           )}
@@ -1049,6 +1105,7 @@ export default function GarnishStudio({
               can only ever mean one of them. Someone asking to soften their drawing had nothing to
               press, and ticking "auto-correct" harder was never going to give it to them. Changing it
               re-derives every stroke from the points the hand actually made. */}
+          {kind !== 'brushed' && (
           <div>
             <span style={labelStyle}>Tidy the drawing</span>
             <div style={{ marginTop: 5 }}>
@@ -1066,6 +1123,7 @@ export default function GarnishStudio({
                   : 'Left exactly as your hand made it.'}
             </div>
           </div>
+          )}
 
 
           {/* ⚠️ SIDE IS NOT OFFERED, and that is a real limit rather than an oversight. A piece on a
@@ -1186,6 +1244,55 @@ function shade(colour, amount) {
 
 /* Plate units: a press that wanders less than this was a tap, not a stroke. */
 const TAP_SLOP = 6;
+
+/* ── Brush presets ───────────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A BRUSHSTROKE IS ONE FAST PULL, and that is why these lead rather than freehand. The character
+ * comes from the spatula, not from the baker's aim: drawing the gesture slowly with a mouse adds a
+ * wobble the technique does not have. What actually varies between the pieces on a brushstroke cake
+ * is LENGTH, WIDTH, CURVE, COLOUR and ANGLE — not the shape of each pull, which is why a fan of them
+ * reads as deliberate. Asking someone to hand-draw seven pulls guarantees seven inconsistent shapes,
+ * which is the very problem the fan helper exists to solve.
+ *
+ * Freehand still works, for a specific sweep nothing here covers. This mirrors the studio's own
+ * grammar: shapes to pick from AND a pen, side by side.
+ *
+ * A preset is just a canned SPINE — the same `brushStroke` generates it, so there is no second code
+ * path and a preview cannot promise something the real thing does not do. */
+const bez = (a, b, c, n = 22) => Array.from({ length: n }, (_, i) => {
+  const t = i / (n - 1), u = 1 - t;
+  return [u * u * a[0] + 2 * u * t * b[0] + t * t * c[0],
+          u * u * a[1] + 2 * u * t * b[1] + t * t * c[1]];
+});
+
+const BRUSH_PRESETS = [
+  { key: 'straight', label: 'Straight pull', width: 7,
+    spine: () => bez([0, 100], [0, 50], [0, 0]) },
+  { key: 'long',     label: 'Long taper',    width: 5.6,
+    spine: () => bez([0, 130], [2, 60], [6, -10]) },
+  { key: 'sweep',    label: 'Curved sweep',  width: 6.6,
+    spine: () => bez([0, 100], [26, 46], [8, -6]) },
+  { key: 'stub',     label: 'Short stub',    width: 8,
+    spine: () => bez([0, 52], [1, 26], [3, 0]) },
+  { key: 'wide',     label: 'Wide flat',     width: 11,
+    spine: () => bez([0, 74], [0, 36], [0, 0]) },
+];
+
+/* The button faces, cut once by the real brush — the same argument as the fill swatches. */
+const BRUSH_ICONS = BRUSH_PRESETS.map(pr => {
+  const b = brushStroke(pr.spine(), { width: pr.width * 6, seed: 3 });
+  const pts = b?.outline ?? [];
+  const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  const w = Math.max(...xs) - x0, h = Math.max(...ys) - y0;
+  // ONE scale for both axes, so a wide flat stays wide and a long taper stays long.
+  const f = 96 / Math.max(1, Math.max(w, h));
+  const ox = (100 - w * f) / 2, oy = (100 - h * f) / 2;
+  return {
+    ...pr,
+    d: pts.map(([x, y], i) => `${i ? 'L' : 'M'}${(ox + (x - x0) * f).toFixed(1)} ${(oy + (y - y0) * f).toFixed(1)}`).join(' '),
+  };
+});
 
 /* The fill swatches, cut ONCE by the real `fillShape` on a square. Generating them per render would
  * re-cut every pattern on every keystroke, and hand-drawing approximations would let a swatch promise
