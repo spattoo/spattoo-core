@@ -316,7 +316,8 @@ export default function GarnishStudio({
           x.beginPath();
           r.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
           x.strokeStyle = shade(c2, 0.16);
-          x.lineWidth = Math.max(1, ROPE * 0.3 * k);
+          // Relative to the PIECE, not to the nozzle: a petal's striations are broader than a pull's.
+          x.lineWidth = Math.max(1, (s2.brush.width ?? ROPE * 4) * 0.06 * k);
           x.lineCap = 'round';
           x.globalAlpha = 0.55;
           x.stroke();
@@ -608,8 +609,17 @@ export default function GarnishStudio({
     const dx = strokes.length * PLATE * 0.11 - PLATE * 0.16;
     const spine = raw.map(([x, y]) => [PLATE / 2 + dx + x * scale,
                                        PLATE * 0.78 - (Math.max(...ys) - y) * scale]);
+    /* ⚠️ THE SAME RULE AS A DRAWN ONE. A preset is a known gesture, so it was given a fixed width —
+       but that meant freehand and presets sized by different rules, and two rules for one idea is
+       how a tool starts feeling arbitrary. A spatula cannot lay a slab broader than the distance it
+       travelled, whoever decided the path. */
+    let plen = 0;
+    for (let i = 1; i < spine.length; i++) {
+      plen += Math.hypot(spine[i][0] - spine[i - 1][0], spine[i][1] - spine[i - 1][1]);
+    }
     const brush = brushStroke(spine, {
-      width: ROPE * preset.width, seed: strokes.length + 1, blade: preset.blade,
+      width: Math.min(ROPE * preset.width, plen * 0.42),
+      seed: strokes.length + 1, blade: preset.blade,
       frayed: !preset.round,          // a rounded piece was lifted, not torn
       round: preset.round,
     });

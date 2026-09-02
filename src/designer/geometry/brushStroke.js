@@ -124,7 +124,8 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
   const band = left.map((l, i) => [l, right[i]]);
   if (closed) band.push(band[0]);          // the last section joins back to the first
 
-  return { outline, band, closed, ridges: ridgesAlong(pts, seg, total, width, rnd, closed) };
+  // `width` travels with the piece: the ridges are drawn relative to it, not to a nozzle setting.
+  return { outline, band, closed, width, ridges: ridgesAlong(pts, seg, total, width, rnd, closed) };
 }
 
 /* The radius of the circle through this point and its neighbours — how tight the turn is here.
@@ -169,7 +170,13 @@ export function bladeProfile(t, width) {
  * by then there is too little chocolate left to hold a ridge. */
 function ridgesAlong(pts, seg, total, width, rnd, closed = false) {
   const out = [];
-  const lanes = [-0.55, -0.2, 0.2, 0.55];
+  /* ⚠️ HOW MANY RIDGES DEPENDS ON HOW WIDE THE BLADE IS. Four lanes look right on a narrow pull and
+   * almost disappear on a petal — the same four lines spread across four times the width, so a big
+   * piece came out as flat colour. A wider knife has more teeth in contact, so the count follows the
+   * width and the spacing between them stays roughly constant, which is what the eye reads as
+   * texture rather than as stripes. */
+  const count = Math.max(3, Math.min(11, Math.round(width / 16)));
+  const lanes = Array.from({ length: count }, (_, i) => -0.72 + (1.44 * i) / (count - 1));
   for (const lane of lanes) {
     // On a ring the knife never lifts, so its striations run the whole way round.
     const stop = closed ? 1.01 : 0.55 + rnd() * 0.3;
