@@ -73,6 +73,33 @@ describe('a chocolate brushstroke', () => {
     expect((l[1] - straight[5][1]) * (r[1] - straight[5][1])).toBeLessThan(0);
   });
 
+  /* ⚠️ A RING IS NOT A PULL. A brushstroke tapers where the spatula lifts — right for a pull, fatal
+     for a loop, because the thin tail can never meet the blunt start and the ring always came out
+     with a gap in it. A spatula taken round a ring never lifts, so it lays an even band. */
+  describe('a closed loop', () => {
+    const ring = Array.from({ length: 40 }, (_, i) => {
+      const a = (i / 39) * Math.PI * 2;
+      return [200 + Math.cos(a) * 90, 200 + Math.sin(a) * 90];
+    });
+
+    it('is recognised from the gesture, not asked for', () => {
+      expect(brushStroke(ring, { width: 40 }).closed).toBe(true);
+      expect(brushStroke(straight, { width: 40 }).closed).toBe(false);
+    });
+
+    it('keeps an even width all the way round, so the ends meet', () => {
+      const b = brushStroke(ring, { width: 40 });
+      const widths = b.band.map(([l, r]) => Math.hypot(l[0] - r[0], l[1] - r[1]));
+      const min = Math.min(...widths), max = Math.max(...widths);
+      expect(min).toBeGreaterThan(max * 0.8);      // no taper to a point
+    });
+
+    it('joins the last section back to the first', () => {
+      const b = brushStroke(ring, { width: 40 });
+      expect(b.band[b.band.length - 1]).toEqual(b.band[0]);
+    });
+  });
+
   it('has nothing to say about a gesture too short to be one', () => {
     expect(brushStroke([[0, 0]])).toBeNull();
     expect(brushStroke([[5, 5], [5, 5]])).toBeNull();

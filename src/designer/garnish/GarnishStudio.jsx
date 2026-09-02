@@ -706,11 +706,19 @@ export default function GarnishStudio({
     /* A press that never really moved was a tap: pick what is under it, and draw nothing. The slop is
        generous because a finger never presses perfectly still — too tight and every tap leaves a
        one-pixel blob of chocolate behind. */
+    /* ⚠️ HOW FAR THE POINTER TRAVELLED, NOT HOW FAR IT ENDED UP. Measured as the straight line from
+       press to release, a CLOSED GESTURE looks exactly like a tap — a loop, a circle, a letter O all
+       finish where they started, so displacement is zero. Every one of them was thrown away and read
+       as a selection instead: "closed shapes disappear", reported twice and diagnosed twice as a
+       problem with the smear, when the stroke never survived long enough to be drawn. A tap is a
+       press that goes NOWHERE, and the only honest measure of that is the distance travelled. */
     const from = downRef.current;
     downRef.current = null;
-    const moved = from && trail.length
-      ? Math.hypot(trail[trail.length - 1][0] - from[0], trail[trail.length - 1][1] - from[1])
-      : Infinity;
+    let moved = 0;
+    for (let i = 1; i < trail.length; i++) {
+      moved += Math.hypot(trail[i][0] - trail[i - 1][0], trail[i][1] - trail[i - 1][1]);
+    }
+    if (!trail.length) moved = Infinity;
     if (trail.length && moved <= TAP_SLOP) {
       setPicked(hitStroke(from));            // null on bare plate, which deselects
       setTrail([]);

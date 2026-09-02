@@ -34,8 +34,21 @@ function noise(seed) {
  * Returns `{ outline, ridges }` — a closed polygon and the polylines running along it.
  */
 export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) {
-  const pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
+  let pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
   if (pts.length < 2) return null;
+
+  /* ⚠️ A RING IS NOT A PULL, AND THE PROFILE IS THE DIFFERENCE. A brushstroke tapers to nothing where
+   * the spatula is lifted — right for a pull, and fatal for a loop: the thin tail can never meet the
+   * blunt start, so a ring drawn in one gesture always came out with a gap in it, no matter how
+   * carefully it was closed. A spatula taken round a ring never lifts, so it lays an EVEN band.
+   * Closure is detected from the gesture rather than asked for: bringing the ends together IS the
+   * request. */
+  const closed = Math.hypot(pts[0][0] - pts[pts.length - 1][0],
+                            pts[0][1] - pts[pts.length - 1][1]) <= width * 0.9;
+  if (closed) {
+    // Snap the ends together, so the band joins cleanly rather than nearly.
+    pts = [...pts.slice(0, -1), [...pts[0]]];
+  }
 
   // Arc length, so the profile follows the DISTANCE travelled rather than however many points the
   // hand happened to leave — a slow start would otherwise look like a long one.
@@ -52,10 +65,12 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) 
   const left = [], right = [];
   for (let i = 0; i < pts.length; i++) {
     const t = seg[i] / total;
-    let w = halfWidth(t, width) * (jitter ? lerp(0.86, 1, jitter[i]) : 1);
+    let w = (closed ? width / 2 : halfWidth(t, width)) * (jitter ? lerp(0.9, 1, jitter[i]) : 1);
 
-    // Perpendicular to the direction of travel here.
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    /* Perpendicular to the direction of travel. On a ring the neighbours WRAP, or the first and last
+       cross-sections face different ways and the join shows as a kink. */
+    const a = closed ? pts[(i - 1 + pts.length - 1) % (pts.length - 1)] : pts[Math.max(0, i - 1)];
+    const b = closed ? pts[(i + 1) % (pts.length - 1)] : pts[Math.min(pts.length - 1, i + 1)];
     const dx = b[0] - a[0], dy = b[1] - a[1];
     const len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len, ny = dx / len;
@@ -86,8 +101,9 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true } = {}) 
    * overlaps simply overdraw. It is also closer to the truth — a spatula lays chocolate down section
    * by section; it does not trace an outline and pour. */
   const band = left.map((l, i) => [l, right[i]]);
+  if (closed) band.push(band[0]);          // the last section joins back to the first
 
-  return { outline, band, ridges: ridgesAlong(pts, seg, total, width, rnd) };
+  return { outline, band, closed, ridges: ridgesAlong(pts, seg, total, width, rnd, closed) };
 }
 
 /* The radius of the circle through this point and its neighbours — how tight the turn is here.
@@ -118,16 +134,17 @@ function halfWidth(t, width) {
 
 /* The knife's own edge, dragged along. Three or four inner lines that stop short of the end, because
  * by then there is too little chocolate left to hold a ridge. */
-function ridgesAlong(pts, seg, total, width, rnd) {
+function ridgesAlong(pts, seg, total, width, rnd, closed = false) {
   const out = [];
   const lanes = [-0.55, -0.2, 0.2, 0.55];
   for (const lane of lanes) {
-    const stop = 0.55 + rnd() * 0.3;      // each ridge runs out at its own point
+    // On a ring the knife never lifts, so its striations run the whole way round.
+    const stop = closed ? 1.01 : 0.55 + rnd() * 0.3;
     const line = [];
     for (let i = 0; i < pts.length; i++) {
       const t = seg[i] / total;
       if (t > stop) break;
-      const w = Math.min(halfWidth(t, width), turnRadius(pts, i) * 0.9);
+      const w = Math.min(closed ? width / 2 : halfWidth(t, width), turnRadius(pts, i) * 0.9);
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
       const dx = b[0] - a[0], dy = b[1] - a[1];
       const len = Math.hypot(dx, dy) || 1;
