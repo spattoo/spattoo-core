@@ -304,18 +304,26 @@ export default function GarnishStudio({
           }
         };
 
-        // How thick the piece looks, and which way the light comes from.
-        const lift = Math.max(2, (s2.brush.width ?? ROPE * 4) * 0.09 * k);
+        /* ⚠️ SET CHOCOLATE IS A SMOOTH, EVENLY LIT SURFACE — almost flat colour. Put beside the real
+           thing, the piece here was a hard-edged extrusion: a dark side band, strong striations, a
+           heavy shadow. All three were "more of the effect" when what the photograph shows is
+           restraint. The chocolate is only a couple of millimetres thick, so its side is a hint
+           rather than a face, and the light in the picture is soft and everywhere.
 
-        // 1. The shadow it casts on the plate.
+           Elevation still comes from a shadow and a side — the earlier lesson holds, an outline
+           would be a border — but both are a fraction of what they were. If you can see where the
+           shading starts, it is too strong. */
+        const lift = Math.max(1.5, (s2.brush.width ?? ROPE * 4) * 0.05 * k);
+
+        // 1. A soft, low shadow — the piece is lying on the surface, not floating above it.
         x.save();
-        x.shadowColor = 'rgba(40, 26, 16, 0.32)';
-        x.shadowBlur = lift * 2.4;
-        x.shadowOffsetX = lift * 0.5;
-        x.shadowOffsetY = lift * 0.9;
-        x.fillStyle = shade(c2, -0.5);
-        x.translate(lift * 0.55, lift * 0.85);
-        drawSilhouette();                       // 2. and the SIDE, in the same pass
+        x.shadowColor = 'rgba(60, 44, 32, 0.16)';
+        x.shadowBlur = lift * 4;
+        x.shadowOffsetX = lift * 0.4;
+        x.shadowOffsetY = lift * 0.8;
+        x.fillStyle = shade(c2, -0.16);         // 2. and the SIDE: a hint of thickness, not a face
+        x.translate(lift * 0.35, lift * 0.6);
+        drawSilhouette();
         x.restore();
 
         // 3. The top face, proud of the side.
@@ -330,11 +338,12 @@ export default function GarnishStudio({
         for (const r of s2.brush.ridges) {
           x.beginPath();
           r.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
-          x.strokeStyle = shade(c2, 0.16);
+          x.strokeStyle = shade(c2, 0.1);
           // Relative to the PIECE, not to the nozzle: a petal's striations are broader than a pull's.
-          x.lineWidth = Math.max(1, (s2.brush.width ?? ROPE * 4) * 0.06 * k);
+          x.lineWidth = Math.max(1, (s2.brush.width ?? ROPE * 4) * 0.07 * k);
           x.lineCap = 'round';
-          x.globalAlpha = 0.55;
+          // Barely there. In the photograph the knife marks are a suggestion, not a corduroy.
+          x.globalAlpha = 0.22;
           x.stroke();
         }
         x.globalAlpha = 1;
@@ -348,9 +357,9 @@ export default function GarnishStudio({
         x.closePath();
         /* Soft: a strong bright line just inside the edge is the border again, wearing a different
            colour. It should read as light falling across the turn, not as a second outline. */
-        x.strokeStyle = shade(c2, 0.26);
-        x.lineWidth = lift * 0.8;
-        x.globalAlpha = 0.45;
+        x.strokeStyle = shade(c2, 0.2);
+        x.lineWidth = lift * 1.4;
+        x.globalAlpha = 0.3;
         x.stroke();
         x.restore();
         x.globalAlpha = 1;
