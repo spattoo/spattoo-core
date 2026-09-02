@@ -270,19 +270,28 @@ export default function GarnishStudio({
       for (const s2 of strokes) {
         if (!s2.brush) { rope(s2.path, ROPE + 2, s2.color ?? color); continue; }
         const c2 = s2.color ?? color;
-        /* Filled section by section — see `band` in brushStroke.js. One polygon of the whole
-           outline cancels itself wherever the stroke doubles back. */
-        x.fillStyle = c2;
-        /* ⚠️ A PIECE MADE BEFORE THE BAND EXISTED HAS ONLY AN OUTLINE, and falling back to filling
-           that outline reproduces the exact bug the band was written to fix — a stroke that doubles
-           back cancels half of itself. The spine is stored, so the smear is regenerated rather than
-           approximated: same generator, same result, and a plate drawn a minute ago behaves like one
-           drawn now. Anything already on the plate when the fix shipped keeps working. */
-        const band = s2.brush.band
-          ?? brushStroke(s2.path, { width: ROPE * 14, seed: 1 })?.band;
-        if (band) {
-          for (let i = 0; i < band.length - 1; i++) {
-            const [l0, r0] = band[i], [l1, r1] = band[i + 1];
+        /* ⚠️ ELEVATION IS NOT AN OUTLINE. A dark line drawn round a shape is a BORDER — it reads as a
+           sticker, however thick it gets, and no amount of darkening it will ever say "this object
+           stands off the surface". The reference piece has no outline at all: what makes it look like
+           a slab of set chocolate is that it is LIT — a soft shadow beneath it, a visible side where
+           its thickness catches darkness, and a top face that is slightly brighter than the side.
+
+           So it is drawn as a solid, three passes, in the order a real object presents itself:
+             1. a soft shadow on the surface underneath,
+             2. the SIDE — the same silhouette, offset toward the shadow, in a darker shade, which is
+                the few millimetres of thickness seen edge-on,
+             3. the top face, sitting on the side and slightly proud of it.
+           There is no stroke round the outside at any point. */
+        const drawSilhouette = () => {
+          const bd = s2.brush.band;
+          if (!bd) {
+            x.beginPath();
+            s2.brush.outline.forEach(([a2, b2], i) => (i ? x.lineTo(a2 * k, b2 * k) : x.moveTo(a2 * k, b2 * k)));
+            x.closePath(); x.fill();
+            return;
+          }
+          for (let i = 0; i < bd.length - 1; i++) {
+            const [l0, r0] = bd[i], [l1, r1] = bd[i + 1];
             x.beginPath();
             x.moveTo(l0[0] * k, l0[1] * k);
             x.lineTo(l1[0] * k, l1[1] * k);
@@ -290,28 +299,34 @@ export default function GarnishStudio({
             x.lineTo(r0[0] * k, r0[1] * k);
             x.closePath();
             x.fill();
-            /* ⚠️ AND STROKED IN ITS OWN COLOUR. Two abutting fills antialias against the background
-               along their shared edge, so a band of them shows a faint seam at every cross-section —
-               a ladder of pale lines across the piece. A hairline in the fill colour closes it. */
-            x.strokeStyle = c2; x.lineWidth = 1; x.stroke();
+            // Stroked in its own colour: two abutting fills antialias apart and leave a pale seam.
+            x.strokeStyle = x.fillStyle; x.lineWidth = 1; x.stroke();
           }
-        }
-        x.beginPath();
-        s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
-        x.closePath();
-        if (!band) x.fill();
+        };
 
-        /* ⚠️ THE EDGE IS RAISED, AND THAT IS WHAT THE REFERENCE SHOWS. Chocolate dragged with a
-           spatula banks up along the sides and thins in the middle, so a real stroke has a lip that
-           catches the light and a slightly sunken centre. Drawn as evenly spaced light lines across
-           the whole width it read as STRIPES — a coloured shape with a pattern printed on it rather
-           than a thing with a surface.
+        // How thick the piece looks, and which way the light comes from.
+        const lift = Math.max(2, (s2.brush.width ?? ROPE * 4) * 0.09 * k);
 
-           So: a bright lip just inside the outline, a dark line at the very edge to seat it, and the
-           knife's striations kept faint underneath. The lip does most of the work; the striations
-           are texture, not the shape. */
+        // 1. The shadow it casts on the plate.
         x.save();
-        x.clip();                                   // keep every highlight inside the smear
+        x.shadowColor = 'rgba(40, 26, 16, 0.32)';
+        x.shadowBlur = lift * 2.4;
+        x.shadowOffsetX = lift * 0.5;
+        x.shadowOffsetY = lift * 0.9;
+        x.fillStyle = shade(c2, -0.5);
+        x.translate(lift * 0.55, lift * 0.85);
+        drawSilhouette();                       // 2. and the SIDE, in the same pass
+        x.restore();
+
+        // 3. The top face, proud of the side.
+        x.fillStyle = c2;
+        drawSilhouette();
+
+        x.save();
+        x.beginPath();
+        s2.brush.outline.forEach(([a2, b2], i) => (i ? x.lineTo(a2 * k, b2 * k) : x.moveTo(a2 * k, b2 * k)));
+        x.closePath();
+        x.clip();
         for (const r of s2.brush.ridges) {
           x.beginPath();
           r.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
@@ -323,26 +338,23 @@ export default function GarnishStudio({
           x.stroke();
         }
         x.globalAlpha = 1;
-        // The banked-up lip, drawn INSIDE the clip so it hugs the edge it belongs to.
+        /* The lit edge, on the side the light comes FROM only. Stroked all the way round it becomes
+           the border again; offset into the shape and clipped, it reads as the top face catching
+           light where it turns over. */
+        x.save();
+        x.translate(-lift * 0.5, -lift * 0.8);
         x.beginPath();
-        s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
+        s2.brush.outline.forEach(([a2, b2], i) => (i ? x.lineTo(a2 * k, b2 * k) : x.moveTo(a2 * k, b2 * k)));
         x.closePath();
-        x.strokeStyle = shade(c2, 0.42);
-        x.lineWidth = Math.max(1.5, ROPE * 0.85 * k);
+        /* Soft: a strong bright line just inside the edge is the border again, wearing a different
+           colour. It should read as light falling across the turn, not as a second outline. */
+        x.strokeStyle = shade(c2, 0.26);
+        x.lineWidth = lift * 0.8;
+        x.globalAlpha = 0.45;
         x.stroke();
         x.restore();
-
-        // And the cut edge itself, which seats the piece against the plate.
-        x.beginPath();
-        s2.brush.outline.forEach(([a, b], i) => (i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k)));
-        x.closePath();
-        /* ⚠️ A SET PIECE HAS A DEFINITE EDGE. The reference pieces read as objects because their rim
-           is dark and heavy — chocolate is a few millimetres thick and that thickness catches shadow
-           all the way round. A hairline made them look like printed shapes. */
-        x.strokeStyle = shade(c2, -0.42);
-        x.lineWidth = Math.max(2, ROPE * 0.4 * k);
-        x.lineJoin = 'round';
-        x.stroke();
+        x.globalAlpha = 1;
+        x.restore();
       }
     } else if (kind === 'cut') {
       /* ⚠️ THE PLATE MUST SHOW WHAT THE CAKE WILL SHOW. Drawing a cut piece as outlines would let
