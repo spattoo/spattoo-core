@@ -273,7 +273,13 @@ export default function GarnishStudio({
         /* Filled section by section — see `band` in brushStroke.js. One polygon of the whole
            outline cancels itself wherever the stroke doubles back. */
         x.fillStyle = c2;
-        const band = s2.brush.band;
+        /* ⚠️ A PIECE MADE BEFORE THE BAND EXISTED HAS ONLY AN OUTLINE, and falling back to filling
+           that outline reproduces the exact bug the band was written to fix — a stroke that doubles
+           back cancels half of itself. The spine is stored, so the smear is regenerated rather than
+           approximated: same generator, same result, and a plate drawn a minute ago behaves like one
+           drawn now. Anything already on the plate when the fix shipped keeps working. */
+        const band = s2.brush.band
+          ?? brushStroke(s2.path, { width: ROPE * 7, seed: 1 })?.band;
         if (band) {
           for (let i = 0; i < band.length - 1; i++) {
             const [l0, r0] = band[i], [l1, r1] = band[i + 1];
