@@ -40,6 +40,10 @@ export const CAKE_BUILD = Object.freeze({
   layers: 2,                 // slices of sponge; layers - 1 gaps of filling between them
   fillingThicknessIn: 0.4,   // per gap
   fillingDensity: 0.90,      // kg/L — buttercream. Ganache and fresh cream differ.
+  /* ⚠️ Nobody bakes 3.26 kg. Batter is weighed out in round amounts, and a tier's share of the
+   * order has to land on one — 3.25 and 1.75, not 3.26 and 1.74. Pure arithmetic produces a number
+   * that is exactly right and cannot be followed. */
+  quantumKg: 0.25,
 });
 
 /* ⚠️ The build the ANCHOR describes, which is NOT whatever this order asked for.
@@ -121,6 +125,37 @@ export function diameterFor(kg, aspect, build = CAKE_BUILD) {
   return (lo + hi) / 2;
 }
 
+/* Split `totalKg` across tiers in whole quanta, by share, summing to the total.
+ *
+ * Largest remainder (Hamilton): floor everything, then hand the leftover quanta to the tiers that
+ * lost the most in the rounding. Rounding each tier on its own is what breaks the sum — three tiers
+ * at .17 each round down and the cake is a quarter-kilo light, with nothing saying so.
+ *
+ * ⚠️ Rounds the TOTAL up, never down. A baker can trim a cake that came out heavy; they cannot add
+ * to one that came out light without baking again. So an order that is not a whole number of quanta
+ * bakes slightly over, and `bakedKg` says by how much rather than quietly restating the order.
+ *
+ * Every tier gets at least one quantum: a tier of zero is not a tier.
+ */
+export function apportion(shares, totalKg, quantumKg) {
+  const n = shares.length;
+  if (!n) return [];
+  if (!(quantumKg > 0)) return shares.map(s => totalKg * s);
+  const units = Math.max(n, Math.ceil(totalKg / quantumKg - 1e-9));
+  const exact = shares.map(s => s * units);
+  const base = exact.map(e => Math.max(1, Math.floor(e)));
+  let left = units - base.reduce((a, b) => a + b, 0);
+  // Give out (or claw back) one quantum at a time, worst-rounded first.
+  const order = exact.map((e, i) => ({ rem: e - Math.floor(e), i }))
+                     .sort((a, b) => (left > 0 ? b.rem - a.rem : a.rem - b.rem));
+  for (let k = 0; left !== 0 && k < order.length * units; k++) {
+    const i = order[k % n].i;
+    if (left > 0) { base[i]++; left--; }
+    else if (base[i] > 1) { base[i]--; left++; }
+  }
+  return base.map(u => +(u * quantumKg).toFixed(3));
+}
+
 // The tins a baker actually owns. Snapping is a convenience, so the exact figure travels too.
 export const COMMON_TINS = Object.freeze([4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
 export const snapToCommon = (inch) =>
@@ -150,10 +185,13 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   const totalVol = vols.reduce((s, v) => s + v, 0) || 1;
   const total = typeof weightKg === 'number' && weightKg > 0 ? weightKg : null;
 
+  // Weights a baker can actually weigh out, summing to what was ordered.
+  const weights = total != null ? apportion(vols.map(v => v / totalVol), total, build.quantumKg) : null;
+
   const out = tiers.map((t, i) => {
     const s = tierShape(t);
     const square = s.kind === 'rect';
-    const weight = total != null ? +(total * vols[i] / totalVol).toFixed(2) : null;
+    const weight = weights ? weights[i] : null;
 
     // The design's own proportion: height over the diameter of a circle with the same footprint, so
     // a heart and a round tier are compared on the space they actually occupy.
@@ -175,5 +213,6 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
     };
   });
 
-  return { totalKg: total, build, tiers: out };
+  const baked = weights ? +weights.reduce((a, b) => a + b, 0).toFixed(3) : null;
+  return { totalKg: total, bakedKg: baked, build, tiers: out };
 }

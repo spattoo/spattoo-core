@@ -61,19 +61,27 @@ describe('footprint — every shape measured, none guessed', () => {
 });
 
 describe('splitting the weight', () => {
+  /* ⚠️ Quantisation OFF in this block, deliberately.
+   *
+   * These test the VOLUME model — that a heart is measured and that round and rect are measured the
+   * same way. Bakeable weights round those shares to the nearest 250g, which is right for a baker
+   * and coarse enough to blur the very thing being asserted: the heart split landed on 1.67 where
+   * the areas say 1.78, and that is the rounding, not the model. Rounding is tested on its own
+   * below. */
+  const RAW = { build: { ...CAKE_BUILD, quantumKg: 0 } };
   it('gives equal real volumes equal weight, round against rect', () => {
     /* ⚠️ THE MISSING PI. Round measured r²·h and rect measured w·d·h, so these two — which hold the
      * same cake — split 0.96 / 3.04 instead of 2 / 2. Any cake mixing the families was wrong. */
     const r = 1.2, h = 1.45;
     const side = Math.sqrt(Math.PI) * r;          // a square of exactly the circle's area
-    const { tiers } = computeTinPlan([round(r, h), rect(side, side, h)], 4);
+    const { tiers } = computeTinPlan([round(r, h), rect(side, side, h)], 4, RAW);
     expect(tiers[0].weightKg).toBeCloseTo(2, 1);
     expect(tiers[1].weightKg).toBeCloseTo(2, 1);
   });
 
   it('uses a heart\'s real footprint when splitting', () => {
     // Two hearts, the lower one wider: the split must follow their areas, not a fixed taper.
-    const { tiers } = computeTinPlan([heart(2.4, 2.4, 1.45), heart(1.8, 1.8, 1.45)], 4);
+    const { tiers } = computeTinPlan([heart(2.4, 2.4, 1.45), heart(1.8, 1.8, 1.45)], 4, RAW);
     const ratio = tiers[0].weightKg / tiers[1].weightKg;
     expect(ratio).toBeCloseTo((2.4 / 1.8) ** 2, 1);   // area scales with the square
     expect(ratio).not.toBeCloseTo(1 / 0.62, 1);       // and NOT the old taper
@@ -141,5 +149,60 @@ describe('the two controls a baker gets', () => {
     const two  = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers: 2 } }).tiers[0];
     const four = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers: 4 } }).tiers[0];
     expect(Math.abs(four.heightIn - two.heightIn)).toBeLessThan(1);
+  });
+});
+
+describe('weights a baker can actually weigh out', () => {
+  const two   = [round(1.2, 1.45), round(0.9, 1.37)];
+  const three = [round(1.2, 1.45), round(0.9, 1.37), round(0.65, 1.29)];
+
+  it('lands every tier on a whole quantum', () => {
+    // ⚠️ Nobody bakes 3.26 kg. The maths was exactly right and impossible to follow.
+    const { tiers } = computeTinPlan(two, 5);
+    for (const t of tiers) expect((t.weightKg / 0.25) % 1).toBeCloseTo(0, 6);
+    expect(tiers.map(t => t.weightKg)).toEqual([3.25, 1.75]);
+  });
+
+  it('still sums to the order', () => {
+    /* Rounding each tier on its own is what breaks this — three tiers each losing a fraction take a
+     * quarter-kilo off the cake with nothing saying so. Largest remainder keeps the total. */
+    for (const kg of [1, 1.5, 2, 3, 5, 7.5, 12]) {
+      for (const tiers of [two, three]) {
+        const plan = computeTinPlan(tiers, kg);
+        const sum = plan.tiers.reduce((s, t) => s + t.weightKg, 0);
+        expect(+sum.toFixed(3), `${kg}kg / ${tiers.length} tiers`).toBe(plan.bakedKg);
+        expect(sum, `${kg}kg / ${tiers.length} tiers`).toBeGreaterThanOrEqual(kg - 1e-9);
+      }
+    }
+  });
+
+  it('rounds the total UP, never down', () => {
+    // A baker can trim a heavy cake; they cannot add to a light one without baking again. An order
+    // that is not a whole number of quanta bakes slightly over, and bakedKg says so.
+    const plan = computeTinPlan(two, 4.6);
+    expect(plan.totalKg).toBe(4.6);
+    expect(plan.bakedKg).toBe(4.75);
+    expect(plan.bakedKg).toBeGreaterThan(plan.totalKg);
+  });
+
+  it('never gives a tier nothing', () => {
+    // A three-tier 1kg cake splits small. A tier of zero is not a tier.
+    const { tiers } = computeTinPlan(three, 1);
+    for (const t of tiers) expect(t.weightKg).toBeGreaterThan(0);
+  });
+
+  it('keeps the big tier the big one', () => {
+    // Rounding must not reorder the cake — the base is always at least the top.
+    for (const kg of [1, 2, 5, 9]) {
+      const { tiers } = computeTinPlan(three, kg);
+      expect(tiers[0].weightKg).toBeGreaterThanOrEqual(tiers[1].weightKg);
+      expect(tiers[1].weightKg).toBeGreaterThanOrEqual(tiers[2].weightKg);
+    }
+  });
+
+  it('lets a bakery set its own step', () => {
+    // 500g houses exist; so do 100g ones. It is config, not a constant.
+    const half = computeTinPlan(two, 5, { build: { ...CAKE_BUILD, quantumKg: 0.5 } });
+    for (const t of half.tiers) expect((t.weightKg / 0.5) % 1).toBeCloseTo(0, 6);
   });
 });
