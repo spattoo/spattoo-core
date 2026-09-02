@@ -749,10 +749,18 @@ export default function GarnishStudio({
       const tidyB = tidyDrawn(trail, { minStep: 3, tolerance: 3 });
       if (!tidyB) return;
       const spine = smoothPath(tidyB.path, { passes: 2, closed: false });
-      /* ⚠️ A BLADE IS NOT A ROPE. Tied to the piping thickness the widest brushstroke was still a
-         band; the reference pieces are half as wide as they are long. The same slider now means
-         "how broad the knife is" in brush mode, over a range that can actually reach a petal. */
-      const brush = brushStroke(spine, { width: ROPE * 14, seed: strokes.length + 1 });
+      /* ⚠️ A BLADE IS NOT A ROPE — but it is also not wider than the pull is long. The knife setting
+         says how broad the blade is, and at full width a short flick came out as a BLOB: 84 units of
+         width on a 60-unit drag, which is not a stroke at all. A real spatula cannot lay a slab
+         broader than the distance it travelled, so the width is capped by the length of the gesture.
+         Pull further and you get the full blade; flick and you get a small piece. */
+      let len = 0;
+      for (let i = 1; i < spine.length; i++) {
+        len += Math.hypot(spine[i][0] - spine[i - 1][0], spine[i][1] - spine[i - 1][1]);
+      }
+      const brush = brushStroke(spine, {
+        width: Math.min(ROPE * 14, len * 0.42), seed: strokes.length + 1,
+      });
       if (!brush) return;
       setStrokes(s2 => { setPicked(s2.length); return [...s2, {
         path: spine, raw: trail, ring: brush.outline, closed: true, gap: 0, area: 0,
