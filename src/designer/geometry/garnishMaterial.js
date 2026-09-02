@@ -38,8 +38,16 @@ export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}
      * covers the whole piece in white-ish reflection and buries the chocolate — which is why raising
      * the gloss twice made it worse. The fix is to let the slider move within a range that suits a
      * rope, not to pin it to one end of that range. */
-    clearcoat: 0.12 + g * 0.55,
+    /* ⚠️ A CLEARCOAT REFLECTS THE ROOM, AND THE ROOM IS WHITE. On top of a saturated colour that
+     * reflection is added, not blended, so a teal piece arrives on the cake as pale mint — the
+     * studio shows the chocolate's own colour and the cake shows the colour plus a sheet of white.
+     * The two disagreed by a lot, and colour is the thing a baker chose deliberately.
+     *
+     * A garnish is a small object seen against a large pale cake, so it needs LESS environment than
+     * the drip it inherited these numbers from, not more. Both come down: the lacquer still moves
+     * with Shine, but across a range where the chocolate underneath keeps the upper hand. */
+    clearcoat: 0.06 + g * 0.30,
     clearcoatRoughness: 0.7 - g * 0.5,
-    envMapIntensity: 0.45 + g * 0.75,
+    envMapIntensity: 0.25 + g * 0.45,
   };
 }
