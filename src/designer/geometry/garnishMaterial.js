@@ -114,7 +114,20 @@ export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}
      * ⚠️ SO THE FIX IS NOT HERE. It has to happen where the scene environment is applied — a second
      * environment layer the garnish is excluded from, a `layers` split, or rendering the piece with a
      * material the scene env does not reach. Until then these zeros are correct-but-inert: they state
-     * the intent and cost nothing, and the residual is the scene's, not this file's. */
+     * the intent and cost nothing, and the residual is the scene's, not this file's.
+     *
+     * ⚠️ AND THE SAME SCENE ENVIRONMENT HURTS A GOLD ACRYLIC TOPPER, BUT THE FIX IS NOT THE SAME —
+     * which is why "turn the environment off" cannot become the general rule. A topper reads as glare
+     * face-on and reads correctly when the cake is turned slightly: that angle-dependence is the
+     * signature of a REFLECTION (a diffuse term does not change as you orbit). A metal has no diffuse
+     * colour at all — what you see IS the reflection — so switching the environment off would leave a
+     * gold topper black, not fixed.
+     *
+     * So the two cases want opposite things from the same term:
+     *   chosen-colour surfaces (chocolate, print, cream)  → the environment must add NOTHING
+     *   metallic surfaces (gold acrylic, foil, age numbers) → the environment is the material, and it
+     *     needs STRUCTURE worth reflecting rather than a flat bright field
+     * A shared model must therefore be about what a surface IS, not a single switch. */
     roughness: 0.52 - 0.34 * g,
     clearcoat: 0,
     envMapIntensity: 0,
