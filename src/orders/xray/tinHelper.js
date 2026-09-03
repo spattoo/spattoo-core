@@ -33,8 +33,23 @@ import { tierShape } from '../../designer/geometry/surface.js';
  * drift from the anchor because it is solved against it.
  */
 
-// The trade anchor: a 6-inch round, 4 inches tall, is sold as a 1kg cake.
-export const ANCHOR = Object.freeze({ diameterIn: 6, heightIn: 4, kg: 1 });
+/* ⚠️ THIS BAKERY'S anchor, which is NOT the pan-set convention — and the convention was wrong here.
+ *
+ * A 6-inch round 4 inches tall is *sold* as a 1kg cake, and that figure sat here because it is the
+ * one datum anybody can look up. It cannot be true of these cakes. It fixes the density at 0.54 kg/L,
+ * and at 0.54 the bakery's own tin table is unreachable: a 9-inch tier holding 5kg would have to
+ * stand 10.4 INCHES TALL. Asked directly, the answer was 1 to 1.5kg for that same 6x4 — and below
+ * about 1.2 no aspect ratio reproduces their tins at all.
+ *
+ * 1.5 is the self-consistent end of that range: it makes a 1.5kg cake in a 6-inch exactly 4 inches
+ * tall, and a 1kg one 2.6 — which is what "a 6-inch takes 1 to 1.5kg" means, the same tin filled
+ * shallow or full. It also lands a 5kg 9-inch at 6 inches tall instead of ten.
+ *
+ * ⚠️ The two single-tier sizes the old model got wrong — 1kg and 2.5kg — were never a tuning problem.
+ * They were this number. With it corrected, all six of their stated single-tier sizes hit exactly,
+ * and no separate lookup ladder was needed.
+ */
+export const ANCHOR = Object.freeze({ diameterIn: 6, heightIn: 4, kg: 1.5 });
 
 /* ── How tall this bakery builds ─────────────────────────────────────────────────────────────────
  *
@@ -42,30 +57,32 @@ export const ANCHOR = Object.freeze({ diameterIn: 6, heightIn: 4, kg: 1 });
  * a loaf or a tray bake, so the code says `tall` and this note records that the trade word is long —
  * the same collision as two unrelated "Number topper" entries, caught before it was written in.
  *
- * A build is defined by how tall a tier stands relative to its width, and calibrated against a cake
- * somebody actually bakes. Both anchors are real:
+ * A build says how tall a tier stands relative to its width, and NOTHING ELSE. Both are fitted
+ * against this bakery's own sizes, sharing the one anchor above:
  *
- *   standard  a 6in x 4in round sold as 1kg — the Indian pan-set convention, printed on the box
- *   tall      3kg in an 8in tin, standing 7.8in — measured from this bakery's own practice
+ *   tall      1-1.5kg → 6in, 2-2.5kg → 7in, 3kg → 8in, 5kg → 9in   ("9 if you want height")
+ *   standard  5kg → 10 or 11in                                     ("10 or 11 for flat")
  *
- * The tall figures came out of a grid search against five of their single-tier cakes (1-1.5kg → 6in,
- * 2-2.5kg → 7in, 3kg → 8in) and hit all five exactly at h/d 0.98 and 0.47 kg/L. Their two 2-tier
- * points (7+5 for 3kg, 8+6 for 4-5kg) fall out of the same numbers without further fitting.
+ * All six tall points hit exactly. Their three 2-tier points (7+5 for 3kg, 8+6 for 4 and 5kg) fall
+ * out of the same numbers with no further fitting, which is the check that matters — they were never
+ * part of the search.
  *
- * ⚠️ The two densities genuinely differ: at 0.47 a 6x4 weighs 0.87kg, not 1.00. A taller tier carries
- * proportionally more filling and less sponge, so one density cannot serve both. Anything that
- * "simplifies" this back to a single figure will break one build or the other.
+ * ⚠️ ONE DENSITY, TWO ASPECTS. An earlier version gave each build its own anchor and so its own
+ * density, and defended it in a comment. That was backwards: baking a tier taller does not change
+ * what the sponge is made of. It was fitting the density to absorb an aspect that had been forced to
+ * 0.98 by the wrong anchor weight. Correct the anchor and one density serves both, which is what a
+ * recipe is.
  */
 export const BUILDS = Object.freeze({
   standard: Object.freeze({
     key: 'standard', label: 'Standard',
-    aspect: 0.65,
+    aspect: 0.45,                      // flat: a 5kg spreads out to a 10in
     anchor: ANCHOR,
   }),
   tall: Object.freeze({
     key: 'tall', label: 'Long',        // the trade word; `tall` is what it means
-    aspect: 0.98,                      // as tall as it is wide
-    anchor: Object.freeze({ diameterIn: 8, heightIn: 7.8, kg: 3 }),
+    aspect: 0.57,                      // taller, so the same 5kg pulls in to a 9in
+    anchor: ANCHOR,
   }),
 });
 
