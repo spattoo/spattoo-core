@@ -35,9 +35,19 @@ export const TOPPER_FINISHES = {
    * larger than the difference between settings, so this sweep cannot separate them and any winner
    * picked from it would be noise. Do not tune this against that metric without averaging repeats.
    *
-   * ⚠️ `envIntensity: 2.0` IS THE UNSWEPT SUSPECT. It doubles the environment for this finish
-   * specifically, on top of the scene's own 1.25 — and the environment is nearly all the light a
-   * metal has. That is a much larger lever than roughness and is where to look next. */
+   * ⚠️ AND `envIntensity: 2.0` IS ALREADY THE BEST VALUE — swept, and it points the opposite way to
+   * the obvious guess. Mean luminance / contrast at 2.0 / 1.4 / 1.0 / 0.7 measured 160/86, 182/70,
+   * 185/67, 182/70: the current setting is the LEAST washed out and the most contrasty, by a margin
+   * far clear of the noise. Turning it DOWN makes the glare worse, which is not a paradox — a metal
+   * has no diffuse colour, so a stronger environment gives it brighter highlights AND darker darks,
+   * i.e. more of the banding that makes gold read as gold. Weakening it flattens the piece towards
+   * the uniform ambient, which is exactly what glare looks like.
+   *
+   * ⚠️ SO ALL THREE PARAMETERS ARE AT THEIR BEST AND THE GLARE REMAINS. Rotation (measured: 0° is
+   * already optimal), roughness (measured: no separable effect), and this. The cause that is left is
+   * the HDRI's own CONTENT — a bright, largely featureless field gives a mirror nothing but white to
+   * reflect, and no parameter can add structure to it. The fix is a different environment map, not a
+   * different number. */
   gold:   { label: 'Mirror gold',   color: '#d9b642', metalness: 0.70, roughness: 0.28, envIntensity: 2.0 },
   silver: { label: 'Mirror silver', color: '#d5dade', metalness: 0.75, roughness: 0.22, envIntensity: 2.0 },
   rose:   { label: 'Rose gold',     color: '#e3ab9c', metalness: 0.70, roughness: 0.30, envIntensity: 2.0 },
