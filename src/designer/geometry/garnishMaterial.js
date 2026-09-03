@@ -81,10 +81,48 @@ function parseColour(v) {
  * to move the swatch to meet it.
  */
 
+/** The light a fully-lit garnish actually receives from the cake rig — a CALIBRATION of the scene.
+ *  MEASURED, NOT DERIVED, exactly as `shared/printExposure.js` insists for the same reason.
+ *
+ *  ⚠️ HOW IT WAS MEASURED, so it can be redone rather than guessed at. Render a mid-grey piece
+ *  (#808080) on `dev/garnish-on-cake.html?color=%23808080` and read it back: it came out 190,188,188.
+ *  In LINEAR light that is 0.5188 against an asked 0.2158 — a ratio of 2.40. sRGB ratios are
+ *  meaningless here; that mistake cost two earlier rounds.
+ *
+ *  ⚠️ AND IT IS A MULTIPLY, WHICH IS THE FINDING THAT MADE THIS FIXABLE. Rendering black came back
+ *  black (0,0,0 → 0,0,0), and an additive white cannot do that. Four earlier attempts assumed an
+ *  additive specular and all of them failed; the one measurement that separates the two cases is a
+ *  black piece. Because it is a multiply, dividing the albedo by the light is exact — it is not a
+ *  fitted constant, and it does not clamp at the dark end the way subtracting a white would.
+ *
+ *  TO RE-CALIBRATE if the rig in CakeCanvas changes: re-run the grey and scale this by the ratio.
+ *  `scripts/measure-garnish-colour.mjs` prints it. */
+export const REFERENCE_LIGHT = 2.40;
+
+/* sRGB ↔ linear. The correction has to happen in linear light because that is where a renderer
+ * multiplies; doing it in sRGB nearly works for dark colours and fails on saturated mid-tones, which
+ * is exactly where a teal turned to mint. */
+const toLinear = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const toSrgb = c => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+
+/** The albedo to hand the material so the RENDER is the colour that was chosen. */
+export function garnishAlbedo(color) {
+  const rgb = parseColour(color);
+  if (!rgb) return color ?? GARNISH_INK;
+  const [r, g, b] = rgb.map(c => {
+    const lin = toLinear(c / 255) / REFERENCE_LIGHT;
+    return Math.round(Math.max(0, Math.min(255, toSrgb(lin) * 255)));
+  });
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
   const g = gloss ?? GARNISH_GLOSS_DEFAULT;
   return {
-    ...mediumOf(medium).material({ softness: g }, color ?? GARNISH_INK),
+    /* ⚠️ THE ALBEDO IS DIVIDED BY THE MEASURED SCENE LIGHT, so what the renderer produces is the
+     * colour that was chosen — see `garnishAlbedo`. Handing it the raw colour is what made a teal
+     * piece arrive as pale mint. */
+    ...mediumOf(medium).material({ softness: g }, garnishAlbedo(color ?? GARNISH_INK)),
     /* ⚠️ NO ADDITIVE WHITE. A clearcoat and an environment reflection are light bouncing OFF the
      * surface rather than through the pigment, so they are not multiplied by the colour — they land
      * on every channel equally. On a dark or saturated colour that constant is most of its distance

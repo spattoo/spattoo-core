@@ -9,7 +9,7 @@
  */
 import { chromium } from 'playwright';
 
-const COLOURS = ['#4EC5B0', '#C4626B', '#E8963C', '#7FC241', '#4A2C1B', '#EFE3CE'];
+const COLOURS = ['#4EC5B0', '#C4626B', '#E8963C', '#7FC241', '#4A2C1B', '#EFE3CE', '#808080'];
 const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -38,6 +38,11 @@ for (const c of COLOURS) {
         const i = (y * cv.width + x) * 4;
         if (d[i + 3] < 200) continue;
         const [r, g, b] = [d[i], d[i + 1], d[i + 2]];
+        /* ⚠️ THIS REJECT LIST IS NOT GOOD ENOUGH FOR PALE OR ORANGE PIECES. Both #E8963C and
+           #EFE3CE read back as 248,229,148 — identical, which is the giveaway: that is the GOLD
+           BOARD, not the piece. Any colour close to the board or the cake defeats a colour-based
+           filter. Trust the rows whose reading is clearly the piece's own hue; for the rest, pin the
+           sample to the panel's screen position instead of hunting by colour. */
         // the cake is pale and pink; the board is yellow-gold; a piece is neither
         const pale = r > 200 && g > 190 && b > 190;
         const gold = r > 150 && g > 120 && b < 110;
