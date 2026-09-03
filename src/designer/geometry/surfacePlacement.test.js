@@ -29,6 +29,18 @@ movableContract('number_topper', {
   }],
 });
 
+/* ⚠️ WHAT THIS CONTRACT CANNOT SEE: whether there is anything on screen to take hold of.
+ *
+ * It asks "does the position respond to a drag", and `writingPlaceAt` answered yes throughout the
+ * whole time an acrylic topper could not be picked up at all. The catcher for a standing topper lay
+ * FLAT on the icing — inherited from cream writing, which really is piped onto the surface — while
+ * the piece rose vertically off it, so every click on the letters passed over the catcher and hit
+ * nothing. The maths was never wrong; there was no way to reach it.
+ *
+ * The gap is structural, not an oversight to patch here: the catcher is R3F geometry and a jsdom
+ * test cannot raycast it. Which means for anything dragged, GATE GREEN IS NOT EVIDENCE — the drag
+ * has to be driven in a browser. `dev/acrylic-text.html` is that harness for this one.
+ */
 movableContract('writing', {
   positionKeys: ['offsetX', 'offsetZ', 'boardX', 'boardZ', 'sideAngle', 'sideY'],
   cases: [

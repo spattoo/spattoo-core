@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { topperShapes, components, bridgeLoose } from '../geometry/topperShape.js';
 import { topperFinish } from '../geometry/topperFinishes.js';
@@ -24,6 +24,7 @@ import { topperFinish } from '../geometry/topperFinishes.js';
  */
 export default function AcrylicWord({
   font, text, cfg = {}, finish = 'gold', pose = 'stand', mount = {}, span = 1.76, castShadow = true,
+  onRise,
 }) {
   const built = useMemo(() => {
     if (!font || !text?.trim()) return null;
@@ -71,12 +72,23 @@ export default function AcrylicWord({
     //             on the bar buries them completely and reads as glued down
     //   flat      the middle of the word, so it is centred on its anchor
     const lowest = Math.min(...parts.flatMap(p => p.outer.map(q => q.y)));
+    const highest = Math.max(...parts.flatMap(p => p.outer.map(q => q.y)));
     const seat = standing
       ? (t.legs.length ? lowest + Math.min(cfg.bury ?? 0.21, cfg.legLen ?? 0.42) : t.baselineY)
       : 0;
 
-    return { geos, seat, thickness, pieces: components(parts).length, width: t.width, feature: t.feature };
+    /* How far the piece rises above where it meets the cake — MEASURED, not a fraction of the span.
+     * A one-line name and a three-line phrase at the same width are wildly different heights, so
+     * anything that wants to cover this word (a grab plane, say) cannot guess it from the width.
+     * The build is the only place that knows, and it already has the bounds. */
+    return { geos, seat, thickness, pieces: components(parts).length, width: t.width,
+             feature: t.feature, rise: Math.max(0.05, highest - seat) };
   }, [font, text, cfg, pose, span]);
+
+  // Reported UP, because only the build can measure it and only the caller can use it — see `rise`.
+  // In an effect rather than during render: this sets state in the parent, and doing that while
+  // rendering a child is the loop React warns about.
+  useEffect(() => { if (built) onRise?.(built.rise); }, [built, onRise]);
 
   if (!built) return null;
   const f = topperFinish(finish);

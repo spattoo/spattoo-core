@@ -44,6 +44,9 @@ export default function AcrylicWriting({
     return () => { live = false; };
   }, [writing?.font]);
 
+  // How far the built word rises above the cake — see `standH` below. Only the build can measure it.
+  const [rise, setRise] = useState(null);
+
   const { grabProps } = useDragPlacement({
     camera, gl, onMove, onClick, onOrbitEnable,
     resolve: (ray) => {
@@ -94,10 +97,14 @@ export default function AcrylicWriting({
 
   const finish = writing.finish === 'silver' ? 'silver' : (writing.acrylicFinish ?? writing.finish ?? 'gold');
   const grabH = Math.max(0.2, maxW * 0.4);
+  // How tall the standing piece actually is, reported by the build — a one-line name and a
+  // three-line phrase at the same width are nothing like the same height, so the catcher below
+  // cannot be sized from the span. `grabH` until the first build lands.
+  const standH = Math.max(rise ?? 0, grabH);
 
   const word = (
     <AcrylicWord font={font} text={writing.text} cfg={cfg} finish={finish}
-                 pose={standing ? 'stand' : 'flat'} span={maxW} mount={{}} />
+                 pose={standing ? 'stand' : 'flat'} span={maxW} mount={{}} onRise={setRise} />
   );
 
   if (surface === 'side' && !sideRect) {
@@ -133,15 +140,30 @@ export default function AcrylicWriting({
     ? (writing.boardZ ?? (cakeBaseR + (boardRadius || cakeBaseR)) / 2)
     : (writing.offsetZ ?? 0);
   const planeY = surface === 'board' ? boardY : topY;
+  const yaw = (writing.yaw ?? 0) * Math.PI / 180;
   return (
     <group>
       {React.cloneElement(word, {
-        mount: { topY: planeY, x: ox, z: oz, yaw: (writing.yaw ?? 0) * Math.PI / 180 },
+        mount: { topY: planeY, x: ox, z: oz, yaw },
       })}
-      <mesh position={[ox, planeY + 0.01, oz]} rotation={[-Math.PI / 2, 0, 0]} {...grabProps}>
-        <planeGeometry args={[maxW, grabH]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-      </mesh>
+      {/* ⚠️ THE CATCHER STANDS WITH THE WORD. It used to lie FLAT on the icing — `rotation-x -90°`
+          at `planeY` — copied from CreamWriting, where writing on the top really is piped onto the
+          surface and a horizontal catcher sits exactly under it.
+
+          A standing topper is not on the surface, it rises off it. The letters are up in the air and
+          every click on them passed straight over a catcher lying on the cake, so the piece rendered
+          perfectly and could not be picked up. Nothing about the drag plumbing was wrong.
+
+          So: vertical, in the word's own plane, turned by the same yaw so it stays with the word as
+          it spins. Only what is GRABBED changes — `resolve` still intersects the horizontal plane at
+          the surface to decide where the drag lands, which is right for something moved about a
+          cake top. */}
+      <group position={[ox, planeY, oz]} rotation={[0, yaw, 0]}>
+        <mesh position={[0, standH / 2, 0.02]} {...grabProps}>
+          <planeGeometry args={[maxW, standH]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
     </group>
   );
 }
