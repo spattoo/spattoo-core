@@ -95,8 +95,19 @@ function parseColour(v) {
  *  black piece. Because it is a multiply, dividing the albedo by the light is exact — it is not a
  *  fitted constant, and it does not clamp at the dark end the way subtracting a white would.
  *
- *  TO RE-CALIBRATE if the rig in CakeCanvas changes: re-run the grey and scale this by the ratio.
- *  `scripts/measure-garnish-colour.mjs` prints it. */
+ *  ⚠️ THIS NUMBER BELONGS TO THE CURRENT HDRI. Measured with the scene environment off, a teal piece
+ *  renders 72,53,4 — near black — so the environment is not a contributor to the light here, it is
+ *  almost ALL of it. 2.40 is therefore a calibration of that specific environment at
+ *  `SCENE_ENV.intensity`, not a property of the material or of three.js.
+ *
+ *  ⚠️ SO CHANGING THE HDRI SILENTLY INVALIDATES THIS, and the failure is quiet: colours simply drift
+ *  again, in whichever direction the new environment is brighter or dimmer. A different HDRI also
+ *  need not be NEUTRAL — a warm one lifts red more than blue, which a single scalar cannot correct;
+ *  if a colour cast appears after a swap, this has to become three numbers rather than one.
+ *
+ *  TO RE-CALIBRATE — after any change to the HDRI, `SCENE_ENV.intensity`, or the lamps in
+ *  `CakeCanvas`: render #808080 on `dev/garnish-on-cake.html?color=%23808080`, convert both to LINEAR
+ *  light, and set this to shown/asked. `scripts/measure-garnish-colour.mjs` prints the whole table. */
 export const REFERENCE_LIGHT = 2.40;
 
 /* sRGB ↔ linear. The correction has to happen in linear light because that is where a renderer
