@@ -13,8 +13,11 @@ import { chromium } from 'playwright';
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
 
-await page.goto('http://localhost:5190/garnish-on-cake.html?topper=1', { waitUntil: 'networkidle' });
-await page.waitForTimeout(3200);
+const DEGREES = [0, 45, 90, 135, 180, 225, 270, 315];
+console.log('rotation   mean   contrast   verdict');
+for (const deg of DEGREES) {
+await page.goto(`http://localhost:5190/garnish-on-cake.html?topper=1&envrot=${deg}`, { waitUntil: 'networkidle' });
+await page.waitForTimeout(2800);
 
 /* ⚠️ REFUSE TO MEASURE WITH NO ENVIRONMENT, because the failure is SILENT and it invalidates
  * everything downstream. `SafeEnvironment` deliberately degrades to the scene's own lights when the
@@ -36,11 +39,8 @@ const envLoaded = await page.evaluate(() => {
   return bright > 500;
 });
 if (!envLoaded) {
-  console.log('REFUSING TO MEASURE: the HDRI did not load, so this is not the real scene.');
-  console.log('The gold board renders dark brown. Retry, or point envMap.js at a local HDRI.');
-  await page.screenshot({ path: '/tmp/topper.png' });
-  await browser.close();
-  process.exit(1);
+  console.log(`${String(deg).padStart(4)}°      REFUSED — the HDRI did not load, so this is not the real scene.`);
+  continue;
 }
 const r = await page.evaluate(() => {
   const cv = document.querySelector('canvas');
@@ -65,7 +65,11 @@ const r = await page.evaluate(() => {
   return { sd: +sd.toFixed(1), mean: Math.round(mean), n: lum.length,
            min: Math.round(Math.min(...lum)), max: Math.round(Math.max(...lum)) };
 });
-console.log(r ? `contrast ${r.sd} · mean ${r.mean} · range ${r.min}-${r.max} · ${r.n} px`
-              : 'no gold pixels — is the topper rendering?');
-await page.screenshot({ path: '/tmp/topper.png' });
+/* ⚠️ LOWER MEAN AND HIGHER CONTRAST IS BETTER. Glare is a bright, flat sheet; legible gold is
+   darker overall with real bands in it. Judging on either number alone picks the wrong winner —
+   dimming everything raises nothing, and contrast alone can come from noise. */
+console.log(`${String(deg).padStart(4)}°   ${String(r ? r.mean : '—').padStart(5)}   ${
+  String(r ? r.sd : '—').padStart(7)}   ${r ? (r.mean < 190 && r.sd > 30 ? 'legible' : '') : 'no gold'}`);
+if (deg === 0) await page.screenshot({ path: '/tmp/topper.png' });
+}
 await browser.close();

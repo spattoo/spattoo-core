@@ -271,7 +271,35 @@ import { envProps as _envProps } from './envMap.js';
  * cannot be used to judge the product, which cost a full round on the garnish colour. Point one of
  * them at the real environment before tuning against it. */
 export const SCENE_ENV = {
-  intensity: 1.25,                // environmentIntensity — brighter than three's default 1.0 so glossy
+  intensity: 1.25,
+  /* ⚠️ WHICH WAY THE ENVIRONMENT FACES, and it is not cosmetic — it decides whether a gold topper
+   * reads as lettering or as a sheet of white. A metal has no colour of its own, so what you see IS
+   * the reflection; at 0° the HDRI's bright region sat on the camera axis at the FRONT view, which is
+   * the view a customer opens on and the thumbnail captures.
+   *
+   * MEASURED by sweeping (`scripts/measure-topper-glare.mjs`), mean luminance / contrast:
+   *     0°  211 / 28      45° 190 / 20      90° 174 / 17     135° 180 / 24
+   *   180°  164 / 27     225° 151 / 29     270° 165 / 20     315° 210 / 25
+   * 225° is the best of them: the least washed out AND the most contrast, which is the pair that
+   * matters — dimming alone would just make a dark metal, and contrast alone can come from noise.
+   *
+   * ⚠️ AND YET IT IS LEFT AT 0, BECAUSE THE TRADE IS NOT WORTH IT AS MEASURED. Turning the environment
+   * changes the light on EVERYTHING, not just the metal: at 225° the whole scene lost about two
+   * thirds of its illumination (a grey garnish that had rendered 130 came back 78), so the cake goes
+   * dim and every garnish colour needs re-calibrating to buy a less glary topper.
+   *
+   * ⚠️ AND COMPENSATING THE INTENSITY BACK UP DID NOT RESOLVE IT — it produced readings that
+   * CONTRADICT the sweep above (at intensity 3.73, rotation 0° measured better than 225°, the
+   * opposite of the result at 1.25). That is a sign the metric is catching different parts of the
+   * scene as overall brightness changes — the gold filter picks up cake and board once they are lit
+   * enough — not a sign that the conclusion flipped. A number that reverses when you change an
+   * unrelated variable is not yet a measurement.
+   *
+   * ⚠️ SO THE NEXT STEP IS TO FIX THE METRIC BEFORE TOUCHING THE SCENE: mask the topper's own pixels
+   * (it is at a known place in the fixture) instead of hunting for "gold-ish" ones, then re-run the
+   * sweep. The glare itself is real and measured — 211/255 mean with the HDRI against 120 without —
+   * so there IS something to fix; what is not yet trustworthy is which rotation fixes it. */
+  rotationY: 0,   // ⚠️ NOT 225 — see below. Left at 0 deliberately, not by omission.                // environmentIntensity — brighter than three's default 1.0 so glossy
                                   // finishes read wet; matte finishes are unaffected (they ignore IBL).
   presetFallback: 'apartment',    // dev fallback when cfAssetsBase (the self-hosted HDRI) is absent
 };
@@ -302,7 +330,17 @@ export function SceneLights({ shadows = false }) {
 export function SceneEnv() {
   // envProps picks self-hosted-or-preset; intensity is this scene's own, which the previews do not
   // share (they are small and lit for legibility, not for how a glaze reads wet).
-  return <SafeEnvironment {..._envProps(SCENE_ENV.presetFallback)} environmentIntensity={SCENE_ENV.intensity} />;
+  /* ⚠️ `?envrot=` IS FOR MEASURING, NOT A FEATURE. Turning the environment is the one lever that can
+     move a metal's reflection off the camera axis without dimming anything, and the glare is
+     angle-dependent — head-on it is a sheet of white, turned slightly the gold reads. The parameter
+     lets `scripts/measure-topper-glare.mjs` sweep it; the default is unchanged. */
+  const override = typeof location !== 'undefined'
+    ? new URLSearchParams(location.search).get('envrot')
+    : null;
+  const rot = override != null ? (Number(override) * Math.PI) / 180 : SCENE_ENV.rotationY;
+  return <SafeEnvironment {..._envProps(SCENE_ENV.presetFallback)}
+    environmentIntensity={SCENE_ENV.intensity}
+    environmentRotation={[0, rot, 0]} />;
 }
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
