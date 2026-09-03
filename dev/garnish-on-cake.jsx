@@ -21,7 +21,16 @@ const asked = new URLSearchParams(location.search).get('color') || '#4A2C1B';
 const design = {
   tiers: [{ shape: 'round', color: '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
             topPipings: [], bottomPipings: [], creamLayers: [] }],
-  texts: [], ages: [], stickers: [], writings: [], piping: [],
+  texts: [], ages: [], stickers: [], piping: [],
+  /* ⚠️ THE ACRYLIC TOPPER GOES HERE BECAUSE THIS HARNESS USES THE REAL SCENE. `dev/topper.jsx` and
+   * `dev/acrylic-text.jsx` each build their own RoomEnvironment, so neither shows the glare that is
+   * actually complained about — a harness that lights its subject differently from the product cannot
+   * be used to judge the product. `CakePreview` mounts SafeEnvironment and the real rig, so a topper
+   * put here is the one a customer sees. `?topper=1`. */
+  writings: new URLSearchParams(location.search).has('topper')
+    ? [{ id: 'w', style: 'acrylic', text: 'Happy Birthday', font: 'ems_allure',
+         surface: 'top', color: '#D4AF37', finish: 'gold' }]
+    : [],
   garnishes: [
     // A CUT panel with a hole punched in it, beside a piped piece — the two ways of being made.
     { id: 'a', name: 'Panel', kind: 'cut', color: asked, plate: 420, radius: 0.5, mode: 'stand', scale: 1.3,

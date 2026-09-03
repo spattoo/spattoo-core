@@ -252,6 +252,19 @@ import { envProps as _envProps } from './envMap.js';
  *    one, it is almost all of it. Change the HDRI and garnish colours silently drift again. Re-run
  *    `scripts/measure-garnish-colour.mjs` and reset that constant from the grey row.
  *
+ * ⚠️ MEASURED, so the glare is a number rather than an impression. A gold topper in the real scene
+ * (`dev/garnish-on-cake.html?topper=1`) reads mean luminance 211/255 with the HDRI loaded and 120
+ * without it — the environment nearly doubles it and pushes the lettering to near-white. Contrast is
+ * only 28 across a 149-wide range, which is what "glare" means: the bands that make gold legible are
+ * flattened into one bright sheet.
+ *
+ * ⚠️ AND THE HDRI LOAD IS FLAKY IN A HEADLESS BROWSER, which invalidates any measurement that does not
+ * check for it. `SafeEnvironment` degrades silently to the lamps alone when drei's CDN 503s — right
+ * for a customer, fatal for a measurement, because this environment is nearly ALL the light here. A
+ * run that loads it and a run that does not disagree completely. `scripts/measure-topper-glare.mjs`
+ * now REFUSES rather than reporting: the gold board is the canary, bright yellow with the HDRI and
+ * dark brown without.
+ *
  * ⚠️ AND THE TOPPER HARNESSES DO NOT REPRODUCE THIS SCENE. `dev/topper.jsx` and `dev/acrylic-text.jsx`
  * both build their own `RoomEnvironment` rather than mounting `SafeEnvironment`, so neither shows the
  * glare being complained about — a harness that lights its subject differently from the product
