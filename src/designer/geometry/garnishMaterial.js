@@ -18,11 +18,6 @@ import { mediumOf } from './pipingMedia.js';
 
 export const GARNISH_GLOSS_DEFAULT = 0.45;
 
-/* ⚠️ HOW MUCH LIGHT THE CAKE SCENE ACTUALLY DELIVERS, in linear units, measured rather than assumed.
- * `CakeCanvas` lights every cake with an ambient at 0.45, a key at 1.1, a fill at 0.4 and an
- * environment at 1.25 — comfortably more than one unit, which is why a colour handed to the material
- * raw comes back lighter than it was asked to be. */
-const SCENE_LIGHT = 1.9;
 
 /* ⚠️ AND THIS IS NOT THE WHOLE STORY — WHAT IS LEFT IS MEASURED, NOT GUESSED.
  *
@@ -85,29 +80,33 @@ function parseColour(v) {
  * renders a little lighter than asked. Better to be as close as the physics allows and say so than
  * to move the swatch to meet it.
  */
-export function materialBase(color, gloss) {
+export function materialBase(color) {
   const rgbIn = parseColour(color);
   if (!rgbIn) return color ?? GARNISH_INK;
 
-  /* ⚠️ THE CORRECTION HAS TO BE DONE IN LINEAR LIGHT, NOT IN sRGB. The scene lights a garnish with
-   * more than one unit of illumination — three lights plus `SCENE_ENV.intensity` at 1.25 — and a
-   * renderer multiplies in LINEAR space. Compensating in sRGB, as this did, is compensating in the
-   * wrong space: it very nearly works for dark colours, which is why measuring dark chocolate said
-   * everything was fine, and fails badly for saturated mid-tones, which is exactly where a teal
-   * turns to pale mint. The error was invisible on the one colour that was measured.
+  /* ⚠️ FITTED TO MEASUREMENTS, NOT DERIVED FROM A MODEL. Four attempts reasoned about what the
+   * renderer does to a colour — a white specular, an environment reflection, a linear-space multiply
+   * — and every one was wrong in a way only the cake revealed. Measuring six colours through the real
+   * scene (`scripts/measure-garnish-colour.mjs`) shows something much simpler: every colour is MIXED
+   * TOWARDS A LIGHT GREY. Solving two of them gives
    *
-   * So: to linear, divide by the light the scene actually delivers, back to sRGB. */
-  const g = gloss ?? GARNISH_GLOSS_DEFAULT;
-  const light = SCENE_LIGHT + (0.06 + g * 0.30) * 0.35;   // brighter still under a heavier sheen
+   *     shown ≈ asked × 0.58 + 84
+   *
+   * which is an affine mix, and affine mixes invert. So the base handed to the material is the value
+   * that comes back as the colour that was asked for.
+   *
+   * ⚠️ THE MEASUREMENT IS THE SPEC. If the scene's lighting or environment changes, these two numbers
+   * are wrong and the script that produced them is how you get the new ones — do not re-derive them
+   * by reasoning, which is what cost four rounds.
+   *
+   * ⚠️ THE EXTREMES CLAMP, AND THAT IS HONEST. A colour darker than the grey being mixed in would need
+   * a negative base; it holds at black and comes back a few points light. Teal's red lands at about
+   * 84 against an asked-for 78 — visible only side by side, where before it was 161. */
+  const KEEP = 0.58;                    // how much of the asked colour survives
+  const LIFT = 84;                      // what the scene adds regardless
 
-  const toLinear = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
-  const toSrgb = c => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
-
-  const [r, gg, b] = rgbIn.map(c => {
-    const lin = toLinear(c / 255) / light;
-    return Math.round(Math.max(0, Math.min(255, toSrgb(Math.min(1, lin)) * 255)));
-  });
-  return `rgb(${r}, ${gg}, ${b})`;
+  const [r, g, b] = rgbIn.map(c => Math.round(Math.max(0, Math.min(255, (c - LIFT) / KEEP))));
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
