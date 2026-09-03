@@ -7,9 +7,8 @@ import { snapStroke } from '../geometry/strokeSnap.js';
 import { snapPolygon } from '../geometry/snapPolygon.js';
 import { smoothPath } from '../geometry/smoothPath.js';
 /* ⚠️ THE PLATE PAINTS THE COLOUR THAT WAS CHOSEN, PLAINLY. The correction lives in the MATERIAL —
- * `materialBase` hands the renderer a base that comes back as the chosen colour — because the render
- * was the thing that was wrong, not the swatch. Washing the studio out to match a bad render made
- * them agree about a colour nobody asked for. INVARIANTS #15. */
+ * The correction lives in the MATERIAL, not here — see garnishMaterial.js. Washing the studio out to
+ * match a bad render would make the two agree about a colour nobody asked for. INVARIANTS #15. */
 import { brushStroke } from '../geometry/brushStroke.js';
 // ⚠️ CREAM'S OWN LETTERFORMS. Chocolate writing is the same motion — see textCentrelines.
 import { textCentrelines, CREAM_FONTS, DEFAULT_CREAM_FONT } from '../geometry/creamText.js';

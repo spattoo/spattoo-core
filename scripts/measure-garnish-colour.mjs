@@ -20,29 +20,31 @@ for (const c of COLOURS) {
   await page.goto(`http://localhost:5190/garnish-on-cake.html?color=${encodeURIComponent(c)}`,
     { waitUntil: 'networkidle' });
   await page.waitForTimeout(2600);
-  /* ⚠️ SAMPLE THE PIECE, NOT "WHATEVER IS CLOSEST TO THE ANSWER". The first version picked the
-     sampled pixel nearest the asked colour, which can land on the cake itself and made a reading move
-     the wrong way — it reported teal getting worse when the base had unambiguously been darkened.
-     A measurement that chooses its own subject is not a measurement. The standing panel is at a known
-     place in this fixture, so read a small window there and take the modal colour. */
+  /* ⚠️ FIND THE PIECE, DO NOT ASSUME WHERE IT IS. Two earlier samplers were wrong in opposite ways:
+     one took "the pixel closest to the answer", which can land on the cake and flatters the result;
+     the next read a fixed window that turned out to be empty and reported 0,0,0 for every colour with
+     total confidence. Both produced tables that looked like measurements.
+     The piece is whatever differs most from the cake's own pale pink, ignoring the swatch drawn in
+     the top-left corner. Modal colour of those pixels, so a highlight or an edge cannot carry it. */
   const best = await page.evaluate(() => {
     const cv = document.querySelector('canvas');
     const t = document.createElement('canvas'); t.width = cv.width; t.height = cv.height;
     t.getContext('2d').drawImage(cv, 0, 0);
     const d = t.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
     const m = new Map();
-    /* ⚠️ THIS WINDOW IS WRONG AND MUST BE FIXED BEFORE THE NUMBERS MEAN ANYTHING. It reads all
-       zeros — the panel is not where these fractions point, or the pixels there are transparent.
-       Find the piece first (screenshot the harness, or scan for the pixels that differ most from the
-       cake's pale pink OUTSIDE the top-left swatch) and pin the window to it. A sampler that returns
-       0,0,0 for every colour is not measuring the render; it is measuring nothing, confidently. */
-    const x0 = Math.round(cv.width * 0.46), x1 = Math.round(cv.width * 0.52);
-    const y0 = Math.round(cv.height * 0.30), y1 = Math.round(cv.height * 0.40);
-    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-      const i = (y * cv.width + x) * 4;
-      if (d[i + 3] < 200) continue;
-      const k = `${d[i]},${d[i + 1]},${d[i + 2]}`;
-      m.set(k, (m.get(k) ?? 0) + 1);
+    for (let y = 0; y < cv.height; y++) {
+      for (let x = 0; x < cv.width; x++) {
+        if (x < 130 && y < 90) continue;                 // the asked-for swatch
+        const i = (y * cv.width + x) * 4;
+        if (d[i + 3] < 200) continue;
+        const [r, g, b] = [d[i], d[i + 1], d[i + 2]];
+        // the cake is pale and pink; the board is yellow-gold; a piece is neither
+        const pale = r > 200 && g > 190 && b > 190;
+        const gold = r > 150 && g > 120 && b < 110;
+        if (pale || gold) continue;
+        const k = `${r},${g},${b}`;
+        m.set(k, (m.get(k) ?? 0) + 1);
+      }
     }
     const top = [...m.entries()].sort((a, b) => b[1] - a[1])[0];
     return top ? top[0].split(',').map(Number) : [0, 0, 0];

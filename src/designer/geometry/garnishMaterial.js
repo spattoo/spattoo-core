@@ -80,61 +80,44 @@ function parseColour(v) {
  * renders a little lighter than asked. Better to be as close as the physics allows and say so than
  * to move the swatch to meet it.
  */
-export function materialBase(color) {
-  const rgbIn = parseColour(color);
-  if (!rgbIn) return color ?? GARNISH_INK;
-
-  /* ⚠️ FITTED TO MEASUREMENTS, NOT DERIVED FROM A MODEL. Four attempts reasoned about what the
-   * renderer does to a colour — a white specular, an environment reflection, a linear-space multiply
-   * — and every one was wrong in a way only the cake revealed. Measuring six colours through the real
-   * scene (`scripts/measure-garnish-colour.mjs`) shows something much simpler: every colour is MIXED
-   * TOWARDS A LIGHT GREY. Solving two of them gives
-   *
-   *     shown ≈ asked × 0.58 + 84
-   *
-   * which is an affine mix, and affine mixes invert. So the base handed to the material is the value
-   * that comes back as the colour that was asked for.
-   *
-   * ⚠️ THE MEASUREMENT IS THE SPEC. If the scene's lighting or environment changes, these two numbers
-   * are wrong and the script that produced them is how you get the new ones — do not re-derive them
-   * by reasoning, which is what cost four rounds.
-   *
-   * ⚠️ THE EXTREMES CLAMP, AND THAT IS HONEST. A colour darker than the grey being mixed in would need
-   * a negative base; it holds at black and comes back a few points light. Teal's red lands at about
-   * 84 against an asked-for 78 — visible only side by side, where before it was 161. */
-  const KEEP = 0.58;                    // how much of the asked colour survives
-  const LIFT = 84;                      // what the scene adds regardless
-
-  const [r, g, b] = rgbIn.map(c => Math.round(Math.max(0, Math.min(255, (c - LIFT) / KEEP))));
-  return `rgb(${r}, ${g}, ${b})`;
-}
 
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
   const g = gloss ?? GARNISH_GLOSS_DEFAULT;
   return {
-    /* ⚠️ PRE-COMPENSATED, so what the renderer produces is the colour that was chosen — see
-     * `materialBase`. Handing it the raw colour is what made a teal piece arrive as pale mint. */
-    ...mediumOf(medium).material({ softness: g }, materialBase(color ?? GARNISH_INK, g)),
-    /* ⚠️ THE LACQUER FOLLOWS THE SLIDER. These three were FIXED constants spread AFTER the medium's
-     * own material, so they overwrote whatever Shine had just decided — the control moved, the
-     * numbers underneath changed, and the render used the constants regardless. Shine at 1.00 looked
-     * exactly like Shine at 0.
+    ...mediumOf(medium).material({ softness: g }, color ?? GARNISH_INK),
+    /* ⚠️ NO ADDITIVE WHITE. A clearcoat and an environment reflection are light bouncing OFF the
+     * surface rather than through the pigment, so they are not multiplied by the colour — they land
+     * on every channel equally. On a dark or saturated colour that constant is most of its distance
+     * to white, which is why a teal piece arrived as pale mint and why four compensations aimed at
+     * the wrong term. The same defect, and the same fix, as a print: `shared/printExposure.js` turns
+     * both off and says "a print is INK".
      *
-     * They are still held DOWN relative to a drip, and that part was right: a thin rope is almost all
-     * grazing angle, and Fresnel makes a clearcoat reflect hardest there, so a full-strength coat
-     * covers the whole piece in white-ish reflection and buries the chocolate — which is why raising
-     * the gloss twice made it worse. The fix is to let the slider move within a range that suits a
-     * rope, not to pin it to one end of that range. */
-    /* ⚠️ A CLEARCOAT REFLECTS THE ROOM, AND THE ROOM IS WHITE. On top of a saturated colour that
-     * reflection is added, not blended, so a teal piece arrives on the cake as pale mint — the
-     * studio shows the chocolate's own colour and the cake shows the colour plus a sheet of white.
-     * The two disagreed by a lot, and colour is the thing a baker chose deliberately.
+     * A GARNISH IS SET CHOCOLATE, so the colour must be the chocolate's colour by construction: every
+     * term multiplies the albedo, nothing adds to it.
      *
-     * A garnish is a small object seen against a large pale cake, so it needs LESS environment than
-     * the drip it inherited these numbers from, not more. Both come down: the lacquer still moves
-     * with Shine, but across a range where the chocolate underneath keeps the upper hand. */
-    clearcoat: 0.06 + g * 0.30,
-    clearcoatRoughness: 0.7 - g * 0.5,
-    envMapIntensity: 0.25 + g * 0.45,
+     * ⚠️ AND CHOCOLATE IS GLOSSY, WHICH A PRINT IS NOT. That is served by roughness — a smooth surface
+     * still catches a highlight from the LAMPS, which is a small bright spot at one angle and leaves
+     * the rest of the piece showing pigment. What is forbidden is the uniform layer the ENVIRONMENT
+     * lays over the whole surface. Shine therefore drives roughness, not the reflection.
+     *
+     * ⚠️ AND THESE THREE ZEROS DO NOT ACTUALLY STOP IT — MEASURED, ON THE REAL CAKE. drei's
+     * `<Environment>` sets `scene.environment`, and `environmentIntensity` is a property of the SCENE.
+     * A material cannot opt out of it:
+     *     material envMapIntensity 0     → teal 181,230,222   (unchanged)
+     *     envMapIntensity={0} on the element → 181,230,222    (unchanged)
+     *     envMap={null} on the element      → 181,230,222     (unchanged, R3F re-attaches it)
+     *     meshStandardMaterial instead      → 193,231,224     (no better)
+     *     SCENE environmentIntensity 0      →  72, 53,  4     (collapses — this is the whole light)
+     * That is why four separate compensations aimed at the material changed nothing. They were all
+     * turning a knob that is not wired to anything.
+     *
+     * ⚠️ SO THE FIX IS NOT HERE. It has to happen where the scene environment is applied — a second
+     * environment layer the garnish is excluded from, a `layers` split, or rendering the piece with a
+     * material the scene env does not reach. Until then these zeros are correct-but-inert: they state
+     * the intent and cost nothing, and the residual is the scene's, not this file's. */
+    roughness: 0.52 - 0.34 * g,
+    clearcoat: 0,
+    envMapIntensity: 0,
+    specularIntensity: 0,
   };
 }
