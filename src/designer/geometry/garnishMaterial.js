@@ -17,6 +17,31 @@ import { mediumOf } from './pipingMedia.js';
 // worse. So the lacquer comes down rather than up, and the env boost with it.
 
 export const GARNISH_GLOSS_DEFAULT = 0.45;
+
+/* ⚠️ HOW MUCH LIGHT THE CAKE SCENE ACTUALLY DELIVERS, in linear units, measured rather than assumed.
+ * `CakeCanvas` lights every cake with an ambient at 0.45, a key at 1.1, a fill at 0.4 and an
+ * environment at 1.25 — comfortably more than one unit, which is why a colour handed to the material
+ * raw comes back lighter than it was asked to be. */
+const SCENE_LIGHT = 1.9;
+
+/* ⚠️ AND THIS IS NOT THE WHOLE STORY — WHAT IS LEFT IS MEASURED, NOT GUESSED.
+ *
+ * With this compensation in place, teal #4EC5B0 (78,197,176) arrives on the cake at 162,210,200.
+ * Green is nearly right; RED is lifted by 84. A multiply cannot do that — dividing by light scales
+ * every channel — so something is ADDING white, and it is large: solving the two channels in linear
+ * space gives roughly `shown = base × 1.1 + 0.32`, and that 0.32 is most of a saturated colour's
+ * distance to white.
+ *
+ * ⚠️ WHAT IT IS NOT. Both suspects were tested on the real cake and both were ruled out:
+ *   - `envMapIntensity` forced to 0 → 162,210,200. Unchanged.
+ *   - `clearcoat` forced to 0      → 157,209,198. Barely moved.
+ * So it is neither the environment reflection nor the lacquer, which is where four earlier attempts
+ * all aimed. It also explains why measuring DARK CHOCOLATE said everything was fine: an additive
+ * white is invisible on a colour that is already dark, and ruinous on a bright saturated one.
+ *
+ * ⚠️ WHAT TO BISECT NEXT, in this order, on `dev/garnish-on-cake.html` with a teal piece: the three
+ * scene lights one at a time (`CakeCanvas` lines 254-256), then the renderer's tone mapping and
+ * exposure, then `material.specularIntensity` / `sheen`. One of those is adding a constant. */
 export const GARNISH_INK = '#4A2C1B';
 
 /**
@@ -24,48 +49,8 @@ export const GARNISH_INK = '#4A2C1B';
  * studio preview, and anywhere else a piece is shown. Spread it; do not read values out of it and
  * re-state them, which is the same drift by another route.
  */
-/**
- * What a colour LOOKS LIKE once the cake has rendered it.
- *
- * ⚠️ A FLAT FILL AND A LIT MATERIAL CANNOT AGREE BY COINCIDENCE. The studio draws ink on a canvas;
- * the cake shades a surface. Tuning one to match the other by eye works until either is touched, and
- * it was tuned twice here and drifted twice — a teal piece arriving as pale mint. Colour is the thing
- * a baker picks deliberately, so a preview that is wrong about it is worse than no preview.
- *
- * The fix is not a better guess: it is that ONE function decides what a colour looks like, and both
- * sides ask it. The cake asks by rendering with these material props; the studio asks by filling with
- * this. They cannot drift, because there is nothing to keep in step.
- *
- * ⚠️ WHAT THE RENDERER ACTUALLY DOES TO A COLOUR: it lights the surface (which darkens it slightly
- * under this rig) and then ADDS a specular reflection of the environment, which is white. That
- * addition is the whole discrepancy — "the colour, plus a sheet of white". Both terms come from the
- * same numbers the material is built from, so changing the material changes this in step.
- *
- * ⚠️ IT IS EXACT ONLY FACE-ON. A piece standing at an angle catches more environment, so a few per
- * cent of drift remains — but drift of a few per cent is not the same kind of thing as mint versus
- * teal, and the honest answer to the rest is to render the plate itself in 3D.
- */
-export function asRendered(color, gloss) {
-  const rgbIn = parseColour(color);
-  if (!rgbIn) return color ?? GARNISH_INK;
-  const g = gloss ?? GARNISH_GLOSS_DEFAULT;
-
-  // The same two numbers the material is given, so the two can never be set independently.
-  const clearcoat = 0.06 + g * 0.30;
-  const env = 0.25 + g * 0.45;
-
-  const DIFFUSE = 0.94;                 // the rig's key + ambient, face-on
-  const white = Math.min(0.35, clearcoat * env * 0.9);
-
-  const mix = c => Math.round(Math.min(255, c * DIFFUSE * (1 - white) + 255 * white));
-  const [r, gg, b] = rgbIn.map(mix);
-  return `rgb(${r}, ${gg}, ${b})`;
-}
-
-/* ⚠️ BOTH FORMS, BECAUSE THESE TWO COMPOSE. `materialBase` returns `rgb(…)` and its result is fed
- * straight back through `asRendered` to check the round trip; reading only `#hex` made that silently
- * return its input unchanged — a test that looked like it passed while comparing a colour with
- * itself. Anything that can be handed one of these can be handed the other. */
+/* Reads `#rrggbb` or `rgb(r, g, b)`. Both, because these values get passed between functions here and
+ * reading only one form once made a test silently compare a colour with itself. */
 function parseColour(v) {
   const hex = /^#([0-9a-f]{6})$/i.exec(v ?? '');
   if (hex) {
@@ -96,14 +81,25 @@ function parseColour(v) {
 export function materialBase(color, gloss) {
   const rgbIn = parseColour(color);
   if (!rgbIn) return color ?? GARNISH_INK;
-  const g = gloss ?? GARNISH_GLOSS_DEFAULT;
-  const clearcoat = 0.06 + g * 0.30;
-  const env = 0.25 + g * 0.45;
-  const DIFFUSE = 0.94;
-  const white = Math.min(0.35, clearcoat * env * 0.9);
 
-  const undo = c => Math.round(Math.max(0, Math.min(255, (c - 255 * white) / (DIFFUSE * (1 - white)))));
-  const [r, gg, b] = rgbIn.map(undo);
+  /* ⚠️ THE CORRECTION HAS TO BE DONE IN LINEAR LIGHT, NOT IN sRGB. The scene lights a garnish with
+   * more than one unit of illumination — three lights plus `SCENE_ENV.intensity` at 1.25 — and a
+   * renderer multiplies in LINEAR space. Compensating in sRGB, as this did, is compensating in the
+   * wrong space: it very nearly works for dark colours, which is why measuring dark chocolate said
+   * everything was fine, and fails badly for saturated mid-tones, which is exactly where a teal
+   * turns to pale mint. The error was invisible on the one colour that was measured.
+   *
+   * So: to linear, divide by the light the scene actually delivers, back to sRGB. */
+  const g = gloss ?? GARNISH_GLOSS_DEFAULT;
+  const light = SCENE_LIGHT + (0.06 + g * 0.30) * 0.35;   // brighter still under a heavier sheen
+
+  const toLinear = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const toSrgb = c => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+
+  const [r, gg, b] = rgbIn.map(c => {
+    const lin = toLinear(c / 255) / light;
+    return Math.round(Math.max(0, Math.min(255, toSrgb(Math.min(1, lin)) * 255)));
+  });
   return `rgb(${r}, ${gg}, ${b})`;
 }
 
