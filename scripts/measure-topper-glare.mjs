@@ -17,7 +17,7 @@
 import { chromium } from 'playwright';
 
 const URL = 'http://localhost:5190/garnish-on-cake.html';
-const DEGREES = [0, 45, 90, 135, 180, 225, 270, 315];
+const DEGREES = (process.env.DEG || "0,45,90,135,225,270,315").split(",").map(Number);
 
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 800 } });

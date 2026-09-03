@@ -28,6 +28,16 @@
  * withdraw one without a deploy. Reached by KEY — a new finish is a row, never a branch.
  */
 export const TOPPER_FINISHES = {
+  /* ⚠️ ROUGHNESS HERE WAS SWEPT FOR THE FRONT-VIEW GLARE AND MAKES NO MEASURABLE DIFFERENCE. Measured
+   * on the real cake (`scripts/measure-topper-glare.mjs`, which finds the topper by diffing two
+   * renders), mean luminance / contrast at 0.28 / 0.34 / 0.40 / 0.46 came out 176/76, 182/71, 184/69,
+   * 171/80 — and then RE-RUNNING the same values gave 183/69 and 181/72. The run-to-run variance is
+   * larger than the difference between settings, so this sweep cannot separate them and any winner
+   * picked from it would be noise. Do not tune this against that metric without averaging repeats.
+   *
+   * ⚠️ `envIntensity: 2.0` IS THE UNSWEPT SUSPECT. It doubles the environment for this finish
+   * specifically, on top of the scene's own 1.25 — and the environment is nearly all the light a
+   * metal has. That is a much larger lever than roughness and is where to look next. */
   gold:   { label: 'Mirror gold',   color: '#d9b642', metalness: 0.70, roughness: 0.28, envIntensity: 2.0 },
   silver: { label: 'Mirror silver', color: '#d5dade', metalness: 0.75, roughness: 0.22, envIntensity: 2.0 },
   rose:   { label: 'Rose gold',     color: '#e3ab9c', metalness: 0.70, roughness: 0.30, envIntensity: 2.0 },
