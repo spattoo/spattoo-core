@@ -32,16 +32,23 @@ const SCENE_LIGHT = 1.9;
  * space gives roughly `shown = base × 1.1 + 0.32`, and that 0.32 is most of a saturated colour's
  * distance to white.
  *
- * ⚠️ WHAT IT IS NOT. Both suspects were tested on the real cake and both were ruled out:
- *   - `envMapIntensity` forced to 0 → 162,210,200. Unchanged.
- *   - `clearcoat` forced to 0      → 157,209,198. Barely moved.
- * So it is neither the environment reflection nor the lacquer, which is where four earlier attempts
- * all aimed. It also explains why measuring DARK CHOCOLATE said everything was fine: an additive
- * white is invisible on a colour that is already dark, and ruinous on a bright saturated one.
+ * ⚠️ WHERE IT COMES FROM, BISECTED ON THE REAL CAKE with a teal piece (asked 78,197,176):
+ *     baseline                                  161,210,199
+ *     ambient light off                         158,207,197   — barely moves
+ *     SCENE ENVIRONMENT off                       0, 76, 64   — collapses
+ * The scene's environment is providing nearly all the light on a garnish, and the HDRI is bright, so
+ * it washes saturated colours towards white. The three lamps are almost incidental.
  *
- * ⚠️ WHAT TO BISECT NEXT, in this order, on `dev/garnish-on-cake.html` with a teal piece: the three
- * scene lights one at a time (`CakeCanvas` lines 254-256), then the renderer's tone mapping and
- * exposure, then `material.specularIntensity` / `sheen`. One of those is adding a constant. */
+ * ⚠️ AND IT CANNOT BE TURNED DOWN PER MATERIAL, which is the awkward part. `envMapIntensity` on this
+ * material was measured at 0, 0.15 and 0.4 and produced 162,210,200 / 161,210,199 / 161,210,199 —
+ * no effect at all, while the scene-level `environmentIntensity` has total effect. So the usual lever
+ * is not connected here, and lowering the scene's own intensity is not available: it is what makes a
+ * poured glaze read wet (see SCENE_ENV in CakeCanvas).
+ *
+ * ⚠️ SO THE REMAINING ROUTE IS THIS CONSTANT, CALIBRATED RATHER THAN DERIVED. `SCENE_LIGHT` is a
+ * guess at 1.9 and the residual says it is too low. Binary-search it against a measured teal until
+ * the cake reads 78,197,176, then confirm on a dark and a pale colour — the transform is not a pure
+ * multiply, so one colour is not enough to fit it. */
 export const GARNISH_INK = '#4A2C1B';
 
 /**
