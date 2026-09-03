@@ -109,6 +109,17 @@ export function writingFromAcrylicRow(acrylic) {
     : null;
   const seed = {
     style: 'acrylic',
+    /* ⚠️ The Look is not a choice on a message that came from a CATALOGUE ROW.
+     *
+     * Texts offers "Piped cream / Acrylic" because there the customer is typing a message and the
+     * material is genuinely theirs to pick. This row is a PRODUCT — an acrylic topper somebody
+     * authored, priced and put on the shelf — and offering to render it in cream turns the thing
+     * they chose into something else entirely. Every acrylic number on it (sheet, bar, legs, the
+     * finishes on offer) would be meaningless the moment it was pressed.
+     *
+     * On the seed rather than checked in the editor, so it travels with the saved design: a message
+     * reopened tomorrow still knows it came from a row. */
+    lockLook: true,
     font: face,
     // An authored fit of 0 is a real choice ("set as drawn"), so `??` and not `||`.
     tracking: acrylic.tracking ?? faceFit(face),

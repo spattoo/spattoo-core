@@ -552,7 +552,11 @@ export function numberTopperPlaceAt(shape, hit) {
  * pair is part of what the surface MEANS — a writing on a round wall is at an angle and a height,
  * one on a flat wall is at an x and a height, and one on the board is at an x and a z.
  */
-export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSideY, shape, boardShape }, hit) {
+/* `halfWidth` is how far the message reaches from its anchor — see the clamp below. Optional, and
+ * 0 (the default) is the old behaviour exactly: the ANCHOR reaches the rim.
+ */
+export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSideY, shape, boardShape,
+                                 halfWidth = 0 }, hit) {
   if (!hit) return null;
   const clampTo = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   if (surface === 'side' && !sideRect) {
@@ -562,8 +566,19 @@ export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSide
     return { offsetX: clampTo(hit.x, -sideWidth / 2, sideWidth / 2),
              sideY: clampTo(hit.y, minSideY, maxSideY) };
   }
+  /* ⚠️ Inset by the message's OWN half-width, not clamped at the rim.
+   *
+   * `topClamp(…, 1.0)` stops the ANCHOR at the edge, which is right for a point and wrong for
+   * anything with width: an 84mm topper dragged to the rim put half its length and one of its legs
+   * out over thin air, with the prong hanging down the side of the cake. The piece has to fit, not
+   * just its centre.
+   *
+   * Half the span in every direction is deliberately conservative — the word is a plane and turns
+   * with `yaw`, so its reach depends on the angle, and the largest extent is the honest bound. A
+   * caller that passes nothing keeps the old behaviour, so cream writing is untouched.
+   */
   const cs = surface === 'board' ? (boardShape ?? shape) : shape;
-  const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
+  const p = cs ? topClampInset(cs, hit.x, hit.z, halfWidth) : hit;
   return surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z };
 }
 

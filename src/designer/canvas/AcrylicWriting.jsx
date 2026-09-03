@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
@@ -50,8 +50,10 @@ export default function AcrylicWriting({
   const { grabProps } = useDragPlacement({
     camera, gl, onMove, onClick, onOrbitEnable,
     resolve: (ray) => {
+      // ⚠️ halfWidth: a topper is not a point. Without it the ANCHOR stops at the rim and half the
+      // word — and a leg — hangs over the edge with the prong down the side of the cake.
       const where = { surface, sideRect, sideWidth: sideTier?.width, minSideY, maxSideY,
-                      shape: shp, boardShape: boardShp };
+                      shape: shp, boardShape: boardShp, halfWidth: maxW / 2 };
       if (surface === 'side' && !sideRect) {
         const hit = new THREE.Vector3();
         const d = ray.origin.clone(), dir = ray.direction.clone();
@@ -78,8 +80,6 @@ export default function AcrylicWriting({
     },
   });
 
-  if (!font || !writing?.text?.trim()) return null;
-
   /* Standing or lying, decided by the SURFACE — the top and the board are things to stand on, a wall
    * is a thing to lie against. Legs and the base bar go with standing: a flat piece has nothing to
    * push into and prongs would point at the customer. */
@@ -89,11 +89,32 @@ export default function AcrylicWriting({
    * five, save, and change nothing. A renderer with a number of its own is a number an admin cannot
    * reach. `mmPerUnit` is optional and only arrives where an order pins a real size; without one the
    * nominal in acrylicConfig applies, and that nominal is an assumption written down rather than a
-   * conversion the designer actually has. */
-  const cfg = {
+   * conversion the designer actually has.
+   *
+   * ⚠️ MEMOISED, and that is the difference between a drag that follows the finger and one that
+   * lurches. AcrylicWord's build keys on `cfg`, so a fresh object literal here invalidated it on
+   * EVERY render — and a drag renders on every pointer move. Each of those frames re-ran two full
+   * topperShapes passes (the probe and the real one), the bridge search, and an ExtrudeGeometry per
+   * part, for a word whose shape had not changed at all. Nothing about the drag was heavy; the
+   * geometry was being rebuilt underneath it.
+   *
+   * Depends on the VALUES, never the writing object — that is a new identity on every move too.
+   *
+   * ⚠️ ABOVE the early return, with every other hook. Put below it, this crashed the whole canvas
+   * with "Rendered more hooks than during the previous render" the moment a font finished loading —
+   * because the render before it had returned early and run one hook fewer. That is what
+   * `check:hooks` exists for, and running a different gate instead of that one is how it shipped. */
+  const cfg = useMemo(() => ({
     ...acrylicCfg(writing, { standing }),
     fitAspect: acrylicFitAspect(writing, maxW, mmPerUnit),
-  };
+  }), [
+    writing.font, writing.tracking, writing.stroke, writing.weight, writing.lineGap,
+    writing.maxLines, writing.bridge, writing.sheet, writing.bar, writing.barRatio,
+    writing.legs, writing.legLen, writing.bury, writing.minDetail,
+    standing, maxW, mmPerUnit,
+  ]);
+
+  if (!font || !writing?.text?.trim()) return null;
 
   const finish = writing.finish === 'silver' ? 'silver' : (writing.acrylicFinish ?? writing.finish ?? 'gold');
   const grabH = Math.max(0.2, maxW * 0.4);

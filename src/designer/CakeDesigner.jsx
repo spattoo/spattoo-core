@@ -7186,7 +7186,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ── What it is made of ────────────────────────────────────────────────
             Cream is piped; acrylic is cut from a sheet and stands or lies against the wall. The
             message survives the switch — same text, same surface, same place — because they are one
-            object in two materials. */}
+            object in two materials.
+
+            ⚠️ NOT OFFERED on a message that came from a catalogue row (`lockLook`). There the
+            material is the product somebody authored and put on the shelf, not a preference — and
+            "Piped cream" would quietly discard its sheet, bar, legs and finishes. The choice is real
+            in Texts, where the customer is typing a message of their own. */}
+        {!w.lockLook && (<>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Look</div>
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
           {[{ k: 'cream', label: 'Piped cream' }, { k: 'acrylic', label: 'Acrylic' }].map(st => (
@@ -7199,6 +7205,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           ))}
         </div>
+        </>)}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
