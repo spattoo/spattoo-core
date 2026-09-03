@@ -236,6 +236,27 @@ import { envProps as _envProps } from './envMap.js';
 // this is the knob that makes a poured glaze read wet. `presetFallback` is the dev env when no self-hosted
 // HDRI URL is configured. Per-finish reflection strength still layers on top via each material's own
 // envMapIntensity (frostings.js).
+/* ⚠️ BEFORE CHANGING THE HDRI OR THE INTENSITY HERE, READ THIS — two things depend on it and neither
+ * will complain.
+ *
+ * 1. GOLD TOPPERS GLARE HEAD-ON AND READ CORRECTLY WHEN THE CAKE IS TURNED. That angle-dependence is
+ *    the signature of a reflection: a metal has no diffuse colour, so what you see IS the reflected
+ *    environment. A bright, featureless HDRI gives every pixel the same value and the lettering
+ *    disappears into a sheet of white; an environment with STRUCTURE gives the bands of light and
+ *    dark that read as gold. So the fix is contrast in the environment — or `environmentRotation`
+ *    (drei supports it) to move the bright part off the default camera axis — NOT less intensity,
+ *    which would leave a metal with nothing to reflect and render it black.
+ *
+ * 2. `REFERENCE_LIGHT` IN `geometry/garnishMaterial.js` IS CALIBRATED TO THIS ENVIRONMENT. Measured:
+ *    with `intensity: 0` a garnish renders near black, so this is not a contributor to the light on
+ *    one, it is almost all of it. Change the HDRI and garnish colours silently drift again. Re-run
+ *    `scripts/measure-garnish-colour.mjs` and reset that constant from the grey row.
+ *
+ * ⚠️ AND THE TOPPER HARNESSES DO NOT REPRODUCE THIS SCENE. `dev/topper.jsx` and `dev/acrylic-text.jsx`
+ * both build their own `RoomEnvironment` rather than mounting `SafeEnvironment`, so neither shows the
+ * glare being complained about — a harness that lights its subject differently from the product
+ * cannot be used to judge the product, which cost a full round on the garnish colour. Point one of
+ * them at the real environment before tuning against it. */
 export const SCENE_ENV = {
   intensity: 1.25,                // environmentIntensity — brighter than three's default 1.0 so glossy
                                   // finishes read wet; matte finishes are unaffected (they ignore IBL).
