@@ -166,10 +166,20 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
 function CutoutLauncher({ order, apiClient, variant }) {
   const [open, setOpen] = useState(false);
   const [prints, setPrints] = useState([]);
-  const { design } = resolveXraySpec(order);
-  const ids = useMemo(() => [...new Set(
+  const { design, fromPhoto } = resolveXraySpec(order);
+  /* ⚠️ NOT on a photo order. A designed cake's `elementId`s ARE its decorations — the customer picked
+   * them, so printing their outline is exactly right. A photo order's are the MATCHER's closest
+   * library stand-ins for what it thought it saw, and a stand-in is not the thing.
+   *
+   * Reported from the goose cake: the sheet offered a yellow daisy under the heading "this cake's
+   * decorations". No daisy is on that cake — it is what inspirationMatch reached for when it met the
+   * small pink blossoms. Two of the three matches could not even be prepared, being 3D models. So on
+   * a photo order the list was one wrong flower and two failures, presented as fact.
+   *
+   * What IS this cake's, on a photo order, is the edible prints generated FROM its own photograph. */
+  const ids = useMemo(() => (fromPhoto ? [] : [...new Set(
     [...(design?.stickers ?? []), ...(design?.decorations ?? [])].map(s => s?.elementId).filter(Boolean),
-  )], [design]);
+  )]), [design, fromPhoto]);
 
   /* ⚠️ Edible prints count too, and they are NOT elements. A print generated from X-Ray lands in the
    * baker's uploads and is linked to this order (migration 086) — so a PHOTO order with no matched
