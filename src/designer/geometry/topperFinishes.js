@@ -56,8 +56,20 @@ export const TOPPER_FINISHES = {
    * rotating camera. ⚠️ Roughness IS real but weak and pushes the wrong way (0.16 → 0.112, 0.70 →
    * 0.090): smoother reads slightly better, so there is no glare fix here either.
    *
-   * Consequence: THERE IS NO MATERIAL-SIDE LEVER. Fixing the topper without touching the rest of the
-   * scene needs a per-material `envMap`, which three.js does honour where intensity does not. */
+   * Consequence: THERE IS NO MATERIAL-SIDE LEVER IN THESE NUMBERS. Fixing the topper without
+   * touching the rest of the scene needs a per-material `envMap` — and that IS proven to work:
+   *
+   *     scene environment only     5833 px   mean 215   relative contrast 0.108
+   *     per-material envMap        5499 px   mean 163   relative contrast 0.178   (+65%)
+   *
+   * with the control run bit-identical either side of it, so the difference is real. A material's own
+   * `envMap` DOES override `scene.environment` where `envMapIntensity` does nothing — which is the
+   * distinction four earlier compensations missed. `?permat=` in dev/garnish-on-cake.jsx.
+   *
+   * ⚠️ BUT THE SPIKE'S SELECTOR IS WRONG FOR SHIPPING: it took every mesh with metalness > 0.5, all
+   * 23 of them, which includes the faux balls — the very things the scene-wide swap dulled. Scoping
+   * it to the acrylic topper's own material is the remaining work; picking metals by a threshold
+   * would repeat the same mistake one level down. */
   gold:   { label: 'Mirror gold',   color: '#d9b642', metalness: 0.70, roughness: 0.28, envIntensity: 2.0 },
   silver: { label: 'Mirror silver', color: '#d5dade', metalness: 0.75, roughness: 0.22, envIntensity: 2.0 },
   rose:   { label: 'Rose gold',     color: '#e3ab9c', metalness: 0.70, roughness: 0.30, envIntensity: 2.0 },

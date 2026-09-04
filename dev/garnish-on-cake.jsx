@@ -2,6 +2,46 @@ import { createRoot } from 'react-dom/client';
 import { CakePreview, configureEnvMap } from '../src/designer/canvas/CakeCanvas.jsx';
 import { fillShape } from '../src/designer/geometry/pipingFill.js';
 import { TOPPER_FINISHES } from '../src/designer/geometry/topperFinishes.js';
+import { useThree, useFrame } from '@react-three/fiber';
+import { useRef } from 'react';
+import * as THREE from 'three';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+
+/* SPIKE (`?permat=<hdr>`): can ONE material get its own environment while the scene keeps another?
+ *
+ * ⚠️ THIS IS THE ONLY REMAINING ROUTE TO A TOPPER-ONLY FIX. `envMapIntensity` is proven inert — 0.5
+ * through 3.0 render bit-identically — because `scene.environment` is a SCENE property a material
+ * cannot oppose. Assigning an actual `envMap` texture is a different question from setting it to
+ * null (which R3F was seen to re-attach), and it is the question nobody has answered.
+ *
+ * If this works, metals can be lit by the studio map while fondant and faux balls keep lebombo, and
+ * the glare is fixable without re-lighting the cake. If it does not, the idea is dead and the next
+ * candidate is a layers split or a second render pass. */
+function PerMaterialEnv({ file }) {
+  const { scene, gl } = useThree();
+  const env = useRef(null), done = useRef(false);
+  if (file && !env.current) {
+    env.current = 'loading';
+    new RGBELoader().load(file, (tex) => {
+      const pm = new THREE.PMREMGenerator(gl);
+      env.current = pm.fromEquirectangular(tex).texture;
+      tex.dispose(); pm.dispose();
+    });
+  }
+  /* Re-applied every frame until it takes: the topper mounts after this component, and R3F rebuilds
+     materials on prop changes — a one-shot effect would silently miss both. */
+  useFrame(() => {
+    if (!file || done.current || !env.current || env.current === 'loading') return;
+    let hit = 0;
+    scene.traverse((o) => {
+      if (o.isMesh && o.material && o.material.metalness > 0.5 && o.material.envMap !== env.current) {
+        o.material.envMap = env.current; o.material.needsUpdate = true; hit++;
+      }
+    });
+    if (hit) { window.__permat = (window.__permat || 0) + hit; }
+  });
+  return null;
+}
 
 /* ⚠️ THE HARNESS MUST LIGHT THE CAKE THE WAY PRODUCTION DOES, and for a while it did not. With no
  * assets base configured, `envProps` falls back to drei's `apartment` preset — so localhost rendered
@@ -84,7 +124,9 @@ createRoot(document.getElementById('root')).render(
         It is why measuring one setting six times gave a spread wider than any parameter produced,
         and why the frame never settles no matter how long the script waits. Sweeping a material
         against a moving camera measures the camera. */}
-    <CakePreview design={design} autoRotate={false} />
+    <CakePreview design={design} autoRotate={false}>
+      <PerMaterialEnv file={_q.get('permat') ? `/_local/env/${_q.get('permat')}.hdr` : null} />
+    </CakePreview>
     {/* The colour that was ASKED FOR, against the cake, so the gap is visible without a screenshot
         being sent anywhere. */}
     <div data-asked style={{ position: 'absolute', top: 12, left: 12, width: 90, height: 60,

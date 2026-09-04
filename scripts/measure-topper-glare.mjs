@@ -32,7 +32,9 @@ const DEGREES = (process.env.DEG || "0").split(",").map(Number);
  * fallback rather than the real map, so both are being re-taken here from scratch. */
 const ROUGH = process.env.ROUGH ? process.env.ROUGH.split(',') : null;
 const ENVI = process.env.ENVI ? process.env.ENVI.split(',') : null;
-const RUNS = ENVS  ? ENVS.map(e => ({ label: e, q: `&env=${encodeURIComponent(e)}` }))
+const PERMAT = process.env.PERMAT ? process.env.PERMAT.split(',') : null;
+const RUNS = PERMAT ? PERMAT.map(m => ({ label: m.slice(0,10), q: m === 'off' ? '' : `&permat=${m}` }))
+  : ENVS  ? ENVS.map(e => ({ label: e, q: `&env=${encodeURIComponent(e)}` }))
   : ROUGH ? ROUGH.map(r => ({ label: `r=${r}`, q: `&rough=${r}` }))
   : ENVI  ? ENVI.map(v => ({ label: `e=${v}`, q: `&envi=${v}` }))
   : DEGREES.map(d => ({ label: `${d}°`, q: `&envrot=${d}` }));

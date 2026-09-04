@@ -3325,6 +3325,7 @@ function CameraRig({ fov, position }) {
 export function CakePreview({
   design, autoRotate = true, style, enableZoom = false,
   fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = null,
+  children = null,          // extra scene contents — a plain composition slot, not a debug hook
 }) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   // Aim at THIS cake's middle by default, the same rule the editor uses (cakeAimTarget) — a preview
@@ -3348,6 +3349,7 @@ export function CakePreview({
           <CakeThumbnailScene config={config} />
         </Suspense>
         <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={aim} />
+        {children}
       </Canvas>
     </div>
   );
