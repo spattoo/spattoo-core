@@ -17,7 +17,19 @@
 import { chromium } from 'playwright';
 
 const URL = 'http://localhost:5190/garnish-on-cake.html';
-const DEGREES = (process.env.DEG || "0,45,90,135,225,270,315").split(",").map(Number);
+
+/* Two sweeps, because there turned out to be two questions. DEG rotates the map; ENV swaps it.
+ * ⚠️ THE SECOND ONE IS THE REAL ONE. Rotation, roughness and envIntensity were each swept to
+ * exhaustion and each was already at its best value, which is what points at the map's own content:
+ * an outdoor sphere is mostly open sky, and a metal reflecting a large featureless bright field IS
+ * glare. `ENV=256,512,1k` compares them on the real cake.
+ *   DEG=0,45 node scripts/measure-topper-glare.mjs
+ *   ENV=256,512,1k node scripts/measure-topper-glare.mjs */
+const ENVS = process.env.ENV ? process.env.ENV.split(',') : null;
+const DEGREES = (process.env.DEG || "0").split(",").map(Number);
+const RUNS = ENVS
+  ? ENVS.map(e => ({ label: e, q: `&env=${encodeURIComponent(e)}` }))
+  : DEGREES.map(d => ({ label: `${d}°`, q: `&envrot=${d}` }));
 
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
@@ -41,12 +53,12 @@ const grab = async (url) => {
   });
 };
 
-console.log('rotation   pixels   mean   contrast');
-for (const deg of DEGREES) {
-  const bare = await grab(`${URL}?envrot=${deg}`);
-  const with_ = await grab(`${URL}?topper=1&envrot=${deg}`);
+console.log('map/rot    pixels   mean   contrast   relative');
+for (const run of RUNS) {
+  const bare = await grab(`${URL}?x=1${run.q}`);
+  const with_ = await grab(`${URL}?topper=1${run.q}`);
   if (bare.lit < 500 || with_.lit < 500) {
-    console.log(`${String(deg).padStart(4)}°     REFUSED — the HDRI did not load, so this is not the real scene.`);
+    console.log(`${run.label.padStart(6)}     REFUSED — the HDRI did not load, so this is not the real scene.`);
     continue;
   }
 
@@ -58,11 +70,14 @@ for (const deg of DEGREES) {
     if (dr + dg + db < 40) continue;                       // unchanged: not the topper
     lum.push(0.2126 * with_.px[i] + 0.7152 * with_.px[i + 1] + 0.0722 * with_.px[i + 2]);
   }
-  if (lum.length < 100) { console.log(`${String(deg).padStart(4)}°     topper not found`); continue; }
+  if (lum.length < 100) { console.log(`${run.label.padStart(6)}     topper not found`); continue; }
 
   const mean = lum.reduce((a, b) => a + b, 0) / lum.length;
   const sd = Math.sqrt(lum.reduce((a, b) => a + (b - mean) ** 2, 0) / lum.length);
-  console.log(`${String(deg).padStart(4)}°   ${String(lum.length).padStart(6)}   ${
-    String(Math.round(mean)).padStart(4)}   ${sd.toFixed(1).padStart(7)}`);
+  /* ⚠️ RELATIVE CONTRAST IS THE COMPARABLE NUMBER. A map that dims everything lowers the spread too,
+     so raw sd rewards darkness; sd/mean asks how legible the lettering is at whatever brightness it
+     ended up with. Rotation was picked on this and 0° won. */
+  console.log(`${run.label.padStart(6)}   ${String(lum.length).padStart(6)}   ${
+    String(Math.round(mean)).padStart(4)}   ${sd.toFixed(1).padStart(8)}   ${(sd / mean).toFixed(3).padStart(8)}`);
 }
 await browser.close();

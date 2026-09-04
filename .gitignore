@@ -18,3 +18,6 @@ dist
 # silently swallow it the day someone adds one.
 .claude/worktrees/
 .claude/settings.local.json
+
+# Local-only HDRI copies for the glare sweep — the CDN does not allow the harness origin.
+public/_local/

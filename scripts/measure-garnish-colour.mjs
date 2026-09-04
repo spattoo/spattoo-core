@@ -17,7 +17,12 @@ const page = await browser.newPage({ viewport: { width: 900, height: 760 } });
 
 console.log('colour     asked            on the cake      drift');
 for (const c of COLOURS) {
-  await page.goto(`http://localhost:5190/garnish-on-cake.html?color=${encodeURIComponent(c)}`,
+  /* ⚠️ THE MAP IS A PARAMETER BECAUSE REFERENCE_LIGHT IS CALIBRATED TO IT. The divisor that makes a
+     garnish render the colour that was asked for is a measurement of how much light this environment
+     throws at it — change the HDRI and it is wrong, in the same direction for every colour at once.
+     `ENV=` re-measures it against a candidate map before that map is allowed to ship. */
+  const env = process.env.ENV ? `&env=${encodeURIComponent(process.env.ENV)}` : '';
+  await page.goto(`http://localhost:5190/garnish-on-cake.html?color=${encodeURIComponent(c)}${env}`,
     { waitUntil: 'networkidle' });
   await page.waitForTimeout(2600);
   /* ⚠️ FIND THE PIECE, DO NOT ASSUME WHERE IT IS. Two earlier samplers were wrong in opposite ways:

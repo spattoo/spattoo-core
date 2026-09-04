@@ -1,6 +1,28 @@
 import { createRoot } from 'react-dom/client';
-import { CakePreview } from '../src/designer/canvas/CakeCanvas.jsx';
+import { CakePreview, configureEnvMap } from '../src/designer/canvas/CakeCanvas.jsx';
 import { fillShape } from '../src/designer/geometry/pipingFill.js';
+
+/* ⚠️ THE HARNESS MUST LIGHT THE CAKE THE WAY PRODUCTION DOES, and for a while it did not. With no
+ * assets base configured, `envProps` falls back to drei's `apartment` preset — so localhost rendered
+ * an INDOOR map while every deployed cake rendered the self-hosted OUTDOOR lebombo. The glare being
+ * complained about is a reflection, and a metal shows nothing but the map, so the two scenes were not
+ * comparable at all: three parameter sweeps were run, reported and documented against a map no
+ * customer has ever seen. The fallback is right for a cold `npm run dev` — it beats a black scene —
+ * but it is a fallback, and anything MEASURING the scene has to opt out of it explicitly.
+ *
+ * `?env=` picks the map, so sizes and sources can be compared in one run: `512`, `1k`, or a full
+ * path. Default is exactly what ships. */
+/* ⚠️ SERVED FROM THIS ORIGIN, NOT THE CDN, because the CDN will not have us. Its allowlist holds
+ * `app.spattoo.com` and `localhost:3000`; the harness runs on 5190 and gets no
+ * `access-control-allow-origin`, and a WebGL texture load without CORS fails — so pointing straight
+ * at the CDN reproduced the very silent-fallback this harness exists to avoid. `scripts/fetch-hdri.sh`
+ * drops the same files under `public/_local/` (gitignored), which vite serves same-origin.
+ *
+ * They are byte-identical to what production fetches, so the light is the real light. */
+const envArg = new URLSearchParams(location.search).get('env');
+configureEnvMap(location.origin, envArg
+  ? (envArg.includes('/') ? envArg : `_local/env/lebombo_${envArg}.hdr`)
+  : '_local/env/lebombo_256.hdr');
 
 /* The whole chain, end to end: design.garnishes -> toCanvasConfig -> CakeContent -> Garnishes.
  * Tests can prove the maths; only this can prove the piece actually arrives on the cake. */

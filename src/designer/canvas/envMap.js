@@ -33,21 +33,45 @@
 // each swept on the real cake and each is already at its best value while the glare remains, so what
 // is left is the map's content.
 //
-// ⚠️ AND 256×128 IS VERY LOW FOR A MIRROR. It is right for fondant, which convolves it away, but a
-// mirror shows the map almost directly — at this size there is little structure left TO show. The
-// note below already anticipates this: 512 is the step back "if gold leaf reads too soft". All four
-// sizes are in R2, so it is one line.
+// ⚠️ RESOLUTION IS NOT THE CAUSE — MEASURED AND REFUTED. The note above guessed that 256×128 was too
+// coarse for a mirror. It is not: on the real cake the relative contrast of the gold lettering reads
+// 0.360 at 256, 0.357 at 512 and 0.391 at 1k, so 512 is indistinguishable from 256 and 1k buys 8%
+// for fifteen times the bytes. Keep 256. The guess was reasonable and wrong, which is the whole
+// reason it was measured before being shipped.
 //
-// ⚠️ MEASURE ON THE REAL MAP, NOT THE FALLBACK. `cfAssetsBase` is unset in the dev harness, so
-// localhost renders drei's `apartment` preset while the deployed app renders THIS file. Every glare
-// number taken so far was against `apartment` and does not describe what a customer sees. Call
-// `configureEnvMap()` in the harness before sweeping anything again.
+// ⚠️ WHAT IS LEFT IS THE MAP'S CONTENT, AND THAT IS CONFIRMED. Swapping in an INDOOR map, same cake
+// same metric, moves both numbers the right way at once:
+//
+//     lebombo (outdoor, ships today)   mean 187   relative contrast 0.346
+//     studio_small_09 (indoor)         mean 133   relative contrast 0.476   <- 29% less washed out, 38% more banding
+//     brown_photostudio_02             mean 153   0.386
+//     photo_studio_01                  mean 170   0.259
+//     empty_warehouse_01               mean 177   0.202
+//
+// An open sky is one large featureless bright field, and a metal has no colour of its own — it shows
+// the map and nothing else, so it shows a sheet of white. A studio map has defined sources with dark
+// surrounds, which is what gives gold its bands.
+//
+// ⚠️ SWAPPING THE MAP IS NOT A ONE-LINE CHANGE, because it re-lights EVERY surface, not just metal.
+// `REFERENCE_LIGHT` in `garnishMaterial.js` is a measurement of how much light this environment
+// throws at a garnish, and under studio_small_09 every colour lands ~38 points dark in sRGB (grey
+// 128 renders 90). Re-measure it in the same commit or every garnish ships wrong. The candidate also
+// has to reach R2 first — see spattoo-api's downsample-hdr.mjs.
 const ENV_HDR_PATH = 'code/env/lebombo_256.hdr';
 
 let _envMapUrl = null;
 
-export function configureEnvMap(cfAssetsBase) {
-  _envMapUrl = cfAssetsBase ? `${String(cfAssetsBase).replace(/\/$/, '')}/${ENV_HDR_PATH}` : null;
+/**
+ * cfAssetsBase  the host's assets origin; null/absent falls back to drei's preset
+ * path          which HDRI under that base — defaults to the shipped one
+ *
+ * ⚠️ `path` EXISTS SO THE MAP CAN BE COMPARED WITHOUT EDITING THE CONSTANT. Choosing between 256,
+ * 512 and an indoor map is a measurement, and a measurement that requires a source edit and a
+ * rebuild between readings is one nobody repeats. `scripts/measure-topper-glare.mjs` sweeps it.
+ * Production passes one argument and gets ENV_HDR_PATH, which stays the single shipped answer.
+ */
+export function configureEnvMap(cfAssetsBase, path = ENV_HDR_PATH) {
+  _envMapUrl = cfAssetsBase ? `${String(cfAssetsBase).replace(/\/$/, '')}/${path}` : null;
 }
 
 export function envMapUrl() { return _envMapUrl; }
