@@ -70,6 +70,8 @@ for (const [param, key] of [['rough', 'roughness'], ['envi', 'envIntensity'], ['
   if (_q.has(param)) TOPPER_FINISHES.gold[key] = Number(_q.get(param));
 }
 
+/* The topper's own map lives under the same base, so the harness needs a copy where it can serve
+ * it same-origin — `code/env/studio_256.hdr` on the CDN, `_local/env/...` here. */
 const envArg = new URLSearchParams(location.search).get('env');
 configureEnvMap(location.origin, envArg
   ? (envArg.includes('/') ? envArg : `_local/env/lebombo_${envArg}.hdr`)

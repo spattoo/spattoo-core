@@ -78,6 +78,7 @@
 const ENV_HDR_PATH = 'code/env/lebombo_256.hdr';
 
 let _envMapUrl = null;
+let _base = null;
 
 /**
  * cfAssetsBase  the host's assets origin; null/absent falls back to drei's preset
@@ -89,8 +90,22 @@ let _envMapUrl = null;
  * Production passes one argument and gets ENV_HDR_PATH, which stays the single shipped answer.
  */
 export function configureEnvMap(cfAssetsBase, path = ENV_HDR_PATH) {
-  _envMapUrl = cfAssetsBase ? `${String(cfAssetsBase).replace(/\/$/, '')}/${path}` : null;
+  _base = cfAssetsBase ? String(cfAssetsBase).replace(/\/$/, '') : null;
+  _envMapUrl = _base ? `${_base}/${path}` : null;
 }
+
+/* The URL of any other HDRI under the same base — for a surface that needs its OWN environment
+ * rather than the scene's. Returns null when no base is configured, and the caller must treat that
+ * as "use the scene's", never as an error. */
+export function hdrUrl(path) { return _base ? `${_base}/${path}` : null; }
+
+/* ⚠️ THE TOPPER'S OWN MAP, AND WHY IT IS SEPARATE FROM THE SCENE'S. A mirror-finish topper is the
+ * one surface that shows the environment almost directly, so the OUTDOOR scene map — mostly open
+ * sky, a large featureless bright field — washes its lettering to white. The studio map fixes that
+ * (mean 215 → 163, relative contrast 0.108 → 0.178) but CANNOT be made the scene map: it dims every
+ * other metal, and the faux balls went dull when that was tried. So the topper gets its own, and
+ * nothing else in the scene moves. */
+export const TOPPER_HDR_PATH = 'code/env/studio_256.hdr';
 
 export function envMapUrl() { return _envMapUrl; }
 

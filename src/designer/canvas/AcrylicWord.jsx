@@ -2,6 +2,7 @@ import React, { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { topperShapes, components, bridgeLoose } from '../geometry/topperShape.js';
 import { topperFinish } from '../geometry/topperFinishes.js';
+import { useTopperEnv } from './topperEnv.js';
 
 /* ── A word cut from one sheet of acrylic ────────────────────────────────────────────────────────
  *
@@ -90,10 +91,18 @@ export default function AcrylicWord({
   // rendering a child is the loop React warns about.
   useEffect(() => { if (built) onRise?.(built.rise); }, [built, onRise]);
 
+  // Above the early return below — a hook cannot sit under one.
+  const topperEnv = useTopperEnv();
+
   if (!built) return null;
   const f = topperFinish(finish);
+  /* ⚠️ `envMap` — NOT `envMapIntensity`, WHICH IS INERT HERE. The scene's environment is an outdoor
+   * map, mostly open sky, and a mirror finish shows it almost directly: the lettering washed out
+   * mid-word. The material's own map overrides the scene's where the intensity knob does nothing.
+   * Null until it loads, or forever if there is no assets base — and null just means the scene's
+   * environment, which is what this used before. See `topperEnv.js`. */
   const mat = (
-    <meshStandardMaterial color={f.color} metalness={f.metalness}
+    <meshStandardMaterial color={f.color} metalness={f.metalness} envMap={topperEnv}
                           roughness={f.roughness} envMapIntensity={f.envIntensity ?? 1} />
   );
 

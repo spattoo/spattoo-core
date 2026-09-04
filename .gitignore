@@ -21,3 +21,5 @@ dist
 
 # Local-only HDRI copies for the glare sweep — the CDN does not allow the harness origin.
 public/_local/
+# Local-only copy of the topper HDRI, served same-origin for the glare measurement.
+public/code/
