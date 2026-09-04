@@ -57,16 +57,25 @@
 // throws at a garnish, and under studio_small_09 every colour lands ~38 points dark in sRGB (grey
 // 128 renders 90). Re-measure it in the same commit or every garnish ships wrong. The candidate also
 // has to reach R2 first — see spattoo-api's downsample-hdr.mjs.
-// studio_small_09 from Poly Haven, CC0, downsampled to 256×128 (105 KB — the same weight as the
-// lebombo it replaces, so the mobile-load decision that picked 256 still holds). 512 measures better
-// still (relative contrast 0.490 against 0.429) and is the one-line step up if gold ever reads soft
-// again, at 413 KB.
+// ⚠️ THE STUDIO MAP WAS TRIED HERE AND REVERTED — DO NOT REACH FOR IT AGAIN WITHOUT READING THIS.
+// `studio_256.hdr` genuinely fixes the gold topper (mean 187 → 133, relative contrast 0.346 → 0.476,
+// and the lettering goes from illegible mid-word to readable). It is in R2 and it works. It was
+// reverted anyway, because THE HDRI IS A SCENE PROPERTY AND THE PROBLEM IS ONE ELEMENT'S.
 //
-// ⚠️ CHANGING THIS LINE REQUIRES THE FILE TO BE IN R2 FIRST, and the failure mode if it is not is
-// bad and quiet: `envProps` returns `{files}`, SafeEnvironment catches the fetch error and renders
-// NOTHING, and a scene lit almost entirely by its environment goes flat and dark. It does not fall
-// back to the preset — that only happens when no assets base is configured at all.
-const ENV_HDR_PATH = 'code/env/studio_256.hdr';
+// Every metal in the library shares this map: faux balls, acrylic words, age numbers, gold leaf, the
+// board. Dimming it to stop a FLAT letterform mirroring an open sky also took away the bright source
+// that a CURVED ball needs to catch, and the faux balls went dull and matte — reported from dev the
+// same afternoon. A sphere and a flat letter want opposite things from the same light, so no single
+// map satisfies both, and tuning this line harder cannot fix that.
+//
+// ⚠️ AND THE EVIDENCE THAT JUSTIFIED THE SWAP WAS INVALID. The sweeps that concluded "no material
+// -side lever exists" — rotation, roughness, envIntensity — were every one of them measured while
+// the harness was rendering drei's `apartment` fallback instead of this file. A scene-wide lever was
+// chosen because a local one had been ruled out on data that never described the real scene.
+//
+// The fix belongs on the topper's own material, or failing that on a per-material `envMap` (three.js
+// lets a material override `scene.environment`), so metals can differ from each other.
+const ENV_HDR_PATH = 'code/env/lebombo_256.hdr';
 
 let _envMapUrl = null;
 

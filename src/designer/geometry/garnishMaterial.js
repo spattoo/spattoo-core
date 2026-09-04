@@ -109,16 +109,20 @@ function parseColour(v) {
  *  `CakeCanvas`: render #808080 on `dev/garnish-on-cake.html?color=%23808080`, convert both to LINEAR
  *  light, and set this to shown/asked. `scripts/measure-garnish-colour.mjs` prints the whole table.
  *
- *  ── 2026-09-04: re-measured for the studio HDRI ────────────────────────────────────────────────
- *  The warning above was not hypothetical — the map changed, to fix the gold topper's glare, and
- *  this had to move in the same commit. Under `studio_256` a mid-grey rendered 91,90,91 against an
- *  asked 128: linear 0.1046 over an albedo of 0.0899, so the environment throws 1.163 where lebombo
- *  threw 2.40. The studio map is 0.485× as bright, which is the whole reason the gold stopped
- *  washing out.
+ *  ── 2026-09-04: re-measured for the studio HDRI, then reverted with it ────────────────────────
+ *  The map briefly changed to fix the gold topper's glare and this moved to 1.401 alongside it —
+ *  correctly, since the studio map is 0.485× as bright and every colour would otherwise have shipped
+ *  ~38 points dark. Both were reverted when the dimmer environment turned the faux balls dull: see
+ *  `envMap.js`. Recorded because the pairing is the point — this constant and the HDRI move TOGETHER
+ *  or not at all, in either direction.
  *
- *  The cast caveat above was checked rather than assumed: 91,90,91 is neutral within a point, so one
- *  scalar still does the job and this does not need to become three numbers. */
-export const REFERENCE_LIGHT = 1.401;
+ *  ⚠️ AND THE ALGEBRA ALONE DID NOT LAND IT, which is worth keeping for the next re-calibration.
+ *  Dividing the measured ratio predicted 1.163; that rendered grey at 142 against an asked 128. The
+ *  pipeline is not a pure multiply end to end — tone mapping compresses differently at the higher
+ *  albedo a smaller divisor produces — so the value has to be INTERPOLATED FROM TWO MEASURED POINTS,
+ *  not computed from one. 1.401 was what landed grey at 128,126,127.
+ */
+export const REFERENCE_LIGHT = 2.40;
 
 /* sRGB ↔ linear. The correction has to happen in linear light because that is where a renderer
  * multiplies; doing it in sRGB nearly works for dark colours and fails on saturated mid-tones, which
