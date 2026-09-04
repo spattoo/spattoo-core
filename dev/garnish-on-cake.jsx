@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { CakePreview, configureEnvMap } from '../src/designer/canvas/CakeCanvas.jsx';
 import { fillShape } from '../src/designer/geometry/pipingFill.js';
+import { TOPPER_FINISHES } from '../src/designer/geometry/topperFinishes.js';
 
 /* ⚠️ THE HARNESS MUST LIGHT THE CAKE THE WAY PRODUCTION DOES, and for a while it did not. With no
  * assets base configured, `envProps` falls back to drei's `apartment` preset — so localhost rendered
@@ -19,6 +20,16 @@ import { fillShape } from '../src/designer/geometry/pipingFill.js';
  * drops the same files under `public/_local/` (gitignored), which vite serves same-origin.
  *
  * They are byte-identical to what production fetches, so the light is the real light. */
+/* ⚠️ THE SWEEP KNOBS LIVE HERE, IN THE HARNESS, NOT IN THE PRODUCT. An earlier round put an
+ * `?envrot=` override into `CakeCanvas` so the rotation could be swept — dev tooling that then
+ * shipped, read the URL on every render of the scene environment, and let anyone rotate the lighting
+ * with a query string. Mutating the finish table from the harness gets the same sweep with nothing
+ * added to production. `?rough=0.34&envi=1.4` on the gold finish. */
+const _q = new URLSearchParams(location.search);
+for (const [param, key] of [['rough', 'roughness'], ['envi', 'envIntensity'], ['metal', 'metalness']]) {
+  if (_q.has(param)) TOPPER_FINISHES.gold[key] = Number(_q.get(param));
+}
+
 const envArg = new URLSearchParams(location.search).get('env');
 configureEnvMap(location.origin, envArg
   ? (envArg.includes('/') ? envArg : `_local/env/lebombo_${envArg}.hdr`)
@@ -67,7 +78,13 @@ const design = {
 
 createRoot(document.getElementById('root')).render(
   <div style={{ height: '100%', position: 'relative' }}>
-    <CakePreview design={design} />
+    {/* ⚠️ autoRotate OFF, AND THIS IS THE WHOLE MEASUREMENT. `CakePreview` spins at 1.4 by default,
+        so every glare reading ever taken here was sampled at a RANDOM CAMERA ANGLE — fatal for a
+        metal, whose appearance is nothing but the reflection and therefore entirely angle-dependent.
+        It is why measuring one setting six times gave a spread wider than any parameter produced,
+        and why the frame never settles no matter how long the script waits. Sweeping a material
+        against a moving camera measures the camera. */}
+    <CakePreview design={design} autoRotate={false} />
     {/* The colour that was ASKED FOR, against the cake, so the gap is visible without a screenshot
         being sent anywhere. */}
     <div data-asked style={{ position: 'absolute', top: 12, left: 12, width: 90, height: 60,

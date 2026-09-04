@@ -27,16 +27,56 @@ const URL = 'http://localhost:5190/garnish-on-cake.html';
  *   ENV=256,512,1k node scripts/measure-topper-glare.mjs */
 const ENVS = process.env.ENV ? process.env.ENV.split(',') : null;
 const DEGREES = (process.env.DEG || "0").split(",").map(Number);
-const RUNS = ENVS
-  ? ENVS.map(e => ({ label: e, q: `&env=${encodeURIComponent(e)}` }))
+/* ROUGH= and ENVI= sweep the gold finish itself. ⚠️ These are the two that were previously reported
+ * as "already optimal" and "no separable effect" — both conclusions drawn against drei's apartment
+ * fallback rather than the real map, so both are being re-taken here from scratch. */
+const ROUGH = process.env.ROUGH ? process.env.ROUGH.split(',') : null;
+const ENVI = process.env.ENVI ? process.env.ENVI.split(',') : null;
+const RUNS = ENVS  ? ENVS.map(e => ({ label: e, q: `&env=${encodeURIComponent(e)}` }))
+  : ROUGH ? ROUGH.map(r => ({ label: `r=${r}`, q: `&rough=${r}` }))
+  : ENVI  ? ENVI.map(v => ({ label: `e=${v}`, q: `&envi=${v}` }))
   : DEGREES.map(d => ({ label: `${d}°`, q: `&envrot=${d}` }));
 
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
 
+/* ⚠️ WAIT FOR THE FRAME TO STOP CHANGING — a fixed timeout does not. At 2800ms this returned a
+ * different frame nearly every run: measuring ONE setting six times gave relative contrasts of
+ * 0.398, 0.384, 0.350, 0.312, 0.369 and 0.334, a spread of 0.086, with the topper's pixel count
+ * swinging 7674–9215 because the scene was still settling. Every roughness and envIntensity sweep
+ * ever run with that timeout — including the two taken to REPLACE the invalid ones — moved less than
+ * that, so all of them measured noise and none of them measured the parameter.
+ *
+ * ⚠️ AND A NOISY METRIC DOES NOT ANNOUNCE ITSELF. It returns plausible numbers in a plausible order
+ * and invites a conclusion; the only thing that exposed it was measuring the same value repeatedly,
+ * which is now the first thing to do after ANY change here. The map comparison survives — it spanned
+ * 0.130, comfortably outside the noise — which is exactly why the check has to be quantitative.
+ *
+ * So: poll until two consecutive frames are near-identical, then read. */
+const settle = async () => {
+  let prev = null;
+  for (let i = 0; i < 40; i++) {
+    const sig = await page.evaluate(() => {
+      const cv = document.querySelector('canvas');
+      if (!cv) return null;
+      const t = document.createElement('canvas'); t.width = cv.width; t.height = cv.height;
+      t.getContext('2d').drawImage(cv, 0, 0);
+      const d = t.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      let sum = 0;
+      for (let j = 0; j < d.length; j += 40) sum += d[j];    // cheap whole-frame fingerprint
+      return sum;
+    });
+    if (sig !== null && sig === prev) return true;
+    prev = sig;
+    await page.waitForTimeout(250);
+  }
+  return false;                                  // never settled — the caller reports it, not hides it
+};
+
 const grab = async (url) => {
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2800);
+  await page.waitForTimeout(600);
+  if (!(await settle())) console.log('   ⚠️ frame never settled — reading is unreliable');
   return page.evaluate(() => {
     const cv = document.querySelector('canvas');
     const t = document.createElement('canvas'); t.width = cv.width; t.height = cv.height;
