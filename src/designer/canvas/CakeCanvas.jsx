@@ -322,17 +322,15 @@ export function SceneLights({ shadows = false }) {
 export function SceneEnv() {
   // envProps picks self-hosted-or-preset; intensity is this scene's own, which the previews do not
   // share (they are small and lit for legibility, not for how a glaze reads wet).
-  /* ⚠️ `?envrot=` IS FOR MEASURING, NOT A FEATURE. Turning the environment is the one lever that can
-     move a metal's reflection off the camera axis without dimming anything, and the glare is
-     angle-dependent — head-on it is a sheet of white, turned slightly the gold reads. The parameter
-     lets `scripts/measure-topper-glare.mjs` sweep it; the default is unchanged. */
-  const override = typeof location !== 'undefined'
-    ? new URLSearchParams(location.search).get('envrot')
-    : null;
-  const rot = override != null ? (Number(override) * Math.PI) / 180 : SCENE_ENV.rotationY;
+  /* ⚠️ NO URL OVERRIDE HERE — IT WAS TRIED AND IT SHIPPED BY ACCIDENT. A `?envrot=` parameter was
+     added so the rotation sweep could turn the environment without a rebuild, and it went to
+     production: read on every render of the scene environment, and letting anyone re-light a cake
+     with a query string. Sweep knobs belong in the harness, which can mutate what it likes without
+     adding surface to the product — `dev/garnish-on-cake.jsx` does exactly that for roughness,
+     envIntensity and the map itself. Measurement is not a reason to widen the product's API. */
   return <SafeEnvironment {..._envProps(SCENE_ENV.presetFallback)}
     environmentIntensity={SCENE_ENV.intensity}
-    environmentRotation={[0, rot, 0]} />;
+    environmentRotation={[0, SCENE_ENV.rotationY, 0]} />;
 }
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side

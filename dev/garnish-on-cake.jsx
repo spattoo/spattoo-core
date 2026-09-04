@@ -3,7 +3,7 @@ import { CakePreview, configureEnvMap } from '../src/designer/canvas/CakeCanvas.
 import { fillShape } from '../src/designer/geometry/pipingFill.js';
 import { TOPPER_FINISHES } from '../src/designer/geometry/topperFinishes.js';
 import { useThree, useFrame } from '@react-three/fiber';
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import * as THREE from 'three';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 
@@ -17,6 +17,20 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
  * If this works, metals can be lit by the studio map while fondant and faux balls keep lebombo, and
  * the glare is fixable without re-lighting the cake. If it does not, the idea is dead and the next
  * candidate is a layers split or a second render pass. */
+/* Rotating the scene's environment, from the harness rather than from the product. This used to be
+ * a `?envrot=` parameter inside `CakeCanvas` — dev tooling that shipped and stayed. `scene.environ-
+ * mentRotation` is settable from here, so the sweep keeps working and production keeps its API. */
+function EnvRotation({ deg }) {
+  const { scene } = useThree();
+  useFrame(() => {
+    const want = (Number(deg) * Math.PI) / 180;
+    if (scene.environmentRotation && scene.environmentRotation.y !== want) {
+      scene.environmentRotation.set(0, want, 0);
+    }
+  });
+  return null;
+}
+
 function PerMaterialEnv({ file }) {
   const { scene, gl } = useThree();
   const env = useRef(null), done = useRef(false);
@@ -118,7 +132,21 @@ const design = {
   ],
 };
 
-createRoot(document.getElementById('root')).render(
+/* ⚠️ `?cycle=1` MOUNTS, UNMOUNTS AND REMOUNTS THE TOPPER — the sequence that broke it in dev (add,
+ * remove, add again → black lettering, fixed only by a refresh). A harness that can only show the
+ * FIRST mount cannot catch a shared resource being disposed under the second one. */
+function App() {
+  /* Present, then absent, then present again — the topper UNMOUNTS in between, which is what lets
+     whatever disposes the shared PMREM do it before the second mount asks for the texture. */
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    if (!_q.has('cycle')) return;
+    const a = setTimeout(() => setOn(false), 1500);
+    const b = setTimeout(() => setOn(true), 3000);
+    return () => { clearTimeout(a); clearTimeout(b); };
+  }, []);
+  const shown = on ? design : { ...design, writings: [] };
+  return (
   <div style={{ height: '100%', position: 'relative' }}>
     {/* ⚠️ autoRotate OFF, AND THIS IS THE WHOLE MEASUREMENT. `CakePreview` spins at 1.4 by default,
         so every glare reading ever taken here was sampled at a RANDOM CAMERA ANGLE — fatal for a
@@ -126,12 +154,16 @@ createRoot(document.getElementById('root')).render(
         It is why measuring one setting six times gave a spread wider than any parameter produced,
         and why the frame never settles no matter how long the script waits. Sweeping a material
         against a moving camera measures the camera. */}
-    <CakePreview design={design} autoRotate={false}>
+    <CakePreview design={shown} autoRotate={false}>
       <PerMaterialEnv file={_q.get('permat') ? `/_local/env/${_q.get('permat')}.hdr` : null} />
+      {_q.has('envrot') && <EnvRotation deg={_q.get('envrot')} />}
     </CakePreview>
     {/* The colour that was ASKED FOR, against the cake, so the gap is visible without a screenshot
         being sent anywhere. */}
     <div data-asked style={{ position: 'absolute', top: 12, left: 12, width: 90, height: 60,
                              background: asked, border: '1px solid rgba(0,0,0,.15)', borderRadius: 6 }} />
   </div>
-);
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App />);

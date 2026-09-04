@@ -1,8 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { topperShapes, components, bridgeLoose } from '../geometry/topperShape.js';
-import { topperFinish } from '../geometry/topperFinishes.js';
-import { useTopperEnv } from './topperEnv.js';
+import { drawTopperMatcap } from '../geometry/topperMatcap.js';
 
 /* ── A word cut from one sheet of acrylic ────────────────────────────────────────────────────────
  *
@@ -91,20 +90,28 @@ export default function AcrylicWord({
   // rendering a child is the loop React warns about.
   useEffect(() => { if (built) onRise?.(built.rise); }, [built, onRise]);
 
-  // Above the early return below — a hook cannot sit under one.
-  const topperEnv = useTopperEnv();
+  /* Built per component and disposed with it. ⚠️ Deliberately NOT shared: a 128px canvas gradient is
+     cheaper than the bookkeeping to share one, and the last shared GPU resource here was handed out
+     after disposal and rendered black. Above the early return — a hook cannot sit under one. */
+  const matcap = useMemo(() => {
+    const t = new THREE.CanvasTexture(drawTopperMatcap(finish));
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, [finish]);
+  useEffect(() => () => matcap.dispose(), [matcap]);
 
   if (!built) return null;
-  const f = topperFinish(finish);
-  /* ⚠️ `envMap` — NOT `envMapIntensity`, WHICH IS INERT HERE. The scene's environment is an outdoor
-   * map, mostly open sky, and a mirror finish shows it almost directly: the lettering washed out
-   * mid-word. The material's own map overrides the scene's where the intensity knob does nothing.
-   * Null until it loads, or forever if there is no assets base — and null just means the scene's
-   * environment, which is what this used before. See `topperEnv.js`. */
-  const mat = (
-    <meshStandardMaterial color={f.color} metalness={f.metalness} envMap={topperEnv}
-                          roughness={f.roughness} envMapIntensity={f.envIntensity ?? 1} />
-  );
+  /* ⚠️ MATCAP, NOT A LIT MATERIAL — the finish is baked, see `topperMatcap.js`. The topper never
+   * reflected the cake, only a stock HDRI, and drawing from `scene.environment` coupled it to every
+   * other metal: dimming the scene for the lettering turned the faux balls matte, and giving it its
+   * own env map produced black toppers when the shared texture was disposed. A matcap needs neither
+   * lights nor environment, so neither failure can recur.
+   *
+   * ⚠️ `topperFinish()` is no longer consulted HERE — metalness, roughness and envIntensity described
+   * a lit material and this element no longer has one. The table still owns the finish LIST and its
+   * labels, and `topperMatcap.js` keys off the same names, so adding a finish still means one entry
+   * in each. Do not re-introduce a lit material to honour those numbers; they are the old model. */
+  const mat = <meshMatcapMaterial matcap={matcap} />;
 
   if (pose === 'stand') {
     const { topY = 0 } = mount;

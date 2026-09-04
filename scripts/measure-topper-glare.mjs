@@ -32,6 +32,11 @@ const DEGREES = (process.env.DEG || "0").split(",").map(Number);
  * fallback rather than the real map, so both are being re-taken here from scratch. */
 const ROUGH = process.env.ROUGH ? process.env.ROUGH.split(',') : null;
 const ENVI = process.env.ENVI ? process.env.ENVI.split(',') : null;
+/* ⚠️ DEG IS OBSOLETE FOR GLARE AND WILL READ IDENTICALLY AT EVERY ANGLE. The topper carries its own
+ * envMap now, so rotating the SCENE environment cannot reach it — 0°, 90° and 225° all return
+ * 5484 px / mean 162 / 0.178. That is the fix working, not the sweep failing, but a knob that
+ * silently returns the same number is how this whole investigation went wrong the first time. Left
+ * in because it still rotates the scene for everything else; do not read it as a glare measurement. */
 const PERMAT = process.env.PERMAT ? process.env.PERMAT.split(',') : null;
 const RUNS = PERMAT ? PERMAT.map(m => ({ label: m.slice(0,10), q: m === 'off' ? '' : `&permat=${m}` }))
   : ENVS  ? ENVS.map(e => ({ label: e, q: `&env=${encodeURIComponent(e)}` }))
