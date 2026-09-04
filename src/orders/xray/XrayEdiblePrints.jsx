@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
+import { cropStyle } from './XrayDecorationSteps.jsx';
 
 /* ── The edible prints on this cake, generated and sent to the print sheet ───────────────────────
  *
@@ -25,6 +26,7 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
   const [made, setMade]   = useState({});       // index → the upload row
   const [err, setErr]     = useState('');
   const [sourceKey, setSourceKey] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(null);
 
   // Without the API wired there is nothing to offer, and an inert button is worse than no button.
   if (!orderId || !apiClient?.identifyEdiblePrints) return null;
@@ -34,6 +36,7 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
     try {
       const res = await apiClient.identifyEdiblePrints(orderId);
       setSourceKey(res?.sourceKey ?? null);
+      setPhotoUrl(res?.photoUrl ?? null);
       const rows = res?.prints ?? [];
       setPrints(rows);
       /* ⚠️ Only what the read was CONFIDENT about arrives ticked. A wrong tick spends real credits
@@ -103,6 +106,19 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
                      checked={!!ticked[p.index]}
                      onChange={e => setTicked(t => ({ ...t, [p.index]: e.target.checked }))}
                      style={{ marginTop: 3 }} />
+              {/* ⚠️ THE CROP THE MODEL WILL ACTUALLY BE GIVEN, so a wrong box is visible BEFORE a
+                  credit is spent. On the real goose cake the box came back on the party BACKDROP
+                  behind the cake — same wording, much bigger — so the reference held a banner and
+                  roses and no plaque, and the output fell back to the text description. Prompt
+                  wording moved the box and did not fix it; vision models are imprecise at boxes and
+                  the fix is to let the baker SEE it rather than to keep arguing with the model.
+                  A CSS crop of a photo already on screen: nothing is cut, stored or swept. */}
+              {photoUrl && p.bbox && (
+                <div title="What will be copied. If this is not the right thing, untick it."
+                     style={{ width: 44, height: 44, borderRadius: 8, flexShrink: 0,
+                              border: '1.5px solid #E8E4DC',
+                              ...cropStyle(photoUrl, [p.bbox.x, p.bbox.y, p.bbox.w, p.bbox.h]) }} />
+              )}
               <span style={{ flex: 1 }}>
                 <span style={{ fontWeight: 700 }}>{p.label}</span>
                 {p.material && <span style={s.muted}>  ·  {p.material.replace(/_/g, ' ')}</span>}

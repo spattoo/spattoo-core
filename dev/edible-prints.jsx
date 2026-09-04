@@ -24,9 +24,11 @@ const s = {
 
 const CANDIDATES = [
   { index: 0, label: 'goose in a straw hat', material: 'edible_print', looksPrinted: true,
-    prompt: 'a white goose wearing a straw boater and a green gingham bow', bbox: { x: .25, y: .39, w: .21, h: .18 } },
+    prompt: 'a white goose wearing a straw boater and a green gingham bow', bbox: { x: .25, y: .15, w: .18, h: .23 } },
   { index: 1, label: '"Our little goose is on the way" plaque', material: 'edible_print', looksPrinted: true,
-    prompt: 'an ornate gold-outlined plaque', bbox: { x: .42, y: .41, w: .26, h: .12 } },
+    // ⚠️ The box identify ACTUALLY returned — on the backdrop, not the cake. The preview is
+    // supposed to make that obvious at a glance.
+    prompt: 'an ornate gold-outlined plaque', bbox: { x: .37, y: .25, w: .24, h: .13 } },
   { index: 2, label: 'white picket fence', material: 'fondant', looksPrinted: false,
     prompt: 'a white fondant picket fence', bbox: { x: .2, y: .62, w: .3, h: .1 } },
   /* Warned, NOT barred — and deliberately still offerable. On the real goose cake the model flagged
@@ -37,6 +39,11 @@ const CANDIDATES = [
     prompt: 'a cartoon pig', bbox: { x: .6, y: .5, w: .15, h: .15 } },
 ];
 
+/* ⚠️ NO PHOTO IS COMMITTED. A real reference photo is a CUSTOMER'S, and a fixture is not a reason
+ * to put one in the repository. Drop any cake photo at dev/photo.jpg (gitignored) to see the crop
+ * previews against a real image; without one they render empty, which still proves the layout. */
+const PHOTO = '/photo.jpg';
+
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 function App() {
@@ -45,6 +52,8 @@ function App() {
     identifyEdiblePrints: async () => {
       await wait(600);
       return { ok: true, sourceKey: 'orders/reference/stub.jpg',
+               // A real photo, so the crop previews show something and a wrong box would be visible.
+               photoUrl: PHOTO,
                prints: mode === 'empty' ? [] : CANDIDATES };
     },
     generateEdiblePrint: async (_id, payload) => {
