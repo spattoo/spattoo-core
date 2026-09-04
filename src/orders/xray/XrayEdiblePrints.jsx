@@ -39,7 +39,9 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
       /* ⚠️ Only what the read was CONFIDENT about arrives ticked. A wrong tick spends real credits
        * on a fondant fence, and a baker who has to untick five things stops trusting the feature.
        * Being asked about two is a fair question. */
-      setTicked(Object.fromEntries(rows.map(p => [p.index, p.looksPrinted && !p.blocked])));
+      // The server already excludes anything it warned about from `looksPrinted`, so this is one
+      // question and not two. A warned row is offered, never pre-ticked.
+      setTicked(Object.fromEntries(rows.map(p => [p.index, !!p.looksPrinted])));
     } catch (e) {
       setErr(e?.message || 'Could not read this photo.');
     } finally { setBusy(false); }
@@ -49,7 +51,7 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
     setBusy(true); setErr('');
     try {
       const res = await apiClient.generateEdiblePrint(orderId, {
-        sourceKey, bbox: p.bbox, prompt: p.prompt, label: p.label, licensed: p.blocked,
+        sourceKey, bbox: p.bbox, prompt: p.prompt, label: p.label,
       });
       if (res?.upload) setMade(m => ({ ...m, [p.index]: res.upload }));
     } catch (e) {
@@ -96,21 +98,22 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
           {prints.map(p => (
             <label key={p.index}
                    style={{ display: 'flex', alignItems: 'flex-start', gap: 9,
-                            padding: '2px 0',
-                            opacity: p.blocked ? 0.55 : 1,
-                            cursor: p.blocked ? 'not-allowed' : 'pointer' }}>
-              <input type="checkbox" disabled={p.blocked || !!made[p.index]}
+                            padding: '2px 0', cursor: 'pointer' }}>
+              <input type="checkbox" disabled={!!made[p.index]}
                      checked={!!ticked[p.index]}
                      onChange={e => setTicked(t => ({ ...t, [p.index]: e.target.checked }))}
                      style={{ marginTop: 3 }} />
               <span style={{ flex: 1 }}>
                 <span style={{ fontWeight: 700 }}>{p.label}</span>
                 {p.material && <span style={s.muted}>  ·  {p.material.replace(/_/g, ' ')}</span>}
-                {/* Said BEFORE anything is spent. The image model moderates at the output stage —
-                    it generates, bills, and then refuses — so finding out at generate time means a
-                    credit is already gone. */}
-                {p.blocked && (
-                  <div style={{ ...s.muted, color: '#B3261E' }}>{p.blockedReason}</div>
+                {/* ⚠️ A WARNING, not a bar. It used to disable the row, and on a real cake that
+                    stopped a plain baby-shower goose the model had read as "Little Goose
+                    illustration" — the cake's own wording mistaken for a title. The baker knows
+                    whether it is Peppa Pig or their own goose; the image service refuses genuine
+                    licensed work at its output stage, and a refusal releases the hold, so an attempt
+                    costs nothing. Shown, never pre-ticked. */}
+                {p.ipWarning && (
+                  <div style={{ ...s.muted, color: '#B26B00' }}>{p.ipWarning}</div>
                 )}
                 {made[p.index] && (
                   <div style={{ ...s.muted, color: '#2C4433' }}>
@@ -123,7 +126,7 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
                   pressing a button that had to repeat the label to say which one it was — and a
                   label that already contains quotation marks then read as Make ""a plaque"". The
                   control and the thing it changes belong in the same place. */}
-              {ticked[p.index] && !p.blocked && !made[p.index] && (
+              {ticked[p.index] && !made[p.index] && (
                 <button type="button" onClick={(e) => { e.preventDefault(); make(p); }} disabled={busy}
                         style={{ border: '1.5px solid #E0DDD8', background: busy ? '#F4F1EC' : '#fff',
                           borderRadius: 9, cursor: busy ? 'default' : 'pointer', padding: '5px 11px',

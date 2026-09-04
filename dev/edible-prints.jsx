@@ -23,14 +23,17 @@ const s = {
 };
 
 const CANDIDATES = [
-  { index: 0, label: 'goose in a straw hat', material: 'edible_paper', looksPrinted: true,  blocked: false,
+  { index: 0, label: 'goose in a straw hat', material: 'edible_print', looksPrinted: true,
     prompt: 'a white goose wearing a straw boater and a green gingham bow', bbox: { x: .25, y: .39, w: .21, h: .18 } },
-  { index: 1, label: '"Our little goose is on the way" plaque', material: 'edible_paper', looksPrinted: true, blocked: false,
+  { index: 1, label: '"Our little goose is on the way" plaque', material: 'edible_print', looksPrinted: true,
     prompt: 'an ornate gold-outlined plaque', bbox: { x: .42, y: .41, w: .26, h: .12 } },
-  { index: 2, label: 'white picket fence', material: 'fondant', looksPrinted: false, blocked: false,
+  { index: 2, label: 'white picket fence', material: 'fondant', looksPrinted: false,
     prompt: 'a white fondant picket fence', bbox: { x: .2, y: .62, w: .3, h: .1 } },
-  { index: 3, label: 'Peppa Pig figure', material: 'edible_paper', looksPrinted: true, blocked: true,
-    blockedReason: 'Licensed character or brand — Peppa Pig (Hasbro). This cannot be generated.',
+  /* Warned, NOT barred — and deliberately still offerable. On the real goose cake the model flagged
+     a plain baby-shower goose as "Little Goose illustration", reading the cake's own wording as a
+     title. The baker decides; the image service is the backstop and a refusal costs them nothing. */
+  { index: 3, label: 'Peppa Pig figure', material: 'edible_print', looksPrinted: false,
+    ipWarning: 'Looks like it might be licensed — Peppa Pig (Hasbro). If it is, the image service will refuse it and you will not be charged.',
     prompt: 'a cartoon pig', bbox: { x: .6, y: .5, w: .15, h: .15 } },
 ];
 
