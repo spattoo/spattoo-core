@@ -10585,9 +10585,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <UploadsPanel
           apiClient={apiClient}
           elementTypes={elementTypes}
-          /* Opening a kept piece hands it to the studio rather than dropping it on the cake: it needs
-             a where and a how, and those questions belong on the screen that asks them. */
-          onOpenGarnish={g => { setPendingGarnish(g); setUploadsOpen(false); setGarnishStudio(true); }}
           // Choosing FOR A FRAME is a different act from placing on the cake, so the panel is told
           // which one it is and the caller supplies the meaning of a tap. The panel itself has no idea
           // what a photo frame is — no branch, no second grid.

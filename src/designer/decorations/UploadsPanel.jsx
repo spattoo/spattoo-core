@@ -38,7 +38,7 @@ function DotsGlyph({ size = 16 }) {
   );
 }
 
-export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onOpenGarnish = null, onClose,
+export default function UploadsPanel({ apiClient, elementTypes = [], canPromote = false, selectMode = false, onSelect, onPlace, onPromote, onClose,
                                       // Forwarded to Panel. Only set by a caller that is itself
                                       // above Z.panel — see Z.overStudio.
                                       zIndex }) {
@@ -66,24 +66,17 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     [elementTypes],
   );
 
-  /* ⚠️ TWO SECTIONS, SPLIT BY WHAT A THING DOES — not by what it is made of. A picture lands as a
-     flat sticker; a piece is an object with thickness that can stand upright and be pushed into the
-     buttercream. Someone tapping one expecting the other is the confusion this prevents.
-
-     Deliberately NOT a section per material: a fondant piece and a chocolate piece behave identically
-     on a cake, so material multiplies sections without changing anything a customer can feel. It
-     belongs on the tile, not in the filing.
-
-     And a section appears only when it holds something — an empty "Pieces" heading on a first visit
-     reads as something missing rather than something not yet made. */
-  const [pieces, setPieces] = useState([]);
-  useEffect(() => {
-    let alive = true;
-    apiClient?.fetchGarnishes?.()
-      .then(rows => { if (alive) setPieces(rows ?? []); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [apiClient]);
+  /* ⚠️ DRAWN PIECES ARE NOT HERE, and that is the point of the window's name.
+   *
+   * This panel used to open on "Pieces you have drawn" — saved chocolate garnishes — above the
+   * pictures. They are not uploads. Nobody uploaded them; they were drawn in the garnish studio, and
+   * a baker looking for the photo they just sent themselves had to read past three chocolate shards
+   * to find it. A window called Uploads holds uploads.
+   *
+   * They are not lost: the decorations picker already lists saved pieces under "mine" and opens the
+   * studio with one loaded (CakeDesigner, `myPieces`). That was true the whole time this panel also
+   * showed them — the section here was a second door, not the only one.
+   */
 
   const load = () => apiClient?.fetchUploads?.()
     .then(rows => setUploads(Array.isArray(rows) ? rows : []))
@@ -348,28 +341,6 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
               Nothing here yet. Anything you upload — a photo for a photo cake, a decoration of your own —
               appears here, and only you can see it.
             </div>
-          )}
-
-          {pieces.length > 0 && onOpenGarnish && (
-            <>
-              <div style={S.sectionHead}>Pieces you have drawn</div>
-              <div style={{ ...S.grid, marginBottom: 18 }}>
-                {pieces.map(g => (
-                  <div key={g.id} style={S.card}>
-                    {/* Tapping opens the STUDIO with the piece loaded, rather than dropping it on the
-                        cake: a piece needs a where and a how, and those questions live there. */}
-                    <button type="button" onClick={() => onOpenGarnish(g)} title={g.name}
-                      style={{ ...S.thumbWrap, cursor: 'pointer', border: 'none', padding: 0, width: '100%' }}>
-                      {g.thumbUrl
-                        ? <img src={g.thumbUrl} alt={g.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                        : <span style={{ fontSize: 11, color: '#8a8a8a' }}>{g.name}</span>}
-                    </button>
-                    <div style={S.name}>{g.name}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={S.sectionHead}>Pictures you have uploaded</div>
-            </>
           )}
 
           {uploads?.length > 0 && (
