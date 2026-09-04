@@ -165,17 +165,30 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
 // would appear for a cake with nothing to print, or hide for one with plenty.
 function CutoutLauncher({ order, apiClient, variant }) {
   const [open, setOpen] = useState(false);
+  const [prints, setPrints] = useState([]);
   const { design } = resolveXraySpec(order);
   const ids = useMemo(() => [...new Set(
     [...(design?.stickers ?? []), ...(design?.decorations ?? [])].map(s => s?.elementId).filter(Boolean),
   )], [design]);
 
-  if (!ids.length) return null;
+  /* ⚠️ Edible prints count too, and they are NOT elements. A print generated from X-Ray lands in the
+   * baker's uploads and is linked to this order (migration 086) — so a PHOTO order with no matched
+   * catalogue decorations can still have two things to print, and the button used to hide on it.
+   * Fetched here rather than inside the modal because it decides whether the button exists at all. */
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve(apiClient?.fetchOrderEdiblePrints?.(order?.id))
+      .then(r => { if (alive) setPrints(r?.prints ?? []); })
+      .catch(() => { if (alive) setPrints([]); });
+    return () => { alive = false; };
+  }, [order?.id, apiClient]);
+
+  if (!ids.length && !prints.length) return null;
   return (
     <>
       <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs" short="Cut-outs"
                   onClick={() => setOpen(true)} variant={variant} />
-      {open && <CutoutModal ids={ids} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
+      {open && <CutoutModal ids={ids} prints={prints} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -183,17 +196,28 @@ function CutoutLauncher({ order, apiClient, variant }) {
 // The catalogue is fetched here rather than read off the design: a saved snapshot carries element
 // IDs and placement, not image URLs, and the sheet needs pixels to trace. One call, filtered — the
 // same call the designer makes to fill its own picker.
-function CutoutModal({ ids, order, apiClient, onClose }) {
+function CutoutModal({ ids, prints = [], order, apiClient, onClose }) {
   const [elements, setElements] = useState(null);
   const [err, setErr] = useState('');
 
   useEffect(() => {
     let alive = true;
+    // No catalogue ids is a normal state now — a photo order can have prints and nothing else — so
+    // this must not fetch the whole catalogue to filter it down to nothing.
+    if (!ids.length) { setElements([]); return () => { alive = false; }; }
     Promise.resolve(apiClient?.fetchElements?.({ parentsOnly: true }))
       .then(rows => { if (alive) setElements((rows ?? []).filter(r => ids.includes(r.id))); })
       .catch(e => { if (alive) { setErr(e?.message || 'Could not load the decorations.'); setElements([]); } });
     return () => { alive = false; };
   }, [ids.join(','), apiClient]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Prints arrive already shaped like an element — `{ id, name, image_url }` — so the sheet traces
+   * them with the same elementSources and learns no second kind of thing. Prints FIRST: they have to
+   * be printed and dry before anything is assembled, so they are the first job on the bench. */
+  const sheetItems = useMemo(
+    () => (elements === null ? null : [...prints, ...elements]),
+    [elements, prints],
+  );
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,22,0.55)', zIndex: 60,
@@ -206,9 +230,9 @@ function CutoutModal({ ids, order, apiClient, onClose }) {
                 style={{ position: 'absolute', top: 10, right: 12, border: 'none', background: 'none',
                          fontSize: 20, cursor: 'pointer', color: '#6B8C74', zIndex: 1 }}>×</button>
         {err && <div style={{ padding: 16, color: '#B42318', fontWeight: 600, fontSize: 13 }}>{err}</div>}
-        {elements === null
+        {sheetItems === null
           ? <div style={{ padding: 40, textAlign: 'center', color: '#6B8C74', fontWeight: 600 }}>Loading decorations…</div>
-          : <CutoutSheet elements={elements} title={order?.customer_name || order?.id || 'cake'}
+          : <CutoutSheet elements={sheetItems} title={order?.customer_name || order?.id || 'cake'}
                          onClose={onClose} />}
       </div>
     </div>
