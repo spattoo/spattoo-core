@@ -22,7 +22,7 @@ import { fillShape } from '../src/designer/geometry/pipingFill.js';
 const envArg = new URLSearchParams(location.search).get('env');
 configureEnvMap(location.origin, envArg
   ? (envArg.includes('/') ? envArg : `_local/env/lebombo_${envArg}.hdr`)
-  : '_local/env/lebombo_256.hdr');
+  : '_local/env/studio_256.hdr');
 
 /* The whole chain, end to end: design.garnishes -> toCanvasConfig -> CakeContent -> Garnishes.
  * Tests can prove the maths; only this can prove the piece actually arrives on the cake. */

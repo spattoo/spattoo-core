@@ -57,7 +57,16 @@
 // throws at a garnish, and under studio_small_09 every colour lands ~38 points dark in sRGB (grey
 // 128 renders 90). Re-measure it in the same commit or every garnish ships wrong. The candidate also
 // has to reach R2 first — see spattoo-api's downsample-hdr.mjs.
-const ENV_HDR_PATH = 'code/env/lebombo_256.hdr';
+// studio_small_09 from Poly Haven, CC0, downsampled to 256×128 (105 KB — the same weight as the
+// lebombo it replaces, so the mobile-load decision that picked 256 still holds). 512 measures better
+// still (relative contrast 0.490 against 0.429) and is the one-line step up if gold ever reads soft
+// again, at 413 KB.
+//
+// ⚠️ CHANGING THIS LINE REQUIRES THE FILE TO BE IN R2 FIRST, and the failure mode if it is not is
+// bad and quiet: `envProps` returns `{files}`, SafeEnvironment catches the fetch error and renders
+// NOTHING, and a scene lit almost entirely by its environment goes flat and dark. It does not fall
+// back to the preset — that only happens when no assets base is configured at all.
+const ENV_HDR_PATH = 'code/env/studio_256.hdr';
 
 let _envMapUrl = null;
 

@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p public/_local/env
-for f in lebombo_256 lebombo_512 lebombo_1k; do
+for f in studio_256 lebombo_256 lebombo_512 lebombo_1k; do
   [ -s "public/_local/env/$f.hdr" ] && continue
   curl -fsS -o "public/_local/env/$f.hdr" "https://dev.spattoocdn.com/code/env/$f.hdr"
   echo "fetched $f"

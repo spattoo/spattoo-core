@@ -107,8 +107,18 @@ function parseColour(v) {
  *
  *  TO RE-CALIBRATE — after any change to the HDRI, `SCENE_ENV.intensity`, or the lamps in
  *  `CakeCanvas`: render #808080 on `dev/garnish-on-cake.html?color=%23808080`, convert both to LINEAR
- *  light, and set this to shown/asked. `scripts/measure-garnish-colour.mjs` prints the whole table. */
-export const REFERENCE_LIGHT = 2.40;
+ *  light, and set this to shown/asked. `scripts/measure-garnish-colour.mjs` prints the whole table.
+ *
+ *  ── 2026-09-04: re-measured for the studio HDRI ────────────────────────────────────────────────
+ *  The warning above was not hypothetical — the map changed, to fix the gold topper's glare, and
+ *  this had to move in the same commit. Under `studio_256` a mid-grey rendered 91,90,91 against an
+ *  asked 128: linear 0.1046 over an albedo of 0.0899, so the environment throws 1.163 where lebombo
+ *  threw 2.40. The studio map is 0.485× as bright, which is the whole reason the gold stopped
+ *  washing out.
+ *
+ *  The cast caveat above was checked rather than assumed: 91,90,91 is neutral within a point, so one
+ *  scalar still does the job and this does not need to become three numbers. */
+export const REFERENCE_LIGHT = 1.401;
 
 /* sRGB ↔ linear. The correction has to happen in linear light because that is where a renderer
  * multiplies; doing it in sRGB nearly works for dark colours and fails on saturated mid-tones, which
