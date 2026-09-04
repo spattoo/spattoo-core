@@ -8,6 +8,7 @@ import XrayTinDiagram from './XrayTinDiagram.jsx';
 import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps from './XrayDecorationSteps.jsx';
+import XrayEdiblePrints from './XrayEdiblePrints.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -430,6 +431,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
             if (key && steps) setFreshSteps(p => ({ ...p, [key]: steps }));
           }} s={s}
         />
+
+        {/* Edible prints — the pieces that are PRINTED rather than made. After the how-to sections
+            because it is a different job done on a different machine, and usually the first thing
+            started: the sheet has to be printed and dry before anything is assembled. */}
+        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} s={s} />
 
         {/* Annotated cake — now BOTH kinds of order, by two different routes to the same anchor.
 
