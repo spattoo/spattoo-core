@@ -104,10 +104,10 @@ const design = {
               ? [{ layerId: 'c1', color: _q.get('tier') || '#F6DCE2', height: 0.42, order: 0, edge: 'wave', seed: 3 }]
               : [] }],
   texts: [], ages: [], stickers: [], piping: [],
-  /* ⚠️ THE ACRYLIC TOPPER GOES HERE BECAUSE THIS HARNESS USES THE REAL SCENE. `dev/topper.jsx` and
-   * `dev/acrylic-text.jsx` each build their own RoomEnvironment, so neither shows the glare that is
-   * actually complained about — a harness that lights its subject differently from the product cannot
-   * be used to judge the product. `CakePreview` mounts SafeEnvironment and the real rig, so a topper
+  /* ⚠️ THE ACRYLIC TOPPER GOES HERE BECAUSE THIS HARNESS USES THE REAL SCENE. every harness now uses
+   * `SceneEnv`, the component production mounts — `topper.jsx` and `acrylic-text.jsx` each built
+   * their own RoomEnvironment until 2026-09-05, which is why the glare being complained about was
+   * invisible on both of them. `CakePreview` mounts SafeEnvironment and the real rig, so a topper
    * put here is the one a customer sees. `?topper=1`. */
   writings: new URLSearchParams(location.search).has('topper')
     ? [{ id: 'w', style: 'acrylic', text: 'Happy Birthday', font: 'ems_allure',
@@ -141,13 +141,14 @@ function App() {
   const shown = on ? design : { ...design, writings: [] };
   return (
   <div style={{ height: '100%', position: 'relative' }}>
-    {/* ⚠️ autoRotate OFF, AND THIS IS THE WHOLE MEASUREMENT. `CakePreview` spins at 1.4 by default,
-        so every glare reading ever taken here was sampled at a RANDOM CAMERA ANGLE — fatal for a
-        metal, whose appearance is nothing but the reflection and therefore entirely angle-dependent.
-        It is why measuring one setting six times gave a spread wider than any parameter produced,
-        and why the frame never settles no matter how long the script waits. Sweeping a material
-        against a moving camera measures the camera. */}
-    <CakePreview design={shown} autoRotate={false}>
+    {/* ⚠️ THE PAGE ROTATES LIKE PRODUCTION; ONLY A MEASUREMENT FREEZES IT. `CakePreview` spins at
+        1.4 and so does every real cake, so the default here is the product's. But a metal's
+        appearance IS the reflection and therefore entirely angle-dependent, so sampling a spinning
+        cake measures the camera: one unchanged setting read six times spanned more than any
+        parameter ever moved it, and the frame never settles however long a script waits.
+        `?still=1` stops it — an explicit, single, documented divergence taken by the measuring
+        tool, not a quiet one baked into the page. */}
+    <CakePreview design={shown} autoRotate={!_q.has('still')}>
       <PerMaterialEnv file={_q.get('permat') ? `/_local/env/${_q.get('permat')}.hdr` : null} />
       {_q.has('envrot') && <EnvRotation deg={_q.get('envrot')} />}
     </CakePreview>

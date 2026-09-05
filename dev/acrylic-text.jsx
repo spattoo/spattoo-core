@@ -1,9 +1,19 @@
 import { StrictMode, useMemo, useState } from 'react';
+import './scene.js';
+import { SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ `SceneEnv`, THE COMPONENT PRODUCTION MOUNTS. This page used to build its own `RoomEnvironment`,
+ * and its reason was sound at the time: `SceneEnv` fell back to a drei preset that fetches from a CDN
+ * a bare dev page might not reach. The vite `/cdn` proxy removed that — `SceneEnv` now resolves the
+ * real self-hosted map here, same as production.
+ *
+ * ⚠️ AND THE OLD RIG IS WHY THE GOLD TOPPER'S GLARE WAS INVISIBLE ON THIS PAGE FOR WEEKS. A metal has
+ * no colour of its own; it shows the environment and nothing else. Judging a mirror finish against a
+ * room built from emissive boxes says nothing about how it reads under an outdoor sky, which is what
+ * every customer sees. A harness that lights its subject differently cannot judge the product. */
 import { createRoot } from 'react-dom/client';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import AcrylicWriting from '../src/designer/canvas/AcrylicWriting.jsx';
 import CreamWriting from '../src/designer/canvas/CreamWriting.jsx';
 import { SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
@@ -45,15 +55,6 @@ function Cake() {
  * environment at all it renders BLACK, which is what the first frame of this page showed. On the
  * real cake SceneEnv supplies this; nothing here is a control, because the room a topper reflects is
  * the scene's business and not the decoration's. */
-function LocalEnv() {
-  const { scene, gl } = useThree();
-  useMemo(() => {
-    const pmrem = new THREE.PMREMGenerator(gl);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    return () => pmrem.dispose();
-  }, [scene, gl]);
-  return null;
-}
 
 const row = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 };
 const lab = { fontSize: 11, fontWeight: 800, color: '#6E8577', width: 62, letterSpacing: 0.3, flexShrink: 0 };
@@ -138,7 +139,7 @@ function App() {
         <Canvas shadows camera={{ position: [0, 2.9, 8.4], fov: 32 }}>
           <color attach="background" args={['#EDEAE3']} />
           <SceneLights shadows />
-          <LocalEnv />
+          <SceneEnv />
           <Cake />
           <Renderer
             writing={w} topY={TOP_Y} topRadius={1.6} shape="round" width={3.2} depth={3.2}

@@ -1,6 +1,14 @@
 import { createRoot } from 'react-dom/client';
+import './scene.js';
+import { SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ LIT BY `SceneEnv`, THE COMPONENT PRODUCTION MOUNTS — not a rig of its own. This harness used to
+ * build its own environment, and every harness that did was lighting its subject differently from the
+ * product it exists to judge. A metal shows nothing but the reflected environment, so a `studio` or
+ * `city` preset does not merely look different, it makes any reading about shine or colour describe a
+ * scene no customer sees. The gold topper's glare was invisible here for exactly that reason.
+ * `./scene.js` supplies the assets base so `SceneEnv` resolves the real map. */
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import {OrbitControls} from '@react-three/drei';
 import * as THREE from 'three';
 import { useMemo, useState } from 'react';
 import { buildGarnishGeometry, garnishTransform } from '../src/designer/geometry/garnishPiece.js';
@@ -49,7 +57,7 @@ function App() {
       </div>
       <div style={{ flex: 1 }}>
         <Canvas camera={{ position: [0, 1.9, 2.9], fov: 42 }} shadows>
-          <Environment preset="studio" />
+          <SceneEnv />
           <ambientLight intensity={0.55} />
           <directionalLight position={[3, 6, 3]} intensity={1.5} castShadow />
           {/* A tier to sit on, so "pushed in" and "floating" are distinguishable. */}

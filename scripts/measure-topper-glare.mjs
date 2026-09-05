@@ -16,7 +16,8 @@
  */
 import { chromium } from 'playwright';
 
-const URL = 'http://localhost:5190/garnish-on-cake.html';
+/* `still=1` — the page rotates like production unless a measurement asks it not to. */
+const URL = 'http://localhost:5190/garnish-on-cake.html?still=1';
 
 /* Two sweeps, because there turned out to be two questions. DEG rotates the map; ENV swaps it.
  * ⚠️ THE SECOND ONE IS THE REAL ONE. Rotation, roughness and envIntensity were each swept to
@@ -102,8 +103,8 @@ const grab = async (url) => {
 
 console.log('map/rot    pixels   mean   contrast   relative');
 for (const run of RUNS) {
-  const bare = await grab(`${URL}?x=1${run.q}`);
-  const with_ = await grab(`${URL}?topper=1${run.q}`);
+  const bare = await grab(`${URL}${run.q}`);
+  const with_ = await grab(`${URL}&topper=1${run.q}`);
   if (bare.lit < 500 || with_.lit < 500) {
     console.log(`${run.label.padStart(6)}     REFUSED — the HDRI did not load, so this is not the real scene.`);
     continue;

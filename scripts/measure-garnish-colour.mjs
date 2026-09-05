@@ -22,7 +22,7 @@ for (const c of COLOURS) {
      throws at it — change the HDRI and it is wrong, in the same direction for every colour at once.
      `ENV=` re-measures it against a candidate map before that map is allowed to ship. */
   const env = process.env.ENV ? `&env=${encodeURIComponent(process.env.ENV)}` : '';
-  await page.goto(`http://localhost:5190/garnish-on-cake.html?color=${encodeURIComponent(c)}${env}`,
+  await page.goto(`http://localhost:5190/garnish-on-cake.html?still=1&color=${encodeURIComponent(c)}${env}`,
     { waitUntil: 'networkidle' });
   await page.waitForTimeout(2600);
   /* ⚠️ FIND THE PIECE, DO NOT ASSUME WHERE IT IS. Two earlier samplers were wrong in opposite ways:

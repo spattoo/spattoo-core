@@ -24,7 +24,7 @@ const hex = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
 console.log('tier      asked            on the cake      drift');
 for (const c of COLOURS) {
-  await page.goto(`http://localhost:5190/garnish-on-cake.html?tier=${encodeURIComponent(c)}`,
+  await page.goto(`http://localhost:5190/garnish-on-cake.html?still=1&tier=${encodeURIComponent(c)}`,
     { waitUntil: 'networkidle' });
   await page.waitForTimeout(3000);
   const shown = await page.evaluate(() => {

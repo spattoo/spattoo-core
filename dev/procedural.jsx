@@ -1,7 +1,15 @@
 import React, { useMemo } from 'react';
+import './scene.js';
+import { SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ LIT BY `SceneEnv`, THE COMPONENT PRODUCTION MOUNTS — not a rig of its own. This harness used to
+ * build its own environment, and every harness that did was lighting its subject differently from the
+ * product it exists to judge. A metal shows nothing but the reflected environment, so a `studio` or
+ * `city` preset does not merely look different, it makes any reading about shine or colour describe a
+ * scene no customer sees. The gold topper's glare was invisible here for exactly that reason.
+ * `./scene.js` supplies the assets base so `SceneEnv` resolves the real map. */
 import ReactDOM from 'react-dom/client';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import {OrbitControls} from '@react-three/drei';
 import * as THREE from 'three';
 
 // ─── Arch curve: straight legs + semicircular top ───────────────────────────
@@ -121,7 +129,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ambientLight intensity={1.0} />
     <directionalLight position={[2, 5, 4]} intensity={2.2} castShadow />
     <directionalLight position={[-3, 2, -1]} intensity={0.5} />
-    <Environment preset="city" />
+    <SceneEnv />
     <RainbowTopper />
     <OrbitControls />
   </Canvas>
