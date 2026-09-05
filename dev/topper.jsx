@@ -1,4 +1,15 @@
 import { StrictMode, useMemo, useState } from 'react';
+import './scene.js';
+import { SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ `SceneEnv`, THE COMPONENT PRODUCTION MOUNTS. This page used to build its own `RoomEnvironment`,
+ * and its reason was sound at the time: `SceneEnv` fell back to a drei preset that fetches from a CDN
+ * a bare dev page might not reach. The vite `/cdn` proxy removed that — `SceneEnv` now resolves the
+ * real self-hosted map here, same as production.
+ *
+ * ⚠️ AND THE OLD RIG IS WHY THE GOLD TOPPER'S GLARE WAS INVISIBLE ON THIS PAGE FOR WEEKS. A metal has
+ * no colour of its own; it shows the environment and nothing else. Judging a mirror finish against a
+ * room built from emissive boxes says nothing about how it reads under an outdoor sky, which is what
+ * every customer sees. A harness that lights its subject differently cannot judge the product. */
 import { createRoot } from 'react-dom/client';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -10,7 +21,6 @@ import greatVibes from '../src/designer/geometry/typefaces/great-vibes.json';
 import dancingScript from '../src/designer/geometry/typefaces/dancing-script.json';
 import parisienne from '../src/designer/geometry/typefaces/parisienne.json';
 import pinyonScript from '../src/designer/geometry/typefaces/pinyon-script.json';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useThree } from '@react-three/fiber';
 import { topperShapes, components, bridgeLoose } from '../src/designer/geometry/topperShape.js';
 import { SizeDial } from '../src/designer/shared/SizeDial.jsx';
@@ -77,26 +87,9 @@ const isMono = (k) => !PARSED[k];
  * nothing to reflect and renders as flat paint, which is exactly how the first screenshot came out
  * and would have made the finish look wrong when it is the maths that was missing.
  *
- * SceneEnv resolves to a self-hosted HDRI when the host configures an assets base and to a drei
- * preset otherwise — and the preset fetches from a CDN, which a bare dev page may not get.
- * RoomEnvironment is generated in-process from a handful of emissive boxes: no network, no config,
- * and enough of a room for a mirror to be judged.
+ * (Historic: this page built a RoomEnvironment because SceneEnv's drei fallback fetched from a CDN
+ * a bare dev page might not reach. The vite /cdn proxy removed that reason.)
  */
-function LocalEnv() {
-  const { scene, gl } = useThree();
-  useMemo(() => {
-    const pmrem = new THREE.PMREMGenerator(gl);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    /* ⚠️ 0.45, and this is the number that makes a shadow possible.
-     *
-     * At full strength the room lights the icing so evenly that a cast shadow is invisible. Turning
-     * it down globally is what works: the metal keeps enough to reflect (mirror gold with nothing to
-     * reflect renders BLACK) and the directional regains enough contrast to leave a mark. */
-    scene.environmentIntensity = 0.45;
-    return () => pmrem.dispose();
-  }, [scene, gl]);
-  return null;
-}
 
 // Mirror gold, silver, rose and black are what the market actually sells. All opaque: metalness 1
 // with a low roughness, so the cost is one more material and not a transmissive re-render.
@@ -128,7 +121,11 @@ function Cake({ r = CAKE_R, h = CAKE_H }) {
   return (
     <mesh position={[0, h / 2, 0]} receiveShadow>
       <cylinderGeometry args={[r, r, h, 96]} />
-{/* The shadow lands now — see the environmentIntensity note in LocalEnv.
+{/* ⚠️ THE SHADOW MAY BE FAINTER HERE NOW, AND THAT IS CORRECT. The old local rig turned
+       * `environmentIntensity` down to 0.45 so a cast shadow would read — a deliberate divergence from
+       * the scene's own 1.25, made when this page lit itself. It lights itself no longer, so the
+       * shadow is whatever production actually gives. If it is too faint to judge, the answer is to
+       * fix the SCENE's shadow, not to dim this page back out of parity.
        *
        * It took three passes to find, and none of them were where I looked: not a missing light
        * (SceneLights already takes `shadows`), not this material's envMapIntensity (dimming it to
@@ -352,7 +349,7 @@ function App() {
               The prop already exists on the designer's own lights — I had added a fourth light of my
               own before noticing, which would have lit this harness differently from the cake. */}
           <SceneLights shadows />
-          <LocalEnv />
+          <SceneEnv />
           <Cake />
           {/* THE renderer, the same one the designer will use — not a copy that looks like it. */}
           <AcrylicWord

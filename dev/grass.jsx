@@ -1,7 +1,15 @@
 import { useState, useCallback } from 'react';
+import './scene.js';
+import { SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ LIT BY `SceneEnv`, THE COMPONENT PRODUCTION MOUNTS — not a rig of its own. This harness used to
+ * build its own environment, and every harness that did was lighting its subject differently from the
+ * product it exists to judge. A metal shows nothing but the reflected environment, so a `studio` or
+ * `city` preset does not merely look different, it makes any reading about shine or colour describe a
+ * scene no customer sees. The gold topper's glare was invisible here for exactly that reason.
+ * `./scene.js` supplies the assets base so `SceneEnv` resolves the real map. */
 import { createRoot } from 'react-dom/client';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import {OrbitControls} from '@react-three/drei';
 import GrassPatch from '../src/designer/canvas/GrassPatch.jsx';
 import { GRASS_DEFAULTS, grassTriangleCount } from '../src/designer/geometry/grass.js';
 
@@ -90,7 +98,7 @@ export default function Harness() {
           <ambientLight intensity={0.55} />
           <directionalLight position={[3, 6, 4]} intensity={1.5} castShadow
             shadow-mapSize={[1024, 1024]} />
-          <Environment preset="studio" />
+          <SceneEnv />
 
           {/* A plain tier so the grass is judged against a cake, not floating in space. */}
           {shapeKey === 'round' ? (

@@ -24,7 +24,9 @@ const IMPORTS_SCENE = /from\s+['"]\.\/scene\.js['"]|import\s+['"]\.\/scene\.js['
 // A harness that builds its OWN environment is a separate, louder problem — it is not lit like the
 // product either, but the fix is to delete its rig rather than to add an import, so it is reported
 // distinctly instead of being swept into the same message.
-const OWN_ENV = /<\s*Environment\b|RoomEnvironment|preset\s*=\s*['"]/;
+/* `<SceneEnv />` is the sanctioned way in — it IS what production mounts, so it must not trip the
+   rig check that exists to stop pages inventing their own. */
+const OWN_ENV = /<\s*Environment\b|RoomEnvironment|(?<!Scene)\bpreset\s*=\s*['"]/;
 
 /* ⚠️ STRIP COMMENTS BEFORE MATCHING. The first version scanned raw source and flagged
    `garnish-on-cake.jsx` for the word "RoomEnvironment" appearing in a COMMENT explaining that other
@@ -38,12 +40,19 @@ const stripComments = (src) => src
 const offenders = [];
 const ownRig = [];
 
+/* ⚠️ A HARNESS THAT BUILDS ITS OWN RIG IS CHECKED WHETHER OR NOT IT MOUNTS THE REAL SCENE. The first
+   version only looked at pages mounting `CakePreview`/`CakeCanvas`, which let `topper.jsx` and
+   `acrylic-text.jsx` through — and those two are exactly where the gold topper's glare stayed
+   invisible for weeks, because each lit its mirror finish with a `RoomEnvironment` built from
+   emissive boxes instead of the outdoor sky every customer sees. "It only renders one element" is
+   not an exemption: a metal shows the environment and nothing else, so the rig IS the measurement. */
 for (const f of readdirSync(DIR)) {
   if (!f.endsWith('.jsx')) continue;
   const src = stripComments(readFileSync(join(DIR, f), 'utf8'));
-  if (!REAL_SCENE.test(src)) continue;
-  if (OWN_ENV.test(src)) ownRig.push(f);
-  else if (!IMPORTS_SCENE.test(src)) offenders.push(f);
+  const rendersCake = REAL_SCENE.test(src);
+  const buildsRig = OWN_ENV.test(src);
+  if (buildsRig) ownRig.push(f);
+  else if (rendersCake && !IMPORTS_SCENE.test(src)) offenders.push(f);
 }
 
 if (!offenders.length && !ownRig.length) {
