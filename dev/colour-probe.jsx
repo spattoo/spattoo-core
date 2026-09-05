@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import { Canvas } from '@react-three/fiber';
 import { Suspense } from 'react';
 import * as THREE from 'three';
@@ -59,8 +60,12 @@ function Row({ label, hex }) {
         <Canvas orthographic camera={{ position: [0, 0, 5], zoom: 60 }}>
           <Suspense fallback={null}>
             <SafeEnvironment {...envProps()} />
-            <ambientLight intensity={0.5} />
-            <directionalLight position={[2, 3, 2]} intensity={1.1} />
+      {/* ⚠️ `SceneLights` — THE shared rig, not a local one. Every page here used to build its own,
+          and they had drifted to ambient 0.5–0.55 with a key of 1.5: precisely the values
+          `SceneLights` was SOFTENED AWAY FROM (to 0.45 / 1.1) because they overexposed the cake top
+          and camera-facing wall and washed the diffuse colour toward white head-on. A harness lit by
+          a rig the product deliberately rejected cannot judge the product's colour. */}
+            <SceneLights />
             <mesh>
               <planeGeometry args={[4, 2]} />
               <meshPhysicalMaterial side={THREE.DoubleSide} {...garnishMaterialProps({ color: hex })} />
@@ -77,10 +82,12 @@ createRoot(document.getElementById('root')).render(
   <div style={{ padding: 22, fontFamily: 'system-ui' }}>
     <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>What the renderer does to a colour</h2>
     <p style={{ fontSize: 12.5, color: '#666', margin: '0 0 16px' }}>
-      Left block is the colour asked for. Right is that colour through the garnish material — but lit
-      by THIS PAGE'S rig, not the cake's, so it reads lighter than the cake does. Use it to compare
-      colours with each other, not to judge what a baker will see. On the real cake, dark chocolate
-      measures 86,46,34 against an asked-for 74,44,27.
+      Left block is the colour asked for. Right is that colour through the garnish material, lit by
+      the cake's own rig — <code>SceneLights</code> and <code>SceneEnv</code>, the same components
+      production mounts, on the same HDRI. Until 2026-09-06 this page built its own lighting and read
+      lighter than the cake, so it carried a warning not to judge a baker's view from it; that is no
+      longer true and the warning is gone. It is still a flat swatch rather than a cake — no
+      curvature, no shadow — so a lit wall will differ, but the light itself is the product's.
     </p>
     <div style={{ display: 'flex', gap: 0, marginBottom: 6, fontSize: 11, fontWeight: 700, color: '#888' }}>
       <div style={{ width: 150 }} /><div style={{ width: 150 }}>ASKED FOR</div><div style={{ width: 150 }}>RENDERED</div>

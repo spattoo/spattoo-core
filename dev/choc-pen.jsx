@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import './scene.js';
-import { SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 /* ⚠️ LIT BY `SceneEnv`, THE COMPONENT PRODUCTION MOUNTS — not a rig of its own. This harness used to
  * build its own environment, and every harness that did was lighting its subject differently from the
  * product it exists to judge. A metal shows nothing but the reflected environment, so a `studio` or
@@ -40,8 +40,12 @@ createRoot(document.getElementById('root')).render(
   <div style={{ height: '100%', background: '#EFEAE3' }}>
     <Canvas camera={{ position: [0, 2.1, 2.6], fov: 40 }} shadows>
       <SceneEnv />
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[3, 5, 2]} intensity={1.5} />
+      {/* ⚠️ `SceneLights` — THE shared rig, not a local one. Every page here used to build its own,
+          and they had drifted to ambient 0.5–0.55 with a key of 1.5: precisely the values
+          `SceneLights` was SOFTENED AWAY FROM (to 0.45 / 1.1) because they overexposed the cake top
+          and camera-facing wall and washed the diffuse colour toward white head-on. A harness lit by
+          a rig the product deliberately rejected cannot judge the product's colour. */}
+      <SceneLights />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
         <planeGeometry args={[6, 6]} /><meshStandardMaterial color="#F6F2EA" />
       </mesh>
