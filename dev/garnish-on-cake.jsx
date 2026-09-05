@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import { CakePreview, configureEnvMap } from '../src/designer/canvas/CakeCanvas.jsx';
+import { CakePreview, configureEnvMap, SceneBackground } from '../src/designer/canvas/CakeCanvas.jsx';
+import { DESIGNER_GROUND } from '../src/designer/constants.js';
 import { HARNESS_ASSETS_BASE } from './scene.js';   // light it the way production does
 import { fillShape } from '../src/designer/geometry/pipingFill.js';
 import { TOPPER_FINISHES } from '../src/designer/geometry/topperFinishes.js';
@@ -155,6 +156,13 @@ function App() {
     <CakePreview design={shown} shadows autoRotate={!_q.has('still')}>
       <PerMaterialEnv file={_q.get('permat') ? `/_local/env/${_q.get('permat')}.hdr` : null} />
       {_q.has('envrot') && <EnvRotation deg={_q.get('envrot')} />}
+      {/* ⚠️ THE DESIGNER'S OWN GROUND. The live scene mounts `<SceneBackground colour={DESIGNER_GROUND} />`
+          and the preview canvas does not, so this page used to show a cake floating on white. It
+          cannot change how the cake RENDERS — `scene.background` is not `scene.environment`, and
+          three.js has no global illumination — but a colour judged against white and the same colour
+          judged against the designer's grey are not the same judgement, and a person is the final
+          check here. */}
+      <SceneBackground colour={DESIGNER_GROUND} />
     </CakePreview>
     {/* The colour that was ASKED FOR, against the cake, so the gap is visible without a screenshot
         being sent anywhere. */}
