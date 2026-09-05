@@ -3077,10 +3077,14 @@ function CakeContent({ config, scene, edit = null }) {
 // capture without it reads as a cake floating in mid-air — and board-level finishes (a grass ring,
 // letter blocks at the foot) had nothing to stand on. Only the ROOM is left out: the floor plane and
 // the studio background belong to the editor, not to the cake.
-function CakeThumbnailScene({ config }) {
+function CakeThumbnailScene({ config, shadows = false }) {
   return (
     <>
-      <SceneLights />
+      {/* ⚠️ `shadows` EXISTS SO A HARNESS CAN MATCH THE LIVE SCENE, which renders `<SceneLights
+          shadows />` while this preview does not. Default stays OFF — production thumbnails and
+          previews are unchanged — but a page MEASURING the cake has to render what a baker sees, and
+          a cast shadow lands on the tier wall, which is exactly where colour is sampled. */}
+      <SceneLights shadows={shadows} />
       {/* Same env rule as the live scene (SceneEnv): the configured HDRI, else the neutral
           `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
           no `background` prop — so the capture stays transparent. */}
@@ -3324,6 +3328,7 @@ export function CakePreview({
   design, autoRotate = true, style, enableZoom = false,
   fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = null,
   children = null,          // extra scene contents — a plain composition slot, not a debug hook
+  shadows = false,          // match the LIVE scene's shadows; off by default so previews are unchanged
 }) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   // Aim at THIS cake's middle by default, the same rule the editor uses (cakeAimTarget) — a preview
@@ -3337,6 +3342,7 @@ export function CakePreview({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
       <Canvas
+        shadows={shadows}
         gl={{ preserveDrawingBuffer: true, alpha: true }}
         onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
         camera={{ position: cameraPosition, fov }}
@@ -3344,7 +3350,7 @@ export function CakePreview({
       >
         <CameraRig fov={fov} position={cameraPosition} />
         <Suspense fallback={null}>
-          <CakeThumbnailScene config={config} />
+          <CakeThumbnailScene config={config} shadows={shadows} />
         </Suspense>
         <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={aim} />
         {children}

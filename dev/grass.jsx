@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import './scene.js';
-import { SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 /* ⚠️ LIT BY `SceneEnv`, THE COMPONENT PRODUCTION MOUNTS — not a rig of its own. This harness used to
  * build its own environment, and every harness that did was lighting its subject differently from the
  * product it exists to judge. A metal shows nothing but the reflected environment, so a `studio` or
@@ -95,9 +95,12 @@ export default function Harness() {
       <div style={{ flex: 1, position: 'relative', background: '#e8b4a8' }}>
         <Canvas shadows camera={{ position: [0, 2.6, 4.4], fov: 42 }} style={{ position: 'absolute', inset: 0 }}>
           <color attach="background" args={['#e8b4a8']} />
-          <ambientLight intensity={0.55} />
-          <directionalLight position={[3, 6, 4]} intensity={1.5} castShadow
-            shadow-mapSize={[1024, 1024]} />
+      {/* ⚠️ `SceneLights` — THE shared rig, not a local one. Every page here used to build its own,
+          and they had drifted to ambient 0.5–0.55 with a key of 1.5: precisely the values
+          `SceneLights` was SOFTENED AWAY FROM (to 0.45 / 1.1) because they overexposed the cake top
+          and camera-facing wall and washed the diffuse colour toward white head-on. A harness lit by
+          a rig the product deliberately rejected cannot judge the product's colour. */}
+          <SceneLights />
           <SceneEnv />
 
           {/* A plain tier so the grass is judged against a cake, not floating in space. */}

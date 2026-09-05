@@ -148,7 +148,11 @@ function App() {
         parameter ever moved it, and the frame never settles however long a script waits.
         `?still=1` stops it — an explicit, single, documented divergence taken by the measuring
         tool, not a quiet one baked into the page. */}
-    <CakePreview design={shown} autoRotate={!_q.has('still')}>
+    {/* ⚠️ `shadows` — the LIVE designer renders `<SceneLights shadows />` and this preview did not,
+        so every colour number here was measured on an unshadowed cake while a baker sees a shadowed
+        one. A cast shadow lands on the tier wall, which is the exact patch the colour scripts
+        sample. Matching it is not a detail. */}
+    <CakePreview design={shown} shadows autoRotate={!_q.has('still')}>
       <PerMaterialEnv file={_q.get('permat') ? `/_local/env/${_q.get('permat')}.hdr` : null} />
       {_q.has('envrot') && <EnvRotation deg={_q.get('envrot')} />}
     </CakePreview>

@@ -24,9 +24,17 @@ const IMPORTS_SCENE = /from\s+['"]\.\/scene\.js['"]|import\s+['"]\.\/scene\.js['
 // A harness that builds its OWN environment is a separate, louder problem — it is not lit like the
 // product either, but the fix is to delete its rig rather than to add an import, so it is reported
 // distinctly instead of being swept into the same message.
-/* `<SceneEnv />` is the sanctioned way in — it IS what production mounts, so it must not trip the
-   rig check that exists to stop pages inventing their own. */
+/* `<SceneEnv />` / `<SceneLights />` are the sanctioned way in — they ARE what production mounts, so
+   they must not trip the checks that exist to stop pages inventing their own. */
 const OWN_ENV = /<\s*Environment\b|RoomEnvironment|(?<!Scene)\bpreset\s*=\s*['"]/;
+
+/* ⚠️ LAMPS ARE CHECKED TOO, because the environment was only half the divergence. Six harnesses had
+   drifted to ambient 0.5–0.55 with a key of 1.5 — precisely the values `SceneLights` was SOFTENED
+   AWAY FROM (to 0.45 / 1.1) because they overexposed the cake top and washed diffuse colour toward
+   white head-on. `colour-probe.jsx` was one of them, and it carried a printed warning that its
+   readings were lighter than the cake's: a page built to judge colour, lit by a rig the product had
+   explicitly rejected for distorting colour. */
+const OWN_LIGHTS = /<\s*(?:ambient|directional|point|hemisphere|spot)Light\b/;
 
 /* ⚠️ STRIP COMMENTS BEFORE MATCHING. The first version scanned raw source and flagged
    `garnish-on-cake.jsx` for the word "RoomEnvironment" appearing in a COMMENT explaining that other
@@ -50,8 +58,8 @@ for (const f of readdirSync(DIR)) {
   if (!f.endsWith('.jsx')) continue;
   const src = stripComments(readFileSync(join(DIR, f), 'utf8'));
   const rendersCake = REAL_SCENE.test(src);
-  const buildsRig = OWN_ENV.test(src);
-  if (buildsRig) ownRig.push(f);
+  if (OWN_ENV.test(src)) ownRig.push({ f, what: 'environment' });
+  else if (OWN_LIGHTS.test(src)) ownRig.push({ f, what: 'lights' });
   else if (rendersCake && !IMPORTS_SCENE.test(src)) offenders.push(f);
 }
 
@@ -68,11 +76,18 @@ for (const f of offenders) {
   console.error('     `apartment` preset instead of the shipped HDRI.');
   console.error("     Fix: add  import './scene.js';  at the top.\n");
 }
-for (const f of ownRig) {
+for (const { f, what } of ownRig) {
   console.error(`   • dev/${f}`);
-  console.error('     builds its OWN environment beside the real scene, so it is lit twice and by');
-  console.error('     the wrong thing. Fix: delete the local <Environment>/RoomEnvironment/preset=');
-  console.error("     and add  import './scene.js';  — the scene already carries its own lighting.\n");
+  if (what === 'environment') {
+    console.error('     builds its OWN environment, so it lights its subject differently from the');
+    console.error('     product. Fix: delete the local <Environment>/RoomEnvironment/preset= and use');
+    console.error("     <SceneEnv />, with  import './scene.js';  for the assets base.");
+  } else {
+    console.error('     builds its OWN lamps. The rigs that drifted here sat at ambient 0.5–0.55 and');
+    console.error('     a key of 1.5 — the values SceneLights was softened away from because they');
+    console.error('     wash diffuse colour toward white. Fix: use <SceneLights />.');
+  }
+  console.error('');
 }
 console.error('   Why this is a gate: the failure is silent. The cake just looks slightly different,');
 console.error('   which stays invisible until someone measures it and reaches a wrong conclusion.');
