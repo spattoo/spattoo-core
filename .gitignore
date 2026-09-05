@@ -19,10 +19,6 @@ dist
 .claude/worktrees/
 .claude/settings.local.json
 
-# Local-only HDRI copies for the glare sweep — the CDN does not allow the harness origin.
-public/_local/
-# Local-only copy of the topper HDRI, served same-origin for the glare measurement.
-public/code/
 
 # A reference cake photo for dev/edible-prints.html. A real one is a CUSTOMER'S, and a fixture is
 # not a reason to commit one — drop any photo here to see the crop previews.
