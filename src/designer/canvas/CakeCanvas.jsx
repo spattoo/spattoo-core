@@ -3110,7 +3110,10 @@ function CakeThumbnailScene({ config, shadows = false }) {
  * whole claim is that the frame on screen is the file. Done at capture time it would have produced
  * a correct download that nobody could have predicted from the screen.
  */
-function SceneBackground({ colour }) {
+/* Exported so a dev harness can stand the cake on the same ground the designer does. It sets
+ * `scene.background` only — never `scene.environment` — so it cannot light anything; it decides what
+ * a PERSON sees behind the cake, which is the half of a colour judgement the numbers do not cover. */
+export function SceneBackground({ colour }) {
   const { gl, scene } = useThree();
   useEffect(() => {
     scene.background = colour ? new THREE.Color(colour) : null;
