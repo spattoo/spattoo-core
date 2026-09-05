@@ -6,6 +6,7 @@
 // shapes is only safe if it changes nothing about the cakes that already exist.
 
 import React, { useState } from 'react';
+import './scene.js';   // light it the way production does — see the file
 import ReactDOM from 'react-dom/client';
 import { CakePreview, cakeShapeList, applyCakeShapeConfig } from '../src/index.js';
 

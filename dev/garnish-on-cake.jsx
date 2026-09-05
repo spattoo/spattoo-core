@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { CakePreview, configureEnvMap } from '../src/designer/canvas/CakeCanvas.jsx';
+import { HARNESS_ASSETS_BASE } from './scene.js';   // light it the way production does
 import { fillShape } from '../src/designer/geometry/pipingFill.js';
 import { TOPPER_FINISHES } from '../src/designer/geometry/topperFinishes.js';
 import { useThree, useFrame } from '@react-three/fiber';
@@ -57,39 +58,24 @@ function PerMaterialEnv({ file }) {
   return null;
 }
 
-/* ⚠️ THE HARNESS MUST LIGHT THE CAKE THE WAY PRODUCTION DOES, and for a while it did not. With no
- * assets base configured, `envProps` falls back to drei's `apartment` preset — so localhost rendered
- * an INDOOR map while every deployed cake rendered the self-hosted OUTDOOR lebombo. The glare being
- * complained about is a reflection, and a metal shows nothing but the map, so the two scenes were not
- * comparable at all: three parameter sweeps were run, reported and documented against a map no
- * customer has ever seen. The fallback is right for a cold `npm run dev` — it beats a black scene —
- * but it is a fallback, and anything MEASURING the scene has to opt out of it explicitly.
- *
- * `?env=` picks the map, so sizes and sources can be compared in one run: `512`, `1k`, or a full
- * path. Default is exactly what ships. */
-/* ⚠️ SERVED FROM THIS ORIGIN, NOT THE CDN, because the CDN will not have us. Its allowlist holds
- * `app.spattoo.com` and `localhost:3000`; the harness runs on 5190 and gets no
- * `access-control-allow-origin`, and a WebGL texture load without CORS fails — so pointing straight
- * at the CDN reproduced the very silent-fallback this harness exists to avoid. `scripts/fetch-hdri.sh`
- * drops the same files under `public/_local/` (gitignored), which vite serves same-origin.
- *
- * They are byte-identical to what production fetches, so the light is the real light. */
-/* ⚠️ THE SWEEP KNOBS LIVE HERE, IN THE HARNESS, NOT IN THE PRODUCT. An earlier round put an
- * `?envrot=` override into `CakeCanvas` so the rotation could be swept — dev tooling that then
- * shipped, read the URL on every render of the scene environment, and let anyone rotate the lighting
- * with a query string. Mutating the finish table from the harness gets the same sweep with nothing
- * added to production. `?rough=0.34&envi=1.4` on the gold finish. */
+/* ⚠️ SWEEP KNOBS LIVE IN THE HARNESS, NOT IN THE PRODUCT. An earlier round put an `?envrot=`
+ * override into `CakeCanvas` so rotation could be swept; it shipped, read the URL on every render of
+ * the scene environment, and let anyone re-light a cake with a query string. Mutating the finish
+ * table from here gets the same sweep with nothing added to production.
+ * `?rough=0.34&envi=1.4&metal=0.9` on the gold finish. */
 const _q = new URLSearchParams(location.search);
 for (const [param, key] of [['rough', 'roughness'], ['envi', 'envIntensity'], ['metal', 'metalness']]) {
   if (_q.has(param)) TOPPER_FINISHES.gold[key] = Number(_q.get(param));
 }
 
-/* The topper's own map lives under the same base, so the harness needs a copy where it can serve
- * it same-origin — `code/env/studio_256.hdr` on the CDN, `_local/env/...` here. */
-const envArg = new URLSearchParams(location.search).get('env');
-configureEnvMap(location.origin, envArg
-  ? (envArg.includes('/') ? envArg : `_local/env/lebombo_${envArg}.hdr`)
-  : '_local/env/lebombo_256.hdr');
+/* The map itself is set by `./scene.js`, which every harness on the real scene imports so none of
+ * them can drift from production again. `?env=` overrides it for a sweep — against the PROXIED CDN,
+ * so a comparison uses the same bytes production serves and cannot go stale: `512`, `1k`, or a path. */
+const envArg = _q.get('env');
+if (envArg) {
+  configureEnvMap(HARNESS_ASSETS_BASE,
+    envArg.includes('/') ? envArg : `code/env/lebombo_${envArg}.hdr`);
+}
 
 /* The whole chain, end to end: design.garnishes -> toCanvasConfig -> CakeContent -> Garnishes.
  * Tests can prove the maths; only this can prove the piece actually arrives on the cake. */
@@ -109,7 +95,14 @@ const asked = new URLSearchParams(location.search).get('color') || '#4A2C1B';
 
 const design = {
   tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
-            topPipings: [], bottomPipings: [], creamLayers: [] }],
+            topPipings: [], bottomPipings: [],
+            /* ⚠️ `?cream=1` PUTS UNCORRECTED CREAM NEXT TO A CORRECTED WALL, which is the only way to
+               see whether fixing tiers alone makes a MISMATCH more visible than the original error.
+               Same chosen colour on both: if they now read as two different colours, correcting one
+               surface at a time is the wrong plan. */
+            creamLayers: _q.has('cream')
+              ? [{ layerId: 'c1', color: _q.get('tier') || '#F6DCE2', height: 0.42, order: 0, edge: 'wave', seed: 3 }]
+              : [] }],
   texts: [], ages: [], stickers: [], piping: [],
   /* ⚠️ THE ACRYLIC TOPPER GOES HERE BECAUSE THIS HARNESS USES THE REAL SCENE. `dev/topper.jsx` and
    * `dev/acrylic-text.jsx` each build their own RoomEnvironment, so neither shows the glare that is

@@ -28,11 +28,12 @@
     "check:occasions": "node scripts/docs-check.mjs check-occasions",
     "check:dup": "jscpd src/designer src/orders src/customers src/dashboard src/admin src/billing src/shared src/storefront src/auth src/legal src/telemetry src/chefsdesk src/notifications",
     "test": "vitest run",
-    "verify": "npm run check:bindings && npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:hooks && npm run check:movable && npm run check:narrow && npm run check:occasions && npm run check:dup && npm test",
+    "verify": "npm run check:bindings && npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:hooks && npm run check:movable && npm run check:narrow && npm run check:harness-scene && npm run check:occasions && npm run check:dup && npm test",
     "pack:vendor": "node scripts/pack-vendor.mjs",
     "release": "node scripts/release.mjs",
     "check:bindings": "node scripts/check-bindings.mjs",
-    "check:movable": "node scripts/check-movable.mjs"
+    "check:movable": "node scripts/check-movable.mjs",
+    "check:harness-scene": "node scripts/check-harness-scene.mjs"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",

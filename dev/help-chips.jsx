@@ -7,6 +7,7 @@
  * differently are in spattoo-docs/plans/element-help.md — read that before reviving any of this.
  */
 import React, { useEffect, useRef, useState } from 'react';
+import './scene.js';   // light it the way production does — see the file
 import ReactDOM from 'react-dom/client';
 import { useCakeDesign } from '../src/designer/hooks/useCakeDesign.js';
 import { CakePreview } from '../src/designer/canvas/CakeCanvas.jsx';

@@ -101,6 +101,23 @@ export function envMapUrl() { return _envMapUrl; }
  * The fallback is deliberately kept — a local dev run with no assets base still gets lighting rather
  * than a black scene. It is a fallback, though, and was never meant to be the normal path.
  */
+let _warnedFallback = false;
+
 export function envProps(preset = 'apartment') {
-  return _envMapUrl ? { files: _envMapUrl } : { preset };
+  if (_envMapUrl) return { files: _envMapUrl };
+  /* ⚠️ THE FALLBACK MUST ANNOUNCE ITSELF. Its silence is what made three parameter sweeps, a set of
+     documented conclusions and a shipped scene-wide change all describe a scene no customer has ever
+     seen: localhost quietly rendered drei's indoor `apartment` while every deployed cake rendered the
+     self-hosted OUTDOOR map, and nothing said so. The fallback is still right — a cold `npm run dev`
+     deserves lighting rather than a black scene — but "right" and "invisible" are different things,
+     and anything MEASURING this scene has to know it is not the real one. */
+  if (!_warnedFallback && typeof console !== 'undefined') {
+    _warnedFallback = true;
+    console.warn(
+      `[spattoo/env] No assets base configured — lighting with drei's "${preset}" preset, NOT the ` +
+      `shipped ${ENV_HDR_PATH}. These are DIFFERENT environments: anything judged or measured here ` +
+      `does not describe what a customer sees. Call configureEnvMap(assetsBase) — dev harnesses can ` +
+      `use dev/scene.js.`);
+  }
+  return { preset };
 }

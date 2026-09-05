@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import './scene.js';   // light it the way production does — see the file
 import ReactDOM from 'react-dom/client';
 import { useCakeDesign } from '../src/designer/hooks/useCakeDesign.js';
 import { GLAZE_DEFAULTS } from '../src/designer/shared/glaze/glazeMaterial.js';
