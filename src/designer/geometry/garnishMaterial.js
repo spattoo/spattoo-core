@@ -1,4 +1,5 @@
 import { mediumOf } from './pipingMedia.js';
+import { albedoForLight, parseColour } from '../shared/albedoForLight.js';
 
 // ── The look of set chocolate, in ONE place ──────────────────────────────────────────────────────
 //
@@ -53,15 +54,6 @@ export const GARNISH_INK = '#4A2C1B';
  */
 /* Reads `#rrggbb` or `rgb(r, g, b)`. Both, because these values get passed between functions here and
  * reading only one form once made a test silently compare a colour with itself. */
-function parseColour(v) {
-  const hex = /^#([0-9a-f]{6})$/i.exec(v ?? '');
-  if (hex) {
-    const n = parseInt(hex[1], 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  }
-  const m = /^rgb\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)\s*\)$/i.exec(v ?? '');
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
-}
 
 /**
  * The base colour to HAND THE MATERIAL so that what comes out is the colour that was chosen.
@@ -127,18 +119,15 @@ export const REFERENCE_LIGHT = 2.40;
 /* sRGB ↔ linear. The correction has to happen in linear light because that is where a renderer
  * multiplies; doing it in sRGB nearly works for dark colours and fails on saturated mid-tones, which
  * is exactly where a teal turned to mint. */
-const toLinear = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
-const toSrgb = c => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
 
-/** The albedo to hand the material so the RENDER is the colour that was chosen. */
+/** The albedo to hand the material so the RENDER is the colour that was chosen.
+ *
+ * ⚠️ The MATHS lives in `shared/albedoForLight.js` — a tier needs the same correction with a
+ * different reference light, and two copies of this would drift the moment one was re-measured. Only
+ * the number below is this surface's. */
 export function garnishAlbedo(color) {
-  const rgb = parseColour(color);
-  if (!rgb) return color ?? GARNISH_INK;
-  const [r, g, b] = rgb.map(c => {
-    const lin = toLinear(c / 255) / REFERENCE_LIGHT;
-    return Math.round(Math.max(0, Math.min(255, toSrgb(lin) * 255)));
-  });
-  return `rgb(${r}, ${g}, ${b})`;
+  if (!parseColour(color)) return color ?? GARNISH_INK;
+  return albedoForLight(color, REFERENCE_LIGHT);
 }
 
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
