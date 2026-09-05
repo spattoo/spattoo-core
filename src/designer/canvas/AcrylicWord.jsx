@@ -5,12 +5,9 @@ import { drawTopperMatcap } from '../geometry/topperMatcap.js';
 
 /* ── A word cut from one sheet of acrylic ────────────────────────────────────────────────────────
  *
- * ONE renderer for both places a topper goes, because they are one object:
+ * ONE renderer for every place a topper goes, because they are one object.
  *
- *   stand   upright on the cake top, on prongs pushed into the icing
- *   flat    against the side wall, lying in a plane
- *
- * ⚠️ FLAT MEANS FLAT, and the standoff is the look — not a defect to design around.
+ * ⚠️ FLAT MEANS FLAT AGAINST THE WALL, and the standoff is the look — not a defect to design around.
  *
  * A rigid sheet cannot follow a round wall. Measured: an 80mm name on a 6-inch cake stands 11mm off
  * the icing at its ends. I took that as a reason side lettering had to be separate per-letter pieces,
@@ -19,8 +16,17 @@ import { drawTopperMatcap } from '../geometry/topperMatcap.js';
  * at its anchor: the middle touches, the ends rise on their own out of the geometry, and it casts a
  * shadow. Pressed flat against the wall it would read as a sticker.
  *
- * The difference between the two poses is a pose and a set of legs, nothing more — same geometry,
- * same fit, same finish. Reached by a `pose` key, never by which zone asked.
+ * The difference between the poses is a pose and a set of legs, nothing more — same geometry, same
+ * fit, same finish. Reached by a `pose` key, never by which zone asked.
+ *
+ *   stand   upright on legs pushed into a surface        — the cake top
+ *   flat    upright against a wall, tangent at its anchor — the side
+ *   lay     lying face-up on a horizontal surface        — the board
+ *
+ * ⚠️ `stand` and `flat` are BOTH UPRIGHT. That is easy to misread as "standing vs lying" and it is
+ * not: `flat` describes the sheet being flat against a wall, not the word being flat on the ground.
+ * Missing that is how the board — which has nothing to lean on — ended up asking for `stand`, and
+ * `stand` grows prongs.
  */
 export default function AcrylicWord({
   font, text, cfg = {}, finish = 'gold', pose = 'stand', mount = {}, span = 1.76, castShadow = true,
@@ -118,6 +124,30 @@ export default function AcrylicWord({
     return (
       <group position={[mount.x ?? 0, topY - built.seat, mount.z ?? 0]} rotation={[0, mount.yaw ?? 0, 0]}>
         {built.geos.map((g, i) => <mesh key={i} geometry={g} castShadow={castShadow}>{mat}</mesh>)}
+      </group>
+    );
+  }
+
+  /* LAY: the piece lying down ON a horizontal surface — a plaque set on the drum, face up.
+   *
+   * ⚠️ This is a THIRD pose, and its absence is what put prongs on the board. `stand` and `flat` are
+   * both UPRIGHT — one on legs, one against a wall — so a board with nothing to lean on could only
+   * be given `stand`, and `stand` means legs. There was no way to ask for this, not a wrong branch.
+   *
+   * The word is built in XY and extruded along Z, so lying it down is one turn of -90° about X: the
+   * word's own "up" goes to -Z (reading away from the front of the cake, which is how a plaque on a
+   * board faces) and its THICKNESS becomes height. Hence `+ thickness / 2` — the geometry is centred
+   * on its extrusion, so without the lift half the sheet is under the drum.
+   *
+   * Yaw stays on the OUTER group. Rolled into the same rotation it would be applied in the tilted
+   * frame and spin the word about its own face like a clock hand. */
+  if (pose === 'lay') {
+    const { topY = 0, x = 0, z = 0, yaw = 0 } = mount;
+    return (
+      <group position={[x, topY + built.thickness / 2, z]} rotation={[0, yaw, 0]}>
+        <group rotation={[-Math.PI / 2, 0, 0]}>
+          {built.geos.map((g, i) => <mesh key={i} geometry={g} castShadow={castShadow}>{mat}</mesh>)}
+        </group>
       </group>
     );
   }

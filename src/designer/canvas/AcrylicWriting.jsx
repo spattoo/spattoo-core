@@ -47,11 +47,36 @@ export default function AcrylicWriting({
   // How far the built word rises above the cake — see `standH` below. Only the build can measure it.
   const [rise, setRise] = useState(null);
 
+  /* The pose, decided by the SURFACE — each of the three wants a different one.
+   *
+   *   top     stand   legs pushed into the icing
+   *   side    flat    upright against the wall
+   *   board   lay     lying face-up on the drum
+   *
+   * ⚠️ THE BOARD LIES DOWN. It used to be `surface !== 'side'`, which lumped the board in with the
+   * top and stood it on prongs — a topper on a gold drum with two spikes going into nothing. A board
+   * is not a thing you push legs into; a plaque set on one lies on it.
+   *
+   * Legs and the base bar follow `standing` below, so this also removes them.
+   *
+   * Declared ABOVE the drag hook because the clamp needs it — see `reach`. */
+  const pose = surface === 'side' ? 'flat' : surface === 'board' ? 'lay' : 'stand';
+  const standing = pose === 'stand';
+
   const { grabProps } = useDragPlacement({
     camera, gl, onMove, onClick, onOrbitEnable,
     resolve: (ray) => {
-      // ⚠️ halfWidth: a topper is not a point. Without it the ANCHOR stops at the rim and half the
-      // word — and a leg — hangs over the edge with the prong down the side of the cake.
+      /* ⚠️ halfWidth: a topper is not a point. Without it the ANCHOR stops at the rim and half the
+       * word — and a leg — hangs over the edge with the prong down the side of the cake.
+       *
+       * ⚠️ HALF THE WIDTH IS ENOUGH FOR THE LAID POSE TOO — do not "improve" this to the diagonal of
+       * width and rise. That was tried. The board is a RING, not a disc, and `topClampInset` only
+       * knows the outer edge: raising the margin shrinks the allowed radius, and at
+       * `2.3 - hypot(halfW, rise) = 1.585` on a 1.6-radius cake the whole permitted area fell INSIDE
+       * the cake, so every drag parked the word under an opaque cylinder.
+       *
+       * Half the width is sound because the depth only points outward near yaw 180°, and even there
+       * the reach is `(boardR - halfW) + rise`, comfortably inside the drum. */
       const where = { surface, sideRect, sideWidth: sideTier?.width, minSideY, maxSideY,
                       shape: shp, boardShape: boardShp, halfWidth: maxW / 2 };
       if (surface === 'side' && !sideRect) {
@@ -80,10 +105,6 @@ export default function AcrylicWriting({
     },
   });
 
-  /* Standing or lying, decided by the SURFACE — the top and the board are things to stand on, a wall
-   * is a thing to lie against. Legs and the base bar go with standing: a flat piece has nothing to
-   * push into and prongs would point at the customer. */
-  const standing = surface !== 'side';
   /* ⚠️ Every number comes from acrylicConfig, none from here. This component used to carry its own
    * bar ratio, leg length, bury depth, bridge flag and line gap — so the studio could author all
    * five, save, and change nothing. A renderer with a number of its own is a number an admin cannot
@@ -125,7 +146,7 @@ export default function AcrylicWriting({
 
   const word = (
     <AcrylicWord font={font} text={writing.text} cfg={cfg} finish={finish}
-                 pose={standing ? 'stand' : 'flat'} span={maxW} mount={{}} onRise={setRise} />
+                 pose={pose} span={maxW} mount={{}} onRise={setRise} />
   );
 
   if (surface === 'side' && !sideRect) {
@@ -155,7 +176,7 @@ export default function AcrylicWriting({
     );
   }
 
-  // Top or board: it stands, on legs pushed into the surface.
+  // Top (standing on legs) or board (lying face-up). Same anchor maths, different pose and catcher.
   const ox = surface === 'board' ? (writing.boardX ?? 0) : (writing.offsetX ?? 0);
   const oz = surface === 'board'
     ? (writing.boardZ ?? (cakeBaseR + (boardRadius || cakeBaseR)) / 2)
@@ -179,11 +200,31 @@ export default function AcrylicWriting({
           it spins. Only what is GRABBED changes — `resolve` still intersects the horizontal plane at
           the surface to decide where the drag lands, which is right for something moved about a
           cake top. */}
+      {/* ⚠️ AND THE CATCHER LIES DOWN WHEN THE WORD DOES. A vertical plane over a word lying on the
+          drum is the same bug in mirror image — it would stand up through the piece, so a click on
+          the letters misses and the topper cannot be picked up.
+
+          ⚠️ CENTRED ON THE ANCHOR AND DOUBLE DEPTH, because the anchor is the BASELINE, not the
+          middle. Reaching only backward by `standH` was measured wrong on screen: the catcher sat
+          behind the word and every click on the descenders — the tails of "Happy Birthday" in a
+          script face, which hang FORWARD of the baseline — passed straight through and orbited the
+          camera instead. A cylinder looks identical under orbit, so the word appeared to move and
+          the bug read as a bad clamp for several rounds.
+
+          Spanning ±standH covers the rise behind and any descender in front, whatever the face. A
+          grab target that is too big costs nothing here; one that is too small cannot be grabbed. */}
       <group position={[ox, planeY, oz]} rotation={[0, yaw, 0]}>
-        <mesh position={[0, standH / 2, 0.02]} {...grabProps}>
-          <planeGeometry args={[maxW, standH]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-        </mesh>
+        {pose === 'lay' ? (
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} {...grabProps}>
+            <planeGeometry args={[maxW, standH * 2]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+        ) : (
+          <mesh position={[0, standH / 2, 0.02]} {...grabProps}>
+            <planeGeometry args={[maxW, standH]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+        )}
       </group>
     </group>
   );
