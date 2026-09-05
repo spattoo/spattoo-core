@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
@@ -84,6 +85,45 @@ function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 0]) {
     worldMaxZ: wbox.max.z, worldMinZ: wbox.min.z,
   };
 }
+
+/* ⚠️ HOW MUCH LIGHT A TIER WALL RECEIVES — MEASURED, NOT DERIVED, and it is NOT the garnish's 2.40.
+ * The two surfaces sit in one scene but do not receive the same light: a tier is curved, rougher
+ * (0.68 against a garnish's 0.52–0.18) and keeps its sheen and clearcoat, where a garnish switches
+ * its specular and environment off entirely. A single shared constant would be wrong for whichever
+ * surface was not measured last, which is why `albedoForLight` takes the number as a parameter.
+ *
+ * WITHOUT this correction a tier renders badly over-exposed and the clipping desaturates it:
+ * mid-grey #808080 came back 180,173,168 against an asked 128, and a teal #4EC5B0 arrived as pale
+ * mint with its chroma more than halved (119 → 56). A baker picked a colour and the cake showed a
+ * paler cousin of it.
+ *
+ * ⚠️ MEASURE, DO NOT COMPUTE. `scripts/measure-tier-colour.mjs` prints the table. One division
+ * overshoots — the pipeline is not a pure multiply end to end — so take two points and interpolate;
+ * see the recipe in `shared/albedoForLight.js`. Re-measure after any change to the HDRI, the scene
+ * intensity, the lamps, or this material's own roughness/sheen/clearcoat.
+ *
+ * ⚠️ THREE NUMBERS, NOT ONE, BECAUSE THE LIGHT HAS A CAST. Under a single scalar of 2.114 an asked
+ * neutral #808080 rendered 133,125,120 — red high, blue low, a spread of 13 that no scalar removes.
+ * Lebombo is an outdoor sky and simply is not neutral. Solved per channel from that reading. */
+export const TIER_REFERENCE_LIGHT = [2.297, 2.007, 1.839];
+
+/* ⚠️ FADE THE CORRECTION TOWARD WHITE, or the commonest cake in the catalogue goes grey. A tier wall
+ * is large and bright, so its pale colours sit where tone mapping rolls off and the light delivered
+ * is less than the reference measured at mid-grey. With a flat divide, pure white rendered 215 and
+ * the default blush came back 35 points dark. At 2.0 white stays white, blush lands within 15, and
+ * mid-grey is still corrected — every colour ends up closer to what was chosen than it is today, and
+ * none ends up further away. A garnish needs none of this (see `albedoForLight`).
+ *
+ * ⚠️ THE RESIDUAL IS ADDITIVE AND CANNOT BE FIXED HERE — do not chase it by re-tuning the numbers
+ * above. Saturated GREENS and CYANS keep a red lift after correction (#45d345 renders +59 on red,
+ * halved from +98 but not gone). The cause is the surface's own specular and environment reflection:
+ * a warm white highlight added ON TOP of the albedo, independent of it. A green's red albedo is tiny,
+ * so that additive term dominates the channel — which is why it shows on greens and is invisible on
+ * reds. Scaling an albedo cannot remove something that is not multiplied by it. The garnish fix hit
+ * this same wall and solved it by switching specular, clearcoat and envMapIntensity to zero; a tier
+ * cannot, because a cake is supposed to have sheen. (⚠️ NOT bounce light off the gold board — that
+ * was the first guess, and three.js has no global illumination, so a board cannot light anything.) */
+export const TIER_ROLLOFF = 2.0;
 
 const DEG = Math.PI / 180;
 
@@ -1311,7 +1351,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : color}
+      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : albedoForLight(color, TIER_REFERENCE_LIGHT, { rolloff: TIER_ROLLOFF })}
         map={finishMaps?.map ?? null}
         roughness={finishMaps ? 1 : (surf?.roughness ?? 0.68)}
         metalness={finishMaps ? 1 : (surf?.metalness ?? 0)}

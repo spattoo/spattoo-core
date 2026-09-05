@@ -108,7 +108,7 @@ const paths = [leaf, ...fillShape(leaf, { pattern: 'hatch', spacing: 26, inset: 
 const asked = new URLSearchParams(location.search).get('color') || '#4A2C1B';
 
 const design = {
-  tiers: [{ shape: 'round', color: '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
+  tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
             topPipings: [], bottomPipings: [], creamLayers: [] }],
   texts: [], ages: [], stickers: [], piping: [],
   /* ⚠️ THE ACRYLIC TOPPER GOES HERE BECAUSE THIS HARNESS USES THE REAL SCENE. `dev/topper.jsx` and
