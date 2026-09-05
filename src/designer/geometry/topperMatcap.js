@@ -26,6 +26,18 @@
 // to the CAKE anyway, only to a field in Lebombo — but if a finish is ever wanted that picks up its
 // surroundings, this is the wrong tool and it should not be bent into it.
 
+// ⚠️ DO NOT SPREAD THIS TO THE OTHER METALS "FOR CONSISTENCY" — they do not have the problem, and
+// the reason is geometry, not material. Age numbers run at metalness 0.95 against this element's
+// 0.70 — MORE mirror-like — and faux balls are polished spheres, yet both read correctly under the
+// scene environment and were confirmed fine in the app. What they have that the topper lacks is a
+// spread of surface NORMALS: a chamfered bevel and a sphere break the environment into bands, which
+// is what reads as metal. The acrylic word is the one near-flat, near-mirror face in the scene, so
+// it showed an open sky as a single sheet of white.
+//
+// So the rule is about FLATNESS, not metalness or finish: bake when a surface is flat enough to
+// mirror the environment wholesale, and leave lit materials alone everywhere else. Baking a bevelled
+// or curved element would cost it the environment response it is currently using well, for no gain.
+
 /* Each finish as the few facts a matcap needs: the body colour, the colour of its bright band, and
  * how tight that band is. ⚠️ These are the AUTHORED look, not measurements — that is the point of
  * baking. Tuned against the previous environment-lit gold so the change reads as the same product. */
