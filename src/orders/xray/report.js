@@ -76,7 +76,21 @@ export function buildXrayReport({ design, weightKg, guides, flavours, specialIns
     })),
   };
 
-  // Each colour with its mixing recipe already resolved — the screen used to call gelRecipeFor inline
+  /* A placed garnish, with the real diameter it is measured against. `Garnishes.jsx` sizes a piece
+ * off the TOP tier, or off the board — 1.35× the bottom tier — when that is where it stands; the two
+ * must agree or the printed template is the wrong size. */
+function garnishesFor(design, plan) {
+  const tiers = plan?.tiers ?? [];
+  if (!tiers.length) return [];
+  const topMm = (tiers[tiers.length - 1]?.tinInch ?? 0) * 25.4;
+  const bottomMm = (tiers[0]?.tinInch ?? 0) * 25.4;
+  return (design?.garnishes ?? []).map(g => ({
+    ...g,
+    cakeDiameterMm: (g.zone === 'board' ? bottomMm * 1.35 : topMm) || null,
+  }));
+}
+
+// Each colour with its mixing recipe already resolved — the screen used to call gelRecipeFor inline
   // in its JSX, which meant the PDF would have had to know to call it too (and could have called it
   // with different arguments). One call, one answer.
   const colors = harvestColors(design).map(c => ({ ...c, recipe: gelRecipeFor(c.hex) }));
@@ -169,6 +183,15 @@ export function buildXrayReport({ design, weightKg, guides, flavours, specialIns
     checklist,
     checklistTotal: seq,
     elementIds: piping.elementIds,
+    /* ⚠️ GARNISHES CARRY THEIR OWN GUIDE AND ARE NOT LOOKED UP BY ELEMENT ID. Every other guide here
+       is written by a model against a library element and cached; a garnish's is DERIVED from the
+       piece's own paths, so it is free, instant, and about the exact piece on this cake rather than
+       about "chocolate drawing" in general. Asking for a written one as well would put a second,
+       vaguer guide beside the true one.
+
+       The size is resolved HERE because this is where tin sizes live, and a template printed at a
+       guessed size does not fit the cake it was cut for. */
+    garnishes: garnishesFor(design, plan),
     // Placeable decorations that reference a library element — stickers and legacy decorations,
     // deduped, first-seen order. Distinct from `elementIds`, which is piping only: a piped border
     // gets a NOZZLE guide, a topper gets a BUILD guide, and they are looked up on the same rail by

@@ -331,27 +331,74 @@ export function rectEdgeRing(shape, off, step, baseY) {
   const cr = Math.max(0, Math.min(cr0 + off, halfW, halfD));
   const sx = Math.max(0, halfW - cr), sz = Math.max(0, halfD - cr);
   const out = [];
+
+  // ── A CORNER ONLY GETS SHELLS IF IT CAN HOLD THEM ───────────────────────────────────────────
+  // This used to drop exactly ONE shell on every corner's bisector, asking only that the fillet
+  // exist (`cr >= 0.02`) — never that it be big enough. A shell is laid TANGENTIALLY, across its
+  // facing, so one sitting on a fillet shorter than itself overhangs both ends of that fillet and
+  // the overhang is not over the cake: it is over the air beside it.
+  //
+  // On a sheet the fillet is only ever as big as the ring's own outset (`SHEET_PIPING_CORNER_RADIUS`
+  // is 0, so cr = off), which is small. The reported case: a scroll 0.688 across on a 0.336 arc —
+  // twice too long — put four shells 0.181 clear of the wall, floating at the corners.
+  //
+  // So the fillet is measured against the shell. It carries however many WHOLE shells fit at the
+  // authored step, which is none at all on a normal sheet, and the two straight runs then meet
+  // directly.
+  const arcLen = (Math.PI / 2) * cr;
+  const cornerN = Math.floor(arcLen / step);
+  const filled = cornerN > 0;
+
+  // ── AND THE END MARGIN FOLLOWS FROM THAT ────────────────────────────────────────────────────
+  // Each edge used to centre its shells with a half-pitch margin at both ends (`t = (i+0.5)/N`).
+  // That is exactly right where the junction is SMOOTH — a straight run flowing into a tangent
+  // fillet — and wrong where it is a hard right angle, because the turn eats the chord: two shells
+  // half a pitch either side of a corner are `hypot(p/2, p/2)` = 0.71p apart, not p.
+  //
+  // Writing `len = 2m + (N-1)p` and tying m to p by the junction gives an exact solve for both:
+  //
+  //   filled fillet — smooth junction, so the old half-pitch margin stands:  m = p/2
+  //   hard corner   — the two end shells sit on perpendicular faces, `cr + m` from the corner along
+  //                   each, so they are (cr + m)·√2 apart:  (cr + m)√2 = p  ⇒  m = p/√2 − cr
+  //
+  // N is then chosen the way a swag's count is (see festoon.js): by which candidate lands the
+  // PITCH nearest the authored step, scored as a ratio, rather than by rounding the count — the
+  // count is not what the eye judges.
   const edge = (ax, az, bx, bz, nx, nz) => {
     const len = Math.hypot(bx - ax, bz - az);
     if (len < 1e-4) return;                               // collapsed side (deep inset): skip
-    const N = Math.max(1, Math.round(len / step));        // whole shells, spaced to fit
+    const pitchOf = (n) => (filled ? len / n : (len + 2 * cr) / (n - 1 + Math.SQRT2));
+    const ideal   = filled ? len / step : (len + 2 * cr) / step - Math.SQRT2 + 1;
+    const lo = Math.max(1, Math.floor(ideal)), hi = Math.max(1, Math.ceil(ideal));
+    const err = (n) => { const r = pitchOf(n) / step; return r >= 1 ? r : 1 / r; };
+    const N = err(hi) < err(lo) ? hi : lo;
+    // Clamped: a fillet wider than the pitch would otherwise ask for a negative margin, i.e. a
+    // shell off the end of its own edge. The walk below uses the REAL gap, so positions stay valid.
+    const m = Math.min(Math.max(filled ? pitchOf(N) / 2 : pitchOf(N) * Math.SQRT1_2 - cr, 0), len / 2);
+    const gap = N > 1 ? (len - 2 * m) / (N - 1) : 0;
     const yaw = Math.atan2(nz, nx);
     for (let i = 0; i < N; i++) {
-      const t = (i + 0.5) / N;
+      const t = N === 1 ? 0.5 : (m + i * gap) / len;
       const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
       out.push({ pos: [x, baseY, z], rotY: yaw, tq: [0, 0, 0, 1] });
     }
   };
-  const corner = (cx, cz, dx, dz) => {                    // one shell on the bisector
-    if (cr < 0.02) return;                                // (near-)sharp corner: rows meet directly, no bridge
-    const L = Math.hypot(dx, dz) || 1, nx = dx / L, nz = dz / L;
-    out.push({ pos: [cx + cr * nx, baseY, cz + cr * nz], rotY: Math.atan2(nz, nx), tq: [0, 0, 0, 1] });
+  // The fillet walked like any other run: `cornerN` shells across its 90°, half-pitch margins at
+  // both ends so it meets the straight runs at the same spacing they use internally.
+  const corner = (cx, cz, a0) => {
+    for (let i = 0; i < cornerN; i++) {
+      const a = a0 - (Math.PI / 2) * ((i + 0.5) / cornerN);
+      const nx = Math.cos(a), nz = Math.sin(a);
+      out.push({ pos: [cx + cr * nx, baseY, cz + cr * nz], rotY: a, tq: [0, 0, 0, 1] });
+    }
   };
   // Walk the four sides + corners, in perimeter order (front, FR, right, BR, back, BL, left, FL).
-  edge(-sx, halfD,  sx, halfD,  0,  1); corner( sx,  sz,  1,  1);
-  edge(halfW,  sz, halfW, -sz,  1,  0); corner( sx, -sz,  1, -1);
-  edge( sx, -halfD, -sx, -halfD, 0, -1); corner(-sx, -sz, -1, -1);
-  edge(-halfW, -sz, -halfW,  sz, -1, 0); corner(-sx,  sz, -1,  1);
+  // Each fillet sweeps 90° clockwise from the facing of the run that fed into it.
+  const HP = Math.PI / 2;
+  edge(-sx, halfD,  sx, halfD,  0,  1); corner( sx,  sz,  HP);
+  edge(halfW,  sz, halfW, -sz,  1,  0); corner( sx, -sz,  0);
+  edge( sx, -halfD, -sx, -halfD, 0, -1); corner(-sx, -sz, -HP);
+  edge(-halfW, -sz, -halfW,  sz, -1, 0); corner(-sx,  sz, -Math.PI);
   return out;
 }
 
@@ -505,7 +552,11 @@ export function numberTopperPlaceAt(shape, hit) {
  * pair is part of what the surface MEANS — a writing on a round wall is at an angle and a height,
  * one on a flat wall is at an x and a height, and one on the board is at an x and a z.
  */
-export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSideY, shape, boardShape }, hit) {
+/* `halfWidth` is how far the message reaches from its anchor — see the clamp below. Optional, and
+ * 0 (the default) is the old behaviour exactly: the ANCHOR reaches the rim.
+ */
+export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSideY, shape, boardShape,
+                                 halfWidth = 0 }, hit) {
   if (!hit) return null;
   const clampTo = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   if (surface === 'side' && !sideRect) {
@@ -515,7 +566,59 @@ export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSide
     return { offsetX: clampTo(hit.x, -sideWidth / 2, sideWidth / 2),
              sideY: clampTo(hit.y, minSideY, maxSideY) };
   }
+  /* ⚠️ Inset by the message's OWN half-width, not clamped at the rim.
+   *
+   * `topClamp(…, 1.0)` stops the ANCHOR at the edge, which is right for a point and wrong for
+   * anything with width: an 84mm topper dragged to the rim put half its length and one of its legs
+   * out over thin air, with the prong hanging down the side of the cake. The piece has to fit, not
+   * just its centre.
+   *
+   * Half the span in every direction is deliberately conservative — the word is a plane and turns
+   * with `yaw`, so its reach depends on the angle, and the largest extent is the honest bound. A
+   * caller that passes nothing keeps the old behaviour, so cream writing is untouched.
+   */
   const cs = surface === 'board' ? (boardShape ?? shape) : shape;
-  const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
+  const p = cs ? topClampInset(cs, hit.x, hit.z, halfWidth) : hit;
   return surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z };
+}
+
+/* ── Where a typed message actually sits ─────────────────────────────────────────────────────────
+ *
+ * One resolution, shared by every material a message can be made of — piped cream today, cut acrylic
+ * now, whatever comes next. It was inline in CreamWriting.jsx, which was fine while cream was the
+ * only kind; a second renderer copying it is how two decorations start disagreeing about where the
+ * same message is.
+ *
+ * ⚠️ THE TIER COMES FROM THE HEIGHT, never from a stored key. Dragging a message up the cake crosses
+ * tiers and the radius has to follow it — a stored `sideTier` was tried and reverted because it
+ * clamped the drag to one wall and took away something bakers were already doing. That rule now
+ * applies to every material by construction rather than by each one remembering it.
+ */
+export function writingSurface({
+  writing, tiers, topY, topRadius, shape = 'round', width = 0, depth = 0, boardRadius = 0,
+}) {
+  const surface = writing?.surface ?? 'top';
+  const fit     = writing?.fit ?? 0.8;
+  const isRect  = shape === 'rect';
+
+  const bottom    = tiers?.[0];
+  const cakeBaseR = bottom ? (bottom.shape === 'rect' ? Math.max(bottom.width, bottom.depth) / 2 : bottom.radius) : topRadius;
+  const sideY     = writing?.sideY ?? (bottom ? bottom.baseY + bottom.height / 2 : topY / 2);
+  const sideTier  = tiers?.find(t => sideY >= t.baseY && sideY <= t.baseY + t.height) ?? bottom;
+  const sideRect  = (sideTier?.shape ?? shape) === 'rect';
+  const sideR     = sideTier ? (sideRect ? sideTier.depth / 2 : sideTier.radius) : topRadius;
+  const sideH     = sideTier?.height ?? 1;
+  const sideFaceW = sideRect ? (sideTier?.width ?? width) : sideR * 2.0;
+
+  let maxW, maxH;
+  if (surface === 'side')       { maxW = sideFaceW * fit; maxH = sideH * fit; }
+  else if (surface === 'board') { maxW = maxH = (boardRadius || topRadius) * 0.9 * fit; }
+  else                          { maxW = (isRect ? width : 2 * topRadius) * fit; maxH = (isRect ? depth : 2 * topRadius) * fit; }
+
+  const minSideY = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
+  return {
+    surface, fit, bottom, cakeBaseR, sideY, sideTier, sideRect, sideR, sideH, sideFaceW,
+    maxW, maxH, minSideY, maxSideY,
+    wrapRadius: surface === 'side' && !sideRect ? sideR + 0.006 : 0,
+  };
 }

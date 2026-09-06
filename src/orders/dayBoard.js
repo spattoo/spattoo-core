@@ -1,0 +1,189 @@
+/* ── What a day's orders add up to ───────────────────────────────────────────────────────────────
+ *
+ * The calendar says how MANY cakes are due on a day. This says what they are, and — the part
+ * nothing else in the product answers — what has to be BAKED.
+ *
+ * A baker planning a day does not think in orders. They think in batches: this much vanilla
+ * without egg, that much vanilla with. So the totals here group by FLAVOUR × EGG, because those
+ * are the two things that decide what can share a bowl. A single "7.5 kg due Saturday" is a number
+ * nobody bakes from.
+ *
+ * Pure — no React, no fetch, no dates beyond the strings it is handed. The board renders it; the
+ * arithmetic is tested here.
+ */
+
+/* ── Egg is THREE states, and the third one is the point ─────────────────────────────────────────
+ *
+ * `egg` / `eggless` / `unknown`. Migration 078 deliberately did not backfill an answer onto orders
+ * placed before the question existed, on the grounds that inventing one writes a false assertion
+ * into a field a customer is supposed to own. So "nobody was asked" is a real state and it must
+ * survive to here.
+ *
+ * Folding it into either answer would be the worse bug in both directions: call it egg and an
+ * eggless customer gets the wrong cake, call it eggless and the baker never learns there was a
+ * question. Shown as its own line, it is a prompt to go and ask — days before it matters, rather
+ * than at 6am.
+ *
+ * ⚠️ VEGAN AND JAIN ARE EGGLESS. The order form already enforces that a vegan cake cannot be
+ * ordered with egg; if this did not agree, a vegan order would sit in "not known" forever and be
+ * chased for an answer it already gave.
+ *
+ * ⚠️ This reads, and never writes. The order still stores whatever it stores.
+ */
+const EGGLESS_KEYS = new Set(['eggless', 'vegan', 'jain']);
+
+export function eggState(order) {
+  const keys = (order?.dietary_requirements ?? []).map(d => (typeof d === 'string' ? d : d?.key));
+  if (keys.some(k => EGGLESS_KEYS.has(k))) return 'eggless';
+  if (keys.includes('egg')) return 'egg';
+  return 'unknown';
+}
+
+export const EGG_LABEL = { egg: 'With egg', eggless: 'Eggless', unknown: 'Not known' };
+
+/* ── Splitting one weight across several flavours ────────────────────────────────────────────────
+ *
+ * An order carries ONE `weight_kg` and, on a tiered cake, one flavour per tier. To say how much
+ * vanilla to bake, that single number has to be divided — and dividing it evenly is wrong enough to
+ * spoil a batch. Measured on a real two-tier order in dev (r=1.0 and r=0.72, both 0.7 high): the
+ * true split is 66/34, so an even one is out by a third of the smaller tier.
+ *
+ * So the share comes from each tier's VOLUME, which is what a cake's weight actually follows.
+ * Footprint × height: a circle for a round tier, the bounding rectangle for everything else. Only
+ * the RATIO is used, so the units and the ~21% a rounded-rect corner loses against its bounding box
+ * never enter the answer — they cancel.
+ */
+function tierVolume(t) {
+  const h = Number(t?.height) > 0 ? Number(t.height) : 1;
+  const r = Number(t?.radius);
+  const w = Number(t?.width), d = Number(t?.depth);
+  if (t?.shape === 'round' || (!Number.isFinite(w) && Number.isFinite(r))) {
+    return Number.isFinite(r) && r > 0 ? Math.PI * r * r * h : 0;
+  }
+  return Number.isFinite(w) && Number.isFinite(d) && w > 0 && d > 0 ? w * d * h : 0;
+}
+
+/* Each tier's share of the cake, as fractions summing to 1.
+ *
+ * Falls back to an even split when there is no usable geometry — a photo order has no design at
+ * all, and an even split of nothing is still nothing. Callers must not present a fallback share as
+ * a measurement; see `flavourWeights`, which marks it.
+ */
+export function tierShares(tiers) {
+  const vols = (Array.isArray(tiers) ? tiers : []).map(tierVolume);
+  const total = vols.reduce((a, b) => a + b, 0);
+  if (!(total > 0)) return vols.length ? vols.map(() => 1 / vols.length) : [];
+  return vols.map(v => v / total);
+}
+
+/* One order → how much of each flavour it needs.
+ *
+ * `estimated` is true when the split did not come from geometry — a photo order, or a design whose
+ * tiers did not survive. It is carried rather than hidden because a batch figure is something
+ * somebody weighs flour against, and "about" is a different promise from "this much".
+ *
+ * A single-flavour order is never estimated: there is nothing to divide, so the whole weight is
+ * exact whatever the design says.
+ */
+export function flavourWeights(order) {
+  const rows = (Array.isArray(order?.flavours) ? order.flavours : [])
+    .map(f => ({ tier: Number(f?.tier) || 0, name: (f?.name ?? '').trim() }))
+    .filter(f => f.name);
+  const kg = Number(order?.weight_kg);
+  const weight = Number.isFinite(kg) && kg > 0 ? kg : null;
+
+  if (!rows.length) return [];
+  if (rows.length === 1) return [{ flavour: rows[0].name, kg: weight, estimated: false }];
+
+  const tiers = order?.design_snapshot?.tiers;
+  const usable = Array.isArray(tiers) && tiers.some(t => tierVolume(t) > 0);
+  const shares = usable ? tierShares(tiers) : [];
+
+  return rows.map(r => ({
+    flavour: r.flavour ?? r.name,
+    kg: weight == null ? null : weight * (shares[r.tier] ?? 1 / rows.length),
+    estimated: !usable,
+  }));
+}
+
+/* ── The batch list ──────────────────────────────────────────────────────────────────────────────
+ *
+ * One row per (flavour × egg), which is one row per thing that can share a bowl.
+ *
+ * ── GROUPED BY EGG FIRST, AND EGGLESS LEADS ─────────────────────────────────────────────────────
+ * Not by weight. In a kitchen that bakes both, the eggless work goes FIRST — once egg has been
+ * through the bowls and the bench, an eggless order is no longer safely eggless without cleaning
+ * down. So the board's order is the order the day is worked in, and "all the eggless together" is
+ * one block you can read off rather than five rows to pick out of a list sorted by size.
+ *
+ * Within a block, heaviest first: the biggest batch decides when the day starts.
+ *
+ * "Not known" sits last whatever it weighs. It is a question, not a job, and it cannot be scheduled
+ * until somebody answers it.
+ *
+ * `kg` is null when nothing in the row carried a weight (a photo order priced later), and the row
+ * still exists: a cake with no weight yet is still a cake to bake, and dropping it would make the
+ * board quietly disagree with the count beside it.
+ */
+export function batchTotals(orders) {
+  const rows = new Map();
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const egg = eggState(order);
+    /* ⚠️ A CAKE IS AN ORDER, NOT A TIER.
+     *
+     * `flavourWeights` returns one entry per TIER, and this used to add one to the count per entry
+     * — so a two-tier cake in a single flavour reported "2 cakes". One order, counted twice, on a
+     * board a baker reads to know how many things to make.
+     *
+     * The WEIGHT was right throughout, since the split is divided and re-added, and that is exactly
+     * what made it look plausible: 5 kg really is 5 kg. Only the noun was wrong.
+     *
+     * De-duplicated on the order itself, so it holds however many tiers share a flavour. Tiers are
+     * counted alongside and shown when the two differ, because that number is worth having on its
+     * own: two tiers is two tins.
+     */
+    for (const { flavour, kg, estimated } of flavourWeights(order)) {
+      const key = `${flavour} ${egg}`;
+      let row = rows.get(key);
+      if (!row) { row = { flavour, egg, kg: null, cakes: 0, tiers: 0, estimated: false, ids: new Set() }; rows.set(key, row); }
+      if (kg != null) row.kg = (row.kg ?? 0) + kg;
+      row.estimated = row.estimated || estimated;
+      row.tiers += 1;
+      row.ids.add(order?.id ?? order);
+      row.cakes = row.ids.size;
+    }
+  }
+  const rank = { eggless: 0, egg: 1, unknown: 2 };
+  return [...rows.values()].sort((a, b) =>
+    (rank[a.egg] - rank[b.egg]) || ((b.kg ?? 0) - (a.kg ?? 0)) || a.flavour.localeCompare(b.flavour));
+}
+
+/* ── One card ────────────────────────────────────────────────────────────────────────────────────
+ *
+ * Four things, because four is what can be taken in without reading: who it is for, how big, what
+ * flavour, and whether it can share a bowl. Everything else about the order is one tap away in the
+ * list, and putting it here would turn a glance into a document.
+ */
+export function stickyFor(order) {
+  const c = order?.customers ?? order?.customer ?? {};
+  const name = [c.first_name, c.last_name].filter(Boolean).join(' ').trim()
+    || c.name || c.email || 'No name yet';
+  const kg = Number(order?.weight_kg);
+  const flavours = (Array.isArray(order?.flavours) ? order.flavours : [])
+    .map(f => (f?.name ?? '').trim()).filter(Boolean);
+  return {
+    id: order?.id,
+    name,
+    weight: Number.isFinite(kg) && kg > 0 ? kg : null,
+    // De-duplicated: a two-tier cake in one flavour should say it once, not twice.
+    flavours: [...new Set(flavours)],
+    egg: eggState(order),
+  };
+}
+
+/* Weights are shown to one decimal and the trailing ".0" dropped — "3 kg", not "3.0 kg". Rounding
+ * happens ONCE here, at the point of display, and never on the way into a total: rounding each
+ * order first and adding the results is how six 0.45 kg cakes become 3.0 instead of 2.7.
+ */
+export const formatKg = (kg) =>
+  kg == null ? null : `${Number(kg.toFixed(1))} kg`;

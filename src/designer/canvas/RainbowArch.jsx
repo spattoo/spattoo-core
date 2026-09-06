@@ -1,4 +1,5 @@
 import { useMemo, useEffect } from 'react';
+import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { rainbowBands, rainbowOffset, bandGeometry, RAINBOW_DEFAULTS } from '../geometry/rainbow.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
@@ -32,6 +33,15 @@ function bandGrain(lengthAlong, circumference) {
 // The geometry is built by geometry/rainbow.js, which the admin studio also calls. One generator,
 // so what is tuned there is what a customer gets — the same rule ChocolateDripStudio states and
 // GrassStudio repeats.
+
+/* ⚠️ MEASURED FOR THIS SURFACE. A mid-grey #808080 renders 171,163,156 here against 180,173,168 on the
+ * tier wall, 184,178,173 on a fondant block and 156,143,128 on grass — every surface in this scene
+ * receives a different amount of light, so every one carries its own number. Interpolated from two
+ * measured points, never one division: see the recipe in `shared/albedoForLight.js`.
+ * `SURFACE=rainbow node scripts/measure-surface-colour.mjs` prints the table. */
+const RAINBOW_REFERENCE_LIGHT = [2.101, 1.766, 1.569];
+const RAINBOW_ROLLOFF = 2.0;
+
 export default function RainbowArch({
   params = RAINBOW_DEFAULTS,
   cake,                       // { radius, topY, boardY } — the geometry it has to fit
@@ -81,7 +91,7 @@ export default function RainbowArch({
               {/* normalScale matches the GLB path's 1.5 — at the shipped 0.5 the grain was too faint
                   to see, which is recorded there and is just as true on a rope. */}
               <meshStandardMaterial
-                color={b.color}
+                color={albedoForLight(b.color, RAINBOW_REFERENCE_LIGHT, { rolloff: RAINBOW_ROLLOFF })}
                 roughness={roughness}
                 metalness={metalness}
                 normalMap={grains ? grains[i] : null}

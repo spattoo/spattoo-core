@@ -41,6 +41,10 @@ const STATUSES = [
 
 const apiClient = {
   fetchOrders:        async () => ORDERS,
+  /* Its PRESENCE is what switches the List/Calendar strip on (`hasCalendar` tests for the function,
+     not for a flag), so without it the harness silently could not reach that control at all — which
+     is how a refactor of it went unverified until someone looked for the tab and it was not there. */
+  fetchOrdersCalendar: async () => ORDERS.map(o => ({ id: o.id, needed_date: o.needed_date, status: o.status })),
   fetchOrderStatuses: async () => STATUSES,
   fetchCustomers:     async () => ORDERS.map((o, i) => ({
     id: `c${i}`, first_name: o.customers.first_name, last_name: o.customers.last_name,

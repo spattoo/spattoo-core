@@ -18,3 +18,8 @@ dist
 # silently swallow it the day someone adds one.
 .claude/worktrees/
 .claude/settings.local.json
+
+
+# A reference cake photo for dev/edible-prints.html. A real one is a CUSTOMER'S, and a fixture is
+# not a reason to commit one — drop any photo here to see the crop previews.
+dev/photo.jpg

@@ -66,6 +66,18 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
     [elementTypes],
   );
 
+  /* ⚠️ DRAWN PIECES ARE NOT HERE, and that is the point of the window's name.
+   *
+   * This panel used to open on "Pieces you have drawn" — saved chocolate garnishes — above the
+   * pictures. They are not uploads. Nobody uploaded them; they were drawn in the garnish studio, and
+   * a baker looking for the photo they just sent themselves had to read past three chocolate shards
+   * to find it. A window called Uploads holds uploads.
+   *
+   * They are not lost: the decorations picker already lists saved pieces under "mine" and opens the
+   * studio with one loaded (CakeDesigner, `myPieces`). That was true the whole time this panel also
+   * showed them — the section here was a second door, not the only one.
+   */
+
   const load = () => apiClient?.fetchUploads?.()
     .then(rows => setUploads(Array.isArray(rows) ? rows : []))
     .catch(e => { setError(e.message || 'Could not load your uploads.'); setUploads([]); });
@@ -400,6 +412,8 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
 const S = {
   uploadBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '11px 0', marginBottom: 14, borderRadius: 10, border: '1.5px dashed #cfcdd6', background: '#faf9fb', color: '#444', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' },
   grid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 },
+  sectionHead: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 1,
+                 textTransform: 'uppercase', margin: '2px 0 8px' },
   card:  { display: 'flex', flexDirection: 'column', gap: 6 },
   thumbWrap: { position: 'relative' },
   thumbBtn: { width: '100%', padding: 0, border: '1.5px solid #e2e0e6', borderRadius: 11, background: '#faf9fb', cursor: 'pointer', overflow: 'hidden', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center' },

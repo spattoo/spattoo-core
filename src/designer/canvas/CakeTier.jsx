@@ -1,9 +1,11 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { shellMatrix } from './shellMatrix.js';
 import { applyStripes, areStripesActive, stripeColors } from '../shared/color/stripeMaterial.js';
 import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { buildGlazeDrip } from '../shared/glaze/glazeDrip.js';
@@ -84,6 +86,52 @@ function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 0]) {
   };
 }
 
+/* ⚠️ HOW MUCH LIGHT A TIER WALL RECEIVES — MEASURED, NOT DERIVED, and it is NOT the garnish's 2.40.
+ * The two surfaces sit in one scene but do not receive the same light: a tier is curved, rougher
+ * (0.68 against a garnish's 0.52–0.18) and keeps its sheen and clearcoat, where a garnish switches
+ * its specular and environment off entirely. A single shared constant would be wrong for whichever
+ * surface was not measured last, which is why `albedoForLight` takes the number as a parameter.
+ *
+ * WITHOUT this correction a tier renders badly over-exposed and the clipping desaturates it:
+ * mid-grey #808080 came back 180,173,168 against an asked 128, and a teal #4EC5B0 arrived as pale
+ * mint with its chroma more than halved (119 → 56). A baker picked a colour and the cake showed a
+ * paler cousin of it.
+ *
+ * ⚠️ MEASURE, DO NOT COMPUTE. `scripts/measure-tier-colour.mjs` prints the table. One division
+ * overshoots — the pipeline is not a pure multiply end to end — so take two points and interpolate;
+ * see the recipe in `shared/albedoForLight.js`. Re-measure after any change to the HDRI, the scene
+ * intensity, the lamps, or this material's own roughness/sheen/clearcoat.
+ *
+ * ⚠️ THREE NUMBERS, NOT ONE, BECAUSE THE LIGHT HAS A CAST. Under a single scalar of 2.114 an asked
+ * neutral #808080 rendered 133,125,120 — red high, blue low, a spread of 13 that no scalar removes.
+ * Lebombo is an outdoor sky and simply is not neutral. Solved per channel from that reading. */
+export const TIER_REFERENCE_LIGHT = [2.297, 2.007, 1.839];
+
+/* ⚠️ FADE THE CORRECTION TOWARD WHITE, or the commonest cake in the catalogue goes grey. A tier wall
+ * is large and bright, so its pale colours sit where tone mapping rolls off and the light delivered
+ * is less than the reference measured at mid-grey. With a flat divide, pure white rendered 215 and
+ * the default blush came back 35 points dark. At 2.0 white stays white, blush lands within 15, and
+ * mid-grey is still corrected — every colour ends up closer to what was chosen than it is today, and
+ * none ends up further away. A garnish needs none of this (see `albedoForLight`).
+ *
+ * ⚠️ THE RESIDUAL IS ADDITIVE AND CANNOT BE FIXED HERE — do not chase it by re-tuning the numbers
+ * above. Saturated GREENS and CYANS keep a red lift after correction (#45d345 renders +59 on red,
+ * halved from +98 but not gone). The cause is the surface's own specular and environment reflection:
+ * a warm white highlight added ON TOP of the albedo, independent of it. A green's red albedo is tiny,
+ * so that additive term dominates the channel — which is why it shows on greens and is invisible on
+ * reds. Scaling an albedo cannot remove something that is not multiplied by it. The garnish fix hit
+ * this same wall and solved it by switching specular, clearcoat and envMapIntensity to zero; a tier
+ * cannot, because a cake is supposed to have sheen. (⚠️ NOT bounce light off the gold board — that
+ * was the first guess, and three.js has no global illumination, so a board cannot light anything.) */
+export const TIER_ROLLOFF = 2.0;
+
+/* The wall's correction as a function, because a GRADIENT and STRIPES replace the base colour per
+ * pixel and must take the same transform the solid colour takes. Without it a gradient or striped
+ * tier renders uncorrected right beside a corrected solid one — the same bypass cream's gradient
+ * had, found by looking for it rather than by it being reported. */
+export const tierAlbedo = (color) =>
+  albedoForLight(color, TIER_REFERENCE_LIGHT, { rolloff: TIER_ROLLOFF });
+
 const DEG = Math.PI / 180;
 
 // ── Cream "softness" → material ───────────────────────────────────────────────
@@ -93,14 +141,41 @@ const DEG = Math.PI / 180;
 // unchanged. Read from placement_config (bottom_softness / top_softness); absent →
 // default. The PipingCalibrator keeps an identical copy so its preview matches.
 export const PIPING_SOFTNESS_DEFAULT = 0.7;
+/* ⚠️ CREAM RECEIVES MORE LIGHT THAN THE WALL — measured, and it is NOT the wall's number. Cream runs
+ * at roughness 0.85 with a sheen layer where the wall runs 0.68 with none, and a mid-grey #808080
+ * renders 188,183,180 here against the wall's 180,173,168 and an asked 128. A reference light is a
+ * property of the SURFACE; reusing the wall's would be a guess wearing a measurement's clothes.
+ *
+ * ⚠️ THIS IS THE ONE CHOKEPOINT FOR EVERY CREAM SURFACE — piped borders, the second cream band, the
+ * calibrator, stamped strokes and cream writing all come through here, so correcting once corrects
+ * all of them and none of them can drift apart. `scripts/measure-cream-colour.mjs` prints the table.
+ *
+ * Re-measure after any change to the HDRI, the scene intensity, the lamps, or this material's own
+ * roughness/sheen — see the recipe in `shared/albedoForLight.js`. */
+/* ⚠️ INTERPOLATED FROM TWO MEASURED POINTS, NOT DIVIDED ONCE. Solving straight from the uncorrected
+ * render gives [2.330, 2.194, 2.114], and that still leaves grey at 141 against an asked 128 — the
+ * pipeline is not a pure multiply end to end, because tone mapping compresses differently at the
+ * higher albedo a smaller divisor produces. The wall hit the same wall (predicted 1.163, rendered
+ * 142). Take a second reading with the first guess in place and interpolate; do not re-derive this
+ * by division and assume the arithmetic is the answer. */
+export const CREAM_REFERENCE_LIGHT = [3.254, 2.974, 2.679];
+export const CREAM_ROLLOFF = 2.0;   // same reason as the wall: pale cream must not go grey
+
+/* The same correction the solid colour gets, exposed so a GRADIENT's stops can take it too — a
+ * gradient replaces the base colour per pixel, so uncorrected stops would render a gradient in
+ * different colours from the solid it stands in for. */
+export const creamAlbedo = (color) =>
+  albedoForLight(color, CREAM_REFERENCE_LIGHT, { rolloff: CREAM_ROLLOFF });
+
 export function creamMaterialProps(softness, color) {
   const s = Math.min(1, Math.max(0, softness ?? PIPING_SOFTNESS_DEFAULT));
+  const albedo = creamAlbedo(color);
   return {
-    color,
+    color: albedo,
     roughness:      0.5 + 0.5 * s,   // 0.5 wet … 0.85 (default) … 1.0 matte
     sheen:          (0.4 / 0.7) * s, // 0 … 0.4 (default) … ~0.571 velvety
     sheenRoughness: 0.9,
-    sheenColor:     color,
+    sheenColor:     albedo,
   };
 }
 
@@ -110,10 +185,20 @@ export function creamMaterialProps(softness, color) {
 // together (the clearcoat is what sells "wet ganache" vs "plastic"). Mirrors the
 // cream "softness" idea but for chocolate. The admin drip studio keeps the same map.
 export const DRIP_GLOSS_DEFAULT = 0.85;
+/* ⚠️ THE GLOSSIEST SURFACE ON THE CAKE, and the most over-exposed: a mid-grey #808080 renders
+ * 188,182,178 here against 180 on the tier wall and 156 on grass. The clearcoat is why — a wet
+ * ganache carries a coat the wall does not. Measured for THIS material, like every other.
+ * `SURFACE=drip node scripts/measure-surface-colour.mjs` prints the table.
+ *
+ * ⚠️ ONE CHOKEPOINT for every chocolate surface — the rim drip and the glaze tendrils both come
+ * through here, so they cannot drift apart. */
+export const CHOCOLATE_REFERENCE_LIGHT = [2.352, 2.194, 2.093];
+export const CHOCOLATE_ROLLOFF = 2.0;
+
 export function chocolateMaterialProps(gloss, color) {
   const g = Math.min(1, Math.max(0, gloss ?? DRIP_GLOSS_DEFAULT));
   return {
-    color,
+    color: albedoForLight(color, CHOCOLATE_REFERENCE_LIGHT, { rolloff: CHOCOLATE_ROLLOFF }),
     metalness:          0,
     roughness:          0.5 - 0.42 * g,    // 0.5 matte … 0.08 wet
     clearcoat:          0.4 + 0.6 * g,     // 0.4 … 1.0 glassy
@@ -248,7 +333,7 @@ function geomBBox(geometry, gradient) {
 function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selected, castShadow = true, userData = null }) {
   const matRef = useRef(null);
   const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
-  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox); }, [gradient, bbox]);
+  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox, creamAlbedo); }, [gradient, bbox]);
   return (
     <mesh geometry={geometry} rotation={rotation} scale={scale} castShadow={castShadow}
       {...(userData ? { userData } : {})}>
@@ -340,15 +425,60 @@ function wallHit(ray, { shape, radius, baseY, height }) {
 }
 
 // One piping shell: position + facing on the ring, with X/Z tilt and Y-yaw offset baked in.
-function Shell({ pos, rotY, tq, ryGroup, meshRot, geometry, shellScale, color, softness, gradient, selected, onPointerDown = null }) {
+
+/* ── One draw call for a whole ring ──────────────────────────────────────────────────────────────
+ *
+ * A ring is one geometry repeated. It used to be drawn as one <Shell> per position — three
+ * Object3Ds each, and because CreamMesh declares its material inline, its OWN MeshPhysicalMaterial.
+ * A 48-shell ring was 48 meshes, 48 physical materials and 48 draw calls; a three-tier cake with a
+ * rim and a board ring on each was around 288 of each, for one shape repeated.
+ *
+ * An InstancedMesh is one mesh, one material and one draw call per version, whatever the count. The
+ * per-shell placement moves into the instance matrix — see shellMatrix.js, which composes the exact
+ * hierarchy this replaces and is tested against it element by element.
+ *
+ * ⚠️ NOT merged geometry. A merge would also be one draw call and would cost N× the vertices in
+ * memory, which is the trade GrassPatch's note warns about ("the warning is about the day somebody
+ * merges"). Instancing keeps ONE copy of the geometry and repeats it on the GPU.
+ *
+ * `alt` is a second InstancedMesh rather than a second material on the first: A and B are different
+ * GEOMETRIES, and an instanced draw takes one.
+ */
+function InstancedShells({ geometry, shellScale, placements, color, softness, gradient, selected, dragHandler = null }) {
+  const ref = useRef(null);
+  const matRef = useRef(null);
+  const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
+
+  useLayoutEffect(() => {
+    const im = ref.current;
+    if (!im) return;
+    const m = new THREE.Matrix4();
+    placements.forEach((p, i) => im.setMatrixAt(i, shellMatrix(p, m)));
+    im.instanceMatrix.needsUpdate = true;
+    // Instanced meshes do not compute this themselves, and without it the ring is frustum-culled
+    // against the bounds of a single shell sitting at the origin — so it vanishes the moment the
+    // camera looks away from the middle of the cake.
+    im.computeBoundingSphere();
+  }, [placements, geometry, shellScale]);
+
+  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox, creamAlbedo); }, [gradient, bbox]);
+
   return (
-    <group position={pos} quaternion={tq} {...(onPointerDown ? { onPointerDown } : {})}>
-      <group rotation={[0, -rotY + Math.PI / 2 + ryGroup, 0]}>
-        <CreamMesh geometry={geometry} rotation={meshRot} scale={shellScale}
-          color={color} softness={softness} gradient={gradient} selected={selected}
-          userData={onPointerDown ? PIPING_HANDLE_DATA : null} />
-      </group>
-    </group>
+    <instancedMesh
+      ref={ref}
+      // `key` on the count: three.js allocates the instance buffer once, at construction, so a ring
+      // that grows (a wider cake, a smaller size) has to be remade rather than resized.
+      key={placements.length}
+      args={[geometry, undefined, placements.length]}
+      castShadow
+      {...(dragHandler ? { userData: PIPING_HANDLE_DATA, onPointerDown: dragHandler } : {})}
+    >
+      <meshPhysicalMaterial ref={matRef}
+        {...creamMaterialProps(softness, color)}
+        emissive={selected ? color : '#000000'}
+        emissiveIntensity={selected ? 0.15 : 0}
+      />
+    </instancedMesh>
   );
 }
 
@@ -359,20 +489,35 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
   const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
-  return positions.map((u, i) => {
+
+  // Split the ring by version, keeping each shell's ORIGINAL index alongside it. The index is what
+  // a drag writes back through (`instances[i].angle`), and an instanced hit reports a position
+  // within its own mesh — so without this an A-shell drag would move whichever B-shell shared its
+  // instance number.
+  const groups = { A: { ver: A, ry: ryA, mesh: meshA, placements: [], indices: [] },
+                   B: { ver: B, ry: ryB, mesh: meshB, placements: [], indices: [] } };
+  positions.forEach((u, i) => {
     const isB = altActive && B && pattern[i % L] === 'B';
-    const ver = isB ? B : A;
+    const g = isB ? groups.B : groups.A;
     let pos = u.pos;
     if (isB && (dRadialB || dYB)) {
       const [px, , pz] = u.pos;
       const len = Math.hypot(px, pz) || 1;
       pos = [px + (px / len) * dRadialB, u.pos[1] + dYB, pz + (pz / len) * dRadialB];
     }
+    g.placements.push({ pos, tq: u.tq, rotY: u.rotY, ryGroup: g.ry, meshRot: g.mesh, shellScale: g.ver.shellScale });
+    g.indices.push(i);
+  });
+
+  return ['A', 'B'].map(k => {
+    const g = groups[k];
+    if (!g.ver || !g.placements.length) return null;
     return (
-      <Shell key={u.key ?? i} pos={pos} rotY={u.rotY} tq={u.tq}
-        ryGroup={isB ? ryB : ryA} meshRot={isB ? meshB : meshA}
-        geometry={ver.geometry} shellScale={ver.shellScale} color={color} softness={softness} gradient={gradient} selected={selected}
-        onPointerDown={dragHandler ? dragHandler(i) : null} />
+      <InstancedShells key={k} geometry={g.ver.geometry} shellScale={g.ver.shellScale}
+        placements={g.placements} color={color} softness={softness} gradient={gradient} selected={selected}
+        dragHandler={dragHandler
+          ? (e) => { const i = g.indices[e.instanceId ?? 0]; if (i != null) dragHandler(i)(e); }
+          : null} />
     );
   });
 }
@@ -421,6 +566,39 @@ function renderFestoons({ festoonGeos, color, softness, gradient, selected }) {
 // `shape` is the tierShape descriptor (null → round). The band hugs this, lifted by yOffset.
 function wallPerimeter(shape, radius) {
   return shape?.kind === 'rect' ? perimeter(shape) : circlePerimeter(radius);
+}
+
+// The wall a FESTOON drapes along — one perimeter per closed contour, plus how far off it to sit.
+//
+// Branching on `isRoundWall`, NOT on `kind === 'rect'`. The old festoon guard asked for rect, which
+// silently treated a heart or a number cake as round; surface.js warns about that exact slip on the
+// definition of this predicate. Every non-round wall now walks its real outline, and
+// `pipingPerimeters` hands back one loop per contour so a swag never bridges the gap between two
+// digits of a number cake.
+//
+// The radial nudge lands differently on the two branches, and deliberately: a circle can simply BE
+// bigger, so the offset moves the circle itself and the round path stays arithmetically identical
+// to what it always was. A shaped outline is fixed, so there the offset rides along its normal.
+function festoonWall(shape, radius, radialOffset) {
+  if (!shape || isRoundWall(shape)) return { perims: [circlePerimeter(radius + radialOffset)], outset: 0 };
+  return { perims: pipingPerimeters(shape), outset: radialOffset };
+}
+
+// How far a band's rendered geometry stands PROUD OF THE WALL, as a radius fraction — what the
+// side-clearance resolver needs so a decoration on the wall is pushed out past whatever is already
+// piped there.
+//
+// It has to be measured against the wall, not against the cake AXIS. Distance-from-axis is the same
+// thing only on a round tier. On a sheet cake `radius` is the bounding half-extent (the LONG side),
+// so a swag hanging on a SHORT face already sits nearer the axis than `radius` — while one running
+// out to a corner sits far beyond it, and reported a third of a radius of standoff for a rope a
+// couple of millimetres thick. Comparing each axis against that axis's own half-extent gives the
+// real, small number. Round is unchanged: there both half-extents are the radius.
+function proudOfWall(bb, shape, radius) {
+  const halfX = shape?.halfW ?? radius, halfZ = shape?.halfD ?? radius;
+  return Math.max(0,
+    bb.max.x - halfX, -bb.min.x - halfX,
+    bb.max.z - halfZ, -bb.min.z - halfZ) / radius;
 }
 
 // Render a single pre-formed RING GLB as ONE band wrapping the wall (no repetition).
@@ -571,17 +749,19 @@ function TopPipingRingImpl({
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped from the rim edge,
-  // instead of repeating a discrete shell. Round cakes only (rect falls through to shells).
+  // instead of repeating a discrete shell. ANY shape — the swag follows the wall's perimeter, and
+  // a circle is just the perimeter a round cake happens to have.
   const festoonGeos = useMemo(() => {
-    if (!bend || !scene || shape?.kind === 'rect') return null;
+    if (!bend || !scene) return null;
     // flip:false to match the calibrator's bend preview, which always bends the un-flipped
     // strip (the flip toggle/bottom_flip applies to discrete shells, not festoons).
-    // The cross-section scales with radius automatically (uscale); scale the absolute drop
+    // The cross-section scales with radius via the calibrated span; scale the absolute drop
     // (bendDepth, tuned at the standard tier radius) by the same ratio so the whole swag
     // shrinks to fit a smaller tier instead of dropping a fixed amount.
+    const { perims, outset } = festoonWall(shape, radius, extraRadialOffset);
     return buildFestoons(scene, {
       flip: false, festoons, depth: bendDepth * (radius / TIER_RADII[0]), tilt: bendTilt * DEG,
-      attachY: topY + yOffset, radius: radius + extraRadialOffset,
+      attachY: topY + yOffset, perims, outset, radius: radius + extraRadialOffset,
       spread: bendRing ? 1.0 : 0.96, sizeFactor,
     });
   }, [bend, scene, shape, festoons, bendDepth, bendTilt, topY, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
@@ -709,17 +889,18 @@ function BottomPipingRingImpl({
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
-  // base, instead of repeating a discrete shell. Round cakes only (rect falls through).
+  // base, instead of repeating a discrete shell. Any shape — see the rim ring's twin above.
   const festoonGeos = useMemo(() => {
-    if (!bend || !scene || shape?.kind === 'rect') return null;
+    if (!bend || !scene) return null;
     // flip:false to match the calibrator's bend preview, which always bends the un-flipped
     // strip (the flip toggle/bottom_flip applies to discrete shells, not festoons).
-    // The cross-section scales with radius automatically (uscale); scale the absolute drop
+    // The cross-section scales with radius via the calibrated span; scale the absolute drop
     // (bendDepth, tuned at the standard tier radius) by the same ratio so the whole swag
     // shrinks to fit a smaller tier instead of dropping a fixed amount.
+    const { perims, outset } = festoonWall(shape, radius, extraRadialOffset);
     return buildFestoons(scene, {
       flip: false, festoons, depth: bendDepth * (radius / TIER_RADII[0]), tilt: bendTilt * DEG,
-      attachY: yBase + yOffset, radius: radius + extraRadialOffset,
+      attachY: yBase + yOffset, perims, outset, radius: radius + extraRadialOffset,
       spread: bendRing ? 1.0 : 0.96, sizeFactor,
     });
   }, [bend, scene, shape, festoons, bendDepth, bendTilt, yBase, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
@@ -730,22 +911,20 @@ function BottomPipingRingImpl({
   useEffect(() => {
     if (!festoonGeos?.length || !radius) return;
     const anchorY = yBase + yOffset;
-    let minY = Infinity, maxY = -Infinity, maxR = 0;
+    let minY = Infinity, maxY = -Infinity, proud = 0;
     festoonGeos.forEach(g => {
       g.computeBoundingBox?.();
       if (g.boundingBox) {
         const bb = g.boundingBox;
         minY = Math.min(minY, bb.min.y); maxY = Math.max(maxY, bb.max.y);
-        // Outward reach: the ring wraps the tier axis, so its furthest point from the axis is the
-        // outer face. bbox is symmetric about the axis, so the max |x|/|z| corner gives that radius.
-        maxR = Math.max(maxR, Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
+        proud = Math.max(proud, proudOfWall(bb, shape, radius));
       }
     });
     if (minY < maxY) setFestoonExtents(glbPath, festoonSig({ size: sizeFactor, bendDepth, festoons, bendRing, bendTilt }), {
       bellyFrac: (anchorY - minY) / radius, topFrac: (maxY - anchorY) / radius,
-      outerFrac: Math.max(0, (maxR - radius) / radius),
+      outerFrac: proud,
     });
-  }, [festoonGeos, yBase, yOffset, radius, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
+  }, [festoonGeos, yBase, yOffset, radius, shape, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
 
   // Wrap elements: a pre-formed ring re-routed onto the tier wall as ONE band (round or rect),
   // riding up the wall by yOffset. Hugs the wall whatever the cake size or shape.
@@ -766,12 +945,13 @@ function BottomPipingRingImpl({
     const bb = wrapGeo.boundingBox;
     if (!bb) return;
     const anchorY = yBase + yOffset;
-    const maxR = Math.max(Math.abs(bb.min.x), bb.max.x, Math.abs(bb.min.z), bb.max.z);
     setWrapExtents(glbPath, sizeFactor, {
       topFrac: (bb.max.y - anchorY) / radius, botFrac: (bb.min.y - anchorY) / radius,
-      outerFrac: Math.max(0, (maxR - radius) / radius),
+      // Same wall-relative measure as the festoon above. A wrap band already followed the
+      // rounded-rect on a sheet cake, so it was already over-reporting its standoff there.
+      outerFrac: proudOfWall(bb, shape, radius),
     });
-  }, [wrapGeo, radius, yBase, yOffset, glbPath, sizeFactor]);
+  }, [wrapGeo, radius, shape, yBase, yOffset, glbPath, sizeFactor]);
 
   if (!A && !festoonGeos && !wrapGeo) return null;
 
@@ -1181,7 +1361,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
       const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
       bb = { min: geo.boundingBox.min.clone(), size, center };
     }
-    applyGradient(matRef.current, gradient, bb);
+    applyGradient(matRef.current, gradient, bb, tierAlbedo);
     /* Stripes ride the SAME bbox and the same seam as the gradient — see shared/color/stripeMaterial.js.
      *
      * ⚠️ Order matters, and it is the reason these are not merged yet: both patch `onBeforeCompile` and
@@ -1189,7 +1369,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
      * tier carrying both renders as stripes. The UI does not let a baker set both — the mode picker is
      * one choice — but a design saved by an older client can, and silently picking one beats a wall
      * that flickers between them depending on which effect re-ran. */
-    applyStripes(matRef.current, stripes, bb);
+    applyStripes(matRef.current, stripes, bb, tierAlbedo);
     applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
   }, [gradient, stripes, glaze, geoSig]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
@@ -1215,7 +1395,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : color}
+      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
         map={finishMaps?.map ?? null}
         roughness={finishMaps ? 1 : (surf?.roughness ?? 0.68)}
         metalness={finishMaps ? 1 : (surf?.metalness ?? 0)}
@@ -1316,7 +1496,13 @@ function SecondCreamBand({ layer, radius, yBase, height, grain }) {
   return (
     <group>
       <mesh geometry={bandGeo} castShadow>
-        <meshPhysicalMaterial {...creamMaterialProps(0.85, color)}
+        {/* ⚠️ `layer.softness ?? 0.85` — the fallback is the value this was hardcoded to, so every
+            saved band renders exactly as before. It became a parameter so the colour correction could
+            be MEASURED across the range a real piping ring uses: rings pass their own softness and
+            default to 0.7, while this band was fixed at 0.85, and softness drives sheen — which adds
+            light. Swept 0.0 / 0.4 / 0.7 / 0.85 / 1.0, a mid-grey renders 130 / 128 / 125 / 124 / 124
+            against an asked 128, so the reference light holds across the whole range. */}
+        <meshPhysicalMaterial {...creamMaterialProps(layer.softness ?? 0.85, color)}
           normalMap={grain} normalScale={SECOND_CREAM_GRAIN_SCALE} side={THREE.DoubleSide} />
       </mesh>
       {gold.on && goldMaps && (

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
+import { GARNISH_DEFAULTS, fanPlacements } from '../geometry/garnishPlacement.js';
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
@@ -45,6 +46,11 @@ const DEFAULT_DESIGN = {
   stickers: [],
   writings: [],    // cream-pen messages piped on the cake (see CreamWriting) — one per placement
   piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
+  /* Chocolate garnishes: pieces piped OFF the cake in the garnish studio, set, and placed on it —
+     lying or standing. Each carries its own `paths` rather than a reference to a library row, so a
+     saved design keeps rendering after the baker deletes the garnish from their library. A design
+     is a record of a cake, not a query against someone's current collection. */
+  garnishes: [],
 };
 
 // The cake a shape STARTS you with — the ONE definition of "new cake, shape X". `New` resets the design
@@ -146,6 +152,7 @@ export function toCanvasConfig(design) {
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
+    garnishes: design.garnishes ?? [],
   };
 }
 
@@ -191,13 +198,21 @@ const DEFAULT_STROKE = {
 
 // Cream-pen writing defaults — created the first time the user types a message.
 const DEFAULT_WRITING = {
+  /* The material this message is made of. 'cream' is the default and the ONLY value every existing
+     saved design has, so an absent key must keep meaning cream — a message that silently became
+     acrylic on load would rewrite cakes people had already ordered. */
+  style: 'cream',            // 'cream' | 'acrylic'
+  acrylicFinish: 'gold',     // acrylic only: a key into TOPPER_FINISHES, not a colour
   text: '', font: 'ems_allure', color: '#ffffff',
   thickness: 0.03, fit: 0.8, softness: 0.7,
   curve: 0, lineSpacing: 1.4,
   surface: 'top',            // 'top' | 'side' | 'board'
   yaw: 0, offsetX: 0, offsetZ: 0, lift: 0.02,
   boardX: undefined, boardZ: undefined,   // board placement (default seeded in CreamWriting)
-  sideAngle: 0, sideY: undefined,         // side placement (default = mid of bottom tier)
+  /* Side placement: where round the cake, and how high. ⚠️ The TIER is not stored — it is resolved
+     from the height, so dragging a message up the cake crosses tiers and the radius follows. A
+     stored `sideTier` was added and reverted; it made the drag clamp to one wall. */
+  sideAngle: 0, sideY: undefined,
 };
 
 // ── One message, or several ─────────────────────────────────────────────────────────────────────
@@ -305,6 +320,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     stickers: migrateTopperToSticker(templateDesign),
     writings: normalizeWritings(templateDesign),
     piping:   templateDesign.piping ?? [],
+    garnishes: templateDesign.garnishes ?? [],
     // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
     boardGrass: templateDesign.boardGrass ?? null,
@@ -1302,6 +1318,80 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   // Freehand cream-pen strokes. addStroke appends a finished stroke (seeding defaults);
   // removeStroke undoes the last; clearPiping wipes them all.
+  /* ── Chocolate garnishes ───────────────────────────────────────────────────────────────────────
+     Placed pieces, each { id, name, paths, rope, plate, theta, radius, yaw, mode, scale }. The
+     placement keys are read by garnishPlacement.js, which is the ONE thing that decides where a
+     piece goes — see the movable contract's first law. */
+  function addGarnish(g) {
+    setDesign(prev => ({
+      ...prev,
+      garnishes: [...(prev.garnishes ?? []), { ...GARNISH_DEFAULTS, id: crypto.randomUUID(), ...g }],
+    }));
+  }
+  /* ⚠️ MERGES, never replaces. The drag hands back only the keys it changed (theta, radius) — see
+     garnishDragTo — so anything else the customer set must survive the move. */
+  function updateGarnish(id, patch) {
+    setDesign(prev => ({
+      ...prev,
+      garnishes: (prev.garnishes ?? []).map(g => (g.id === id ? { ...g, ...patch } : g)),
+    }));
+  }
+  /* ⚠️ A COPY MUST LAND VISIBLY SEPARATE, or it looks as though nothing happened and pressing again
+   * quietly makes a third. A garnish is placed in polar coordinates — an angle round the cake and a
+   * fraction out from the middle — so it steps round the RIM rather than sideways in x/z, which is
+   * the movement that keeps it on the cake at the same distance from the centre. Stickers de-overlap
+   * through a shared surface-aware seat; a garnish cannot use it, because that helper speaks x/z and
+   * theta/u for flat and wall surfaces and knows nothing about `radius`.
+   *
+   * ⚠️ THE STEP IS AN ANGLE, NOT A DISTANCE, which is what makes a repeated piece read as a fan: the
+   * reference cakes place three or five identical pieces at even angles round an arc. It scales with
+   * how far out the piece sits — near the middle a fixed angle would barely move it, and at the rim
+   * the same angle is a wide stride. */
+  function duplicateGarnish(id) {
+    setDesign(prev => {
+      const original = (prev.garnishes ?? []).find(g => g.id === id);
+      if (!original) return prev;
+      const radius = original.radius ?? GARNISH_DEFAULTS.radius ?? 0.5;
+      const step = 0.5 / Math.max(0.25, radius);        // radians — a wider arc the further out it sits
+      return {
+        ...prev,
+        garnishes: [...prev.garnishes, {
+          ...original,
+          id: crypto.randomUUID(),
+          theta: (original.theta ?? 0) + step,
+        }],
+      };
+    });
+  }
+
+  /* ⚠️ THE ORIGINAL MOVES INTO THE MIDDLE OF THE ARC rather than staying put with copies added to
+   * one side — a fan is symmetric about where the piece was aimed, and asking for five otherwise
+   * sends the whole arrangement off to the right of it. So the piece that was there is PATCHED, not
+   * left alone, and the rest are new rows.
+   *
+   * ⚠️ AND IT IS ONE ACTION, so one undo takes it back. Five separate duplicates would be five
+   * presses of undo to recover from an arc that came out wrong — which is what makes people leave a
+   * bad arrangement alone rather than try a different one. */
+  function fanGarnish(id, { count = 3, spread = 1.0 } = {}) {
+    setDesign(prev => {
+      const original = (prev.garnishes ?? []).find(g => g.id === id);
+      if (!original) return prev;
+      const seats = fanPlacements(original, count, spread);
+      const [first, ...rest] = seats;
+      return {
+        ...prev,
+        garnishes: [
+          ...prev.garnishes.map(g => (g.id === id ? { ...g, ...first } : g)),
+          ...rest.map(seat => ({ ...original, id: crypto.randomUUID(), ...seat })),
+        ],
+      };
+    });
+  }
+
+  function removeGarnish(id) {
+    setDesign(prev => ({ ...prev, garnishes: (prev.garnishes ?? []).filter(g => g.id !== id) }));
+  }
+
   function addStroke(stroke) {
     setDesign(prev => ({ ...prev, piping: [...prev.piping, { ...DEFAULT_STROKE, id: crypto.randomUUID(), ...stroke }] }));
   }
@@ -1314,6 +1404,26 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       piping: prev.piping.map(s => (s.id === id ? { ...s, points } : s)),
     }));
   }
+  /* ⚠️ A FILL REPLACES THE LAST FILL, it does not stack on top of it. Each pass is a real stroke —
+     that is the point, they are what the baker pipes — but appending them meant choosing a second
+     pattern laid it OVER the first, and made the newest stroke a fill rather than the outline, so the
+     control that offered patterns hid itself after one use. Fills are tagged `fillOf` with the
+     outline's id; this clears that outline's old ones and lays the new. */
+  function setStrokeFill(outlineId, strokes, pattern = null) {
+    /* One state change, so the fill strokes and the pattern the card SHOWS can never disagree —
+       two updates would let a re-render land between them and draw a strip pointing at the wrong
+       pattern for a frame. */
+    setDesign(prev => ({
+      ...prev,
+      piping: [
+        ...prev.piping
+          .filter(s2 => s2.fillOf !== outlineId)
+          .map(s2 => (s2.id === outlineId ? { ...s2, fillPattern: pattern } : s2)),
+        ...strokes.map(s2 => ({ ...DEFAULT_STROKE, id: crypto.randomUUID(), ...s2, fillOf: outlineId })),
+      ],
+    }));
+  }
+
   function removeStroke() {
     setDesign(prev => ({ ...prev, piping: prev.piping.slice(0, -1) }));
   }
@@ -1374,7 +1484,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    addStroke, updateStrokePoints, removeStroke, clearPiping,
+    addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping,
+    addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish,
     resetDesign,
     addStickerBatch,
     loadDesign,

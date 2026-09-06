@@ -1,10 +1,26 @@
 import * as THREE from 'three';
+import { PIPING_FRONT_ANGLE } from '../constants.js';
 
 // ── Bend a straight strip GLB into U-shaped festoons (swags) around the cake ──
-// A "strip" element (e.g. a rope/braid) is bent so its LENGTH follows an arc of the ring
-// and its belly hangs into a U — the classic draped swag border. One strip = one festoon.
+// A "strip" element (e.g. a rope/braid) is bent so its LENGTH follows the wall and its belly hangs
+// into a U — the classic draped swag border. One strip = one festoon.
 // This is the EXACT math the admin Piping Calibrator previews with (bakeStrip /
-// bendOneFestoon / buildFestoons), kept in sync so the cake matches what was tuned there.
+// bendOneFestoon / buildFestoons), kept in sync so the cake matches what was tuned there. (The
+// calibrator only ever previews a ROUND tier, so it keeps the circle form of the curve below.)
+//
+// ── THE WALL IS A PERIMETER, NOT A CIRCLE ───────────────────────────────────────────────────────
+// This used to bend the strip around `cos(th)*R, sin(th)*R` — a circle, and nothing else. A sheet
+// cake was excluded at the call site (`shape?.kind === 'rect'` → no festoons) and then fell through
+// to the ordinary shell renderer, which repeats a piece at every perimeter point FACING OUTWARD.
+// For a rosette that is right; for a 30cm ribbon it means the ribbon points straight out of the
+// cake. That was the reported bug: garland spikes radiating off a sheet cake.
+//
+// Worse, that guard asked for `rect`, so a HEART or a number cake — `kind: 'outline'` / `'glyph'` —
+// was NOT excluded and got a full circle of swags at the bounding radius, hanging in mid-air off
+// the real shape. surface.js:75 warns about this exact mistake in so many words.
+//
+// So the curve now walks a PERIMETER (the same abstraction buildWrapBand below already uses), and
+// a circle is simply the perimeter a round cake has. One path, every shape.
 
 // Bake the node transform into the geometry so we work in real (small) world units, not the
 // GLB's raw local coords (which can be ~70× scaled & offset). Optional 180° X flip.
@@ -37,11 +53,110 @@ function bakeStrip(scene, flip) {
   return src;
 }
 
-// Bend ONE strip into a single festoon centred on angle `th0`, spanning `span` radians.
-// `depth` = how far the belly hangs below the attachment ends (cake units). `tilt` (radians)
-// rolls the strip about its length so it leans into a draped look. `sizeFactor` scales the
-// rope's cross-section (thickness) without changing how far it spans the arc.
-function bendOneFestoon(srcGeo, { th0, span, depth, attachY, radius, tilt = 0, sizeFactor = 1 }) {
+const TWO_PI = Math.PI * 2;
+
+// ── Where the wall turns a corner ───────────────────────────────────────────────────────────────
+// A swag must not drape ACROSS a corner. A garland is attached AT the corners and hangs along each
+// face between them; a swag whose belly sags over a square corner reads as a mistake, which is what
+// "it should not look odd" rules out. So the wall is CUT at its corners and each run filled on its
+// own.
+//
+// A corner is measured against the shape's OWN average turn, never an absolute angle. A circle also
+// turns a full 360° — just evenly — so any fixed threshold either finds four corners on a small
+// circle or none on a gently rounded rectangle. What distinguishes a corner is that the turning is
+// CONCENTRATED: the wall swings `sharpness`× faster there than a circle of the same perimeter would.
+// That single rule gives a round cake no breaks at all (one closed run — precisely the behaviour
+// that existed before corners were a concept), a sheet cake four, and a heart its point and cleft.
+//
+// Returned as arc-length positions along `perim`, ascending.
+export function perimeterBreaks(perim, { sharpness = 4, samples = 720 } = {}) {
+  const L = perim.length;
+  if (!(L > 0)) return [];
+  const ang = [];
+  for (let i = 0; i < samples; i++) {
+    const p = perim.at((i / samples) * L);
+    ang.push(Math.atan2(p.nz, p.nx));
+  }
+  const limit = (TWO_PI / samples) * sharpness;        // a circle turns exactly 2π/samples per step
+  const hot = ang.map((a, i) => {
+    let d = ang[(i + 1) % samples] - a;
+    while (d >  Math.PI) d -= TWO_PI;
+    while (d < -Math.PI) d += TWO_PI;
+    return Math.abs(d) > limit;
+  });
+  // All cool → a circle. All hot → a shape so uniformly sharp there is no corner to speak of
+  // (a many-sided polygon read at this sample rate); both mean "one continuous run".
+  if (!hot.some(Boolean) || hot.every(Boolean)) return [];
+
+  // Group runs of consecutive hot samples into ONE corner each — a sharp corner spikes a single
+  // step, a rounded one spreads over the whole fillet — and break at the middle of the group. The
+  // walk starts from a cool sample so a corner sitting on the seam is not split into two.
+  let s = 0; while (hot[s]) s++;
+  const out = [];
+  let start = null;
+  for (let k = 0; k <= samples; k++) {
+    const live = k < samples && hot[(s + k) % samples];
+    if (live) { if (start === null) start = k; }
+    else if (start !== null) {
+      // +0.5: for a sharp corner the turn happens BETWEEN sample i and i+1, so the corner itself
+      // sits half a step past the last hot sample.
+      out.push((((s + (start + k - 1) / 2 + 0.5) % samples) / samples) * L);
+      start = null;
+    }
+  }
+  return out.sort((a, b) => a - b);
+}
+
+// The wall between two corners (or the whole closed loop when there are none), cut into whole
+// festoons. `pitch` is what one swag OCCUPIES; `spanLen` the arc it actually covers, the rest being
+// the gap `spread` leaves.
+//
+// ── COUNT IS A LENGTH ───────────────────────────────────────────────────────────────────────────
+// The authored festoon count was tuned on a round tier, which makes it a disguised measurement: how
+// much wall one swag should cover. So it is converted to a length once (`calibSpan`) and it is the
+// LENGTH that travels. On a circle this hands back exactly the authored count and nothing moves. On
+// a longer wall it lays down MORE swags at the tuned size instead of the same few stretched to fit —
+// which is what keeps a sheet cake's garland from ballooning past the cake it hangs on.
+//
+// ── HOW MANY, EXACTLY ───────────────────────────────────────────────────────────────────────────
+// Whole swags rarely divide a run exactly, so one of two counts has to be picked and the swags
+// stretched or squeezed to close the gap. Rounding the COUNT is the obvious move and the wrong one:
+// a run of 1.38 calibrated spans rounds to 1, which stretches that single swag by 38% — while two
+// swags would only have squeezed them by 31%. The count is not what the eye judges; the SIZE is.
+//
+// So both candidates are scored on how far their pitch lands from the calibrated one, as a RATIO
+// (scale-symmetric — 1.4× too long and 1.4× too short are equally wrong, which is not what an
+// absolute difference says). Choosing the better of the two caps the error at the geometric
+// crossover: a swag can never be stretched past √2 or squeezed below 1/√2 of the size it was tuned
+// at, whatever the wall measures. That bound is the guarantee, not a happy accident of the numbers.
+function fitRun({ start, len, closed }, calibSpan, spread, frontS) {
+  const raw = len / calibSpan;
+  const lo = Math.max(1, Math.floor(raw)), hi = Math.max(1, Math.ceil(raw));
+  const off = m => { const r = (len / m) / calibSpan; return r >= 1 ? r : 1 / r; };
+  const m = off(hi) < off(lo) ? hi : lo;
+  const pitch = len / m;
+  return Array.from({ length: m }, (_, k) => ({
+    // A closed run is phase-anchored to the cake FRONT, so the first swag is centred there exactly
+    // as it was before any of this. An open run is centred WITHIN the run instead — its ends are
+    // the corners, and that is where the joins belong.
+    s0: closed ? frontS + k * pitch : start + (k + 0.5) * pitch,
+    spanLen: pitch * spread,
+    pitch,
+  }));
+}
+
+// Bend ONE strip into a single festoon centred at arc-length `s0` along `perim`, covering
+// `spanLen` of wall. `depth` = how far the belly hangs below the attachment ends (cake units).
+// `tilt` (radians) rolls the strip about its length so it leans into a draped look. `outset`
+// pushes it proud of the wall on top of its own half-thickness.
+//
+// `cScale` (cross-section) is passed in rather than derived from `spanLen`, and that separation is
+// the second half of the sizing fix. They used to be the same number, so a swag squeezed into a
+// short run came out THINNER as well as shorter, and a stretched one came out fatter — a garland
+// that changed weight from face to face. Now the rope keeps the thickness it was calibrated at and
+// only its LENGTH flexes to the run. Its reach off the wall is therefore constant too, which is
+// what stops it projecting past the cake.
+function bendOneFestoon(srcGeo, { perim, s0, spanLen, cScale, depth, attachY, tilt = 0, outset = 0 }) {
   const g = srcGeo.clone();
   g.computeBoundingBox();
   const bb = g.boundingBox, min = bb.min.clone(), size = new THREE.Vector3(); bb.getSize(size);
@@ -49,19 +164,17 @@ function bendOneFestoon(srcGeo, { th0, span, depth, attachY, radius, tilt = 0, s
   const lenAxis = ax.reduce((a, b) => (size[b] > size[a] ? b : a), 'x'); // longest = strip length
   const cross = ax.filter(a => a !== lenAxis);
   const L = size[lenAxis];
-  const uscale = (span * radius) / L;                                    // stretch to fill the arc
   const outAxis = size[cross[0]] >= size[cross[1]] ? cross[0] : cross[1]; // bump axis (sticks out)
   const widthAxis = outAxis === cross[0] ? cross[1] : cross[0];
   const cOut = min[outAxis] + size[outAxis] / 2, cW = min[widthAxis] + size[widthAxis] / 2;
-  const cScale = uscale * sizeFactor;
   const outHalf = (size[outAxis] / 2) * cScale;
-  const R = radius + outHalf;                                            // sit proud of the wall
+  const off = outHalf + outset;                                          // sit proud of the wall
   const ct = Math.cos(tilt), st = Math.sin(tilt);
   const pos = g.attributes.position, v = new THREE.Vector3();
   const curve = t => {
-    const th = th0 + (t - 0.5) * span;
+    const P = perim.at(s0 + (t - 0.5) * spanLen);
     const cy = attachY - depth * (1 - Math.pow(2 * t - 1, 2));           // U: belly at t=0.5
-    return { p: new THREE.Vector3(Math.cos(th) * R, cy, Math.sin(th) * R), th };
+    return { p: new THREE.Vector3(P.x + P.nx * off, cy, P.z + P.nz * off), nx: P.nx, nz: P.nz };
   };
   for (let i = 0; i < pos.count; i++) {
     const comp = { x: pos.getX(i), y: pos.getY(i), z: pos.getZ(i) };
@@ -69,7 +182,7 @@ function bendOneFestoon(srcGeo, { th0, span, depth, attachY, radius, tilt = 0, s
     const oOut = (comp[outAxis] - cOut) * cScale, oW = (comp[widthAxis] - cW) * cScale;
     const cur = curve(t), nxt = curve(Math.min(1, t + 1e-3)), prv = curve(Math.max(0, t - 1e-3));
     const T = new THREE.Vector3().subVectors(nxt.p, prv.p).normalize();      // tangent along the U
-    const Rhat0 = new THREE.Vector3(Math.cos(cur.th), 0, Math.sin(cur.th));  // radial out (bumps)
+    const Rhat0 = new THREE.Vector3(cur.nx, 0, cur.nz);                      // wall normal (bumps out)
     const B0 = new THREE.Vector3().crossVectors(T, Rhat0).normalize();       // in-wall perpendicular
     const Rhat = Rhat0.clone().multiplyScalar(ct).addScaledVector(B0, st);   // roll by `tilt`
     const B    = B0.clone().multiplyScalar(ct).addScaledVector(Rhat0, -st);
@@ -81,16 +194,46 @@ function bendOneFestoon(srcGeo, { th0, span, depth, attachY, radius, tilt = 0, s
   return g;
 }
 
-// Build every festoon around the ring. `spread` 1.0 tiles them edge-to-edge into one
-// continuous garland; <1 (default 0.96) leaves a small gap between separate swags.
+// Build every festoon along the wall. `perims` is one perimeter per closed contour (a round or
+// sheet cake has one; a two-digit number cake has one per digit, so no swag ever bridges the gap
+// between them). `radius` is the tier radius — the calibration scale only, not a position.
+// `spread` 1.0 tiles them edge-to-edge into one continuous garland; <1 (default 0.96) leaves a
+// small gap between separate swags — and at a corner, that gap is the join.
 // Returns an array of bent geometries — render each as its own mesh in the ring's colour.
-export function buildFestoons(scene, { flip = false, festoons = 6, depth = 0.4, attachY = 0, radius = 1.2, spread = 0.96, tilt = 0, sizeFactor = 1 }) {
+export function buildFestoons(scene, {
+  flip = false, festoons = 6, depth = 0.4, attachY = 0,
+  perims = null, radius = 1.2, spread = 0.96, tilt = 0, sizeFactor = 1, outset = 0,
+}) {
   const src = bakeStrip(scene, flip);
-  if (!src) return [];
+  if (!src || !perims?.length) return [];
   const n = Math.max(1, Math.round(festoons));
-  const span = (2 * Math.PI / n) * spread;
-  return Array.from({ length: n }, (_, k) =>
-    bendOneFestoon(src, { th0: Math.PI / 2 + k * (2 * Math.PI / n), span, depth, attachY, radius, tilt, sizeFactor }));
+  const calibSpan = (TWO_PI * radius) / n;         // wall covered by ONE swag, as tuned on a round tier
+  // The strip's own length, so the calibrated span can be turned into a cross-section scale that no
+  // longer depends on how far this particular swag happens to be stretched.
+  src.computeBoundingBox();
+  const sSize = new THREE.Vector3(); src.boundingBox.getSize(sSize);
+  const stripL = Math.max(sSize.x, sSize.y, sSize.z) || 1;
+  const cScale = ((calibSpan * spread) / stripL) * sizeFactor;
+  const out = [];
+  for (const perim of perims) {
+    if (!(perim?.length > 0)) continue;
+    const breaks = perimeterBreaks(perim);
+    const runs = breaks.length
+      ? breaks.map((b, i) => ({
+          start: b,
+          len: (((breaks[(i + 1) % breaks.length] - b) % perim.length) + perim.length) % perim.length || perim.length,
+          closed: false,
+        }))
+      : [{ start: 0, len: perim.length, closed: true }];
+    // s=0 on a circle sits at +X; the front is a quarter turn round from there (PIPING_FRONT_ANGLE).
+    const frontS = perim.length * (PIPING_FRONT_ANGLE / TWO_PI);
+    for (const run of runs) {
+      for (const f of fitRun(run, calibSpan, spread, frontS)) {
+        out.push(bendOneFestoon(src, { perim, s0: f.s0, spanLen: f.spanLen, cScale, depth, attachY, tilt, outset }));
+      }
+    }
+  }
+  return out;
 }
 
 // ── Wrap a pre-formed RING GLB around the tier wall (round OR rounded-rect) ────

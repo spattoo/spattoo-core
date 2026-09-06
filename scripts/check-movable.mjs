@@ -48,6 +48,9 @@ const NOT_DRAGGED = {
   // The pen is a way of DRAWING. A stroke is where the hand went; there is no object to take hold of
   // and move afterwards, so there is no position for the contract to ask about.
   cream_pen: 'freehand strokes follow the hand — there is no placed object to drag',
+  // Same tool, different bag. If the pen ever does become draggable, BOTH of these go at once —
+  // they are one code path and splitting them here would be inventing a difference that is not real.
+  chocolate_pen: 'freehand strokes follow the hand — there is no placed object to drag',
 };
 
 const designer = read('src/designer/CakeDesigner.jsx');

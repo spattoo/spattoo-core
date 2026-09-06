@@ -1,0 +1,151 @@
+import { createRoot } from 'react-dom/client';
+import { useEffect, useRef, useState } from 'react';
+import { fillShape, liftCount, FILL_PATTERNS } from '../src/designer/geometry/pipingFill.js';
+import { tidyDrawn, fillWorthwhile } from '../src/designer/geometry/drawnShape.js';
+import Segmented from '../src/shared/Segmented.jsx';
+
+/* Draw a shape with the mouse or a finger, then choose a fill — or no fill. A flat plate, which is
+ * how these pieces are actually made: piped on parchment, set, peeled off, stood on the cake.
+ *
+ * ⚠️ FILL IS A CHOICE AND STARTS AT "NONE". Half the reference pieces are outline only — the leaf
+ * veins, the treble clefs, the loops. Filling by default would decide for the baker, and it is the
+ * same rule the photo editor settled on: our judgement is offered, never applied.
+ */
+
+const CHOC = '#4A2C1B';
+const PLATE = '#F6F4F0';
+
+const FILLS = [
+  { id: 'none', label: 'None' },
+  ...Object.entries(FILL_PATTERNS).map(([id, s]) => ({ id, label: s.label })),
+];
+
+const ROPE = 6;          // the nozzle's rope width on the plate, in px
+
+function Studio() {
+  const ref = useRef(null);
+  /* ⚠️ THE LIVE TRAIL IS STATE, NOT A REF, and that was a real bug: it lived in a ref and the move
+     handler called setDrawing(true) while `drawing` was ALREADY true. React bails out of a re-render
+     when the state is unchanged, so nothing repainted until pointerup and the shape appeared only
+     after letting go. Piping you cannot see as you pipe is not a drawing tool. */
+  const [trail, setTrail] = useState([]);
+  const [shape, setShape] = useState(null);
+  const [fill, setFill] = useState('none');
+  const [spacing, setSpacing] = useState(14);
+  const drawing = trail.length > 0;
+
+  // Only a shape that actually closes can be filled — a letter or an "8" has no inside.
+  const paths = shape?.ring && fill !== 'none'
+    ? fillShape(shape.ring, { pattern: fill, spacing, inset: 4, seed: 11, ropeWidth: ROPE })
+    : [];
+
+  // ── Draw ────────────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const c = ref.current, dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = c.clientWidth, H = c.clientHeight;
+    c.width = W * dpr; c.height = H * dpr;
+    const x = c.getContext('2d');
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    x.fillStyle = PLATE; x.fillRect(0, 0, W, H);
+
+    const stroke = (pts, w, colour = CHOC) => {
+      if (pts.length < 2) return;
+      x.beginPath();
+      pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b)));
+      x.lineWidth = w; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = colour;
+      x.stroke();
+    };
+
+    for (const p of paths) stroke(p, ROPE);                     // fill first, the stroke over it
+    // ⚠️ Draw `path`, never `ring`: the stroke is piped exactly as it was drawn, open or closed.
+    if (shape) stroke(shape.path, ROPE + 2);
+    // Wet, still being piped: lighter, so it reads as in-progress rather than as the finished piece.
+    if (drawing) stroke(trail, ROPE + 2, 'rgba(74,44,27,0.55)');
+  }, [shape, fill, spacing, drawing, trail, paths]);
+
+  // ── Capture ─────────────────────────────────────────────────────────────────────────────────
+  const at = e => {
+    const r = ref.current.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  function down(e) {
+    ref.current.setPointerCapture(e.pointerId);      // so a finger leaving the plate still tracks
+    setShape(null); setTrail([at(e)]);
+  }
+  function move(e) { if (drawing) setTrail(t => [...t, at(e)]); }
+  function up() {
+    const tidy = tidyDrawn(trail);
+    setTrail([]);
+    if (tidy) setShape(tidy);
+  }
+
+  const worthwhile = shape?.ring && fillWorthwhile(shape.ring);
+
+  return (
+    <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <canvas
+        ref={ref}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+        style={{ width: 420, height: 420, borderRadius: 14, touchAction: 'none', cursor: 'crosshair',
+                 border: '1px solid #E3DFD8', display: 'block' }}
+      />
+
+      <div style={{ width: 340, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ fontSize: 13, color: '#555', margin: 0, lineHeight: 1.5 }}>
+          Draw a shape on the plate — any shape, it does not need to be neat or to join up.
+        </p>
+
+        {/* ⚠️ Fill is offered only for a shape that CLOSED. An open stroke — a letter, a number, a
+            swirl — has no inside, and offering a dead control is worse than not offering one. */}
+        {shape && !shape.closed ? (
+          <div style={{ fontSize: 12, color: '#8a6a3a', lineHeight: 1.6, background: '#FDF7EC',
+                        border: '1px solid #EFE2CB', borderRadius: 10, padding: '9px 11px' }}>
+            An open stroke — nothing to fill. Letters, numbers and swirls are piped just like this.
+            Bring the ends together to fill a shape.
+          </div>
+        ) : (
+          <div style={{ opacity: shape ? 1 : 0.55 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6, color: '#333' }}>Fill</div>
+            <Segmented items={FILLS} value={fill} onChange={setFill} tone={CHOC} label="Fill" />
+          </div>
+        )}
+
+        {fill !== 'none' && !FILL_PATTERNS[fill]?.packed && (
+          <label style={{ fontSize: 12, color: '#555' }}>
+            Gap between lines — {spacing}px
+            <input type="range" min={6} max={30} value={spacing} style={{ width: '100%', accentColor: CHOC }}
+                   onChange={e => setSpacing(Number(e.target.value))} />
+          </label>
+        )}
+
+        <div style={{ fontSize: 12, color: '#555', lineHeight: 1.7 }} data-readout>
+          {!shape && <>Nothing drawn yet.</>}
+          {shape && <>
+            {shape.closed ? 'Closed shape' : 'Open stroke'}, {shape.path.length} points
+            {shape.closed ? '' : ` — ends ${Math.round(shape.gap)}px apart`}<br />
+            {!shape.closed
+              ? 'Piped as drawn.'
+              : fill === 'none'
+              ? 'No fill — outline only.'
+              : <>Fill: {FILL_PATTERNS[fill]?.packed ? 'solid — ' : ''}{paths.length} continuous {paths.length === 1 ? 'squeeze' : 'squeezes'} ({liftCount(paths)} {liftCount(paths) === 1 ? 'lift' : 'lifts'})</>}
+            {shape?.ring && !worthwhile && fill !== 'none' &&
+              <><br /><span style={{ color: '#9A6A2F' }}>This reads more like a line than a region — a fill will look like dashes.</span></>}
+          </>}
+        </div>
+
+        <button onClick={() => { setShape(null); setFill('none'); }}
+                style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #DDD8D0',
+                         background: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')).render(
+  <div style={{ padding: 22, background: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <h1 style={{ fontSize: 15, marginBottom: 14 }}>Piped chocolate — draw a shape, then choose a fill</h1>
+    <Studio />
+  </div>
+);

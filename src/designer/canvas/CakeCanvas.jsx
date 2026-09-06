@@ -15,8 +15,10 @@ import CakeTier from './CakeTier';
 import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { LoadingPing } from './loadingRegistry.js';
 import CreamWriting from './CreamWriting.jsx';
+import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
+import Garnishes from './Garnishes.jsx';
 import FinishHandles from './FinishHandles.jsx';
 import { printExposure } from '../shared/printExposure.js';
 import SelectionBox from './SelectionBox.jsx';
@@ -234,9 +236,63 @@ import { envProps as _envProps } from './envMap.js';
 // this is the knob that makes a poured glaze read wet. `presetFallback` is the dev env when no self-hosted
 // HDRI URL is configured. Per-finish reflection strength still layers on top via each material's own
 // envMapIntensity (frostings.js).
+/* ⚠️ BEFORE CHANGING THE HDRI OR THE INTENSITY HERE, READ THIS — two things depend on it and neither
+ * will complain.
+ *
+ * 1. GOLD TOPPERS GLARE HEAD-ON AND READ CORRECTLY WHEN THE CAKE IS TURNED. That angle-dependence is
+ *    the signature of a reflection: a metal has no diffuse colour, so what you see IS the reflected
+ *    environment. A bright, featureless HDRI gives every pixel the same value and the lettering
+ *    disappears into a sheet of white; an environment with STRUCTURE gives the bands of light and
+ *    dark that read as gold. So the fix is contrast in the environment — or `environmentRotation`
+ *    (drei supports it) to move the bright part off the default camera axis — NOT less intensity,
+ *    which would leave a metal with nothing to reflect and render it black.
+ *
+ * 2. `REFERENCE_LIGHT` IN `geometry/garnishMaterial.js` IS CALIBRATED TO THIS ENVIRONMENT. Measured:
+ *    with `intensity: 0` a garnish renders near black, so this is not a contributor to the light on
+ *    one, it is almost all of it. Change the HDRI and garnish colours silently drift again. Re-run
+ *    `scripts/measure-garnish-colour.mjs` and reset that constant from the grey row.
+ *
+ * ⚠️ MEASURED, so the glare is a number rather than an impression. A gold topper in the real scene
+ * (`dev/garnish-on-cake.html?topper=1`) reads mean luminance 211/255 with the HDRI loaded and 120
+ * without it — the environment nearly doubles it and pushes the lettering to near-white. Contrast is
+ * only 28 across a 149-wide range, which is what "glare" means: the bands that make gold legible are
+ * flattened into one bright sheet.
+ *
+ * ⚠️ AND THE HDRI LOAD IS FLAKY IN A HEADLESS BROWSER, which invalidates any measurement that does not
+ * check for it. `SafeEnvironment` degrades silently to the lamps alone when drei's CDN 503s — right
+ * for a customer, fatal for a measurement, because this environment is nearly ALL the light here. A
+ * run that loads it and a run that does not disagree completely. `scripts/measure-topper-glare.mjs`
+ * now REFUSES rather than reporting: the gold board is the canary, bright yellow with the HDRI and
+ * dark brown without.
+ *
+ * ⚠️ AND THE TOPPER HARNESSES DO NOT REPRODUCE THIS SCENE. `dev/topper.jsx` and `dev/acrylic-text.jsx`
+ * both build their own `RoomEnvironment` rather than mounting `SafeEnvironment`, so neither shows the
+ * glare being complained about — a harness that lights its subject differently from the product
+ * cannot be used to judge the product, which cost a full round on the garnish colour. Point one of
+ * them at the real environment before tuning against it. */
 export const SCENE_ENV = {
   intensity: 1.25,                // environmentIntensity — brighter than three's default 1.0 so glossy
                                   // finishes read wet; matte finishes are unaffected (they ignore IBL).
+  /* ⚠️ ROTATION IS NOT THE FIX FOR THE TOPPER GLARE — measured, after the metric was corrected.
+   *
+   * Finding the topper by DIFFING two renders (with and without it) rather than by picking "gold-ish"
+   * pixels, `scripts/measure-topper-glare.mjs` reports mean luminance / contrast:
+   *       0° 177 / 76      45° 169 / 60      90° 158 / 54     135° 174 / 34
+   *     225° 139 / 57     270° 151 / 54     315° 186 / 62     (180° refused: HDRI had not loaded)
+   * By relative contrast — the spread the eye actually reads, contrast over mean — 0° is the BEST of
+   * them at 0.43, with 225° next at 0.41. The current setting is already the best available.
+   *
+   * ⚠️ AND THAT REVERSES WHAT THE BROKEN METRIC SAID. The earlier sweep selected warm bright pixels
+   * and concluded 225° was best and 0° worst; once the cake and board were lit enough they matched
+   * that description too, so it was partly measuring the scene rather than the topper. It also
+   * reversed itself when intensity changed — the sign that should have stopped it being believed.
+   * A wrong measurement is worse than none, because it gets acted on.
+   *
+   * ⚠️ SO THE GLARE HAS ANOTHER CAUSE, and it is not which way the HDRI faces. The next suspects are
+   * the topper's own material — a very smooth metal mirrors the environment sharply, so `roughness`
+   * on the gold finish is the first thing to sweep — and the HDRI's own lack of structure, which no
+   * rotation can add. Sweep roughness with this same diffing metric before touching the scene. */
+  rotationY: 0,   // ⚠️ Left at 0 deliberately, not by omission — see the measurements above.
   presetFallback: 'apartment',    // dev fallback when cfAssetsBase (the self-hosted HDRI) is absent
 };
 export function configureSceneEnv(partial) { if (partial) Object.assign(SCENE_ENV, partial); }
@@ -266,7 +322,15 @@ export function SceneLights({ shadows = false }) {
 export function SceneEnv() {
   // envProps picks self-hosted-or-preset; intensity is this scene's own, which the previews do not
   // share (they are small and lit for legibility, not for how a glaze reads wet).
-  return <SafeEnvironment {..._envProps(SCENE_ENV.presetFallback)} environmentIntensity={SCENE_ENV.intensity} />;
+  /* ⚠️ NO URL OVERRIDE HERE — IT WAS TRIED AND IT SHIPPED BY ACCIDENT. A `?envrot=` parameter was
+     added so the rotation sweep could turn the environment without a rebuild, and it went to
+     production: read on every render of the scene environment, and letting anyone re-light a cake
+     with a query string. Sweep knobs belong in the harness, which can mutate what it likes without
+     adding surface to the product — `dev/garnish-on-cake.jsx` does exactly that for roughness,
+     envIntensity and the map itself. Measurement is not a reason to widen the product's API. */
+  return <SafeEnvironment {..._envProps(SCENE_ENV.presetFallback)}
+    environmentIntensity={SCENE_ENV.intensity}
+    environmentRotation={[0, SCENE_ENV.rotationY, 0]} />;
 }
 
 // Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
@@ -2291,6 +2355,7 @@ function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
+  selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   orbitRef,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
@@ -2467,6 +2532,7 @@ function CakeScene({
           onPipingInstanceMove, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
+          selectedGarnishId, onGarnishSelect, onGarnishMove,
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
@@ -2558,10 +2624,11 @@ const NOOP = () => {};
 // are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
 // its own, and it is what every board-level finish is placed against.
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writings = [], piping = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], boardGrass = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
+    selectedGarnishId = null, onGarnishSelect = NOOP, onGarnishMove = null,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
     onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
@@ -2811,8 +2878,14 @@ function CakeContent({ config, scene, edit = null }) {
           nothing (it is a card waiting to be typed into), which is why the text guard is per-item
           rather than around the map. Orbit is keyed per id so dragging one message does not free the
           camera for another. */}
-      {topTier && board && writings.map(w => w?.text?.trim() ? (
-        <CreamWriting
+      {topTier && board && writings.map(w => {
+        if (!w?.text?.trim()) return null;
+        /* ⚠️ Dispatched on the message's own `style` KEY, never on its surface or its font. Cream and
+           acrylic are the same message in two materials — same text, same placement, same drag — so
+           switching Look keeps what was typed and where it was put. */
+        const Renderer = w.style === 'acrylic' ? AcrylicWriting : CreamWriting;
+        return (
+        <Renderer
           key={w.id}
           writing={w}
           topY={stackY}
@@ -2830,7 +2903,8 @@ function CakeContent({ config, scene, edit = null }) {
           onOrbitEnable={orbitEnableFor(`__writing__${w.id}`)}
           selected={selectedWritingId === w.id}
         />
-      ) : null)}
+        );
+      })}
 
       {/* Fondant letter blocks. On the board they ring the cake's foot; on top they sit on the
           highest tier. Each block is its own placement, so the arrangement IS the data — see
@@ -2855,6 +2929,17 @@ function CakeContent({ config, scene, edit = null }) {
         tierData={tierData}
         board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 } : undefined}
         onAddStroke={onAddStroke}
+      />
+
+      {/* Chocolate garnishes: pieces piped in the studio and placed here. Always drawn — they are
+          part of the cake, not a mode. */}
+      <Garnishes
+        garnishes={garnishes}
+        tierData={tierData}
+        selectedId={selectedGarnishId}
+        onSelect={onGarnishSelect}
+        onMove={onGarnishMove}
+        onOrbitEnable={orbitEnableFor('__garnish__')}
       />
 
       {bottomTier && texts.map(t => {
@@ -2992,10 +3077,14 @@ function CakeContent({ config, scene, edit = null }) {
 // capture without it reads as a cake floating in mid-air — and board-level finishes (a grass ring,
 // letter blocks at the foot) had nothing to stand on. Only the ROOM is left out: the floor plane and
 // the studio background belong to the editor, not to the cake.
-function CakeThumbnailScene({ config }) {
+function CakeThumbnailScene({ config, shadows = false }) {
   return (
     <>
-      <SceneLights />
+      {/* ⚠️ `shadows` EXISTS SO A HARNESS CAN MATCH THE LIVE SCENE, which renders `<SceneLights
+          shadows />` while this preview does not. Default stays OFF — production thumbnails and
+          previews are unchanged — but a page MEASURING the cake has to render what a baker sees, and
+          a cast shadow lands on the tier wall, which is exactly where colour is sampled. */}
+      <SceneLights shadows={shadows} />
       {/* Same env rule as the live scene (SceneEnv): the configured HDRI, else the neutral
           `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
           no `background` prop — so the capture stays transparent. */}
@@ -3021,7 +3110,10 @@ function CakeThumbnailScene({ config }) {
  * whole claim is that the frame on screen is the file. Done at capture time it would have produced
  * a correct download that nobody could have predicted from the screen.
  */
-function SceneBackground({ colour }) {
+/* Exported so a dev harness can stand the cake on the same ground the designer does. It sets
+ * `scene.background` only — never `scene.environment` — so it cannot light anything; it decides what
+ * a PERSON sees behind the cake, which is the half of a colour judgement the numbers do not cover. */
+export function SceneBackground({ colour }) {
   const { gl, scene } = useThree();
   useEffect(() => {
     scene.background = colour ? new THREE.Color(colour) : null;
@@ -3238,6 +3330,8 @@ function CameraRig({ fov, position }) {
 export function CakePreview({
   design, autoRotate = true, style, enableZoom = false,
   fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = null,
+  children = null,          // extra scene contents — a plain composition slot, not a debug hook
+  shadows = false,          // match the LIVE scene's shadows; off by default so previews are unchanged
 }) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   // Aim at THIS cake's middle by default, the same rule the editor uses (cakeAimTarget) — a preview
@@ -3251,6 +3345,7 @@ export function CakePreview({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', ...style }}>
       <Canvas
+        shadows={shadows}
         gl={{ preserveDrawingBuffer: true, alpha: true }}
         onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
         camera={{ position: cameraPosition, fov }}
@@ -3258,9 +3353,10 @@ export function CakePreview({
       >
         <CameraRig fov={fov} position={cameraPosition} />
         <Suspense fallback={null}>
-          <CakeThumbnailScene config={config} />
+          <CakeThumbnailScene config={config} shadows={shadows} />
         </Suspense>
         <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={aim} />
+        {children}
       </Canvas>
     </div>
   );
@@ -3270,6 +3366,8 @@ export default function CakeCanvas({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
+  // Chocolate garnishes — placed pieces from the garnish studio.
+  selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   autoRotate = false,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
@@ -3423,6 +3521,12 @@ export default function CakeCanvas({
         selectedAgeId={selectedAgeId}
         onAgeSelect={i => { if (!pointerRef.current.dragged) onAgeSelect?.(i); }}
         onAgeMove={onAgeMove}
+        selectedGarnishId={selectedGarnishId}
+        onGarnishMove={onGarnishMove}
+        onGarnishSelect={id => {
+          // Guarded like the age topper: a drag that happens to end on the piece must not select it.
+          if (!pointerRef.current.dragged) onGarnishSelect?.(id);
+        }}
         onTextContentChange={onTextContentChange}
         textToolbar={textToolbar}
         orbitRef={orbitRef}

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildCreamWriting } from '../geometry/creamText.js';
-import { writingPlaceAt } from '../geometry/surface.js';
+import { writingPlaceAt, writingSurface } from '../geometry/surface.js';
 import { planeHit, cylinderHit } from '../utils/raycasting.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { creamMaterialProps, goldMaterialProps, silverMaterialProps, metallicCreamProps, GOLD_FINISH_COLOR, SILVER_FINISH_COLOR, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
@@ -22,29 +22,13 @@ export default function CreamWriting({
   onClick, onMove, onOrbitEnable, selected = false,
 }) {
   const { camera, gl } = useThree();
-  const surface   = writing?.surface ?? 'top';
-  const fit       = writing?.fit ?? 0.8;
   const thickness = writing?.thickness ?? 0.03;
-  const isRect    = shape === 'rect';
-
-  // ── Resolve the target surface's radius / footprint ──────────────────────────
-  const bottom    = tiers?.[0];
-  const cakeBaseR = bottom ? (bottom.shape === 'rect' ? Math.max(bottom.width, bottom.depth) / 2 : bottom.radius) : topRadius;
-  const sideY     = writing?.sideY ?? (bottom ? bottom.baseY + bottom.height / 2 : topY / 2);
-  const sideTier  = tiers?.find(t => sideY >= t.baseY && sideY <= t.baseY + t.height) ?? bottom;
-  const sideRect  = (sideTier?.shape ?? shape) === 'rect';
-  const sideR     = sideTier ? (sideRect ? sideTier.depth / 2 : sideTier.radius) : topRadius;
-  const sideH     = sideTier?.height ?? 1;
-
-  // Footprint the writing must fit within (world units): top/board use the surface extents,
-  // side uses a comfortable arc (≈ fit·2 rad of the side) by tier height.
-  const sideFaceW = sideRect ? (sideTier?.width ?? width) : sideR * 2.0;
-  let maxW, maxH;
-  if (surface === 'side')      { maxW = sideFaceW * fit; maxH = sideH * fit; }
-  else if (surface === 'board'){ maxW = maxH = (boardRadius || topRadius) * 0.9 * fit; }
-  else                         { maxW = (isRect ? width : 2 * topRadius) * fit; maxH = (isRect ? depth : 2 * topRadius) * fit; }
-
-  const wrapRadius = surface === 'side' && !sideRect ? sideR + 0.006 : 0;
+  // Where this message sits — one resolution, shared with every other material a message can be
+  // made of. See geometry/surface.js: the tier comes from the height, for every renderer at once.
+  const {
+    surface, fit, cakeBaseR, sideY, sideTier, sideRect, sideR, sideH,
+    maxW, maxH, wrapRadius, minSideY, maxSideY,
+  } = writingSurface({ writing, tiers, topY, topRadius, shape, width, depth, boardRadius });
 
   const geo = useMemo(() => {
     if (!writing?.text?.trim()) return null;
@@ -57,8 +41,12 @@ export default function CreamWriting({
   }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.letterSpacing, writing?.curve, wrapRadius]);
 
   // Side-drag vertical bounds (also used by the drag resolver below).
-  const minSideY = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
-
+  /* ⚠️ THE DRAG SPANS THE WHOLE CAKE, and clamping it to one tier was a regression I introduced and
+     had to take back. Dragging a message from one tier to another ALREADY WORKED — the tier was
+     resolved from the height, so crossing a boundary picked up the new tier's radius on the way. I
+     clamped it while adding the tier chooser, on the theory that a thumb should not change tiers by
+     accident, and in doing so removed a capability bakers were already using. The chooser is worth
+     having because an upper tier was not DISCOVERABLE, not because the drag was wrong. */
   // Drag-to-place: map the pointer ray to a per-surface placement patch; the press/drag/tap plumbing
   // and grabProps are shared (useDragPlacement). Called before the early return to satisfy hook rules.
   const { grabProps } = useDragPlacement({
@@ -68,6 +56,10 @@ export default function CreamWriting({
     resolve: (ray) => {
       const where = { surface, sideRect, sideWidth: sideTier?.width, minSideY, maxSideY,
                       shape: shp, boardShape: boardShp };
+      /* ⚠️ A drag that crosses a tier boundary must WRITE the new tier back, or the stored `sideTier`
+         and the height disagree and the next render snaps the message somewhere nobody put it. This
+         is the seam between "choose a tier" and "drag between tiers": both end up saying the same
+         thing. */
       if (surface === 'side' && !sideRect) return writingPlaceAt(where, cylinderHit(ray, sideR));
       if (surface === 'side') {
         // Rect side: intersect the front face plane (z = depth/2), drag in x & y.

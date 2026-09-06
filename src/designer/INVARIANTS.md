@@ -307,6 +307,172 @@ invisible; a crash is not. (Worth fixing at the source; until then, know which y
 anchoring half is not, so a gate would pass the exact bug that caused this rule to exist. Check it by
 looking — see Verification.
 
+## 11. A control and what it changes must be VISIBLE AT THE SAME TIME — RULE IS ON
+**PROJECT-WIDE** (like #1/#3/#6/#7/#9). This is the single most repeated correction in this project.
+It has been raised on the photo editor, on the garnish studio twice, and on the X-ray build guide,
+each time as a fresh bug and each time it was the same rule. Writing it down is the fix; the
+individual repairs were not.
+
+**The rule.** If moving a control changes something on screen, the person must be able to see BOTH
+without scrolling, without switching tabs, and without remembering what the other one looked like.
+Anything else asks them to hold a picture in their head and compare it to the screen, which is
+exactly the thing a screen is for.
+
+⚠️ **"It is on the page" is not the same as "it can be seen".** Every one of these shipped, and every
+one was reported:
+
+| What was built | What it did to the person using it |
+|---|---|
+| Brightness sliders below the photo | Drag, scroll up, look, scroll down. The control and its effect were never both in view. |
+| Fill options at the bottom of the studio column, past the library and the name field | A baker had no reason to believe the feature existed at all. |
+| The step caption UNDER the animation it describes | You can watch the drawing or read the words. Not both — which is the whole point of a narrated guide. |
+| Colour picker open by default, taking the top third of the column | It pushed the control the studio exists for below the fold. |
+
+**What to do instead**, in order of preference:
+
+1. **Side by side** — control beside effect. The default for anything wide enough.
+2. **Effect first, then control** — put the words ABOVE the picture they describe, and the picture
+   above the settings that change it. Reading order is top-down; the thing being explained should
+   arrive before the explanation of how to change it.
+3. **Tabs or an accordion** — only when 1 and 2 genuinely do not fit. Tabs mean one thing is always
+   hidden, so they are a last resort and never the first idea.
+
+⚠️ **Text that narrates a moving thing goes BESIDE it or BEFORE it, never after.** Below, the reader
+has to look down, look back, and by then the motion has moved on.
+
+**No gate protects this** and one could not: whether two things are visible together depends on
+viewport, content length and what the person is doing. Check it by **looking at the real screen at
+phone width**, which is what Verification already says and what would have caught every row above.
+
+## 12. Layout follows USE, not the order the code was written — RULE IS ON
+**PROJECT-WIDE.** A settings column tends to end up in the order its features were built, which is a
+record of our history and nothing to do with the job in front of the person using it.
+
+**Order the surface by how often a control is touched, and put related ones together.** In the
+garnish studio the true order is: draw → pick a shape → fill it → colour it → say where it goes →
+name it. It shipped as: colour → how it is made → shapes → thickness → where it goes → library →
+name → **fill**. Fill is why the studio exists and it was last, because it was built last.
+
+Three questions to ask before laying anything out:
+
+- **How often is this touched?** Constantly while working (fill, undo) beats once at the end
+  (placement, naming). Frequent goes higher and nearer the work.
+- **Where are the hands already?** Undo belongs ON the drawing, not below it — it is reached for the
+  instant a stroke goes wrong. A control that acts on something should sit next to that thing.
+- **What is set once and left?** Colour, name, placement. These can collapse, and a collapsed control
+  that shows its current value costs one line instead of a third of the column.
+
+⚠️ **A label must name what the control acts on.** "Fill the last shape" kept its name for weeks after
+it had started acting on the PICKED shape — so it described behaviour that no longer existed, and
+anyone who had just picked a shape had every reason to distrust it.
+
+## 13. Unsaved work is never dismissed by an accident — RULE IS ON
+**PROJECT-WIDE.** A backdrop click and Esc are for a panel somebody opened and does not want. They are
+NOT for a panel holding work: a stray click outside the garnish studio threw away a drawing that had
+taken five minutes, with no undo and no warning.
+
+⚠️ **THIS KEEPS HAPPENING, AND THE MECHANISM ALREADY EXISTS.** `Panel` takes `guardUnsaved` — pass it
+and Esc and the backdrop are ignored while it is true. Every occurrence of this bug has been a panel
+that simply never passed it. The fix is never new code; it is remembering that the panel has state.
+
+**The rule.** Any surface that can hold work the person has not committed — a drawing, a form part-
+filled, an upload mid-flight — passes `guardUnsaved` with the condition that says work exists
+(`strokeCount > 0`, `isDirty`, `text.trim()`). ⚠️ **The deliberate exits must stay one press away:** ✕
+and Cancel still close, because guarding everything is how people learn to fear the panel.
+
+⚠️ **"They can just redo it" is not an answer.** The work being small to rebuild is exactly why nobody
+warned them; the cost is the surprise, and the lesson they take is to distrust the tool.
+
+**No gate protects this** — whether a panel holds work is a question about meaning, not syntax. Ask it
+of every panel you add, and check it by opening yours and clicking the backdrop mid-task.
+
+## 14. An icon means the same thing everywhere — RULE IS ON
+**PROJECT-WIDE.** A control that looks unlike every other control doing the same job reads as a
+different KIND of thing, and the person has to learn it separately. The garnish studio grew a rainbow
+conic-gradient wheel for choosing colour — a widget this product has nowhere else — while the
+swatches it opened were the plain colour circles used everywhere. Trigger and contents looked
+unrelated, and a baker had no reason to expect one to lead to the other.
+
+**The rule.** Before drawing an icon or a control, find the one this codebase already uses for that
+job and use it. ⚠️ **Look first, draw second** — the failure is never a deliberate choice to differ, it
+is not having checked.
+
+Established here already:
+- **Choosing a colour** — a plain filled circle of the current colour, thin neutral ring, green ring
+  when active. The swatch and the thing that opens the swatches are the same object.
+- **Undo / clear / close** — line icons on 24×24 viewBox, `strokeWidth` 1.9, round caps and joins.
+- **A tool that adds something** — its own outline drawn at the size it will land.
+
+⚠️ **A generated preview must obey the same rules as the thing it previews.** The brush preset icons
+were generated WITHOUT the width cap the plate applies, so four different gestures rendered as the
+same dark rectangle: a button face that does not follow the piece's own rule is not a preview of it,
+it is a picture that happens to be nearby.
+
+**No gate protects this** — sameness is a judgement about meaning. Check it by putting your new
+control beside the existing one and asking whether they look like the same family.
+
+## 15. A preview and the thing previewed ask ONE function — RULE IS ON
+**PROJECT-WIDE, and it binds on every studio we build.** A studio draws on a canvas; the cake renders
+a lit material. Those two produce different pixels for the same colour, and the difference is not
+small: a teal piece previewed in the studio arrived on the cake as pale mint.
+
+⚠️ **THE ANSWER IS NEVER TO TUNE ONE TOWARDS THE OTHER.** That was tried twice here and drifted twice,
+because it is two sets of numbers maintained by hand with nothing keeping them in step. The fix is
+that **one function decides**, and both sides ask it: the cake asks by rendering with the material
+props it returns, the studio asks by filling with `asRendered()`. Then there is nothing left to keep
+in step.
+
+⚠️ **COLOUR IS NOT A DETAIL TO BE TRADED AWAY.** It is chosen deliberately, and a preview that is
+wrong about it is worse than no preview — the person believes it, designs around it, and finds out on
+the cake. "Close enough" is not available for the one property somebody picked on purpose, and
+offering to accept the difference is not an answer to be put to them.
+
+**What the renderer does to a colour**, and therefore what the shared function models: it lights the
+surface, which darkens it slightly, then ADDS a specular reflection of the environment, which is
+white. That addition is the whole discrepancy — *the colour, plus a sheet of white*.
+
+**Its limit is stated rather than hidden.** The shared function is exact face-on; a piece standing at
+an angle catches more environment and drifts by a few per cent. The honest end state is for a studio
+to render its own surface with the SAME renderer, which is what the next one should be built to do
+from the start.
+
+## 16. Calibrate ON grey, choose the taper ON the palette bakers use — RULE IS ON
+**Every surface that renders a chosen colour divides its albedo by the light it receives**
+(`shared/albedoForLight.js`). Setting that up needs two numbers, and they are answered by two
+DIFFERENT questions — measuring both against the same patch is how a calibration ends up optimised
+for a colour nobody orders.
+
+**The reference light — solve it on a mid-grey `#808080`.** Grey is the only patch that can expose a
+CAST: a neutral rendering 133,125,120 says the LIGHT is warm, and no coloured patch can tell you that
+because you cannot separate "warm light" from "warm colour." It is also mid-range, clear of the
+highlight rolloff above and the gamma crush below. This is what forced three numbers per surface
+instead of one — lebombo is an outdoor sky and is not neutral.
+
+⚠️ **THE ROLLOFF IS NOT A GREY QUESTION, AND JUDGING IT ON GREY GIVES THE WRONG ANSWER.** The rolloff
+decides how the correction tapers as colours approach white, so it is a judgement about WHICH COLOURS
+MATTER — and grey is not one of them. Measured on cream: rolloff 1.5 beats 2.0 on grey (−1 against
+−6) and on two pinks, so 1.5 was proposed. Re-measured across ten colours a baker actually picks —
+blush, pinks, ivory, white, chocolate, teal, green — **2.0 wins**: mean error 11.4 per channel against
+12.1, worst channel 38 against 48. Tuning on grey was pulling toward a setting that is worse on real
+cakes.
+
+**So:** solve the reference light on grey, sweep the rolloff on a palette, and report the mean AND the
+worst channel — a setting that improves the average by crushing one colour is not an improvement.
+
+⚠️ **AND EVERY REFERENCE LIGHT IS PER SURFACE, INTERPOLATED FROM TWO POINTS.** A tier wall measures
+`[2.297, 2.007, 1.839]`, cream `[3.254, 2.974, 2.679]`, grass `[1.901, 1.358, 1.000]` — grass needs
+NO correction on blue at all, which no shared constant could express. Geometry counts as much as
+material: thin angled blades self-shadow, so grass reads 156 where a flat block reads 184. And one
+division always overshoots — the pipeline is not a pure multiply, so tone mapping compresses
+differently at the higher albedo a smaller divisor produces. Take a second reading with the first
+guess in place and interpolate. Every surface so far has needed it.
+
+⚠️ **A CLEARCOAT PUTS A FLOOR UNDER ALL OF THIS.** Where light bounces OFF a coat rather than through
+the pigment, it is added, not multiplied, and scaling an albedo cannot remove it. The chocolate drip
+stops at grey 152 on purpose: driving it to 128 needs a divisor of `[7.9, 4.2, 3.2]`, which was
+measured and crushes rose by −50 and renders a dark drip indistinguishable from black. Stop where the
+measurement says stop, and write down why.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —

@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+// ── A harness must be lit like the product ───────────────────────────────────────────────────────
+//
+// Any harness mounting the real cake scene has to import `dev/scene.js`, which supplies the assets
+// base the app supplies. Without it `envProps` falls back to drei's `apartment` preset and the
+// harness renders a DIFFERENT ENVIRONMENT from every deployed cake.
+//
+// ⚠️ THIS IS A GATE AND NOT A CONVENTION BECAUSE THE FAILURE IS SILENT AND EXPENSIVE. Nothing throws,
+// nothing logs (the warning added alongside this helps, but a console line in a harness nobody has
+// open is not a control). The cake simply looks slightly different, which is invisible until someone
+// measures it — and by then three parameter sweeps had been run, documented as settled findings, and
+// a scene-wide change shipped and reverted on the strength of them. Of the harnesses mounting the
+// real scene, exactly ONE configured this correctly before the gate existed.
+//
+//   node scripts/check-harness-scene.mjs
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
+
+const DIR = 'dev';
+// Mounting either of these means the real rig — SafeEnvironment, the lamps, the shared materials.
+const REAL_SCENE = /<\s*(CakePreview|CakeCanvas)\b/;
+const IMPORTS_SCENE = /from\s+['"]\.\/scene\.js['"]|import\s+['"]\.\/scene\.js['"]/;
+
+// A harness that builds its OWN environment is a separate, louder problem — it is not lit like the
+// product either, but the fix is to delete its rig rather than to add an import, so it is reported
+// distinctly instead of being swept into the same message.
+/* `<SceneEnv />` / `<SceneLights />` are the sanctioned way in — they ARE what production mounts, so
+   they must not trip the checks that exist to stop pages inventing their own. */
+const OWN_ENV = /<\s*Environment\b|RoomEnvironment|(?<!Scene)\bpreset\s*=\s*['"]/;
+
+/* ⚠️ LAMPS ARE CHECKED TOO, because the environment was only half the divergence. Six harnesses had
+   drifted to ambient 0.5–0.55 with a key of 1.5 — precisely the values `SceneLights` was SOFTENED
+   AWAY FROM (to 0.45 / 1.1) because they overexposed the cake top and washed diffuse colour toward
+   white head-on. `colour-probe.jsx` was one of them, and it carried a printed warning that its
+   readings were lighter than the cake's: a page built to judge colour, lit by a rig the product had
+   explicitly rejected for distorting colour. */
+const OWN_LIGHTS = /<\s*(?:ambient|directional|point|hemisphere|spot)Light\b/;
+
+/* ⚠️ STRIP COMMENTS BEFORE MATCHING. The first version scanned raw source and flagged
+   `garnish-on-cake.jsx` for the word "RoomEnvironment" appearing in a COMMENT explaining that other
+   harnesses use one. A gate that reports a file for what its prose says is a gate people learn to
+   ignore, and an ignored gate is worse than none — this codebase comments heavily, so a checker here
+   must read code. */
+const stripComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');       // the [^:] guard keeps `https://…` intact
+
+const offenders = [];
+const ownRig = [];
+
+/* ⚠️ A HARNESS THAT BUILDS ITS OWN RIG IS CHECKED WHETHER OR NOT IT MOUNTS THE REAL SCENE. The first
+   version only looked at pages mounting `CakePreview`/`CakeCanvas`, which let `topper.jsx` and
+   `acrylic-text.jsx` through — and those two are exactly where the gold topper's glare stayed
+   invisible for weeks, because each lit its mirror finish with a `RoomEnvironment` built from
+   emissive boxes instead of the outdoor sky every customer sees. "It only renders one element" is
+   not an exemption: a metal shows the environment and nothing else, so the rig IS the measurement. */
+for (const f of readdirSync(DIR)) {
+  if (!f.endsWith('.jsx')) continue;
+  const src = stripComments(readFileSync(join(DIR, f), 'utf8'));
+  const rendersCake = REAL_SCENE.test(src);
+  if (OWN_ENV.test(src)) ownRig.push({ f, what: 'environment' });
+  else if (OWN_LIGHTS.test(src)) ownRig.push({ f, what: 'lights' });
+  else if (rendersCake && !IMPORTS_SCENE.test(src)) offenders.push(f);
+}
+
+if (!offenders.length && !ownRig.length) {
+  const n = readdirSync(DIR).filter(f => f.endsWith('.jsx')).length;
+  console.log(`✓ check:harness-scene — every harness on the real scene is lit like production (${n} harnesses)`);
+  process.exit(0);
+}
+
+console.error('✗ check:harness-scene — harnesses that do not light the cake the way production does:\n');
+for (const f of offenders) {
+  console.error(`   • dev/${f}`);
+  console.error("     mounts the real scene but never sets the assets base, so it renders drei's");
+  console.error('     `apartment` preset instead of the shipped HDRI.');
+  console.error("     Fix: add  import './scene.js';  at the top.\n");
+}
+for (const { f, what } of ownRig) {
+  console.error(`   • dev/${f}`);
+  if (what === 'environment') {
+    console.error('     builds its OWN environment, so it lights its subject differently from the');
+    console.error('     product. Fix: delete the local <Environment>/RoomEnvironment/preset= and use');
+    console.error("     <SceneEnv />, with  import './scene.js';  for the assets base.");
+  } else {
+    console.error('     builds its OWN lamps. The rigs that drifted here sat at ambient 0.5–0.55 and');
+    console.error('     a key of 1.5 — the values SceneLights was softened away from because they');
+    console.error('     wash diffuse colour toward white. Fix: use <SceneLights />.');
+  }
+  console.error('');
+}
+console.error('   Why this is a gate: the failure is silent. The cake just looks slightly different,');
+console.error('   which stays invisible until someone measures it and reaches a wrong conclusion.');
+process.exit(1);

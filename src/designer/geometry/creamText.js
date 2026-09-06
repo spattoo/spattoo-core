@@ -131,6 +131,28 @@ function buildPipedFromStrokes(strokes, thickness) {
 // Wrap a centred, flat (XY) cream geometry around a vertical cylinder of `radius`, facing
 // +Z outward: x → arc angle (centred on +Z), z (bead thickness) → radial offset, y stays
 // vertical. Used for writing on the rounded SIDE of a cake. Mutates and returns geo.
+/**
+ * The same letterforms, as flat CENTRELINE POLYLINES — for anyone who pipes a line rather than
+ * building a rope on the cake.
+ *
+ * ⚠️ CHOCOLATE LETTERING IS CREAM LETTERING WITH A DIFFERENT MEDIUM. Both are a nozzle following a
+ * line, which is precisely why these faces are single-line centreline fonts: a piped letter is a
+ * PATH THE HAND TRAVELS, not an outline it fills. Writing a second layout for chocolate would have
+ * duplicated the glyph walk, the line stacking, the tracking and the arc — and the two would have
+ * drifted the first time either was touched. (Acrylic is the genuinely different one: a topper is
+ * cut from sheet, so its letters are closed outlines with an inside.)
+ *
+ * Returns `[[x, y], …][]` in the font's own y-UP units, centred on the origin. The caller scales and
+ * flips to its own space — the studio's y runs down the screen, the cake's runs up.
+ */
+export function textCentrelines({ text, font = DEFAULT_CREAM_FONT, lineGap, letterSpacing, curve, fitW, fitH }) {
+  const strokes = strokesFromText(font, text, lineGap, letterSpacing);
+  if (!strokes.length) return [];
+  if (curve) warpArc(strokes, curve);
+  if (fitW && fitH) fitStrokes(strokes, fitW, fitH);
+  return strokes.map(st => st.map(pt => [pt.x, pt.y]));
+}
+
 export function wrapOnCylinder(geo, radius) {
   if (!(radius > 0)) return geo;
   const pos = geo.attributes.position;

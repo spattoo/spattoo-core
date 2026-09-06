@@ -1,4 +1,5 @@
 import { Suspense, useRef, useState } from 'react';
+import './scene.js';   // light it the way production does — see the file
 import { createRoot } from 'react-dom/client';
 import CakeCanvas from '../src/designer/canvas/CakeCanvas.jsx';
 import { toCanvasConfig } from '../src/designer/hooks/useCakeDesign.js';

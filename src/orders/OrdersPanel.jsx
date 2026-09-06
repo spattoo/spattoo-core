@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'rea
 import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen, restrictions } from './dietary.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
+import FinishedPhotoEditor from './FinishedPhotoEditor.jsx';
+import Segmented from '../shared/Segmented.jsx';
 import {
   buildStatusIndex, DEFAULT_STATUS_INDEX,
   statusLabel, isClosed, isTerminal, isDesignLocked, statusTone,
@@ -132,10 +134,14 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
   if (!design) return null;
   // Two different things are being gated, and only one is a plan feature.
   //
-  // A DESIGNED order's X-Ray costs us nothing to produce, so it stays what it has always been:
-  // a Blaze+ hook (xray_reports). A PHOTO order's was PAID FOR with credits, on any plan — gating
-  // it again would take a baker's credits and then withhold what they bought, which is the worst
-  // thing this feature could do.
+  // ⚠️ X-RAY IS ON EVERY PLAN. It was a Blaze+ hook once and this comment went on saying so long
+  // after that stopped being true — while Pricing.tsx told every visitor the opposite, which is the
+  // version that is correct. What differs by plan is the CREDIT allowance for the AI work (reading
+  // a photo, working out how a decoration was made); a designed cake's X-Ray costs nothing to
+  // produce and is free to everyone.
+  //
+  // A PHOTO order's was PAID FOR with credits, on any plan — gating it again would take a baker's
+  // credits and then withhold what they bought, which is the worst thing this feature could do.
   if (!fromPhoto && !enabled) return null;
   return (
     <>
@@ -159,17 +165,40 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
 // would appear for a cake with nothing to print, or hide for one with plenty.
 function CutoutLauncher({ order, apiClient, variant }) {
   const [open, setOpen] = useState(false);
-  const { design } = resolveXraySpec(order);
-  const ids = useMemo(() => [...new Set(
+  const [prints, setPrints] = useState([]);
+  const { design, fromPhoto } = resolveXraySpec(order);
+  /* ⚠️ NOT on a photo order. A designed cake's `elementId`s ARE its decorations — the customer picked
+   * them, so printing their outline is exactly right. A photo order's are the MATCHER's closest
+   * library stand-ins for what it thought it saw, and a stand-in is not the thing.
+   *
+   * Reported from the goose cake: the sheet offered a yellow daisy under the heading "this cake's
+   * decorations". No daisy is on that cake — it is what inspirationMatch reached for when it met the
+   * small pink blossoms. Two of the three matches could not even be prepared, being 3D models. So on
+   * a photo order the list was one wrong flower and two failures, presented as fact.
+   *
+   * What IS this cake's, on a photo order, is the edible prints generated FROM its own photograph. */
+  const ids = useMemo(() => (fromPhoto ? [] : [...new Set(
     [...(design?.stickers ?? []), ...(design?.decorations ?? [])].map(s => s?.elementId).filter(Boolean),
-  )], [design]);
+  )]), [design, fromPhoto]);
 
-  if (!ids.length) return null;
+  /* ⚠️ Edible prints count too, and they are NOT elements. A print generated from X-Ray lands in the
+   * baker's uploads and is linked to this order (migration 086) — so a PHOTO order with no matched
+   * catalogue decorations can still have two things to print, and the button used to hide on it.
+   * Fetched here rather than inside the modal because it decides whether the button exists at all. */
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve(apiClient?.fetchOrderEdiblePrints?.(order?.id))
+      .then(r => { if (alive) setPrints(r?.prints ?? []); })
+      .catch(() => { if (alive) setPrints([]); });
+    return () => { alive = false; };
+  }, [order?.id, apiClient]);
+
+  if (!ids.length && !prints.length) return null;
   return (
     <>
       <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs" short="Cut-outs"
                   onClick={() => setOpen(true)} variant={variant} />
-      {open && <CutoutModal ids={ids} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
+      {open && <CutoutModal ids={ids} prints={prints} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -177,17 +206,28 @@ function CutoutLauncher({ order, apiClient, variant }) {
 // The catalogue is fetched here rather than read off the design: a saved snapshot carries element
 // IDs and placement, not image URLs, and the sheet needs pixels to trace. One call, filtered — the
 // same call the designer makes to fill its own picker.
-function CutoutModal({ ids, order, apiClient, onClose }) {
+function CutoutModal({ ids, prints = [], order, apiClient, onClose }) {
   const [elements, setElements] = useState(null);
   const [err, setErr] = useState('');
 
   useEffect(() => {
     let alive = true;
+    // No catalogue ids is a normal state now — a photo order can have prints and nothing else — so
+    // this must not fetch the whole catalogue to filter it down to nothing.
+    if (!ids.length) { setElements([]); return () => { alive = false; }; }
     Promise.resolve(apiClient?.fetchElements?.({ parentsOnly: true }))
       .then(rows => { if (alive) setElements((rows ?? []).filter(r => ids.includes(r.id))); })
       .catch(e => { if (alive) { setErr(e?.message || 'Could not load the decorations.'); setElements([]); } });
     return () => { alive = false; };
   }, [ids.join(','), apiClient]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Prints arrive already shaped like an element — `{ id, name, image_url }` — so the sheet traces
+   * them with the same elementSources and learns no second kind of thing. Prints FIRST: they have to
+   * be printed and dry before anything is assembled, so they are the first job on the bench. */
+  const sheetItems = useMemo(
+    () => (elements === null ? null : [...prints, ...elements]),
+    [elements, prints],
+  );
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,22,0.55)', zIndex: 60,
@@ -200,9 +240,9 @@ function CutoutModal({ ids, order, apiClient, onClose }) {
                 style={{ position: 'absolute', top: 10, right: 12, border: 'none', background: 'none',
                          fontSize: 20, cursor: 'pointer', color: '#6B8C74', zIndex: 1 }}>×</button>
         {err && <div style={{ padding: 16, color: '#B42318', fontWeight: 600, fontSize: 13 }}>{err}</div>}
-        {elements === null
+        {sheetItems === null
           ? <div style={{ padding: 40, textAlign: 'center', color: '#6B8C74', fontWeight: 600 }}>Loading decorations…</div>
-          : <CutoutSheet elements={elements} title={order?.customer_name || order?.id || 'cake'}
+          : <CutoutSheet elements={sheetItems} title={order?.customer_name || order?.id || 'cake'}
                          onClose={onClose} />}
       </div>
     </div>
@@ -225,8 +265,8 @@ function PhotoXrayLauncher({ order, apiClient, variant }) {
   const [spec, setSpec] = useState(null);
 
   // NOT gated on xray_reports. Reading a photo costs real money and is metered by CREDITS, which
-  // every plan has — so every plan can buy one. Gating it on the Blaze entitlement as well was
-  // what left a Flame baker holding an allowance they could not spend on anything.
+  // every plan has — so every plan can buy one. Gating it on a plan entitlement as well was what
+  // left a Flame baker holding an allowance they could not spend on anything.
   const { stale } = resolveXraySpec(order);
   if (!apiClient?.createXraySpec) return null;    // host hasn't wired it → no dead button
   if (order?.design_snapshot) return null;        // designed: X-Ray reads it directly
@@ -479,9 +519,14 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
 // transition). This sheet uploads each pick to R2 (orders/photos) as it's added and
 // hands the resulting keys back on confirm; the caller persists them then advances.
 // Photos are never required — "Mark as ready" works with zero.
-function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
+function MarkReadySheet({ order, apiClient, bakerName, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
   const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
   const [pickError, setPickError] = useState(null);   // why a chosen file was refused
+  /* ⚠️ CHOSEN FILES QUEUE HERE INSTEAD OF UPLOADING. The editor has to run BEFORE anything leaves,
+     because the ready flip that follows this sheet is what emails the customer — so a photo that
+     uploaded on pick would be one the baker never had the chance to tidy. Declining to edit is a
+     complete answer; not having been offered it is not. */
+  const [queue, setQueue] = useState([]);     // Files waiting to be tidied, in pick order
   const { maxImageBytes } = useUploadLimits(apiClient);   // the server's ceiling, not a copy of it
   const uploading = photos.some(p => p.uploading);
   const atMax = photos.length >= MAX_FINISHED_PHOTOS;
@@ -492,17 +537,26 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
   photosRef.current = photos;
   useEffect(() => () => photosRef.current.forEach(p => p.previewUrl && URL.revokeObjectURL(p.previewUrl)), []);
 
-  async function addFiles(e) {
-    const files = [...(e.target.files || [])].slice(0, MAX_FINISHED_PHOTOS - photos.length);
+  // Validate on pick, then queue for the editor. Upload happens on the far side of it.
+  function addFiles(e) {
+    const files = [...(e.target.files || [])].slice(0, MAX_FINISHED_PHOTOS - photos.length - queue.length);
     e.target.value = '';
     setPickError(null);
+    const good = [];
     for (const file of files) {
-      // Refuse what we cannot use, WITH a reason. A HEIC (a Mac drag-drop, an untranscoded iPhone
-      // share) satisfies `image/*`, so it used to get this far, fail to decode, fall through as the
-      // original file and then be refused by the API's content-type allowlist — surfacing to the
-      // baker as a photo that just says "failed" with nothing to act on.
       const bad = validateImageFile(file, { maxBytes: maxImageBytes });
       if (bad) { setPickError(bad); continue; }
+      good.push(file);
+    }
+    if (good.length) setQueue(q => [...q, ...good]);
+  }
+
+  async function uploadFiles(files) {
+    for (const file of files) {
+      /* Already validated on pick — a HEIC (a Mac drag-drop, an untranscoded iPhone share) satisfies
+         `image/*`, so without that check it reaches here, fails to decode, falls through as the
+         original file and is refused by the API's content-type allowlist, surfacing to the baker as
+         a photo that says "failed" with nothing to act on. */
       const id = `p${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const previewUrl = URL.createObjectURL(file);
       setPhotos(ps => [...ps, { id, previewUrl, key: null, uploading: true, failed: false }]);
@@ -530,6 +584,26 @@ function MarkReadySheet({ order, apiClient, primaryColor = '#1a1a1a', busy, erro
 
   const slots = [...photos];
   if (!atMax) slots.push(null);   // trailing "add" tile
+
+  /* ⚠️ ONE AT A TIME, and it replaces the sheet rather than sitting inside it. Three photos means
+     three passes; batching them behind one set of toggles would apply a judgement made about one
+     cake to two others shot in different light, which is the thing this feature exists to avoid. */
+  if (queue.length) {
+    const file = queue[0];
+    const next = (out) => { setQueue(q => q.slice(1)); uploadFiles([out]); };
+    return (
+      <FinishedPhotoEditor
+        key={`${file.name}-${file.size}-${queue.length}`}
+        file={file}
+        bakerName={bakerName}
+        primaryColor={primaryColor}
+        onDone={next}
+        // Cancel drops THIS photo and moves on — it does not abandon the ones already chosen, and
+        // it does not close the sheet behind it.
+        onCancel={() => setQueue(q => q.slice(1))}
+      />
+    );
+  }
 
   return (
     <Panel
@@ -931,7 +1005,7 @@ function AuditTrail({ orderId, apiClient, refresh }) {
 
 // ── Detail pane ───────────────────────────────────────────────────────────────
 
-function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, statusIndex = DEFAULT_STATUS_INDEX }) {
+function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, bakerName = null, statusIndex = DEFAULT_STATUS_INDEX }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [editing, setEditing]               = useState(false);
   const [saving, setSaving]                 = useState(false);
@@ -1113,7 +1187,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
             </>
         }
         {markingReady && (
-          <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+          <MarkReadySheet order={order} apiClient={apiClient} bakerName={bakerName} primaryColor={primaryColor}
             busy={changingStatus} error={readyErr}
             onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
         )}
@@ -1164,7 +1238,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         }
       </div>
       {markingReady && (
-        <MarkReadySheet order={order} apiClient={apiClient} primaryColor={primaryColor}
+        <MarkReadySheet order={order} apiClient={apiClient} bakerName={bakerName} primaryColor={primaryColor}
           busy={changingStatus} error={readyErr}
           onConfirm={confirmMarkReady} onCancel={() => { if (!changingStatus) setMarkingReady(false); }} />
       )}
@@ -1341,7 +1415,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
   const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1450,24 +1524,13 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           {/* List | Calendar — the calendar is a view of the same orders, so it lives
               here rather than being a separate destination. */}
           {hasCalendar && !selected ? (
-            <div style={{
-              display: 'flex', gap: 2, padding: 2, borderRadius: 10,
-              background: '#F2F0EB', border: '1.5px solid #E8E4DC', flexShrink: 0,
-            }}>
-              {[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }].map(v => (
-                <button key={v.id}
-                  onClick={() => { setView(v.id); if (v.id === 'calendar') { setDateFilter(null); setSelected(null); } }}
-                  style={{
-                    border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-                    padding: isMobile ? '5px 10px' : '5px 14px', fontSize: 12, fontWeight: 800,
-                    background: view === v.id ? '#fff' : 'transparent',
-                    color:      view === v.id ? '#1a1a1a' : '#8a8a8a',
-                    boxShadow:  view === v.id ? '0 1px 3px rgba(0,0,0,0.10)' : 'none',
-                  }}>
-                  {v.label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="How to show these orders"
+              items={[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }]}
+              value={view}
+              isMobile={isMobile}
+              onChange={id => { setView(id); if (id === 'calendar') { setDateFilter(null); setSelected(null); } }}
+            />
           ) : null}
 
           <span style={{ flex: 1 }} />
@@ -1563,6 +1626,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
                     isMobile={isMobile}
                     homeDeliveryEnabled={homeDeliveryEnabled}
                     bakerSlug={bakerSlug}
+                    bakerName={bakerName}
                     statusIndex={statusIndex}
                   />
                 : <Empty>Select an order to view details.</Empty>

@@ -75,6 +75,21 @@ export {
   LETTER_COUNTS, LETTER_SIZE_DEFAULTS, letterCount, letterSizeForCount, letterTierDims,
 } from './designer/geometry/glyphShape.js';
 export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './designer/geometry/surface.js';
+// Acrylic toppers: the word, its bar, its prongs — and the connectivity check that says whether the
+// thing can be cut as one piece. Exported because the admin studio previews from the same numbers
+// the designer renders, the same bargain TextTopperStudio already makes with the text-slot compositor.
+export { topperShapes, pieceCount, components, bridgeLoose } from './designer/geometry/topperShape.js';
+// THE size control — the admin studios size a topper with the same dial the customer will.
+export { SizeDial } from './designer/shared/SizeDial.jsx';
+// One face list and one finish list, shared by the studio and the cake. creamFonts.json is already
+// copied into spattoo-admin; a topper does not get a second copy of anything.
+export { TOPPER_FACES, DEFAULT_TOPPER_FACE, loadTopperFace, isMonoline, faceFit } from './designer/geometry/topperFaces.js';
+export { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, topperFinish, applyTopperFinishConfig } from './designer/geometry/topperFinishes.js';
+// ONE renderer for both places a topper goes — standing on the top, or lying flat on the side.
+export { default as AcrylicWord } from './designer/canvas/AcrylicWord.jsx';
+// Every acrylic number in one place — the seam a catalogue row reaches the cake through.
+export { ACRYLIC_DEFAULTS, acrylicCfg, acrylicFitAspect, writingFromAcrylicRow, acrylicFinishes,
+         NOMINAL_MM_PER_UNIT } from './designer/geometry/acrylicConfig.js';
 export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).

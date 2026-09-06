@@ -96,7 +96,16 @@ function ensureUniforms(mat) {
 //   gradient : { mode, colors:[hex,…], balance? } | null  (balance 0..1, default 0.5)
 //   bbox     : { min:THREE.Vector3, size:THREE.Vector3, center:THREE.Vector3 } in the mesh's local
 //              space — used to normalise the vertical/linear blend and to find the swirl axis.
-export function applyGradient(mat, gradient, bbox) {
+/* albedo  optional transform applied to each stop before it becomes a uniform.
+ *
+ * ⚠️ THE STOPS MUST GET THE SAME CORRECTION THE BASE COLOUR GETS, or a gradient renders in different
+ * colours from the solid it replaces. This module's own note below says the stops match `mat.color`
+ * because both go through `new THREE.Color(...)` — that stopped being true the moment cream started
+ * correcting its albedo for how much light the surface receives. The caller owns the correction
+ * (a reference light belongs to the SURFACE), so it passes the transform in rather than this shared
+ * module guessing which surface it is decorating. Absent = identity, which is right for anything
+ * uncorrected. */
+export function applyGradient(mat, gradient, bbox, albedo = (c) => c) {
   const active = isGradientActive(gradient);
 
   if (!active) {
@@ -115,7 +124,7 @@ export function applyGradient(mat, gradient, bbox) {
 
   // Three's colour management treats the hex as sRGB and converts to the linear working space —
   // the same conversion `new THREE.Color(color)` on `mat.color` already gets, so stops match.
-  for (let i = 0; i < 3; i++) u.uGColors.value[i].set(colors[Math.min(i, count - 1)]);
+  for (let i = 0; i < 3; i++) u.uGColors.value[i].set(albedo(colors[Math.min(i, count - 1)]));
   u.uGCount.value = count;
   u.uGMode.value = MODE_INDEX[gradient.mode] ?? 0;
   u.uGBalance.value = typeof gradient.balance === 'number' ? gradient.balance : 0.5;

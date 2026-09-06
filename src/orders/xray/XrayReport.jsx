@@ -8,6 +8,7 @@ import XrayTinDiagram from './XrayTinDiagram.jsx';
 import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps from './XrayDecorationSteps.jsx';
+import XrayEdiblePrints from './XrayEdiblePrints.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -423,11 +424,18 @@ export default function XrayReport({ order, apiClient, onClose }) {
           photoUrl={order?.design_thumbnail_url}
           // Shared with the PDF, so the close-up and the printed size are the same on both.
           decorationMeta={decorationMeta}
+          // Derived from the pieces' own paths — see GarnishGuides. Nothing is fetched for these.
+          garnishes={report.garnishes ?? []}
           onGenerated={(key, steps) => {
             setGuideRefresh(n => n + 1);                       // element guides, for designed orders
             if (key && steps) setFreshSteps(p => ({ ...p, [key]: steps }));
           }} s={s}
         />
+
+        {/* Edible prints — the pieces that are PRINTED rather than made. After the how-to sections
+            because it is a different job done on a different machine, and usually the first thing
+            started: the sheet has to be printed and dry before anything is assembled. */}
+        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} s={s} />
 
         {/* Annotated cake — now BOTH kinds of order, by two different routes to the same anchor.
 
@@ -455,6 +463,25 @@ export default function XrayReport({ order, apiClient, onClose }) {
               {tinPlan.totalKg
                 ? <XrayTinDiagram tiers={tinPlan.tiers} />
                 : <div style={s.muted}>Add a weight to the order to size the tins.</div>}
+
+              {/* ⚠️ HOW the tins were arrived at, said out loud.
+               *
+               * A printed tin size is indistinguishable from a measured one — the doc's own warning
+               * — and these come from a build and a slicing that somebody chose. Naming them is what
+               * lets a baker disagree with the number instead of following it.
+               *
+               * The bake-up is here for the same reason: an order that is not a whole number of
+               * 250g steps bakes slightly OVER, because a heavy cake can be trimmed and a light one
+               * cannot be added to. That is a decision, and a sheet that quietly restated the
+               * ordered weight would be hiding it. */}
+              {tinPlan.totalKg && (
+                <div style={{ ...s.muted, marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <span>{tinPlan.build.layers} layers, {tinPlan.build.layers - 1} filling</span>
+                  {tinPlan.bakedKg > tinPlan.totalKg && (
+                    <span>· bake {tinPlan.bakedKg} kg for a {tinPlan.totalKg} kg cake, and trim</span>
+                  )}
+                </div>
+              )}
 
               {/* What goes IN each tin — the sheet never said, and it is the one mistake
                   here that cannot be patched afterwards. Under the diagram rather than

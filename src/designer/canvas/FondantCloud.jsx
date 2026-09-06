@@ -1,4 +1,5 @@
 import { useMemo, useEffect } from 'react';
+import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { cloudPlacement, CLOUD_DEFAULTS } from '../geometry/cloud.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
@@ -78,6 +79,15 @@ function bendToWall(geo, { wallR, theta, centerX, baseY }) {
 //
 // The geometry comes from geometry/cloud.js, which the admin studio also calls — one generator, so
 // what is tuned there is what a customer gets.
+
+/* ⚠️ MEASURED FOR THIS SURFACE. A mid-grey #808080 renders 169,159,151 here against 180,173,168 on the
+ * tier wall, 184,178,173 on a fondant block and 156,143,128 on grass — every surface in this scene
+ * receives a different amount of light, so every one carries its own number. Interpolated from two
+ * measured points, never one division: see the recipe in `shared/albedoForLight.js`.
+ * `SURFACE=cloud node scripts/measure-surface-colour.mjs` prints the table. */
+const CLOUD_REFERENCE_LIGHT = [2.219, 1.793, 1.505];
+const CLOUD_ROLLOFF = 2.0;
+
 export default function FondantCloud({
   params = CLOUD_DEFAULTS,
   cake,                     // { radius, topY, boardY }
@@ -119,7 +129,7 @@ export default function FondantCloud({
 
   const material = (map) => (
     <meshStandardMaterial
-      color={p.color}
+      color={albedoForLight(p.color, CLOUD_REFERENCE_LIGHT, { rolloff: CLOUD_ROLLOFF })}
       roughness={roughness}
       metalness={metalness}
       normalMap={map ?? null}

@@ -32,6 +32,11 @@ import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
+import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
+import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
+import GarnishStudio from './garnish/GarnishStudio.jsx';
+import { garnishDragTo } from './geometry/garnishPlacement.js';
+import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
@@ -55,6 +60,7 @@ import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
+import AnchoredPopup from '../shared/AnchoredPopup.jsx';
 import MyDecorationStudio from './decorations/MyDecorationStudio.jsx';
 import UploadsPanel from './decorations/UploadsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -69,7 +75,12 @@ import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
 import ShapePicker from './controls/ShapePicker.jsx';
 import TierShapeControls, { hasShapeControls } from './controls/TierShapeControls.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
+import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit, loadTopperFace } from './geometry/topperFaces.js';
+import { topperShapes } from './geometry/topperShape.js';
+import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
+import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
+import { SizeDial } from './shared/SizeDial.jsx';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
@@ -176,55 +187,7 @@ function pipingPlacementChanged(current, next, isTop) {
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
 // ── Size dial ─────────────────────────────────────────────────────────────────
-// Compact radial size control: a 280° arc whose band tapers thin → thick (= small →
-// large), so it reads like a piping nozzle widening. Drag or tap anywhere on the arc;
-// the filled portion shows the current value and the centre shows the number. Replaces
-// the full-width linear slider so Color + Size fit a short row and the popup stays tight.
-function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
-  const CX = 24, CY = 24, R_IN = 12, W_MIN = 2, W_MAX = 8;
-  const A_START = -140 * Math.PI / 180;   // lower-left (thin end)
-  const A_SWEEP =  280 * Math.PI / 180;   // sweeps up over the top to lower-right (gap at bottom)
-  const t = Math.max(0, Math.min(1, (size - min) / (max - min)));
-
-  const angOf = u => A_START + u * A_SWEEP;
-  const pt    = (u, r) => [CX + r * Math.sin(angOf(u)), CY - r * Math.cos(angOf(u))];
-  // Filled band from uA→uB: inner edge at R_IN, outer edge growing with u (the taper).
-  const band = (uA, uB) => {
-    const N = Math.max(2, Math.round(40 * Math.abs(uB - uA)));
-    const seg = [];
-    for (let i = 0; i <= N; i++) { const u = uA + (uB - uA) * i / N; const [x, y] = pt(u, R_IN); seg.push(`${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`); }
-    for (let i = 0; i <= N; i++) { const u = uB - (uB - uA) * i / N; const [x, y] = pt(u, R_IN + W_MIN + (W_MAX - W_MIN) * u); seg.push(`L${x.toFixed(2)} ${y.toFixed(2)}`); }
-    return seg.join(' ') + ' Z';
-  };
-  const knob = pt(t, R_IN + (W_MIN + (W_MAX - W_MIN) * t) / 2);
-
-  const setFromEvent = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const px = (e.clientX - rect.left) / rect.width  * 48;
-    const py = (e.clientY - rect.top)  / rect.height * 48;
-    const a  = Math.atan2(px - CX, CY - py);          // angle from top, clockwise
-    const u  = Math.max(0, Math.min(1, (a - A_START) / A_SWEEP));
-    // Clamp to [min,max]: a step that doesn't evenly divide (max-min) can round the top notch past max.
-    onChange?.(+(Math.min(max, Math.max(min, min + Math.round(u * (max - min) / step) * step))).toFixed(2));
-  };
-
-  return (
-    <div style={{ width: 46, height: 46, position: 'relative', flexShrink: 0, cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
-      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFromEvent(e); }}
-      onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); setFromEvent(e); }}
-      onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-      onPointerCancel={e => e.currentTarget.releasePointerCapture(e.pointerId)}>
-      <svg viewBox="0 0 48 48" width={46} height={46} style={{ display: 'block', pointerEvents: 'none' }}>
-        <path d={band(0, 1)} fill="#e6e0e3" />
-        {t > 0.001 && <path d={band(0, t)} fill="#1a1a1a" />}
-        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke="#1a1a1a" strokeWidth={2} />
-      </svg>
-      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
-        {size.toFixed(1)}
-      </span>
-    </div>
-  );
-}
+// SizeDial moved to shared/SizeDial.jsx — it is THE size control and other modules need it.
 
 /**
  * A horizontally scrolling row that admits it scrolls.
@@ -506,6 +469,29 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
   );
 }
 
+/* Switching material, keeping the message.
+ *
+ * ⚠️ The two font lists only PARTLY overlap. The four centreline faces (Allure, Felix, Elfin,
+ * Cursive) are in both; the outline scripts are acrylic-only and Nixish, Osmotron, Clean, Tech,
+ * Gothic and Serif are cream-only. Carrying a font across blind leaves the message set in a face the
+ * new material cannot render, which comes out as a silent fallback rather than an error — so the
+ * font moves to that material's default whenever it is not valid in both.
+ */
+function writingStyleSwitch(w, style) {
+  if (style === (w.style ?? 'cream')) return {};
+  if (style === 'acrylic') {
+    /* ⚠️ Only an OUTLINE face is carried across, and a centreline one is not — even though it is
+     * valid in both lists. Allure as PIPED CREAM is a delicate script; Allure cut from acrylic is a
+     * monoline swept at a fixed width, and at a name's size that comes out as a fat blob nobody
+     * asked for. It was the default cream font, so every message switching Look landed on it. They
+     * stay on the menu because a monoline topper is a real product — just not what "keep my font"
+     * should mean when the two are barely the same letterform. */
+    const font = TOPPER_FACES[w.font]?.kind === 'outline' ? w.font : DEFAULT_TOPPER_FACE;
+    return { style, font, tracking: faceFit(font) };
+  }
+  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT };
+}
+
 // Texts colour picker — the wheel plus a "Metallic" toggle that turns the chosen
 // cream colour into a shiny, shimmery metallic finish. Used both inline (mobile) and
 // in the desktop left-side flyout.
@@ -568,6 +554,49 @@ function FinishTierPicker({ tiers, tier, onPick }) {
 
 // Cream-pen font swatch — renders the font's own single-stroke shapes (not a system face)
 // so bakers pick by the real piped look. The centerline path is stroked with round caps.
+/* ── A font button that shows the face it names ──────────────────────────────────────────────────
+ *
+ * ⚠️ `creamFontPreview` only knows the CREAM faces. Pointed at an acrylic key it falls back, so all
+ * eight acrylic buttons drew the same script and the picker was decoration — you could not tell
+ * Great Vibes from Pinyon without choosing one and looking at the cake.
+ *
+ * So the preview is built from the SAME geometry the cake is cut from: topperShapes on "Abc",
+ * flattened to one SVG path. It cannot disagree with what you get, because it is what you get.
+ * Async because an outline face is fetched on demand; until it arrives the button shows its name,
+ * which is still more use than the wrong picture.
+ */
+function AcrylicFontButton({ fontKey, label, selected, onClick }) {
+  const [prev, setPrev] = useState(null);
+  useEffect(() => {
+    let live = true;
+    loadTopperFace(fontKey).then(font => {
+      const t = topperShapes(font, 'Abc', { height: 1, lines: 1, stroke: 0.12, tracking: faceFit(fontKey) });
+      if (!live || !t.parts?.length) return;
+      const ring = (r) => r.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(3)} ${(-q.y).toFixed(3)}`).join('') + 'Z';
+      setPrev({
+        d: t.parts.map(p => ring(p.outer) + (p.holes ?? []).map(ring).join('')).join(' '),
+        w: t.width, h: t.height,
+      });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [fontKey]);
+
+  const active = selected ? '#1a1a1a' : '#999999';
+  return (
+    <button onClick={onClick} title={label}
+      style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer',
+        border: `1.5px solid ${active}`, background: selected ? '#F2F1EE' : '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: 34 }}>
+      {prev
+        ? <svg width={54} height={22} viewBox={`${-prev.w / 2} ${-prev.h / 2} ${prev.w} ${prev.h}`}
+               style={{ display: 'block', overflow: 'visible' }}>
+            <path d={prev.d} fill={active} fillRule="evenodd" />
+          </svg>
+        : <span style={{ fontSize: 9, fontWeight: 800, color: active }}>{label}</span>}
+    </button>
+  );
+}
+
 function CreamFontButton({ fontKey, label, selected, onClick }) {
   const { d, width, height } = useMemo(() => creamFontPreview(fontKey, 'Abc'), [fontKey]);
   const sw = Math.max(width, height) * 0.05;   // bead ≈ 5% of glyph extent
@@ -1614,7 +1643,16 @@ const EDIT_PANEL_MIN = 108;
 const EDIT_PANEL_MAX_VH = 0.6;
 
 /** The element stack's width on a phone. */
+/* ⚠️ TWO WIDTHS, because the stack does two jobs. Closed, it is a LIST of cards and 156px is right:
+ * narrow enough that the cake stays the thing you are looking at. Expanded, it is an EDITOR, and
+ * 156px is where the Texts card ended up — a textarea, ten fonts and a colour row in a column two
+ * words wide, running off the bottom of the screen. A width chosen for browsing was being asked to
+ * do editing.
+ *
+ * The open width is capped against the viewport rather than fixed, so it cannot exceed a small phone
+ * while still leaving the drag lane (STACK_RIGHT_MOBILE) and a strip of cake visible down the side. */
 const STACK_W_MOBILE = 156;
+const STACK_W_MOBILE_OPEN = 'min(300px, calc(100vw - 84px))';
 /** The flyout handle's width — it lives on the right edge and never moves. */
 const STACK_TAB_W = 22;
 /** How far the stack sits in from the right on a phone: clear of the handle, plus the same 10 of
@@ -1720,7 +1758,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, removeStroke, clearPiping, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1797,7 +1835,26 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // GLB. Hence the wider slider in stamp mode rather than a range that stops just above this.
   const PEN_DEFAULT_THICKNESS = 0.03;
   const PIPE_STAMP_THICKNESS  = +(SHELL_HEIGHT_FRAC * TIER_RADII[0] / 2).toFixed(3);   // 0.144
-  const [penStyle, setPenStyle] = useState({ nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
+  // `medium` is what is in the bag — cream or chocolate. It is a KEY into MEDIA (see pipingMedia.js),
+  // never a branch, and the element row's placement_config is what switches it.
+  const [garnishStudio, setGarnishStudio] = useState(false);
+  const [pendingGarnish, setPendingGarnish] = useState(null);
+  /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
+     saved appears without a refresh — the shelf is the place a baker goes to check it worked. */
+  const [savedGarnishes, setSavedGarnishes] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    apiClient?.fetchGarnishes?.()
+      .then(rows => { if (alive) setSavedGarnishes(rows ?? []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient, garnishStudio]);
+  // Kept on the DESIGNER, not inside the studio, so closing and reopening does not lose the chocolate
+  // a baker just chose — the same reason penStyle lives out here.
+  const [garnishColor, setGarnishColor] = useState('#4A2C1B');
+  const [garnishRope, setGarnishRope] = useState(6);
+  const [selectedGarnishId, setSelectedGarnishId] = useState(null);
+  const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -2073,8 +2130,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [printStudioOpen,     setPrintStudioOpen]     = useState(false);
-  // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked, matching how xray_reports is
-  // handled a few files over — one convention for "your plan does not include this" beats two.
+  // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked — one convention for "your
+  // plan does not include this" beats two. (This used to cite xray_reports as the precedent; X-Ray
+  // is on every plan and is not an example of anything being gated.)
   const [printStudioEnabled,  setPrintStudioEnabled]  = useState(false);
   // Reels. Two entitlements, because "may record" and "whose name is on it" are different questions
   // — see spattoo-docs/plans/reel-for-bakers.md §2e.
@@ -4135,7 +4193,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Decorations and absent when picked from Tools — the same optional-row contract addGrass has had
   // since the registry was written, so both paths run one function and cannot drift.
   function addWritingFromRow(el) {
-    const tuned = el?.placement_config?.writing ?? {};
+    /* ⚠️ A row may author either material. `placement_config.acrylic` is what the Acrylic Topper
+     * Studio writes, and until this it was written and never read — an admin could set the face,
+     * fit, sheet, bar, legs and the finishes on offer, press Save, and change nothing on any cake.
+     * Translated by writingFromAcrylicRow so the studio's nesting is read in ONE place. */
+    const acrylic = el?.placement_config?.acrylic;
+    const tuned = acrylic
+      ? writingFromAcrylicRow(acrylic)
+      : (el?.placement_config?.writing ?? {});
     const id = addWriting({ font: DEFAULT_CREAM_FONT, ...tuned });
     focusEditor('decoration');
     selectExclusive({ type: 'writing', id });
@@ -4239,9 +4304,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            thickness: PEN_DEFAULT_THICKNESS }));
   }
 
-  function addPenFromRow(el) {
-    const tuned = el?.placement_config?.cream_pen ?? {};
-    setPenStyle(prev => ({ ...prev, ...tuned }));
+  /* ⚠️ THE ROW IS THE AUTHORITY, and the medium's defaults sit UNDER it. A `chocolate_pen` row gets
+     a fine round tip, dark brown and a gloss finish without restating any of it; a row that also
+     names a colour — white chocolate, ruby — wins over the default. Master data on the row, material
+     recipe in the table (pipingMedia.js), and neither needs a deploy to change.
+
+     `medium` comes from the registry key rather than from the row, because AddElement writes only
+     `placement_config.procedural` — an admin can pick the generator but cannot author nested config,
+     so a medium that lived only in the nested block could not actually be created by anyone. */
+  function addPenFromRow(el, medium = DEFAULT_MEDIUM) {
+    /* ⚠️ THE NESTED BLOCK IS KEYED BY THE ROW'S OWN GENERATOR, falling back to `cream_pen`. Every
+       existing pen row carries its tuning under `cream_pen` and must keep working; but an admin
+       filling in a chocolate pen would reasonably write `chocolate_pen: {…}`, and reading only the
+       one key would ignore it in silence — the worst kind of wrong, because the row looks configured
+       and behaves as though it is not. */
+    const cfg = el?.placement_config ?? {};
+    const tuned = cfg[cfg.procedural] ?? cfg.cream_pen ?? {};
+    setPenStyle(prev => ({ ...prev, medium, ...(MEDIA[medium]?.defaults ?? {}), ...tuned }));
     selectExclusive({ type: 'tool', tool: 'pen' });
   }
 
@@ -4272,6 +4351,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Both are LOOKS rather than objects — see addDustFromRow and addPenFromRow.
     luster_dust: addDustFromRow,
     cream_pen: addPenFromRow,
+    /* One pen, two media. A separate KEY rather than a flag on the row, for two reasons:
+       the key is the only thing an admin can author on Add Element (it writes `procedural` and
+       nothing nested); and a customer looking for chocolate should meet a chocolate item on the
+       shelf rather than a cream one with a setting to change.
+
+       ⚠️ What that item is CALLED is data, not this. The display name lives on the row and an admin
+       edits it without a deploy — it reads "Chocolate Drawing" today. Never write a name into a
+       comment as though the code depends on it; the code depends on the key. */
+    /* ⚠️ CHOCOLATE OPENS THE STUDIO; it does not write on the cake. Drawing a filigree on a curved
+       surface with a mouse is the hard way to do it and not how the piece is made — piped flat on
+       parchment, set, then placed. Doing it on a plate also removes two limits at a stroke: a fill
+       always works (there is no curved wall to cut through), and fill becomes per-shape rather than
+       "whatever you drew last".
+
+       Chocolate strokes already on saved cakes keep rendering; the renderer is untouched. Only the
+       way NEW ones are made has changed. Cream still writes directly on the cake — the same move is
+       planned for it, deliberately after this one. */
+    chocolate_pen: () => setGarnishStudio(true),
+    /* Opens the studio rather than placing something. A garnish has to be MADE before it can be
+       put anywhere, which is the one procedural tool so far whose first act is a screen. */
+    chocolate_garnish: () => setGarnishStudio(true),
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -5816,8 +5916,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.nameBlocks?.blocks?.length) {
     decorationCards.unshift({ key: 'blocks', type: 'blocks', name: 'Letter Blocks', thumb: null, glyph: 'A' });
   }
+  /* One card per placed garnish, newest first — the same shape every other placed decoration has, so
+     a customer meets one accordion rather than a special case for chocolate. */
+  (design.garnishes ?? []).forEach(g => {
+    decorationCards.unshift({ key: `garnish-${g.id}`, type: 'garnish', id: g.id, garnish: g, thumb: null,
+                              name: g.name || 'Chocolate garnish' });
+  });
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'pen') || design.piping?.length) {
-    decorationCards.unshift({ key: 'cream-pen', type: 'tool', tool: 'pen', name: 'Cream Pen', thumb: null });
+    // Named for what is in the bag. "Cream Pen" while piping chocolate was the giveaway that the
+    // medium had reached the renderer and nothing else.
+    decorationCards.unshift({ key: 'cream-pen', type: 'tool', tool: 'pen', thumb: null,
+      name: `${MEDIA[penStyle.medium]?.label ?? MEDIA[DEFAULT_MEDIUM].label} Pen` });
   }
   // The element stack is ONE persistent right-side editor holding every editable
   // element on the cake — decorations (sticker/topper/text) AND piping cards — in a
@@ -5913,6 +6022,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
       : card.type === 'cloud'         ? { type: 'cloud', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
+      : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
       : card.type === 'blocks'        ? { type: 'blocks' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
@@ -7073,14 +7183,68 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <span style={{ fontSize: 12, fontWeight: 800, color: '#666' }}>CAPITAL LETTERS</span>
         </label>
 
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-          {CREAM_FONTS.map(f => (
-            <CreamFontButton key={f.key} fontKey={f.key} label={f.label}
-              selected={w.font === f.key} onClick={() => setWriting({ font: f.key })} />
+        {/* ── What it is made of ────────────────────────────────────────────────
+            Cream is piped; acrylic is cut from a sheet and stands or lies against the wall. The
+            message survives the switch — same text, same surface, same place — because they are one
+            object in two materials.
+
+            ⚠️ NOT OFFERED on a message that came from a catalogue row (`lockLook`). There the
+            material is the product somebody authored and put on the shelf, not a preference — and
+            "Piped cream" would quietly discard its sheet, bar, legs and finishes. The choice is real
+            in Texts, where the customer is typing a message of their own. */}
+        {!w.lockLook && (<>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Look</div>
+        <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
+          {[{ k: 'cream', label: 'Piped cream' }, { k: 'acrylic', label: 'Acrylic' }].map(st => (
+            <button key={st.k}
+              onClick={() => setWriting(writingStyleSwitch(w, st.k))}
+              style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
+                background: (w.style ?? 'cream') === st.k ? '#1a1a1a' : 'transparent',
+                color: (w.style ?? 'cream') === st.k ? '#fff' : '#1a1a1a' }}>
+              {st.label}
+            </button>
           ))}
         </div>
+        </>)}
 
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {(w.style === 'acrylic'
+            ? Object.entries(TOPPER_FACES).map(([key, f]) => ({ key, label: f.label }))
+            : CREAM_FONTS
+          ).map(f => {
+            const Btn = w.style === 'acrylic' ? AcrylicFontButton : CreamFontButton;
+            return (
+              <Btn key={f.key} fontKey={f.key} label={f.label}
+                selected={w.font === f.key}
+                onClick={() => setWriting({ font: f.key, ...(w.style === 'acrylic' ? { tracking: faceFit(f.key) } : {}) })} />
+            );
+          })}
+        </div>
+
+        {/* An acrylic finish is a MATERIAL, not a colour — mirror gold is nothing but its
+            reflections, gloss black is pigment under clear. So the wheel is replaced rather than
+            recoloured; there is no arbitrary hue to pick. */}
+        {w.style === 'acrylic' && <>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Finish</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {/* Only the finishes this element offers. A row authoring gold and black should not
+                show rose — the studio's list is a decision, not a suggestion. */}
+            {acrylicFinishes(w).map(k => TOPPER_FINISHES[k] && [k, TOPPER_FINISHES[k]]).filter(Boolean).map(([k, f]) => (
+              <button key={k} onClick={() => setWriting({ acrylicFinish: k })}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, background: '#fff',
+                  border: `2px solid ${(w.acrylicFinish ?? 'gold') === k ? '#1a1a1a' : '#e2ddd6'}` }}>
+                <span style={{ width: 14, height: 14, borderRadius: 4, background: f.color, border: '1px solid #00000022' }} />
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </>}
+
+{/* ⚠️ CREAM ONLY. Colour/Gold/Silver tint piped icing; an acrylic finish is a MATERIAL chosen
+            above, and showing both put two colour controls on one card where only one did anything. */}
+        {w.style !== 'acrylic' && <>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>
           {[
@@ -7110,6 +7274,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {writingColorOpen && (
           <WritingColourPicker writing={w} design={design} setWriting={setWriting} width={152} />
         )}
+        </>}
 
         {/* ── Draw or slide ────────────────────────────────────────────────────────────────────
             One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
@@ -7175,13 +7340,153 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   // Cream Pen (freehand) editor body — rendered inline as the expanded body of its stack card (like
   // renderWritingEditor / renderFoilBody), NOT in a floating popup. Dismiss = collapse the card; no ✕.
+  /* A placed garnish: how it sits, how big, and away with it. Everything else about the piece —
+     its shape, its fill — was decided in the studio and is not editable here, because changing it
+     would change every cake that used the same saved garnish if it were ever a reference. It is not
+     (each design carries its own paths), but the card should not invite the idea either. */
+  function renderGarnishBody(g) {
+    if (!g) return null;
+    const tiers = design.tiers ?? [];
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* ⚠️ ONLY WHEN THERE IS A CHOICE. On a one-tier cake a tier chooser is a control with a
+            single answer, and it pushes everything a baker actually came for further down. */}
+        {tiers.length > 1 && g.zone !== 'board' && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>
+              Which tier
+            </div>
+            <Segmented
+              label="Which tier the garnish sits on"
+              items={tiers.map((_, i) => ({
+                id: String(i),
+                // Bottom-up, the way a baker stacks and talks about them.
+                label: i === 0 ? 'Base' : i === tiers.length - 1 ? 'Top' : `Tier ${i + 1}`,
+              }))}
+              value={String(Number.isInteger(g.tierIndex) ? g.tierIndex : tiers.length - 1)}
+              onChange={v => updateGarnish(g.id, { tierIndex: Number(v) })}
+            />
+          </div>
+        )}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+            How it sits
+          </div>
+          <Segmented
+            label="How the garnish sits"
+            items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+            value={g.mode ?? 'stand'}
+            onChange={mode => updateGarnish(g.id, { mode })}
+            tone={primaryColor}
+          />
+        </div>
+
+        <PenSlider label="Size" value={g.scale ?? 1} min={0.4} max={2} step={0.05}
+          onChange={v => updateGarnish(g.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
+        <PenSlider label="Turn" value={g.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
+          onChange={v => updateGarnish(g.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
+        <PenSlider label="Shine" value={g.gloss ?? 0.45} min={0} max={1} step={0.05}
+          onChange={v => updateGarnish(g.id, { gloss: v })} fmt={v => v.toFixed(2)} />
+
+        <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
+          Drag it on the cake to move it round.
+        </div>
+
+        {/* ⚠️ A FAN IS GENERATED, NOT NUDGED. The eye catches a two-degree error immediately on a
+            repeated shape, so an arc of five placed by hand never looks deliberate however long you
+            spend on it — which is the whole reason the reference cakes look made rather than
+            arranged. Offered as counts rather than a slider because a fan is 3 or 5 pieces; a
+            continuous control would invite fiddling with a number nobody has an opinion about. */}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.4,
+                        textTransform: 'uppercase', marginBottom: 5 }}>Fan it out</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[3, 5, 7].map(n => (
+              <button key={n} onClick={() => fanGarnish(g.id, { count: n, spread: 0.55 + n * 0.09 })}
+                title={`${n} pieces, evenly spread and splayed from where this one sits`}
+                style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                         border: '1.5px solid #DDD7CD', background: '#fff',
+                         fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>{n}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10.5, color: '#999', marginTop: 4, lineHeight: 1.45 }}>
+            Repeats this piece round an arc, centred where it sits now. One undo takes it back.
+          </div>
+        </div>
+
+        {/* ⚠️ DUPLICATION LIVES ON THE CAKE, not in the studio. The reference pieces — three or five
+            identical petals fanned round an arc — differ only in ANGLE, which is placement, and
+            placement belongs to the cake. Arranging them in the studio would mean drawing the
+            arrangement flat and discovering it does not read the same standing up, and it would make
+            "what is this drawing?" stop having one answer. */}
+        <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => duplicateGarnish(g.id)}
+          style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                   border: '1.5px solid #DDD7CD', background: '#fff',
+                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
+          Duplicate
+        </button>
+        <button onClick={() => { removeGarnish(g.id); setSelectedGarnishId(null); }}
+          style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                   border: '1.5px solid #E0C9C9', background: '#fff', color: '#A33',
+                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
+          Remove
+        </button>
+        </div>
+      </div>
+    );
+  }
+
   function renderPenBody() {
+    /* ⚠️ THE COPY FOLLOWS THE MEDIUM. The card said "Cream Pen" and "Cream colour" while piping
+       chocolate — the medium reached the renderer and not a word of the interface, which is the kind
+       of gap a screenshot finds and a test never will. */
+    const mediumLabel = MEDIA[penStyle.medium]?.label ?? MEDIA[DEFAULT_MEDIUM].label;
+
+    /* Fill applies to the LAST stroke: the one just drawn, which is what a baker means by "fill it
+       in". Offered only when that stroke can honestly be filled — closed, and on a flat surface. A
+       wall curves away and a straight pass would cut through the cake; see pipingFillOnCake.js. */
+    /* ⚠️ THE LAST OUTLINE, not the last stroke. A fill adds strokes of its own, so "the last stroke"
+       became a fill pass the moment one was applied — and the control, which asks whether the last
+       stroke can be filled, answered no and vanished. The baker got one guess at a pattern. */
+    const outlines = (design.piping ?? []).filter(s2 => !s2.fillOf);
+    const last = outlines[outlines.length - 1] ?? null;
+    const fillable = last && last.kind !== 'stamp' && last.kind !== 'stamprope'
+      ? fillStrokeOnFlat(last.points ?? [], { thickness: last.thickness ?? 0.03 })
+      : null;
+
+    const canFillLast = !!fillable?.canFill;
+    /* Why NOT, in words. "No fill button" with no explanation reads as a bug, and the two reasons
+       lead to different actions: close the shape, or draw it somewhere flat. */
+    /* ⚠️ A TAP HAS NO `points` — it stores a single `point` — so it reached the "on the side" message,
+       which is simply untrue and sends the baker to the wrong place. Three cases, three sentences,
+       and the wrong one is worse than none. */
+    const lastHasPath = (last?.points?.length ?? 0) >= 4;
+    const whyNotFill = !last || canFillLast ? null
+      : !lastHasPath
+        ? 'Draw a shape with the pen, then fill it — a single dab has no inside.'
+      : fillable?.flat
+        ? 'Bring the ends of a stroke together to fill it — letters and swirls are piped as drawn.'
+        : 'A shape on the side of a cake cannot be filled — draw it on the top or the board.';
+
+    function fillLastStroke(pattern) {
+      if (!last) return;
+      const out = fillStrokeOnFlat(last.points ?? [], {
+        pattern, thickness: last.thickness ?? 0.03, seed: last.id?.length ?? 7,
+      });
+      /* Each continuous squeeze becomes its own stroke, which is what it is: the nozzle lifted
+         between them. It also means Undo removes them one at a time, in the order they were piped —
+         the same way undoing any other piping behaves. */
+      setStrokeFill(last.id, out.paths.map(pts => ({ ...last, id: undefined, points: pts })), pattern);
+    }
+
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
           {penStyle.stampUrl
             ? 'Drag on the cake and the shape repeats along your line — release to stop. Drag the empty space around it to rotate.'
-            : 'Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.'}
+            : `Drag on the cake to pipe ${mediumLabel.toLowerCase()} — release to stop. Drag the empty space around it to rotate.`}
         </div>
 
         {/* ── What is on the nozzle ─────────────────────────────────────────────────────────────
@@ -7221,9 +7526,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
 
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Cream colour</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>{mediumLabel} colour</div>
         <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={152} />
+
+        {/* ⚠️ ONLY WHEN IT CAN ACTUALLY BE FILLED. An open stroke has no inside and a curved wall
+            cannot take a straight pass, so the control is absent rather than present-and-dead —
+            and the line below says which of the two it is, because "no fill button" with no reason
+            reads as a bug. */}
+        {canFillLast && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                Fill the shape
+              </div>
+              <Segmented
+                label="Fill the shape you just drew"
+                items={Object.entries(FILL_PATTERNS).map(([id, f]) => ({ id, label: f.label }))}
+                value={last.fillPattern ?? null}
+                onChange={fillLastStroke}
+                tone={penStyle.color}
+              />
+              <div style={{ fontSize: 10, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
+                Fills the shape you just drew. Undo takes it back.
+              </div>
+            </div>
+        )}
+        {whyNotFill && (
+          <div style={{ fontSize: 10, color: '#999', marginTop: 10, lineHeight: 1.45 }}>{whyNotFill}</div>
+        )}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         {/* "Size" and a wider range in stamp mode. The word first: on the pen this IS a thickness —
@@ -8481,7 +8811,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   // The spinner at the top of the panel is already saying the true thing.
                   if (elementTypesLoading) return null;
                   const mine = filterEl(Object.values(otherElementsDb).flat().filter(el => el.baker_id));
-                  return mine.length ? (
+                  /* ⚠️ PIECES BELONG HERE TOO. "My decorations" is where somebody looks for the things
+                     they made, and a chocolate piece they piped is one of those — it was reachable
+                     only from the Uploads panel, which is a different door, so this shelf said
+                     "nothing here yet" to a baker who had just drawn two. Shown above the pictures
+                     and only when there are any, and tapping one opens the STUDIO with it loaded:
+                     a piece needs a where and a how, and those live there. */
+                  const myPieces = (savedGarnishes ?? []).filter(g =>
+                    !elemSearch.trim() || (g.name ?? '').toLowerCase().includes(elemSearch.trim().toLowerCase()));
+                  return (mine.length || myPieces.length) ? (
+                    <>
+                    {myPieces.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
+                        {myPieces.map(g => (
+                          <button key={`g${g.id}`} title={g.name}
+                            onClick={() => { setPendingGarnish(g); setGarnishStudio(true); }}
+                            style={{ ...s.elementCard, padding: 6, cursor: 'pointer' }}>
+                            {g.thumbUrl
+                              ? <img src={g.thumbUrl} alt={g.name} style={{ width: '100%', height: 54, objectFit: 'contain' }} />
+                              : <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#8a8a8a' }}>{g.name}</div>}
+                            <div style={{ fontSize: 9.5, fontWeight: 700, color: '#555', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
                       {mine.map(el => (
                         <button key={el.id} onClick={() => tapPlaceElement(el)} style={{ ...s.elementCard, padding: 6, cursor: 'pointer' }}>
@@ -8491,6 +8844,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         </button>
                       ))}
                     </div>
+                    </>
                   ) : (
                     // #9a939a at 11px was the only thing on the screen and could barely be read —
                     // about 2.9:1 against the panel, well under the 4.5:1 a sentence needs. Grey
@@ -8531,7 +8885,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Templates flyout ── */}
         {templatesOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : {}) }}>
+          /* ⚠️ WIDER than the shared rail flyout, and only this one.
+           *
+           * s.flyout is 200px — right for the Elements list, which is small chips, and wrong for
+           * templates, which are 180px-wide thumbnails. At 200 the grid can only ever draw one
+           * column. 560 starting at RAIL_CENTRE (72) ends at 632, so a 1280 viewport keeps 648px of
+           * cake behind it and a 1024 laptop keeps 392 — a browsing overlay may cover the cake while
+           * you choose, which is what it is for.
+           *
+           * Overridden here rather than in s.flyout because Elements shares that style and does not
+           * want the width. */
+          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : { width: 560 }) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -8584,7 +8948,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!templatesLoading && templates.length === 0 && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
-            <div style={isMobile ? s.templateGrid : null}>
+            <div style={s.templateGrid}>
             {templates
               .filter(t => {
                 const q = tmplSearch.trim().toLowerCase();
@@ -8604,7 +8968,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 return true;
               })
               .map(t => (
-              <div key={t.id} style={{ ...s.templateCard, ...(isMobile ? { flex: '0 0 calc(50% - 5px)', position: 'relative' } : {}) }}
+              /* `position: relative` on both now: it anchors the enlarged preview, and that is not a
+                 phone-only need. The width came off — a grid track decides it. */
+              <div key={t.id} style={{ ...s.templateCard, position: 'relative' }}
                 // Desktop only: touch has no hover, and the two substitutes both break here —
                 // long-press fights the panel's own scrolling, and tap already loads the template.
                 // Mobile gets the explicit ⤢ button below instead.
@@ -8667,9 +9033,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <span style={s.templateBadge}>Premium</span>
                   )}
                 </div>
-                <div style={{ fontSize: 9, color: '#888', textAlign: 'center' }}>
-                  {t.tier_count}-tier
-                </div>
+                {/* No "1-tier" caption. The thumbnail already shows how many tiers there are, and on
+                    a grid of nine cakes it was nine repetitions of a word doing no work — the count
+                    is still there for anyone who wants it, in the enlarged preview on hover. */}
               </div>
             ))
             }
@@ -8804,6 +9170,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // space in it. Reel excluded on purpose — see FitCakeToView.
               filmTight={photoFraming}
               config={canvasConfig}
+              selectedGarnishId={selectedGarnishId}
+              onGarnishSelect={id => { setSelectedGarnishId(id); selectExclusive({ type: 'garnish', id }); }}
+              /* The patch is only the keys the drag changed, so updateGarnish MERGES — anything the
+                 customer set (size, standing or lying) survives being moved. */
+              onGarnishMove={(id, patch) => updateGarnish(id, patch)}
               autoRotate={creamAutoRotate}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
@@ -9270,7 +9641,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 // Mobile: a see-through, narrower overlay so the cake shows THROUGH the stack (the cards
                 // carry the fill). Light tint + a small blur (not the heavy 18px frost, which washed the
                 // cake out to white). Scroll/maxHeight kept so a long element list still works.
-                ? { ...s.editPopup, width: STACK_W_MOBILE, right: STACK_RIGHT_MOBILE, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
+                ? { ...s.editPopup,
+                    width: stackHasExpandedCard ? STACK_W_MOBILE_OPEN : STACK_W_MOBILE,
+                    right: STACK_RIGHT_MOBILE,
+                    /* An open editor needs to be READ, so it takes a solid-enough surface. The
+                       see-through treatment is for the list, where the point is that the cake shows
+                       through the cards. */
+                    background: stackHasExpandedCard ? 'rgba(255,255,255,0.93)' : 'rgba(255,255,255,0.12)',
+                    backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
                 : s.editPopup}>
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
@@ -9309,6 +9687,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()
+                           : card.type === 'garnish' ? renderGarnishBody(card.garnish)
                            : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
                            : buildToolbar(selectedEl, 'panel')}
                         </div>
@@ -9534,18 +9913,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         Anchored to the left of the tapped Color dot, clamped to the viewport. */}
                     {pipingColorKey === `${card.cardId}-${zone}-${tierIndex}` && pipingColorAnchor && createPortal(
                       (() => {
-                        const PAD = 14, EST_H = 400;
+                        const PAD = 14;
                         // Wheel shrinks to fit narrow / pinch-zoomed viewports so the popup box
-                        // (wheel + padding) never exceeds the screen; box below caps it too.
+                        // (wheel + padding) never exceeds the screen.
                         const vw = window.innerWidth;
                         const wheelW = Math.max(150, Math.min(216, vw - 2 * PAD - 16));
                         const popupW = wheelW + 2 * PAD;
-                        // Prefer the popup to the LEFT of the tapped dot; if it won't fit there,
-                        // flip to the right of the 26px dot — then clamp fully on-screen.
-                        let left = pipingColorAnchor.left - popupW - 18;
-                        if (left < 8) left = pipingColorAnchor.left + 26 + 18;
-                        left = Math.min(Math.max(left, 8), vw - popupW - 8);
-                        const top  = Math.max(8, Math.min(pipingColorAnchor.top - 48, window.innerHeight - EST_H));
+                        // Placement is AnchoredPopup's job now. It used to be an EST_H = 400 guess
+                        // here, and the guess was too small — this popup carries a wheel, a swatch
+                        // grid, colours-from-cake and a gradient row — so the bottom fell off the
+                        // screen whenever the swatch sat low enough to expose it.
                         // Gradient eligibility is CONFIG only — the piping element's allowed_actions.gradient.
                         // Stops/mode live on the ring layer (p.gradient); `color` is the solid/stop-0 fallback.
                         const gradEligible = !!pipingPopupEl?.allowed_actions?.gradient;
@@ -9560,10 +9937,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           else writePipingGradient(tierIndex, zone, next, gMode);
                         };
                         return (
-                          <div style={{ position: 'fixed', top, left, zIndex: 4000, background: '#fff',
-                            width: popupW, boxSizing: 'border-box', maxWidth: 'calc(100vw - 16px)',
-                            borderRadius: 16, padding: PAD, boxShadow: '0 12px 44px rgba(0,0,0,0.24)',
-                            border: '1px solid #eadde2' }}>
+                          <AnchoredPopup
+                            anchor={pipingColorAnchor}
+                            width={popupW}
+                            style={{ zIndex: 4000, background: '#fff', borderRadius: 16, padding: PAD,
+                                     boxShadow: '0 12px 44px rgba(0,0,0,0.24)', border: '1px solid #eadde2' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                               <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#1a1a1a', textTransform: 'uppercase' }}>{label}</span>
                               <button style={s.iconBtn} onClick={() => setPipingColorKey(null)}>✕</button>
@@ -9583,7 +9961,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 onModeChange={m => writePipingGradient(tierIndex, zone, gStops, m)}
                               />
                             )}
-                          </div>
+                          </AnchoredPopup>
                         );
                       })(),
                       document.body
@@ -10174,6 +10552,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
       )}
 
+      {/* Chocolate garnish studio. Saving drops the piece straight onto the cake and selects it, so
+          the next thing the customer sees is their own piece with its card open — rather than a
+          confirmation and a hunt for where it went. */}
+      {garnishStudio && (
+        <GarnishStudio
+          onCancel={() => { setGarnishStudio(false); setPendingGarnish(null); }}
+          apiClient={apiClient}
+          openWith={pendingGarnish}
+          color={garnishColor}
+          rope={garnishRope}
+          onRopeChange={setGarnishRope}
+          /* The ONE colour control, handed in rather than rebuilt — see INVARIANTS #3. */
+          colorControl={
+            <ColorWheel color={garnishColor} onChange={setGarnishColor} width={152}
+              cakeColors={[...new Set(collectElementColors(design))]} />
+          }
+          onSave={piece => {
+            const id = crypto.randomUUID();
+            addGarnish({ ...piece, id });
+            setSelectedGarnishId(id);
+            setGarnishStudio(false);
+            setPendingGarnish(null);
+          }}
+        />
+      )}
+
       {/* Uploads — the uploads themselves. Tap one to put it on the cake (it borrows the placement
           rules of the type flagged default_for_uploads — data, not a hardcoded slug). A baker can also
           release one to his customers here, or take it back. */}
@@ -10362,6 +10766,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         initialOrderId={newOrderId}
         initialView={ordersInitialView}
         bakerTimezone={bakerData?.timezone ?? null}
+        // For the finished-photo editor's optional mark. Absent = the "add your name" tool is not
+        // offered at all, rather than offered and writing nothing.
+        bakerName={bakerData?.name ?? null}
         onNewOrderForDate={hasCap('order:manage') ? startOrderForDate : null}
         onEditDesign={(order, opts) => {
           // Locked orders (confirmed onward) open READ-ONLY in the 3D viewer — never
@@ -10928,8 +11335,17 @@ const s = {
     position: 'absolute', top: 6, right: 8,
     fontSize: 11, color: '#333', fontWeight: 800,
   },
+  /* ⚠️ A GRID that counts its own columns, and it runs on desktop too.
+   *
+   * This was `display: flex` applied only when `isMobile`, so a phone got two columns and a desktop
+   * got none — every template stacked in a single 200px lane, which is a worse use of a large screen
+   * than of a small one. `auto-fill` + `minmax` means the count follows the width instead of being
+   * asserted per breakpoint: two columns on a phone, three in the widened flyout, without either
+   * number appearing anywhere. */
   templateGrid: {
-    display: 'flex', flexWrap: 'wrap', gap: 10,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
+    gap: 10,
   },
   // Enlarged thumbnail. pointerEvents none on desktop so it can never sit between the cursor and
   // the card it belongs to — that would fire mouseleave and make the preview flicker itself away.
