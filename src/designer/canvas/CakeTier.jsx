@@ -3,6 +3,7 @@ import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
+import { SafeGlb } from './TextureErrorBoundary.jsx';
 import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { shellMatrix } from './shellMatrix.js';
@@ -626,7 +627,10 @@ export function TopPipingRing(props) {
       selected={props.selected} onClick={props.onClick} />
   );
   if (!props.glbPath) return null;
-  return <TopPipingRingImpl {...props} />;
+  // SafeGlb, for the same reason the stickers have one: a border whose GLB has been deleted from
+  // storage used to throw out of the canvas and take the whole screen with it. Now the rim is
+  // simply absent and the cake still draws (the failure is reported — see TextureErrorBoundary).
+  return <SafeGlb screen="TopPipingRing"><TopPipingRingImpl {...props} /></SafeGlb>;
 }
 
 // ── Top chocolate-drip ring — procedural ganache draped over the rim ──────────
@@ -801,7 +805,7 @@ function TopPipingRingImpl({
 // throws deep in the loader, so the guard has to live above the hook-bearing Impl.
 export function BottomPipingRing(props) {
   if (!props.glbPath) return null;
-  return <BottomPipingRingImpl {...props} />;
+  return <SafeGlb screen="BottomPipingRing"><BottomPipingRingImpl {...props} /></SafeGlb>;
 }
 function BottomPipingRingImpl({
   yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, tierHeight = 0,

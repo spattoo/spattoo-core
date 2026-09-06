@@ -3,14 +3,22 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { stampTransforms } from '../geometry/creamPen.js';
 import { creamMaterialProps, extractGeo } from './CakeTier.jsx';
+import { SafeGlb } from './TextureErrorBoundary.jsx';
 
 // ── GLB stamp stroke ─────────────────────────────────────────────────────────
 // Renders one committed stamp stroke (a tap → single stamp, or a drag → row of stamps) by
 // cloning the chosen library GLB's mesh at each placement transform. We deliberately strip
 // the GLB's own materials and apply the shared cream material (piping renders geometry-only),
-// so every stamp matches the pen's colour/softness. Must be mounted under a <Suspense>
-// (useGLTF suspends while the model loads).
-export default function StampStroke({ stroke, url, color, softness }) {
+// so every stamp matches the pen's colour/softness.
+//
+// The export is a thin SafeGlb wrapper: it carries the Suspense useGLTF needs (so no call site has
+// to remember one) AND the shared boundary, so a stamp whose GLB has gone missing costs that stroke
+// rather than throwing out of the canvas and killing the screen.
+export default function StampStroke(props) {
+  return <SafeGlb screen="StampStroke"><StampStrokeImpl {...props} /></SafeGlb>;
+}
+
+function StampStrokeImpl({ stroke, url, color, softness }) {
   const glbUrl = url || stroke.glbUrl;
   const { scene } = useGLTF(glbUrl);
 

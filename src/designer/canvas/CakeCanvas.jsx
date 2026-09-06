@@ -12,8 +12,7 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // the rendered text changes.
 import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
-import { TextureErrorBoundary, SafeEnvironment } from './TextureErrorBoundary.jsx';
-import { LoadingPing } from './loadingRegistry.js';
+import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import CreamWriting from './CreamWriting.jsx';
 import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
@@ -1613,18 +1612,16 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
-    // While this element's GLB/texture loads, LoadingPing registers it with the shared
-    // loading count (it draws nothing); a single canvas overlay shows ONE spinner for the
+    // SafeGlb = the shared boundary + a Suspense whose fallback registers this element with the
+    // shared loading count (it draws nothing); a single canvas overlay shows ONE spinner for the
     // whole page (see loadingRegistry). Suspense clears the ping when the asset resolves
     // (cached assets resolve synchronously → never counted). Type/zone-agnostic.
-    <TextureErrorBoundary screen="CakeCanvas">
-      <Suspense fallback={<LoadingPing />}>
-        {isGlb
-          ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
-          : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
-        }
-      </Suspense>
-    </TextureErrorBoundary>
+    <SafeGlb screen="CakeCanvas">
+      {isGlb
+        ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
+        : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
+      }
+    </SafeGlb>
   );
   // Mirror across the vertical axis about the model's own centre (StickerModel/StickerTexture
   // both centre their content at the origin). THREE flips winding for the negative determinant,
@@ -2200,7 +2197,10 @@ function CreamStylePicker({ styles = [], onSelect, onCancel }) {
   return (
     <group>
       {styles.map((s, i) => (
-        <StyleTile key={s.id} id={s.id} label={s.name} glbPath={s.image_url} position={positions[i]} onSelect={onSelect} />
+        // A style whose GLB has gone missing drops its tile; the rest of the picker still opens.
+        <SafeGlb key={s.id} screen="CreamStylePicker">
+          <StyleTile id={s.id} label={s.name} glbPath={s.image_url} position={positions[i]} onSelect={onSelect} />
+        </SafeGlb>
       ))}
       <Html position={[midX, -0.5, midZ]} center zIndexRange={[300, 0]}>
         <button onClick={onCancel} style={{

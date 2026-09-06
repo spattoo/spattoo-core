@@ -36,3 +36,26 @@ export function useAnyLoading() {
     () => false,
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The other half of the same question: which assets did NOT arrive.
+//
+// A decoration whose GLB/texture 404s is caught by TextureErrorBoundary and rendered as
+// nothing, so the cake still draws. On screen that is right — one missing element must never
+// white-screen the designer. For a BATCH CAPTURE it is not enough: a thumbnail that is silently
+// missing a border is a wrong picture, and writing it over the good one is worse than skipping.
+//
+// So every caught failure is recorded here. A capture run clears the list before it renders a
+// design and reads it back after: empty → the frame is complete, non-empty → skip that one and
+// say which asset is gone. Same reasoning as captureThumbnailBlob refusing an undrawn frame.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let failed = [];
+
+// Called by TextureErrorBoundary for every asset it swallows.
+export function recordAssetFailure(entry) { failed.push(entry); }
+
+// What has failed since the last clear. Copy — callers must not mutate the list.
+export function assetFailures() { return failed.slice(); }
+
+export function clearAssetFailures() { failed = []; }
