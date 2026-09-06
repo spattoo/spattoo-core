@@ -14,12 +14,10 @@ export { zoneMode, zoneCfg, zoneSeat, zoneInsert } from './designer/placement.js
 // canvas→blob path (the same one order placement and template save use), not a second copy in admin.
 export { shapeView } from './designer/controls/ShapePicker.jsx';
 export { captureThumbnailBlob } from './designer/utils/thumbnail.js';
-// The companion check for a BATCH capture. captureThumbnailBlob refuses a frame that drew nothing;
-// this says whether the frame that DID draw was complete. A decoration whose GLB/texture 404s is
-// caught and rendered as nothing (right on screen — one dead asset must never kill the canvas), so
-// without this a batch would happily save a thumbnail with a missing border over the good one.
-// Clear before you render a design, read after you capture it.
-export { assetFailures, clearAssetFailures } from './designer/canvas/loadingRegistry.js';
+// The same crop, for a picture a PERSON supplies. Staff replace a template's thumbnail by
+// photographing the cake in the designer and uploading the PNG, and an upload stored raw would sit
+// in the grid framed differently from every captured one. Goes through captureThumbnailBlob.
+export { thumbnailFromImage } from './designer/utils/thumbnail.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to

@@ -1,7 +1,7 @@
 import { Component, Suspense } from 'react';
 import { Environment } from '@react-three/drei';
 import { reportError } from '../../telemetry/index.js';
-import { LoadingPing, recordAssetFailure } from './loadingRegistry.js';
+import { LoadingPing } from './loadingRegistry.js';
 
 // Render-time error boundary for texture/GLB load failures inside an R3F tree. If a child throws
 // (e.g. a texture fails to load — a CORS-poisoned cache entry, a 404, a tainted image), render
@@ -14,11 +14,7 @@ export class TextureErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
   componentDidCatch(error) {
-    const screen = this.props.screen || 'CakeCanvas';
-    reportError(error, { screen, action: 'texture_load', severity: 'warning' });
-    // Also record it for anything CAPTURING this frame. Telemetry says the failure happened;
-    // the registry lets a batch run ask "was THIS cake complete?" before it saves a picture of it.
-    recordAssetFailure({ screen, message: error?.message ?? String(error) });
+    reportError(error, { screen: this.props.screen || 'CakeCanvas', action: 'texture_load', severity: 'warning' });
   }
   render() { return this.state.error ? null : this.props.children; }
 }
