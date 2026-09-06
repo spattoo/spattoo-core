@@ -134,14 +134,41 @@ const DEG = Math.PI / 180;
 // unchanged. Read from placement_config (bottom_softness / top_softness); absent →
 // default. The PipingCalibrator keeps an identical copy so its preview matches.
 export const PIPING_SOFTNESS_DEFAULT = 0.7;
+/* ⚠️ CREAM RECEIVES MORE LIGHT THAN THE WALL — measured, and it is NOT the wall's number. Cream runs
+ * at roughness 0.85 with a sheen layer where the wall runs 0.68 with none, and a mid-grey #808080
+ * renders 188,183,180 here against the wall's 180,173,168 and an asked 128. A reference light is a
+ * property of the SURFACE; reusing the wall's would be a guess wearing a measurement's clothes.
+ *
+ * ⚠️ THIS IS THE ONE CHOKEPOINT FOR EVERY CREAM SURFACE — piped borders, the second cream band, the
+ * calibrator, stamped strokes and cream writing all come through here, so correcting once corrects
+ * all of them and none of them can drift apart. `scripts/measure-cream-colour.mjs` prints the table.
+ *
+ * Re-measure after any change to the HDRI, the scene intensity, the lamps, or this material's own
+ * roughness/sheen — see the recipe in `shared/albedoForLight.js`. */
+/* ⚠️ INTERPOLATED FROM TWO MEASURED POINTS, NOT DIVIDED ONCE. Solving straight from the uncorrected
+ * render gives [2.330, 2.194, 2.114], and that still leaves grey at 141 against an asked 128 — the
+ * pipeline is not a pure multiply end to end, because tone mapping compresses differently at the
+ * higher albedo a smaller divisor produces. The wall hit the same wall (predicted 1.163, rendered
+ * 142). Take a second reading with the first guess in place and interpolate; do not re-derive this
+ * by division and assume the arithmetic is the answer. */
+export const CREAM_REFERENCE_LIGHT = [3.254, 2.974, 2.679];
+export const CREAM_ROLLOFF = 2.0;   // same reason as the wall: pale cream must not go grey
+
+/* The same correction the solid colour gets, exposed so a GRADIENT's stops can take it too — a
+ * gradient replaces the base colour per pixel, so uncorrected stops would render a gradient in
+ * different colours from the solid it stands in for. */
+export const creamAlbedo = (color) =>
+  albedoForLight(color, CREAM_REFERENCE_LIGHT, { rolloff: CREAM_ROLLOFF });
+
 export function creamMaterialProps(softness, color) {
   const s = Math.min(1, Math.max(0, softness ?? PIPING_SOFTNESS_DEFAULT));
+  const albedo = creamAlbedo(color);
   return {
-    color,
+    color: albedo,
     roughness:      0.5 + 0.5 * s,   // 0.5 wet … 0.85 (default) … 1.0 matte
     sheen:          (0.4 / 0.7) * s, // 0 … 0.4 (default) … ~0.571 velvety
     sheenRoughness: 0.9,
-    sheenColor:     color,
+    sheenColor:     albedo,
   };
 }
 
@@ -289,7 +316,7 @@ function geomBBox(geometry, gradient) {
 function CreamMesh({ geometry, rotation, scale, color, softness, gradient, selected, castShadow = true, userData = null }) {
   const matRef = useRef(null);
   const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
-  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox); }, [gradient, bbox]);
+  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox, creamAlbedo); }, [gradient, bbox]);
   return (
     <mesh geometry={geometry} rotation={rotation} scale={scale} castShadow={castShadow}
       {...(userData ? { userData } : {})}>
@@ -417,7 +444,7 @@ function InstancedShells({ geometry, shellScale, placements, color, softness, gr
     im.computeBoundingSphere();
   }, [placements, geometry, shellScale]);
 
-  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox); }, [gradient, bbox]);
+  useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox, creamAlbedo); }, [gradient, bbox]);
 
   return (
     <instancedMesh
