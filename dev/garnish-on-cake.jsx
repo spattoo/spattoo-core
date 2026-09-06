@@ -105,6 +105,23 @@ const design = {
               ? [{ layerId: 'c1', color: _q.get('creamcolor') || _q.get('tier') || '#F6DCE2', height: 0.42, order: 0, edge: 'wave', seed: 3, softness: _q.has('soft') ? Number(_q.get('soft')) : undefined }]
               : [] }],
   texts: [], ages: [], stickers: [], piping: [],
+  /* ⚠️ `?blocks=1` / `?grass=1` PUT THE REMAINING UNCORRECTED SURFACES ON THE REAL CAKE, so each can
+   * be measured under the same light as the wall it sits against. Both take their colour from the
+   * URL so the measurement can sweep it, exactly as the tier and cream do. */
+  /* ⚠️ EXPLICIT `blocks`, NOT `text` — the canvas gates on `nameBlocks?.blocks?.length > 0`, so a
+   * fixture passing only `text` renders nothing at all and silently looks like a working scene with
+   * no blocks in it. Polar: `u` is the fraction around the board, `v` the fraction out from centre. */
+  nameBlocks: _q.has('blocks')
+    ? { blocks: [0.94, 0, 0.06].map((u, i) => ({ char: 'ABC'[i], u, v: 0.86, yaw: 0 })),
+        zone: 'board', blockColor: _q.get('blockcolor') || '#F6DCE2',
+        letterColor: _q.get('blockcolor') || '#F6DCE2' }
+    : null,
+  /* ⚠️ `ringWidth`, not `patches` — the canvas reads `boardGrass.ringWidth` to work out how far the
+   * ring reaches across the board-to-cake gap. A fixture inventing a `patches` key renders a ring of
+   * zero width: no error, no grass, and a measurement that reports "surface not found". */
+  boardGrass: _q.has('grass')
+    ? { ringWidth: 0.7, height: 0.16, color: _q.get('grasscolor') || '#4caf3d' }
+    : null,
   /* ⚠️ THE ACRYLIC TOPPER GOES HERE BECAUSE THIS HARNESS USES THE REAL SCENE. every harness now uses
    * `SceneEnv`, the component production mounts — `topper.jsx` and `acrylic-text.jsx` each built
    * their own RoomEnvironment until 2026-09-05, which is why the glare being complained about was

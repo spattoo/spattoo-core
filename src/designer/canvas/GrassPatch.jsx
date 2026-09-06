@@ -1,4 +1,5 @@
 import { useMemo, useRef, useLayoutEffect } from 'react';
+import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { buildGrassTuft, grassSeats, GRASS_DEFAULTS } from '../geometry/grass.js';
 
@@ -9,6 +10,19 @@ import { buildGrassTuft, grassSeats, GRASS_DEFAULTS } from '../geometry/grass.js
 //
 // One InstancedMesh means one draw call over ~120 triangles of real geometry, however many tufts
 // there are. That is the difference between grass being usable on a phone and not.
+
+/* ⚠️ GRASS RECEIVES FAR LESS LIGHT THAN A FLAT SURFACE, and it is the strongest case in the library
+ * for measuring per surface rather than sharing a constant. A mid-grey #808080 renders 156,143,128
+ * here against 184,178,173 on a fondant block and 180,173,168 on the tier wall — thin angled blades
+ * self-shadow, so much of the patch never sees the key light at all. It also carries the biggest
+ * CAST of any surface measured (28 points between red and blue against an asked neutral), which is
+ * why this is three numbers and why blue comes out at 1.0 — needing no correction at all.
+ * `SURFACE=grass node scripts/measure-surface-colour.mjs` prints the table. */
+/* ⚠️ Interpolated from two measured points; one division gives [1.540, 1.272, 1.000] and leaves grey
+ * at 136. Blue stays at 1.0 — grass genuinely needs no correction on that channel. */
+const GRASS_REFERENCE_LIGHT = [1.901, 1.358, 1.000];
+const GRASS_ROLLOFF = 2.0;
+
 export default function GrassPatch({
   shape, topY, color = '#4caf3d',
   strands = GRASS_DEFAULTS.strands,
@@ -93,7 +107,7 @@ export default function GrassPatch({
   return (
     <instancedMesh ref={ref} args={[geo, undefined, seats.length]} castShadow receiveShadow>
       {/* Flat-ish and slightly waxy, like coloured buttercream — a shiny blade reads as plastic. */}
-      <meshStandardMaterial color={color} roughness={0.72} metalness={0} />
+      <meshStandardMaterial color={albedoForLight(color, GRASS_REFERENCE_LIGHT, { rolloff: GRASS_ROLLOFF })} roughness={0.72} metalness={0} />
     </instancedMesh>
   );
 }

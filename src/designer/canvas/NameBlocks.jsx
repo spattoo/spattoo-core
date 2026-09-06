@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { albedoForLight } from '../shared/albedoForLight.js';
 import { RoundedBox, Text3D, Center } from '@react-three/drei';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { nameBlockLayout, NAME_BLOCK_DEFAULTS } from '../geometry/nameBlocks.js';
@@ -17,12 +18,27 @@ import { nameBlockLayout, NAME_BLOCK_DEFAULTS } from '../geometry/nameBlocks.js'
 // is a handful of cubes, so each is its own mesh — instancing would buy nothing and would forbid
 // the per-block letter that is the entire point.
 
+
+/* ⚠️ MEASURED FOR THIS SURFACE — a fondant block is not a cake wall and not grass. Blocks are solid,
+ * near-vertical faces at metalness 0 and roughness 0.55–0.62, and a mid-grey #808080 renders
+ * 184,178,173 against an asked 128 — close to the wall's 180,173,168 but not the same, and nothing
+ * about "close" makes a shared constant correct. Grass, by contrast, reads 156,143,128 on the same
+ * scene: thin angled blades self-shadow, so they receive far less light. Measure per surface.
+ * `SURFACE=blocks node scripts/measure-surface-colour.mjs` prints the table. */
+/* ⚠️ Interpolated from TWO measured points, not divided once — solving straight from the uncorrected
+ * render gives [2.220, 2.061, 1.934] and still leaves grey at 141 against an asked 128, because tone
+ * mapping compresses differently at the higher albedo a smaller divisor produces. Every surface in
+ * this codebase has needed the second reading; treat one division as a first guess, never an answer. */
+export const BLOCK_REFERENCE_LIGHT = [3.124, 2.618, 2.316];
+export const BLOCK_ROLLOFF = 2.0;
+const blockAlbedo = (c) => albedoForLight(c, BLOCK_REFERENCE_LIGHT, { rolloff: BLOCK_ROLLOFF });
+
 function Block({ char, size, chamfer, letterScale, letterDepth, blockColor, letterColor }) {
   return (
     <>
       <RoundedBox args={[size, size, size]} radius={size * chamfer} smoothness={4} castShadow receiveShadow>
         {/* Fondant: matte, faintly waxy. Any shine and it reads as a plastic toy brick. */}
-        <meshStandardMaterial color={blockColor} roughness={0.62} metalness={0} />
+        <meshStandardMaterial color={blockAlbedo(blockColor)} roughness={0.62} metalness={0} />
       </RoundedBox>
       {/* Seated ON the front face and extruding outward. `disableZ` keeps Center from pulling the
           letter's depth back through the face — it centres the glyph in X and Y only, which is what
@@ -40,7 +56,7 @@ function Block({ char, size, chamfer, letterScale, letterDepth, blockColor, lett
             bevelSegments={2}
           >
             {char}
-            <meshStandardMaterial color={letterColor} roughness={0.55} metalness={0} />
+            <meshStandardMaterial color={blockAlbedo(letterColor)} roughness={0.55} metalness={0} />
           </Text3D>
         </Center>
       </group>
