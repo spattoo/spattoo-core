@@ -125,6 +125,13 @@ export const TIER_REFERENCE_LIGHT = [2.297, 2.007, 1.839];
  * was the first guess, and three.js has no global illumination, so a board cannot light anything.) */
 export const TIER_ROLLOFF = 2.0;
 
+/* The wall's correction as a function, because a GRADIENT and STRIPES replace the base colour per
+ * pixel and must take the same transform the solid colour takes. Without it a gradient or striped
+ * tier renders uncorrected right beside a corrected solid one — the same bypass cream's gradient
+ * had, found by looking for it rather than by it being reported. */
+export const tierAlbedo = (color) =>
+  albedoForLight(color, TIER_REFERENCE_LIGHT, { rolloff: TIER_ROLLOFF });
+
 const DEG = Math.PI / 180;
 
 // ── Cream "softness" → material ───────────────────────────────────────────────
@@ -1344,7 +1351,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
       const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
       bb = { min: geo.boundingBox.min.clone(), size, center };
     }
-    applyGradient(matRef.current, gradient, bb);
+    applyGradient(matRef.current, gradient, bb, tierAlbedo);
     /* Stripes ride the SAME bbox and the same seam as the gradient — see shared/color/stripeMaterial.js.
      *
      * ⚠️ Order matters, and it is the reason these are not merged yet: both patch `onBeforeCompile` and
@@ -1352,7 +1359,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
      * tier carrying both renders as stripes. The UI does not let a baker set both — the mode picker is
      * one choice — but a design saved by an older client can, and silently picking one beats a wall
      * that flickers between them depending on which effect re-ran. */
-    applyStripes(matRef.current, stripes, bb);
+    applyStripes(matRef.current, stripes, bb, tierAlbedo);
     applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
   }, [gradient, stripes, glaze, geoSig]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
@@ -1378,7 +1385,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : albedoForLight(color, TIER_REFERENCE_LIGHT, { rolloff: TIER_ROLLOFF })}
+      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
         map={finishMaps?.map ?? null}
         roughness={finishMaps ? 1 : (surf?.roughness ?? 0.68)}
         metalness={finishMaps ? 1 : (surf?.metalness ?? 0)}

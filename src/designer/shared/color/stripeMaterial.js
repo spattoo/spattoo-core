@@ -215,7 +215,12 @@ const FRAG_COLOR = `#include <color_fragment>
  * `position` attribute and needs to know what the bottom and top of THIS wall are. The caller owns
  * it; the material has no idea what geometry it is on.
  */
-export function applyStripes(material, stripes, bbox) {
+/* albedo  optional per-stop transform, exactly as `applyGradient` takes — see there for why.
+ *
+ * ⚠️ STRIPES ARE CHOSEN COLOURS TOO. A striped wall replaces the base colour per pixel, so without
+ * this a striped tier renders uncorrected beside a solid tier that is corrected — the same bypass
+ * gradients had. Absent = identity, right for any surface that is not correcting its albedo. */
+export function applyStripes(material, stripes, bbox, albedo = (c) => c) {
   if (!material) return;
   const active = areStripesActive(stripes) && !!bbox;
 
@@ -242,7 +247,7 @@ export function applyStripes(material, stripes, bbox) {
   // Already patched: just push the new values. Recompiling on every colour tweak is what makes a
   // colour picker feel like it is chewing through treacle.
   if (u && material.userData.__stripesPatched) {
-    for (let i = 0; i < MAX_STRIPES; i++) u.uSColors.value[i].set(colors[Math.min(i, count - 1)]);
+    for (let i = 0; i < MAX_STRIPES; i++) u.uSColors.value[i].set(albedo(colors[Math.min(i, count - 1)]));
     for (let i = 0; i < MAX_STRIPES; i++) u.uSEdges.value[i] = edges[i] ?? 1;
     u.uSCount.value  = count;
     u.uSBlend.value  = blend;
