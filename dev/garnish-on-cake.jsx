@@ -102,7 +102,7 @@ const design = {
                Same chosen colour on both: if they now read as two different colours, correcting one
                surface at a time is the wrong plan. */
             creamLayers: _q.has('cream')
-              ? [{ layerId: 'c1', color: _q.get('tier') || '#F6DCE2', height: 0.42, order: 0, edge: 'wave', seed: 3 }]
+              ? [{ layerId: 'c1', color: _q.get('creamcolor') || _q.get('tier') || '#F6DCE2', height: 0.42, order: 0, edge: 'wave', seed: 3 }]
               : [] }],
   texts: [], ages: [], stickers: [], piping: [],
   /* ⚠️ THE ACRYLIC TOPPER GOES HERE BECAUSE THIS HARNESS USES THE REAL SCENE. every harness now uses
