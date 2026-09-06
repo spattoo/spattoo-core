@@ -94,6 +94,11 @@ const paths = [leaf, ...fillShape(leaf, { pattern: 'hatch', spacing: 26, inset: 
  * not a harness. */
 const asked = new URLSearchParams(location.search).get('color') || '#4A2C1B';
 
+/* A solid #808080 PNG, inline. ⚠️ A DATA URI, not a file in `public/` — a measurement fixture has no
+ * business shipping to customers, and 64x64 of one colour compresses to nothing. The artwork is
+ * uniform so "renders at 1x" has an unambiguous meaning: the render should read 128. */
+const PROBE_GREY = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAXklEQVR4nO3PMQ0AMAzAsEIf9ILYYVWKESTzjhsd8KsBrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BbQEfPgFpLSbCLgAAAABJRU5ErkJggg==';
+
 const design = {
   /* ⚠️ `?cloud=1` / `?rainbow=1` — the last two on-cake surfaces taking a chosen colour. Both hang off
    * the TIER (`tier.clouds`, `tier.rainbows`), not off the design root, which is why they are here
@@ -123,7 +128,16 @@ const design = {
             creamLayers: _q.has('cream')
               ? [{ layerId: 'c1', color: _q.get('creamcolor') || _q.get('tier') || '#F6DCE2', height: 0.42, order: 0, edge: 'wave', seed: 3, softness: _q.has('soft') ? Number(_q.get('soft')) : undefined }]
               : [] }],
-  texts: [], ages: [], stickers: [], piping: [],
+  texts: [], ages: [],
+  /* ⚠️ `?print=1` PUTS A PRINT ON THE CAKE so the claim in `shared/printExposure.js` — that a print
+   * renders at exactly 1x its artwork — can be CHECKED rather than trusted. The artwork is a solid
+   * mid-grey PNG, so "1x" means the render reads 128. A print is the one surface with a documented
+   * exposure model of its own, and the only way to know it still holds is to measure it. */
+  stickers: _q.has('print')
+    ? [{ id: 'p1', imageUrl: PROBE_GREY, zone: 'top', surface: 'top',
+         x: 0, z: 0, scale: 1.6, rotation: 0 }]
+    : [],
+  piping: [],
   /* ⚠️ `?blocks=1` / `?grass=1` PUT THE REMAINING UNCORRECTED SURFACES ON THE REAL CAKE, so each can
    * be measured under the same light as the wall it sits against. Both take their colour from the
    * URL so the measurement can sweep it, exactly as the tier and cream do. */
@@ -150,7 +164,10 @@ const design = {
     ? [{ id: 'w', style: 'acrylic', text: 'Happy Birthday', font: 'ems_allure',
          surface: 'top', color: '#D4AF37', finish: 'gold' }]
     : [],
-  garnishes: [
+  /* ⚠️ `?bare=1` DROPS THE GARNISHES so a measurement can have the cake to itself. The standing panel
+   * sits over the middle of the top surface, which is exactly where a print or a topper lands — a
+   * sample taken with it present is a sample of whatever peeks out from behind it. */
+  garnishes: _q.has('bare') ? [] : [
     // A CUT panel with a hole punched in it, beside a piped piece — the two ways of being made.
     { id: 'a', name: 'Panel', kind: 'cut', color: asked, plate: 420, radius: 0.5, mode: 'stand', scale: 1.3,
       rings: [
