@@ -42,7 +42,23 @@ describe('what is in the bag', () => {
     expect(MEDIA.chocolate.defaults.thickness).toBeLessThan(MEDIA.cream.defaults.thickness ?? 0.03);
   });
 
-  it('passes the colour through rather than deciding it', () => {
-    expect(MEDIA.chocolate.material({ softness: 0.5 }, '#EDE0C8').color).toBe('#EDE0C8');
+  /* ⚠️ THE MEDIUM MUST NOT DECIDE THE COLOUR — but "the albedo it hands the renderer" and "the colour
+   * that was asked for" are no longer the same string, and that is deliberate. `chocolateMaterialProps`
+   * divides the albedo by the light this surface measurably receives, so the RENDER is the chosen
+   * colour; handing over the raw value is what made a teal garnish arrive as pale mint. The invariant
+   * this test protects is that the medium does not IMPOSE a colour of its own (chocolate is not forced
+   * brown) — so it now checks the correction is a faithful transform of what was asked, not that it is
+   * a no-op. `garnishMaterial.test.js` states the same convention for the same reason. */
+  it('renders the colour asked for rather than deciding one of its own', () => {
+    const asked = '#EDE0C8';
+    const out = MEDIA.chocolate.material({ softness: 0.5 }, asked).color;
+    // Still that colour's own hue, just darkened by the measured light — never a colour of the
+    // medium's choosing, and never lighter than what was asked for.
+    const [r, g, b] = out.match(/\d+/g).map(Number);
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);            // #EDE0C8 is warm: R > G > B, and the order survives
+    expect(r).toBeLessThan(0xED);            // divided by the light, so darker than asked
+    // A different asked colour must give a different albedo — proof it is transforming, not choosing.
+    expect(MEDIA.chocolate.material({ softness: 0.5 }, '#3A2117').color).not.toBe(out);
   });
 });

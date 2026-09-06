@@ -185,10 +185,20 @@ export function creamMaterialProps(softness, color) {
 // together (the clearcoat is what sells "wet ganache" vs "plastic"). Mirrors the
 // cream "softness" idea but for chocolate. The admin drip studio keeps the same map.
 export const DRIP_GLOSS_DEFAULT = 0.85;
+/* ⚠️ THE GLOSSIEST SURFACE ON THE CAKE, and the most over-exposed: a mid-grey #808080 renders
+ * 188,182,178 here against 180 on the tier wall and 156 on grass. The clearcoat is why — a wet
+ * ganache carries a coat the wall does not. Measured for THIS material, like every other.
+ * `SURFACE=drip node scripts/measure-surface-colour.mjs` prints the table.
+ *
+ * ⚠️ ONE CHOKEPOINT for every chocolate surface — the rim drip and the glaze tendrils both come
+ * through here, so they cannot drift apart. */
+export const CHOCOLATE_REFERENCE_LIGHT = [2.352, 2.194, 2.093];
+export const CHOCOLATE_ROLLOFF = 2.0;
+
 export function chocolateMaterialProps(gloss, color) {
   const g = Math.min(1, Math.max(0, gloss ?? DRIP_GLOSS_DEFAULT));
   return {
-    color,
+    color: albedoForLight(color, CHOCOLATE_REFERENCE_LIGHT, { rolloff: CHOCOLATE_ROLLOFF }),
     metalness:          0,
     roughness:          0.5 - 0.42 * g,    // 0.5 matte … 0.08 wet
     clearcoat:          0.4 + 0.6 * g,     // 0.4 … 1.0 glassy

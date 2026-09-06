@@ -133,10 +133,18 @@ export function garnishAlbedo(color) {
 export function garnishMaterialProps({ medium = 'chocolate', gloss, color } = {}) {
   const g = gloss ?? GARNISH_GLOSS_DEFAULT;
   return {
-    /* ⚠️ THE ALBEDO IS DIVIDED BY THE MEASURED SCENE LIGHT, so what the renderer produces is the
-     * colour that was chosen — see `garnishAlbedo`. Handing it the raw colour is what made a teal
-     * piece arrive as pale mint. */
-    ...mediumOf(medium).material({ softness: g }, garnishAlbedo(color ?? GARNISH_INK)),
+    /* ⚠️ THE RAW COLOUR GOES IN AND THE GARNISH'S OWN ALBEDO IS SET AFTER — pre-correcting here
+     * DOUBLE-CORRECTS. The medium's material functions (`creamMaterialProps`, `chocolateMaterialProps`)
+     * now carry corrections of their own for the surfaces THEY serve — a piped border, a chocolate
+     * drip — so handing them an already-divided colour applies two corrections and a teal garnish
+     * came out 32,94,85 against the 50,133,118 it should be. A unit test caught it.
+     *
+     * A garnish needs its OWN number regardless: it switches clearcoat, env and specular off below,
+     * so it receives measurably different light from a drip that keeps them. Same colour, different
+     * surface, different constant — which is the whole reason `albedoForLight` takes the light as a
+     * parameter instead of owning one. */
+    ...mediumOf(medium).material({ softness: g }, color ?? GARNISH_INK),
+    color: garnishAlbedo(color ?? GARNISH_INK),
     /* ⚠️ NO ADDITIVE WHITE. A clearcoat and an environment reflection are light bouncing OFF the
      * surface rather than through the pigment, so they are not multiplied by the colour — they land
      * on every channel equally. On a dark or saturated colour that constant is most of its distance
