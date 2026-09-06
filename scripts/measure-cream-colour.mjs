@@ -29,7 +29,8 @@ const hex = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
 const grab = async (cream) => {
   await page.goto('http://localhost:5190/garnish-on-cake.html?still=1&cream=1&tier=%23FFFFFF'
-    + `&color=%23FFFFFF&creamcolor=${encodeURIComponent(cream)}`, { waitUntil: 'networkidle' });
+    + `&color=%23FFFFFF&creamcolor=${encodeURIComponent(cream)}`
+    + (process.env.SOFT ? `&soft=${process.env.SOFT}` : ''), { waitUntil: 'networkidle' });
   await page.waitForTimeout(3000);
   return page.evaluate(() => {
     const cv = document.querySelector('canvas');
