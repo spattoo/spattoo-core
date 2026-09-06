@@ -18,6 +18,9 @@ import { chromium } from 'playwright';
 const SURFACES = {
   blocks: { on: 'blocks=1', key: 'blockcolor' },
   grass:  { on: 'grass=1',  key: 'grasscolor' },
+  cloud:  { on: 'cloud=1',  key: 'cloudcolor' },
+  rainbow:{ on: 'rainbow=1', key: 'rainbowcolor' },
+  drip:   { on: 'drip=1',   key: 'dripcolor' },
 };
 
 const name = process.env.SURFACE || 'blocks';

@@ -95,8 +95,27 @@ const paths = [leaf, ...fillShape(leaf, { pattern: 'hatch', spacing: 26, inset: 
 const asked = new URLSearchParams(location.search).get('color') || '#4A2C1B';
 
 const design = {
+  /* ⚠️ `?cloud=1` / `?rainbow=1` — the last two on-cake surfaces taking a chosen colour. Both hang off
+   * the TIER (`tier.clouds`, `tier.rainbows`), not off the design root, which is why they are here
+   * rather than beside `nameBlocks`. Single-colour rainbow bands on purpose: a measurement wants one
+   * colour it asked for, not six it has to disentangle. */
   tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
-            topPipings: [], bottomPipings: [],
+            clouds: _q.has('cloud')
+              ? [{ id: 'cl1', surface: 'top', u: 0.5, v: 0.3, scale: 1.6,
+                   color: _q.get('cloudcolor') || '#FFFFFF' }]
+              : [],
+            rainbows: _q.has('rainbow')
+              ? [{ id: 'rb1', u: 0.5, scale: 1.1,
+                   colors: Array(6).fill(_q.get('rainbowcolor') || '#F5A3B8') }]
+              : [],
+            /* ⚠️ `?drip=1` — a chocolate drip is a TOP PIPING carrying `drip: true`, not a design key
+             * of its own, so it goes here. `TopDripRing` builds its own geometry, so no catalogue
+             * GLB is needed to render one. */
+            topPipings: _q.has('drip')
+              ? [{ layerId: 'd1', drip: true, dripLength: 1.2,
+                   color: _q.get('dripcolor') || '#3a2117' }]
+              : [],
+            bottomPipings: [],
             /* ⚠️ `?cream=1` PUTS UNCORRECTED CREAM NEXT TO A CORRECTED WALL, which is the only way to
                see whether fixing tiers alone makes a MISMATCH more visible than the original error.
                Same chosen colour on both: if they now read as two different colours, correcting one
