@@ -21,6 +21,7 @@ const SURFACES = {
   cloud:  { on: 'cloud=1',  key: 'cloudcolor' },
   rainbow:{ on: 'rainbow=1', key: 'rainbowcolor' },
   drip:   { on: 'drip=1',   key: 'dripcolor' },
+  rope:   { on: 'rope=1&bare=1', key: 'ropecolor' },
 };
 
 const name = process.env.SURFACE || 'blocks';

@@ -90,6 +90,12 @@ screenshot of something broken that looks fine. Use real pointer or keyboard inp
   features were built. What is touched constantly goes near the work; what is set once and left can
   collapse. A label names what the control actually acts on.
 
+- **Calibrate colour ON grey, choose the taper ON the palette bakers use** (INVARIANTS #16). Grey is
+  the only patch that exposes a CAST in the light, so the reference light is solved there — but the
+  rolloff is a judgement about which colours matter, and grey is not one of them. Tuning it on grey
+  picked a setting measurably worse across ten real cake colours. Every reference light is PER
+  SURFACE and interpolated from two readings; one division always overshoots.
+
 - **Unsaved work is never dismissed by accident** (INVARIANTS #13). `Panel` already takes
   `guardUnsaved` — every occurrence of this bug has been a panel that never passed it. Deliberate
   exits (✕, Cancel) still close.

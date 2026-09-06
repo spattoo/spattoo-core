@@ -137,7 +137,19 @@ const design = {
     ? [{ id: 'p1', imageUrl: PROBE_GREY, zone: 'top', surface: 'top',
          x: 0, z: 0, scale: 1.6, rotation: 0 }]
     : [],
-  piping: [],
+  /* ⚠️ `?rope=1` PIPES A CREAM ROPE, which is the shape a real border is — small, rounded and
+   * SELF-SHADOWING. The cream reference light was measured on the second-cream BAND, a large flat-ish
+   * face on the wall, and grass already proved that geometry changes how much light a surface
+   * receives as much as its material does. This exists to check whether one cream constant serves
+   * both shapes or whether a piped border is being over-darkened. */
+  piping: _q.has('rope')
+    ? [{ id: 'r1', points: Array.from({ length: 40 }, (_, i) => {
+           const t = (i / 39) * Math.PI * 1.4 + 0.3;
+           return [Math.cos(t) * 1.45, 1.16, Math.sin(t) * 1.45];
+         }),
+         nozzle: 'round', thickness: 0.09, softness: 0.7, medium: 'cream',
+         color: _q.get('ropecolor') || '#F6DCE2' }]
+    : [],
   /* ⚠️ `?blocks=1` / `?grass=1` PUT THE REMAINING UNCORRECTED SURFACES ON THE REAL CAKE, so each can
    * be measured under the same light as the wall it sits against. Both take their colour from the
    * URL so the measurement can sweep it, exactly as the tier and cream do. */

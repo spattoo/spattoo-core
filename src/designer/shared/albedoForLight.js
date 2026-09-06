@@ -24,12 +24,34 @@
 // measured last. `printExposure.js` measures 1.54 for a print; a garnish measures 2.40.
 //
 // ⚠️ AND EVERY REFERENCE LIGHT IS MEASURED, NEVER DERIVED. Adding the lighting rig up on paper gives
-// the wrong answer — the render is the authority. The recipe: render a mid-grey (#808080) on the
-// surface, read it back, and solve for the value that lands it on 128. One division usually
-// OVERSHOOTS, because the pipeline is not a pure multiply end to end — tone mapping compresses
-// differently at the higher albedo a smaller divisor produces — so take TWO measured points and
-// interpolate between them. Re-measure after any change to the HDRI, the scene intensity, the lamps,
-// or the surface's own material.
+// the wrong answer — the render is the authority. Re-measure after any change to the HDRI, the scene
+// intensity, the lamps, or the surface's own material.
+//
+// ── THE RECIPE, and it is TWO measurements answering TWO different questions ─────────────────────
+//
+// 1. THE REFERENCE LIGHT — solve it on a mid-grey #808080.
+//    Grey is the only patch that exposes a CAST. A neutral rendering 133,125,120 says the LIGHT is
+//    warm; no coloured patch can tell you that, because you cannot separate "warm light" from "warm
+//    colour". It is also mid-range, clear of the highlight rolloff above and the gamma crush below.
+//    ⚠️ One division OVERSHOOTS — the pipeline is not a pure multiply end to end, so tone mapping
+//    compresses differently at the higher albedo a smaller divisor produces. Take a SECOND reading
+//    with the first guess in place and interpolate. Every surface here has needed it: cream predicted
+//    2.330 and still rendered grey at 141; the wall predicted 1.163 and rendered 142.
+//
+// 2. THE ROLLOFF — sweep it on the colours BAKERS ACTUALLY PICK, never on grey.
+//    ⚠️ THIS IS THE ONE THAT LOOKS LIKE A GREY QUESTION AND IS NOT. The rolloff decides how the
+//    correction tapers toward white, which is a judgement about WHICH COLOURS MATTER — and grey is
+//    not one of them. Measured on cream: 1.5 beats 2.0 on grey (−1 against −6) and on two pinks, so
+//    1.5 was proposed. Re-measured across ten real colours — blush, pinks, ivory, white, chocolate,
+//    teal, green — 2.0 WINS: mean error 11.4 per channel against 12.1, worst channel 38 against 48.
+//    Tuning on grey was pulling toward a setting measurably worse on real cakes.
+//    Report the MEAN and the WORST channel: a setting that improves the average by crushing one
+//    colour is not an improvement.
+//
+// ⚠️ AND KNOW WHEN TO STOP. Where a surface has a CLEARCOAT, light bounces off the coat rather than
+// through the pigment — added, not multiplied — and no albedo divisor removes it. The chocolate drip
+// stops at grey 152 deliberately: driving it to 128 needs [7.9, 4.2, 3.2], which was measured and
+// crushes rose by −50 and renders a dark drip indistinguishable from black. See INVARIANTS #16.
 
 const toLinear = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const toSrgb = c => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);

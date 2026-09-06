@@ -436,6 +436,43 @@ an angle catches more environment and drifts by a few per cent. The honest end s
 to render its own surface with the SAME renderer, which is what the next one should be built to do
 from the start.
 
+## 16. Calibrate ON grey, choose the taper ON the palette bakers use — RULE IS ON
+**Every surface that renders a chosen colour divides its albedo by the light it receives**
+(`shared/albedoForLight.js`). Setting that up needs two numbers, and they are answered by two
+DIFFERENT questions — measuring both against the same patch is how a calibration ends up optimised
+for a colour nobody orders.
+
+**The reference light — solve it on a mid-grey `#808080`.** Grey is the only patch that can expose a
+CAST: a neutral rendering 133,125,120 says the LIGHT is warm, and no coloured patch can tell you that
+because you cannot separate "warm light" from "warm colour." It is also mid-range, clear of the
+highlight rolloff above and the gamma crush below. This is what forced three numbers per surface
+instead of one — lebombo is an outdoor sky and is not neutral.
+
+⚠️ **THE ROLLOFF IS NOT A GREY QUESTION, AND JUDGING IT ON GREY GIVES THE WRONG ANSWER.** The rolloff
+decides how the correction tapers as colours approach white, so it is a judgement about WHICH COLOURS
+MATTER — and grey is not one of them. Measured on cream: rolloff 1.5 beats 2.0 on grey (−1 against
+−6) and on two pinks, so 1.5 was proposed. Re-measured across ten colours a baker actually picks —
+blush, pinks, ivory, white, chocolate, teal, green — **2.0 wins**: mean error 11.4 per channel against
+12.1, worst channel 38 against 48. Tuning on grey was pulling toward a setting that is worse on real
+cakes.
+
+**So:** solve the reference light on grey, sweep the rolloff on a palette, and report the mean AND the
+worst channel — a setting that improves the average by crushing one colour is not an improvement.
+
+⚠️ **AND EVERY REFERENCE LIGHT IS PER SURFACE, INTERPOLATED FROM TWO POINTS.** A tier wall measures
+`[2.297, 2.007, 1.839]`, cream `[3.254, 2.974, 2.679]`, grass `[1.901, 1.358, 1.000]` — grass needs
+NO correction on blue at all, which no shared constant could express. Geometry counts as much as
+material: thin angled blades self-shadow, so grass reads 156 where a flat block reads 184. And one
+division always overshoots — the pipeline is not a pure multiply, so tone mapping compresses
+differently at the higher albedo a smaller divisor produces. Take a second reading with the first
+guess in place and interpolate. Every surface so far has needed it.
+
+⚠️ **A CLEARCOAT PUTS A FLOOR UNDER ALL OF THIS.** Where light bounces OFF a coat rather than through
+the pigment, it is added, not multiplied, and scaling an albedo cannot remove it. The chocolate drip
+stops at grey 152 on purpose: driving it to 128 needs a divisor of `[7.9, 4.2, 3.2]`, which was
+measured and crushes rose by −50 and renders a dark drip indistinguishable from black. Stop where the
+measurement says stop, and write down why.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —
