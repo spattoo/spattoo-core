@@ -1479,7 +1479,13 @@ function SecondCreamBand({ layer, radius, yBase, height, grain }) {
   return (
     <group>
       <mesh geometry={bandGeo} castShadow>
-        <meshPhysicalMaterial {...creamMaterialProps(0.85, color)}
+        {/* ⚠️ `layer.softness ?? 0.85` — the fallback is the value this was hardcoded to, so every
+            saved band renders exactly as before. It became a parameter so the colour correction could
+            be MEASURED across the range a real piping ring uses: rings pass their own softness and
+            default to 0.7, while this band was fixed at 0.85, and softness drives sheen — which adds
+            light. Swept 0.0 / 0.4 / 0.7 / 0.85 / 1.0, a mid-grey renders 130 / 128 / 125 / 124 / 124
+            against an asked 128, so the reference light holds across the whole range. */}
+        <meshPhysicalMaterial {...creamMaterialProps(layer.softness ?? 0.85, color)}
           normalMap={grain} normalScale={SECOND_CREAM_GRAIN_SCALE} side={THREE.DoubleSide} />
       </mesh>
       {gold.on && goldMaps && (
