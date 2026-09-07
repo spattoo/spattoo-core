@@ -14,6 +14,10 @@ export { zoneMode, zoneCfg, zoneSeat, zoneInsert } from './designer/placement.js
 // canvas→blob path (the same one order placement and template save use), not a second copy in admin.
 export { shapeView } from './designer/controls/ShapePicker.jsx';
 export { captureThumbnailBlob } from './designer/utils/thumbnail.js';
+// The same crop, for a picture a PERSON supplies. Staff replace a template's thumbnail by
+// photographing the cake in the designer and uploading the PNG, and an upload stored raw would sit
+// in the grid framed differently from every captured one. Goes through captureThumbnailBlob.
+export { thumbnailFromImage } from './designer/utils/thumbnail.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect, Suspense } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
@@ -7,7 +7,6 @@ import { translateStroke, distanceToStroke } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
 import StampStroke from './StampStroke.jsx';
-import { LoadingPing } from './loadingRegistry.js';
 
 // ── Cream Pen (freehand piping) ──────────────────────────────────────────────
 // Renders the committed freehand strokes (design.piping) and, while drawMode is on,
@@ -254,7 +253,8 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
   return (
     <>
       {piping.map((s, i) => ((s.kind === 'stamp' || s.kind === 'stamprope')
-        ? <Suspense key={s.id ?? i} fallback={<LoadingPing />}><StampStroke stroke={s} /></Suspense>
+        /* StampStroke carries its own Suspense + boundary (SafeGlb) — nothing to add here. */
+        ? <StampStroke key={s.id ?? i} stroke={s} />
         : <StrokeMesh key={s.id ?? i} {...s} />))}
 
       {/* Live preview: swept rope/heap only. In stamp mode the stamps appear on release

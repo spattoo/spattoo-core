@@ -150,6 +150,43 @@ export function captureThumbnailBlob(canvas, { quality = THUMB_QUALITY, timeoutM
   });
 }
 
+// ── An uploaded picture → a thumbnail, through the SAME crop as a captured one ─────────────────
+// A template's thumbnail can also be replaced by hand: photograph the cake in the designer, upload
+// the PNG in admin. That picture is framed as a PHOTO — 2048 on the long edge, the cake wherever the
+// take put it — and a template card is a tight 3:2 crop flattened onto white. Storing the upload raw
+// would give a grid where some cakes are tight and some float in space, which is exactly the drift
+// this file exists to prevent, so it goes through `captureThumbnailBlob` like any captured frame.
+// Reused whole rather than re-implemented: there is ONE crop rule and it is the one above.
+//
+// `tight` reports whether the crop actually found the cake. It can only do that from the ALPHA
+// channel, so it needs the take's TRANSPARENT CUTOUT ground; a photo on a solid ground is opaque
+// edge to edge, so the bounds are the whole frame and the picture is letterboxed as-is. That is a
+// perfectly usable thumbnail, just not a framed one — so the caller is told, rather than left to
+// wonder later why one card looks unlike its neighbours.
+//
+// Resolves null when the picture is empty (fully transparent), on the same reasoning as an undrawn
+// frame: no thumbnail is a failure every caller handles, a wrong one is a failure nobody notices.
+export async function thumbnailFromImage(file, opts = {}) {
+  if (!file) return null;
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement('canvas');
+  canvas.width  = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  bitmap.close?.();
+
+  // Measured before the capture rather than inside it, so this stays a read and the capture path
+  // keeps the single behaviour every other caller already depends on.
+  let tight = false;
+  try {
+    const b = contentBounds(canvas);
+    tight = !!b && (b.w < canvas.width || b.h < canvas.height);
+  } catch { /* pixels unreadable — the capture falls back to the whole frame, and tight stays false */ }
+
+  const blob = await captureThumbnailBlob(canvas, opts);
+  return blob ? { blob, tight } : null;
+}
+
 // Upload a captured thumbnail blob to R2 via a signed URL → the stored key, or null on ANY failure
 // (a missing thumbnail is always non-fatal). `folder` must be an allowed sign-upload folder. This is
 // the ONE copy of the signed-PUT block that order placement, template save, and share-the-draft all
