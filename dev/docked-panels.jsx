@@ -19,7 +19,24 @@ import CustomersPanel from '../src/customers/CustomersPanel.jsx';
  * permanent navigation rail is meaningless.
  */
 
+/* ⚠️ A DESIGNED order, so the X-Ray sheet is reachable here at all.
+ *
+ * Every other fixture is a photo/quote order with no `design_snapshot`, and the X-Ray button on
+ * those needs an AI read and an API. So the tin plan — which tin, how tall, how many layers, how
+ * many bakes and barrels — could not be looked at without an account and a real order, and it
+ * shipped for a long time saying "2 layers, 1 filling" above a nine-inch cake because nobody
+ * could see it. 12kg at the football cake's own proportions is the case that exposed it.
+ */
+const TALL_12KG = {
+  tiers: [{ shape: 'round', radius: 1.2, height: 2.1, color: '#F1EEDC',
+            frostingType: 'buttercream', frostingStyle: 'smooth' }],
+};
+
 const ORDERS = [
+  { id: 'o0', status: 'confirmed', delivery_date: '2026-09-12', weight_kg: 12,
+    design_snapshot: TALL_12KG, flavours: [{ tier: 0, name: 'Blueberry' }],
+    dietary_requirements: [],
+    customers: { first_name: 'Jay', last_name: 'test', phone: '9000000000' } },
   { id: 'o1', status: 'requested', delivery_date: '2026-08-29', weight_kg: 1,
     flavours: [{ tier: 0, name: 'Black Forest' }], dietary_requirements: [],
     customers: { first_name: 'daya', last_name: 'tammisetty', phone: '9177717190' } },
@@ -51,7 +68,10 @@ const apiClient = {
     phone: o.customers.phone, email: null, is_active: true,
   })),
   fetchFlavours:      async () => [],
-  fetchEntitlements:  async () => ({}),
+  /* ⚠️ xray_reports ON, or the X-Ray button does not render and the sheet is unreachable here.
+   * It was stubbed as `{}`, which reads as "no entitlement" — so the one screen this harness could
+   * have shown without an account was the one it hid. */
+  fetchEntitlements:  async () => ({ ent: { xray_reports: true } }),
   fetchOrderAudit:    async () => [],
 };
 

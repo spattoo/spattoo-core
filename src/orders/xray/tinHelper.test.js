@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computeTinPlan, footprintArea, diameterFor, spongeDensity, ANCHOR, CAKE_BUILD, BUILDS,
-  heightFor, enforceStep, MIN_TIER_STEP_IN, COMMON_TINS,
+  computeTinPlan,
+  footprintArea,
+  diameterFor,
+  spongeDensity,
+  ANCHOR,
+  CAKE_BUILD,
+  BUILDS,
+  heightFor,
+  enforceStep,
+  MIN_TIER_STEP_IN,
+  COMMON_TINS,
+  layersFor,
 } from './tinHelper.js';
 
 const round = (r, h) => ({ shape: 'round', radius: r, height: h });
@@ -14,20 +24,21 @@ const heart = (w, d, h) => ({ shape: 'heart', shapeFamily: 'heart', width: w, de
  * Everything else here is geometry, so if this holds the rest follows.
  */
 describe('the anchor', () => {
-  it('makes a 6in x 4in tier weigh 1kg', () => {
+  it('reproduces the cake it was measured from', () => {
     const d = diameterFor(ANCHOR.kg, ANCHOR.heightIn / ANCHOR.diameterIn);
     expect(d).toBeCloseTo(ANCHOR.diameterIn, 2);
   });
 
   it('derives the sponge density rather than asserting one', () => {
     /* ⚠️ The guard against the error the old chart died of. Component densities picked
-     * independently look fine one at a time and disagree together — 0.40 kg/L for sponge is a
-     * perfectly reasonable figure, and it produced a 7-inch tier twelve inches tall.
+     * independently look fine one at a time and disagree together.
      *
-     * 0.80 rather than the 0.50 this asserted while the anchor said a 6x4 was 1kg. That figure came
-     * from a pan set, not from this bakery, and it made a 9-inch tier holding 5kg stand 10.4 inches
-     * tall. Asked directly: 1 to 1.5kg for the same tin. */
-    expect(spongeDensity()).toBeCloseTo(0.8, 2);
+     * 0.44, and it is worth knowing why the previous 0.80 was impossible rather than merely wrong:
+     * NOTHING BAKED IS 0.80 kg/L — that is the density of batter, before it rises. It came from a
+     * 6x4 assumed to weigh 1.5kg. Measured against a real cake (3kg, 8in tin, 7in tall) the sponge
+     * is 0.44 and the whole filled tier is 0.52, which is what a buttercream layer cake weighs.
+     * A figure that cannot be true of anything you could take out of an oven is the tell. */
+    expect(spongeDensity()).toBeCloseTo(0.44, 2);
   });
 
   it('does not let the order\'s build rewrite the sponge recipe', () => {
@@ -38,10 +49,15 @@ describe('the anchor', () => {
      * a sponge does not change what it is made of. The anchor is a calibration at a stated build;
      * departing from it legitimately changes what a 6×4 weighs. */
     const tier = [round(1.2, 1.45)];
-    const at = (layers) => computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers } }).tiers[0].heightIn;
-    // More filling can only make a tier shorter at a fixed weight. If the recipe followed the
-    // slicing this would rise instead, which is how the bug showed itself.
-    expect(at(4)).toBeLessThan(at(2));
+    // Layers are no longer a build FIELD — they follow the height (layersFor). The caller's handle
+    // on them is the target slice thickness, so that is what must not reach the recipe.
+    const at = (targetLayerIn) =>
+      computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, targetLayerIn } }).tiers[0].heightIn;
+    expect(spongeDensity()).toBeCloseTo(0.44, 2);          // unmoved by anything below
+    // Thinner slices means more of them, so more filling. More filling can only make a tier
+    // shorter at a fixed weight. If the recipe followed the slicing this would rise instead,
+    // which is how the bug showed itself.
+    expect(at(1.0)).toBeLessThan(at(2.0));
   });
 });
 
@@ -108,14 +124,19 @@ describe('the tin for a real order', () => {
   const twoTier = [round(1.2, 1.45), round(0.9, 1.37)];
 
   it('sizes a 5kg two-tier from the design\'s own proportions', () => {
-    /* 8+6, where this asserted 9+7 while the anchor said a 6x4 was 1kg. The bakery's own answer for
-     * a 5kg two-tier is 8+6, so the correction moved this ONTO their practice, not away from it. */
+    /* 9+7 at the measured anchor. ⚠️ This asserted 8+6, and before that 9+7 — it has now been each
+     * twice, which is the honest signal that it tracks the anchor rather than the bakery's practice.
+     * The bakery's stated 5kg TWO-tier is 8+6; this design is not that cake (its drawn proportions
+     * are its own, and no preset is named here), so the two are not in conflict. The stated ladder
+     * is pinned where it belongs, against the presets, in 'reproduces EVERY size this bakery gave'. */
     const { tiers } = computeTinPlan(twoTier, 5);
-    expect(tiers[0].tinInch).toBe(8);
-    expect(tiers[1].tinInch).toBe(6);
+    expect(tiers[0].tinInch).toBe(9);
+    expect(tiers[1].tinInch).toBe(7);
     // And it says how tall that makes them, which the old sheet never did.
     expect(tiers[0].heightIn).toBeGreaterThan(4);
-    expect(tiers[0].heightIn).toBeLessThan(7);
+    expect(tiers[0].heightIn).toBeLessThan(8);
+    // The top is never taller than the base — the invert guard, on a real pair.
+    expect(tiers[1].heightIn).toBeLessThanOrEqual(tiers[0].heightIn);
   });
 
   it('says nothing when the order has no weight', () => {
@@ -157,16 +178,17 @@ describe('the two controls a baker gets', () => {
     /* ⚠️ The counter-intuitive one, and worth pinning. Cutting to add filling does add height — but
      * only if the weight may grow. The ORDER fixes the weight, and filling is nearly twice the
      * density of sponge, so each gap buys its height by removing more sponge than it adds. */
-    const two   = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers: 2 } }).tiers[0];
-    const four  = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers: 4 } }).tiers[0];
-    expect(four.heightIn).toBeLessThan(two.heightIn);
+    const thick = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, targetLayerIn: 2.0 } }).tiers[0];
+    const thin  = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, targetLayerIn: 1.0 } }).tiers[0];
+    expect(thin.layers).toBeGreaterThan(thick.layers);     // thinner slices, more of them
+    expect(thin.heightIn).toBeLessThan(thick.heightIn);    // and the tier is SHORTER for it
   });
 
   it('moves the tier less than a step of tin does', () => {
     // Which is the argument for the tall/wide handle being the control and layers being a trim.
-    const two  = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers: 2 } }).tiers[0];
-    const four = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, layers: 4 } }).tiers[0];
-    expect(Math.abs(four.heightIn - two.heightIn)).toBeLessThan(1);
+    const thick = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, targetLayerIn: 2.0 } }).tiers[0];
+    const thin  = computeTinPlan(tier, 3, { build: { ...CAKE_BUILD, targetLayerIn: 1.0 } }).tiers[0];
+    expect(Math.abs(thin.heightIn - thick.heightIn)).toBeLessThan(1);
   });
 });
 
@@ -229,10 +251,14 @@ describe('the named builds, calibrated against real cakes', () => {
   /* ⚠️ "Long" means TALL, not long along the bench — every general baking reference uses "long" for
    * a loaf. The code says `tall`; the trade says long.
    *
-   * These numbers are not chosen. A grid search over density and height-to-width against this
-   * bakery's own SIX single-tier sizes — 1 and 1.5kg → 6in, 2 and 2.5kg → 7in, 3kg → 8in, 5kg → 9in
-   * — hits all six exactly at h/d 0.57 and 0.80 kg/L, and their three two-tier points fall out of
-   * the same figures without further fitting. If a change here stops reproducing these, it is wrong.
+   * These numbers are not chosen. A grid search over height-to-width against this bakery's own SIX
+   * single-tier sizes — 1 and 1.5kg → 6in, 2 and 2.5kg → 7in, 3kg → 8in, 5kg → 9in — hits all six
+   * for any tall aspect in 0.880..0.905, at the density measured from their 3kg/8in/7in cake. 0.895
+   * is the middle of that band. If a change here stops reproducing these, it is wrong.
+   *
+   * ⚠️ The density is no longer part of the search. It is MEASURED, and searching over it is how the
+   * previous fit went wrong: with two free parameters, an impossible density could always be traded
+   * against an impossibly flat cake and still reproduce the tins. One free parameter cannot hide.
    *
    * ⚠️ An earlier fit reached only four of six and blamed the bakery, in a comment right here: it
    * called 1kg and 2.5kg "ties" the bakery broke inconsistently, and concluded that forcing them
@@ -260,7 +286,7 @@ describe('the named builds, calibrated against real cakes', () => {
      * to see from the sheet when a tin could have gone either way. */
     expect(exactFor(1)).toBeCloseTo(5.5, 1);
     expect(exactFor(2.5)).toBeCloseTo(7.5, 1);
-    expect(exactFor(5)).toBeCloseTo(9.5, 1);
+    expect(exactFor(5)).toBeCloseTo(9.4, 1);
   });
 
   it('makes a long cake taller than a flat one at the same weight', () => {
@@ -270,7 +296,7 @@ describe('the named builds, calibrated against real cakes', () => {
      * separates the builds is that one is taller than the other, and that is what is asserted. */
     const long = computeTinPlan(single(1.2, 1.45), 3, { preset: 'tall' }).tiers[0];
     const flat = computeTinPlan(single(1.2, 1.45), 3, { preset: 'standard' }).tiers[0];
-    expect(long.heightIn / long.exactInch).toBeCloseTo(0.57, 1);
+    expect(long.heightIn / long.exactInch).toBeCloseTo(0.89, 1);
     expect(long.heightIn).toBeGreaterThan(flat.heightIn);
     expect(long.tinInch).toBeLessThan(flat.tinInch);
   });
@@ -280,7 +306,7 @@ describe('the named builds, calibrated against real cakes', () => {
     const flat = computeTinPlan(single(1.2, 1.45), 5, { preset: 'standard' }).tiers[0];
     expect([10, 11]).toContain(flat.tinInch);
     expect(computeTinPlan(single(1.2, 1.45), 5, { preset: 'tall' }).tiers[0].tinInch).toBe(9);
-    expect(flat.heightIn / flat.exactInch).toBeCloseTo(0.45, 1);
+    expect(flat.heightIn / flat.exactInch).toBeCloseTo(0.71, 1);
   });
 
   it('uses ONE density for both builds — a build is a shape, not a recipe', () => {
@@ -333,13 +359,34 @@ describe('this bakery, as stated', () => {
       expect(computeTinPlan(two, kg, { preset: 'tall' }).tiers.map(t => t.tinInch)).toEqual(tins);
     });
 
-  it('gives every one of them a height a cake could actually be', () => {
-    // The check that caught the wrong anchor: it reproduced the tins and asked for a 10.4in tier.
+  it('never names a height without saying how to build it', () => {
+    /* ⚠️ THIS TEST USED TO ASSERT `h < 8`, AND THAT ASSERTION IS WHAT BROKE THE MODEL.
+     *
+     * It read as a sanity check — "no cake is nine inches tall" — and it is simply not true here.
+     * This bakery's own anchor is an 8-inch tin standing 7, and a 9-inch holding 5kg comes out at
+     * 9.2. When the correct density produced a tall answer, this test called it absurd, and the
+     * density was raised until the tall answer went away. A bound asserted from intuition beat a
+     * measurement, and took the whole file with it.
+     *
+     * The real invariant was never the number. It is that the sheet cannot name a height it has not
+     * told the baker how to reach: no tin is nine inches deep, so a tall tier is several bakes and,
+     * past `maxBarrelIn`, several barrels on their own dowelled boards. */
     for (const kg of [1, 1.5, 2, 2.5, 3, 5]) {
       for (const preset of ['tall', 'standard']) {
-        const h = computeTinPlan(one(), kg, { preset }).tiers[0].heightIn;
-        expect(h, `${kg}kg ${preset}`).toBeGreaterThan(2);
-        expect(h, `${kg}kg ${preset}`).toBeLessThan(8);
+        const t = computeTinPlan(one(), kg, { preset }).tiers[0];
+        const where = `${kg}kg ${preset}`;
+        expect(t.heightIn, where).toBeGreaterThan(2);
+        expect(t.heightIn, where).toBeLessThan(12);
+        // Every named height is accounted for: enough bakes to hold the sponge, and enough
+        // barrels that no stack stands taller than one board can carry.
+        expect(t.bakes, where).toBeGreaterThanOrEqual(1);
+        expect(t.bakes * CAKE_BUILD.maxBakeIn, where).toBeGreaterThanOrEqual(t.heightIn - t.fillings * CAKE_BUILD.fillingThicknessIn - 1e-9);
+        expect(t.barrels * CAKE_BUILD.maxBarrelIn, where).toBeGreaterThanOrEqual(t.heightIn - 1e-9);
+        // And the layering follows the cake rather than being one number for every one of them:
+        // a real slice thickness, near the target, with a filling in every gap.
+        expect(t.fillings, where).toBe(t.layers - 1);
+        expect(t.layerIn, where).toBeGreaterThan(0.7);
+        expect(t.layerIn, where).toBeLessThan(2.6);
       }
     }
   });

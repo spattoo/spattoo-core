@@ -33,23 +33,30 @@ import { tierShape } from '../../designer/geometry/surface.js';
  * drift from the anchor because it is solved against it.
  */
 
-/* ⚠️ THIS BAKERY'S anchor, which is NOT the pan-set convention — and the convention was wrong here.
+/* ⚠️ THIS BAKERY'S anchor is a cake they BAKED, measured — not a convention, and not a guess.
  *
- * A 6-inch round 4 inches tall is *sold* as a 1kg cake, and that figure sat here because it is the
- * one datum anybody can look up. It cannot be true of these cakes. It fixes the density at 0.54 kg/L,
- * and at 0.54 the bakery's own tin table is unreachable: a 9-inch tier holding 5kg would have to
- * stand 10.4 INCHES TALL. Asked directly, the answer was 1 to 1.5kg for that same 6x4 — and below
- * about 1.2 no aspect ratio reproduces their tins at all.
+ * 3 kg in an 8-inch tin, standing 7 inches. That is one of their own football cakes, and every
+ * number in this file is solved against it.
  *
- * 1.5 is the self-consistent end of that range: it makes a 1.5kg cake in a 6-inch exactly 4 inches
- * tall, and a 1kg one 2.6 — which is what "a 6-inch takes 1 to 1.5kg" means, the same tin filled
- * shallow or full. It also lands a 5kg 9-inch at 6 inches tall instead of ten.
+ * ── WHAT IT REPLACED, AND WHY THAT WAS WRONG ────────────────────────────────────────────────────
  *
- * ⚠️ The two single-tier sizes the old model got wrong — 1kg and 2.5kg — were never a tuning problem.
- * They were this number. With it corrected, all six of their stated single-tier sizes hit exactly,
- * and no separate lookup ladder was needed.
+ * A 6x4 assumed to weigh 1.5kg, which fixed the density at 0.809 kg/L. Nothing baked is 0.809 —
+ * that is the density of BATTER, before it rises. The measured cake says 0.520, so the model was
+ * 55% too dense and every cake it sized came out about a third too small. Asked for a 12kg cake it
+ * answered "11 inch, 9.6 inch tall"; the real answer is nearer 14 inch and 9 inch tall.
+ *
+ * ⚠️ AND THE 1.5 WAS ITSELF A CORRECTION THAT WENT THE WRONG WAY. The file started at 1.0 — which
+ * this anchor now says was RIGHT, since a 6x4 at 0.520 weighs 0.96 kg — and raised it because at a
+ * realistic density "a 9-inch tier holding 5kg would have to stand 10.4 INCHES TALL", which read as
+ * absurd. It is not absurd here: their 8-inch stands 7, and a 9-inch holding 5kg comes out at 9.2.
+ * The tall answer was correct and was judged against a flat-cake assumption that this bakery does
+ * not build to. The density was then bent until the tall answer disappeared, and the BUILD ASPECTS
+ * were bent with it — see BUILDS. Two errors in the same direction, each hiding the other.
+ *
+ * The lesson is the one this file already states and then broke: solve against a cake somebody
+ * weighed. A number that cannot reproduce a real cake is wrong however plausible it reads.
  */
-export const ANCHOR = Object.freeze({ diameterIn: 6, heightIn: 4, kg: 1.5 });
+export const ANCHOR = Object.freeze({ diameterIn: 8, heightIn: 7, kg: 3 });
 
 /* ── How tall this bakery builds ─────────────────────────────────────────────────────────────────
  *
@@ -62,6 +69,17 @@ export const ANCHOR = Object.freeze({ diameterIn: 6, heightIn: 4, kg: 1.5 });
  *
  *   tall      1-1.5kg → 6in, 2-2.5kg → 7in, 3kg → 8in, 5kg → 9in   ("9 if you want height")
  *   standard  5kg → 10 or 11in                                     ("10 or 11 for flat")
+ *
+ * ⚠️ REFITTED, because the old pair (0.45 / 0.57) was fitted against the batter density and is far
+ * too flat. Re-solved at the measured 0.520, the SAME tin table implies 6in/1.5kg = 1.04,
+ * 7in/2.5kg = 1.09, 8in/3kg = 0.88, 9in/5kg = 1.02 — and for the flat end, 10in/5kg = 0.75 and
+ * 11in/5kg = 0.56. These cakes are TALL; the anchor itself stands 7 inches on an 8-inch base.
+ * A preset that returned a 4-inch cake was never describing anything this bakery makes.
+ *
+ * Re-run as a grid search against those six sizes at the measured density: every one of them is hit
+ * for any tall aspect between 0.880 and 0.905, and 0.895 is the middle of that band. The anchor's
+ * own shape — 7 inches on an 8-inch base, 0.875 — sits a hair below it, which is the check that
+ * matters: the fit was not steered to the anchor, and it landed there anyway.
  *
  * All six tall points hit exactly. Their three 2-tier points (7+5 for 3kg, 8+6 for 4 and 5kg) fall
  * out of the same numbers with no further fitting, which is the check that matters — they were never
@@ -76,25 +94,69 @@ export const ANCHOR = Object.freeze({ diameterIn: 6, heightIn: 4, kg: 1.5 });
 export const BUILDS = Object.freeze({
   standard: Object.freeze({
     key: 'standard', label: 'Standard',
-    aspect: 0.45,                      // flat: a 5kg spreads out to a 10in
+    aspect: 0.65,                      // flat FOR THIS BAKERY: a 5kg spreads out to 10.5in
     anchor: ANCHOR,
   }),
   tall: Object.freeze({
     key: 'tall', label: 'Long',        // the trade word; `tall` is what it means
-    aspect: 0.57,                      // taller, so the same 5kg pulls in to a 9in
+    aspect: 0.895,                     // taller, so the same 5kg pulls in to a 9in
     anchor: ANCHOR,
   }),
 });
 
 export const CAKE_BUILD = Object.freeze({
-  layers: 2,                 // slices of sponge; layers - 1 gaps of filling between them
+  /* ⚠️ LAYERS ARE NOT A CONSTANT. They were — fixed at 2 — so a 3-inch cake and a 9-inch one were
+   * both reported as "2 layers, 1 filling". Nobody builds a nine-inch cake as two slabs with one
+   * scrape of buttercream between them; the sponge is torted and filled every inch and a half.
+   *
+   * So the count comes from the HEIGHT (see layersFor) and this is the target thickness of one
+   * slice of sponge, which is the number a baker actually holds in their head.
+   *
+   * ⚠️ It makes the tier SHORTER, not taller, and that surprises people. Buttercream is twice the
+   * density of sponge, so at a FIXED order weight every gap you add buys its height by taking more
+   * than that much away from the sponge. Adding filling only makes a cake taller if it may also get
+   * heavier, and an order fixes the weight. */
+  targetLayerIn: 1.5,        // one slice of sponge, before filling
   fillingThicknessIn: 0.4,   // per gap
   fillingDensity: 0.90,      // kg/L — buttercream. Ganache and fresh cream differ.
+
+  /* ── How it is BAKED, which is not how it is built ────────────────────────────────────────────
+   *
+   * ⚠️ NO TIN IS NINE INCHES DEEP. The sheet used to name a tin and a finished height and stop,
+   * which reads as one impossible bake. A tall cake is several bakes, torted and stacked.
+   *
+   * `maxBakeIn` is the sponge one tin yields in a single bake. `maxBarrelIn` is how tall a stack
+   * can stand on one board before it needs its own: past roughly six inches the bottom layers
+   * compress under the weight, so the cake is built as BARRELS — each on a board, the lower one
+   * dowelled to carry the upper — and iced as one. That is the standard double-barrel build. */
+  maxBakeIn: 3,              // sponge per bake; deep tins go to ~4, this is the safe figure
+  maxBarrelIn: 6,            // taller than this and it needs a board + dowels under the next barrel
+
   /* ⚠️ Nobody bakes 3.26 kg. Batter is weighed out in round amounts, and a tier's share of the
    * order has to land on one — 3.25 and 1.75, not 3.26 and 1.74. Pure arithmetic produces a number
    * that is exactly right and cannot be followed. */
   quantumKg: 0.25,
 });
+
+/* How many slices of sponge a tier of `heightIn` is built from, and the gaps that go with them.
+ *
+ * Closed form rather than a loop. With L slices there are L-1 gaps, so the sponge left is
+ * h - t(L-1) and each slice is (h - t(L-1))/L. Setting that to the target and solving:
+ *
+ *     L = (h + t) / (target + t)
+ *
+ * Rounded, and never below 2 — one slab is not a layer cake. The anchor's own 7 inches comes out
+ * at 4 slices of 1.45in with 3 fillings, which is what that cake is.
+ *
+ * ⚠️ FOR A HEIGHT THAT IS ALREADY KNOWN — the anchor, or a cake somebody has measured. When the
+ * height is still being solved for, the height MOVES with the layer count and this closed form is
+ * the wrong question; see the search in tierBuild, and do not expect the two to agree.
+ */
+export function layersFor(heightIn, build = CAKE_BUILD) {
+  const t = build.fillingThicknessIn, target = build.targetLayerIn;
+  if (!(heightIn > 0) || !(target > 0)) return 2;
+  return Math.max(2, Math.round((heightIn + t) / (target + t)));
+}
 
 /* ⚠️ The build the ANCHOR describes, which is NOT whatever this order asked for.
  *
@@ -121,7 +183,8 @@ const areaOf = (d) => Math.PI * (d / 2) ** 2;
 export function spongeDensity(anchor = ANCHOR) {
   const b = ANCHOR_BUILD;   // the filling the anchor was built with — never the order's
   const A = areaOf(anchor.diameterIn);
-  const hFill = Math.max(0, (b.layers - 1) * b.fillingThicknessIn);
+  // The anchor's own height decides how it was layered — 7in comes out at 4 slices, 3 fillings.
+  const hFill = Math.max(0, (layersFor(anchor.heightIn, b) - 1) * b.fillingThicknessIn);
   const hSponge = Math.max(0.1, anchor.heightIn - hFill);
   const litres = (h) => (A * h) / IN3_PER_L;
   return (anchor.kg - litres(hFill) * b.fillingDensity) / litres(hSponge);
@@ -161,11 +224,13 @@ export function footprintArea(tier) {
  */
 export function diameterFor(kg, aspect, build = CAKE_BUILD, anchor = ANCHOR) {
   const rhoS = spongeDensity(anchor);
-  const hFill = Math.max(0, (build.layers - 1) * build.fillingThicknessIn);
+  // No iteration here: the aspect pins the height at every candidate diameter, so the layer count
+  // falls straight out of it. Only heightFor, where the diameter is fixed instead, has to settle.
   const weightAt = (d) => {
-    const A = areaOf(d);
-    const hSponge = Math.max(0, aspect * d - hFill);
-    return (A * (hSponge * rhoS + hFill * build.fillingDensity)) / IN3_PER_L;
+    const h = aspect * d;
+    const hFill = Math.max(0, (layersFor(h, build) - 1) * build.fillingThicknessIn);
+    const hSponge = Math.max(0, h - hFill);
+    return (areaOf(d) * (hSponge * rhoS + hFill * build.fillingDensity)) / IN3_PER_L;
   };
   let lo = 0.5, hi = 40;
   for (let i = 0; i < 80; i++) {
@@ -206,8 +271,17 @@ export function apportion(shares, totalKg, quantumKg) {
   return base.map(u => +(u * quantumKg).toFixed(3));
 }
 
-// The tins a baker actually owns. Snapping is a convenience, so the exact figure travels too.
-export const COMMON_TINS = Object.freeze([4, 5, 6, 7, 8, 9, 10, 11, 12, 14]);
+/* The tins a baker actually owns. Snapping is a convenience, so the exact figure travels too.
+ *
+ * ⚠️ 16 and 18 ARE ORDINARY PROFESSIONAL SIZES and stopping at 14 was costing real answers. With a
+ * 14-inch ceiling a big cake has nowhere to spread, so it climbs: a 12kg came back at 11 inches
+ * across and nearly ten tall. At 16 the same cake is 7 inches tall, which is a cake somebody can
+ * carry. Both want a heating core (two for an 18) and a long bake — see the bake notes.
+ *
+ * ⚠️ STILL HARDCODED, and it should not be. Every bakery owns a different set, and this is exactly
+ * the kind of value the root CLAUDE.md says an admin must be able to change without a deploy. It is
+ * seeded here ready to be overlaid; the API route and the admin screen are not written yet. */
+export const COMMON_TINS = Object.freeze([4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18]);
 export const snapToCommon = (inch) =>
   COMMON_TINS.reduce((best, t) => (Math.abs(t - inch) < Math.abs(best - inch) ? t : best), COMMON_TINS[0]);
 
@@ -231,16 +305,58 @@ export const MIN_TIER_STEP_IN = 2;
  * nobody owns. Once a tier is also pushed down to clear the step below it, the gap stops being a
  * rounding difference and becomes a whole inch of height.
  *
- * Algebraic, unlike diameterFor: with the diameter fixed the area is known, so the sponge height
- * falls straight out. Filling contributes a fixed height regardless.
+ * ⚠️ NO LONGER ALGEBRAIC. With the layer count following the height it is a fixed point, so this
+ * returns the whole build — height, layers, fillings, and how many bakes and barrels it takes.
  */
-export function heightFor(kg, diameterIn, build = CAKE_BUILD, anchor = ANCHOR) {
+export function tierBuild(kg, diameterIn, build = CAKE_BUILD, anchor = ANCHOR) {
   if (!(kg > 0) || !(diameterIn > 0)) return null;
   const rhoS = spongeDensity(anchor);
-  const hFill = Math.max(0, (build.layers - 1) * build.fillingThicknessIn);
   const A = areaOf(diameterIn);
-  const hSponge = Math.max(0, (kg * IN3_PER_L / A - hFill * build.fillingDensity) / rhoS);
-  return hSponge + hFill;
+  const at = (layers) => {
+    const hFill = Math.max(0, (layers - 1) * build.fillingThicknessIn);
+    const hSponge = Math.max(0, (kg * IN3_PER_L / A - hFill * build.fillingDensity) / rhoS);
+    return { heightIn: hSponge + hFill, hSponge, layers, layerIn: hSponge / layers };
+  };
+
+  /* ⚠️ SEARCHED, NOT ITERATED, and the difference is a bug that shipped in the first draft.
+   *
+   * The obvious way is a fixed point: guess the layers, get a height, re-read the layers off that
+   * height, repeat. It does not settle. Adding a layer adds filling, which makes the tier SHORTER,
+   * which asks for fewer layers, which makes it taller again — a 1kg cake flips between 2 and 3
+   * forever. Stopping after n turns leaves whatever the last turn held, so the sheet could name a
+   * height and a layer count that disagree with each other.
+   *
+   * The weight is what is actually fixed, so every candidate count is evaluated on its own terms —
+   * each gives a real height and a real slice — and the one whose slice lands nearest the target
+   * wins. No oscillation, because nothing is fed back. Ties go to MORE layers: thinner slices are
+   * the safer bake, and a baker would rather torte once more than serve a slab.
+   */
+  let best = null;
+  for (let L = 2; L <= 40; L++) {
+    const cand = at(L);
+    if (cand.hSponge <= 0) break;                      // filling alone already exceeds the weight
+    const miss = Math.abs(cand.layerIn - build.targetLayerIn);
+    if (!best || miss <= best.miss) best = { ...cand, miss };
+    else break;                                        // miss is convex in L — past the turn
+  }
+  if (!best) best = at(2);
+
+  return {
+    heightIn: best.heightIn,
+    layers: best.layers,
+    fillings: Math.max(0, best.layers - 1),
+    layerIn: best.layerIn,
+    // Sponge only — the filling is spread, not baked, so it is not part of what goes in the oven.
+    bakes: Math.max(1, Math.ceil(best.hSponge / build.maxBakeIn - 1e-9)),
+    // 1 = one board under the whole cake. 2+ = a double barrel, each on its own dowelled board.
+    barrels: Math.max(1, Math.ceil(best.heightIn / build.maxBarrelIn - 1e-9)),
+  };
+}
+
+/* The height alone — kept because it is the question most callers ask, and because the step and
+ * inversion passes below compare heights and have no use for the rest. */
+export function heightFor(kg, diameterIn, build = CAKE_BUILD, anchor = ANCHOR) {
+  return tierBuild(kg, diameterIn, build, anchor)?.heightIn ?? null;
 }
 
 /* Push each tier down until it clears the one below it by MIN_TIER_STEP_IN.
@@ -270,7 +386,7 @@ export function enforceStep(tins, minStep = MIN_TIER_STEP_IN) {
 }
 
 /* Returns { totalKg, build, tiers: [{ index, label, weightKg, tinInch, exactInch, heightIn,
- *           layers, shape, square, aspect }] }
+ *           layers, fillings, layerIn, bakes, barrels, shape, square, aspect }] }
  *
  * `tiers` is design_snapshot.tiers, bottom-first. weightKg may be null — with no weight there is no
  * scale, and the report says so rather than inventing one.
@@ -369,8 +485,8 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
     const square = s.kind === 'rect';
     const tin = finalTins[i];
     const weight = finalWeights ? finalWeights[i] : null;
-    // Height comes from the tin that will actually be greased — see heightFor.
-    const height = tin != null && weight != null ? heightFor(weight, tin, build, anchor) : null;
+    // The whole build comes from the tin that will actually be greased — see tierBuild.
+    const b = tin != null && weight != null ? tierBuild(weight, tin, build, anchor) : null;
     return {
       index: i,
       label: n === 1 ? 'Single tier' : i === 0 ? 'Base tier' : i === n - 1 ? 'Top tier' : `Tier ${i + 1}`,
@@ -379,8 +495,17 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
       tinInch: tin,
       // Was this tier narrowed to clear the one below it, rather than being its own best answer?
       stepped: wanted != null && tin != null && tin < wanted,
-      heightIn: height != null ? +height.toFixed(1) : null,
-      layers: build.layers,
+      heightIn: b ? +b.heightIn.toFixed(1) : null,
+      /* PER TIER, not per cake. A 9in tier and a 3in one are not layered the same way, and the
+       * sheet said they were — one number at the top of the page covering every tier below it. */
+      layers: b?.layers ?? null,
+      fillings: b?.fillings ?? null,
+      // How thick one slice of sponge is — the number a baker tortes to.
+      layerIn: b ? +b.layerIn.toFixed(2) : null,
+      // How it reaches that height: how many times the tin goes in the oven, and whether the
+      // stack needs splitting onto its own boards. See CAKE_BUILD.
+      bakes: b?.bakes ?? null,
+      barrels: b?.barrels ?? null,
       aspect: +aspect.toFixed(3),
       designAspect: +designAspect.toFixed(3),
       shape: square ? 'square' : 'round',

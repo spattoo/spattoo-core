@@ -9,7 +9,20 @@ const RY_FACTOR = 0.18; // ellipse vertical squash
 const BASE_HW = 96;     // half-width of widest square tier (front face)
 const DX_F = 0.42;      // box depth: horizontal, as fraction of half-width
 const DY_F = 0.34;      // box depth: vertical
-const H = 120;          // tier body height
+/* ⚠️ THE BODY HEIGHT IS DRAWN TO SCALE, and it was a constant — every tier 120 tall whatever the
+ * sheet said underneath it. The width already followed the tin, so the picture was half-true: a
+ * 12kg cake captioned "12″ round · 12.2″ tall" was drawn as a squat disc, flatter than a cake half
+ * its height. A picture that contradicts its own caption is worse than no picture (INVARIANTS #15),
+ * and these cakes are TALL — a shape the old drawing could not show at all.
+ *
+ * Scaled off the widest tin so height and width share one ruler and the drawn proportion IS the
+ * stated one. Clamped only to keep a very tall tier inside the frame and a very short one visible;
+ * both bounds are far outside anything a real cake reaches. */
+/* ⚠️ BASE_RX IS A HALF-WIDTH. The widest tin spans BASE_RX*2 across, so a tier as tall as that tin
+ * is wide must be BASE_RX*2 DOWN — not the old 120, which drew the vertical axis at half the
+ * horizontal scale and still made a square cake look squat. One ruler means one number. */
+const H = BASE_RX * 2;  // body height of a tier as tall as the widest tin is wide
+const H_MIN = 40, H_MAX = 420;
 const PAD = 16;
 const CX = 150;
 const VBW = 300;
@@ -84,7 +97,12 @@ export default function XrayTinDiagram({ tiers }) {
 
   const geo = tiers.map((t) => {
     const frac = (t.tinInch || maxInch * 0.5) / maxInch;
-    return { ...t, sq: isSquare(t), rx: BASE_RX * frac, ry: BASE_RX * frac * RY_FACTOR, hw: BASE_HW * frac };
+    // One ruler for both axes: BASE_RX*2 pixels is maxInch of cake, across OR up. A tier with no
+    // measured height keeps the old fixed body, so a plan without weights draws as it always did.
+    const h = t.heightIn
+      ? Math.min(H_MAX, Math.max(H_MIN, (t.heightIn / maxInch) * H))
+      : H;
+    return { ...t, sq: isSquare(t), rx: BASE_RX * frac, ry: BASE_RX * frac * RY_FACTOR, hw: BASE_HW * frac, h };
   });
 
   const topOver = (g) => (g.sq ? g.hw * DY_F : g.ry);
@@ -92,10 +110,10 @@ export default function XrayTinDiagram({ tiers }) {
 
   // Place top-down: topmost tier first, each lower tier's top = upper tier's bottom.
   geo[n - 1].topY = PAD + topOver(geo[n - 1]);
-  geo[n - 1].bottomY = geo[n - 1].topY + H;
+  geo[n - 1].bottomY = geo[n - 1].topY + geo[n - 1].h;
   for (let i = n - 2; i >= 0; i--) {
     geo[i].topY = geo[i + 1].bottomY;
-    geo[i].bottomY = geo[i].topY + H;
+    geo[i].bottomY = geo[i].topY + geo[i].h;
   }
   const vbh = geo[0].bottomY + botOver(geo[0]) + PAD;
 

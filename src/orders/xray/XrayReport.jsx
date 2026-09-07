@@ -476,7 +476,19 @@ export default function XrayReport({ order, apiClient, onClose }) {
                * ordered weight would be hiding it. */}
               {tinPlan.totalKg && (
                 <div style={{ ...s.muted, marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  <span>{tinPlan.build.layers} layers, {tinPlan.build.layers - 1} filling</span>
+                  {/* ⚠️ PER TIER, and it used to be one number for the whole cake — a constant 2,
+                      so a nine-inch tier and a three-inch one both read "2 layers, 1 filling".
+                      Nobody builds a nine-inch cake as two slabs. The count now follows the height
+                      (a filling every ~1.5in of sponge), so it differs per tier and has to be
+                      printed per tier. One tier still reads as one line, which is the common case. */}
+                  {tinPlan.tiers.filter(t => t.layers).map(t => (
+                    <span key={t.index}>
+                      {tinPlan.tiers.length > 1 ? `${t.label}: ` : ''}
+                      {t.layers} layers of {t.layerIn}″, {t.fillings} filling{t.fillings === 1 ? '' : 's'}
+                      {' · '}{t.bakes} bake{t.bakes === 1 ? '' : 's'}
+                      {t.barrels > 1 && ` · ${t.barrels} barrels, board + dowels between`}
+                    </span>
+                  ))}
                   {tinPlan.bakedKg > tinPlan.totalKg && (
                     <span>· bake {tinPlan.bakedKg} kg for a {tinPlan.totalKg} kg cake, and trim</span>
                   )}
