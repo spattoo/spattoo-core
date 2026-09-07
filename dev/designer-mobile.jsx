@@ -157,6 +157,11 @@ const STUBS = {
   fetchTextures:       async () => ([]),
   fetchTextStyles:     async () => ([]),
   fetchBakerFlavours:  async () => ({ curated: true, flavours: [], visibility: {} }),
+  // Kept chocolate pieces, for the "My decorations" shelf. Same trap as fetchTags below and the
+  // second time it has been paid for: the Proxy answers with an OBJECT, `rows ?? []` keeps it
+  // because `{}` is not nullish, and opening Decorations threw
+  // "(savedGarnishes ?? []).filter is not a function" — the whole panel, not just the shelf.
+  fetchGarnishes:      async () => ([]),
   // Real occasion tags. The catch-all Proxy below answers unknown methods with an OBJECT, and the
   // save-as-template modal maps over this — so without a stub the modal threw
   // "filterTags.filter is not a function" and had never once opened in this harness.

@@ -477,8 +477,30 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
  * new material cannot render, which comes out as a silent fallback rather than an error — so the
  * font moves to that material's default whenever it is not valid in both.
  */
+/* Which surfaces each writing MATERIAL is offered on.
+ *
+ * A config table, not a condition: the editor renders this list and the material switch repairs
+ * against it, so withdrawing a surface is one edit here rather than a branch in each place that asks.
+ *
+ * ⚠️ ACRYLIC IS NOT OFFERED ON THE BOARD, and the renderer still draws it. A cut sheet lying flat on
+ * the board is a real thing — AcrylicWriting's 'lay' pose stays, because saved designs and ORDERS
+ * carrying one have to keep rendering exactly as agreed. It is simply not something anyone orders,
+ * and it was spending a third of the surface chooser on a choice nobody makes. Piped cream on the
+ * board is common and keeps all three.
+ */
+const WRITING_SURFACES = {
+  cream:   ['top', 'side', 'board'],
+  acrylic: ['top', 'side'],
+};
+const SURFACE_LABELS = { top: 'Top', side: 'Side', board: 'Board' };
+const writingSurfaces = (style) => WRITING_SURFACES[style] ?? WRITING_SURFACES.cream;
+
 function writingStyleSwitch(w, style) {
   if (style === (w.style ?? 'cream')) return {};
+  /* The surface moves for the same reason the font does. A material is not offered on every
+   * surface, and a message left on one the new material does not do would sit there with nothing
+   * in the chooser showing as chosen. Only when it is actually invalid — 'top' and 'side' carry. */
+  const surface = writingSurfaces(style).includes(w.surface ?? 'top') ? null : { surface: 'top' };
   if (style === 'acrylic') {
     /* ⚠️ Only an OUTLINE face is carried across, and a centreline one is not — even though it is
      * valid in both lists. Allure as PIPED CREAM is a delicate script; Allure cut from acrylic is a
@@ -487,9 +509,9 @@ function writingStyleSwitch(w, style) {
      * stay on the menu because a monoline topper is a real product — just not what "keep my font"
      * should mean when the two are barely the same letterform. */
     const font = TOPPER_FACES[w.font]?.kind === 'outline' ? w.font : DEFAULT_TOPPER_FACE;
-    return { style, font, tracking: faceFit(font) };
+    return { style, font, tracking: faceFit(font), ...surface };
   }
-  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT };
+  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT, ...surface };
 }
 
 // Texts colour picker — the wheel plus a "Metallic" toggle that turns the chosen
@@ -7148,7 +7170,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const w = activeWriting ?? {};
     const isMultiline = (w.text ?? '').includes('\n');
     const surface = w.surface ?? 'top';
-    const SURFACES = [{ k: 'top', label: 'Top' }, { k: 'side', label: 'Side' }, { k: 'board', label: 'Board' }];
+    /* A surface this material no longer offers is still shown while a message is ON it, so an
+     * existing design (or an order being looked at) stays legible and editable instead of showing a
+     * chooser with nothing selected. New messages simply never reach it. */
+    const offered = writingSurfaces(w.style ?? 'cream');
+    const SURFACES = (offered.includes(surface) ? offered : [...offered, surface])
+      .map(k => ({ k, label: SURFACE_LABELS[k] }));
     return (
       <>
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
