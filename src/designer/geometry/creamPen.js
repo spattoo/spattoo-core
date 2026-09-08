@@ -130,6 +130,11 @@ export const PEN_FEEL = Object.freeze({
    * be the same rounded nub, which is a strong tell. */
   tailDias: 1.3,
   tailEnd:  0.32,
+  /* ⚠️ SLIT TIPS ONLY — the angle the bag is held at. A rope tip's roll is invisible, so this does
+   * nothing to one. For a petal it is the technique: held upright the ribbon stands on its edge and
+   * reads as a loop of tape, and leaning it away from the flower's centre is what lays the sheet
+   * over so it cups. Every reference photo of a piped rose is a bag held at an angle. */
+  leanDeg: 40,
 });
 
 /* Rope radius along the stroke, from how fast the hand was moving.
@@ -252,7 +257,7 @@ function fixedUpFrames(samples, up) {
 //   opts.ruffleAmp    — fractional radius swell (0 = off)
 //   opts.ruffleFreq   — radians of squeeze phase per unit arc length
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
-  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, up = null } = opts;
+  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, up = null, roll = 0 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
@@ -293,7 +298,11 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
       ? 1 + ruffleAmp * (0.66 * Math.sin(ruffleFreq * s) + 0.34 * Math.sin(ruffleFreq * 0.61 * s + 1.7))
       : 1;
     const r = radiusAt(i, segs, s, arc[segs]) * swell;
-    const phi = twistPerLen * s;                          // spiral the ribs along the rope
+    /* `roll` is the WRIST, and for a slit tip it is the whole difference between a petal and a
+     * standing loop of ribbon. Nobody pipes a petal with the bag upright — it is held leaning away
+     * from the flower's centre, which is what makes the sheet lie over and cup instead of standing
+     * on its edge. Constant along the stroke, added to the rib spiral, which is zero for a slit. */
+    const phi = roll + twistPerLen * s;
     const cs = Math.cos(phi), sn = Math.sin(phi);
     for (let j = 0; j < P; j++) {
       const ax = profile[j][0] * r, ay = profile[j][1] * r;
@@ -351,6 +360,8 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
      * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
      * a caller with the real surface normal (or a nail's axis) should pass it. */
     up: noz.flat ? (upVec ? toVec(upVec) : new THREE.Vector3(0, 1, 0)) : null,
+    // Only a slit has an attitude worth setting; a rope's roll is invisible, so leaning it is noise.
+    roll: noz.flat ? (feel.leanDeg * Math.PI) / 180 : 0,
   };
 
   /* The hand's own speed, mapped onto the swept samples. pushSweep resamples the control points
