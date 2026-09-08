@@ -546,8 +546,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
                             {t.label}
                           </div>
                         )}
+                        {/* A sheet is the one tin a single number cannot name, so it gets both. */}
                         <div style={{ fontSize: 17, fontWeight: 800, color: '#3a352e' }}>
-                          {t.tinInch}″ {t.shape}
+                          {t.rectIn ? `${t.rectIn.w}×${t.rectIn.d}″` : `${t.tinInch}″`} {t.shape}
                         </div>
                         <div style={{ fontSize: 12.5, color: '#6b6459' }}>
                           {t.weightKg} kg · {t.heightIn}″ tall
@@ -621,7 +622,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
                               tiers={o.tiers.map((t, i) => ({ ...t, ...(tierColours[i] ?? {}) }))} />
                           </div>
                           <div style={{ fontSize: 12, fontWeight: 800, color: '#3a352e' }}>
-                            {o.tiers.map(t => `${t.tinInch}″`).join(' + ')}
+                            {o.tiers.map(t => (t.rectIn ? `${t.rectIn.w}×${t.rectIn.d}″` : `${t.tinInch}″`)).join(' + ')}
                           </div>
                           <div style={{ fontSize: 10.5, color: '#9a958d' }}>{o.totalIn}″ tall</div>
                         </button>

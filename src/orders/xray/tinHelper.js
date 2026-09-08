@@ -112,7 +112,12 @@ export const CAKE_BUILD = Object.freeze({
    * A 1.5kg in a 12in tin stands under an inch — you cannot torte that, let alone fill it — and the
    * same weight in a 4in stands about fourteen, which nobody carries to a party. Bounds, so the row
    * shows choices instead of arithmetic. */
-  minTierIn: 2,              // shorter than this and there is nothing to slice
+  /* ⚠️ 1.4, and a SLAB is what set it. Their square cakes are 1.5 to 2.8 inches — 1kg in an 8in
+   * square is 1.7 — where their round ones are six to nine. Two products, not a discrepancy. At a
+   * 2in floor every square size this bakery actually uses was filtered out as unbuildable, which is
+   * the filter deleting the practice it exists to serve. Costs nothing on the round side: the
+   * flattest round option any weight reaches is already above it. */
+  minTierIn: 1.4,            // shorter than this and there is nothing to slice
   /* ⚠️ A RATIO, NOT INCHES, and the first attempt at inches got it exactly backwards. A 12in cap
    * threw out a 12in tin standing 12.2 — a tall cake, but a perfectly ordinary one, and the very
    * option a baker matching a tall photo needs — while happily keeping a 1kg baked in a 4in tin at
@@ -299,6 +304,37 @@ export function apportion(shares, totalKg, quantumKg) {
  * the kind of value the root CLAUDE.md says an admin must be able to change without a deploy. It is
  * seeded here ready to be overlaid; the API route and the admin screen are not written yet. */
 export const COMMON_TINS = Object.freeze([4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18]);
+
+/* ── SQUARE TINS, and why they are not the round ladder ─────────────────────────────────────────
+ *
+ * ⚠️ THE SAME NUMBER MEANS A DIFFERENT CAKE. An 8-inch square tin is 64 square inches; an 8-inch
+ * round one is 50. Twenty-seven percent, on every size. Before this the model solved a circular
+ * diameter, snapped it to the round ladder and printed it with the word "square" on it — so a cake
+ * wanting an 8in square was sent to a 9in square, a quarter too big, and came out flat.
+ *
+ * This bakery's own square sizes: 1kg → 8in, 1.5kg → 8 or 10, 2kg → 10 or 12. At the density
+ * measured from a ROUND cake those land at 1.7in, 2.8/1.7in and 2.3/1.5in tall — slabs, where
+ * their round cakes are six to nine inches. That is not a discrepancy, it is two products, and it
+ * is a real check on the density: it was solved on a tall round cake and predicts a flat square
+ * one that nobody fitted it to.
+ *
+ * ⚠️ Seeded, and it should be DB-overlaid like COMMON_TINS. 6 and 14 are the ordinary sizes either
+ * side of the three they named; nothing here is measured, so an admin must be able to correct it.
+ */
+export const SQUARE_TINS = Object.freeze([6, 8, 10, 12, 14]);
+export const snapToSquare = (inch) =>
+  SQUARE_TINS.reduce((best, t) => (Math.abs(t - inch) < Math.abs(best - inch) ? t : best), SQUARE_TINS[0]);
+
+/* What a tin of `tin` inches actually holds, in square inches. The ONE place the shape changes the
+ * arithmetic — everything upstream works in area, which is shape-blind, and everything downstream
+ * asks this. `footprintArea` measures the DRAWN tier; this measures the TIN it will be baked in. */
+export const tinAreaIn2 = (tin, square) => (square ? tin * tin : areaOf(tin));
+
+/* A footprint area, back to the number that shape's tins are sold by: a side for a square, a
+ * diameter for everything else. The inverse of tinAreaIn2. */
+export const tinSideFor = (areaIn2, square) =>
+  (square ? Math.sqrt(areaIn2) : 2 * Math.sqrt(areaIn2 / Math.PI));
+
 export const snapToCommon = (inch) =>
   COMMON_TINS.reduce((best, t) => (Math.abs(t - inch) < Math.abs(best - inch) ? t : best), COMMON_TINS[0]);
 
@@ -325,10 +361,13 @@ export const MIN_TIER_STEP_IN = 2;
  * ⚠️ NO LONGER ALGEBRAIC. With the layer count following the height it is a fixed point, so this
  * returns the whole build — height, layers, fillings, and how many bakes and barrels it takes.
  */
-export function tierBuild(kg, diameterIn, build = CAKE_BUILD, anchor = ANCHOR) {
-  if (!(kg > 0) || !(diameterIn > 0)) return null;
+export function tierBuild(kg, areaIn2, build = CAKE_BUILD, anchor = ANCHOR) {
+  /* ⚠️ AN AREA, not a diameter. It used to take a diameter and square it, which silently made every
+   * tier round — a square tin handed in as its side came back 27% short. Area is what the sponge
+   * actually fills, and it is the one quantity every shape agrees on. */
+  if (!(kg > 0) || !(areaIn2 > 0)) return null;
   const rhoS = spongeDensity(anchor);
-  const A = areaOf(diameterIn);
+  const A = areaIn2;
   const at = (layers) => {
     const hFill = Math.max(0, (layers - 1) * build.fillingThicknessIn);
     const hSponge = Math.max(0, (kg * IN3_PER_L / A - hFill * build.fillingDensity) / rhoS);
@@ -373,7 +412,7 @@ export function tierBuild(kg, diameterIn, build = CAKE_BUILD, anchor = ANCHOR) {
 /* The height alone — kept because it is the question most callers ask, and because the step and
  * inversion passes below compare heights and have no use for the rest. */
 export function heightFor(kg, diameterIn, build = CAKE_BUILD, anchor = ANCHOR) {
-  return tierBuild(kg, diameterIn, build, anchor)?.heightIn ?? null;
+  return tierBuild(kg, areaOf(diameterIn), build, anchor)?.heightIn ?? null;
 }
 
 /* Push each tier down until it clears the one below it by MIN_TIER_STEP_IN.
@@ -494,15 +533,30 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
     const s = tierShape(t);
     const weight = weights ? weights[i] : null;
 
+    /* ⚠️ SQUARE means the footprint really is square, not merely "not round".
+     * `s.kind === 'rect'` was being reported as `square` outright, so a 13x9 sheet came back
+     * labelled square and given one number for a tin that has two. A rect within a few percent of
+     * equal sides IS a square tin; anything else is a sheet and is reported as its own W x D. */
+    const rect = s.kind === 'rect';
+    const w = rect ? s.halfW * 2 : 0, d = rect ? s.halfD * 2 : 0;
+    const square = rect && Math.abs(w - d) <= Math.max(w, d) * 0.05;
+
     // The design's own proportion: height over the diameter of a circle with the same footprint, so
-    // a heart and a round tier are compared on the space they actually occupy.
+    // a heart and a round tier are compared on the space they actually occupy. Shape-blind on
+    // purpose — it is a PROPORTION, and only the tin at the end is sold in a shape's own units.
     const equivDia = 2 * Math.sqrt(areas[i] / Math.PI);
     const designAspect = (t?.height ?? 1) / equivDia;
     // The tier's own drawn proportion, moved by the sweep. No named build overrides it any more.
     const aspect = designAspect * bias;
-    const exact = weight != null ? diameterFor(weight, aspect, build, anchor) : null;
-    return { shape: s, weight, designAspect, aspect, exact,
-             wanted: exact != null ? snapToCommon(exact) : null };
+    const exactDia = weight != null ? diameterFor(weight, aspect, build, anchor) : null;
+    /* The solve is circular; the TIN is whatever this shape is sold by. Converted through AREA so
+     * the cake keeps the footprint that was solved for — a square of the same area as a circle is
+     * 0.886 of its diameter, and reading the diameter straight onto a square tin is the 27% error
+     * this replaced. */
+    const exact = exactDia != null ? tinSideFor(areaOf(exactDia), square) : null;
+    return { shape: s, weight, designAspect, aspect, exact, square,
+             rectRatio: rect && !square && d > 0 ? w / d : null,
+             wanted: exact != null ? (square ? snapToSquare(exact) : snapToCommon(exact)) : null };
   });
 
   /* Pass 2 — the tiers as a SET. A step is a relationship between two tiers, so it cannot be seen
@@ -528,7 +582,7 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
     heightShares.push(h);
     cap = h;
   }
-  const tinVols = finalTins.map((tin, i) => (tin != null ? areaOf(tin) : 0) * heightShares[i]);
+  const tinVols = finalTins.map((tin, i) => (tin != null ? tinAreaIn2(tin, solved[i].square) : 0) * heightShares[i]);
   const tinVolTotal = tinVols.reduce((s, v) => s + v, 0);
   const finalWeights = total != null && tinVolTotal > 0
     ? apportion(tinVols.map(v => v / tinVolTotal), total, quantum)
@@ -543,7 +597,9 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
    * move strictly reduces the gap — it cannot cycle. */
   if (finalWeights && quantum > 0) {
     const q = quantum;
-    const hAt = (i) => (finalTins[i] != null ? heightFor(finalWeights[i], finalTins[i], build, anchor) : 0);
+    const hAt = (i) => (finalTins[i] != null
+      ? (tierBuild(finalWeights[i], tinAreaIn2(finalTins[i], solved[i].square), build, anchor)?.heightIn ?? 0)
+      : 0);
     for (let i = 1; i < n; i++) {
       for (let guard = 0; guard < 64; guard++) {
         if (!(hAt(i) > hAt(i - 1) + 1e-6) || finalWeights[i] <= q + 1e-9) break;
@@ -554,12 +610,12 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   }
 
   const out = tiers.map((t, i) => {
-    const { shape: s, designAspect, aspect, exact, wanted } = solved[i];
-    const square = s.kind === 'rect';
+    const { designAspect, aspect, exact, wanted, square, rectRatio } = solved[i];
     const tin = finalTins[i];
     const weight = finalWeights ? finalWeights[i] : null;
     // The whole build comes from the tin that will actually be greased — see tierBuild.
-    const b = tin != null && weight != null ? tierBuild(weight, tin, build, anchor) : null;
+    const b = tin != null && weight != null
+      ? tierBuild(weight, tinAreaIn2(tin, square), build, anchor) : null;
     return {
       index: i,
       label: n === 1 ? 'Single tier' : i === 0 ? 'Base tier' : i === n - 1 ? 'Top tier' : `Tier ${i + 1}`,
@@ -581,8 +637,16 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
       barrels: b?.barrels ?? null,
       aspect: +aspect.toFixed(3),
       designAspect: +designAspect.toFixed(3),
-      shape: square ? 'square' : 'round',
+      shape: square ? 'square' : rectRatio != null ? 'sheet' : 'round',
       square,
+      /* A sheet is the one shape a single number cannot describe, so it carries both sides — the
+       * DRAWN ratio scaled to the footprint that was solved for. ⚠️ Whole inches, not snapped to a
+       * pan: SHEET_SIZES has the real quarter/half/full pans, and which of them this bakery owns has
+       * not been asked. Naming a pan they do not have would be worse than naming a size. */
+      rectIn: rectRatio != null && tin != null
+        ? (() => { const A = tinAreaIn2(tin, false), d0 = Math.sqrt(A / rectRatio);
+                   return { w: Math.round(d0 * rectRatio), d: Math.round(d0) }; })()
+        : null,
     };
   });
 

@@ -92,7 +92,13 @@ export function sectionHeight(totalIn, ruler, width) {
  * in a comparison, or the tins cannot be compared by looking at them, which is the whole point.
  */
 export default function XrayTinSection({ tiers = [], ruler, width = 150, id = 's' }) {
-  const drawn = tiers.filter(t => t?.tinInch > 0 && t?.heightIn > 0);
+  /* ⚠️ A SHEET IS DRAWN ITS REAL WIDTH. `tinInch` on a sheet is the equivalent-circle diameter the
+   * solve ran on, which is narrower than the pan's long side — drawing that would make a 13x9 look
+   * like a 11in cake. Cut down the middle, the face you see is the LONG side. Every other shape
+   * already reports the number it is sold by, so this is the one substitution. */
+  const drawn = tiers
+    .filter(t => t?.tinInch > 0 && t?.heightIn > 0)
+    .map(t => (t.rectIn ? { ...t, tinInch: t.rectIn.w } : t));
   if (drawn.length === 0) return null;
 
   const widest = Math.max(...drawn.map(t => t.tinInch));

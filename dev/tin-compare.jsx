@@ -15,8 +15,13 @@ import { tinOptions } from '../src/orders/xray/tinHelper.js';
  */
 const P = new URLSearchParams(location.search);
 const round = (r, h) => ({ shape: 'round', radius: r, height: h });
+const rect = (w, d, h) => ({ shape: 'rect', width: w, depth: d, height: h });
 const ONE = [round(1.2, 1.9)];
 const TWO = [round(1.2, 1.6), round(0.85, 1.45)];
+// ⚠️ A square and a sheet, because a square tin holds 27% more than a round one of the same number
+// and the model used to print a circle's diameter with "square" written beside it.
+const SQ    = [rect(2.4, 2.4, 0.6)];
+const SHEET = [rect(3.1, 2.15, 0.7)];
 
 const CASES = P.get('w')
   ? [[Number(P.get('w')), P.get('tiers') === '2' ? TWO : ONE, `${P.get('w')}kg`]]
@@ -26,6 +31,9 @@ const CASES = P.get('w')
       [12,  ONE, '12 kg · one tier — the reported one'],
       [1.5, TWO, '1.5 kg · two tiers — where the step rule runs out'],
       [5,   TWO, '5 kg · two tiers'],
+      [1,   SQ,  '1 kg · SQUARE — they use an 8 inch'],
+      [2,   SQ,  '2 kg · SQUARE — they use a 10 or a 12'],
+      [2,   SHEET, '2 kg · SHEET — two numbers, not one'],
     ];
 
 const FLAV = { sponge: '#E8D9BE', filling: '#F6EFE2' };
@@ -53,7 +61,9 @@ function Row({ kg, tiers, label }) {
               <XrayTinSection tiers={o.tiers.map(t => ({ ...t, ...FLAV }))} ruler={ruler}
                               width={128} id={`${kg}-${o.key}`} />
             </div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>{o.tiers.map(t => `${t.tinInch}″`).join(' + ')}</div>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>
+              {o.tiers.map(t => (t.rectIn ? `${t.rectIn.w}×${t.rectIn.d}″` : `${t.tinInch}″`)).join(' + ')}
+            </div>
             <div style={{ fontSize: 11.5, color: '#6B8C74' }}>{o.totalIn}″ tall</div>
             <div style={{ fontSize: 11, color: '#8a8578' }}>
               {o.tiers.map(t => t.layers).join('+')} layers · {o.tiers.map(t => t.weightKg).join('+')} kg

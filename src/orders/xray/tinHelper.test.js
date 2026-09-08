@@ -13,6 +13,7 @@ import {
   layersFor,
   tinOptions,
   quantumFor,
+  tierBuild,
 } from './tinHelper.js';
 
 const round = (r, h) => ({ shape: 'round', radius: r, height: h });
@@ -341,6 +342,37 @@ describe('this bakery, as stated', () => {
     'two tier, %skg -> %s is offered', (kg, pair) => {
       expect(tinOptions(two, kg).map(o => o.key)).toContain(pair);
     });
+
+  /* ⚠️ THE SQUARE TABLE, given the same way the round one was: 1kg -> 8in, 1.5kg -> 8 or 10,
+   * 2kg -> 10 or 12. Never fitted — the density comes from a TALL ROUND cake, and it predicts these
+   * flat squares, which is the same kind of evidence the two-tier rows are.
+   *
+   * ⚠️ And the reason it is worth pinning: before this the model solved a circular diameter and
+   * printed it with "square" beside it. An 8in square is 27% more cake than an 8in round, every
+   * size, so every square recommendation sent a baker to a tin a quarter too big. */
+  const sq = [{ shape: 'rect', width: 2.4, depth: 2.4, height: 0.6 }];
+
+  it.each([[1, [8]], [1.5, [8, 10]], [2, [10, 12]]])(
+    'square single tier, %skg -> %s inch offered', (kg, wanted) => {
+      const offered = tinOptions(sq, kg).map(o => o.tiers[0].tinInch);
+      for (const tin of wanted) expect(offered, `${kg}kg`).toContain(tin);
+    });
+
+  it('calls a square a square and a sheet a sheet', () => {
+    // `square` used to mean "not round", so a 13x9 sheet was labelled square and given ONE number
+    // for a tin that has two.
+    expect(computeTinPlan(sq, 2).tiers[0].shape).toBe('square');
+    const sheet = computeTinPlan([{ shape: 'rect', width: 3.1, depth: 2.15, height: 0.7 }], 2).tiers[0];
+    expect(sheet.shape).toBe('sheet');
+    expect(sheet.rectIn.w).toBeGreaterThan(sheet.rectIn.d);
+  });
+
+  it('gives a square tin the area a square tin has', () => {
+    // The 27%: a square tier must be solved on side², never on the area of a circle of that width.
+    const t = computeTinPlan(sq, 2).tiers[0];
+    const built = tierBuild(t.weightKg, t.tinInch * t.tinInch);
+    expect(t.heightIn).toBeCloseTo(built.heightIn, 1);
+  });
 
   it('never names a height without saying how to build it', () => {
     /* ⚠️ THIS TEST USED TO ASSERT `h < 8`, AND THAT ASSERTION IS WHAT BROKE THE MODEL.

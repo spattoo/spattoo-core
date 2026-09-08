@@ -453,7 +453,8 @@ function drawTins(sheet, tins) {
     const rowH = mm(9);
     const y = sheet.space(rowH);
     sheet.text(t.label, sheet.margin, y + mm(1.5), { size: mm(3.4), weight: 700 });
-    const size = `${t.tinInch}″ ${t.shape}`;
+    // A sheet is the one tin a single number cannot name — see rectIn in tinHelper.
+    const size = `${t.rectIn ? `${t.rectIn.w}×${t.rectIn.d}″` : `${t.tinInch}″`} ${t.shape}`;
     sheet.font(mm(3.4), 700);
     sheet.ctx.fillStyle = ACCENT.tins;
     sheet.ctx.fillText(size, sheet.margin + mm(45), y + mm(1.5));
