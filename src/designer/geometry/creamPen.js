@@ -257,9 +257,9 @@ function fixedUpFrames(samples, up) {
 //   opts.ruffleAmp    — fractional radius swell (0 = off)
 //   opts.ruffleFreq   — radians of squeeze phase per unit arc length
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
-  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, up = null, roll = 0 } = opts;
+  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, up = null, roll = 0, maxSegs = 900 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
-  const segs = Math.min(900, Math.max(24, controlPts.length * 5));
+  const segs = Math.min(maxSegs, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
 
   /* ⚠️ TWO KINDS OF FRAME, and which one you want depends on whether the tip is symmetric.
@@ -339,10 +339,26 @@ function finishGeo(pos, idx) {
 
 const toVec = p => (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0], p[1], p[2]));
 
+/* Every Nth point of a nozzle's cross-section, ends kept.
+ *
+ * ⚠️ FOR CALLERS THAT BUILD MANY STROKES AT ONCE, which means flowers. One hand-piped stroke wants
+ * every point the profile has — it is the only thing on screen and it is looked at closely. A dahlia
+ * is fifty-seven strokes of the same tip, each a petal a few millimetres across, and at full detail
+ * that one decoration came to 362,000 vertices. The petals are small enough that a coarser slit is
+ * not visible and the count falls by roughly a factor of ten. The pen is untouched: this only
+ * happens when a caller asks for it. */
+function decimateProfile(profile, step) {
+  if (!(step > 1)) return profile;
+  const out = [];
+  for (let i = 0; i < profile.length; i += step) out.push(profile[i]);
+  if (out[out.length - 1] !== profile[profile.length - 1]) out.push(profile[profile.length - 1]);
+  return out.length >= 6 ? out : profile;
+}
+
 // Build one freehand stroke: sweep the chosen nozzle profile (constant radius) through the
 // seated centerline points. `points` is [[x,y,z]…] or Vector3[]. Returns a BufferGeometry,
 // or null if there's nothing to draw.
-export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null) {
+export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null, lod = null) {
   const noz = NOZZLE_BY_KEY[nozzleKey] || NOZZLE_BY_KEY[DEFAULT_NOZZLE];
   const feel = feelOverride ? { ...PEN_FEEL, ...feelOverride } : PEN_FEEL;
   let pts = points.map(toVec).filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 1e-4);
@@ -362,7 +378,9 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     up: noz.flat ? (upVec ? toVec(upVec) : new THREE.Vector3(0, 1, 0)) : null,
     // Only a slit has an attitude worth setting; a rope's roll is invisible, so leaning it is noise.
     roll: noz.flat ? (feel.leanDeg * Math.PI) / 180 : 0,
+    maxSegs: lod?.segs ?? 900,
   };
+  const profile = decimateProfile(noz.profile, lod?.profileStep ?? 1);
 
   /* The hand's own speed, mapped onto the swept samples. pushSweep resamples the control points
    * onto a centripetal CatmullRom, so a sample's index is not a control index — but the curve spans
@@ -392,7 +410,7 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     return thickness * f;
   };
 
-  pushSweep(pos, idx, pts, noz.profile, radiusAt, opts);
+  pushSweep(pos, idx, pts, profile, radiusAt, opts);
   return finishGeo(pos, idx);
 }
 

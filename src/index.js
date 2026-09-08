@@ -28,6 +28,13 @@ export { thumbnailFromImage } from './designer/utils/thumbnail.js';
  */
 export { buildPipingStroke, buildPipingHeap, NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL }
   from './designer/geometry/creamPen.js';
+/* Flowers are ARRANGED from those same strokes, not drawn — see the head of flower.js for why hand
+ * piping on a nail was abandoned. The studio and the cake both call `flowerStrokes`/`buildFlower`,
+ * so neither can hold its own idea of what a rose is (INVARIANTS #15). */
+export { flowerStrokes, buildFlower, FLOWERS, FLOWER_ORDER, FLOWER_PARAMS, FLOWER_NOZZLES,
+         FLOWER_FORMS, FLOWER_CENTRES, flowerDef, flowerNozzles, resolveFlowerParams,
+         resolveFlowerForm, resolveFlowerCentre, userFlowerParams, applyFlowerConfig }
+  from './designer/geometry/flower.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to
