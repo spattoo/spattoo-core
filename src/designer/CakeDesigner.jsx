@@ -7310,6 +7310,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Sliding moves the WHOLE stroke and keeps its shape: it is the unit you drew, and the unit
             a ring already is. Until this, a border a few millimetres too low cost you the whole line.
         */}
+        {/* ⚠️ CREAM ONLY. "Draw" is a gesture you make against the cake with a pen; an acrylic
+            topper is a cut sheet that is placed, never drawn, so on a topper these two buttons named
+            a mode that did not exist and did nothing when pressed. Reported as exactly that: "not
+            sure what are intended for". */}
+        {w.style !== 'acrylic' && <>
         <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
           {[['Draw', false], ['Move', true]].map(([label, val]) => (
             <button key={label} onClick={() => setPenMove(val)}
@@ -7327,18 +7332,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Drag a piped line to slide it. It keeps its shape and stays on the cake.
           </div>
         )}
+        </>}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
-        <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
+        {/* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic it
+            is the SHEET: 3mm standing so the piece holds itself up and pushes into the icing, thinner
+            lying flat so the cut edge does not read as bent rod. Two authored defaults, per pose, set
+            in ACRYLIC_DEFAULTS and overlaid by an admin — not something a customer should be able to
+            drag. It also wrote `thickness` while the acrylic builder reads `sheet`, so it moved a
+            number nothing consumed. */}
+        {w.style !== 'acrylic' && (
+          <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
+        )}
         <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
-        <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
-        {surface !== 'side' && (
+        {/* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at `tracking`.
+            On acrylic the equivalent number is negative by design: the letters have to overlap so the
+            word cuts as one piece. It is calibrated PER FACE, by eye, and topperFaces.js records what
+            happens when it is not — chasing zero bridges gave a Parisienne topper reading "Bithday",
+            correct by every measure and unreadable, and the same ratio applied unseen to the
+            centreline faces gave a tangle. That is a legibility-and-cuttability value, not a taste.
+            If it is ever wanted in front of a customer, the safe shape is a narrow nudge either side
+            of the face's own default, checked on each face — not this raw slider. */}
+        {w.style !== 'acrylic' && (
+          <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
+        )}
+        {/* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
+            from a sheet; bending the baseline is a piped-writing idea. */}
+        {surface !== 'side' && w.style !== 'acrylic' && (
           <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
         )}
         {surface !== 'side' && (
           <PenSlider label="Rotate"  value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
         )}
-        {isMultiline && (
+        {/* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the rows
+            nest until they meet rather than sitting on a baseline — so it is bounded by the shapes,
+            not by taste. Cream only until someone decides what a customer should be able to do to it. */}
+        {isMultiline && w.style !== 'acrylic' && (
           <PenSlider label="Line gap" value={w.lineSpacing ?? 1.4} min={1}   max={2.2}  step={0.05}  onChange={v => setWriting({ lineSpacing: v })} fmt={v => `${v.toFixed(2)}×`} />
         )}
 
