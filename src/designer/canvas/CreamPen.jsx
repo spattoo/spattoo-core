@@ -128,16 +128,36 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
       const samples = ev.getCoalescedEvents ? ev.getCoalescedEvents() : null;
       const evs = (samples && samples.length) ? samples : [ev];
       const minGap = Math.max(0.006, (styleRef.current?.thickness ?? 0.03) * 0.5);
-      setLive(prev => {
-        const next = prev.slice();
-        for (const pe of evs) {
-          const s = seatAt(pe.clientX, pe.clientY);
-          if (!s) continue;
-          if (!activeRef.current.normal) activeRef.current.normal = s.n;  // capture normal if start missed
-          if (!next.length || s.p.distanceTo(next[next.length - 1]) >= minGap) next.push(s.p);
-        }
-        return next;
-      });
+
+      /* ⚠️ LEAVING THE CAKE ENDS THE STROKE. A miss used to be skipped silently and the stroke went
+       * on, so the next hit was appended to the SAME stroke and the curve drew a straight chord
+       * across the gap — cream nobody piped, reported as "it is finding edges and joining", and it
+       * appeared near the rim because that is where a pointer crosses off the top.
+       *
+       * Ending is what actually happens: the tip is off the cake, so nothing lands. It is also the
+       * honest choice — clamping the stroke to the rim instead would keep a border continuous by
+       * inventing the part that was never drawn.
+       *
+       * Resolved BEFORE setLive, not inside it: the updater may not run synchronously, so a flag set
+       * in there cannot be trusted afterwards. */
+      const hits = [];
+      let leftCake = false;
+      for (const pe of evs) {
+        const s = seatAt(pe.clientX, pe.clientY);
+        if (!s) { leftCake = true; break; }
+        hits.push(s);
+      }
+      if (hits.length && !activeRef.current.normal) activeRef.current.normal = hits[0].n;  // if the start missed
+      if (hits.length) {
+        setLive(prev => {
+          const next = prev.slice();
+          for (const s of hits) {
+            if (!next.length || s.p.distanceTo(next[next.length - 1]) >= minGap) next.push(s.p);
+          }
+          return next;
+        });
+      }
+      if (leftCake) onUp();
     };
 
     const onUp = () => {
