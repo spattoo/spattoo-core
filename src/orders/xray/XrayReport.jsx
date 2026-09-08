@@ -4,8 +4,7 @@ import { buildXrayReport } from './report.js';
 import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
-import XrayTinDiagram from './XrayTinDiagram.jsx';
-import XrayTinSection from './XrayTinSection.jsx';
+import XrayTinSection, { sectionHeight } from './XrayTinSection.jsx';
 import { tinOptions } from './tinHelper.js';
 import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
@@ -117,6 +116,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
   // ONE ruler for every option, so a wide cake is drawn wide. Per-option scaling would make them
   // all the same size on screen, which is the one thing this row must not do.
   const optionRuler = options.length ? Math.max(...options.map(o => o.tiers[0].tinInch)) : 0;
+  // One box height for the row — the tallest option's — so every tile shares a baseline AND the
+  // labels line up, without reserving space for a cake none of them is.
+  const OPTION_W = 112;
+  const optionBoxH = options.length
+    ? sectionHeight(Math.max(...options.map(o => o.totalIn)), optionRuler, OPTION_W) : 0;
   const chosen = options.find(o => o.key === pickedTins) ?? null;
   const tinPlan = useMemo(() => {
     if (!chosen) return report.tins;
@@ -500,8 +504,31 @@ export default function XrayReport({ order, apiClient, onClose }) {
           <div>
             <div style={s.sub}><span style={s.dot('#1B5FA8')} /> Tins &amp; weight {tinPlan.totalKg && <span style={s.tag}>{tinPlan.totalKg} kg · {tinPlan.tiers.length} tier{tinPlan.tiers.length > 1 ? 's' : ''}</span>}</div>
             <div style={s.card}>
+              {/* ⚠️ THE BIG WIREFRAME IS GONE. It drew the chosen cake as a 3/4 cylinder above the
+                  comparison row, which showed the same cake again and better — to scale, with its
+                  layers, beside the alternatives. Two pictures of one thing, the larger one saying
+                  less. What the wireframe uniquely carried was the NUMBERS, so those stay, as
+                  words: the row is the picture now. */}
               {tinPlan.totalKg
-                ? <XrayTinDiagram tiers={tinPlan.tiers} />
+                ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22, rowGap: 10 }}>
+                    {tinPlan.tiers.map(t => (
+                      <div key={t.index}>
+                        {tinPlan.tiers.length > 1 && (
+                          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9a958d', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                            {t.label}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 17, fontWeight: 800, color: '#3a352e' }}>
+                          {t.tinInch}″ {t.shape}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: '#6b6459' }}>
+                          {t.weightKg} kg · {t.heightIn}″ tall
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
                 : <div style={s.muted}>Add a weight to the order to size the tins.</div>}
 
               {/* ⚠️ HOW the tins were arrived at, said out loud.
@@ -562,8 +589,8 @@ export default function XrayReport({ order, apiClient, onClose }) {
                           }}>
                           {/* Bottom-aligned and sharing one ruler, so the row reads as one cake
                               photographed in different tins rather than several cakes. */}
-                          <div style={{ display: 'flex', alignItems: 'flex-end', height: 124 }}>
-                            <XrayTinSection tiers={o.tiers} ruler={optionRuler} width={88} id={o.key} />
+                          <div style={{ display: 'flex', alignItems: 'flex-end', height: optionBoxH }}>
+                            <XrayTinSection tiers={o.tiers} ruler={optionRuler} width={OPTION_W} id={o.key} />
                           </div>
                           <div style={{ fontSize: 12, fontWeight: 800, color: '#3a352e' }}>
                             {o.tiers.map(t => `${t.tinInch}″`).join(' + ')}

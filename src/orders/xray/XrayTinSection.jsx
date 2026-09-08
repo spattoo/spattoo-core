@@ -12,7 +12,7 @@
 // means half the number under it would quietly mislead on the one question being asked. This is the
 // whole cake cut down the middle: symmetric, and its width IS the diameter.
 //
-// ⚠️ AND NOT THE 3/4 WIREFRAME EITHER (XrayTinDiagram). On a cylinder seen from above, a layer of
+// ⚠️ AND NOT A 3/4 WIREFRAME, which is what this replaced. On a cylinder seen from above, a layer of
 // filling is an elliptical arc, not a straight line — so bands cannot be drawn on it without arc
 // geometry per layer, and it would still foreshorten the height, which is the very thing being
 // compared. A flat elevation shows the true ratio.
@@ -72,6 +72,18 @@ function tierPath(w, h, topY, sharp) {
     `Q ${hw} ${topY} ${hw} ${topY + r} ` +
     `L ${hw} ${botY} Z`
   );
+}
+
+/* How tall this draws, in pixels, for a cake of `totalIn` on a row scaled to `ruler`.
+ *
+ * Exported because a ROW of options has to reserve one box height for all of them — they share a
+ * baseline, so the labels line up — and that height is the tallest option's, not a constant. A
+ * constant was 156px next to a 33px cake, which is most of a tile of nothing. The caller cannot
+ * work it out because the cap and the board are this file's business.
+ */
+export function sectionHeight(totalIn, ruler, width) {
+  if (!(totalIn > 0) || !(ruler > 0) || !(width > 0)) return 0;
+  return Math.ceil((totalIn + CAP_IN + PLATE_IN) * (width / (ruler * 1.06)));
 }
 
 /**
