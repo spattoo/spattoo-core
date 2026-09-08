@@ -56,13 +56,94 @@ export const NOZZLES = [
 export const NOZZLE_BY_KEY = Object.fromEntries(NOZZLES.map(n => [n.key, n]));
 export const DEFAULT_NOZZLE = 'star5';
 
-// How alive the rope looks. Both are keyed to the rope DIAMETER so the rhythm is consistent
-// whether the stroke is fat or thin, long or short:
-//  · TWIST — turns of the rib spiral per diameter travelled (ribs corkscrew as cream extrudes)
-//  · RUFFLE — squeeze rhythm: the rope swells & necks ±amp, one full pulse per ~diameter
-const RIB_TWIST_TURNS_PER_DIAMETER = 0.16;
-const RUFFLE_AMP = 0.06;
-const RUFFLE_PULSES_PER_DIAMETER = 0.85;
+/* ── How alive the rope looks ────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE OLD NUMBERS MADE IT LOOK LIKE TWISTED CORD, and the reason is worth stating because it is
+ * the whole difference between piped cream and extruded plastic:
+ *
+ *   ALL THE VARIATION WAS HIGH-FREQUENCY AND PERFECTLY PERIODIC, AND THERE WAS NONE OF THE OTHER
+ *   KIND. Hand-piped cream is the opposite. It varies SLOWLY and UNEVENLY along a stroke, and its
+ *   surface texture is comparatively calm. Regular periodic detail is the visual signature of a
+ *   machine, which is exactly what a baker reported seeing.
+ *
+ * Measured on a stroke twenty diameters long, which is an ordinary one:
+ *   twist 0.16/dia  -> 3.2 full turns of the ribs. A barber pole.
+ *   ruffle 0.85/dia -> ~17 identical ripples at ±6%. A regular knurl.
+ *   radius constant -> dead uniform width, end to end, which no hand can produce.
+ *
+ * A real star tip's ribs run essentially STRAIGHT unless the wrist turns, so the twist is now a
+ * hint rather than a spiral; the swell is slow and irregular; and the width comes from the drag.
+ *
+ * Every number here is a FEEL, not a fact, so they live in one object an admin studio can drive —
+ * see FreehandPenStudio. `speedWidth: 0` restores the old dead-constant rope exactly.
+ */
+export const PEN_FEEL = Object.freeze({
+  /* How much the drag's own speed shapes the rope. See widthAlong: this is the single biggest cue,
+   * and it costs nothing — the signal is already in the stored points. */
+  speedWidth: 1,
+  widthMin:   0.72,   // clamps, because a stalled pointer would otherwise balloon
+  widthMax:   1.55,
+  /* Ribs corkscrew a LITTLE as cream extrudes — not 0.16 of a turn per diameter, which is a rope. */
+  twistTurnsPerDia: 0.03,
+  /* One lazy swell every ~8 diameters instead of one ripple per diameter, and irregular: two
+   * incommensurate waves, so the rhythm never repeats. Deterministic — no random, because a stroke
+   * must rebuild identically on reload. */
+  swellAmp:    0.085,
+  swellPerDia: 0.13,
+  /* The lift-off. Release pressure and draw away and the bead thins to a point; both ends used to
+   * be the same rounded nub, which is a strong tell. */
+  tailDias: 1.3,
+  tailEnd:  0.32,
+});
+
+/* Rope radius along the stroke, from how fast the hand was moving.
+ *
+ * ⚠️ PHYSICS, NOT A TUNING. At a steady squeeze the flow Q is constant, so the cross-section area
+ * A = Q/v and the radius goes as v^-1/2. That exponent is derived, not picked, which is why this
+ * reads as cream rather than as a wobble effect.
+ *
+ * ⚠️ AND THE SPEED IS ALREADY IN THE FILE. Capture uses getCoalescedEvents(), which samples at a
+ * roughly fixed RATE, so the SPACING between stored points is the speed: points close together mean
+ * a slow hand, which means more cream. Nothing new is stored, `design.piping` stays a plain list of
+ * points that fully determines the mesh (the contract at the top of this file), and every stroke
+ * already drawn gets better the next time it is loaded.
+ *
+ * Normalised against this stroke's OWN median gap, so it is immune to device sampling rate, cake
+ * scale and how fast this particular person draws — it reads the variation within a stroke, which
+ * is what a hand actually is, rather than an absolute speed nobody agrees on.
+ *
+ * Smoothed over several points, which fixes mouse jitter AND is physically right: cream has inertia
+ * and a bead cannot change width instantly.
+ */
+function widthAlong(pts, feel) {
+  const n = pts.length;
+  if (n < 4 || !(feel.speedWidth > 0)) return null;
+
+  const gap = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    const span = Math.min(n - 1, i + 1) - Math.max(0, i - 1);
+    gap[i] = span > 0 ? a.distanceTo(b) / span : 0;
+  }
+  const sorted = gap.filter(g => g > 1e-9).sort((x, y) => x - y);
+  const med = sorted.length ? sorted[sorted.length >> 1] : 0;
+  if (!(med > 0)) return null;
+
+  // v^-1/2, with the slow end floored so a stationary pointer cannot balloon the rope.
+  let w = gap.map(g => Math.sqrt(med / Math.max(g, med * 0.25)));
+
+  // Box blur, twice — a bead's width changes over roughly its own length, not per sample.
+  for (let pass = 0; pass < 2; pass++) {
+    const src = w;
+    w = src.map((_, i) => {
+      let sum = 0, k = 0;
+      for (let d = -2; d <= 2; d++) { const j = i + d; if (j >= 0 && j < n) { sum += src[j]; k++; } }
+      return sum / k;
+    });
+  }
+  const lo = feel.widthMin, hi = feel.widthMax;
+  return w.map(f => Math.min(hi, Math.max(lo, 1 + (f - 1) * feel.speedWidth)));
+}
 
 // Star "heap" (pipe-and-lift): tap instead of drag and the tip is held PERPENDICULAR to the
 // surface — cream extrudes up the surface normal and tapers to a peak, so the ribs radiate
@@ -130,8 +211,14 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
   for (let i = 0; i <= segs; i++) {
     const C = samples[i], N = frames.normals[i], B = frames.binormals[i];
     const s = arc[i];
-    const swell = ruffleAmp ? 1 + ruffleAmp * Math.sin(ruffleFreq * s) : 1;
-    const r = radiusAt(i, segs) * swell;
+    /* Two incommensurate waves, not one — a single sine is a knurl, and the ear (or eye) finds a
+     * repeating rhythm immediately. The 0.61 ratio is irrational enough that the pattern never
+     * closes over any stroke a person will draw, and it is a CONSTANT, so a reloaded stroke is
+     * identical to the one that was piped. */
+    const swell = ruffleAmp
+      ? 1 + ruffleAmp * (0.66 * Math.sin(ruffleFreq * s) + 0.34 * Math.sin(ruffleFreq * 0.61 * s + 1.7))
+      : 1;
+    const r = radiusAt(i, segs, s, arc[segs]) * swell;
     const phi = twistPerLen * s;                          // spiral the ribs along the rope
     const cs = Math.cos(phi), sn = Math.sin(phi);
     for (let j = 0; j < P; j++) {
@@ -147,7 +234,7 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
       idx.push(a, c, b, b, c, d);
     }
   }
-  const r0 = radiusAt(0, segs), rn = radiusAt(segs, segs);
+  const r0 = radiusAt(0, segs, 0, arc[segs]), rn = radiusAt(segs, segs, arc[segs], arc[segs]);
   const sC = samples[0].clone().addScaledVector(frames.tangents[0], -r0 * 0.6);
   const eC = samples[segs].clone().addScaledVector(frames.tangents[segs], rn * 0.6);
   const sI = pos.length / 3; pos.push(sC.x, sC.y, sC.z);
@@ -172,8 +259,9 @@ const toVec = p => (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0], p[1
 // Build one freehand stroke: sweep the chosen nozzle profile (constant radius) through the
 // seated centerline points. `points` is [[x,y,z]…] or Vector3[]. Returns a BufferGeometry,
 // or null if there's nothing to draw.
-export function buildPipingStroke(points, nozzleKey, thickness) {
+export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null) {
   const noz = NOZZLE_BY_KEY[nozzleKey] || NOZZLE_BY_KEY[DEFAULT_NOZZLE];
+  const feel = feelOverride ? { ...PEN_FEEL, ...feelOverride } : PEN_FEEL;
   let pts = points.map(toVec).filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 1e-4);
   if (pts.length === 0) return null;
   // A lone tap can't sweep — stub it upward so a dot still reads as piped cream.
@@ -182,11 +270,40 @@ export function buildPipingStroke(points, nozzleKey, thickness) {
   // Spiral + squeeze rhythm scale with the rope diameter so they read the same at any size.
   const dia = 2 * thickness;
   const opts = {
-    twistPerLen: (noz.twist  ?? 0) * RIB_TWIST_TURNS_PER_DIAMETER  * 2 * Math.PI / dia,
-    ruffleAmp:   (noz.ruffle ?? 0) * RUFFLE_AMP,
-    ruffleFreq:  RUFFLE_PULSES_PER_DIAMETER * 2 * Math.PI / dia,
+    twistPerLen: (noz.twist  ?? 0) * feel.twistTurnsPerDia * 2 * Math.PI / dia,
+    ruffleAmp:   (noz.ruffle ?? 0) * feel.swellAmp,
+    ruffleFreq:  feel.swellPerDia * 2 * Math.PI / dia,
   };
-  pushSweep(pos, idx, pts, noz.profile, () => thickness, opts);
+
+  /* The hand's own speed, mapped onto the swept samples. pushSweep resamples the control points
+   * onto a centripetal CatmullRom, so a sample's index is not a control index — but the curve spans
+   * the controls evenly in parameter, so i/segs scaled by (n-1) lands between the two it came from
+   * and lerping between their widths is faithful enough for something this smooth. */
+  const w = widthAlong(pts, feel);
+  const tail = feel.tailDias * dia;
+
+  const radiusAt = (i, segs2, arcS, arcTotal) => {
+    let f = 1;
+    if (w) {
+      const u = (i / segs2) * (w.length - 1);
+      const k = Math.min(w.length - 2, Math.floor(u));
+      f = w[k] + (w[k + 1] - w[k]) * (u - k);
+    }
+    /* ⚠️ The LIFT-OFF, and only at the end. A stroke starts where the tip was already pressed to the
+     * surface with cream under it, so it begins at full width; it ENDS by releasing and drawing
+     * away, which thins the bead to a point. Both ends used to be the same rounded nub, and the
+     * ends are where the eye goes first. */
+    if (tail > 0 && arcTotal > tail * 1.5) {
+      const left = arcTotal - arcS;
+      if (left < tail) {
+        const t = left / tail;                       // 1 at the start of the tail, 0 at the tip
+        f *= feel.tailEnd + (1 - feel.tailEnd) * (t * t * (3 - 2 * t));   // smoothstep
+      }
+    }
+    return thickness * f;
+  };
+
+  pushSweep(pos, idx, pts, noz.profile, radiusAt, opts);
   return finishGeo(pos, idx);
 }
 

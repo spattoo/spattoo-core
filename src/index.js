@@ -18,6 +18,16 @@ export { captureThumbnailBlob } from './designer/utils/thumbnail.js';
 // photographing the cake in the designer and uploading the PNG, and an upload stored raw would sit
 // in the grid framed differently from every captured one. Goes through captureThumbnailBlob.
 export { thumbnailFromImage } from './designer/utils/thumbnail.js';
+
+/* The cream pen's own geometry, so the ADMIN STUDIO renders what the cake renders.
+ *
+ * ⚠️ FreehandPenStudio carried its own copy of all of this — its own nozzles, its own sweep, its own
+ * material — because it was the prototype this was ported FROM. The two then drifted, which makes it
+ * a studio that tunes a renderer no customer ever sees: exactly the mock-up the root CLAUDE.md warns
+ * about, and the drift INVARIANTS #15 exists to stop. `PEN_FEEL` is the tunable set it drives.
+ */
+export { buildPipingStroke, buildPipingHeap, NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL }
+  from './designer/geometry/creamPen.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to
