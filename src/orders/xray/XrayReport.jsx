@@ -207,19 +207,46 @@ export default function XrayReport({ order, apiClient, onClose }) {
   // A failure means no band, never a wrong one: silence is recoverable, a false all-clear
   // on a bench sheet is not.
   const [declarations, setDeclarations] = useState({});
+  /* The same fetch also carries the flavour COLOURS, which the tin drawings need — see
+   * `tierColours`. Kept as one call rather than two: it is the same list, and asking twice would
+   * be two chances for the sheet to describe two different flavour tables. */
+  const [flavourRows, setFlavourRows] = useState([]);
   useEffect(() => {
     let alive = true;
     if (!apiClient?.fetchBakerFlavours) return;
     apiClient.fetchBakerFlavours()
-      .then(list => {
+      .then(res => {
         if (!alive) return;
+        // ⚠️ Two shapes in the wild — this screen has always read a bare array, ThemePreview reads
+        // `{ flavours }`. Accept either rather than pick a side and break one of them.
+        const list = Array.isArray(res) ? res : (res?.flavours ?? []);
+        setFlavourRows(list);
         setDeclarations(Object.fromEntries(
-          (list ?? []).filter(f => f.conflicts_with?.length).map(f => [f.id, f.conflicts_with]),
+          list.filter(f => f.conflicts_with?.length).map(f => [f.id, f.conflicts_with]),
         ));
       })
       .catch(() => {});
     return () => { alive = false; };
   }, [apiClient]);
+
+  /* Sponge and filling colour per TIER, for the tin drawings — the same colours the storefront
+   * shows a customer, so a Belgian Dark reads dark on the bench sheet too.
+   *
+   * Matched by NAME because that is all an order stores: `order.flavours` is [{tier, name}], and
+   * the id it was chosen by is not kept. Trimmed and case-folded, since a display name a baker
+   * edited is the thing on both sides.
+   *
+   * ⚠️ A flavour nobody has coloured yet stays null, and the drawing falls back to a neutral
+   * sponge. Guessing a colour from the name is exactly what flavourList.js refuses to do — "Red
+   * Velvet is crimson in every kitchen" is authored, not inferred — and a bench sheet inventing
+   * one would be worse than a plain drawing. */
+  const tierColours = useMemo(() => {
+    const byName = new Map(flavourRows.map(f => [String(f.name ?? '').trim().toLowerCase(), f]));
+    return (report.tins.tiers ?? []).map(t => {
+      const f = t.flavour ? byName.get(String(t.flavour).trim().toLowerCase()) : null;
+      return { sponge: f?.spongeColor ?? null, filling: f?.fillingColor ?? null };
+    });
+  }, [flavourRows, report.tins.tiers]);
 
   const conflicts = useMemo(() => findFlavourConflicts({
     flavours:     order?.flavours,
@@ -590,7 +617,8 @@ export default function XrayReport({ order, apiClient, onClose }) {
                           {/* Bottom-aligned and sharing one ruler, so the row reads as one cake
                               photographed in different tins rather than several cakes. */}
                           <div style={{ display: 'flex', alignItems: 'flex-end', height: optionBoxH }}>
-                            <XrayTinSection tiers={o.tiers} ruler={optionRuler} width={OPTION_W} id={o.key} />
+                            <XrayTinSection ruler={optionRuler} width={OPTION_W} id={o.key}
+                              tiers={o.tiers.map((t, i) => ({ ...t, ...(tierColours[i] ?? {}) }))} />
                           </div>
                           <div style={{ fontSize: 12, fontWeight: 800, color: '#3a352e' }}>
                             {o.tiers.map(t => `${t.tinInch}″`).join(' + ')}

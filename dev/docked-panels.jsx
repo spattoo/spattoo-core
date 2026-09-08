@@ -68,6 +68,15 @@ const apiClient = {
     phone: o.customers.phone, email: null, is_active: true,
   })),
   fetchFlavours:      async () => [],
+  /* Real-shaped flavour rows, because the X-Ray tin drawings colour their layers from these —
+   * `spongeColor`/`fillingColor`, exactly as lib/flavourList.js resolves them. The catch-all Proxy
+   * answers `{}`, which reads as "no flavours are coloured", so the one thing this fixture exists
+   * to show — a Blueberry cake that looks like blueberry — was drawn in neutral cream. */
+  fetchBakerFlavours: async () => ([
+    { id: 'f1', name: 'Blueberry',    spongeColor: '#F2E7D2', fillingColor: '#4B3B78', conflicts_with: [] },
+    { id: 'f2', name: 'Belgian Dark', spongeColor: '#4A3327', fillingColor: '#6B4A36', conflicts_with: [] },
+    { id: 'f3', name: 'Lemon',        spongeColor: '#F6E7B0', fillingColor: '#E8C24A', conflicts_with: [] },
+  ]),
   /* ⚠️ xray_reports ON, or the X-Ray button does not render and the sheet is unreachable here.
    * It was stubbed as `{}`, which reads as "no entitlement" — so the one screen this harness could
    * have shown without an account was the one it hid. */
