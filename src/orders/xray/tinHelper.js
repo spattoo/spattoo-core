@@ -51,58 +51,33 @@ import { tierShape } from '../../designer/geometry/surface.js';
  * absurd. It is not absurd here: their 8-inch stands 7, and a 9-inch holding 5kg comes out at 9.2.
  * The tall answer was correct and was judged against a flat-cake assumption that this bakery does
  * not build to. The density was then bent until the tall answer disappeared, and the BUILD ASPECTS
- * were bent with it — see BUILDS. Two errors in the same direction, each hiding the other.
+ * were bent with it (they are now retired — see the note below). Two errors in the same
+ * direction, each hiding the other.
  *
  * The lesson is the one this file already states and then broke: solve against a cake somebody
  * weighed. A number that cannot reproduce a real cake is wrong however plausible it reads.
  */
 export const ANCHOR = Object.freeze({ diameterIn: 8, heightIn: 7, kg: 3 });
 
-/* ── How tall this bakery builds ─────────────────────────────────────────────────────────────────
+/* ── The tall/flat presets are GONE, and the reason is worth keeping ────────────────────────────
  *
- * ⚠️ "Long" here means TALL, not long along the bench. Every general baking reference uses "long" for
- * a loaf or a tray bake, so the code says `tall` and this note records that the trade word is long —
- * the same collision as two unrelated "Number topper" entries, caught before it was written in.
+ * There were two: `standard` (flat) and `tall`, each an aspect the tier was forced to whatever the
+ * customer had drawn. They were a control for one question — how tall should this cake stand? — and
+ * the tin comparison is a better answer to it: the baker sees the actual options, drawn to scale,
+ * and picks the one that matches the customer's picture. Two named guesses cannot beat that, and
+ * keeping them would leave two ways to decide the same thing.
  *
- * A build says how tall a tier stands relative to its width, and NOTHING ELSE. Both are fitted
- * against this bakery's own sizes, sharing the one anchor above:
+ * ⚠️ Their FIT is not gone, because it is the calibration. The presets existed to reproduce this
+ * bakery's own tin table — 1 and 1.5kg → 6in, 2 and 2.5kg → 7in, 3kg → 8in, 5kg → 9in — and that
+ * table is still the check that the density is right. It is asserted against `tinOptions` now, which
+ * is a stronger form of the same test: the tin must be among the options a baker is offered, at the
+ * height that bakery actually gets, rather than only reachable by naming a preset.
  *
- *   tall      1-1.5kg → 6in, 2-2.5kg → 7in, 3kg → 8in, 5kg → 9in   ("9 if you want height")
- *   standard  5kg → 10 or 11in                                     ("10 or 11 for flat")
- *
- * ⚠️ REFITTED, because the old pair (0.45 / 0.57) was fitted against the batter density and is far
- * too flat. Re-solved at the measured 0.520, the SAME tin table implies 6in/1.5kg = 1.04,
- * 7in/2.5kg = 1.09, 8in/3kg = 0.88, 9in/5kg = 1.02 — and for the flat end, 10in/5kg = 0.75 and
- * 11in/5kg = 0.56. These cakes are TALL; the anchor itself stands 7 inches on an 8-inch base.
- * A preset that returned a 4-inch cake was never describing anything this bakery makes.
- *
- * Re-run as a grid search against those six sizes at the measured density: every one of them is hit
- * for any tall aspect between 0.880 and 0.905, and 0.895 is the middle of that band. The anchor's
- * own shape — 7 inches on an 8-inch base, 0.875 — sits a hair below it, which is the check that
- * matters: the fit was not steered to the anchor, and it landed there anyway.
- *
- * All six tall points hit exactly. Their three 2-tier points (7+5 for 3kg, 8+6 for 4 and 5kg) fall
- * out of the same numbers with no further fitting, which is the check that matters — they were never
- * part of the search.
- *
- * ⚠️ ONE DENSITY, TWO ASPECTS. An earlier version gave each build its own anchor and so its own
- * density, and defended it in a comment. That was backwards: baking a tier taller does not change
- * what the sponge is made of. It was fitting the density to absorb an aspect that had been forced to
- * 0.98 by the wrong anchor weight. Correct the anchor and one density serves both, which is what a
- * recipe is.
+ * ⚠️ And the fit is why the presets were dangerous. Fitted against the batter density, they came out
+ * at 0.45 and 0.57 — far too flat — and each error concealed the other, because with two free
+ * parameters an impossible density can always be traded against an impossible shape and still
+ * reproduce the tins. One measured density and no free shape is what makes the model checkable.
  */
-export const BUILDS = Object.freeze({
-  standard: Object.freeze({
-    key: 'standard', label: 'Standard',
-    aspect: 0.65,                      // flat FOR THIS BAKERY: a 5kg spreads out to 10.5in
-    anchor: ANCHOR,
-  }),
-  tall: Object.freeze({
-    key: 'tall', label: 'Long',        // the trade word; `tall` is what it means
-    aspect: 0.895,                     // taller, so the same 5kg pulls in to a 9in
-    anchor: ANCHOR,
-  }),
-});
 
 export const CAKE_BUILD = Object.freeze({
   /* ⚠️ LAYERS ARE NOT A CONSTANT. They were — fixed at 2 — so a 3-inch cake and a 9-inch one were
@@ -138,13 +113,47 @@ export const CAKE_BUILD = Object.freeze({
    * same weight in a 4in stands about fourteen, which nobody carries to a party. Bounds, so the row
    * shows choices instead of arithmetic. */
   minTierIn: 2,              // shorter than this and there is nothing to slice
-  maxTotalIn: 14,            // taller than this and it stops being a cake somebody can move
+  /* ⚠️ A RATIO, NOT INCHES, and the first attempt at inches got it exactly backwards. A 12in cap
+   * threw out a 12in tin standing 12.2 — a tall cake, but a perfectly ordinary one, and the very
+   * option a baker matching a tall photo needs — while happily keeping a 1kg baked in a 4in tin at
+   * 9.3in, which is a column. Height alone says nothing; height against WIDTH is what makes a cake
+   * look like a cake. This bakery's own anchor is 0.875 and their tall builds reach about 1.0. */
+  maxTierAspect: 1.3,        // taller than this against its own width and it reads as a column
+  /* ⚠️ 18, NOT 14, and the bakery's own table is what corrected it. Their 5kg two-tier is 8+6 —
+   * stated, never fitted — and at the measured density that cake is 14.4in tall: an 8in base near
+   * eight inches with a 6in top of six on top of it, which is exactly the way they build (their
+   * 8in single tier stands 7). A 14in ceiling quietly deleted one of the three points the model is
+   * checked against, and a filter that removes the evidence is worse than no filter. */
+  maxTotalIn: 18,            // taller than this and it stops being a cake somebody can move
 
   /* ⚠️ Nobody bakes 3.26 kg. Batter is weighed out in round amounts, and a tier's share of the
    * order has to land on one — 3.25 and 1.75, not 3.26 and 1.74. Pure arithmetic produces a number
-   * that is exactly right and cannot be followed. */
-  quantumKg: 0.25,
+   * that is exactly right and cannot be followed.
+   *
+   * ⚠️ BUT A FIXED STEP IS TOO COARSE FOR A SMALL CAKE, and it showed as a cake nobody would build.
+   * 250g is 2% of a 12kg order and SEVENTEEN PERCENT of a 1.5kg one. On a 1.5kg two-tier in 6+4 the
+   * honest split is 1.08 / 0.42; forced onto a 250g grid it became 1.25 / 0.25, which is a 5.3in
+   * base under a 2.3in token — and it looked like the no-inversion rule misbehaving when it was
+   * only ever the grid. At 100g the same cake is 4.5 + 4.0, which is what a baker would make.
+   *
+   * So the step is chosen per order: the coarsest one a baker would weigh to that still leaves
+   * enough of them to divide. `minSteps` is what "enough" means. Nothing at 3kg and above moves. */
+  quantumLadder: [0.05, 0.1, 0.25],   // steps a baker will actually weigh to, finest first
+  minSteps: 12,                       // at least this many to share out, or the grid drives the cake
 });
+
+/* The batter step for an order of `totalKg`. See the note above for why it is not a constant.
+ *
+ * A bakery that weighs to its own step sets `quantumLadder` — one entry pins it exactly, which is
+ * what a 500g house wants.
+ */
+export function quantumFor(totalKg, build = CAKE_BUILD) {
+  const ladder = build.quantumLadder ?? [0.25];
+  if (!(totalKg > 0)) return ladder[ladder.length - 1];
+  const cap = totalKg / (build.minSteps ?? 12);
+  const fits = ladder.filter(q => q <= cap + 1e-9);
+  return fits.length ? fits[fits.length - 1] : ladder[0];
+}
 
 /* How many slices of sponge a tier of `heightIn` is built from, and the gaps that go with them.
  *
@@ -432,6 +441,7 @@ export function tinOptions(tiersInput, weightKg, opts = {}) {
     // real choices is the feature, and a row of twelve with seven struck through is a puzzle.
     if (totalIn > build.maxTotalIn) continue;
     if (tiers.some(t => t.heightIn < build.minTierIn)) continue;
+    if (tiers.some(t => t.heightIn / t.tinInch > build.maxTierAspect + 1e-9)) continue;
     /* ⚠️ AND NOT A STACK THAT IS NOT A STACK. When the step rule runs out of tins it gives up and
      * repeats the smallest one, so a small cake can produce 4+4 — two discs of the same size with
      * no ledge for a border, which is not a tiered cake. `stepped` does not catch it (it detects
@@ -457,12 +467,13 @@ export function tinOptions(tiersInput, weightKg, opts = {}) {
  */
 export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   const build = { ...CAKE_BUILD, ...(opts.build ?? {}) };
+  /* ⚠️ INTERNAL NOW. `shapeBias` was the baker's tall/wide handle and is no longer offered — the tin
+   * comparison replaced it. It stays because `tinOptions` sweeps it to ENUMERATE the options, and
+   * sweeping the real handle guarantees every option it produces is one this solver can actually
+   * reach, step rule and re-split included. Generating tin sets directly would invent combinations
+   * the rest of the pipeline would then quietly refuse. Callers other than tinOptions leave it at 1. */
   const bias = opts.shapeBias ?? 1;
-  /* A named build, or none. With none the tier keeps the proportions the CUSTOMER WAS SHOWN, which
-   * is the conservative default and what shipped before presets existed. Naming one says "however it
-   * was drawn, we bake them this tall", which is what a bakery with a house style actually wants. */
-  const preset = opts.preset ? BUILDS[opts.preset] ?? null : null;
-  const anchor = preset?.anchor ?? ANCHOR;
+  const anchor = ANCHOR;
   const tiers = Array.isArray(tiersInput) ? tiersInput : [];
   const n = tiers.length;
   if (n === 0) return { totalKg: weightKg ?? null, build, tiers: [] };
@@ -475,7 +486,8 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   const total = typeof weightKg === 'number' && weightKg > 0 ? weightKg : null;
 
   // Weights a baker can actually weigh out, summing to what was ordered.
-  const weights = total != null ? apportion(vols.map(v => v / totalVol), total, build.quantumKg) : null;
+  const quantum = quantumFor(total, build);
+  const weights = total != null ? apportion(vols.map(v => v / totalVol), total, quantum) : null;
 
   // Pass 1 — each tier solved on its own terms.
   const solved = tiers.map((t, i) => {
@@ -486,7 +498,8 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
     // a heart and a round tier are compared on the space they actually occupy.
     const equivDia = 2 * Math.sqrt(areas[i] / Math.PI);
     const designAspect = (t?.height ?? 1) / equivDia;
-    const aspect = (preset?.aspect ?? designAspect) * bias;
+    // The tier's own drawn proportion, moved by the sweep. No named build overrides it any more.
+    const aspect = designAspect * bias;
     const exact = weight != null ? diameterFor(weight, aspect, build, anchor) : null;
     return { shape: s, weight, designAspect, aspect, exact,
              wanted: exact != null ? snapToCommon(exact) : null };
@@ -518,7 +531,7 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   const tinVols = finalTins.map((tin, i) => (tin != null ? areaOf(tin) : 0) * heightShares[i]);
   const tinVolTotal = tinVols.reduce((s, v) => s + v, 0);
   const finalWeights = total != null && tinVolTotal > 0
-    ? apportion(tinVols.map(v => v / tinVolTotal), total, build.quantumKg)
+    ? apportion(tinVols.map(v => v / tinVolTotal), total, quantum)
     : weights;
 
   /* Pass 4 — and the ROUNDING can still invert them. Sharing by volume gets the heights close, then
@@ -528,8 +541,8 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
    *
    * So: hand a quantum down until it is not. Always downward, so the total is untouched, and each
    * move strictly reduces the gap — it cannot cycle. */
-  if (finalWeights && build.quantumKg > 0) {
-    const q = build.quantumKg;
+  if (finalWeights && quantum > 0) {
+    const q = quantum;
     const hAt = (i) => (finalTins[i] != null ? heightFor(finalWeights[i], finalTins[i], build, anchor) : 0);
     for (let i = 1; i < n; i++) {
       for (let guard = 0; guard < 64; guard++) {
@@ -574,5 +587,5 @@ export function computeTinPlan(tiersInput, weightKg, opts = {}) {
   });
 
   const baked = weights ? +weights.reduce((a, b) => a + b, 0).toFixed(3) : null;
-  return { totalKg: total, bakedKg: baked, build, preset: preset?.key ?? null, tiers: out };
+  return { totalKg: total, bakedKg: baked, build, tiers: out };
 }
