@@ -132,6 +132,14 @@ export const CAKE_BUILD = Object.freeze({
   maxBakeIn: 3,              // sponge per bake; deep tins go to ~4, this is the safe figure
   maxBarrelIn: 6,            // taller than this and it needs a board + dowels under the next barrel
 
+  /* ── What counts as a cake at all ─────────────────────────────────────────────────────────────
+   * The comparison offers every tin that could hold the weight, and most of them are not offers.
+   * A 1.5kg in a 12in tin stands under an inch — you cannot torte that, let alone fill it — and the
+   * same weight in a 4in stands about fourteen, which nobody carries to a party. Bounds, so the row
+   * shows choices instead of arithmetic. */
+  minTierIn: 2,              // shorter than this and there is nothing to slice
+  maxTotalIn: 14,            // taller than this and it stops being a cake somebody can move
+
   /* ⚠️ Nobody bakes 3.26 kg. Batter is weighed out in round amounts, and a tier's share of the
    * order has to land on one — 3.25 and 1.75, not 3.26 and 1.74. Pure arithmetic produces a number
    * that is exactly right and cannot be followed. */
@@ -382,6 +390,58 @@ export function enforceStep(tins, minStep = MIN_TIER_STEP_IN) {
     out.push(pick);
     ceiling = pick - minStep;
   }
+  return out;
+}
+
+/* ── Every tin this weight could be baked in, as whole cakes ─────────────────────────────────────
+ *
+ * ⚠️ A COMPARISON, NOT A RECOMMENDATION, and that is the point of the feature rather than a hedge.
+ * Which tin to use is a question about how the finished cake should LOOK, and the customer's own
+ * picture is the only thing that answers it. The model is good at the geometry — this weight in
+ * that tin gives this height and these layers — and has no business guessing the taste. So it lays
+ * the options out and the baker matches the picture.
+ *
+ * ⚠️ It also makes the model checkable. A recommendation hides its own errors: it was 55% too dense
+ * for months and surfaced only when somebody finally said so. Five options side by side are wrong
+ * in front of you the first time you bake one.
+ *
+ * ONE DEGREE OF FREEDOM, even for a stack. The pairs are not free — the design's own footprint ratio
+ * decides how far the top steps in, and MIN_TIER_STEP_IN and the no-inversion rule finish it — so
+ * picking an option picks every tin in it. A two-tier 5kg has about eight real answers, not the
+ * dozens a per-tier chooser would imply, which is why an option is a whole CAKE and not a tier.
+ *
+ * Swept through `shapeBias` rather than by choosing tins directly: the bias is the existing handle
+ * on proportion, so every option this produces is one the solver can actually reach, including the
+ * step and re-split passes. Generating tin sets directly would invent combinations the rest of the
+ * pipeline would then quietly refuse.
+ */
+export function tinOptions(tiersInput, weightKg, opts = {}) {
+  const build = { ...CAKE_BUILD, ...(opts.build ?? {}) };
+  const out = [];
+  const seen = new Set();
+  for (let bias = 0.4; bias <= 2.6; bias += 0.01) {
+    const plan = computeTinPlan(tiersInput, weightKg, { ...opts, shapeBias: bias });
+    const tiers = plan.tiers;
+    if (!tiers.length || tiers.some(t => t.tinInch == null || t.heightIn == null)) continue;
+    const key = tiers.map(t => t.tinInch).join('+');
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const totalIn = +tiers.reduce((s, t) => s + t.heightIn, 0).toFixed(1);
+    // Unbuildable is not an option. Kept out here rather than greyed out in the UI: a row of five
+    // real choices is the feature, and a row of twelve with seven struck through is a puzzle.
+    if (totalIn > build.maxTotalIn) continue;
+    if (tiers.some(t => t.heightIn < build.minTierIn)) continue;
+    /* ⚠️ AND NOT A STACK THAT IS NOT A STACK. When the step rule runs out of tins it gives up and
+     * repeats the smallest one, so a small cake can produce 4+4 — two discs of the same size with
+     * no ledge for a border, which is not a tiered cake. `stepped` does not catch it (it detects
+     * narrowing, not running out), so it is caught here on the geometry itself. */
+    if (tiers.some((t, i) => i > 0 && t.tinInch > tiers[i - 1].tinInch - MIN_TIER_STEP_IN + 1e-9)) continue;
+
+    out.push({ key, tiers, totalIn, bakedKg: plan.bakedKg });
+  }
+  // Widest base first, so the row reads flat → tall, which is the axis the baker is choosing on.
+  out.sort((a, b) => b.tiers[0].tinInch - a.tiers[0].tinInch);
   return out;
 }
 
