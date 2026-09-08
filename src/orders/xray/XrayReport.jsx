@@ -530,6 +530,23 @@ export default function XrayReport({ order, apiClient, onClose }) {
         {tinPlan.tiers.length > 0 && (
           <div>
             <div style={s.sub}><span style={s.dot('#1B5FA8')} /> Tins &amp; weight {tinPlan.totalKg && <span style={s.tag}>{tinPlan.totalKg} kg · {tinPlan.tiers.length} tier{tinPlan.tiers.length > 1 ? 's' : ''}</span>}</div>
+            {/* ⚠️ BEFORE the numbers, never after — INVARIANTS #11. A caveat printed under a table
+                is read once the reader has already believed it.
+
+                The wording is deliberate and it is NOT "beta" or "still evolving". Both of those
+                promise a version that WILL be authoritative, and there is no such version: this
+                figure is geometry, and geometry cannot know a baker's tins, batter or oven. The
+                limit is permanent, so the words have to be true permanently.
+
+                It also must not read as Spattoo RECOMMENDING a tin. `tinHelper` says why — "a
+                recommendation hides its own errors" — and an earlier model was 55% out on density
+                and claimed a tin held 38% more than it can. The row lays options out; the baker
+                chooses. This sentence says that in the one place a baker will actually see it,
+                rather than only in the Terms. Mirrors ToS 7.2. */}
+            <div style={{ ...s.muted, marginTop: -6, marginBottom: 10, lineHeight: 1.5 }}>
+              A reference, not a measurement. Worked out from geometry — not from your tins, your
+              recipe or your oven. Compare the options, then use your own judgement before you bake.
+            </div>
             <div style={s.card}>
               {/* ⚠️ THE BIG WIREFRAME IS GONE. It drew the chosen cake as a 3/4 cylinder above the
                   comparison row, which showed the same cake again and better — to scale, with its
