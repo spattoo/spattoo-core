@@ -35,6 +35,35 @@ function roundProfile(n) {
   return out;
 }
 
+/* ── A PETAL APERTURE, which is not a radius ─────────────────────────────────────────────────────
+ *
+ * ⚠️ EVERY PROFILE ABOVE IS r(theta) — a radius swept round a centre. That covers every ROPE tip
+ * (round, star, French) and it cannot express a petal tip at all. A #104 is a SLIT: a teardrop,
+ * thick and rounded at one end, tapering to almost nothing at the other. There is no centre and no
+ * radius; it is just a closed shape.
+ *
+ * That difference is the whole reason buttercream flowers exist. A rope tip makes the same rope
+ * whichever way you hold it, so nobody has ever had to care which way up it was. A petal tip makes a
+ * RIBBON, and which way up you hold it — and how you turn your wrist through the stroke — is the
+ * entire technique. See the `up` frame in pushSweep.
+ *
+ * Local axes, and they matter:
+ *   y  -1 = the WIDE end (rests on the surface / points at the flower's centre)
+ *      +1 = the THIN end (stands away, and is what gives a petal its feathered edge)
+ *   x  across the slit — the sheet's thickness, fat at the base and vanishing at the tip
+ */
+function petalProfile(n = 36) {
+  const side = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;                                   // 0 at the wide end, 1 at the thin one
+    // Fat and rounded at the base, easing away to a hair at the tip. The floor keeps it a solid
+    // rather than a zero-thickness sheet, which would shade like paper and z-fight against itself.
+    const w = 0.40 * Math.pow(1 - t, 0.65) + 0.022;
+    side.push([w, -1 + 2 * t]);
+  }
+  return [...side, ...side.map(([x, y]) => [-x, y]).reverse()];
+}
+
 // Per-nozzle character:
 //   twist/ruffle (0..1) scale the global spiral + squeeze rhythm below — a round writing tip
 //     wants neither (clean rope); star tips want both for a hand-piped look.
@@ -52,6 +81,13 @@ export const NOZZLES = [
   { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055 },
   { key: 'french', label: 'French',      hint: 'Fine fluted ribs',          profile: lobedProfile(16, 0.26), twist: 0.6, ruffle: 0.6 },
   { key: 'fine',   label: 'Fine French', hint: 'Silky many-rib flutes',     profile: lobedProfile(26, 0.18), twist: 0.5, ruffle: 0.5, thickness: 0.024 },
+  /* ⚠️ `flat` is the flag that changes the FRAME, not the profile. A petal tip only means anything
+   * if it is held at a known attitude — wide end down, slit square to the direction of travel — so
+   * this nozzle asks pushSweep for a fixed-up frame instead of the rotation-minimising one every
+   * rope uses. Twist and ruffle are off: corrugating a ribbon reads as crimped foil, not cream.
+   * Thicker by default because a petal is a decoration in its own right, not a line. */
+  { key: 'petal',  label: 'Petal 104',  hint: 'Roses, ruffles — a slit, wide end down',
+    profile: petalProfile(), twist: 0, ruffle: 0, thickness: 0.10, flat: true },
 ];
 export const NOZZLE_BY_KEY = Object.fromEntries(NOZZLES.map(n => [n.key, n]));
 export const DEFAULT_NOZZLE = 'star5';
@@ -185,6 +221,27 @@ function rmFrames(samples) {
   return { tangents: T, normals: N, binormals: B };
 }
 
+/* Frames from a fixed reference direction — the bag held at a constant attitude. See the note in
+ * pushSweep for why a petal needs this and a rope does not. */
+function fixedUpFrames(samples, up) {
+  const n = samples.length;
+  const U = up.clone().normalize();
+  const T = new Array(n), N = new Array(n), B = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = samples[Math.max(0, i - 1)], b = samples[Math.min(n - 1, i + 1)];
+    T[i] = b.clone().sub(a);
+    if (T[i].lengthSq() < 1e-12) T[i] = (T[i - 1] || new THREE.Vector3(0, 0, 1)).clone();
+    T[i].normalize();
+    let nrm = new THREE.Vector3().crossVectors(U, T[i]);
+    // Travel parallel to `up` leaves the cross product undefined — carry the last frame rather than
+    // let it flip, which would twist the ribbon through 180 degrees in one sample.
+    if (nrm.lengthSq() < 1e-8) nrm = (N[i - 1] || new THREE.Vector3(1, 0, 0)).clone();
+    N[i] = nrm.normalize();
+    B[i] = new THREE.Vector3().crossVectors(T[i], N[i]).normalize();
+  }
+  return { tangents: T, normals: N, binormals: B };
+}
+
 // Sweep a profile along a centerline: sample a CENTRIPETAL CatmullRom through the control
 // points (centripetal provably avoids the cusps/self-intersections that pinch the tube at
 // sharp corners), build rotation-minimizing frames (a stable normal/binormal plane per
@@ -195,11 +252,28 @@ function rmFrames(samples) {
 //   opts.ruffleAmp    — fractional radius swell (0 = off)
 //   opts.ruffleFreq   — radians of squeeze phase per unit arc length
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
-  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0 } = opts;
+  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, up = null } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
-  const frames = rmFrames(samples);
+
+  /* ⚠️ TWO KINDS OF FRAME, and which one you want depends on whether the tip is symmetric.
+   *
+   * A ROPE tip is a radius, so its roll is invisible and the right frame is the one that TWISTS
+   * LEAST — that is rmFrames, and every nozzle above uses it.
+   *
+   * A PETAL tip is a slit, and its roll is the entire technique. You hold the wide end down and the
+   * slit square to where you are going, and you turn your wrist through the stroke; that is what
+   * makes a petal a petal rather than a smear. So `up` replaces the frame with one built from a
+   * fixed reference direction — the surface normal, or the flower nail's axis — exactly the way a
+   * hand holds a bag at a constant attitude:
+   *
+   *   N = up x T   the slit's width, horizontal and square to travel
+   *   B = T x N    the slit's length, standing along `up`
+   *
+   * Degenerate where the path runs parallel to `up` (a petal piped straight upward); the previous
+   * frame is carried forward there rather than flipping, which is the same reason rmFrames exists. */
+  const frames = up ? fixedUpFrames(samples, up) : rmFrames(samples);
   const P = profile.length;
   const base = pos.length / 3;
 
@@ -259,7 +333,7 @@ const toVec = p => (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0], p[1
 // Build one freehand stroke: sweep the chosen nozzle profile (constant radius) through the
 // seated centerline points. `points` is [[x,y,z]…] or Vector3[]. Returns a BufferGeometry,
 // or null if there's nothing to draw.
-export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null) {
+export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null) {
   const noz = NOZZLE_BY_KEY[nozzleKey] || NOZZLE_BY_KEY[DEFAULT_NOZZLE];
   const feel = feelOverride ? { ...PEN_FEEL, ...feelOverride } : PEN_FEEL;
   let pts = points.map(toVec).filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 1e-4);
@@ -273,6 +347,10 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     twistPerLen: (noz.twist  ?? 0) * feel.twistTurnsPerDia * 2 * Math.PI / dia,
     ruffleAmp:   (noz.ruffle ?? 0) * feel.swellAmp,
     ruffleFreq:  feel.swellPerDia * 2 * Math.PI / dia,
+    /* A slit tip needs a known attitude; a rope tip does not care and is better off with the
+     * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
+     * a caller with the real surface normal (or a nail's axis) should pass it. */
+    up: noz.flat ? (upVec ? toVec(upVec) : new THREE.Vector3(0, 1, 0)) : null,
   };
 
   /* The hand's own speed, mapped onto the swept samples. pushSweep resamples the control points
