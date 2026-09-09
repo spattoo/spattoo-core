@@ -755,7 +755,7 @@ function ringsTouch(a, b) {
  * `pad` is in the same units as the parts. Returns ONE part, so the plate composes with everything
  * that already takes a parts list.
  */
-export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96 } = {}) {
+export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96, minHalf = null } = {}) {
   if (!Array.isArray(parts) || !parts.length) return null;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const p of parts) for (const q of p.outer) {
@@ -773,6 +773,8 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96 
    * take the LARGER half-extent on both axes and sit the word inside; a rounded rectangle is exactly
    * the shape that is supposed to follow what is written on it. */
   if (family !== 'rect') hw = hh = Math.max(hw, hh);
+
+
 
   /* ⚠️ A heart's usable middle is NOT its middle, and the correction runs the opposite way to the
    * obvious guess. Its widest span sits BELOW the centre — above that the cleft between the lobes
@@ -830,15 +832,87 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96 
    * what it got and the baker picks a different shape or a shorter word. */
   let m = 1;
   for (let i = 0; i < 40 && !corners(m); i++) m *= 1.08;
-  return { kind: 'plate', outer: at(m), holes: [] };
+
+  /* ⚠️ A FLOOR ON THE FINISHED SIZE, for a PAIR — applied to the SETTLED multiplier, not to the
+   * starting half-extents. Two hearts on a couple's cake are the same size: "Jo" and "Alexandra" get
+   * two matching hearts with a short name in one, not a small heart and a big one. So the caller
+   * fits each plate, takes the larger `half`, and asks again with it as the floor.
+   *
+   * Applying it before the search instead fed a post-search size back into a pre-search input and
+   * grew every plate by the fit factor a second time — two matched hearts, both twice the size they
+   * should have been. */
+  if (minHalf) m = Math.max(m, (minHalf.w ?? 0) / hw, (minHalf.h ?? 0) / hh);
+  // The half-extents it actually settled on, so a caller sizing a PAIR can ask for both again with
+  // the larger of the two as a floor.
+  return { kind: 'plate', outer: at(m), holes: [], half: { w: hw * m, h: hh * m } };
 }
 
-export function offsetParts(parts, d) {
+/* Drop the spikes an offset leaves behind.
+ *
+ * ⚠️ THESE ARE NOT SHARP CORNERS AND SMOOTHING THEM DOES NOTHING. Pushing a contour outward makes
+ * the boundary DOUBLE BACK at a reflex corner — a point that runs out and returns along almost the
+ * same line. Measured on "Emily", the word's worst turn is 147 degrees and its raw offset's is 177,
+ * which is a reversal. Two Chaikin passes took 177 to 174 and quadrupled the point count, because a
+ * rounded spike is still a spike. The fix is to DELETE the point that doubles back.
+ *
+ * Done iteratively: removing one reversal can expose the next behind it. Cheap, because each pass
+ * only touches the handful of points that qualify.
+ */
+function despike(ring, turnDeg = 135) {
+  const cosLimit = Math.cos((turnDeg * Math.PI) / 180);
+  let pts = ring;
+  for (let pass = 0; pass < 6; pass++) {
+    if (pts.length < 5) break;
+    const keep = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
+      const v1x = b.x - a.x, v1y = b.y - a.y, v2x = c.x - b.x, v2y = c.y - b.y;
+      const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+      if (l1 < 1e-9 || l2 < 1e-9) continue;                       // duplicate point
+      const cosT = (v1x * v2x + v1y * v2y) / (l1 * l2);
+      if (cosT < cosLimit) continue;                              // turns further than the limit
+      keep.push(b);
+    }
+    if (keep.length === pts.length || keep.length < 5) { pts = keep.length >= 5 ? keep : pts; break; }
+    pts = keep;
+  }
+  return pts;
+}
+
+/* Chaikin corner-cutting on a closed ring: each edge contributes two points at a quarter and three
+ * quarters along, so every corner is replaced by a short chamfer and repeating rounds it.
+ *
+ * ⚠️ A LOCAL COPY, and the alternative is worse. `glyphShape.js` already has this — but it also
+ * imports the letter-cake engine and helvetiker, so reaching for it would drag a font into every
+ * bundle that renders a topper. Eight lines of a published algorithm against ~200KB of font is not a
+ * close call. If a third caller appears, lift it into a leaf module both can import.
+ */
+function chaikin(ring, passes = 1) {
+  let pts = ring;
+  for (let k = 0; k < passes; k++) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    pts = out;
+  }
+  return pts;
+}
+
+export function offsetParts(parts, d, { smooth = 1 } = {}) {
   if (!Array.isArray(parts) || !d) return parts ?? [];
+  /* ⚠️ SMOOTHED, because offsetting a letterform makes cusps. Pushing a contour outward turns every
+   * concave corner into a near-reversal — measured on "Emily", the word's own worst turn is 147
+   * degrees and its offset backing's is 177, which is a spike, not a corner. It looks ragged and no
+   * blade or die could cut it. `despike` deletes the reversals and one Chaikin pass softens what is
+   * left; the FACE is untouched, so the letters keep their drawn corners and only the backing
+   * softens, which is what a real cut card does. */
   return parts.map(p => ({
     ...p,
-    outer: offsetRing(p.outer, d),
-    holes: (p.holes ?? []).map(h => offsetRing(h, -d)),
+    outer: chaikin(despike(offsetRing(p.outer, d)), smooth),
+    holes: (p.holes ?? []).map(h => chaikin(despike(offsetRing(h, -d)), smooth)),
   }));
 }
 
