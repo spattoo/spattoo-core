@@ -92,7 +92,7 @@ export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './d
 // Acrylic toppers: the word, its bar, its prongs — and the connectivity check that says whether the
 // thing can be cut as one piece. Exported because the admin studio previews from the same numbers
 // the designer renders, the same bargain TextTopperStudio already makes with the text-slot compositor.
-export { topperShapes, pieceCount, components, bridgeLoose, offsetParts } from './designer/geometry/topperShape.js';
+export { topperShapes, pieceCount, components, bridgeLoose, offsetParts, backingPlate } from './designer/geometry/topperShape.js';
 // THE size control — the admin studios size a topper with the same dial the customer will.
 export { SizeDial } from './designer/shared/SizeDial.jsx';
 // One face list and one finish list, shared by the studio and the cake. creamFonts.json is already

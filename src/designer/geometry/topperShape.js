@@ -1,4 +1,15 @@
 import * as THREE from 'three';
+/* The cake's own outline families. A backing PLATE is the same closed 2D outline a cake footprint
+ * is, at a different scale — so a heart on a topper and a heart cake are the SAME curve, tuned once,
+ * and a family authored into `cake_shapes` later arrives here for free.
+ *
+ * ⚠️ shapes.js ONLY. `surface.js` also has samplers (circlePerimeter, roundedRectPerimeter) and they
+ * are deliberately not used: it imports the letter-cake engine and its font, so taking two trivial
+ * curves from there would drag helvetiker and glyphShape into everything that renders a topper. A
+ * circle and a rounded box are sampled below instead — sin/cos and four arcs are not a shared domain
+ * decision the way a heart's plump/cleft/tip are, and shapes.js says outright that those two stay
+ * analytic in surface.js so no existing cake regresses. */
+import { outlineOf, pointInPolygon } from './shapes.js';
 
 /* ── An acrylic cake topper, as one cut-out ──────────────────────────────────────────────────────
  *
@@ -724,6 +735,104 @@ function ringsTouch(a, b) {
  * slightly differently and the band comes out uneven. Offsetting the parts we already have keeps
  * the two layers exactly concentric.
  */
+/* ── A PLATE behind the word, rather than a band around it ───────────────────────────────────────
+ *
+ * The other kind of card topper: the word sits on a solid SHAPE — a disc, a rounded rectangle, a
+ * heart — instead of on a second cut of itself. A "4" in yellow on an orange circle is this, and it
+ * is a different object from an offset, not a bigger one.
+ *
+ * ⚠️ THE SHAPES ARE THE CAKE'S OWN. `outlineOf` and the perimeter samplers already answer "what
+ * closed outline is this shape", and shapes.js exists precisely so a new one is DATA rather than a
+ * branch. A topper drawing its own heart would be a second heart in the codebase, free to drift from
+ * the heart cake, and a shape authored into `cake_shapes` later would never reach it.
+ *
+ * ⚠️ FITTED BY SEARCH, not by a formula, because a heart is not convex. A disc holds a word if its
+ * radius clears the corner; a heart of the same bounding box does not — the word's top corners fall
+ * outside the lobes and its bottom corners outside the point. So the plate is grown until all four
+ * corners of the padded box are genuinely INSIDE the outline. A formula per family would be four
+ * formulas, three of them wrong the first time a shape is added.
+ *
+ * `pad` is in the same units as the parts. Returns ONE part, so the plate composes with everything
+ * that already takes a parts list.
+ */
+export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96 } = {}) {
+  if (!Array.isArray(parts) || !parts.length) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of parts) for (const q of p.outer) {
+    if (q.x < minX) minX = q.x; if (q.x > maxX) maxX = q.x;
+    if (q.y < minY) minY = q.y; if (q.y > maxY) maxY = q.y;
+  }
+  if (!(maxX > minX)) return null;
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  let hw = (maxX - minX) / 2 + pad, hh = (maxY - minY) / 2 + pad;
+
+  /* ⚠️ A CIRCLE STAYS CIRCULAR; ONLY THE RECTANGLE FOLLOWS THE WORD. Scaling every family to the
+   * text's own box turns the disc behind a short wide name into an ELLIPSE — measured, "Emily" gave
+   * 2.00 x 0.92 — which is not what anyone means by "on a circle". A heart is the same: it has a
+   * proportion of its own and stretching it to a wide box gives a squashed cartoon. So those two
+   * take the LARGER half-extent on both axes and sit the word inside; a rounded rectangle is exactly
+   * the shape that is supposed to follow what is written on it. */
+  if (family !== 'rect') hw = hh = Math.max(hw, hh);
+
+  /* ⚠️ A heart's usable middle is NOT its middle, and the correction runs the opposite way to the
+   * obvious guess. Its widest span sits BELOW the centre — above that the cleft between the lobes
+   * eats the middle — so a word centred on the outline's centre is sitting too high and the fit
+   * search inflates the whole heart to catch its top corners. Lifting the plate relative to the word
+   * (a POSITIVE bias) drops the word into the wide part. Measured on a "4": at bias 0 the heart came
+   * out 3.68 wide, at -0.16 it grew to 3.98, and at +0.25 it fell to 3.41. Guessing the sign here
+   * cost a render, and the sign flipped again when the heart was turned the right way up. */
+  const biasY = family === 'heart' ? -hh * 0.20 : 0;
+
+  // An outline in [-1,1]^2, in this file's (x, y) rather than the cake's (x, z).
+  const unit = (() => {
+    if (family === 'heart') {
+      /* ⚠️ y = -z, NOT z. A cake's outline lives in (x, z) where +Z is the FRONT, and a heart cake's
+       * point faces front — so mapping z straight onto y stands the heart on its head, lobes down and
+       * point in the air. It renders perfectly and is obviously wrong the moment you look at it. */
+      const o = outlineOf('heart', {});
+      return o ? o.map(q => ({ x: q.x, y: -q.z })) : null;
+    }
+    if (family === 'rect') {
+      // A box with rounded corners, in [-1,1]^2. The radius is a fraction of the half-extent so a
+      // wide plate and a tall one round by the same visual amount.
+      const r = 0.22, k = 1 - r;
+      const arc = Math.max(4, Math.round(segments / 8));
+      const out = [];
+      /* Four quarter-arcs, each about its OWN corner centre and each starting where the last ended,
+       * walked anticlockwise from the top-right. The first attempt mirrored the arc with a sign on
+       * cos/sin as well as placing the centre, which reflected two of the corners back across their
+       * own centres and tore a notch out of the left edge. */
+      for (const [ccx, ccy, a0] of [[k, k, 0], [-k, k, Math.PI / 2], [-k, -k, Math.PI], [k, -k, 1.5 * Math.PI]]) {
+        for (let i = 0; i <= arc; i++) {
+          const a = a0 + (i / arc) * (Math.PI / 2);
+          out.push({ x: ccx + r * Math.cos(a), y: ccy + r * Math.sin(a) });
+        }
+      }
+      return out;
+    }
+    // A disc.
+    return Array.from({ length: segments }, (_, i) => {
+      const a = (i / segments) * Math.PI * 2;
+      return { x: Math.cos(a), y: Math.sin(a) };
+    });
+  })();
+  if (!unit?.length) return null;
+
+  const at = (m) => unit.map(q => ({ x: cx + q.x * hw * m, y: cy + biasY + q.y * hh * m }));
+  const corners = (m) => {
+    const ring = at(m).map(q => ({ x: q.x, z: q.y }));
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]
+      .every(([dx, dy]) => pointInPolygon(ring, cx + dx, cy + dy));
+  };
+
+  /* Grow until it holds, then stop. Capped: a shape that cannot hold a very wide word at any
+   * sensible size should give up rather than return a plate the size of the room — the caller shows
+   * what it got and the baker picks a different shape or a shorter word. */
+  let m = 1;
+  for (let i = 0; i < 40 && !corners(m); i++) m *= 1.08;
+  return { kind: 'plate', outer: at(m), holes: [] };
+}
+
 export function offsetParts(parts, d) {
   if (!Array.isArray(parts) || !d) return parts ?? [];
   return parts.map(p => ({
