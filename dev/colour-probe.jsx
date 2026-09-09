@@ -31,8 +31,16 @@ import { garnishMaterialProps } from '../src/designer/geometry/garnishMaterial.j
  * changed the rendered pixel NOT AT ALL — five identical readings. Every compensation attempted so
  * far aimed at that term, so all of them were aimed at the wrong thing, which is why none of them
  * moved the colour. The lift comes from elsewhere: the scene's lights, the tone mapping, or
- * colour-space handling of the material colour. Sweep those next, here, before writing another
- * correction. */
+ * colour-space handling of the material colour.
+ *
+ * ⚠️ ANSWERED, 2026-09-09, in `dev/card-colour.html` — which lights its card the way CakeCanvas
+ * lights a cake, so its numbers describe the product. IT IS THE TONE MAPPING. On a yellow whose blue
+ * channel is 8, corrected: ACES renders blue 122, none/linear 58, NeutralToneMapping 40. ACES exists
+ * to roll off and DESATURATE the top of the range, and it is applied after everything, so no albedo
+ * divisor reaches it. The env sweep was reproduced there and is still flat — 122 at every intensity.
+ * The residue below ACES is the dielectric specular of the LIGHTS, additive and equally unreachable.
+ * Full details in that file. Nothing has been changed on the strength of it: tone mapping is
+ * scene-wide and every reference light so far was measured under ACES. */
 
 const COLOURS = [
   ['Teal (the studio one)', '#4EC5B0'],
