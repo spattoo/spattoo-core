@@ -708,6 +708,31 @@ function ringsTouch(a, b) {
  * worse — the one control offered as the remedy for a hairline, breaking the thing it was for.
  *
  * The signed area says which way the ring winds, so the sign is corrected rather than assumed. */
+/* The same parts, grown outward by `d` — the BACKING of a layered card cutout.
+ *
+ * A paper topper is two cuts of the same word: the colour on top, and a second sheet cut slightly
+ * larger behind it, so a band of the second colour follows the letterforms all the way round. The
+ * "10" and the "Emily" on a printed cake topper are both this.
+ *
+ * ⚠️ Holes go the OTHER WAY. The outer contour grows so the backing shows around the outside; a
+ * counter — the hole in a 0, an e, an a — has to SHRINK by the same amount, or the backing stops at
+ * the face's own hole and the band vanishes exactly where the eye looks for it. Growing everything
+ * uniformly is the mistake that makes a cutout look printed rather than layered.
+ *
+ * Derived from the face's own contours rather than by re-cutting the word at a heavier weight: a
+ * second `topperShapes` call is re-fitted and re-scaled to the same height, so its strokes land
+ * slightly differently and the band comes out uneven. Offsetting the parts we already have keeps
+ * the two layers exactly concentric.
+ */
+export function offsetParts(parts, d) {
+  if (!Array.isArray(parts) || !d) return parts ?? [];
+  return parts.map(p => ({
+    ...p,
+    outer: offsetRing(p.outer, d),
+    holes: (p.holes ?? []).map(h => offsetRing(h, -d)),
+  }));
+}
+
 function offsetRing(ring, d) {
   if (!d) return ring;
   const n = ring.length;
