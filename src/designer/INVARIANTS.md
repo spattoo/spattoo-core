@@ -473,6 +473,45 @@ stops at grey 152 on purpose: driving it to 128 needs a divisor of `[7.9, 4.2, 3
 measured and crushes rose by −50 and renders a dark drip indistinguishable from black. Stop where the
 measurement says stop, and write down why.
 
+## 17. A studio is lit like the cake it authors for — RULE IS ON, gated by `check:studio-scene`
+**Any screen previewing something that goes ON A CAKE mounts `<SceneLights />` and `<SceneEnv />`
+from `@spattoo/designer` — the designer's own rig — and builds no lighting of its own.** A studio is
+where colour, gloss and finish are decided. Decide them under a different light and you have tuned
+for a scene no customer will ever load.
+
+A hand-rolled `<ambientLight>` plus a `<directionalLight>` or two is NOT the same light, however
+close the numbers look. The card cutout studio ran ambient `0.72` with **no environment map at all**
+against production's `0.45` and an HDRI — sixty percent more fill and no image-based lighting — and
+nothing about the screen said so.
+
+⚠️ **THIS IS A GATE BECAUSE THE FAILURE IS SILENT.** Nothing throws, nothing logs, nothing looks
+broken; the preview simply renders a slightly different object from the cake. Core learned this at
+the harness level first (`check:harness-scene`, INVARIANT note there), where the same gap produced
+three parameter sweeps, a set of documented conclusions and a shipped scene-wide change that all
+described a scene nobody had ever seen. Of the harnesses mounting the real scene, exactly one was
+right before the gate existed; of admin's 28 canvas screens, six were.
+
+**Not every canvas is a cake.** A GLB inspector or a geometry calibrator is looking at a MODEL, and
+flat even light is the right choice there. It opts out by saying why, in the file:
+
+    // scene-rig: not cake output — <the reason>
+
+A sentence rather than a flag, because the next reader needs the reason and not the permission.
+
+⚠️ **MOUNTING THE RIG IS NOT YET THE CUSTOMER'S SCENE, and do not mistake one for the other.** Admin
+never calls `configureEnvMap`, so `SceneEnv` falls back to drei's INDOOR `apartment` preset while
+every deployed cake renders the self-hosted OUTDOOR map. `envProps` warns in the console and means
+it: **anything measured in admin today does not describe what a customer sees.** Matching the LAMPS
+is worth having on its own — it removes one of the two differences — but a reference light
+(INVARIANT #16) measured against the fallback is a guess wearing a measurement's clothes. Measure
+where the thing actually renders.
+
+**How it is enforced.** `npm run check:studio-scene` in spattoo-admin, also run by its pre-commit
+hook. 22 studios predate the gate and sit in an explicit, dated baseline inside the script — visible
+debt that only shrinks, never a silent waiver. The script reports any baselined file that has since
+been fixed so the entry can be deleted. Fixing one is usually three lines, but it CHANGES WHAT THE
+STUDIO LOOKS LIKE, so each wants doing deliberately with a look at the result rather than in a sweep.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —
@@ -559,6 +598,8 @@ shared answer for everything except the renderer, which leaves exactly one copy 
 - [ ] No new `=== '<slug>'` / type branch in render or popup code (config instead).
 - [ ] No hardcoded world dimension that assumes a fixed cake radius/size — value is a fraction of the
       live `surfaceR`/`radius`/`height` (#8).
+- [ ] A studio previewing cake output mounts `<SceneLights />` + `<SceneEnv />` and lights nothing
+      itself (#17) — and any colour it was used to judge was judged under that rig.
 - [ ] No emojis in any UI text; controls use real styles (a button looks like a button) (#7).
 - [ ] No branch on zone (`rim`/`board`/…) to decide picker interaction, clickability, or which popup
       opens — the panel treats every element identically (#6).
