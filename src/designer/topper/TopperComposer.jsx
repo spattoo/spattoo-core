@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { HexColorPicker } from 'react-colorful';
-import { topperShapes, backingPlate, offsetParts } from '../geometry/topperShape.js';
+import { offsetParts } from '../geometry/topperShape.js';
+import { topperContours } from '../geometry/topperPiece.js';
 import { outlineOf } from '../geometry/shapes.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
 import { SceneLights, SceneEnv, SceneBackground } from '../canvas/CakeCanvas.jsx';
@@ -135,24 +136,6 @@ function Grid() {
   );
 }
 
-// One object's geometry: a word, or a shape plate. Both end as extruded contours, which is why they
-// can share everything downstream.
-function contoursOf(obj, font) {
-  if (obj.kind === 'text') {
-    if (!font || !obj.text.trim()) return null;
-    const probe = topperShapes(font, obj.text, { height: 1 });
-    if (!probe.width) return null;
-    return topperShapes(font, obj.text, { height: obj.size / probe.width }).parts;
-  }
-  // A shape on its own has no word to fit, so it is fitted to a square of its own size.
-  const box = [{ outer: [
-    { x: -obj.size / 2, y: -obj.size / 2 }, { x: obj.size / 2, y: -obj.size / 2 },
-    { x: obj.size / 2, y: obj.size / 2 }, { x: -obj.size / 2, y: obj.size / 2 },
-  ], holes: [] }];
-  const plate = backingPlate(box, { family: obj.family, pad: 0 });
-  return plate ? [plate] : null;
-}
-
 /* ── Dragging ────────────────────────────────────────────────────────────────────────────────────
  *
  * ⚠️ AGAINST A FIXED PLANE, never against the object's own surface. `e.point` is where the ray met
@@ -275,7 +258,7 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
     e.target?.releasePointerCapture?.(e.pointerId);
   };
 
-  const parts = useMemo(() => contoursOf(obj, font), [obj, font]);
+  const parts = useMemo(() => topperContours(obj, font), [obj, font]);
 
   /* ⚠️ The offset is a PROPERTY OF THE TEXT, not of the screen. It was a slider that existed whether
    * or not there was anything to offset; here it belongs to the object it acts on, so two words on

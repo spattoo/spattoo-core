@@ -134,6 +134,9 @@ export { default as SelectionBox } from './designer/canvas/SelectionBox.jsx';
 /* The card-topper composer. A BAKER studio, so it ends the way GarnishStudio does — use it on the
  * cake, or keep it and use it — and it stores the OBJECT LIST rather than the geometry it builds. */
 export { default as TopperComposer } from './designer/topper/TopperComposer.jsx';
+/* ⚠️ ONE answer to "what shape is this topper", asked by the composer AND by the cake. A private copy
+ * in either is two answers to one question, and the cake's is the one the customer sees. */
+export { topperContours, topperSheets, topperBox } from './designer/geometry/topperPiece.js';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".
