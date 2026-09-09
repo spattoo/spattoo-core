@@ -131,6 +131,9 @@ export { DESIGNER_GROUND, SELECTION_COLOR } from './designer/constants.js';
  * on a screen whose job is choosing colours. Exported so a studio shows selection the way the
  * designer does instead of inventing a second blue. */
 export { default as SelectionBox } from './designer/canvas/SelectionBox.jsx';
+/* The card-topper composer. A BAKER studio, so it ends the way GarnishStudio does — use it on the
+ * cake, or keep it and use it — and it stores the OBJECT LIST rather than the geometry it builds. */
+export { default as TopperComposer } from './designer/topper/TopperComposer.jsx';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".
