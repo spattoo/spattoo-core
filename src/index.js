@@ -80,6 +80,11 @@ export { DECOR_MATERIALS, materialSurface, materialsFor, applyDecorMaterialConfi
 // operation derives from. The admin Cake Shape Studio authors rows against exactly these.
 export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from './designer/cakeShapes.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
+/* The colour model (INVARIANTS #16): every surface rendering a CHOSEN colour divides its albedo by
+ * the light it receives, with a reference light MEASURED per surface. Exported so admin studios —
+ * which decide colour and must therefore show it truthfully — can apply the same correction the
+ * cake does. */
+export { albedoForLight } from './designer/shared/albedoForLight.js';
 // Glyph-cake sizing — the per-character-count model shared by the `number` (digits) and `letter` (A–Z)
 // families (a "1"/"A" and a "21"/"AB" size independently; every string of a given count renders
 // identically). Exported so the Cake Shape Studio authors byCount against the SAME defaults + resolver the
