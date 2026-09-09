@@ -120,7 +120,12 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
 // The shipping light rig. Exported so an admin studio tunes a look under the SAME lights the designer
 // renders it under — a colour picked beneath a brighter key is simply the wrong colour, and the
 // designer's own rig carries a note about exactly that overexposure washing the cake top toward white.
-export { SceneLights, SceneEnv } from './designer/canvas/CakeCanvas.jsx';
+/* The designer's rig, so a studio previewing cake output can mount exactly what the cake mounts
+ * (INVARIANTS #17). `SceneBackground` and `DESIGNER_GROUND` are part of it: the ground is a SCENE
+ * background, so it is in the render — a studio that paints a different colour behind a transparent
+ * canvas is judging its subject against a surround no cake has. */
+export { SceneLights, SceneEnv, SceneBackground } from './designer/canvas/CakeCanvas.jsx';
+export { DESIGNER_GROUND } from './designer/constants.js';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".
