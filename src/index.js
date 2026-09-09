@@ -125,7 +125,12 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
  * background, so it is in the render — a studio that paints a different colour behind a transparent
  * canvas is judging its subject against a surround no cake has. */
 export { SceneLights, SceneEnv, SceneBackground } from './designer/canvas/CakeCanvas.jsx';
-export { DESIGNER_GROUND } from './designer/constants.js';
+export { DESIGNER_GROUND, SELECTION_COLOR } from './designer/constants.js';
+/* THE selection cue for a placed object (INVARIANTS #14). A border rather than a tint, because an
+ * emissive highlight is additive and corrupts the very albedo it is advertising — which matters most
+ * on a screen whose job is choosing colours. Exported so a studio shows selection the way the
+ * designer does instead of inventing a second blue. */
+export { default as SelectionBox } from './designer/canvas/SelectionBox.jsx';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".
