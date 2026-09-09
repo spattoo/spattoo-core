@@ -512,6 +512,69 @@ debt that only shrinks, never a silent waiver. The script reports any baselined 
 been fixed so the entry can be deleted. Fixing one is usually three lines, but it CHANGES WHAT THE
 STUDIO LOOKS LIKE, so each wants doing deliberately with a look at the result rather than in a sweep.
 
+## 18. `envMapIntensity` DOES NOTHING, and a finish must not repaint the wall
+
+Two things found together on 2026-09-09, chasing three surfaces reported as "dull" — a foil flake, a
+whole cake wall, and an acrylic topper. They are separate faults with one thing in common: each was a
+number that looked set and was not being used.
+
+### 18a. `material.envMapIntensity` is discarded by three.js, everywhere in this app
+
+three.js overwrites the uniform whenever the material has no `envMap` of its own:
+
+```js
+// WebGLRenderer, per material, per frame
+if ((material.isMeshStandardMaterial || …) && material.envMap === null && scene.environment !== null)
+  m_uniforms.envMapIntensity.value = scene.environmentIntensity;
+```
+
+Nothing in the designer sets `material.envMap` — the light comes from `scene.environment` — so
+**every surface renders at `scene.environmentIntensity` (1.25) no matter what its material asks for.**
+Swept 0 → 30 on the real cake, on the tier wall and on the board: byte-identical frames. Setting
+`material.envMap = scene.environment` at runtime makes the value take effect immediately, and 1.25
+then reproduces the shipped pixels exactly — which is the proof, not the fix.
+
+⚠️ **The damage is not the dim gold; it is the CONCLUSIONS.** Gold leaf asks for `env: 4.5` precisely
+so shards reflect the room and has never got it. More costly, `ENVI=` sweeps were run over this knob
+during the topper-glare investigation and reported "already at its best value" — a knob that returns
+the same number at every setting reads exactly like one that is already optimal. That reading is part
+of what sent the search to the scene-wide HDRI swap, which was shipped and then reverted for turning
+the faux balls matte. **Do not sweep a parameter without first proving it reaches the render.** A
+harness that can read the live material back (`SceneProbe` in `dev/garnish-on-cake.jsx`) is how.
+
+⚠️ **And reviving it is not a fix.** Handing a material its own `envMap` re-lights everything sharing
+that material — the shards share the tier's material with the entire cake wall — and switches on a
+value nobody has ever calibrated, because it never applied. Tried: the shards went to near-white.
+
+### 18b. A finish adds particles; it must not change the colour of the cake
+
+Gold leaf and luster dust bake the wall into map form, and the base fill was the baker's RAW chosen
+colour while the un-finished wall goes through `tierAlbedo()` (INVARIANT #16). So **one flake
+anywhere on a tier repainted the whole tier**: measured up to **+48 per channel**, with a saturated
+lilac losing a third of its chroma (46 → 31). That is what "the cake looks dull" meant, and it had
+nothing to do with the flakes the report was about. `scripts/measure-finish-wall.mjs` renders the same
+cake with and without a finish and fails if the two disagree — worst channel now 2.
+
+The lesson is not "remember `tierAlbedo` here". It is that **`tierAlbedo` has to be applied wherever
+albedo is decided, and there are more of those than there look to be**: the solid colour, the
+gradient, the stripes, and now a baked finish map. A per-pixel replacement of the wall colour is a
+place the correction belongs, and each one was found separately, after shipping.
+
+### 18c. A flat face has one normal, so it renders one colour
+
+An acrylic word was extruded `bevelEnabled: false`. A flat face has exactly one normal, so under a
+matcap it samples one texel and the entire word is a single flat colour — and turning the cake moves
+that one sample, which is why it changed brightness *all at once* instead of a highlight travelling
+along the strokes. The cure is a chamfer, and a chamfer only reads against a DARK body: bevelling
+alone measured **worse** than the flat piece (0.143 against 0.148) because there was nothing for the
+bright edge to stand against. Bevel plus a darker matcap body: 0.182. `black` was already right and
+had never been complained about, for exactly this reason.
+
+⚠️ **Contrast, not brightness, is the measurement.** A mean cannot tell matte paint from mirror gold;
+the swing between a surface's brightest and darkest pixel is the reflection. Every number here is
+p95−p5 over the mean, against the gold board — a metal in the same frame nobody has ever called dull
+— which reads **0.463**.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —

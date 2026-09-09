@@ -17,7 +17,10 @@
 import { chromium } from 'playwright';
 
 /* `still=1` — the page rotates like production unless a measurement asks it not to. */
-const URL = 'http://localhost:5190/garnish-on-cake.html?still=1';
+/* FINISH= picks which of the five topper finishes is on the cake. They share one gradient, so a
+ * change judged on gold has to be checked on the others before it ships as a change to the table. */
+const URL = `http://localhost:5190/garnish-on-cake.html?still=1${
+  process.env.FINISH ? `&topperfinish=${process.env.FINISH}` : ''}`;
 
 /* Two sweeps, because there turned out to be two questions. DEG rotates the map; ENV swaps it.
  * ⚠️ THE SECOND ONE IS THE REAL ONE. Rotation, roughness and envIntensity were each swept to

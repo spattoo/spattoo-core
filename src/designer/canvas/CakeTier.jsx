@@ -1407,12 +1407,25 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
         roughnessMap={finishMaps?.roughnessMap ?? null}
         emissive={finishMaps ? (foil ? (foil.color ?? '#000000') : (dusting?.dustColor ?? '#000000')) : '#000000'}
         emissiveMap={finishMaps?.emissiveMap ?? null}
-        emissiveIntensity={finishMaps ? (foil ? (foil.finish?.glow ?? 0.35) : (dusting?.glow ?? 0)) : 0}
+        /* ⚠️ `GOLD_LEAF_DEFAULTS.glow`, NOT A SECOND COPY OF THE NUMBER. This read `?? 0.35`, which
+         * is the same default written twice in two files — so editing the table that calls itself
+         * the defaults changed the shards' colour maps and left their emissive exactly where it
+         * was, and the measurement came back saying the edit had done nothing. A default belongs to
+         * one file; every other reader asks that file. */
+        emissiveIntensity={finishMaps ? (foil ? (foil.finish?.glow ?? GOLD_LEAF_DEFAULTS.glow) : (dusting?.glow ?? 0)) : 0}
         sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
         clearcoat={finishMaps ? 1 : (surf?.clearcoat ?? 0)}
         clearcoatMap={finishMaps?.metalnessMap ?? null}
         clearcoatRoughness={finishMaps ? 0.12 : (surf?.clearcoatRoughness ?? 0.5)}
-        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 4.5) : (surf?.envMapIntensity ?? 0.5)}
+        /* ⚠️ EVERY VALUE ON THIS LINE IS DISCARDED BY three.js, and that is not a comment about this
+         * feature — it is true of `envMapIntensity` everywhere in this app. The renderer overwrites
+         * the uniform with `scene.environmentIntensity` for any material whose own `envMap` is null
+         * (WebGLRenderer: `isMeshStandardMaterial && material.envMap === null && scene.environment
+         * !== null`), and nothing here sets one. Swept 0 → 30 on the real cake at runtime: the
+         * frames are byte-identical. Left in place because the fix is not to delete the line but to
+         * stop believing it — several past investigations swept `envIntensity` and drew conclusions
+         * from a knob that has never been connected. */
+        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? GOLD_LEAF_DEFAULTS.env) : (surf?.envMapIntensity ?? 0.5)}
         normalMap={normalMap ?? null}
         normalScale={[normalScale, normalScale]} />
     </mesh>
@@ -1444,7 +1457,8 @@ function GlazeDrip({ geo, surf, glaze, bodyBbox, yBase }) {
 // transparent — it's a decal, not the surface. A PlaneGeometry(2R) laid flat: its default UV matches
 // the polar `place()` in topDiskProject, so a flake's drag handle (FinishHandles top branch) lands on
 // its shard. Works for cylinder / rounded / styled tiers alike (all share the flat top at topY).
-function TopFoilDecal({ maps, radius, y, foilColor = '#e6be4a', glow = 0.35, env = 4.5 }) {
+function TopFoilDecal({ maps, radius, y, foilColor = GOLD_LEAF_COLORS.gold,
+                       glow = GOLD_LEAF_DEFAULTS.glow, env = GOLD_LEAF_DEFAULTS.env }) {
   const matRef = useRef();
   const onRef = useRef(false);
   // Binding the maps onto an existing material needs a one-time shader recompile (same reason as the
@@ -1706,7 +1720,8 @@ export default function CakeTier({
   const finishMaps = useMemo(() => {
     if (isPrism || !(dusting?.splashes?.length || sideFoil?.flakes?.length)) { finishRef.current = null; return null; }
     finishRef.current = makeParticleFinishMaps({
-      surface: 'side', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+      surface: 'side', radius, height, baseColor: tierAlbedo(color), surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+
       dusting, foil: sideFoil, reuse: finishRef.current,
     });
     return finishRef.current;
@@ -1718,7 +1733,8 @@ export default function CakeTier({
   const topFinishMaps = useMemo(() => {
     if (isPrism || !topFoil?.flakes?.length) { topFinishRef.current = null; return null; }
     topFinishRef.current = makeParticleFinishMaps({
-      surface: 'top_surface', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+      surface: 'top_surface', radius, height, baseColor: tierAlbedo(color), surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+
       foil: topFoil, reuse: topFinishRef.current,
     });
     return topFinishRef.current;
@@ -1870,7 +1886,8 @@ export default function CakeTier({
       )}
       {!isPrism && topFinishMaps && (
         <TopFoilDecal maps={topFinishMaps} radius={radius - 0.02} y={topY + 0.02}
-          foilColor={topFoil?.color} glow={topFoil?.finish?.glow ?? 0.35} env={topFoil?.finish?.env ?? 4.5} />
+          foilColor={topFoil?.color} glow={topFoil?.finish?.glow ?? GOLD_LEAF_DEFAULTS.glow}
+          env={topFoil?.finish?.env ?? GOLD_LEAF_DEFAULTS.env} />
       )}
       {renderTops()}
       {renderBottoms()}

@@ -68,8 +68,29 @@ export default function AcrylicWord({
     const geos = parts.map(p => {
       const shape = new THREE.Shape(p.outer.map(q => new THREE.Vector2(q.x, q.y)));
       shape.holes = (p.holes ?? []).map(h => new THREE.Path(h.map(q => new THREE.Vector2(q.x, q.y))));
-      const g = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
-      g.translate(0, 0, -thickness / 2);
+      /* ⚠️ THE CHAMFER IS WHAT MAKES IT READ AS ACRYLIC, and its absence is why the topper looked
+       * flat. A letter extruded with `bevelEnabled: false` has exactly two normals — dead ahead on
+       * the face, dead sideways on the wall — so the face samples ONE texel of the matcap and the
+       * whole word renders as a single colour. That is also why turning the cake changed its
+       * brightness all at once rather than moving a highlight along the strokes: one normal, one
+       * sample, moving together. A real laser-cut topper has a bright edge that catches the light
+       * against a darker face, and that contrast is the whole look.
+       *
+       * Measured on the real cake: relative contrast 0.148 flat, against the gold board's 0.463 in
+       * the same frame. See scripts/measure-topper-glare.mjs.
+       *
+       * ⚠️ SMALL, AND SEGMENTED. `bevelSize` eats INTO the outline, so a chamfer approaching half a
+       * stroke's width collapses a thin script letter — and this font is a script. It is a fraction
+       * of the THICKNESS for that reason, not of the letter size, so a heavier sheet gets a heavier
+       * edge and a hairline stroke is never eaten. Config-driven like the thickness beside it. */
+      const bevel = Math.max(0, cfg.bevel ?? 0.08) * thickness;
+      const g = new THREE.ExtrudeGeometry(shape, bevel > 0
+        ? { depth: thickness - 2 * bevel, bevelEnabled: true, bevelThickness: bevel,
+            bevelSize: bevel, bevelOffset: 0, bevelSegments: 2 }
+        : { depth: thickness, bevelEnabled: false });
+      // Centre the piece on its own extrusion whether or not the bevel added depth to it.
+      g.computeBoundingBox();
+      g.translate(0, 0, -(g.boundingBox.max.z + g.boundingBox.min.z) / 2);
       return g;
     });
 

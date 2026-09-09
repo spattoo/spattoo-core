@@ -41,10 +41,34 @@
 /* Each finish as the few facts a matcap needs: the body colour, the colour of its bright band, and
  * how tight that band is. ⚠️ These are the AUTHORED look, not measurements — that is the point of
  * baking. Tuned against the previous environment-lit gold so the change reads as the same product. */
+/* ⚠️ THE BODY COLOUR IS THE DARK THE HIGHLIGHT IS SEEN AGAINST, which is why the three metals are
+ * far darker here than the gold, silver and rose anyone would name. A letter is a FLAT face: it takes
+ * one normal, so it samples ONE texel of this picture and renders as a single colour. Whatever
+ * variation the piece shows comes from its CHAMFER, and a bright edge only reads if the face behind
+ * it is darker. Set the body to the colour of the metal itself and the edge has nothing to be bright
+ * against — which is what "dull" meant when it was reported from the app on 2026-09-09.
+ *
+ * ⚠️ AND THIS IS MEASURED, NOT PREFERRED. `black` was already right and nobody had complained about
+ * it: it reads 0.322 relative contrast where gold read 0.143, and the only thing it does differently
+ * is start from a dark body. Darkening the metals to ~2/3 moved them the same way, each measured
+ * separately rather than by spreading gold's number across the table:
+ *
+ *     finish   was     now      (relative contrast, scripts/measure-topper-glare.mjs)
+ *     gold     0.143   0.182
+ *     silver   0.139   0.160
+ *     rose     0.126   0.166
+ *     black    0.322   0.322    unchanged — it already had this
+ *     white    0.098   0.098    unchanged — a white topper IS pale, and darkening it would make
+ *                               it grey rather than white. Low contrast is correct here.
+ *
+ * ⚠️ IT ONLY WORKS WITH THE CHAMFER, and the chamfer only works with it. Bevelling the letters while
+ * the body stayed bright measured 0.143 — WORSE than the flat piece it replaced (0.148) — because a
+ * chamfer with no dark to stand against just fills the letter with mid-tones. Neither half is a fix
+ * on its own; do not keep one and revert the other. See `cfg.bevel` in AcrylicWord.jsx. */
 const LOOKS = {
-  gold:   { base: [168, 128, 32], sheen: [255, 240, 186], rim: [92, 62, 12],  tight: 0.55, spec: 0.95 },
-  silver: { base: [176, 182, 190], sheen: [255, 255, 255], rim: [78, 86, 96],  tight: 0.55, spec: 0.95 },
-  rose:   { base: [198, 138, 120], sheen: [255, 226, 214], rim: [104, 60, 48], tight: 0.55, spec: 0.90 },
+  gold:   { base: [112, 84, 20],  sheen: [255, 240, 186], rim: [92, 62, 12],  tight: 0.55, spec: 0.95 },
+  silver: { base: [117, 121, 127], sheen: [255, 255, 255], rim: [78, 86, 96],  tight: 0.55, spec: 0.95 },
+  rose:   { base: [132, 92, 80],  sheen: [255, 226, 214], rim: [104, 60, 48], tight: 0.55, spec: 0.90 },
   black:  { base: [26, 26, 28],   sheen: [236, 236, 240], rim: [6, 6, 8],     tight: 0.80, spec: 0.75 },
   white:  { base: [232, 230, 226], sheen: [255, 255, 255], rim: [150, 148, 144], tight: 0.80, spec: 0.55 },
 };
