@@ -18,6 +18,7 @@ import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import Garnishes from './Garnishes.jsx';
+import Toppers from './Toppers.jsx';
 import FinishHandles from './FinishHandles.jsx';
 import { printExposure } from '../shared/printExposure.js';
 import SelectionBox from './SelectionBox.jsx';
@@ -2356,6 +2357,7 @@ function CakeScene({
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
+  selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   orbitRef,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
@@ -2533,6 +2535,7 @@ function CakeScene({
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
           selectedGarnishId, onGarnishSelect, onGarnishMove,
+          selectedTopperId, onTopperSelect, onTopperMove,
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
@@ -2624,11 +2627,12 @@ const NOOP = () => {};
 // are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
 // its own, and it is what every board-level finish is placed against.
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
     selectedGarnishId = null, onGarnishSelect = NOOP, onGarnishMove = null,
+    selectedTopperId = null, onTopperSelect = NOOP, onTopperMove = null,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
     onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
@@ -2940,6 +2944,17 @@ function CakeContent({ config, scene, edit = null }) {
         onSelect={onGarnishSelect}
         onMove={onGarnishMove}
         onOrbitEnable={orbitEnableFor('__garnish__')}
+      />
+
+      {/* Card toppers: compositions from the topper composer, stood on the cake. Placed by the same
+          `garnishPlacement` a garnish uses — see Toppers.jsx. */}
+      <Toppers
+        toppers={toppers}
+        tierData={tierData}
+        selectedId={selectedTopperId}
+        onSelect={onTopperSelect}
+        onMove={onTopperMove}
+        onOrbitEnable={orbitEnableFor('__topper__')}
       />
 
       {bottomTier && texts.map(t => {
@@ -3368,6 +3383,7 @@ export default function CakeCanvas({
   selectedAgeId, onAgeSelect, onAgeMove,
   // Chocolate garnishes — placed pieces from the garnish studio.
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
+  selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   autoRotate = false,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],

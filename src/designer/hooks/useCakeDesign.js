@@ -1,6 +1,13 @@
 import { useState, useMemo } from 'react';
 import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
 import { GARNISH_DEFAULTS, fanPlacements } from '../geometry/garnishPlacement.js';
+/* ⚠️ A TOPPER IS PLACED THE WAY A GARNISH IS, so it takes the same defaults rather than a copy of
+ * them. Both are a piece made off the cake and stood on it: an angle round the cake, a fraction out
+ * from the middle, a turn and a scale. A second set of the same numbers is how two decorations start
+ * disagreeing about what `radius` means — the movable contract's first law, one place says where it
+ * is. A topper differs only in defaulting to LYING: a card stands on a stick pushed in, which is not
+ * yet built, and a card left standing on nothing floats. */
+const TOPPER_PLACEMENT_DEFAULTS = { ...GARNISH_DEFAULTS, mode: 'lie', radius: 0.35 };
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';
@@ -51,6 +58,11 @@ const DEFAULT_DESIGN = {
      saved design keeps rendering after the baker deletes the garnish from their library. A design
      is a record of a cake, not a query against someone's current collection. */
   garnishes: [],
+  /* Card toppers composed in the topper composer and stood on the cake. Like a garnish, each carries
+     its own OBJECT LIST rather than a reference to a library row, so a saved design keeps rendering
+     after the baker deletes the topper from their collection. A design is a record of a cake, not a
+     query against someone's current shelf. */
+  toppers: [],
 };
 
 // The cake a shape STARTS you with — the ONE definition of "new cake, shape X". `New` resets the design
@@ -153,6 +165,7 @@ export function toCanvasConfig(design) {
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
     garnishes: design.garnishes ?? [],
+    toppers: design.toppers ?? [],
   };
 }
 
@@ -321,6 +334,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     writings: normalizeWritings(templateDesign),
     piping:   templateDesign.piping ?? [],
     garnishes: templateDesign.garnishes ?? [],
+    toppers: templateDesign.toppers ?? [],
     // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
     boardGrass: templateDesign.boardGrass ?? null,
@@ -1318,6 +1332,28 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   // Freehand cream-pen strokes. addStroke appends a finished stroke (seeding defaults);
   // removeStroke undoes the last; clearPiping wipes them all.
+  /* ── Card toppers ──────────────────────────────────────────────────────────────────────────────
+     Placed pieces, each { id, name, payload, theta, radius, yaw, mode, scale, tierIndex }. The
+     placement keys are the garnish's, and read by the same `garnishPlacement` — a topper is placed
+     the way a garnish is, and a second set of placement laws for the same job is how two decorations
+     start disagreeing about what `radius` means (the movable contract's first law). */
+  function addTopper(t) {
+    setDesign(prev => ({
+      ...prev,
+      toppers: [...(prev.toppers ?? []), { ...TOPPER_PLACEMENT_DEFAULTS, id: crypto.randomUUID(), ...t }],
+    }));
+  }
+  /* ⚠️ MERGES, never replaces — the drag hands back only the keys it changed. */
+  function updateTopper(id, patch) {
+    setDesign(prev => ({
+      ...prev,
+      toppers: (prev.toppers ?? []).map(t => (t.id === id ? { ...t, ...patch } : t)),
+    }));
+  }
+  function removeTopper(id) {
+    setDesign(prev => ({ ...prev, toppers: (prev.toppers ?? []).filter(t => t.id !== id) }));
+  }
+
   /* ── Chocolate garnishes ───────────────────────────────────────────────────────────────────────
      Placed pieces, each { id, name, paths, rope, plate, theta, radius, yaw, mode, scale }. The
      placement keys are read by garnishPlacement.js, which is the ONE thing that decides where a
@@ -1486,6 +1522,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
     addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping,
     addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish,
+    addTopper, updateTopper, removeTopper,
     resetDesign,
     addStickerBatch,
     loadDesign,

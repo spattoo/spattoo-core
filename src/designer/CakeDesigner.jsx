@@ -35,6 +35,7 @@ import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
+import TopperComposer from './topper/TopperComposer.jsx';
 import { garnishDragTo } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
@@ -1780,7 +1781,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1860,6 +1861,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // `medium` is what is in the bag — cream or chocolate. It is a KEY into MEDIA (see pipingMedia.js),
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
+  const [topperStudio, setTopperStudio] = useState(false);
+  const [pendingTopper, setPendingTopper] = useState(null);
   const [pendingGarnish, setPendingGarnish] = useState(null);
   /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
      saved appears without a refresh — the shelf is the place a baker goes to check it worked. */
@@ -2040,6 +2043,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // type 'text':   { id }
   // type 'sticker': { id }  ← primary sticker (toolbar anchor); toppers are stickers too
   const [selectedEl, setSelectedEl] = useState(null);
+
+  /* ⚠️ DERIVED, not a second piece of state — and it MUST sit below `selectedEl`, which is the trap
+   * the note further down this file records. `selectedGarnishId` is only cleared when the piece is
+   * deleted, so a garnish stays highlighted after the customer selects something else: two things
+   * lit at once, and the highlight stops meaning "this one". Reading the selection that already
+   * exists cannot drift — select anything else and the topper unlights itself. */
+  const selectedTopperId = selectedEl?.type === 'topper' ? selectedEl.id : null;
   const [colorOpen, setColorOpen] = useState(false);
   // GLB Recompose: which editable part-group the colour wheel is currently editing (group key), or
   // null when editing the element's single colour. Set when a per-group swatch / on-canvas dot is
@@ -4394,6 +4404,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     /* Opens the studio rather than placing something. A garnish has to be MADE before it can be
        put anywhere, which is the one procedural tool so far whose first act is a screen. */
     chocolate_garnish: () => setGarnishStudio(true),
+    /* A card topper: composed off the cake and stood on it. `card_topper` because that is what it
+       is made of — the key is DATA, read by an admin on a row, so it names the thing rather than
+       the studio that happens to make it today. */
+    card_topper: () => setTopperStudio(true),
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -9296,6 +9310,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               filmTight={photoFraming}
               config={canvasConfig}
               selectedGarnishId={selectedGarnishId}
+              selectedTopperId={selectedTopperId}
+              onTopperSelect={id => selectExclusive({ type: 'topper', id })}
+              onTopperMove={updateTopper}
               onGarnishSelect={id => { setSelectedGarnishId(id); selectExclusive({ type: 'garnish', id }); }}
               /* The patch is only the keys the drag changed, so updateGarnish MERGES — anything the
                  customer set (size, standing or lying) survives being moved. */
@@ -10699,6 +10716,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             setSelectedGarnishId(id);
             setGarnishStudio(false);
             setPendingGarnish(null);
+          }}
+        />
+      )}
+
+      {topperStudio && (
+        <TopperComposer
+          apiClient={apiClient}
+          openWith={pendingTopper}
+          onCancel={() => { setTopperStudio(false); setPendingTopper(null); }}
+          /* Selected the moment it lands, like a garnish: the thing you just made is the thing you
+             want to move, and having to hunt for it is a step nobody wants. */
+          onSave={topper => {
+            const id = crypto.randomUUID();
+            addTopper({ ...topper, id });
+            selectExclusive({ type: 'topper', id });
+            setTopperStudio(false);
+            setPendingTopper(null);
           }}
         />
       )}
