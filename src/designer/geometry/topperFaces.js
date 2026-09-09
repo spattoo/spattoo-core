@@ -58,6 +58,11 @@ import creamFonts from './creamFonts.json';
  * The UMD build cannot code-split and inlines all four (1.59MB -> 1.98MB). Both web and admin
  * resolve the ESM entry via `exports.import`, so nothing that ships pays it; the CJS file carries
  * the weight for any consumer that requires it. Worth knowing before adding a fifth face.
+ *
+ * Three more were added for card cutouts (Lilita One, Poppins Bold, Pacifico), taking the outline
+ * faces to seven and ~490KB. They are cheaper than the scripts — 25-64KB against 73-104KB — because
+ * a block face has far fewer curve segments per glyph. The split still holds: an ESM consumer
+ * fetches only the face it picks.
  */
 
 // Parsing a typeface JSON allocates every glyph's outline, so it is done once per face and kept —
@@ -69,6 +74,16 @@ export const TOPPER_FACES = {
   parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
   pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
   dancing_script:   { label: 'Dancing Script', kind: 'outline',    fit: -0.10, licence: 'OFL 1.1' },
+  /* ⚠️ BLOCK faces, and their `fit` is near zero where every script above is deeply negative.
+   * A script's letters already almost touch, so a small negative closes them into one cuttable
+   * piece. A block face's do not come close at any tracking a reader would accept — measured, the
+   * value that joins "Sandeep" in Poppins overlaps each letter into the next by a third and sets it
+   * as a smear. So these are left set as drawn: on a CARD topper the backing sheet is what joins the
+   * letters (grow the offset until the outlines meet), and on acrylic the bar or a bridge does it.
+   * Do not "fix" these by driving them negative until the piece count says 1. */
+  lilita_one:       { label: 'Lilita One',    kind: 'outline',    fit: -0.012, licence: 'OFL 1.1' },
+  poppins_bold:     { label: 'Poppins Bold',  kind: 'outline',    fit: -0.010, licence: 'OFL 1.1' },
+  pacifico:         { label: 'Pacifico',      kind: 'outline',    fit: -0.06,  licence: 'OFL 1.1' },
   // ⚠️ The centreline faces need FAR less than the outline ones, and nothing about the outline
   // numbers predicts theirs — see the note below.
   ems_allure:       { label: 'Allure',         kind: 'centreline', fit: -0.04, licence: 'public domain' },
@@ -96,6 +111,9 @@ const OUTLINE_JSON = {
   parisienne:     () => import('./typefaces/parisienne.json'),
   pinyon_script:  () => import('./typefaces/pinyon-script.json'),
   dancing_script: () => import('./typefaces/dancing-script.json'),
+  lilita_one:     () => import('./typefaces/lilita-one.json'),
+  poppins_bold:   () => import('./typefaces/poppins-bold.json'),
+  pacifico:       () => import('./typefaces/pacifico.json'),
 };
 
 /* The font object `topperShapes` wants, for either kind.

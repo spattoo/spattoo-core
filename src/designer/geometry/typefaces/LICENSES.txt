@@ -1,10 +1,19 @@
-These four typefaces are vendored as three.js typeface JSON, converted from the TTFs in
+These seven typefaces are vendored as three.js typeface JSON, converted from the TTFs in
 github.com/google/fonts with scripts/ttf-to-typeface.mjs. They are subset to the 78 characters a
-topper needs and normalised to 1000 units/em, which is why they weigh about 100KB each rather than
+topper needs and normalised to 1000 units/em, which is why they weigh 25-104KB each rather than
 the 60-460KB of the originals.
 
-All four are under the SIL Open Font License 1.1, which permits embedding and redistribution in a
-product. The full, unaltered text of each licence follows.
+All seven are under the SIL Open Font License 1.1, which permits embedding and redistribution in a
+product. The full, unaltered text of the licence follows, reproduced once per typeface for the first
+four; the three added later carry their own copyright notice below and are governed by the same
+text, which the OFL permits so long as the notice and the licence travel with the work.
+
+  Lilita One    Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz)
+  Poppins Bold  Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins)
+  Pacifico      Copyright 2018 The Pacifico Project Authors (https://github.com/googlefonts/Pacifico)
+
+Added for the card cutout topper, which needs block and casual faces; the original four are all
+formal scripts.
 
 ==============================================================================
   Great Vibes
