@@ -550,13 +550,20 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   </div>
                 </Field>
 
+                {/* ⚠️ A COLUMN, not `delivery.radius_km` in the settings blob — so it is written and
+                    read top-level, exactly like `lead_time_days` above. Migration 091 moved it, and
+                    the reason is that this number is now SHOWN TO CUSTOMERS: a jsonb key has no
+                    default, no type and no CHECK, so `min`/`max` here was the only thing between a
+                    typo and a public promise — and an <input> attribute is a hint to a browser, not
+                    a constraint on an API. Nothing read the old key and no baker had one, so there
+                    was nothing to migrate. Do NOT reintroduce a fallback to it. */}
                 {delivery.home_delivery && (
-                  <Field label="Delivery Radius" hint="Maximum distance you deliver to, in kilometres.">
+                  <Field label="Delivery Radius" hint="Shown to customers on your storefront, so they know whether you reach them.">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                       <input
                         type="number" min={1} max={500}
-                        value={delivery.radius_km ?? ''}
-                        onChange={e => setSetting('delivery.radius_km', e.target.value === '' ? null : Number(e.target.value))}
+                        value={settings.delivery_radius_km ?? ''}
+                        onChange={e => setSetting('delivery_radius_km', e.target.value === '' ? null : Number(e.target.value))}
                         placeholder="e.g. 10"
                         style={{ width: 100, padding: '8px 12px', borderRadius: 10, border: '1.5px solid #C5D4C8', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', color: '#2C4433', outline: 'none', background: '#fff' }}
                       />
