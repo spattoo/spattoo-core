@@ -4897,7 +4897,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Place `count` instances of `el` scattered on (zone × tier), spaced from `taken` seats, all at
   // `scale` (and `color` if given). The ONE generator used by initial drop, density +, and zone
   // change. Mode comes from the element's config for the zone (renders its art).
-  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], color) {
+  // `palette` — one colour, several, or none. Several cycles across the new instances the way a
+  // cluster's does; one behaves exactly as the single `color` argument always did.
+  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], palette) {
+    const pal = Array.isArray(palette) ? palette.filter(Boolean) : (palette ? [palette] : []);
     const mode = zoneMode(el.placement_config, zone, 'hug');
     const minDist = STICKER_SIZE * scale;
     const baseId = Date.now();
@@ -4906,7 +4909,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const seat = randomScatterSeat(zone, tierIndex, taken, minDist);
       taken.push(seat);
       const id = addSticker(el, zone, tierIndex, mode, seat, { id: baseId + i, scale });
-      if (color != null) updateSticker(id, { color });
+      // ⚠️ Offset by how many are ALREADY seated, so growing a mixed scatter continues the cycle
+      // instead of restarting it. Without this, dragging Count up gives you a correctly mixed first
+      // batch followed by a run of whatever colour the palette happens to start on.
+      if (pal.length) updateSticker(id, { color: pal[(taken.length - 1) % pal.length] });
       ids.push(id);
     }
     return ids;
@@ -5088,6 +5094,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     design.stickers.filter(s => s.clusterId === clusterId).sort((a, b) => a.id - b.id)
       .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
   }
+  // ⚠️ "+" MUST ADD A COLOUR THAT DIFFERS. Both palettes are DERIVED as the DISTINCT colours on the
+  // instances, so appending a copy of the last swatch collapses on the very next read and the button
+  // appears to do nothing at all. Found by pressing it: a scatter starting from one colour stayed on
+  // one colour forever. The cluster card carries the same bug and is merely masked — the faux ball
+  // ships three distinct golds, so nobody has started one from a single colour.
+  //
+  // A lighter shade of the last colour, so the default mix is a tonal set (which is what the faux
+  // ball's three golds already are) rather than an arbitrary second hue. Near-white flips to darker,
+  // because lightening white returns white and the button would silently do nothing again.
+  function nextPaletteColour(hex) {
+    const h = /^#([0-9a-f]{6})$/i.exec(String(hex ?? '')) ? hex : '#cccccc';
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const up = (r + g + b) / 3 < 210;                        // room to lighten?
+    const f = (v) => Math.max(0, Math.min(255, Math.round(up ? v + (255 - v) * 0.35 : v * 0.72)));
+    return '#' + [r, g, b].map(v => f(v).toString(16).padStart(2, '0')).join('');
+  }
+
+  // ── A scatter's palette, exactly as a cluster's ─────────────────────────────────────────────────
+  // Scatter and cluster are DIFFERENT arrangements — a cluster packs into a tangent heap, a scatter
+  // spreads across a surface — but the colour question is identical, so the answer is too rather than
+  // a second one that drifts.
+  //
+  // ⚠️ DERIVED, NOT STORED. The distinct colours already on the instances ARE the palette. Each
+  // scatter instance is its own sticker record carrying its own `color`, so nothing new is persisted
+  // and every design saved before this reads back as a one-colour palette on its own. A stored field
+  // would have had to survive the design jsonb, the template snapshot and the order snapshot, and
+  // every existing design would have needed a default.
+  function scatterPaletteOf(elementId) {
+    const out = [];
+    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+      .forEach(s => { if (s.color && !out.includes(s.color)) out.push(s.color); });
+    return out;
+  }
+  // Cycle the customer's palette across the instances, in placement order. `i % length` is what makes
+  // a 3-colour palette read as a repeating mix rather than three blocks.
+  function setScatterPalette(elementId, palette) {
+    if (!palette.length) return;
+    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+      .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
+  }
+
   // The cluster's CURRENT finish = the material override its balls share (every member carries the
   // same roughness/metalness). Returned so a re-pack can reapply it; null = config-default finish.
   function clusterFinishOf(clusterId) {
@@ -5166,7 +5213,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const el = elementById.get(elementId);
       const ref = instances[0];
       if (!el) return;
-      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, ref.scale ?? scatterScaleFor(el), takenSeatsOf(instances), ref.color ?? undefined);
+      // ⚠️ The PALETTE, not `ref.color`. This passed the first instance's colour, so growing a
+      // mixed scatter gave a correctly mixed original batch followed by a block of one colour.
+      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, ref.scale ?? scatterScaleFor(el), takenSeatsOf(instances), scatterPaletteOf(elementId));
     } else {
       // Drop the newest (highest id) instances first.
       const remove = [...instances].sort((a, b) => b.id - a.id).slice(0, cur - target).map(s => s.id);
@@ -5187,7 +5236,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const ref = all[0];                                     // share size/colour with the existing set
       const tierIndex = scatterTierForZone(zone);
       const scale = ref?.scale ?? scatterScaleFor(el);
-      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], ref?.color ?? undefined);
+      // Same reason: a scatter ticked onto a second surface should carry the whole mix, not the
+      // first instance's colour.
+      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterPaletteOf(elementId));
     } else {
       all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
     }
@@ -6368,7 +6419,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const el = elementById.get(members[0].elementId);
     const { min, max } = clusterConfigOf(el ?? {});
     const palette = clusterPaletteOf(card.clusterId);
-    const swatch = { width: 26, height: 26, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer' };
+    const swatch = s.paletteSwatch;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {clusterAddHandle(el)}
@@ -6400,7 +6451,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 )}
               </span>
             ))}
-            <button title="Add colour" onClick={() => setClusterPalette(card.clusterId, [...palette, palette[palette.length - 1] ?? '#D4AF37'])}
+            <button title="Add colour" onClick={() => setClusterPalette(card.clusterId, [...palette, nextPaletteColour(palette[palette.length - 1] ?? '#D4AF37')])}
               style={{ ...swatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
           </div>
         </div>
@@ -6481,22 +6532,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onChange={v => scaleStickers(all.map(s => s.id), v)} />
           </div>
         </div>
-        {canColor && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={s.editPanelLabel}>Colour</span>
-            <button
-              style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-              onClick={() => {
-                const opening = !colorOpen;
-                closeAllPopups();
-                setSelectedEl({ type: 'scatter', elementId: card.elementId });
-                setSelectedStickerIds(new Set());
-                if (opening) setColorOpen(true);
-              }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: all[0]?.color ?? '#ffffff' }} />
-            </button>
-          </div>
-        )}
+        {/* ── Colours, not Colour ────────────────────────────────────────────────────────────────
+            One wheel here set every instance to the same colour, because the write fanned it across
+            the whole group. But each scatter instance is its own sticker record with its own `color`,
+            so a mix was always storable — the card was the only thing insisting on uniformity.
+
+            The same row the cluster card uses, and deliberately so: a cluster packs into a heap and a
+            scatter spreads across a surface, but "which colours is this group made of" is one
+            question and should not have two answers that drift apart.
+
+            The palette is DERIVED from the instances (scatterPaletteOf), so nothing new is persisted
+            and an old single-colour design reads back as a one-swatch palette by itself. */}
+        {canColor && (() => {
+          const palette = scatterPaletteOf(card.elementId);
+          const pal = palette.length ? palette : ['#ffffff'];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <span style={s.editPanelLabel}>Colours</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                {pal.map((c, i) => (
+                  <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
+                    <input type="color" value={c} style={s.paletteSwatch}
+                      onChange={e => { const next = [...pal]; next[i] = e.target.value; setScatterPalette(card.elementId, next); }} />
+                    {pal.length > 1 && (
+                      <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, pal.filter((_, j) => j !== i))}
+                        style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: '#e53935', cursor: 'pointer', padding: 0 }}>×</button>
+                    )}
+                  </span>
+                ))}
+                <button title="Add colour" onClick={() => setScatterPalette(card.elementId, [...pal, nextPaletteColour(pal[pal.length - 1])])}
+                  style={{ ...s.paletteSwatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+              </div>
+            </div>
+          );
+        })()}
         {/* Always offered. See the note on `delete` in the toolbar's actions below: a decoration a
             customer cannot take off their own cake is not a capability, it is a trap. */}
         {true && (
@@ -11549,6 +11618,9 @@ const s = {
     border:'1px solid rgba(240,220,227,0.9)',
     pointerEvents:'auto',
   },
+  // The square swatch in a Colours row. Shared by the cluster card and the scatter card so the two
+  // palettes cannot drift apart visually — they answer the same question about different arrangements.
+  paletteSwatch: { width: 26, height: 26, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer' },
   swatchBtn: {
     width:26, height:26, borderRadius:'50%', border:'2.5px solid #999999',
     cursor:'pointer', flexShrink:0, padding:0,
