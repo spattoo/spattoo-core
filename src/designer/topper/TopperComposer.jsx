@@ -1356,9 +1356,20 @@ export default function TopperComposer({
              composing canvas would otherwise paint straight over the preview — and tearing its
              WebGL context down and building it again on every toggle costs a second and loses the
              buffer the shelf tile is photographed from. */
-          style={{ position: 'absolute', inset: 0, visibility: onCake ? 'hidden' : 'visible' }}>
+          /* ⚠️ `touchAction: none`, OR A PHONE NEVER GETS A VERTICAL DRAG. The browser claims an
+             up-or-down swipe for scrolling before the canvas sees it, so dragging a piece sideways
+             worked and dragging it up moved the SHEET instead — the piece stayed put and the studio
+             appeared to be ignoring the finger. R3F does not set this for us. */
+          style={{ position: 'absolute', inset: 0, touchAction: 'none',
+            visibility: onCake ? 'hidden' : 'visible' }}>
           {/* Flat only: the 3D look is a perspective camera and has no zoom to set. */}
-          <FitCamera bottomInset={isMobile && panel ? SHEET_FRACTION : 0} />
+          {/* ⚠️ THE INSET IS CONSTANT ON A PHONE, NOT "WHEN THE SHEET IS SHOWING". Tying it to the
+              sheet meant the camera re-framed the moment a piece was selected — so the piece JUMPED
+              out from under the finger that had just tapped it, and the drag that followed grabbed
+              empty grid. It read as the studio ignoring you, or moving stickily.
+              The composing area is simply the top of the stage on a phone, whether the sheet is
+              there or not: a view that never moves is worth more than the extra sliver. */}
+          <FitCamera bottomInset={isMobile ? SHEET_FRACTION : 0} />
           <SceneLights shadows />
           <SceneEnv />
           {/* The designer's own ground, imported rather than chosen, so what is judged here is what a
