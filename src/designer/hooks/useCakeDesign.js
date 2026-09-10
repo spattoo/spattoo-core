@@ -7,7 +7,11 @@ import { GARNISH_DEFAULTS, fanPlacements } from '../geometry/garnishPlacement.js
  * disagreeing about what `radius` means — the movable contract's first law, one place says where it
  * is. A topper differs only in defaulting to LYING: a card stands on a stick pushed in, which is not
  * yet built, and a card left standing on nothing floats. */
-const TOPPER_PLACEMENT_DEFAULTS = { ...GARNISH_DEFAULTS, mode: 'lie', radius: 0.35 };
+/* ⚠️ IT STANDS. It defaulted to LYING while there was no stick — a card standing on nothing floats —
+ * and that reasoning expired the day the stick was built. A card topper is a thing that stands up on
+ * a cake; laid flat it reads as a sticker, which is the one thing this is not. Standing without a
+ * stick still works: the bottom edge is pushed into the icing exactly as a garnish's is. */
+const TOPPER_PLACEMENT_DEFAULTS = { ...GARNISH_DEFAULTS, mode: 'stand', radius: 0.35 };
 import { tierShape } from '../geometry/surface.js';
 import { isGlyphFamily, glyphTierDims } from '../geometry/glyphShape.js';
 import { cakeShapeDef, tierGeometry } from '../cakeShapes.js';

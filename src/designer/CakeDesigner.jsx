@@ -6051,6 +6051,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.nameBlocks?.blocks?.length) {
     decorationCards.unshift({ key: 'blocks', type: 'blocks', name: 'Letter Blocks', thumb: null, glyph: 'A' });
   }
+  /* One card per placed card topper. ⚠️ It was missing entirely: a topper could be dropped on the
+     cake and then dragged, and nothing else — no way to stand it up, move it to another tier, resize
+     it or take it off again, because the only control was the drag. Every other placed decoration
+     has a card and this is the same shape. */
+  (design.toppers ?? []).forEach(t => {
+    decorationCards.unshift({ key: `topper-${t.id}`, type: 'topper', id: t.id, topper: t, thumb: null,
+                              name: t.name || 'Card topper' });
+  });
+
   /* One card per placed garnish, newest first — the same shape every other placed decoration has, so
      a customer meets one accordion rather than a special case for chocolate. */
   (design.garnishes ?? []).forEach(g => {
@@ -6157,6 +6166,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
       : card.type === 'cloud'         ? { type: 'cloud', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
+      : card.type === 'topper'        ? { type: 'topper', id: card.id }
       : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
       : card.type === 'blocks'        ? { type: 'blocks' }
@@ -7531,6 +7541,71 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      its shape, its fill — was decided in the studio and is not editable here, because changing it
      would change every cake that used the same saved garnish if it were ever a reference. It is not
      (each design carries its own paths), but the card should not invite the idea either. */
+  /* ⚠️ A CARD TOPPER'S CARD. Deliberately shorter than the garnish's: no gloss (printed card is
+   * matte and has no shine to set), no fan (a fanned arc of NAMES is not a thing anyone makes), and
+   * no duplicate for the same reason. What is left is where it sits and how big it is. */
+  function renderTopperBody(t) {
+    if (!t) return null;
+    const tiers = design.tiers ?? [];
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* ⚠️ ONLY WHERE THERE IS A CHOICE — a tier chooser on a one-tier cake is a control with a
+            single answer, and it pushes down what the baker actually came for. */}
+        {tiers.length > 1 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>
+              Which tier
+            </div>
+            <Segmented
+              label="Which tier the topper sits on"
+              items={tiers.map((_, i) => ({
+                id: String(i),
+                label: i === 0 ? 'Base' : i === tiers.length - 1 ? 'Top' : `Tier ${i + 1}`,
+              }))}
+              value={String(Number.isInteger(t.tierIndex) ? t.tierIndex : tiers.length - 1)}
+              onChange={v => updateTopper(t.id, { tierIndex: Number(v) })}
+            />
+          </div>
+        )}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                        textTransform: 'uppercase', marginBottom: 6 }}>
+            How it sits
+          </div>
+          <Segmented
+            label="How the topper sits"
+            items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+            value={t.mode ?? 'stand'}
+            onChange={mode => updateTopper(t.id, { mode })}
+            tone={primaryColor}
+          />
+          <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
+            {t.payload?.stick?.on
+              ? 'It stands on its stick. How deep that goes was set in the studio.'
+              : 'Standing pushes its bottom edge into the icing. Add a stick in the studio to raise it.'}
+          </div>
+        </div>
+
+        <PenSlider label="Size" value={t.scale ?? 1} min={0.4} max={2} step={0.05}
+          onChange={v => updateTopper(t.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
+        <PenSlider label="Turn" value={t.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
+          onChange={v => updateTopper(t.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
+
+        <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
+          Drag it on the cake to move it round.
+        </div>
+
+        <button onClick={() => { removeTopper(t.id); setSelectedEl(null); }}
+          style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                   border: '1.5px solid #E0C9C9', background: '#fff', color: '#A33',
+                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
+          Remove
+        </button>
+      </div>
+    );
+  }
+
   function renderGarnishBody(g) {
     if (!g) return null;
     const tiers = design.tiers ?? [];
@@ -9892,6 +9967,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()
+                           : card.type === 'topper'  ? renderTopperBody(card.topper)
                            : card.type === 'garnish' ? renderGarnishBody(card.garnish)
                            : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
                            : buildToolbar(selectedEl, 'panel')}

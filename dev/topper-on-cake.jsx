@@ -54,7 +54,8 @@ const design = {
     /* Placement keys are the GARNISH's, because a topper is placed by `garnishPlacement`. Leaving
        them out would take the hook's defaults and prove nothing about what a drag writes back. */
     theta: num('theta', 0), radius: num('radius', 0.35), yaw: num('yaw', 0),
-    mode: q.get('mode') ?? 'lie', scale: num('scale', 1),
+    // Matches TOPPER_PLACEMENT_DEFAULTS — a card topper stands unless it is told to lie.
+    mode: q.get('mode') ?? 'stand', scale: num('scale', 1),
   }],
 };
 

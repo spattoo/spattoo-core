@@ -455,12 +455,15 @@ const inputStyle = {
   border: '1.5px solid #E2E8E3', fontFamily: 'inherit', fontSize: 13.5,
 };
 
-function Properties({ obj, onChange, onDelete, grouped = false, onUngroup }) {
+function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embedded = false }) {
   const [wheel, setWheel] = useState(null);
   const set = (patch) => onChange(obj.id, patch);
 
   return (
-    <div className="tcProps" style={{ padding: 16, background: '#fff', borderLeft: '1px solid #E8EFE9' }}>
+    <div className={embedded ? undefined : 'tcProps'}
+      style={{ padding: 16, background: '#fff',
+        borderLeft: embedded ? 'none' : '1px solid #E8EFE9',
+        borderBottom: embedded ? '1px solid #E8EFE9' : 'none' }}>
       <h2 style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 800, color: '#2C3E33' }}>
         {obj.kind === 'text' ? 'Text' : (SHAPES.find(x => x.key === obj.family)?.label ?? 'Shape')}
       </h2>
@@ -903,7 +906,10 @@ export default function TopperComposer({
       onClose={onCancel}
       footer={
         <>
-          <button onClick={onCancel} style={btn(false)}>Cancel</button>
+          {/* ⚠️ `alignSelf`, because the footer is a flex row and its default is STRETCH. When the
+              tick and the button wrapped onto two lines on a phone, Cancel grew to match them and
+              became a tall square. It should be a button whatever is beside it. */}
+          <button onClick={onCancel} style={{ ...btn(false), alignSelf: 'center' }}>Cancel</button>
           {/* ⚠️ ONE ACTION, WITH A MODIFIER BESIDE IT — not two buttons that both place the topper.
               Two primaries differing only in a side effect made the baker read both to find the
               difference, and put the longest label in a footer that also holds Cancel: at 375px
@@ -924,7 +930,7 @@ export default function TopperComposer({
               wraps, so on a phone the tick drops onto its own line ABOVE the button rather than
               squeezing it; the footer itself does not wrap. */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-            flexWrap: 'wrap', gap: 14 }}>
+            flexWrap: 'wrap', gap: 14, alignSelf: 'center' }}>
           {canKeep && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
               <input type="checkbox" checked={alsoSave} onChange={e => setAlsoSave(e.target.checked)}
@@ -955,10 +961,22 @@ export default function TopperComposer({
         .tc > .tcProps { flex: 0 0 268px; overflow-y: auto; }
         @media (max-width: 820px) {
           .tc { flex-direction: column; height: auto; min-height: 0; overflow: visible; }
+          /* ⚠️ A ROW PER SECTION, NOT THREE COLUMNS SIDE BY SIDE. Turned on its side, "Text",
+             "Shapes" and "Presets" each kept their own vertical stack — so a T, a column of three
+             shapes and a two-wide grid of presets sat abreast and read as one jumbled block with
+             three headings floating over it. Stacked, each heading owns the row beneath it. */
           .tc > .tcRail {
-            flex: none; flex-direction: row; align-items: flex-start; gap: 14px;
-            overflow-x: auto; border-right: none; border-bottom: 1px solid #E8EFE9;
+            flex: none; flex-direction: column; align-items: stretch; gap: 12px;
+            overflow-x: visible; border-right: none; border-bottom: 1px solid #E8EFE9;
           }
+          /* The grids flow ACROSS on a phone, and their buttons stop being full-width: a rail button
+             asking to fill a desktop COLUMN is asking for one per line once the rail is a row, which
+             is not the same wish. (No backticks in here — this is inside a template literal.) */
+          .tc .tcGroup { display: flex !important; flex-wrap: wrap; gap: 7px; }
+          /* !important because RailButton sets width INLINE when it is asked to fill the rail, and
+             an inline style beats a stylesheet rule — without it every button stayed full width and
+             the rail became one tall column that pushed the canvas off the screen. */
+          .tc .tcGroup > button { width: 46px !important; min-height: 46px !important; flex: none; }
           /* The canvas keeps a definite height of its own — a flex child with nothing to fill
              collapses to nothing, and R3F will not create a renderer for a zero-height box. */
           .tc > .tcStage { flex: none; height: 52vh; min-height: 280px; }
@@ -971,15 +989,17 @@ export default function TopperComposer({
             textTransform: 'uppercase', color: '#9AA8A0', marginBottom: 7 }}>Text</span>
           {/* A "T" and nothing else. It is the one mark every editor uses for this, so it needs no
               label (INVARIANTS #14) — the accessible name carries the words. */}
-          <RailButton onClick={addText} title="Add text" wide>
-            <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>T</span>
-          </RailButton>
+          <div className="tcGroup" style={{ display: 'grid' }}>
+            <RailButton onClick={addText} title="Add text" wide>
+              <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>T</span>
+            </RailButton>
+          </div>
         </div>
 
         <div>
           <span style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
             textTransform: 'uppercase', color: '#9AA8A0', marginBottom: 7 }}>Shapes</span>
-          <div style={{ display: 'grid', gap: 7 }}>
+          <div className="tcGroup" style={{ display: 'grid', gap: 7 }}>
             {SHAPES.map(sh => (
               <RailButton key={sh.key} onClick={() => addShape(sh.key)} title={`Add ${sh.label.toLowerCase()}`} wide>
                 <ShapeIcon family={sh.key} />
@@ -1008,7 +1028,7 @@ export default function TopperComposer({
               is the reason "Happy Birthday" was left out once already. Paired, six rows become three
               and the rail fits a 1280x720 laptop with room to spare. The rail carries 16px of the
               canvas's width for it, which is a better trade than a preset nobody finds. */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+          <div className="tcGroup" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             {TOPPER_PRESETS.map(pre => (
               <RailButton key={pre.key} onClick={() => usePreset(pre)} title={pre.label} wide compact>
                 <PresetIcon objects={pre.objects} font={blockFont} size={30} />
@@ -1084,77 +1104,81 @@ export default function TopperComposer({
             <span style={{ fontSize: 13, color: '#5B6B60', fontFamily: "'Quicksand', sans-serif",
               fontWeight: 700, background: 'rgba(255,255,255,0.82)', padding: '8px 14px',
               borderRadius: 9 }}>
-              Pick a preset on the left, or add text or a shape
+              Pick a preset, or add text or a shape
             </span>
           </div>
         )}
       </div>
 
       {/* Only when there is something selected — see the note on Properties. */}
-      {/* ⚠️ THE STICK IS THE WHOLE TOPPER'S, so it is not in a selected piece's properties — it would
-          appear to belong to whatever you last clicked, and vanish when you clicked away from it.
-          Shown once there is something on the canvas, because a stick with nothing on it is a rod.
+      {/* ⚠️ ONE RIGHT-HAND COLUMN, NOT ONE PER PANEL. The stick and the selection were two siblings,
+          and `.tcProps` is a fixed 268px — so selecting a piece put TWO of them beside the canvas and
+          squeezed it to a strip with the topper hanging out of both sides. Everything that describes
+          the thing being made shares one column and scrolls.
 
-          ⚠️ THE DEPTH APPEARS ONLY WITH A STICK. There is no "how far into the cake" without one,
-          and the old card cutout studio showed exactly that — an insertion depth with nothing to
-          insert — which is the example this rebuild was argued against (INVARIANTS #12). */}
+          ⚠️ ORDER FOLLOWS USE (INVARIANTS #12). The selected piece's controls are touched constantly
+          while composing; the stick is decided once at the end, so it sits under them. */}
       {objects.length > 0 && (
-        <div className="tcProps" style={{ padding: 16, background: '#fff',
-          borderLeft: '1px solid #E8EFE9', borderTop: selectedIds.length ? '1px solid #E8EFE9' : 'none' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-            <input type="checkbox" checked={stick.on}
-              onChange={e => setStick(v => ({ ...v, on: e.target.checked }))}
-              style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>On a stick</span>
-          </label>
-          {stick.on ? (
-            <div style={{ marginTop: 12 }}>
-              <Slide label="How far into the cake" value={stick.bury} min={0} max={1} step={0.02}
-                onChange={v => setStick(s2 => ({ ...s2, bury: v }))}
-                fmt={v => (v <= 0.01 ? 'resting on top' : `${Math.round(v * 100)}% of the stick`)} />
-              <p style={{ margin: '4px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
-                The stick is taped to the back and runs up behind the card, so the join never shows.
+        <div className="tcProps" style={{ background: '#fff', borderLeft: '1px solid #E8EFE9' }}>
+          {/* ⚠️ ONE PIECE GETS ITS PROPERTIES; SEVERAL GET THE ONE THING THAT APPLIES TO SEVERAL. A
+              colour or a size spread across three pieces is three different answers, so those
+              controls are absent rather than guessing which piece you meant — and what IS true of a
+              multi-selection, that it can be grouped, is the only thing offered. */}
+          {selectedIds.length > 1 ? (
+            <div style={{ padding: 16, borderBottom: '1px solid #E8EFE9' }}>
+              <h2 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#2C3E33' }}>
+                {selectedIds.length} pieces
+              </h2>
+              <p style={{ margin: '0 0 14px', fontSize: 11.5, lineHeight: 1.5, color: '#5B6B60' }}>
+                {isGrouped
+                  ? 'These move together. Drag any one of them and the rest follow.'
+                  : 'Group them and they move together — drag any one and the rest follow.'}
+              </p>
+              <button type="button" onClick={isGrouped ? ungroupSelected : groupSelected}
+                style={{ width: '100%', minHeight: 42, borderRadius: 9, cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
+                  color: isGrouped ? '#8A6320' : '#fff',
+                  background: isGrouped ? '#FDF3E7' : '#3D5A44',
+                  border: isGrouped ? '1.5px solid #F0DCC0' : 'none' }}>
+                {isGrouped ? 'Ungroup' : 'Group'}
+              </button>
+              <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+                Hold Shift and tap a piece to add it to the selection, or to drop it.
               </p>
             </div>
-          ) : (
-            <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
-              Without one the card lies flat on the cake.
-            </p>
-          )}
+          ) : selected ? (
+            <Properties obj={selected} onChange={update} onDelete={remove}
+              grouped={!!selected.groupId} onUngroup={ungroupSelected} embedded />
+          ) : null}
+
+          {/* ⚠️ THE STICK IS THE WHOLE TOPPER'S, so it is not in a selected piece's properties — it
+              would appear to belong to whatever you last clicked, and vanish when you clicked away.
+              ⚠️ THE DEPTH APPEARS ONLY WITH A STICK: an insertion depth with nothing to insert is
+              the exact thing this rebuild was argued against (INVARIANTS #12). */}
+          <div style={{ padding: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+              <input type="checkbox" checked={stick.on}
+                onChange={e => setStick(v => ({ ...v, on: e.target.checked }))}
+                style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>On a stick</span>
+            </label>
+            {stick.on ? (
+              <div style={{ marginTop: 12 }}>
+                <Slide label="How far into the cake" value={stick.bury} min={0} max={1} step={0.02}
+                  onChange={v => setStick(s2 => ({ ...s2, bury: v }))}
+                  fmt={v => (v <= 0.01 ? 'resting on top' : `${Math.round(v * 100)}% of the stick`)} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+                  Taped to the back and running up behind the card, so the join never shows.
+                </p>
+              </div>
+            ) : (
+              <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+                Without one the card lies flat on the cake.
+              </p>
+            )}
+          </div>
         </div>
       )}
-
-      {/* ⚠️ ONE PIECE GETS ITS PROPERTIES; SEVERAL GET THE ONE THING THAT APPLIES TO SEVERAL. A
-          colour or a size spread across three pieces is three different answers, so those controls
-          are absent rather than guessing which piece you meant (INVARIANTS #12) — and what IS true
-          of a multi-selection, that it can be grouped, is the only thing offered. */}
-      {selectedIds.length > 1 ? (
-        <div className="tcProps" style={{ padding: 16, background: '#fff',
-          borderLeft: '1px solid #E8EFE9' }}>
-          <h2 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#2C3E33' }}>
-            {selectedIds.length} pieces
-          </h2>
-          <p style={{ margin: '0 0 14px', fontSize: 11.5, lineHeight: 1.5, color: '#5B6B60' }}>
-            {isGrouped
-              ? 'These move together. Drag any one of them and the rest follow.'
-              : 'Group them and they move together — drag any one and the rest follow.'}
-          </p>
-          <button type="button" onClick={isGrouped ? ungroupSelected : groupSelected}
-            style={{ width: '100%', minHeight: 42, borderRadius: 9, cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
-              color: isGrouped ? '#8A6320' : '#fff',
-              background: isGrouped ? '#FDF3E7' : '#3D5A44',
-              border: isGrouped ? '1.5px solid #F0DCC0' : 'none' }}>
-            {isGrouped ? 'Ungroup' : 'Group'}
-          </button>
-          <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
-            Hold Shift and tap a piece to add it to the selection, or to drop it.
-          </p>
-        </div>
-      ) : selected ? (
-        <Properties obj={selected} onChange={update} onDelete={remove}
-          grouped={!!selected.groupId} onUngroup={ungroupSelected} />
-      ) : null}
     </div>
     </Panel>
   );

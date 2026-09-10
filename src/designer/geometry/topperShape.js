@@ -984,9 +984,9 @@ function offsetRound(ring, d) {
   for (let i = 0; i < n; i++) { const p = ring[i], q = ring[(i + 1) % n]; twice += p.x * q.y - q.x * p.y; }
   const D = d * (twice < 0 ? -1 : 1);
 
-  // How far a corner may run out before it is cut back. A near-reversal would otherwise throw a
-  // point across the card; past this the corner is simply left where the naive offset put it.
-  const MITRE_LIMIT = 2.5;
+  /* How far a corner may run out before it is rounded instead. Below this a mitre is the true
+     parallel offset and looks it; beyond it, an acute corner throws a long blunt spike. */
+  const MITRE_LIMIT = 1.6;
 
   return ring.map((p, i) => {
     const prev = ring[(i - 1 + n) % n], next = ring[(i + 1) % n];
@@ -1009,12 +1009,42 @@ function offsetRound(ring, d) {
      * the ring's topology is what makes this safe without a clipper. */
     const dot = n1.x * n2.x + n1.y * n2.y;
     const k = 1 + dot;
-    if (k < 1e-6) return { x: p.x + n1.x * D, y: p.y + n1.y * D };   // reversal: no usable bisector
+    if (k < 1e-6) return [{ x: p.x + n1.x * D, y: p.y + n1.y * D }];  // reversal: no usable bisector
     let mx = (n1.x + n2.x) / k, my = (n1.y + n2.y) / k;
     const len = Math.hypot(mx, my);
-    if (len > MITRE_LIMIT) { mx = (mx / len) * MITRE_LIMIT; my = (my / len) * MITRE_LIMIT; }
-    return { x: p.x + mx * D, y: p.y + my * D };
-  });
+    if (len <= MITRE_LIMIT) return [{ x: p.x + mx * D, y: p.y + my * D }];
+
+    /* ⚠️ PAST THE LIMIT THE CORNER IS ROUNDED, NOT CUT FLAT. A mitre at an acute corner runs a long
+     * way out — clamping it leaves a blunt diagonal, and on a "1", whose flag and foot are the
+     * sharpest corners in the digits, those blunt cuts read as a BEVEL: the band stopped looking cut
+     * and started looking moulded. The 0 never showed it, being all gentle curves.
+     *
+     * Where the outline turns AWAY from the offset — a convex corner — the two offset edges leave a
+     * wedge, and an arc of radius d about the original corner fills it at exactly the band's width.
+     * A rounded outer corner is also what a blade actually leaves; no real card topper has a
+     * needle-sharp offset point.
+     *
+     * ⚠️ ONLY WHERE IT IS CONVEX. `cross * D > 0` is that test, and getting it backwards puts arcs
+     * at REFLEX corners instead — which is a guaranteed self-intersection and tore a "1" into
+     * pieces when this was first attempted. A reflex corner keeps the clamped mitre: it needs a
+     * polygon union to do properly, and this file does not have one. */
+    const cross = e1.x * e2.y - e1.y * e2.x;
+    if (cross * D <= 0) {
+      return [{ x: p.x + (mx / len) * MITRE_LIMIT * D, y: p.y + (my / len) * MITRE_LIMIT * D }];
+    }
+    const R = Math.abs(D);
+    let a0 = Math.atan2(n1.y, n1.x);
+    let sweep = Math.atan2(n2.y, n2.x) - a0;
+    while (sweep > Math.PI) sweep -= 2 * Math.PI;
+    while (sweep < -Math.PI) sweep += 2 * Math.PI;
+    const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 12)));
+    const arc = [];
+    for (let t = 0; t <= steps; t++) {
+      const a = a0 + (sweep * t) / steps;
+      arc.push({ x: p.x + Math.cos(a) * R, y: p.y + Math.sin(a) * R });
+    }
+    return arc;
+  }).flat();
 }
 
 const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return { x: x / l, y: y / l }; };
