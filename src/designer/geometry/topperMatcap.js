@@ -49,22 +49,34 @@
  * against — which is what "dull" meant when it was reported from the app on 2026-09-09.
  *
  * ⚠️ AND THIS IS MEASURED, NOT PREFERRED. `black` was already right and nobody had complained about
- * it: it reads 0.322 relative contrast where gold read 0.143, and the only thing it does differently
+ * it: it reads 0.368 relative contrast where gold read 0.148, and the only thing it does differently
  * is start from a dark body. Darkening the metals to ~2/3 moved them the same way, each measured
  * separately rather than by spreading gold's number across the table:
  *
  *     finish   was     now      (relative contrast, scripts/measure-topper-glare.mjs)
- *     gold     0.143   0.182
- *     silver   0.139   0.160
- *     rose     0.126   0.166
- *     black    0.322   0.322    unchanged — it already had this
- *     white    0.098   0.098    unchanged — a white topper IS pale, and darkening it would make
+ *     gold     0.148   0.191
+ *     silver   0.131   0.169
+ *     rose     0.132   0.174
+ *     black    0.368   0.368    unchanged — it already had this
+ *     white    0.083   0.083    unchanged — a white topper IS pale, and darkening it would make
  *                               it grey rather than white. Low contrast is correct here.
+ *     ⚠️ These are re-taken WITHOUT the chamfer. The first set was measured with a bevel on the
+ *     letters that has since been reverted, so every figure in it — before and after — described a
+ *     geometry that does not ship.
  *
- * ⚠️ IT ONLY WORKS WITH THE CHAMFER, and the chamfer only works with it. Bevelling the letters while
- * the body stayed bright measured 0.143 — WORSE than the flat piece it replaced (0.148) — because a
- * chamfer with no dark to stand against just fills the letter with mid-tones. Neither half is a fix
- * on its own; do not keep one and revert the other. See `cfg.bevel` in AcrylicWord.jsx. */
+ * ⚠️ AND IT IS THE WHOLE FIX — THERE IS NO GEOMETRY HALF. A chamfer on the letters was shipped
+ * alongside this and then reverted, because it measured identical: brightness spread across seven
+ * turning angles 28.3 either way, contrast within the piece 0.595 chamfered against 0.605 flat. The
+ * commit that introduced both claimed "neither half works alone"; that was an inference from two
+ * measurements, not three — bevel-with-old-body and bevel-with-new-body were tested, and
+ * new-body-without-bevel never was. It is the best of the three. Body colour alone, no geometry.
+ *
+ * ⚠️ WHAT THIS DOES NOT FIX, stated so nobody re-opens it expecting otherwise: the piece still
+ * changes brightness AS A BLOCK when the cake turns — mean 111 at one edge of the swing, 196
+ * head-on. A flat face reads ONE texel of this picture, so every pixel of the word moves together.
+ * No matcap can do better; only a surface that responds to the scene can, which is precisely what
+ * baking gave up on purpose. See the trade at the top of this file.
+ */
 const LOOKS = {
   gold:   { base: [112, 84, 20],  sheen: [255, 240, 186], rim: [92, 62, 12],  tight: 0.55, spec: 0.95 },
   silver: { base: [117, 121, 127], sheen: [255, 255, 255], rim: [78, 86, 96],  tight: 0.55, spec: 0.95 },

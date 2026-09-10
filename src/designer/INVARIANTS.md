@@ -560,15 +560,31 @@ albedo is decided, and there are more of those than there look to be**: the soli
 gradient, the stripes, and now a baked finish map. A per-pixel replacement of the wall colour is a
 place the correction belongs, and each one was found separately, after shipping.
 
-### 18c. A flat face has one normal, so it renders one colour
+### 18c. A flat face has one normal, so it renders one colour — and geometry does not rescue it
 
-An acrylic word was extruded `bevelEnabled: false`. A flat face has exactly one normal, so under a
+An acrylic word is extruded `bevelEnabled: false`. A flat face has exactly one normal, so under a
 matcap it samples one texel and the entire word is a single flat colour — and turning the cake moves
-that one sample, which is why it changed brightness *all at once* instead of a highlight travelling
-along the strokes. The cure is a chamfer, and a chamfer only reads against a DARK body: bevelling
-alone measured **worse** than the flat piece (0.143 against 0.148) because there was nothing for the
-bright edge to stand against. Bevel plus a darker matcap body: 0.182. `black` was already right and
-had never been complained about, for exactly this reason.
+that one sample, which is why it changes brightness *all at once* instead of a highlight travelling
+along the strokes.
+
+The obvious cure is a chamfer, and **it was shipped and then reverted, because it does nothing.**
+Measured across seven turning angles, chamfered against flat: brightness spread 28.3 either way,
+contrast within the piece 0.595 against 0.605. A matcap is sampled by the normal in VIEW space, and a
+chamfer's normals turn with the piece — they slide across the same picture together with the face, so
+the geometry moved and nothing gained a light the face did not already have.
+
+What worked was the material alone: darkening the matcap's BODY, so the highlight has something to
+stand against. Gold 0.148 → 0.191, and `black` — never complained about — already read 0.368 for
+exactly that reason.
+
+⚠️ **AND THE ORIGINAL SYMPTOM SURVIVES.** The word still changes brightness as a block through a
+turn, 111 to 196. Only a surface that responds to the scene can fix that, which is what baking a
+matcap deliberately gave up. It is a trade, not a bug — do not "fix" it with more geometry.
+
+⚠️ **THE PROCESS FAILURE IS THE POINT OF THIS ENTRY.** The commit that shipped the chamfer claimed
+"neither half works alone" from TWO measurements — bevel with the old body, and bevel with the new
+one. The third cell, new body with no bevel, was never taken, and it is the best of the three. Two
+points do not establish an interaction; fill the grid before claiming one.
 
 ⚠️ **Contrast, not brightness, is the measurement.** A mean cannot tell matte paint from mirror gold;
 the swing between a surface's brightest and darkest pixel is the reflection. Every number here is

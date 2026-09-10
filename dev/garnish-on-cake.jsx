@@ -268,7 +268,12 @@ const design = {
        sees, which is how the dullness was reported in the first place. */
     ? [{ id: 'w', style: 'acrylic', text: 'Happy Birthday', font: 'ems_allure',
          ...(_q.has('topperside')
-           ? { surface: 'side', sideAngle: 0, sideY: 0.5 }
+           /* ⚠️ `?topperangle=` TURNS THE PIECE AROUND THE WALL, which is the only way to test the
+              symptom that was actually reported: "in a few angles when I turn the cake it looks a
+              little brighter". A single frame cannot see that. A flat face has one normal, so its
+              whole brightness moves together as the piece turns; a chamfer is supposed to hold a
+              highlight through the turn. The test is the SPREAD across angles, not any one of them. */
+           ? { surface: 'side', sideAngle: Number(_q.get('topperangle') ?? 0), sideY: 0.5 }
            : { surface: 'top' }),
          /* ⚠️ `?topperfinish=silver` — the finishes are five entries in one table drawn by one
             gradient, so a change to the gradient reaches all of them. Judging it on gold alone and
