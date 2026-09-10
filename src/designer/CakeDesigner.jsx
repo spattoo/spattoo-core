@@ -7,6 +7,7 @@ import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius } from './canvas/CakeCanvas';
+import { shellBand, wallYoBounds, stackedYoBounds, clampYo } from './geometry/boardBands.js';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
 import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
@@ -3419,7 +3420,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const flip   = p.userFlipBottom != null ? p.userFlipBottom : (p.flipBottom ?? true);
     const { topFrac, botFrac } = getShellExtents(p.glbUrl, flip, p.size ?? 1);
     const yo = (p.yOffset ?? 0) + (p.userYOffset ?? 0);
-    return [yo + radius * botFrac, yo + radius * topFrac];
+    return shellBand(yo, radius, topFrac, botFrac);
   }
   // Default userYOffset for a NEW side/board layer: stack it just above the highest board
   // layer already on the tier (kept within the wall) so layers don't overlap.
@@ -3659,7 +3660,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     }
     const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
     const desiredYo = baseYOffset + v;
-    const clampedYo = Math.min(Math.max(yoMin, desiredYo), Math.max(yoMin, yoMax));
+    const clampedYo = clampYo(desiredYo, { yoMin, yoMax });
     updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: Math.max(0, +(clampedYo - baseYOffset).toFixed(4)) }));
   }
 
@@ -3670,22 +3671,35 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Extracted so the Height slider and the on-cake DRAG share one definition of "how far can this
   // go" (INVARIANTS #3). A second copy would drift, and the drag would let a baker push a piece
   // somewhere the slider refuses to — the two would disagree about the same cake.
+  /* How far the layer's HEIGHT SLIDER may travel: the wall, plus the ring-stacking rule. A ring is a
+   * band all the way round, so it genuinely can rest on the ring below or stop under the one above.
+   * ⚠️ NOT for a dragged PIECE — see `pieceYoBounds`. The two were one function, and a piece
+   * inherited a rule that only makes sense for something that goes all the way round. */
   function boardYoBounds(cur, tierIndex) {
-    const tierHeight = canvasConfig.tiers[tierIndex]?.height ?? 0;
-    const [curLo, curHi] = sideBand(cur, tierIndex);
-    const curYo  = (cur.yOffset ?? 0) + (cur.userYOffset ?? 0);
-    const topExt = curHi - curYo;   // how far the shell reaches ABOVE its anchor (measured)
-    const botExt = curLo - curYo;   // and BELOW (≤ 0 when it dips under the anchor)
-    const EPS = 1e-4;
-    let yoMin = -botExt;                 // bottom edge ≥ tier base (0)
-    let yoMax = tierHeight - topExt;     // top edge ≤ tier top edge (the rim) — exact contact
-    (design.tiers[tierIndex]?.bottomPipings ?? []).forEach(p => {
-      if (p.layerId === cur.layerId) return;
-      const [nlo, nhi] = sideBand(p, tierIndex);
-      if      (nhi <= curLo + EPS) yoMin = Math.max(yoMin, nhi - botExt);   // neighbour below → our bottom rests on it
-      else if (nlo >= curHi - EPS) yoMax = Math.min(yoMax, nlo - topExt);   // neighbour above → our top stops under it
+    const neighbourBands = (design.tiers[tierIndex]?.bottomPipings ?? [])
+      .filter(p => p.layerId !== cur.layerId)
+      .map(p => sideBand(p, tierIndex));
+    return stackedYoBounds({
+      tierHeight: canvasConfig.tiers[tierIndex]?.height ?? 0,
+      yo: (cur.yOffset ?? 0) + (cur.userYOffset ?? 0),
+      band: sideBand(cur, tierIndex),
+      neighbourBands,
     });
-    return { yoMin, yoMax };
+  }
+
+  /* How far ONE hand-placed piece may travel: the wall, and nothing else.
+   *
+   * ⚠️ NO NEIGHBOUR STACKING, and that is the fix rather than an oversight. Dragging is offered only
+   * in `single` arrangement, so the piece has an ANGLE — a rosette at 331° cannot touch one at 90°
+   * whatever their heights, and the baker is placing it by hand. Sharing the ring bounds meant a
+   * white rosette dragged DOWN stopped dead at the top of a purple layer on the other side of the
+   * cake, while dragging UP worked; reported 2026-09-10. Covered in geometry/boardBands.test.js. */
+  function pieceYoBounds(cur, tierIndex) {
+    return wallYoBounds({
+      tierHeight: canvasConfig.tiers[tierIndex]?.height ?? 0,
+      yo: (cur.yOffset ?? 0) + (cur.userYOffset ?? 0),
+      band: sideBand(cur, tierIndex),
+    });
   }
 
   function handlePipingBoardFlipChange(tierIndex) {
@@ -3745,12 +3759,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // so the rim drag stays angle-only and the canvas sends no wallY for it.
     let dy = null;
     if (wallY != null && zone === 'board') {
-      const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
+      const bounds = pieceYoBounds(cur, tierIndex);
       const layerYo = (cur.yOffset ?? 0) + (cur.userYOffset ?? 0);
-      // wallY is where the pointer met the wall, in tier-local units. Clamp the piece's own anchor
-      // into the SAME band the slider clamps to, then store it as a delta from the layer's anchor —
-      // so nudging the layer's Height afterwards still carries every piece with it.
-      const clamped = Math.min(Math.max(yoMin, wallY), Math.max(yoMin, yoMax));
+      // wallY is where the pointer met the wall, in tier-local units. Keep the shell ON the wall,
+      // then store the result as a delta from the layer's anchor — so nudging the layer's Height
+      // afterwards still carries every piece with it.
+      const clamped = clampYo(wallY, bounds);
       dy = +(clamped - layerYo).toFixed(4);
     }
     updatePipingLayer(tierIndex, zone, layerId, (p) => ({

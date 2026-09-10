@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import CakeCanvas from '../src/designer/canvas/CakeCanvas.jsx';
 import { toCanvasConfig } from '../src/designer/hooks/useCakeDesign.js';
 import { PIPING_FRONT_ANGLE } from '../src/designer/constants.js';
+import { shellBand, wallYoBounds, stackedYoBounds, clampYo } from '../src/designer/geometry/boardBands.js';
 
 /* ── Dragging a single-mode piping piece round its ring. Open /piping-drag.html ──────────────────
  *
@@ -36,7 +37,13 @@ const seedInstances = () => [
   { id: 2, angle: PIPING_FRONT_ANGLE + Math.PI / 2 },
 ];
 
-const layer = (instances, arrangement) => ({
+/* The shell's reach above/below its anchor, as a fraction of the tier RADIUS. The app measures this
+   off the real GLB (`getShellExtents`); a fixed pair is fine here because what this page exercises
+   is the RULE, not the measurement. */
+const TOP_FRAC = 0.12, BOT_FRAC = -0.12;
+
+const layer = (instances, arrangement, yOffset = 0) => ({
+  yOffset,
   id: 'el-rosette',            // the ELEMENT id — what isPipingMovable looks up
   layerId: 'layer-1',
   cardId: 'card-1',
@@ -48,20 +55,38 @@ const layer = (instances, arrangement) => ({
   instances,
 });
 
+// A second board ring, low on the wall, in a colour that cannot be confused with the draggable one.
+/* ⚠️ LOW ON THE WALL, and the draggable layer sits ABOVE it — that is the arrangement the bug needs.
+   The ring rule only makes a neighbour a FLOOR when its band is entirely below ours, so a neighbour
+   placed above (or overlapping) reproduces nothing. The reported cake had a white rosette above a
+   purple layer, and it was the downward direction that jammed. */
+const NEIGHBOUR_YO = 0.15;
+const MAIN_YO = 0.75;
+const NEIGHBOUR_LAYER = {
+  id: 'el-neighbour', layerId: 'layer-2', cardId: 'card-2', glbUrl: GLB, name: 'Other ring',
+  color: '#b98ad6', size: 1, arrangement: 'ring', count: 14, yOffset: NEIGHBOUR_YO,
+};
+
 export default function Harness() {
   const [instances, setInstances] = useState(seedInstances);
   const [arrangement, setArrangement] = useState('single');
   const [movable, setMovable] = useState(true);
   const [shape, setShape] = useState('round');
   const [zone, setZone] = useState('rim');
+  /* ⚠️ A SECOND BOARD LAYER, because the bug that hid here needed one. A single rosette dragged DOWN
+     stopped dead at the top of an unrelated layer on the other side of the cake, while dragging UP
+     worked — reported 2026-09-10. With one layer on the page there was nothing to be pinned BY, and
+     this harness's own comment admitted it was approximating the clamp for that reason. */
+  const [neighbour, setNeighbour] = useState(false);
   const [log, setLog] = useState([]);
   // CakeScene writes resolved tier geometry into this on every render — it is not optional, and
   // omitting it throws inside the scene, which r3f swallows into a blank canvas with a clean console.
   const tierDataRef = useRef([]);
 
   const say = (m) => setLog(l => [`${l.length + 1}. ${m}`, ...l].slice(0, 8));
+  const [bounds, setBounds] = useState(null);
 
-  const ring = layer(instances, arrangement);
+  const ring = layer(instances, arrangement, neighbour && zone === 'board' ? MAIN_YO : 0);
   // Through the SAME resolver the live editor uses (toCanvasConfig), not a hand-written scene config
   // — stacking, radius-from-footprint and the frosting defaults are all resolved there, and a harness
   // that reproduced them by hand would be testing my copy rather than the real path.
@@ -70,7 +95,7 @@ export default function Harness() {
       radius: 1.5, height: 1.2, color: '#ffd9e8', frostingType: 'buttercream',
       ...(shape === 'rect' ? { shapeFamily: 'rounded_rect', shape: 'rect', width: 3, depth: 2.2, cornerR: 0.3 } : {}),
       topPipings:    zone === 'rim'   ? [ring] : [],
-      bottomPipings: zone === 'board' ? [ring] : [],
+      bottomPipings: zone === 'board' ? (neighbour ? [ring, NEIGHBOUR_LAYER] : [ring]) : [],
     }],
   });
 
@@ -90,12 +115,25 @@ export default function Harness() {
         <Row label="Tier shape">
           {['round', 'rect'].map(s => <Btn key={s} on={shape === s} onClick={() => setShape(s)}>{s}</Btn>)}
         </Row>
+        <Row label="Second board layer">
+          <Btn on={neighbour} onClick={() => setNeighbour(n => !n)}>
+            {neighbour ? 'Present' : 'None'}
+          </Btn>
+        </Row>
         <Row label="Capability">
           <Btn on={movable} onClick={() => setMovable(m => !m)}>
             {movable ? 'Movable ✓' : 'Pinned'}
           </Btn>
         </Row>
 
+        {bounds && (
+          <div style={{ marginBottom: 10, fontSize: 11, color: '#666', fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ fontSize: 11, color: '#999' }}>Height bounds at the last drag</div>
+            <div>pointer met the wall at {bounds.wallY.toFixed(2)}</div>
+            <div>as a PIECE: {bounds.piece.yoMin.toFixed(2)} … {bounds.piece.yoMax.toFixed(2)}</div>
+            <div>as a RING:&nbsp; {bounds.asRing.yoMin.toFixed(2)} … {bounds.asRing.yoMax.toFixed(2)}</div>
+          </div>
+        )}
         <h3 style={{ fontSize: 13, marginBottom: 4 }}>Angles (live)</h3>
         {instances.map((x, i) => (
           <div key={x.id} style={{ fontVariantNumeric: 'tabular-nums', color: '#666' }}>
@@ -129,10 +167,20 @@ export default function Harness() {
           onBottomPipingSelect={() => say('piping SELECTED (board)')}
           isPipingMovable={() => movable}
           onPipingInstanceMove={(tierIndex, z, layerId, index, angle, wallY) => {
-            // The app clamps height through boardYoBounds (measured shell reach + neighbouring
-            // layers). There is one layer here, so the band is just the wall — enough to show that
-            // a piece rides it and stops at the rim.
-            const dy = wallY == null ? null : Math.min(Math.max(wallY, 0), 1.2);
+            /* ⚠️ THE APP'S OWN RULE, imported — not an approximation of it. This handler used to
+               clamp to [0, tierHeight] by hand and say so, and that is exactly why a bug in the real
+               clamp could not be reproduced here. `boardBands.js` is now shared by both. */
+            let dy = null;
+            if (wallY != null) {
+              const yo = neighbour ? MAIN_YO : 0;             // this layer's anchor
+              const band = shellBand(yo, 1.5, TOP_FRAC, BOT_FRAC);
+              const piece = wallYoBounds({ tierHeight: 1.2, yo, band });
+              // What the RING rule would have allowed, side by side — the difference IS the bug.
+              const others = neighbour ? [shellBand(NEIGHBOUR_YO, 1.5, TOP_FRAC, BOT_FRAC)] : [];
+              const asRing = stackedYoBounds({ tierHeight: 1.2, yo, band, neighbourBands: others });
+              dy = clampYo(wallY, piece) - yo;
+              setBounds({ piece, asRing, wallY });
+            }
             setInstances(prev => prev.map((x, i) =>
               i === index ? { ...x, angle, ...(dy != null ? { dy } : {}) } : x));
           }}

@@ -122,7 +122,35 @@ const OUTLINE_JSON = {
  * that only ever uses a monoline to carry four of them. Centreline faces resolve immediately — they
  * are already in the cream pen's bundle.
  */
+/* ⚠️ THE STUDIO'S PLAIN BLOCK FACE, WHICH IS NOT IN `TOPPER_FACES`. It is not offered in the face
+ * picker — it is what a topper falls back to and what presets are drawn in — but it still has to be
+ * LOADABLE, because `resolveFace` sends an unknown key to the default and the default is a SCRIPT.
+ * Before this lived here, a caller that forgot got Great Vibes silently: the card topper's print
+ * source hit it, and every future caller would have. One key, resolved in the one place that knows
+ * how to load a face. */
+export const BLOCK_FACE = '__block';
+
+/** Every face a topper payload needs, loaded, keyed by face — with the block one always present so
+ *  a caller can fall back without knowing what "block" means. */
+export async function loadFacesFor(payload) {
+  const wanted = new Set([BLOCK_FACE]);
+  for (const o of payload?.objects ?? []) if (o.kind === 'text' && o.face) wanted.add(o.face);
+  const out = {};
+  await Promise.all([...wanted].map(async (key) => {
+    try { out[key] = await loadTopperFace(key); } catch { /* the caller falls back to block */ }
+  }));
+  return out;
+}
+
 export async function loadTopperFace(key) {
+  if (key === BLOCK_FACE) {
+    if (parsed.has(BLOCK_FACE)) return parsed.get(BLOCK_FACE);
+    // Dynamic, like every other face here, so nothing pays for it until a topper is drawn.
+    const mod = await import('three/examples/fonts/helvetiker_bold.typeface.json');
+    const f = new FontLoader().parse(mod.default ?? mod);
+    parsed.set(BLOCK_FACE, f);
+    return f;
+  }
   const k = resolveFace(key);
   if (parsed.has(k)) return parsed.get(k);
 

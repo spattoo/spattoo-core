@@ -1,7 +1,5 @@
-import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { topperSheets, topperBox } from '../../designer/geometry/topperPiece.js';
-import { loadTopperFace } from '../../designer/geometry/topperFaces.js';
+import { loadFacesFor, BLOCK_FACE } from '../../designer/geometry/topperFaces.js';
 
 // ── A card topper on the print sheet ─────────────────────────────────────────────────────────────
 //
@@ -27,22 +25,6 @@ import { loadTopperFace } from '../../designer/geometry/topperFaces.js';
    rather than each spelling it out. */
 export const TOPPER_PREFIX = 'topper:';
 
-const BLOCK_KEY = '__block';
-const blockFont = new FontLoader().parse(helvetikerBold);
-
-/* ⚠️ `__block` IS NOT IN `TOPPER_FACES`, and `loadTopperFace` resolves an unknown key to the DEFAULT
- * face — which is a script. So handing it straight through would print a block-lettered topper in
- * Great Vibes, quietly and only on paper. It is carried here explicitly, exactly as the cake's
- * renderer carries it. */
-async function facesFor(payload) {
-  const wanted = new Set();
-  for (const o of payload?.objects ?? []) if (o.kind === 'text' && o.face && o.face !== BLOCK_KEY) wanted.add(o.face);
-  const out = { [BLOCK_KEY]: blockFont };
-  await Promise.all([...wanted].map(async (key) => {
-    try { out[key] = await loadTopperFace(key); } catch { /* falls back to the block font below */ }
-  }));
-  return out;
-}
 
 /**
  * What a topper occupies and what it is made of, with no canvas involved — so the shape of a printed
@@ -117,8 +99,8 @@ function previewOf(plan) {
 export async function topperSources(topper) {
   const payload = topper?.payload;
   if (!payload) return [];
-  const fonts = await facesFor(payload);
-  const plan = topperPlan(payload, (o) => fonts[o.face] ?? blockFont);
+  const fonts = await loadFacesFor(payload);
+  const plan = topperPlan(payload, (o) => fonts[o.face] ?? fonts[BLOCK_FACE]);
   if (!plan) return [];
 
   return [{
