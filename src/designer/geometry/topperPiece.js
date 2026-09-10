@@ -49,9 +49,16 @@ export function topperSheets(payload, fontOf) {
   objects.forEach((obj, i) => {
     const parts = topperContours(obj, fontOf?.(obj));
     if (!parts?.length) return;
-    // The offset sheet goes BEHIND its own text and in front of everything below it, so a band never
-    // separates from the word it belongs to.
-    if (obj.kind === 'text' && obj.offset > 0) {
+    /* The offset sheet goes BEHIND the piece it belongs to and in front of everything below it, so a
+       band never separates from its own word or shape.
+
+       ⚠️ ANY PIECE, NOT ONLY A WORD. This was gated on `kind === 'text'` on the reasoning that a
+       shape is already a solid, so an outline round it is just a second shape you could add
+       yourself. That is true and it is not the same thing: a second heart has to be sized and
+       centred BY EYE, and it comes apart again the moment the first one is moved or resized. An
+       offset is exact, and it is locked to its piece. The machinery never cared — `offsetParts`
+       walks contours and has no opinion about where they came from. */
+    if (obj.offset > 0) {
       sheets.push({ parts: offsetParts(parts, obj.offset * obj.size), colour: obj.offsetColour, layer: i * 2 });
     }
     sheets.push({ parts, colour: obj.colour, layer: i * 2 + 1, x: obj.x ?? 0, y: obj.y ?? 0 });

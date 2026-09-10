@@ -27,7 +27,11 @@ const family = q.get('shape');            // absent = the word alone, no plate u
 /* Back to front, which is the order the composer stores and the order the stacking depends on: a
    plate added first sits behind a word added after it. */
 const objects = [
-  ...(family ? [{ id: 1, kind: 'shape', family, size: 1.5, x: 0, y: 0, colour: q.get('plate') ?? '#F2AEC4' }] : []),
+  /* `?plateOffset=` — a SHAPE's own offset band. It could not be asked for at all until shapes got
+     one, so the harness could not have shown the bug that was missing. */
+  ...(family ? [{ id: 1, kind: 'shape', family, size: 1.5, x: 0, y: 0,
+                  colour: q.get('plate') ?? '#F2AEC4',
+                  offset: num('plateOffset', 0), offsetColour: q.get('plateOffsetColour') ?? '#FFFFFF' }] : []),
   { id: 2, kind: 'text', text: word, size: num('size', 0.6), x: 0, y: 0,
     colour: q.get('colour') ?? '#4A2C1B',
     offset: num('offset', 0.06), offsetColour: q.get('offsetColour') ?? '#FFFFFF',

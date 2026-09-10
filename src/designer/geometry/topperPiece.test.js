@@ -61,6 +61,22 @@ describe('topperSheets', () => {
     expect(band.colour).toBe('#FFFFFF');
   });
 
+  /* ⚠️ A SHAPE GETS A BAND TOO. This was text-only, and the gap was invisible: nothing failed, a
+   * heart simply had no way to carry an outline and the control was not offered for one. */
+  it('gives a shape its own offset band, behind it', () => {
+    const sheets = topperSheets({ objects: [shape({ offset: 0.1, offsetColour: '#FFFFFF' })] }, fontOf);
+    expect(sheets).toHaveLength(2);                       // the band, then the shape
+    const [band, face] = sheets;
+    expect(band.colour).toBe('#FFFFFF');
+    expect(face.layer).toBeGreaterThan(band.layer);       // the band never covers its own shape
+  });
+
+  it('leaves a shape alone when it has no offset', () => {
+    // Every shape saved before offsets existed carries no `offset` key at all.
+    expect(topperSheets({ objects: [shape()] }, fontOf)).toHaveLength(1);
+    expect(topperSheets({ objects: [shape({ offset: 0 })] }, fontOf)).toHaveLength(1);
+  });
+
   it('leaves out a word that cannot be cut', () => {
     expect(topperSheets({ objects: [text({ text: '' })] }, fontOf)).toEqual([]);
   });
