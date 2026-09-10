@@ -1120,9 +1120,11 @@ export default function TopperComposer({
              off by the footer. The toolbar is one row now and the stage fills the rest. */
           .tc > .tcStage { flex: none; height: 46vh; min-height: 300px; }
           .tc > .tcBar {
-            flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+            flex: none; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px;
             border-bottom: 1px solid #E8EFE9; background: #fff; position: relative; z-index: 6;
           }
+          /* A preset button must not be squeezed by a strip narrower than its contents. */
+          .tc > .tcBar button { flex: none; }
           .tc > .tcProps { flex: none; border-left: none; border-top: 1px solid #E8EFE9; }
         }
       `}</style>
@@ -1132,38 +1134,45 @@ export default function TopperComposer({
           one button each, and the canvas gets the room. */}
       {isMobile ? (
         <div className="tcBar">
-          <RailButton onClick={() => { setDrawer(null); addText(); }} title="Add text">
-            <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>T</span>
-          </RailButton>
+          {/* ⚠️ SHAPES ARE BEHIND A BUTTON; PRESETS ARE NOT — and the difference is what each is FOR.
+              A preset is a picture of a finished topper and it is the fastest way to start, so it
+              has to be seen to be chosen. A shape is a component you reach for once you are already
+              composing, and three of them on show cost a row that the canvas wanted more. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <RailButton onClick={() => { setDrawer(null); addText(); }} title="Add text">
+              <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>T</span>
+            </RailButton>
 
-          <PickerButton label="Shapes" open={drawer === 'shapes'}
-            onToggle={() => setDrawer(d => (d === 'shapes' ? null : 'shapes'))}>
-            {SHAPES.map(sh => (
-              <RailButton key={sh.key} onClick={() => { setDrawer(null); addShape(sh.key); }}
-                title={`Add ${sh.label.toLowerCase()}`}>
-                <ShapeIcon family={sh.key} />
-              </RailButton>
-            ))}
-          </PickerButton>
+            <PickerButton label="Shapes" open={drawer === 'shapes'}
+              onToggle={() => setDrawer(d => (d === 'shapes' ? null : 'shapes'))}>
+              {SHAPES.map(sh => (
+                <RailButton key={sh.key} onClick={() => { setDrawer(null); addShape(sh.key); }}
+                  title={`Add ${sh.label.toLowerCase()}`}>
+                  <ShapeIcon family={sh.key} />
+                </RailButton>
+              ))}
+            </PickerButton>
 
-          <PickerButton label="Presets" open={drawer === 'presets'}
-            onToggle={() => setDrawer(d => (d === 'presets' ? null : 'presets'))}>
+            {objects.length > 0 && (
+              <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); setDrawer(null); }}
+                style={{ marginLeft: 'auto', minHeight: 46, padding: '0 14px', borderRadius: 10,
+                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800,
+                  color: '#8A6320', background: '#FDF3E7', border: '1.5px solid #F0DCC0' }}>
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Six at 46px fit a 390px phone with room over; `auto` is the guard for a narrower one,
+              where scrolling a strip is better than wrapping it into a second block. */}
+          <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
             {TOPPER_PRESETS.map(pre => (
               <RailButton key={pre.key} onClick={() => { setDrawer(null); usePreset(pre); }}
                 title={pre.label}>
                 <PresetIcon objects={pre.objects} font={blockFont} size={30} />
               </RailButton>
             ))}
-          </PickerButton>
-
-          {objects.length > 0 && (
-            <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); setDrawer(null); }}
-              style={{ marginLeft: 'auto', minHeight: 46, padding: '0 14px', borderRadius: 10,
-                cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800,
-                color: '#8A6320', background: '#FDF3E7', border: '1.5px solid #F0DCC0' }}>
-              Clear
-            </button>
-          )}
+          </div>
         </div>
       ) : (
       <div className="tcRail" style={{ padding: 14, borderRight: '1px solid #E8EFE9', background: '#fff' }}>
