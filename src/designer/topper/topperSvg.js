@@ -26,6 +26,13 @@ import { topperSheets, topperBox } from '../geometry/topperPiece.js';
 /** How wide one topper is written, in millimetres. A starting size — see the note above. */
 export const DEFAULT_WIDTH_MM = 100;
 const GAP_MM = 10;           // between toppers, so a machine's auto-arrange has something to hold
+
+/* ⚠️ WRAPPED TO A MAT'S WIDTH, not laid out in one endless row. A cutting mat is 12 inches across —
+ * 305mm — and six toppers in a line came to 650, wider than any mat made. The machine's software
+ * would have re-arranged it, but handing it an artboard twice the size of the thing it is cut on is
+ * telling the baker their file is too big for their machine and letting them work out that it is
+ * not. 300 leaves a margin inside a 12-inch mat. */
+const MAT_WIDTH_MM = 300;
 const DP = 3;                // decimal places: finer than any blade, far short of noise
 
 const n = (v) => Number(v.toFixed(DP));
@@ -64,19 +71,23 @@ export function topperLayers(payload, fontOf, { widthMm = DEFAULT_WIDTH_MM } = {
   // throw — it cuts the topper mirrored, and only somebody holding the card would notice.
   const project = (x, y) => [(x - (box.cx - box.w / 2)) * scale, ((box.cy + box.h / 2) - y) * scale];
 
-  /* ⚠️ MERGED BY COLOUR. `topperSheets` yields a sheet per piece, so two words in one colour are two
-     sheets — but they are cut from ONE sheet of card, and a machine treats one path as one layer.
-     Merging means the baker loads each colour once instead of once per word. First appearance sets
-     the order, so the back layer stays the back layer. */
-  const byColour = new Map();
-  for (const sheet of sheets) {
-    const key = (sheet.colour || '#FFFFFF').toUpperCase();
-    byColour.set(key, (byColour.get(key) ?? '') + pathData(sheet, project));
-  }
-
+  /* ⚠️ ONE LAYER PER SHEET, AND NOT PER COLOUR. Merging same-coloured sheets was tried and is
+   * wrong twice over.
+   *
+   * Visibly: a white offset band and a white word are one path under `fill-rule="evenodd"`, so the
+   * word — sitting inside the band — CANCELS OUT of it and disappears. "Mia" vanished from its heart
+   * and left a plain pink shape. Nothing failed; the paths were valid and the tests passed, because
+   * a merged path is a perfectly good path. Only looking at it showed anything.
+   *
+   * And physically: they are different PIECES. The band is cut from white card and glued behind the
+   * heart; the word is cut from white card and glued on top. Same colour, same sheet of card, two
+   * cuts — a machine needs them as two, or it cuts one shape with a name-shaped hole in it. */
   return {
     widthMm, heightMm,
-    layers: [...byColour].map(([colour, d]) => ({ colour, d })),
+    layers: sheets.map(sheet => ({
+      colour: (sheet.colour || '#FFFFFF').toUpperCase(),
+      d: pathData(sheet, project),
+    })),
   };
 }
 
@@ -95,20 +106,25 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
  */
 export function toppersToSvg(toppers, fontOf, { widthMm = DEFAULT_WIDTH_MM } = {}) {
   const laid = [];
-  let x = 0;
+  let x = 0, y = 0, rowH = 0, widest = 0;
   for (const t of toppers ?? []) {
     const one = topperLayers(t?.payload, fontOf, { widthMm });
     if (!one) continue;                      // an empty topper is left out, not written as a blank
-    laid.push({ ...one, name: t.name, x });
+    // A topper wider than the mat still gets its own row rather than being dropped — the baker can
+    // scale it down in their software, and a missing topper would be the worse surprise.
+    if (x > 0 && x + one.widthMm > MAT_WIDTH_MM) { y += rowH + GAP_MM; x = 0; rowH = 0; }
+    laid.push({ ...one, name: t.name, x, y });
     x += one.widthMm + GAP_MM;
+    rowH = Math.max(rowH, one.heightMm);
+    widest = Math.max(widest, x - GAP_MM);
   }
   if (!laid.length) return null;
 
-  const totalW = x - GAP_MM;
-  const totalH = Math.max(...laid.map(l => l.heightMm));
+  const totalW = widest;
+  const totalH = y + rowH;
 
   const groups = laid.map(l => [
-    `  <g transform="translate(${n(l.x)} 0)">`,
+    `  <g transform="translate(${n(l.x)} ${n(l.y)})">`,
     `    <title>${esc(l.name || 'Card topper')}</title>`,
     ...l.layers.map(y => `    <path fill="${y.colour}" fill-rule="evenodd" d="${y.d}"/>`),
     '  </g>',

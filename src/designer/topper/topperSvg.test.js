@@ -21,14 +21,25 @@ describe('topperLayers', () => {
     expect(topperLayers(pay([text({ text: '' })]), fontOf)).toBeNull();
   });
 
-  /* ⚠️ ONE LAYER PER COLOUR — the opposite of the print sheet, and deliberately. A machine cuts each
-   * colour from a DIFFERENT sheet of card; a printer does not. */
-  it('gives one layer per colour, not one per piece', () => {
-    // Two words in one colour are cut from one sheet of card, so they must arrive as one layer.
-    const two = topperLayers(pay([text({ id: 1, x: -1 }), text({ id: 2, x: 1 })]), fontOf);
-    expect(two.layers).toHaveLength(1);
+  /* ⚠️ ONE LAYER PER PIECE — the opposite of the print sheet, and deliberately. A machine cuts each
+   * piece from card and the baker stacks them; a printer prints them as one. */
+  it('gives one layer per piece, so a band and its word stay separable', () => {
     const banded = topperLayers(pay([text({ offset: 0.1, offsetColour: '#FFFFFF' })]), fontOf);
     expect(banded.layers.map(l => l.colour)).toEqual(['#FFFFFF', '#4A2C1B']);
+  });
+
+  /* ⚠️ THE BUG THIS CATCHES WAS INVISIBLE TO EVERY OTHER TEST. Merging same-coloured pieces into one
+   * path makes a white word CANCEL OUT of the white band behind it under even-odd — "Mia" simply
+   * vanished from its heart. The paths stayed valid and every assertion still passed; only rendering
+   * the file showed it. They are also physically two cuts from one sheet of card. */
+  it('keeps two same-coloured pieces as two layers, never merged', () => {
+    const l = topperLayers(pay([
+      shape({ colour: '#D94F6E', offset: 0.05, offsetColour: '#FFFFFF' }),
+      text({ colour: '#FFFFFF' }),
+    ]), fontOf);
+    const whites = l.layers.filter(x => x.colour === '#FFFFFF');
+    expect(whites).toHaveLength(2);              // the heart's band, and the word on top
+    expect(whites[0].d).not.toBe(whites[1].d);
   });
 
   it('keeps the back layer at the back', () => {
@@ -84,10 +95,20 @@ describe('toppersToSvg', () => {
   it('lays several toppers side by side in one file', () => {
     const svg = toppersToSvg([one, { ...one, id: 't2', name: 'Second' }], fontOf, { widthMm: 50 });
     expect(svg.match(/<g transform/g)).toHaveLength(2);
-    const xs = [...svg.matchAll(/translate\(([\d.]+) 0\)/g)].map(m => Number(m[1]));
+    const xs = [...svg.matchAll(/translate\(([\d.]+) [\d.]+\)/g)].map(m => Number(m[1]));
     expect(xs[0]).toBe(0);
     expect(xs[1]).toBeGreaterThanOrEqual(50);            // clear of the first, plus a gap
-    expect(Number(svg.match(/viewBox="0 0 ([\d.]+)/)[1])).toBeGreaterThan(100);
+  });
+
+  /* ⚠️ A cutting mat is 12 inches across. Six toppers in one row came to 650mm — wider than any mat
+   * made — so the file has to wrap rather than hand the machine an artboard it cannot cut on. */
+  it('wraps to a mat width instead of running off in one row', () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({ ...one, id: `t${i}`, name: `T${i}` }));
+    const svg = toppersToSvg(many, fontOf, { widthMm: 100 });
+    const w = Number(svg.match(/viewBox="0 0 ([\d.]+)/)[1]);
+    expect(w).toBeLessThanOrEqual(305);                  // fits a 12-inch mat
+    const ys = [...svg.matchAll(/translate\([\d.]+ ([\d.]+)\)/g)].map(m => Number(m[1]));
+    expect(new Set(ys).size).toBeGreaterThan(1);         // it used more than one row
   });
 
   it('leaves out a topper that cannot be cut rather than writing a blank group', () => {
