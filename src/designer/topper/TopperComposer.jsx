@@ -9,7 +9,7 @@ import { offsetParts, followsBox} from '../geometry/topperShape.js';
 import { topperContours, topperBox, topperSheets, topperStick } from '../geometry/topperPiece.js';
 import { outlineOf } from '../geometry/shapes.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
-import { SceneLights, SceneEnv, SceneBackground } from '../canvas/CakeCanvas.jsx';
+import { SceneLights, SceneEnv, SceneBackground, CakePreview } from '../canvas/CakeCanvas.jsx';
 import SelectionBox from '../canvas/SelectionBox.jsx';
 import { DESIGNER_GROUND, SELECTION_COLOR } from '../constants.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
@@ -568,6 +568,15 @@ const VIEW_UNITS = 3.0;
 // camera's idea of what is still visible cannot drift apart.
 const SHEET_FRACTION = 0.40;
 
+/* A plain cake to try a topper on. ⚠️ ONE TIER AND NOTHING ELSE: this is here to answer "how big is
+ * it and how does it sit", and a decorated cake answers a different question badly — every extra
+ * thing on it is something a baker has to look past. The colour is the designer's own default
+ * buttercream, so the card is judged against what most cakes actually are. */
+const PREVIEW_TIER = Object.freeze({
+  shape: 'round', color: '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
+  topPipings: [], bottomPipings: [], creamLayers: [],
+});
+
 /* `bottomInset` is the fraction of the stage a sheet is covering.
  *
  * ⚠️ THE CANVAS DOES NOT SHRINK, THE VIEW MOVES. On a phone the controls sit OVER the canvas so the
@@ -751,7 +760,13 @@ export default function TopperComposer({
    * looks bigger than the same card behind. An ORTHOGRAPHIC camera has neither problem.
    * Seeing it standing on a cake is still worth having, so it is a deliberate switch rather than
    * something a mis-aimed drag does to you. */
-  const [view3d, setView3d] = useState(false);
+  /* ⚠️ THE PREVIEW IS A CAKE, NOT A TURNTABLE. This used to spin the flat card in perspective, and
+   * turning a flat thing round tells you nothing you could not already see — a card has no other
+   * side worth looking at. What a baker actually cannot judge from the composing view is SCALE and
+   * how it sits: whether a name is lost on a big cake, whether it stands or lies. So the preview
+   * puts it on one, drawn by the cake's own renderer so it cannot promise something different from
+   * what gets placed. */
+  const [onCake, setOnCake] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
 
@@ -968,6 +983,10 @@ export default function TopperComposer({
 
   async function keepAndUse() {
     setSaving(true);
+    /* ⚠️ THE TILE IS THE PIECE, NEVER THE PREVIEW. `thumbnail()` photographs whatever canvas is in
+       the stage, and while the cake preview is showing that is a CAKE — the shelf would fill with
+       pictures of the same pink tier. Back to the composing view first. */
+    setOnCake(false);
     /* ⚠️ TWO FRAMES BEFORE THE PHOTOGRAPH. `preserveDrawingBuffer` keeps the LAST frame drawn, so
        asking for the pixels in the same tick captures the studio exactly as it looked before the
        grid went. Two rAFs is one React commit plus one R3F draw. */
@@ -1217,14 +1236,6 @@ export default function TopperComposer({
               <FaceList value={defaultFace} onPick={chooseFace} />
             </PickerButton>
 
-            {objects.length > 0 && (
-              <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); setDrawer(null); }}
-                style={{ marginLeft: 'auto', minHeight: 46, padding: '0 14px', borderRadius: 10,
-                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800,
-                  color: '#8A6320', background: '#FDF3E7', border: '1.5px solid #F0DCC0' }}>
-                Clear
-              </button>
-            )}
           </div>
 
           {/* Six at 46px fit a 390px phone with room over; `auto` is the guard for a narrower one,
@@ -1314,26 +1325,40 @@ export default function TopperComposer({
           </div>
         </div>
 
-        {objects.length > 0 && (
-          <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); }}
-            style={{ marginTop: 'auto', minHeight: 40, borderRadius: 9, cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, color: '#8A6320',
-              background: '#FDF3E7', border: '1.5px solid #F0DCC0' }}>
-            Clear
-          </button>
-        )}
       </div>
       )}
 
       <div className="tcStage" ref={stageRef}>
+        {/* ⚠️ THE CAKE'S OWN RENDERER, not a second one. `CakePreview` draws `design.toppers` through
+            the same `Toppers` component a real cake uses, so the preview cannot promise a size,
+            a pose or a colour that placing it would not give (INVARIANTS #15). It is why this is a
+            preview rather than an illustration. */}
+        {onCake && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 2 }}>
+            <CakePreview
+              design={{
+                tiers: [PREVIEW_TIER], texts: [], ages: [], stickers: [], piping: [], garnishes: [],
+                toppers: [{ id: 'preview', name: name || 'Card topper', payload: payloadOf(),
+                            theta: Math.PI / 2, radius: 0.1, yaw: 0,
+                            mode: 'stand', scale: 1 }],
+              }}
+              shadows
+            />
+          </div>
+        )}
+
         {/* ⚠️ Keyed on the view, because a Canvas takes its camera ON MOUNT ONLY — remounting is the
             honest way to change camera type, and the same call ChocolateDripStudio makes. */}
-        <Canvas key={view3d ? '3d' : 'flat'} shadows
-          orthographic={!view3d}
-          camera={view3d ? { position: [0, -1.6, 4.6], fov: 34 } : { position: [0, 0, 6], zoom: 190 }}
-          gl={{ preserveDrawingBuffer: true }} style={{ position: 'absolute', inset: 0 }}>
+        <Canvas shadows orthographic
+          camera={{ position: [0, 0, 6], zoom: 190 }}
+          gl={{ preserveDrawingBuffer: true }}
+          /* ⚠️ HIDDEN, NOT UNMOUNTED, while the cake is showing. Both are absolutely placed, so the
+             composing canvas would otherwise paint straight over the preview — and tearing its
+             WebGL context down and building it again on every toggle costs a second and loses the
+             buffer the shelf tile is photographed from. */
+          style={{ position: 'absolute', inset: 0, visibility: onCake ? 'hidden' : 'visible' }}>
           {/* Flat only: the 3D look is a perspective camera and has no zoom to set. */}
-          {!view3d && <FitCamera bottomInset={isMobile && panel ? SHEET_FRACTION : 0} />}
+          <FitCamera bottomInset={isMobile && panel ? SHEET_FRACTION : 0} />
           <SceneLights shadows />
           <SceneEnv />
           {/* The designer's own ground, imported rather than chosen, so what is judged here is what a
@@ -1364,19 +1389,38 @@ export default function TopperComposer({
               `topperStick`, the same function the cake asks, so the two cannot disagree about how
               long it is or how much of it goes in. */}
           <StudioStick objects={objects} fontOf={fontOf} stick={stick} />
-          {/* Only in the 3D look. While composing there is nothing to orbit: the camera is the one
-              thing on this screen that must hold still. */}
-          {view3d && <OrbitControls enablePan={false} makeDefault />}
         </Canvas>
 
-        <button type="button" onClick={() => setView3d(v => !v)}
-          style={{ position: 'absolute', top: 12, right: 12, minHeight: 34, padding: '0 12px',
-            borderRadius: 9, cursor: 'pointer', fontFamily: "'Quicksand', sans-serif", fontSize: 11.5,
-            fontWeight: 800, color: view3d ? '#fff' : '#3D5A44',
-            background: view3d ? '#3D5A44' : 'rgba(255,255,255,0.92)',
-            border: '1.5px solid #C5D4C8' }}>
-          {view3d ? 'Back to flat' : 'See it in 3D'}
-        </button>
+        {objects.length > 0 && (
+          <button type="button" onClick={() => setOnCake(v => !v)}
+            style={{ position: 'absolute', top: 12, right: 12, zIndex: 3, minHeight: 34,
+              padding: '0 12px', borderRadius: 9, cursor: 'pointer',
+              fontFamily: "'Quicksand', sans-serif", fontSize: 11.5, fontWeight: 800,
+              color: onCake ? '#fff' : '#3D5A44',
+              background: onCake ? '#3D5A44' : 'rgba(255,255,255,0.92)',
+              border: '1.5px solid #C5D4C8' }}>
+            {onCake ? 'Back to editing' : 'View on cake'}
+          </button>
+        )}
+
+        {/* ⚠️ CLEAR IS A MARK ON THE CANVAS, NOT A BUTTON IN THE RAIL. It was a full-width block the
+            size of the things you build with, which is the wrong weight for something used once and
+            never on purpose twice — and on a phone it was taking a row from the canvas. Here it is
+            beside the work it clears, small, and its own colour says it removes. */}
+        {objects.length > 0 && !onCake && (
+          <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); setDrawer(null); }}
+            title="Clear the canvas" aria-label="Clear the canvas"
+            style={{ position: 'absolute', top: 12, left: 12, zIndex: 3, width: 34, height: 34,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 9,
+              cursor: 'pointer', color: '#8A6320', background: 'rgba(255,255,255,0.92)',
+              border: '1.5px solid #F0DCC0' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 7h16" /><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              <path d="M6.5 7l.8 12a1 1 0 0 0 1 1h7.4a1 1 0 0 0 1-1l.8-12" />
+            </svg>
+          </button>
+        )}
 
         {/* ⚠️ ON THE CANVAS, NOT UNDER IT. On a phone these controls sat below the stage, so
             changing an offset meant scrolling down to the slider, scrolling back up to see what it
