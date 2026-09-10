@@ -506,7 +506,7 @@ function RailButton({ onClick, title, children, wide = false }) {
 }
 
 export default function TopperComposer({
-  open = true, apiClient = null, openWith = null, onSave, onCancel,
+  open = true, apiClient = null, openWith = null, preset = null, onSave, onCancel,
 }) {
   const isMobile = useNarrow();
   const [objects, setObjects] = useState([]);          // ⚠️ EMPTY. Nothing is on the canvas until asked for.
@@ -523,15 +523,28 @@ export default function TopperComposer({
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
 
-  /* Reopening a kept topper: the objects come back and the geometry is REBUILT from them, which is
-   * the whole reason the geometry is not stored. */
+  /* ⚠️ TWO DOORS PRE-FILL THIS CANVAS, AND THEY ARE NOT THE SAME DOOR.
+   *
+   *   `openWith` — a topper the baker already KEPT, reopened from My Decorations.
+   *   `preset`   — a ready-made from the catalogue: a starting point, kept by nobody.
+   *
+   * Both put objects on the canvas, so it is tempting to make them one prop. They differ on the one
+   * thing that matters at the end: keeping. A kept topper must not offer to be kept again, because
+   * the row is INSERTED and never updated, so reusing one would save a second copy every time. A
+   * preset is the opposite — the baker has kept nothing yet, and a ready-made they edited into their
+   * own is exactly the thing worth keeping. One prop would have to pick one behaviour and be wrong
+   * about the other half of the time.
+   *
+   * Either way the objects come back and the geometry is REBUILT from them, which is the whole
+   * reason the geometry is not stored. */
+  const openFrom = openWith ?? preset;
   useEffect(() => {
-    if (!openWith) return;
-    const p = openWith.payload ?? {};
+    if (!openFrom) return;
+    const p = openFrom.payload ?? {};
     setObjects(Array.isArray(p.objects) ? p.objects : []);
-    setName(openWith.name ?? '');
+    setName(openFrom.name ?? '');
     nextId.current = (p.objects ?? []).reduce((m, o) => Math.max(m, o.id ?? 0), 0) + 1;
-  }, [openWith]);
+  }, [openFrom]);
   const nextId = useRef(1);
 
   /* ⚠️ FONTS PER OBJECT, loaded once and kept. Two words on one topper can want two faces, so the
@@ -602,6 +615,7 @@ export default function TopperComposer({
     }
   }
 
+  /* ⚠️ `openWith`, NOT `openFrom`. A preset still offers keeping — see the note above. */
   const canKeep = !!apiClient?.saveTopper && !openWith;
   const empty = objects.length === 0;
 
@@ -619,7 +633,7 @@ export default function TopperComposer({
       /* ⚠️ Minutes of composing are never lost to a stray tap (INVARIANTS #13). The ✕ and Cancel
          still close — deliberate exits stay one press away. */
       guardUnsaved={!empty}
-      title="Card topper"
+      title="Card topper studio"
       width={880}
       flow="block"
       isMobile={isMobile}

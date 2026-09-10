@@ -4406,8 +4406,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     chocolate_garnish: () => setGarnishStudio(true),
     /* A card topper: composed off the cake and stood on it. `card_topper` because that is what it
        is made of — the key is DATA, read by an admin on a row, so it names the thing rather than
-       the studio that happens to make it today. */
-    card_topper: () => setTopperStudio(true),
+       the studio that happens to make it today.
+
+       ⚠️ ONE ENTRY SERVES BOTH DOORS, because the difference is in the ROW and not in the code. A
+       row with nothing on it opens an empty canvas — that is the plain "make a card topper" item,
+       the same shape `chocolate_garnish` has. A row carrying objects is a READY-MADE, and opens the
+       studio with them already on the canvas.
+
+       ⚠️ A PRESET OPENS THE STUDIO; IT DOES NOT DROP ONTO THE CAKE. The thumbnail in the menu is
+       what shows a baker what these look like — that is the job it is there for — but a ready-made
+       that placed itself would make the words on it the ONE thing about the cake nobody could
+       change, and the words are the whole point of a name topper. It arrives as a starting point
+       that can be left. */
+    card_topper: (el) => {
+      const made = el?.placement_config?.card_topper;
+      setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
+      setTopperStudio(true);
+    },
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -10723,7 +10738,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {topperStudio && (
         <TopperComposer
           apiClient={apiClient}
-          openWith={pendingTopper}
+          /* `preset`, not `openWith`: a catalogue ready-made is kept by nobody, so the baker is
+             still offered "keep it". See the note on the two doors in TopperComposer. */
+          preset={pendingTopper}
           onCancel={() => { setTopperStudio(false); setPendingTopper(null); }}
           /* Selected the moment it lands, like a garnish: the thing you just made is the thing you
              want to move, and having to hunt for it is a step nobody wants. */
