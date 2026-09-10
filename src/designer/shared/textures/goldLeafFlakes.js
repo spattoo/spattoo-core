@@ -30,6 +30,13 @@ import { gray } from './finishCanvas.js';
  * `metalness` was 0.6 to keep "the gold albedo bright". Measured, that reasoning is backwards: at 0.9
  * the shards hold MORE colour (chroma 108 against 91), not less, and stop looking like a wash of sky.
  *
+ * ⚠️ CONFIRMED ON A REAL CAKE, 2026-09-10, and that step nearly went the other way. Judged on the
+ * harness — flat pink, three oversized shards — the OLD look was preferred: the richer gold read as
+ * heavy there. On an actual baker's cake, a pink→lilac gradient with small scattered flakes, it
+ * reads as gold leaf and the old one reads as pale paper. Same numbers, opposite verdicts, because
+ * a fixture with big shards on a flat ground is not the thing being decided. A harness proves a
+ * MECHANISM; it does not settle a LOOK. Take the look to a real cake before changing a default back.
+ *
  * ⚠️ `env` IS INERT AND ALWAYS HAS BEEN — see the note below. It is kept only so a shard's finish row
  * still round-trips through admin unchanged; nothing reads it. Do not tune it. */
 export const GOLD_LEAF_DEFAULTS = {
