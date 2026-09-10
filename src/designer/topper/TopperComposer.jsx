@@ -606,17 +606,21 @@ export default function TopperComposer({
       await apiClient?.saveTopper?.({ name: name.trim() || 'Card topper', payload: payloadOf() });
     } catch (e) {
       /* ⚠️ A FAILED SAVE STILL PLACES IT. The baker composed it; losing the work because a network
-       * call failed would be the worst trade available, and they can keep it again from the card
+       * call failed would be the worst trade available, and they can save it again from the card
        * later. The same call GarnishStudio makes. */
-      console.error('Could not keep the topper', e);
+      console.error('Could not save the topper to my decorations', e);
     } finally {
       setSaving(false);
       useOnCake();
     }
   }
 
-  /* ⚠️ `openWith`, NOT `openFrom`. A preset still offers keeping — see the note above. */
+  /* ⚠️ `openWith`, NOT `openFrom`. A preset still offers saving — see the note above. */
   const canKeep = !!apiClient?.saveTopper && !openWith;
+  /* ⚠️ ON BY DEFAULT. A baker who composes something good almost always wants it again, so the
+   * quieter decision is the one that needs the deliberate act — GarnishStudio's call, kept when the
+   * pair of buttons became a button and a tick. */
+  const [alsoSave, setAlsoSave] = useState(true);
   const empty = objects.length === 0;
 
   const btn = (primary, disabled = false) => ({
@@ -641,30 +645,41 @@ export default function TopperComposer({
       footer={
         <>
           <button onClick={onCancel} style={btn(false)}>Cancel</button>
-          {/* ⚠️ SAVING IS THE DEFAULT, and the quieter button is the rarer decision — a baker who
-              composes something good almost always wants it again. GarnishStudio's call, inherited
-              rather than re-argued.
-              ⚠️ A topper opened from the shelf is ALREADY saved, so the option disappears then:
-              offering it again writes a SECOND copy every time one is reused, because the row is
-              inserted and never updated.
+          {/* ⚠️ ONE ACTION, WITH A MODIFIER BESIDE IT — not two buttons that both place the topper.
+              Two primaries differing only in a side effect made the baker read both to find the
+              difference, and put the longest label in a footer that also holds Cancel: at 375px
+              there was nothing left. A tick states what will happen BEFORE it happens and leaves one
+              obvious thing to press.
 
-              ⚠️ IT NAMES WHERE IT GOES. This said "Keep it" first, inherited from the garnish, and
-              "keep" does not say WHERE — kept on the cake? kept as it is? The shelf is labelled
-              "My decorations" on this same screen (`MY_DECORATIONS`), so the button and the place it
-              lands now use one word, which is the whole argument decorationCopy.js makes: if the
-              button pressed and the screen it feeds disagree, the baker stops trusting both.
+              ⚠️ IT NAMES WHERE IT GOES. This said "Keep it" first, and "keep" does not say WHERE —
+              kept on the cake? kept as it is? The shelf is labelled "My decorations" on this same
+              screen (`MY_DECORATIONS`), so the tick and the place it lands use one word. That is the
+              argument decorationCopy.js makes: if the control pressed and the screen it feeds
+              disagree, the baker stops trusting both.
 
-              ⚠️ AND IT STILL SAYS "and use it". "Save to my decorations" alone reads as save INSTEAD
-              of place — the one misreading that would cost somebody the thing they just made. */}
+              ⚠️ HIDDEN, NOT UNTICKED, for a topper opened from the shelf — it is already there, and
+              saving again writes a SECOND copy every time one is reused, because the row is inserted
+              and never updated. */}
+          {/* ⚠️ The tick sits BESIDE THE BUTTON IT MODIFIES, not out on its own next to Cancel
+              (INVARIANTS #11) — it changes what that button does, so they are one control. The group
+              wraps, so on a phone the tick drops onto its own line ABOVE the button rather than
+              squeezing it; the footer itself does not wrap. */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            flexWrap: 'wrap', gap: 14 }}>
           {canKeep && (
-            <button onClick={useOnCake} disabled={empty || saving} style={btn(false, empty || saving)}>
-              Use it on the cake
-            </button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+              <input type="checkbox" checked={alsoSave} onChange={e => setAlsoSave(e.target.checked)}
+                style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>
+                Save to my decorations
+              </span>
+            </label>
           )}
-          <button onClick={canKeep ? keepAndUse : useOnCake} disabled={empty || saving}
+          <button onClick={canKeep && alsoSave ? keepAndUse : useOnCake} disabled={empty || saving}
             style={btn(true, empty || saving)}>
-            {saving ? 'Saving…' : canKeep ? 'Save to my decorations and use it' : 'Use it on the cake'}
+            {saving ? 'Saving…' : 'Use it on the cake'}
           </button>
+          </div>
         </>
       }
     >
