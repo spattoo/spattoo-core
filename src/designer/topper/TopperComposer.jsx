@@ -546,6 +546,68 @@ function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embed
 /* `compact` trims the row height for the presets. ⚠️ It exists because the rail RAN OUT: with the
    presets added, the last one sat below the fold on a laptop and the only way to know it was there
    was to scroll a column that gives no sign it scrolls. A hidden example is no example. */
+/* ⚠️ A DRAWER, BECAUSE THE PHONE HAS NO ROOM FOR A SHELF. Laid out flat, the shapes and the presets
+ * took half the screen before the canvas began — and the canvas is the thing being worked on. Behind
+ * one button they cost a row; opened, they cover the canvas only while being chosen, which is the
+ * moment nobody is looking at it. */
+/* ⚠️ THE CAMERA FITS THE STAGE. Its zoom was a fixed 190, which shows about four units across a
+ * desktop's 728px canvas and only 1.8 across a phone's 354 — so the same topper that sat comfortably
+ * on one hung off both edges of the other, cut off before it could be judged. A zoom in pixels per
+ * unit has to be told how many pixels there are.
+ *
+ * `VIEW_UNITS` is what the working area always shows, whatever the screen: the presets are about 1.9
+ * units across, so three leaves a margin on every side without making them small. */
+const VIEW_UNITS = 3.0;
+// How much of the stage the phone's control sheet covers. One number, so the sheet's height and the
+// camera's idea of what is still visible cannot drift apart.
+const SHEET_FRACTION = 0.40;
+
+/* `bottomInset` is the fraction of the stage a sheet is covering.
+ *
+ * ⚠️ THE CANVAS DOES NOT SHRINK, THE VIEW MOVES. On a phone the controls sit OVER the canvas so the
+ * piece stays in sight while it is changed — but "in sight" has to mean in the part still showing,
+ * and the topper was being framed dead centre with its bottom half behind the sheet. So the camera
+ * fits the UNCOVERED band and lifts the piece into it. Shrinking the canvas instead would tear down
+ * and rebuild the WebGL viewport every time a piece is selected. */
+function FitCamera({ bottomInset = 0 }) {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const visible = size.height * (1 - bottomInset);
+    const zoom = Math.min(size.width, visible) / VIEW_UNITS;
+    if (!(zoom > 0)) return;
+    // Lift world-zero to the middle of what is still showing.
+    const y = -(size.height * bottomInset) / (2 * zoom);
+    if (camera.zoom === zoom && camera.position.y === y) return;
+    camera.zoom = zoom;
+    camera.position.y = y;
+    camera.updateProjectionMatrix();
+  }, [camera, size.width, size.height, bottomInset]);
+  return null;
+}
+
+function PickerButton({ label, count, children, open, onToggle }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" onClick={onToggle} aria-expanded={open}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 46, padding: '0 12px',
+          borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+          color: '#3D5A44', background: open ? '#EFF4F0' : '#fff',
+          border: `1.5px solid ${open ? '#3D5A44' : '#E2E8E3'}` }}>
+        {label}
+        <span aria-hidden="true" style={{ fontSize: 9, opacity: 0.7 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 5,
+          display: 'flex', flexWrap: 'wrap', gap: 7, padding: 10, width: 'max-content',
+          maxWidth: 'min(78vw, 320px)', borderRadius: 12, background: '#fff',
+          border: '1.5px solid #E2E8E3', boxShadow: '0 10px 26px rgba(0,0,0,0.13)' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RailButton({ onClick, title, children, wide = false, compact = false }) {
   return (
     <button type="button" onClick={onClick} title={title} aria-label={title}
@@ -878,6 +940,8 @@ export default function TopperComposer({
   const piecesRef = useRef(null);
   /* True only for the frames being photographed for the shelf tile — see ThumbFit. */
   const [capturing, setCapturing] = useState(false);
+  // Which phone drawer is showing, if any. One at a time: two open cover the canvas entirely.
+  const [drawer, setDrawer] = useState(null);
   /* ⚠️ THE STICK BELONGS TO THE WHOLE TOPPER, not to any one piece on it — a card has one stick
    * however many words and shapes are cut into it, so it lives at the payload's root rather than on
    * an object. Off by default: a topper that is laid flat on the cake needs no stick, and one that
@@ -892,6 +956,78 @@ export default function TopperComposer({
     background: primary ? (disabled ? '#9BB0A2' : '#3D5A44') : '#fff',
     border: primary ? 'none' : '1.5px solid #C5D4C8',
   });
+
+  /* ⚠️ ONE PANEL, PLACED TWICE. Everything that describes the topper being made — the selected
+   * piece's controls, a multi-selection's grouping, the stick — is defined once here and then put
+   * where the screen has room: a column beside the canvas on a desktop, a sheet OVER it on a phone.
+   * Two copies of this markup is how one of them quietly stops matching the other.
+   *
+   * ⚠️ ONE PIECE GETS ITS PROPERTIES; SEVERAL GET THE ONE THING THAT APPLIES TO SEVERAL. A colour or
+   * a size spread across three pieces is three different answers, so those controls are absent
+   * rather than guessing which piece you meant — and what IS true of a multi-selection, that it can
+   * be grouped, is the only thing offered. */
+  const panel = objects.length === 0 ? null : (
+    <>
+
+          {/* ⚠️ ONE PIECE GETS ITS PROPERTIES; SEVERAL GET THE ONE THING THAT APPLIES TO SEVERAL. A
+              colour or a size spread across three pieces is three different answers, so those
+              controls are absent rather than guessing which piece you meant — and what IS true of a
+              multi-selection, that it can be grouped, is the only thing offered. */}
+          {selectedIds.length > 1 ? (
+            <div style={{ padding: 16, borderBottom: '1px solid #E8EFE9' }}>
+              <h2 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#2C3E33' }}>
+                {selectedIds.length} pieces
+              </h2>
+              <p style={{ margin: '0 0 14px', fontSize: 11.5, lineHeight: 1.5, color: '#5B6B60' }}>
+                {isGrouped
+                  ? 'These move together. Drag any one of them and the rest follow.'
+                  : 'Group them and they move together — drag any one and the rest follow.'}
+              </p>
+              <button type="button" onClick={isGrouped ? ungroupSelected : groupSelected}
+                style={{ width: '100%', minHeight: 42, borderRadius: 9, cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
+                  color: isGrouped ? '#8A6320' : '#fff',
+                  background: isGrouped ? '#FDF3E7' : '#3D5A44',
+                  border: isGrouped ? '1.5px solid #F0DCC0' : 'none' }}>
+                {isGrouped ? 'Ungroup' : 'Group'}
+              </button>
+              <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+                Hold Shift and tap a piece to add it to the selection, or to drop it.
+              </p>
+            </div>
+          ) : selected ? (
+            <Properties obj={selected} onChange={update} onDelete={remove}
+              grouped={!!selected.groupId} onUngroup={ungroupSelected} embedded />
+          ) : null}
+
+          {/* ⚠️ THE STICK IS THE WHOLE TOPPER'S, so it is not in a selected piece's properties — it
+              would appear to belong to whatever you last clicked, and vanish when you clicked away.
+              ⚠️ THE DEPTH APPEARS ONLY WITH A STICK: an insertion depth with nothing to insert is
+              the exact thing this rebuild was argued against (INVARIANTS #12). */}
+          <div style={{ padding: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+              <input type="checkbox" checked={stick.on}
+                onChange={e => setStick(v => ({ ...v, on: e.target.checked }))}
+                style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>On a stick</span>
+            </label>
+            {stick.on ? (
+              <div style={{ marginTop: 12 }}>
+                <Slide label="How far into the cake" value={stick.bury} min={0} max={1} step={0.02}
+                  onChange={v => setStick(s2 => ({ ...s2, bury: v }))}
+                  fmt={v => (v <= 0.01 ? 'resting on top' : `${Math.round(v * 100)}% of the stick`)} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+                  Taped to the back and running up behind the card, so the join never shows.
+                </p>
+              </div>
+            ) : (
+              <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+                Without one the card lies flat on the cake.
+              </p>
+            )}
+          </div>
+    </>
+  );
 
   return (
     <Panel
@@ -979,10 +1115,57 @@ export default function TopperComposer({
           .tc .tcGroup > button { width: 46px !important; min-height: 46px !important; flex: none; }
           /* The canvas keeps a definite height of its own — a flex child with nothing to fill
              collapses to nothing, and R3F will not create a renderer for a zero-height box. */
-          .tc > .tcStage { flex: none; height: 52vh; min-height: 280px; }
+          /* ⚠️ THE CANVAS GETS WHAT IS LEFT, and it is the thing being worked on. It used to be a
+             fixed 52vh under a shelf that had already taken half the screen, so the topper was cut
+             off by the footer. The toolbar is one row now and the stage fills the rest. */
+          .tc > .tcStage { flex: none; height: 46vh; min-height: 300px; }
+          .tc > .tcBar {
+            flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+            border-bottom: 1px solid #E8EFE9; background: #fff; position: relative; z-index: 6;
+          }
           .tc > .tcProps { flex: none; border-left: none; border-top: 1px solid #E8EFE9; }
         }
       `}</style>
+      {/* ⚠️ TWO SHAPES OF TOOLBAR, because a phone has one axis to spare and a desktop has the
+          other. On a desktop the rail is a column and everything can be on show. On a phone the
+          same shelf ate half the screen before the canvas began — so shapes and presets go behind
+          one button each, and the canvas gets the room. */}
+      {isMobile ? (
+        <div className="tcBar">
+          <RailButton onClick={() => { setDrawer(null); addText(); }} title="Add text">
+            <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>T</span>
+          </RailButton>
+
+          <PickerButton label="Shapes" open={drawer === 'shapes'}
+            onToggle={() => setDrawer(d => (d === 'shapes' ? null : 'shapes'))}>
+            {SHAPES.map(sh => (
+              <RailButton key={sh.key} onClick={() => { setDrawer(null); addShape(sh.key); }}
+                title={`Add ${sh.label.toLowerCase()}`}>
+                <ShapeIcon family={sh.key} />
+              </RailButton>
+            ))}
+          </PickerButton>
+
+          <PickerButton label="Presets" open={drawer === 'presets'}
+            onToggle={() => setDrawer(d => (d === 'presets' ? null : 'presets'))}>
+            {TOPPER_PRESETS.map(pre => (
+              <RailButton key={pre.key} onClick={() => { setDrawer(null); usePreset(pre); }}
+                title={pre.label}>
+                <PresetIcon objects={pre.objects} font={blockFont} size={30} />
+              </RailButton>
+            ))}
+          </PickerButton>
+
+          {objects.length > 0 && (
+            <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); setDrawer(null); }}
+              style={{ marginLeft: 'auto', minHeight: 46, padding: '0 14px', borderRadius: 10,
+                cursor: 'pointer', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800,
+                color: '#8A6320', background: '#FDF3E7', border: '1.5px solid #F0DCC0' }}>
+              Clear
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="tcRail" style={{ padding: 14, borderRight: '1px solid #E8EFE9', background: '#fff' }}>
         <div>
           <span style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
@@ -1046,6 +1229,7 @@ export default function TopperComposer({
           </button>
         )}
       </div>
+      )}
 
       <div className="tcStage" ref={stageRef}>
         {/* ⚠️ Keyed on the view, because a Canvas takes its camera ON MOUNT ONLY — remounting is the
@@ -1054,6 +1238,8 @@ export default function TopperComposer({
           orthographic={!view3d}
           camera={view3d ? { position: [0, -1.6, 4.6], fov: 34 } : { position: [0, 0, 6], zoom: 190 }}
           gl={{ preserveDrawingBuffer: true }} style={{ position: 'absolute', inset: 0 }}>
+          {/* Flat only: the 3D look is a perspective camera and has no zoom to set. */}
+          {!view3d && <FitCamera bottomInset={isMobile && panel ? SHEET_FRACTION : 0} />}
           <SceneLights shadows />
           <SceneEnv />
           {/* The designer's own ground, imported rather than chosen, so what is judged here is what a
@@ -1098,6 +1284,19 @@ export default function TopperComposer({
           {view3d ? 'Back to flat' : 'See it in 3D'}
         </button>
 
+        {/* ⚠️ ON THE CANVAS, NOT UNDER IT. On a phone these controls sat below the stage, so
+            changing an offset meant scrolling down to the slider, scrolling back up to see what it
+            did, and back again — judging a change you cannot see while you make it, which is the
+            one thing INVARIANTS #11 exists to stop. Over the canvas the piece stays in view; the
+            sheet is capped at two fifths of the stage and scrolls inside itself. */}
+        {isMobile && panel && (
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 4,
+            maxHeight: `${SHEET_FRACTION * 100}%`, overflowY: 'auto', background: 'rgba(255,255,255,0.97)',
+            borderTop: '1px solid #E8EFE9', boxShadow: '0 -8px 22px rgba(0,0,0,0.08)' }}>
+            {panel}
+          </div>
+        )}
+
         {objects.length === 0 && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
             justifyContent: 'center', pointerEvents: 'none' }}>
@@ -1110,73 +1309,10 @@ export default function TopperComposer({
         )}
       </div>
 
-      {/* Only when there is something selected — see the note on Properties. */}
-      {/* ⚠️ ONE RIGHT-HAND COLUMN, NOT ONE PER PANEL. The stick and the selection were two siblings,
-          and `.tcProps` is a fixed 268px — so selecting a piece put TWO of them beside the canvas and
-          squeezed it to a strip with the topper hanging out of both sides. Everything that describes
-          the thing being made shares one column and scrolls.
-
-          ⚠️ ORDER FOLLOWS USE (INVARIANTS #12). The selected piece's controls are touched constantly
-          while composing; the stick is decided once at the end, so it sits under them. */}
-      {objects.length > 0 && (
+      {/* The panel, where a desktop has room for it: a column of its own beside the canvas. */}
+      {!isMobile && panel && (
         <div className="tcProps" style={{ background: '#fff', borderLeft: '1px solid #E8EFE9' }}>
-          {/* ⚠️ ONE PIECE GETS ITS PROPERTIES; SEVERAL GET THE ONE THING THAT APPLIES TO SEVERAL. A
-              colour or a size spread across three pieces is three different answers, so those
-              controls are absent rather than guessing which piece you meant — and what IS true of a
-              multi-selection, that it can be grouped, is the only thing offered. */}
-          {selectedIds.length > 1 ? (
-            <div style={{ padding: 16, borderBottom: '1px solid #E8EFE9' }}>
-              <h2 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#2C3E33' }}>
-                {selectedIds.length} pieces
-              </h2>
-              <p style={{ margin: '0 0 14px', fontSize: 11.5, lineHeight: 1.5, color: '#5B6B60' }}>
-                {isGrouped
-                  ? 'These move together. Drag any one of them and the rest follow.'
-                  : 'Group them and they move together — drag any one and the rest follow.'}
-              </p>
-              <button type="button" onClick={isGrouped ? ungroupSelected : groupSelected}
-                style={{ width: '100%', minHeight: 42, borderRadius: 9, cursor: 'pointer',
-                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
-                  color: isGrouped ? '#8A6320' : '#fff',
-                  background: isGrouped ? '#FDF3E7' : '#3D5A44',
-                  border: isGrouped ? '1.5px solid #F0DCC0' : 'none' }}>
-                {isGrouped ? 'Ungroup' : 'Group'}
-              </button>
-              <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
-                Hold Shift and tap a piece to add it to the selection, or to drop it.
-              </p>
-            </div>
-          ) : selected ? (
-            <Properties obj={selected} onChange={update} onDelete={remove}
-              grouped={!!selected.groupId} onUngroup={ungroupSelected} embedded />
-          ) : null}
-
-          {/* ⚠️ THE STICK IS THE WHOLE TOPPER'S, so it is not in a selected piece's properties — it
-              would appear to belong to whatever you last clicked, and vanish when you clicked away.
-              ⚠️ THE DEPTH APPEARS ONLY WITH A STICK: an insertion depth with nothing to insert is
-              the exact thing this rebuild was argued against (INVARIANTS #12). */}
-          <div style={{ padding: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-              <input type="checkbox" checked={stick.on}
-                onChange={e => setStick(v => ({ ...v, on: e.target.checked }))}
-                style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>On a stick</span>
-            </label>
-            {stick.on ? (
-              <div style={{ marginTop: 12 }}>
-                <Slide label="How far into the cake" value={stick.bury} min={0} max={1} step={0.02}
-                  onChange={v => setStick(s2 => ({ ...s2, bury: v }))}
-                  fmt={v => (v <= 0.01 ? 'resting on top' : `${Math.round(v * 100)}% of the stick`)} />
-                <p style={{ margin: '4px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
-                  Taped to the back and running up behind the card, so the join never shows.
-                </p>
-              </div>
-            ) : (
-              <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
-                Without one the card lies flat on the cake.
-              </p>
-            )}
-          </div>
+          {panel}
         </div>
       )}
     </div>
