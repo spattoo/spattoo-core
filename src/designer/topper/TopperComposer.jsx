@@ -641,12 +641,21 @@ export default function TopperComposer({
       footer={
         <>
           <button onClick={onCancel} style={btn(false)}>Cancel</button>
-          {/* ⚠️ KEEPING IT IS THE DEFAULT, and the quieter button is the rarer decision — a baker who
+          {/* ⚠️ SAVING IS THE DEFAULT, and the quieter button is the rarer decision — a baker who
               composes something good almost always wants it again. GarnishStudio's call, inherited
               rather than re-argued.
-              ⚠️ A topper opened from the shelf is ALREADY kept, so the keep option disappears then:
-              offering it again saves a SECOND copy every time one is reused, because the row is
-              inserted and never updated. */}
+              ⚠️ A topper opened from the shelf is ALREADY saved, so the option disappears then:
+              offering it again writes a SECOND copy every time one is reused, because the row is
+              inserted and never updated.
+
+              ⚠️ IT NAMES WHERE IT GOES. This said "Keep it" first, inherited from the garnish, and
+              "keep" does not say WHERE — kept on the cake? kept as it is? The shelf is labelled
+              "My decorations" on this same screen (`MY_DECORATIONS`), so the button and the place it
+              lands now use one word, which is the whole argument decorationCopy.js makes: if the
+              button pressed and the screen it feeds disagree, the baker stops trusting both.
+
+              ⚠️ AND IT STILL SAYS "and use it". "Save to my decorations" alone reads as save INSTEAD
+              of place — the one misreading that would cost somebody the thing they just made. */}
           {canKeep && (
             <button onClick={useOnCake} disabled={empty || saving} style={btn(false, empty || saving)}>
               Use it on the cake
@@ -654,7 +663,7 @@ export default function TopperComposer({
           )}
           <button onClick={canKeep ? keepAndUse : useOnCake} disabled={empty || saving}
             style={btn(true, empty || saving)}>
-            {saving ? 'Keeping…' : canKeep ? 'Keep it and use it on the cake' : 'Use it on the cake'}
+            {saving ? 'Saving…' : canKeep ? 'Save to my decorations and use it' : 'Use it on the cake'}
           </button>
         </>
       }
