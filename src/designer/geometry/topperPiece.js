@@ -24,11 +24,18 @@ export function topperContours(obj, font) {
     if (!probe.width) return null;
     return topperShapes(font, obj.text, { height: obj.size / probe.width }).parts;
   }
-  /* A shape has no word to fit, so it is fitted to a square of its own size — `backingPlate` sizes
-   * itself around whatever it is given, and giving it a box is how you ask for the shape alone. */
-  const half = obj.size / 2;
+  /* A shape has no word to fit, so it is fitted to a box of its own size — `backingPlate` sizes
+   * itself around whatever it is given, and giving it a box is how you ask for the shape alone.
+   *
+   * ⚠️ `ratio` IS WIDTH OVER HEIGHT, and it is why a rectangle can be a NAME PLAQUE. The box was
+   * always square, so "rect" — the one family that follows what it is fitted around — could only
+   * ever come out square, and a preset asking for a rectangle got a lozenge. Absent means 1, so every
+   * shape saved before this is unchanged. A circle and a heart ignore it by their own rule
+   * (`followsBox`), which is why the studio only offers the control where it does something. */
+  const hh = obj.size / 2;
+  const hw = hh * (Number.isFinite(obj.ratio) && obj.ratio > 0 ? obj.ratio : 1);
   const box = [{
-    outer: [{ x: -half, y: -half }, { x: half, y: -half }, { x: half, y: half }, { x: -half, y: half }],
+    outer: [{ x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh }],
     holes: [],
   }];
   const plate = backingPlate(box, { family: obj.family, pad: 0 });
@@ -59,7 +66,16 @@ export function topperSheets(payload, fontOf) {
        offset is exact, and it is locked to its piece. The machinery never cared — `offsetParts`
        walks contours and has no opinion about where they came from. */
     if (obj.offset > 0) {
-      sheets.push({ parts: offsetParts(parts, obj.offset * obj.size), colour: obj.offsetColour, layer: i * 2 });
+      /* ⚠️ THE BAND CARRIES ITS OBJECT'S POSITION TOO. It did not, and defaulted to the origin — so
+         an outline DETACHED from the piece it belongs to and sat in the middle of the topper. It hid
+         for as long as it did because everything that had an offset was centred: the moment two
+         hearts went to x = ±0.58, both their white bands stacked up in the gap between them and ate
+         the white letters of the word on top. On a cake it is worse than it looks in a studio — the
+         band is part of the CUT, so the piece would be cut wrong. */
+      sheets.push({
+        parts: offsetParts(parts, obj.offset * obj.size), colour: obj.offsetColour, layer: i * 2,
+        x: obj.x ?? 0, y: obj.y ?? 0,
+      });
     }
     sheets.push({ parts, colour: obj.colour, layer: i * 2 + 1, x: obj.x ?? 0, y: obj.y ?? 0 });
   });

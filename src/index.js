@@ -97,7 +97,7 @@ export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './d
 // Acrylic toppers: the word, its bar, its prongs — and the connectivity check that says whether the
 // thing can be cut as one piece. Exported because the admin studio previews from the same numbers
 // the designer renders, the same bargain TextTopperStudio already makes with the text-slot compositor.
-export { topperShapes, pieceCount, components, bridgeLoose, offsetParts, backingPlate } from './designer/geometry/topperShape.js';
+export { topperShapes, pieceCount, components, bridgeLoose, offsetParts, backingPlate, followsBox } from './designer/geometry/topperShape.js';
 // THE size control — the admin studios size a topper with the same dial the customer will.
 export { SizeDial } from './designer/shared/SizeDial.jsx';
 // One face list and one finish list, shared by the studio and the cake. creamFonts.json is already
@@ -137,7 +137,7 @@ export { default as TopperComposer } from './designer/topper/TopperComposer.jsx'
 /* ⚠️ ONE answer to "what shape is this topper", asked by the composer AND by the cake. A private copy
  * in either is two answers to one question, and the cake's is the one the customer sees. */
 export { topperContours, topperSheets, topperBox } from './designer/geometry/topperPiece.js';
-export { TOPPER_PRESETS, PresetIcon } from './designer/topper/topperPresets.jsx';
+export { TOPPER_PRESETS, presetPaths } from './designer/topper/topperPresets.js';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".

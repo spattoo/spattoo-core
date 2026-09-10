@@ -77,6 +77,24 @@ describe('topperSheets', () => {
     expect(topperSheets({ objects: [shape({ offset: 0 })] }, fontOf)).toHaveLength(1);
   });
 
+  /* ⚠️ A BAND SITS ON ITS OWN PIECE, NOT AT THE ORIGIN. It used to take the default (0, 0) while the
+   * face carried the object's position, so an outline detached and slid to the middle of the topper.
+   * Invisible while everything with an offset happened to be centred. */
+  it('puts the offset band at its own object\'s position', () => {
+    const sheets = topperSheets({ objects: [
+      text({ id: 1, offset: 0.1, x: -0.58, y: 0.2 }),
+      shape({ id: 2, offset: 0.1, x: 0.58, y: -0.2 }),
+    ] }, fontOf);
+    expect(sheets).toHaveLength(4);
+    for (const sh of sheets) {
+      // Each pair — band then face — shares one position.
+      expect(Math.abs(sh.x)).toBeCloseTo(0.58, 5);
+      expect(Math.abs(sh.y)).toBeCloseTo(0.2, 5);
+    }
+    expect(sheets[0].x).toBe(sheets[1].x);   // the word's band sits on the word
+    expect(sheets[2].x).toBe(sheets[3].x);   // the shape's band sits on the shape
+  });
+
   it('leaves out a word that cannot be cut', () => {
     expect(topperSheets({ objects: [text({ text: '' })] }, fontOf)).toEqual([]);
   });

@@ -755,6 +755,15 @@ function ringsTouch(a, b) {
  * `pad` is in the same units as the parts. Returns ONE part, so the plate composes with everything
  * that already takes a parts list.
  */
+/* Does this family take the PROPORTION of what it is fitted around, or force itself square?
+ *
+ * ⚠️ ONE PLACE ANSWERS THIS. The rule lives inside `backingPlate` (see the note there — a stretched
+ * circle is an ellipse and a stretched heart is a squashed cartoon), and a studio offering a "how
+ * wide" control needs the same answer: on a circle that control would do nothing at all, and a
+ * control that cannot act is one the reader has to rule out before finding the one that can
+ * (INVARIANTS #12). Restating it in the UI is how the two would come to disagree. */
+export const followsBox = (family) => family === 'rect';
+
 export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96, minHalf = null } = {}) {
   if (!Array.isArray(parts) || !parts.length) return null;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -772,7 +781,7 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96,
    * proportion of its own and stretching it to a wide box gives a squashed cartoon. So those two
    * take the LARGER half-extent on both axes and sit the word inside; a rounded rectangle is exactly
    * the shape that is supposed to follow what is written on it. */
-  if (family !== 'rect') hw = hh = Math.max(hw, hh);
+  if (!followsBox(family)) hw = hh = Math.max(hw, hh);
 
 
 

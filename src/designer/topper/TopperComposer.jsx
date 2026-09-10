@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { HexColorPicker } from 'react-colorful';
-import { offsetParts } from '../geometry/topperShape.js';
+import { offsetParts, followsBox} from '../geometry/topperShape.js';
 import { topperContours } from '../geometry/topperPiece.js';
 import { outlineOf } from '../geometry/shapes.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
@@ -15,7 +15,7 @@ import { DESIGNER_GROUND, SELECTION_COLOR } from '../constants.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
 import { Panel } from '../../shared/Panel.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
-import { TOPPER_PRESETS, PresetIcon } from './topperPresets.jsx';
+import { TOPPER_PRESETS, presetPaths } from './topperPresets.js';
 
 /* ── Topper composer ─────────────────────────────────────────────────────────────────────────────
  *
@@ -179,17 +179,30 @@ const LAYER_Z = CARD_THICK * 0.1;
  * orthographic and fixed, so a world size IS a screen size and there is nothing to compensate for. */
 const HANDLE = 0.075;
 
-function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, onChange }) {
+function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, onChange,
+                 onDragStart, showHandles = true }) {
   const { controls } = useThree();
   const grab = useRef(null);
   const sizing = useRef(null);
 
   const begin = (e) => {
     e.stopPropagation();
-    onSelect(obj.id);
+    /* Shift adds to the selection instead of replacing it — the gesture every editor uses.
+     *
+     * ⚠️ READ OFF `nativeEvent`, NOT off the R3F event. R3F builds its event by SPREADING the DOM
+     * one, and `shiftKey` is a getter on the prototype — a spread copies own properties only, so
+     * `e.shiftKey` is silently `undefined` and every shift-click behaves like a plain click. Nothing
+     * throws; multi-select simply never happens. */
+    const mod = e.nativeEvent ?? e;
+    onSelect(obj.id, { add: !!(mod.shiftKey || mod.metaKey || mod.ctrlKey) });
     if (editing) return;                 // a drag would fight the caret
     const hit = planeHit(e.ray);
     if (!hit) return;
+    /* ⚠️ THE WHOLE SELECTION'S START POSITIONS ARE SNAPSHOT HERE, not just this piece's. A group
+       moves by ONE delta applied to where each member STARTED — the same shape `moveGroupStickers`
+       uses. Reading each member's current position every frame instead compounds rounding and, worse,
+       lets the snap pull members together until a group collapses onto itself. */
+    onDragStart?.(obj.id);
     grab.current = { dx: obj.x - hit.x, dy: obj.y - hit.y };
     // ⚠️ Orbit off for the duration, or one drag both moves the card and swings the camera.
     if (controls) controls.enabled = false;
@@ -232,7 +245,7 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
    * to stay fixed while its size changes — which is exactly what a re-cut word does not do. */
   const sizeStart = (e) => {
     e.stopPropagation();
-    onSelect(obj.id);
+    onSelect(obj.id, { add: false });
     const hit = planeHit(e.ray);
     if (!hit) return;
     const r = Math.hypot(hit.x - obj.x, hit.y - obj.y);
@@ -268,8 +281,19 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
     obj.offset > 0 && parts ? offsetParts(parts, obj.offset * obj.size) : null
   ), [obj.kind, obj.offset, obj.size, parts]);
 
-  const geos = useMemo(() => extrude(parts, 0), [parts]);
-  const backGeos = useMemo(() => extrude(backParts, -CARD_THICK), [backParts]);
+  /* ⚠️ A BAND AND ITS FACE ARE TWO SUB-LAYERS, exactly as `topperSheets` orders them for the cake.
+   *
+   * The band used to be pushed back a whole CARD_THICK — ten times the gap between layers — so a
+   * word's outline sank behind everything under it. On "Ava" the plaque simply swallowed the name's
+   * band and the studio showed a plain white word while the CAKE showed the outline correctly: the
+   * two disagreed about where a band sits, which is the divergence INVARIANTS #15 exists to stop.
+   *
+   * Band at 2n, face at 2n+1, so a band is always in front of everything BELOW its object and always
+   * behind its own face. The whole stack is still about one card thick. */
+  const bandZ = layer * 2 * LAYER_Z;
+  const faceZ = (layer * 2 + 1) * LAYER_Z;
+  const geos = useMemo(() => extrude(parts, faceZ), [parts, faceZ]);
+  const backGeos = useMemo(() => extrude(backParts, bandZ), [backParts, bandZ]);
   useEffect(() => () => { geos.forEach(g => g.dispose()); backGeos.forEach(g => g.dispose()); },
     [geos, backGeos]);
 
@@ -287,7 +311,7 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
   if (!geos.length || !box) return null;
 
   return (
-    <group position={[obj.x, obj.y, layer * LAYER_Z]}>
+    <group position={[obj.x, obj.y, 0]}>
       {backGeos.map((g, i) => (
         <mesh key={`b${i}`} geometry={g} castShadow receiveShadow
           onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
@@ -335,8 +359,13 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
               colours that is not a small thing. */}
           <SelectionBox width={box.w * 1.06} height={box.h * 1.12} depth={CARD_THICK * 3} />
           {/* A grip on each corner, so the nearest one is always to hand whichever way the piece
-              is sitting. All four do the same thing — the scale is about the centre. */}
-          {[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => (
+              is sitting. All four do the same thing — the scale is about the centre.
+
+              ⚠️ NOT WHILE SEVERAL ARE SELECTED. Resizing one member of a group is not what a grip on
+              a group means, and resizing the group is a different piece of work with its own law
+              (every member scales about the GROUP's centre, so the spacing between them scales too).
+              Grips that did the first while looking like the second would be worse than none. */}
+          {showHandles && [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => (
             <mesh key={`${sx}${sy}`}
               position={[sx * box.w * 0.53, sy * box.h * 0.56, CARD_THICK * 2]}
               onPointerDown={sizeStart} onPointerMove={sizeMove}
@@ -426,7 +455,7 @@ const inputStyle = {
   border: '1.5px solid #E2E8E3', fontFamily: 'inherit', fontSize: 13.5,
 };
 
-function Properties({ obj, onChange, onDelete }) {
+function Properties({ obj, onChange, onDelete, grouped = false, onUngroup }) {
   const [wheel, setWheel] = useState(null);
   const set = (patch) => onChange(obj.id, patch);
 
@@ -466,6 +495,14 @@ function Properties({ obj, onChange, onDelete }) {
       <Slide label="Size" value={obj.size} min={0.25} max={2.6} step={0.02} onChange={v => set({ size: v })}
         fmt={v => v.toFixed(2)} />
 
+      {/* ⚠️ ONLY WHERE IT DOES SOMETHING, and the geometry is asked rather than the family named. A
+          circle stretched to a wide box is an ellipse and a heart is a squashed cartoon, so both
+          refuse — offering the control there would be a slider that moves and changes nothing. */}
+      {obj.kind === 'shape' && followsBox(obj.family) && (
+        <Slide label="How wide" value={obj.ratio ?? 1} min={0.4} max={3.2} step={0.05}
+          onChange={v => set({ ratio: v })} fmt={v => `${v.toFixed(2)}x`} />
+      )}
+
       <Colour label="Colour" value={obj.colour} onChange={v => set({ colour: v })}
         open={wheel === 'c'} onToggle={() => setWheel(wheel === 'c' ? null : 'c')} />
 
@@ -481,6 +518,18 @@ function Properties({ obj, onChange, onDelete }) {
           open={wheel === 'o'} onToggle={() => setWheel(wheel === 'o' ? null : 'o')} />
       )}
 
+      {/* ⚠️ A GROUPED PIECE SAYS SO HERE. Clicking one selects the whole group, so if you have
+          landed on this panel at all you selected it another way — and the question "why does this
+          drag its neighbours" needs an answer where you are looking, not in a menu. */}
+      {grouped && (
+        <button type="button" onClick={onUngroup}
+          style={{ width: '100%', marginTop: 4, minHeight: 38, borderRadius: 9, cursor: 'pointer',
+            fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, color: '#8A6320',
+            background: '#FDF3E7', border: '1.5px solid #F0DCC0' }}>
+          Ungroup
+        </button>
+      )}
+
       <button type="button" onClick={() => onDelete(obj.id)}
         style={{ width: '100%', marginTop: 10, minHeight: 42, borderRadius: 9, cursor: 'pointer',
           fontFamily: 'inherit', fontSize: 12, fontWeight: 800, color: '#8A6320',
@@ -491,12 +540,15 @@ function Properties({ obj, onChange, onDelete }) {
   );
 }
 
-function RailButton({ onClick, title, children, wide = false }) {
+/* `compact` trims the row height for the presets. ⚠️ It exists because the rail RAN OUT: with the
+   presets added, the last one sat below the fold on a laptop and the only way to know it was there
+   was to scroll a column that gives no sign it scrolls. A hidden example is no example. */
+function RailButton({ onClick, title, children, wide = false, compact = false }) {
   return (
     <button type="button" onClick={onClick} title={title} aria-label={title}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-        width: wide ? '100%' : 46, minHeight: 46, borderRadius: 10, cursor: 'pointer',
+        width: wide ? '100%' : 46, minHeight: compact ? 38 : 46, borderRadius: 10, cursor: 'pointer',
         fontFamily: 'inherit', fontSize: 15, fontWeight: 800, color: '#3D5A44',
         background: '#fff', border: '1.5px solid #E2E8E3',
       }}>
@@ -550,12 +602,35 @@ function ThumbFit({ active, target }) {
   return null;
 }
 
+/* The picture on a preset button: the real outlines, drawn flat. See presetPaths — it is the same
+   function the cake's shapes come from, so this cannot drift from what gets made. */
+function PresetIcon({ objects, font, size = 46 }) {
+  const built = useMemo(() => presetPaths(objects, font), [objects, font]);
+  if (!built) return null;
+  return (
+    /* ⚠️ NOT `overflow: visible`. A two-line topper is far wider than it is tall, and letting it
+       spill put "Happy Birthday" straight through the button's own label. The default
+       preserveAspectRatio already fits a wide piece inside a square box. */
+    <svg viewBox={built.viewBox} width={size} height={size}
+      style={{ display: 'block', overflow: 'hidden' }} aria-hidden="true">
+      {/* evenodd, so a hole in a letter — the middle of an O — stays a hole. */}
+      {built.paths.map(p => <path key={p.key} d={p.d} fill={p.colour} fillRule="evenodd" />)}
+    </svg>
+  );
+}
+
 export default function TopperComposer({
   open = true, apiClient = null, openWith = null, preset = null, onSave, onCancel,
 }) {
   const isMobile = useNarrow();
   const [objects, setObjects] = useState([]);          // ⚠️ EMPTY. Nothing is on the canvas until asked for.
-  const [selectedId, setSelected] = useState(null);
+  /* ⚠️ A LIST, BECAUSE A GROUP HAS TO BE MADE BEFORE IT CAN BE MOVED. One id could express "which
+   * piece" but never "these two", so grouping needs the selection itself to hold more than one.
+   * `selectedId` below stays as the derived single case, which is what the properties panel wants:
+   * the controls for one piece are meaningless spread across three. */
+  const [selectedIds, setSelectedIds] = useState([]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const dragFrom = useRef(null);
   const [editingId, setEditing] = useState(null);
   /* ⚠️ FLAT IS THE WORKING VIEW; 3D IS A LOOK, and they are two different jobs. Composing needs a
    * surface that does not move: an orbit-able perspective camera means one stray drag skews the grid,
@@ -614,7 +689,7 @@ export default function TopperComposer({
      * a second one does not land exactly on the first and look like nothing happened. */
     const n = objects.length;
     setObjects(o => [...o, { id, x: n * 0.12, y: -n * 0.12, colour: '#F2AEC4', ...obj }]);
-    setSelected(id);
+    setSelectedIds([id]);
     /* New text opens for editing with "TEST" selected, so the first keystroke replaces it. Adding a
      * word and then having to discover how to change it is a step nobody wants. */
     if (obj.kind === 'text') setEditing(id);
@@ -635,7 +710,7 @@ export default function TopperComposer({
   const usePreset = (pre) => {
     const seeded = pre.objects.map(o => ({ ...o, id: nextId.current++ }));
     setObjects(seeded);
-    setSelected(null);
+    setSelectedIds([]);
     setEditing(null);
   };
 
@@ -648,10 +723,67 @@ export default function TopperComposer({
   }, []);
   const remove = useCallback((id) => {
     setObjects(o => o.filter(x => x.id !== id));
-    setSelected(s => (s === id ? null : s));
+    setSelectedIds(ids => ids.filter(x => x !== id));
     setEditing(e => (e === id ? null : e));
   }, []);
   const selected = objects.find(o => o.id === selectedId) ?? null;
+
+  /* ── Selecting, with groups ───────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ CLICKING A GROUPED PIECE SELECTS THE WHOLE GROUP. That is what a group IS — otherwise
+   * "grouped" would mean nothing until you happened to shift-click every member again. Shift still
+   * reaches past it, so a group can be extended or a member released. */
+  const setSelected = useCallback((id, { add = false } = {}) => {
+    setSelectedIds(prev => {
+      if (id == null) return [];
+      const obj = objects.find(o => o.id === id);
+      const family = obj?.groupId
+        ? objects.filter(o => o.groupId === obj.groupId).map(o => o.id)
+        : [id];
+      if (!add) return family;
+      // Shift on something already selected removes it; on anything else, adds it.
+      const has = family.every(f => prev.includes(f));
+      return has ? prev.filter(p => !family.includes(p)) : [...new Set([...prev, ...family])];
+    });
+  }, [objects]);
+
+  /* Snapshot where everything selected STARTED, so a drag applies one delta to all of them rather
+     than each member chasing its own pointer maths. `moveGroupStickers`' shape. */
+  const beginDrag = useCallback((id) => {
+    const ids = selectedIds.includes(id) ? selectedIds : [id];
+    dragFrom.current = Object.fromEntries(
+      objects.filter(o => ids.includes(o.id)).map(o => [o.id, { x: o.x, y: o.y }]));
+  }, [objects, selectedIds]);
+
+  /* ⚠️ THE DELTA COMES FROM THE PIECE BEING DRAGGED, and every other member gets the SAME delta from
+   * where IT started. Moving each member to the pointer would pile them on top of one another;
+   * re-reading current positions each frame would let the centre-snap drag the whole group into the
+   * middle one member at a time. */
+  const moveSelected = useCallback((id, next) => {
+    const from = dragFrom.current;
+    if (!from || !from[id] || Object.keys(from).length < 2) { update(id, next); return; }
+    const dx = next.x - from[id].x, dy = next.y - from[id].y;
+    setObjects(list => list.map(o => (
+      from[o.id] ? { ...o, x: from[o.id].x + dx, y: from[o.id].y + dy } : o)));
+  }, [update]);
+
+  /* ── Grouping ─────────────────────────────────────────────────────────────────────────────────
+   * A `groupId` on each member, exactly as a sticker cluster does it on the cake. Nothing about the
+   * PIECE changes — the geometry never sees it — so a group is purely a statement about what moves
+   * together, and ungrouping leaves every object exactly where it was. */
+  const groupSelected = useCallback(() => {
+    const gid = (crypto.randomUUID?.() ?? `g${Date.now()}`);
+    setObjects(list => list.map(o => (selectedIds.includes(o.id) ? { ...o, groupId: gid } : o)));
+  }, [selectedIds]);
+
+  const ungroupSelected = useCallback(() => {
+    setObjects(list => list.map(o => (selectedIds.includes(o.id) ? { ...o, groupId: null } : o)));
+  }, [selectedIds]);
+
+  // Every selected piece belongs to one group, and there are enough of them for that to mean something.
+  const selectedObjs = objects.filter(o => selectedIds.includes(o.id));
+  const isGrouped = selectedObjs.length > 1
+    && selectedObjs.every(o => o.groupId && o.groupId === selectedObjs[0].groupId);
 
   /* ⚠️ THE OBJECT LIST, and nothing derived from it. See the note at the top: a word is stored as its
    * word, so a later improvement to how words are cut reaches every topper already kept. */
@@ -786,7 +918,7 @@ export default function TopperComposer({
       <div className="tc">
       <style>{`
         .tc { display: flex; height: 62vh; min-height: 340px; overflow: hidden; }
-        .tc > .tcRail { flex: 0 0 96px; display: flex; flex-direction: column; gap: 16; }
+        .tc > .tcRail { flex: 0 0 112px; display: flex; flex-direction: column; gap: 16; overflow-y: auto; }
         .tc > .tcStage { flex: 1; min-width: 0; position: relative; }
         .tc > .tcProps { flex: 0 0 268px; overflow-y: auto; }
         @media (max-width: 820px) {
@@ -824,8 +956,37 @@ export default function TopperComposer({
           </div>
         </div>
 
+        {/* ⚠️ IN THE RAIL, WITH THE OTHER THINGS YOU ADD — not on the empty canvas. On the canvas
+            they were only reachable while it was empty, so the one baker who most needs an example —
+            somebody who added a word, saw it was not what they wanted, and now has no idea what else
+            is possible — was the one baker who could not get at them. Here they sit beside "T" and
+            the shapes, which is what they are: another way to put something on the canvas.
+
+            ⚠️ A STARTING POINT, NEVER A MENU. Picking one drops its pieces on as ordinary objects —
+            retype the word, recolour, drag, delete half of it. Nothing is locked.
+
+            The pictures are cut from the SAME contours the cake is (INVARIANTS #15) — see
+            presetPaths. Icon only, like the shapes: the rail is 96px and the name rides on the
+            tooltip, which is how every other button here already works (INVARIANTS #14). */}
+        <div>
+          <span style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
+            textTransform: 'uppercase', color: '#9AA8A0', marginBottom: 7 }}>Presets</span>
+          {/* ⚠️ TWO COLUMNS, because six will not stack. One per row put the last pair below the fold
+              of a column that gives no sign it scrolls, and a hidden example is not an example — it
+              is the reason "Happy Birthday" was left out once already. Paired, six rows become three
+              and the rail fits a 1280x720 laptop with room to spare. The rail carries 16px of the
+              canvas's width for it, which is a better trade than a preset nobody finds. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+            {TOPPER_PRESETS.map(pre => (
+              <RailButton key={pre.key} onClick={() => usePreset(pre)} title={pre.label} wide compact>
+                <PresetIcon objects={pre.objects} font={blockFont} size={30} />
+              </RailButton>
+            ))}
+          </div>
+        </div>
+
         {objects.length > 0 && (
-          <button type="button" onClick={() => { setObjects([]); setSelected(null); }}
+          <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); }}
             style={{ marginTop: 'auto', minHeight: 40, borderRadius: 9, cursor: 'pointer',
               fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, color: '#8A6320',
               background: '#FDF3E7', border: '1.5px solid #F0DCC0' }}>
@@ -850,16 +1011,18 @@ export default function TopperComposer({
           {!capturing && <Grid />}
           {/* A click on nothing clears the selection, which is what every canvas does and what makes
               the border mean "this one" rather than "the last one you touched". */}
-          <mesh position={[0, 0, -0.05]} onPointerDown={() => { setSelected(null); setEditing(null); }}>
+          <mesh position={[0, 0, -0.05]} onPointerDown={() => { setSelectedIds([]); setEditing(null); }}>
             <planeGeometry args={[GRID_HALF * 2, GRID_HALF * 2]} />
             <meshBasicMaterial visible={false} />
           </mesh>
           <group ref={piecesRef}>
           {objects.map((o, i) => (
             <Piece key={o.id} obj={o} layer={i} font={fonts[o.face] ?? blockFont}
-              selected={!capturing && o.id === selectedId}
+              selected={!capturing && selectedIds.includes(o.id)}
               editing={!capturing && o.id === editingId}
-              onSelect={setSelected} onMove={update} onEdit={setEditing} onChange={update} />
+              showHandles={selectedIds.length === 1}
+              onSelect={setSelected} onDragStart={beginDrag}
+              onMove={moveSelected} onEdit={setEditing} onChange={update} />
           ))}
           </group>
           <ThumbFit active={capturing} target={piecesRef} />
@@ -877,46 +1040,50 @@ export default function TopperComposer({
           {view3d ? 'Back to flat' : 'See it in 3D'}
         </button>
 
-        {/* ⚠️ AN EMPTY CANVAS CANNOT SELL A CARD TOPPER. "Add text or a shape from the left" names the
-            controls and says nothing about what the thing IS, and a baker who has never seen one
-            cannot want one. So the empty state is a few made toppers.
-
-            ⚠️ THEY ARE A STARTING POINT, NOT A MENU. Picking one drops its pieces on the canvas as
-            ordinary objects — retype the word, recolour, drag, delete half of it. And the row is
-            gone the moment there is anything on the canvas, so it can never read as "these are the
-            toppers you may have".
-
-            The pictures are cut from the SAME contours the cake is (INVARIANTS #15) — see
-            PresetIcon. The canvas behind is where the real one appears the instant it is picked. */}
         {objects.length === 0 && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 14, padding: 16 }}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', pointerEvents: 'none' }}>
             <span style={{ fontSize: 13, color: '#5B6B60', fontFamily: "'Quicksand', sans-serif",
-              fontWeight: 700 }}>
-              Start with one of these, or add text or a shape from the left
+              fontWeight: 700, background: 'rgba(255,255,255,0.82)', padding: '8px 14px',
+              borderRadius: 9 }}>
+              Pick a preset on the left, or add text or a shape
             </span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
-              {TOPPER_PRESETS.map(pre => (
-                <button key={pre.key} type="button" title={pre.label} aria-label={pre.label}
-                  onClick={() => usePreset(pre)}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                    width: 92, padding: '10px 6px', borderRadius: 11, cursor: 'pointer',
-                    fontFamily: "'Quicksand', sans-serif",
-                    border: '1.5px solid #E2E8E3', background: 'rgba(255,255,255,0.94)' }}>
-                  <span style={{ height: 46, display: 'flex', alignItems: 'center' }}>
-                    <PresetIcon objects={pre.objects} font={blockFont} />
-                  </span>
-                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#3D5A44',
-                    lineHeight: 1.25, textAlign: 'center' }}>{pre.label}</span>
-                </button>
-              ))}
-            </div>
           </div>
         )}
       </div>
 
       {/* Only when there is something selected — see the note on Properties. */}
-      {selected && <Properties obj={selected} onChange={update} onDelete={remove} />}
+      {/* ⚠️ ONE PIECE GETS ITS PROPERTIES; SEVERAL GET THE ONE THING THAT APPLIES TO SEVERAL. A
+          colour or a size spread across three pieces is three different answers, so those controls
+          are absent rather than guessing which piece you meant (INVARIANTS #12) — and what IS true
+          of a multi-selection, that it can be grouped, is the only thing offered. */}
+      {selectedIds.length > 1 ? (
+        <div className="tcProps" style={{ padding: 16, background: '#fff',
+          borderLeft: '1px solid #E8EFE9' }}>
+          <h2 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#2C3E33' }}>
+            {selectedIds.length} pieces
+          </h2>
+          <p style={{ margin: '0 0 14px', fontSize: 11.5, lineHeight: 1.5, color: '#5B6B60' }}>
+            {isGrouped
+              ? 'These move together. Drag any one of them and the rest follow.'
+              : 'Group them and they move together — drag any one and the rest follow.'}
+          </p>
+          <button type="button" onClick={isGrouped ? ungroupSelected : groupSelected}
+            style={{ width: '100%', minHeight: 42, borderRadius: 9, cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
+              color: isGrouped ? '#8A6320' : '#fff',
+              background: isGrouped ? '#FDF3E7' : '#3D5A44',
+              border: isGrouped ? '1.5px solid #F0DCC0' : 'none' }}>
+            {isGrouped ? 'Ungroup' : 'Group'}
+          </button>
+          <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+            Hold Shift and tap a piece to add it to the selection, or to drop it.
+          </p>
+        </div>
+      ) : selected ? (
+        <Properties obj={selected} onChange={update} onDelete={remove}
+          grouped={!!selected.groupId} onUngroup={ungroupSelected} />
+      ) : null}
     </div>
     </Panel>
   );
