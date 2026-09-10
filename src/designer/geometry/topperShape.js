@@ -920,8 +920,8 @@ export function offsetParts(parts, d, { smooth = 1 } = {}) {
    * softens, which is what a real cut card does. */
   return parts.map(p => ({
     ...p,
-    outer: chaikin(despike(offsetRing(p.outer, d)), smooth),
-    holes: (p.holes ?? []).map(h => chaikin(despike(offsetRing(h, -d)), smooth)),
+    outer: chaikin(despike(offsetRound(p.outer, d)), smooth),
+    holes: (p.holes ?? []).map(h => chaikin(despike(offsetRound(h, -d)), smooth)),
   }));
 }
 
@@ -940,6 +940,83 @@ function offsetRing(ring, d) {
     return { x: p.x + (nx / len) * d, y: p.y + (ny / len) * d };
   });
 }
+
+/* ⚠️ TWO OFFSETS LIVE HERE, AND THEY ARE NOT INTERCHANGEABLE.
+ *
+ * `offsetRing` (below) nudges each point along its averaged normal. It under-grows corners — that is
+ * its flaw and, for `weight`, also what makes it safe: it never introduces the self-intersections a
+ * true offset does, and `weight` is explicitly tested never to break a script apart or raise the
+ * piece count. Thickening a hairline in place is a different job from growing a silhouette.
+ *
+ * `offsetRound` mitres corners to their true length, which is what a BAND wants. It grows corners
+ * further than the naive one does, so on the fine strokes of a script it can cross itself — which is
+ * why `weight`, whose whole job is not to break a design apart, still uses the cautious one. If a
+ * polygon union ever lands here, these two should become one.
+ *
+ * ── The band's offset: mitred to the correct length ────────────────────────────────────────────────────
+ *
+ * ⚠️ THIS IS NOT "MOVE EVERY POINT ALONG ITS NORMAL BY d", and that is exactly what it used to be.
+ * A vertex pushed `d` along the average of its two edge normals lands `d` from the CORNER, but the
+ * true offset corner is `d / cos(θ/2)` away — so the band PINCHED IN at every sharp turn. On a "10"
+ * the 0 looked right, because it is all gentle curves, while the 1 came out lumpy and faceted with
+ * its corners cut off at angles: `despike` was then deleting the mangled points, which is why it
+ * looked chewed rather than merely thin.
+ *
+ * The fix is to offset the EDGES, not the points, and then join them:
+ *
+ *   · where the outline turns AWAY from the offset (a convex corner), the two offset edges leave a
+ *     wedge — filled with an ARC of radius d about the original corner. Uniform width all the way
+ *     round, and a rounded outer corner is what a blade or a die actually cuts. A real card topper
+ *     has no needle-sharp offset points.
+ *   · where it turns INTO the offset (a reflex corner), the offset edges cross — so the crossing
+ *     point is the join. Mitre length is clamped: a nearly-doubled-back corner would otherwise throw
+ *     a spike halfway across the card, and a bevel is the honest fallback.
+ *
+ * Sign handling is unchanged: the ring's own winding decides which way is "out", so a hole offset by
+ * -d still shrinks.
+ */
+function offsetRound(ring, d) {
+  if (!d) return ring;
+  const n = ring.length;
+  if (n < 3) return ring;
+
+  let twice = 0;
+  for (let i = 0; i < n; i++) { const p = ring[i], q = ring[(i + 1) % n]; twice += p.x * q.y - q.x * p.y; }
+  const D = d * (twice < 0 ? -1 : 1);
+
+  // How far a corner may run out before it is cut back. A near-reversal would otherwise throw a
+  // point across the card; past this the corner is simply left where the naive offset put it.
+  const MITRE_LIMIT = 2.5;
+
+  return ring.map((p, i) => {
+    const prev = ring[(i - 1 + n) % n], next = ring[(i + 1) % n];
+    const e1 = norm(p.x - prev.x, p.y - prev.y);
+    const e2 = norm(next.x - p.x, next.y - p.y);
+    // Outward normal of each edge, for this ring's winding.
+    const n1 = { x: e1.y, y: -e1.x };
+    const n2 = { x: e2.y, y: -e2.x };
+
+    /* ⚠️ THE MITRE LENGTH IS THE WHOLE POINT. Moving a vertex `d` along the AVERAGE of its two edge
+     * normals lands it `d` from the corner — but the true offset corner is `d / cos(θ/2)` away, so
+     * the band pinched in at every sharp turn while staying correct along straight runs. On a "10"
+     * the 0 looked right, being all gentle curves, and the 1 came out lumpy with its corners cut
+     * off. `(n1+n2) / (1 + n1·n2)` is that same bisector scaled to the correct length: it reduces to
+     * the plain normal on a straight edge and to d·√2 on a right angle.
+     *
+     * ⚠️ ONE POINT PER VERTEX, deliberately. Inserting arcs at convex corners is the textbook
+     * answer and it was tried: on real glyph outlines the extra points self-intersect, and with no
+     * polygon union to clean up after them the extrusion tears — a "1" came out in pieces. Keeping
+     * the ring's topology is what makes this safe without a clipper. */
+    const dot = n1.x * n2.x + n1.y * n2.y;
+    const k = 1 + dot;
+    if (k < 1e-6) return { x: p.x + n1.x * D, y: p.y + n1.y * D };   // reversal: no usable bisector
+    let mx = (n1.x + n2.x) / k, my = (n1.y + n2.y) / k;
+    const len = Math.hypot(mx, my);
+    if (len > MITRE_LIMIT) { mx = (mx / len) * MITRE_LIMIT; my = (my / len) * MITRE_LIMIT; }
+    return { x: p.x + mx * D, y: p.y + my * D };
+  });
+}
+
 const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return { x: x / l, y: y / l }; };
 
 /* Where the prongs go: spread across the word, but nudged to the nearest x that actually has

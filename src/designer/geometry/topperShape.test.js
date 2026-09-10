@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperShapes, pieceCount, components, bridgeLoose } from './topperShape.js';
+import { topperShapes, pieceCount, components, bridgeLoose, offsetParts } from './topperShape.js';
 import greatVibes from './typefaces/great-vibes.json';
 
 // ── An acrylic topper has to be ONE piece ────────────────────────────────────────────────────────
@@ -605,5 +605,56 @@ describe('fit — letters that meet, instead of a bar bolted across the gap', ()
     const words = topperShapes(SCRIPT, 'HappyBirthday', { height: 1, tracking: -0.2, lines: 1 });
     expect(tight.width).toBeLessThan(loose.width);
     expect(tight.width).toBeGreaterThan(words.width);
+  });
+});
+
+/* ── The offset band must not PINCH at corners ─────────────────────────────────────────────────
+ *
+ * ⚠️ THE BUG THIS CATCHES WAS VISIBLE AND UNMEASURED. `offsetRound`'s predecessor moved each VERTEX
+ * along the average of its two edge normals by `d`. Along a straight run that is right; at a corner
+ * it lands the point `d` from the CORNER rather than `d` from the two EDGES, so the band narrowed to
+ * `d·cos(θ/2)` — at a right angle, 71% of its proper width. A "10" showed it exactly: the 0 is all
+ * gentle curves and looked correct, while the 1 came out lumpy with its corners cut off.
+ *
+ * A MITRE is what is shipped, so the corner deliberately runs out past `d` — the band is `d` wide
+ * measured off each edge, and the corner point sits at `d / cos(θ/2)`. So the assertion is a FLOOR
+ * (nothing thinner than d) and a ceiling at the mitre limit, never uniformity.
+ */
+describe('offsetParts — the band never pinches', () => {
+  const distToSegment = (p, a, b) => {
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const len2 = vx * vx + vy * vy;
+    const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2)) : 0;
+    return Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
+  };
+  const distToRing = (p, ring) => Math.min(...ring.map((a, i) => distToSegment(p, a, ring[(i + 1) % ring.length])));
+
+  // A square has the sharpest corner a letterform will hand it; the L adds a reflex one.
+  const square = [{ x: -1, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 1 }, { x: -1, y: 1 }];
+  const ell = [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 0, y: 2 }];
+
+  it.each([['square', square], ['L-shape', ell]])('never grows a %s by less than the offset', (_n, ring) => {
+    const d = 0.2;
+    const [out] = offsetParts([{ outer: ring, holes: [] }], d, { smooth: 0 });
+    const widths = out.outer.map(p => distToRing(p, ring));
+    // The floor is the bug: the old offset gave 0.707d at every right angle.
+    expect(Math.min(...widths)).toBeGreaterThan(d * 0.95);
+    // And nothing runs away — the mitre is clamped.
+    expect(Math.max(...widths)).toBeLessThan(d * 2.6);
+  });
+
+  it('mitres a right angle to its true length', () => {
+    const d = 0.2;
+    const [out] = offsetParts([{ outer: square, holes: [] }], d, { smooth: 0 });
+    const corner = out.outer.find(p => p.x > 1 && p.y > 1);
+    expect(corner).toBeTruthy();
+    // d / cos(45°) = d·√2 from the corner it was grown from. The old code put it at d.
+    expect(Math.hypot(corner.x - 1, corner.y - 1)).toBeCloseTo(d * Math.SQRT2, 3);
+  });
+
+  it('grows the outline outward, never inward', () => {
+    const [out] = offsetParts([{ outer: square, holes: [] }], 0.2, { smooth: 0 });
+    expect(Math.max(...out.outer.map(p => p.x))).toBeGreaterThan(1);
+    expect(Math.min(...out.outer.map(p => p.x))).toBeLessThan(-1);
   });
 });
