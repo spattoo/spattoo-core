@@ -19,6 +19,60 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
  * If this works, metals can be lit by the studio map while fondant and faux balls keep lebombo, and
  * the glare is fixable without re-lighting the cake. If it does not, the idea is dead and the next
  * candidate is a layers split or a second render pass. */
+/* ⚠️ `?lever=1` — CONNECT `envMapIntensity`, WITHOUT CHANGING THE LIGHT.
+ *
+ * three.js discards a material's own `envMapIntensity` and substitutes `scene.environmentIntensity`
+ * whenever that material's `envMap` is null:
+ *
+ *     if ((material.isMeshStandardMaterial || …) && material.envMap === null && scene.environment !== null)
+ *       m_uniforms.envMapIntensity.value = scene.environmentIntensity;
+ *
+ * So handing every material the SCENE'S OWN environment texture changes nothing about the light —
+ * same map, same orientation, same everything — and only stops that substitution, letting each
+ * surface's authored value apply. That makes this the clean half of the experiment: whatever moves
+ * when `?lever=1` is on is a value somebody already wrote and has never once seen take effect.
+ *
+ * ⚠️ It assigns the texture the SCENE owns and never disposes it. The earlier attempt at per-material
+ * environments built its OWN PMREM, and disposing that produced black toppers after an
+ * add/remove/re-add. Nothing here creates or frees a texture.
+ *
+ * Every frame rather than once: R3F rebuilds materials on prop changes, and a one-shot effect misses
+ * the rebuild — which is how a previous spike concluded a per-material env "did not work". */
+function EnvLever({ on }) {
+  const { scene } = useThree();
+  useFrame(() => {
+    if (!on || !scene.environment) return;
+    scene.traverse((o) => {
+      const m = o.material;
+      if (!m || !m.isMeshStandardMaterial) return;      // physical extends standard
+      if (m.envMap !== scene.environment) { m.envMap = scene.environment; m.needsUpdate = true; }
+    });
+  });
+  return null;
+}
+
+/* ⚠️ `?ball=1` — A POLISHED GOLD SPHERE, the case that must NOT break.
+ *
+ * The faux balls are the reason the studio HDRI was reverted: they went matte under it and were
+ * reported from dev the same afternoon. They are catalogue elements and cannot be placed in this
+ * harness, so this is a bare sphere carrying their material question — polished metal, strongly
+ * CURVED — sitting where it is easy to sample. It stands in for the geometry class, not for the
+ * element: it says whether curved polished metal survives a change, which is the thing that was
+ * lost last time. Do not read it as a faux ball's exact look.
+ *
+ * Numbers match the gold BOARD (metalness 0.75, roughness 0.15), the one metal in this scene nobody
+ * has ever called dull, so the sphere and the board differ by GEOMETRY alone. */
+function GoldBall({ on }) {
+  if (!on) return null;
+  return (
+    <mesh position={[0.95, 1.62, 0.55]} castShadow>
+      <sphereGeometry args={[0.26, 48, 32]} />
+      <meshStandardMaterial color="#D4AF37" metalness={0.75} roughness={0.15}
+        envMapIntensity={Number(_q.get('ballenv') ?? 1)} />
+    </mesh>
+  );
+}
+
 /* Rotating the scene's environment, from the harness rather than from the product. This used to be
  * a `?envrot=` parameter inside `CakeCanvas` — dev tooling that shipped and stayed. `scene.environ-
  * mentRotation` is settable from here, so the sweep keeps working and production keeps its API. */
@@ -280,6 +334,8 @@ function App() {
         sample. Matching it is not a detail. */}
     <CakePreview design={shown} shadows autoRotate={!_q.has('still')}>
       <SceneProbe />
+      <EnvLever on={_q.has('lever')} />
+      <GoldBall on={_q.has('ball')} />
       {/* ⚠️ A PATH WITH A SLASH GOES TO THE PROXIED CDN, same convention as `?env=`, so a per-material
           map can be compared against the bytes production actually serves rather than a local copy
           that can go stale: `?permat=code/env/studio_256.hdr`. A bare name still reads /_local. */}
