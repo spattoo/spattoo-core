@@ -1365,7 +1365,10 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
       const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
       bb = { min: geo.boundingBox.min.clone(), size, center };
     }
-    applyGradient(matRef.current, gradient, bb, tierAlbedo);
+    /* ⚠️ The finish's particle map goes in as a MASK, or the gradient paints over the gold leaf and
+     * the luster dust it is stamped alongside. `emissiveMap` is the compositor's clean particle
+     * mask — white on a shard or fleck, black on bare wall. */
+    applyGradient(matRef.current, gradient, bb, tierAlbedo, finishMaps?.emissiveMap ?? null);
     /* Stripes ride the SAME bbox and the same seam as the gradient — see shared/color/stripeMaterial.js.
      *
      * ⚠️ Order matters, and it is the reason these are not merged yet: both patch `onBeforeCompile` and
@@ -1373,9 +1376,9 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
      * tier carrying both renders as stripes. The UI does not let a baker set both — the mode picker is
      * one choice — but a design saved by an older client can, and silently picking one beats a wall
      * that flickers between them depending on which effect re-ran. */
-    applyStripes(matRef.current, stripes, bb, tierAlbedo);
+    applyStripes(matRef.current, stripes, bb, tierAlbedo, finishMaps?.emissiveMap ?? null);
     applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
-  }, [gradient, stripes, glaze, geoSig]);
+  }, [gradient, stripes, glaze, geoSig, finishMaps]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.

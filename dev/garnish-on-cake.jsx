@@ -159,6 +159,16 @@ const design = {
    * rather than beside `nameBlocks`. Single-colour rainbow bands on purpose: a measurement wants one
    * colour it asked for, not six it has to disentangle. */
   tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
+            /* ⚠️ `?grad=1` — A GRADIENT WALL, and it is not a cosmetic option. The gradient patches
+               the shader and writes `diffuseColor.rgb` outright, which REPLACES whatever the albedo
+               map put there — including a gold-leaf shard. A finish judged on a solid-colour tier
+               therefore says nothing about the same finish on a gradient one, and that is exactly how
+               a foil fix measured good here and shipped looking wrong: reported 2026-09-10 with the
+               shards taking the cake's pink→lilac instead of being gold. */
+            gradient: _q.has('grad')
+              ? { mode: 'vertical', balance: 0.5,
+                  colors: [_q.get('grad1') || '#E8598F', _q.get('grad2') || '#9B6FD4'] }
+              : null,
             clouds: _q.has('cloud')
               ? [{ id: 'cl1', surface: 'top', u: 0.5, v: 0.3, scale: 1.6,
                    color: _q.get('cloudcolor') || '#FFFFFF' }]

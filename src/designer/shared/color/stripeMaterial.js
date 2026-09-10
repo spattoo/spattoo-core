@@ -174,6 +174,8 @@ const FRAG_COMMON = [
   'uniform vec3  uSCenter;',
 ].join('\n');
 
+const FRAG_COMMON_MASKED = FRAG_COMMON + '\nuniform sampler2D uSMask;';
+
 /* Progressive mix, stripe by stripe.
  *
  * Each boundary blends the accumulated colour into the next one with a smoothstep. Walking them in
@@ -185,7 +187,7 @@ const FRAG_COMMON = [
  * epsilon — without it the crisp rainbow, the very look someone reaches for first, renders as
  * garbage on some drivers while looking fine on others.
  */
-const FRAG_COLOR = `#include <color_fragment>
+const stripeBody = (masked) => `#include <color_fragment>
 {
   float bt = (vStripeLocal.y - uSMin.y) / max(uSSize.y, 1e-4);
 
@@ -206,8 +208,18 @@ const FRAG_COLOR = `#include <color_fragment>
     float e = uSEdges[i];
     bcol = mix(bcol, uSColors[i + 1], smoothstep(e - half_, e + half_, bt));
   }
-  diffuseColor.rgb = bcol;
+  ${masked
+    ? `float sMask = texture2D(uSMask, vMapUv).r;
+  diffuseColor.rgb = mix(bcol, diffuseColor.rgb, sMask);`
+    : 'diffuseColor.rgb = bcol;'}
 }`;
+
+/* ⚠️ SAME RULE AS THE GRADIENT, and for the same reason — see the long note in gradientMaterial.js.
+ * `<color_fragment>` runs after `<map_fragment>`, so on a tier carrying gold leaf or luster dust the
+ * shards are already IN `diffuseColor` and an outright write repaints them in the cake's colour.
+ * The mask is the finish's particle map; the wall gets the stripes and the particles keep theirs. */
+const FRAG_COLOR        = stripeBody(false);
+const FRAG_COLOR_MASKED = stripeBody(true);
 
 /* Apply (or remove) stripes on an existing MeshStandard/MeshPhysical material.
  *
@@ -220,7 +232,10 @@ const FRAG_COLOR = `#include <color_fragment>
  * ⚠️ STRIPES ARE CHOSEN COLOURS TOO. A striped wall replaces the base colour per pixel, so without
  * this a striped tier renders uncorrected beside a solid tier that is corrected — the same bypass
  * gradients had. Absent = identity, right for any surface that is not correcting its albedo. */
-export function applyStripes(material, stripes, bbox, albedo = (c) => c) {
+/* `mask` — the finish's particle map when the wall carries one; see the note above FRAG_COLOR. It
+ * also selects which program compiles, since the masked snippet reads `vMapUv` and that varying
+ * exists only on a material with a map. */
+export function applyStripes(material, stripes, bbox, albedo = (c) => c, mask = null) {
   if (!material) return;
   const active = areStripesActive(stripes) && !!bbox;
 
@@ -243,10 +258,14 @@ export function applyStripes(material, stripes, bbox, albedo = (c) => c) {
   const blend = blendWidth(stripes.softness ?? 0.35, count, stripes.weights);
   const wob   = wobbleAmplitude(stripes.wobble, count, stripes.weights);
 
+  const masked = !!mask;
   const u = material.userData.__stripeUniforms;
   // Already patched: just push the new values. Recompiling on every colour tweak is what makes a
-  // colour picker feel like it is chewing through treacle.
-  if (u && material.userData.__stripesPatched) {
+  // colour picker feel like it is chewing through treacle. ⚠️ Unless the MASK has appeared or gone —
+  // that swaps the snippet, so it has to fall through to a recompile or a tier that just gained its
+  // first flake keeps painting over it.
+  if (u && material.userData.__stripesPatched && material.userData.__stripesMasked === masked) {
+    u.uSMask.value = mask ?? null;
     for (let i = 0; i < MAX_STRIPES; i++) u.uSColors.value[i].set(albedo(colors[Math.min(i, count - 1)]));
     for (let i = 0; i < MAX_STRIPES; i++) u.uSEdges.value[i] = edges[i] ?? 1;
     u.uSCount.value  = count;
@@ -267,6 +286,7 @@ export function applyStripes(material, stripes, bbox, albedo = (c) => c) {
     uSMin:    { value: bbox.min.clone() },
     uSSize:   { value: bbox.size.clone() },
     uSCenter: { value: bbox.center.clone() },
+    uSMask:   { value: mask ?? null },
   };
 
   const prev = material.onBeforeCompile;
@@ -278,10 +298,11 @@ export function applyStripes(material, stripes, bbox, albedo = (c) => c) {
       .replace('#include <common>', VERT_COMMON)
       .replace('#include <begin_vertex>', VERT_BEGIN);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', FRAG_COMMON)
-      .replace('#include <color_fragment>', FRAG_COLOR);
+      .replace('#include <common>', masked ? FRAG_COMMON_MASKED : FRAG_COMMON)
+      .replace('#include <color_fragment>', masked ? FRAG_COLOR_MASKED : FRAG_COLOR);
   };
   material.userData.__stripeUniforms = uniforms;
   material.userData.__stripesPatched = true;
+  material.userData.__stripesMasked = masked;
   material.needsUpdate = true;
 }
