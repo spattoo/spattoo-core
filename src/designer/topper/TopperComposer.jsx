@@ -177,11 +177,19 @@ const LAYER_Z = CARD_THICK * 0.1;
 
 /* Corner grips on the selection box. Small squares in world units — the working camera is
  * orthographic and fixed, so a world size IS a screen size and there is nothing to compensate for. */
-const HANDLE = 0.075;
+/* ⚠️ A GRIP IS SIZED IN PIXELS, NOT IN THE SHAPE'S UNITS. It used to be 0.075 units, which is
+ * whatever the zoom makes it — about 11px on a desktop and 9 on a phone, where a finger is 40. With
+ * the size slider gone the grips are the ONLY way to resize, so a grip nobody can hit is a piece
+ * nobody can resize. Converted through the camera's own zoom, it stays the same size on screen
+ * however far in the view is. */
+const HANDLE_PX = 26;
 
 function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, onChange,
                  onDragStart, showHandles = true }) {
-  const { controls } = useThree();
+  const { controls, camera } = useThree();
+  // Pixels back into the shape's own units. Read at render: the zoom only changes when the stage is
+  // resized, which re-renders everything anyway.
+  const HANDLE = HANDLE_PX / (camera?.zoom || 190);
   const grab = useRef(null);
   const sizing = useRef(null);
 
@@ -393,8 +401,8 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
  */
 function Row({ label, children }) {
   return (
-    <label style={{ display: 'block', marginBottom: 12 }}>
-      <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#3D5A44', marginBottom: 5 }}>
+    <label style={{ display: 'block', marginBottom: 9 }}>
+      <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#3D5A44', marginBottom: 4 }}>
         {label}
       </span>
       {children}
@@ -495,8 +503,10 @@ function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embed
         </Row>
       )}
 
-      <Slide label="Size" value={obj.size} min={0.25} max={2.6} step={0.02} onChange={v => set({ size: v })}
-        fmt={v => v.toFixed(2)} />
+      {/* ⚠️ THERE IS NO SIZE SLIDER. The corner grips already resize the piece, and two controls for
+          one value means neither is THE control — you reach for whichever you happen to remember,
+          and the panel grows a row that the canvas wanted. The same argument that took the text
+          field out of this panel when the words became editable in place. */}
 
       {/* ⚠️ ONLY WHERE IT DOES SOMETHING, and the geometry is asked rather than the family named. A
           circle stretched to a wide box is an ellipse and a heart is a squashed cartoon, so both
