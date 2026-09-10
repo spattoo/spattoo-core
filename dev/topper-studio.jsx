@@ -15,7 +15,14 @@ const q = new URLSearchParams(location.search);
 
 /* Resolves, slowly enough that "Saving…" can be caught in a screenshot. It saves nothing: this
    harness is about the footer, and a fake row in a real table helps nobody. */
-const apiClient = { saveTopper: async () => new Promise(r => setTimeout(r, 1200)) };
+const apiClient = {
+  saveCardTopper: async ({ thumbBase64 }) => {
+    /* Handed to the page so the TILE can be looked at — it is the thing the shelf will show, and it
+       is captured off the working canvas, so the grid and the selection have to be gone from it. */
+    window.__tile = thumbBase64 ?? null;
+    return new Promise(r => setTimeout(r, 1200));
+  },
+};
 
 const KEPT = {
   name: 'A kept topper',

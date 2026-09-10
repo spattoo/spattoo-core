@@ -19,8 +19,14 @@ import { chromium } from 'playwright';
 /* `still=1` — the page rotates like production unless a measurement asks it not to. */
 /* FINISH= picks which of the five topper finishes is on the cake. They share one gradient, so a
  * change judged on gold has to be checked on the others before it ships as a change to the table. */
+/* CAM= sets the camera HEIGHT. ⚠️ A topper's look is not one number, it is a curve over this: a flat
+ * letter under a matcap samples the baked picture by its normal in VIEW space, so the eye's height
+ * decides WHICH part of that picture the whole word shows. Judging at one height is how a change that
+ * improved a 3/4 view while darkening the head-on view got shipped as an improvement. Sweep it. */
 const URL = `http://localhost:5190/garnish-on-cake.html?still=1${
-  process.env.FINISH ? `&topperfinish=${process.env.FINISH}` : ''}`;
+  process.env.FINISH ? `&topperfinish=${process.env.FINISH}` : ''}${
+  process.env.CAM ? `&cam=${process.env.CAM}` : ''}${
+  process.env.SIDE ? '&topperside=1' : ''}`;
 
 /* Two sweeps, because there turned out to be two questions. DEG rotates the map; ENV swaps it.
  * ⚠️ THE SECOND ONE IS THE REAL ONE. Rotation, roughness and envIntensity were each swept to

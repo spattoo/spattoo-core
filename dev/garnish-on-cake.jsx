@@ -337,7 +337,15 @@ function App() {
         so every colour number here was measured on an unshadowed cake while a baker sees a shadowed
         one. A cast shadow lands on the tier wall, which is the exact patch the colour scripts
         sample. Matching it is not a detail. */}
-    <CakePreview design={shown} shadows autoRotate={!_q.has('still')}>
+    {/* ⚠️ `?cam=` SWEEPS THE CAMERA'S HEIGHT, and the topper cannot be judged without it. A matcap is
+        read by the surface normal IN VIEW SPACE, so raising or lowering the eye moves WHERE on the
+        baked picture a flat letter samples — the piece genuinely looks different from a low view than
+        from a high one, with nothing about it changed. Reported from the app 2026-09-10: "its front
+        view is dull, other angle view is better", with two screenshots that differ only in height.
+        Every earlier topper number here was taken at the default 4.85 and is therefore a reading of
+        ONE row of that sweep. `?cam=2.2` is about level with the lettering; 7.5 looks down on it. */}
+    <CakePreview design={shown} shadows autoRotate={!_q.has('still')}
+      cameraPosition={_q.has('cam') ? [0, Number(_q.get('cam')), 6.95] : undefined}>
       <SceneProbe />
       <EnvLever on={_q.has('lever')} />
       <GoldBall on={_q.has('ball')} />

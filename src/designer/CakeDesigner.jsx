@@ -1874,6 +1874,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       .catch(() => {});
     return () => { alive = false; };
   }, [apiClient, garnishStudio]);
+
+  /* Kept card toppers, same shelf and same reload rule as the garnishes above.
+   *
+   * ⚠️ A SECOND STATE FROM `pendingTopper`, AND THAT IS THE POINT. Both put a composition into the
+   * studio and they are different doors: this one is a topper the baker ALREADY KEPT, so the studio
+   * must not offer to keep it again — the row is inserted rather than updated, so a reused piece
+   * would quietly become two. `pendingTopper` is a catalogue ready-made, kept by nobody, where the
+   * offer belongs. See the note on the two doors in TopperComposer. */
+  const [savedToppers, setSavedToppers] = useState([]);
+  const [openTopper, setOpenTopper] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    apiClient?.fetchCardToppers?.()
+      .then(rows => { if (alive) setSavedToppers(rows ?? []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient, topperStudio]);
   // Kept on the DESIGNER, not inside the studio, so closing and reopening does not lose the chocolate
   // a baker just chose — the same reason penStyle lives out here.
   const [garnishColor, setGarnishColor] = useState('#4A2C1B');
@@ -4419,6 +4436,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        change, and the words are the whole point of a name topper. It arrives as a starting point
        that can be left. */
     card_topper: (el) => {
+      // Arriving from a catalogue row, so nothing here is a kept piece — clear the shelf door.
+      setOpenTopper(null);
       const made = el?.placement_config?.card_topper;
       setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
       setTopperStudio(true);
@@ -8971,15 +8990,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                      "nothing here yet" to a baker who had just drawn two. Shown above the pictures
                      and only when there are any, and tapping one opens the STUDIO with it loaded:
                      a piece needs a where and a how, and those live there. */
-                  const myPieces = (savedGarnishes ?? []).filter(g =>
-                    !elemSearch.trim() || (g.name ?? '').toLowerCase().includes(elemSearch.trim().toLowerCase()));
+                  /* ⚠️ ONE GRID, NOT ONE PER STUDIO. A baker looking for something they made is not
+                     thinking "was that chocolate or card" — they are looking for the thing. A row
+                     per studio would also grow a row every time a studio is added, which is how a
+                     shelf becomes a filing cabinet. What differs is only which studio a tap opens,
+                     and each piece carries that with it. */
+                  const q = elemSearch.trim().toLowerCase();
+                  const myPieces = [
+                    ...(savedGarnishes ?? []).map(g => ({
+                      key: `g${g.id}`, name: g.name, thumbUrl: g.thumbUrl,
+                      open: () => { setPendingGarnish(g); setGarnishStudio(true); },
+                    })),
+                    ...(savedToppers ?? []).map(t => ({
+                      key: `t${t.id}`, name: t.name, thumbUrl: t.thumbUrl,
+                      // `openTopper`, never `pendingTopper`: this one is already kept.
+                      open: () => { setOpenTopper(t); setTopperStudio(true); },
+                    })),
+                  ].filter(x => !q || (x.name ?? '').toLowerCase().includes(q));
                   return (mine.length || myPieces.length) ? (
                     <>
                     {myPieces.length > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
                         {myPieces.map(g => (
-                          <button key={`g${g.id}`} title={g.name}
-                            onClick={() => { setPendingGarnish(g); setGarnishStudio(true); }}
+                          <button key={g.key} title={g.name}
+                            onClick={g.open}
                             style={{ ...s.elementCard, padding: 6, cursor: 'pointer' }}>
                             {g.thumbUrl
                               ? <img src={g.thumbUrl} alt={g.name} style={{ width: '100%', height: 54, objectFit: 'contain' }} />
@@ -10741,7 +10775,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           /* `preset`, not `openWith`: a catalogue ready-made is kept by nobody, so the baker is
              still offered "keep it". See the note on the two doors in TopperComposer. */
           preset={pendingTopper}
-          onCancel={() => { setTopperStudio(false); setPendingTopper(null); }}
+          openWith={openTopper}
+          onCancel={() => { setTopperStudio(false); setPendingTopper(null); setOpenTopper(null); }}
           /* Selected the moment it lands, like a garnish: the thing you just made is the thing you
              want to move, and having to hunt for it is a step nobody wants. */
           onSave={topper => {
@@ -10750,6 +10785,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             selectExclusive({ type: 'topper', id });
             setTopperStudio(false);
             setPendingTopper(null);
+            setOpenTopper(null);
           }}
         />
       )}

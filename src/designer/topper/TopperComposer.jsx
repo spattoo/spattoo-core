@@ -15,6 +15,7 @@ import { DESIGNER_GROUND, SELECTION_COLOR } from '../constants.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
 import { Panel } from '../../shared/Panel.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
+import { TOPPER_PRESETS, PresetIcon } from './topperPresets.jsx';
 
 /* ── Topper composer ─────────────────────────────────────────────────────────────────────────────
  *
@@ -504,6 +505,51 @@ function RailButton({ onClick, title, children, wide = false }) {
   );
 }
 
+/* ── The shelf tile is a photo of the PIECE, not of the studio ─────────────────────────────────
+ *
+ * ⚠️ WHAT IS CAPTURED IS THE LIVE CANVAS, so everything drawn to help you WORK would otherwise end up
+ * on the shelf: the grid, and the selection box with its handles. Add that a composition drawn small
+ * or off to one side stays that way, and the tile is a square of graph paper with a smudge on it at
+ * the size a picker card actually is.
+ *
+ * So the camera is moved onto the pieces and zoomed to fit them for the frame being photographed,
+ * and put back straight after. ⚠️ RESTORING MATTERS: this is the working camera and the drag maths
+ * reads it — leaving it zoomed would silently change where every later drag lands. */
+function ThumbFit({ active, target }) {
+  const { camera } = useThree();
+  const saved = useRef(null);
+
+  useEffect(() => {
+    if (!active) {
+      if (saved.current) {
+        camera.zoom = saved.current.zoom;
+        camera.position.set(...saved.current.pos);
+        camera.updateProjectionMatrix();
+        saved.current = null;
+      }
+      return;
+    }
+    const group = target?.current;
+    if (!group) return;
+    const box = new THREE.Box3().setFromObject(group);
+    if (box.isEmpty()) return;
+
+    saved.current = { zoom: camera.zoom, pos: camera.position.toArray() };
+    const size = box.getSize(new THREE.Vector3());
+    const mid = box.getCenter(new THREE.Vector3());
+    // The tile is square, so the SHORTER side is the one that has to hold the piece.
+    const visW = (camera.right - camera.left) / camera.zoom;
+    const visH = (camera.top - camera.bottom) / camera.zoom;
+    const fill = Math.max(size.x, size.y);
+    if (!(fill > 0)) return;
+    camera.zoom *= (0.8 * Math.min(visW, visH)) / fill;   // 0.8: not jammed against its own edges
+    camera.position.set(mid.x, mid.y, camera.position.z);
+    camera.updateProjectionMatrix();
+  }, [active, camera, target]);
+
+  return null;
+}
+
 export default function TopperComposer({
   open = true, apiClient = null, openWith = null, preset = null, onSave, onCancel,
 }) {
@@ -583,6 +629,16 @@ export default function TopperComposer({
   });
   /* Offset starts at nothing: a shape gains an outline because somebody asked for one, never
      because it was added. */
+  /* ⚠️ IDS ARE MINTED HERE, not stored on the preset — picking the same one twice would otherwise
+     produce two objects sharing an id, and selecting either would move both. Cloned per object too,
+     so editing what was just dropped cannot reach back into the frozen preset list. */
+  const usePreset = (pre) => {
+    const seeded = pre.objects.map(o => ({ ...o, id: nextId.current++ }));
+    setObjects(seeded);
+    setSelected(null);
+    setEditing(null);
+  };
+
   const addShape = (family) => add({
     kind: 'shape', family, size: 1.0, colour: '#E9DFF2', offset: 0, offsetColour: '#FFFFFF',
   });
@@ -603,15 +659,47 @@ export default function TopperComposer({
 
   const useOnCake = () => onSave?.({ name: name.trim() || 'Card topper', payload: payloadOf() });
 
+  /* The tile is the piece itself, photographed off the working canvas — a true sample rather than an
+     illustration. `capturing` has already taken the grid and the selection away and framed it.
+     *
+     * ⚠️ A SQUARE CROP, because the tile is square. The stage is a wide panel and the picker card is
+     * not, so handing the whole canvas over letterboxes it and everything inside shrinks by the
+     * aspect ratio — a piece framed to fill 80% of the HEIGHT lands at about half the width of its
+     * card. `useElementSave` has the same crop and the same note; the mistake is easy to make twice
+     * because nothing about it fails, the tile is just quietly small. The middle square is where
+     * ThumbFit has already centred the piece. */
+  const thumbnail = () => {
+    try {
+      const cnv = stageRef.current?.querySelector('canvas');
+      if (!cnv) return null;
+      const side = Math.min(cnv.width, cnv.height);
+      if (side === cnv.width && side === cnv.height) return cnv.toDataURL('image/png');
+      const out = document.createElement('canvas');
+      out.width = out.height = side;
+      out.getContext('2d').drawImage(
+        cnv, (cnv.width - side) / 2, (cnv.height - side) / 2, side, side, 0, 0, side, side);
+      return out.toDataURL('image/png');
+    } catch { return null; }
+  };
+
   async function keepAndUse() {
     setSaving(true);
+    /* ⚠️ TWO FRAMES BEFORE THE PHOTOGRAPH. `preserveDrawingBuffer` keeps the LAST frame drawn, so
+       asking for the pixels in the same tick captures the studio exactly as it looked before the
+       grid went. Two rAFs is one React commit plus one R3F draw. */
+    setCapturing(true);
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const thumbBase64 = thumbnail();
+    setCapturing(false);
     try {
-      await apiClient?.saveTopper?.({ name: name.trim() || 'Card topper', payload: payloadOf() });
+      await apiClient?.saveCardTopper?.({
+        name: name.trim() || 'Card topper', payload: payloadOf(), thumbBase64,
+      });
     } catch (e) {
       /* ⚠️ A FAILED SAVE STILL PLACES IT. The baker composed it; losing the work because a network
        * call failed would be the worst trade available, and they can save it again from the card
        * later. The same call GarnishStudio makes. */
-      console.error('Could not save the topper to my decorations', e);
+      console.error('Could not save the card topper to my decorations', e);
     } finally {
       setSaving(false);
       useOnCake();
@@ -619,11 +707,15 @@ export default function TopperComposer({
   }
 
   /* ⚠️ `openWith`, NOT `openFrom`. A preset still offers saving — see the note above. */
-  const canKeep = !!apiClient?.saveTopper && !openWith;
+  const canKeep = !!apiClient?.saveCardTopper && !openWith;
   /* ⚠️ ON BY DEFAULT. A baker who composes something good almost always wants it again, so the
    * quieter decision is the one that needs the deliberate act — GarnishStudio's call, kept when the
    * pair of buttons became a button and a tick. */
   const [alsoSave, setAlsoSave] = useState(true);
+  const stageRef = useRef(null);
+  const piecesRef = useRef(null);
+  /* True only for the frames being photographed for the shelf tile — see ThumbFit. */
+  const [capturing, setCapturing] = useState(false);
   const empty = objects.length === 0;
 
   const btn = (primary, disabled = false) => ({
@@ -742,7 +834,7 @@ export default function TopperComposer({
         )}
       </div>
 
-      <div className="tcStage">
+      <div className="tcStage" ref={stageRef}>
         {/* ⚠️ Keyed on the view, because a Canvas takes its camera ON MOUNT ONLY — remounting is the
             honest way to change camera type, and the same call ChocolateDripStudio makes. */}
         <Canvas key={view3d ? '3d' : 'flat'} shadows
@@ -754,18 +846,23 @@ export default function TopperComposer({
           {/* The designer's own ground, imported rather than chosen, so what is judged here is what a
               cake shows (INVARIANTS #17). */}
           <SceneBackground colour={DESIGNER_GROUND} />
-          <Grid />
+          {/* A working surface, and no part of the piece — so it is not in the tile. */}
+          {!capturing && <Grid />}
           {/* A click on nothing clears the selection, which is what every canvas does and what makes
               the border mean "this one" rather than "the last one you touched". */}
           <mesh position={[0, 0, -0.05]} onPointerDown={() => { setSelected(null); setEditing(null); }}>
             <planeGeometry args={[GRID_HALF * 2, GRID_HALF * 2]} />
             <meshBasicMaterial visible={false} />
           </mesh>
+          <group ref={piecesRef}>
           {objects.map((o, i) => (
             <Piece key={o.id} obj={o} layer={i} font={fonts[o.face] ?? blockFont}
-              selected={o.id === selectedId} editing={o.id === editingId}
+              selected={!capturing && o.id === selectedId}
+              editing={!capturing && o.id === editingId}
               onSelect={setSelected} onMove={update} onEdit={setEditing} onChange={update} />
           ))}
+          </group>
+          <ThumbFit active={capturing} target={piecesRef} />
           {/* Only in the 3D look. While composing there is nothing to orbit: the camera is the one
               thing on this screen that must hold still. */}
           {view3d && <OrbitControls enablePan={false} makeDefault />}
@@ -780,13 +877,40 @@ export default function TopperComposer({
           {view3d ? 'Back to flat' : 'See it in 3D'}
         </button>
 
+        {/* ⚠️ AN EMPTY CANVAS CANNOT SELL A CARD TOPPER. "Add text or a shape from the left" names the
+            controls and says nothing about what the thing IS, and a baker who has never seen one
+            cannot want one. So the empty state is a few made toppers.
+
+            ⚠️ THEY ARE A STARTING POINT, NOT A MENU. Picking one drops its pieces on the canvas as
+            ordinary objects — retype the word, recolour, drag, delete half of it. And the row is
+            gone the moment there is anything on the canvas, so it can never read as "these are the
+            toppers you may have".
+
+            The pictures are cut from the SAME contours the cake is (INVARIANTS #15) — see
+            PresetIcon. The canvas behind is where the real one appears the instant it is picked. */}
         {objects.length === 0 && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', pointerEvents: 'none' }}>
-            <span style={{ fontSize: 13, color: '#8A9A8E', fontFamily: "'Quicksand', sans-serif",
-              background: 'rgba(255,255,255,0.82)', padding: '8px 14px', borderRadius: 9 }}>
-              Add text or a shape from the left
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 14, padding: 16 }}>
+            <span style={{ fontSize: 13, color: '#5B6B60', fontFamily: "'Quicksand', sans-serif",
+              fontWeight: 700 }}>
+              Start with one of these, or add text or a shape from the left
             </span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
+              {TOPPER_PRESETS.map(pre => (
+                <button key={pre.key} type="button" title={pre.label} aria-label={pre.label}
+                  onClick={() => usePreset(pre)}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                    width: 92, padding: '10px 6px', borderRadius: 11, cursor: 'pointer',
+                    fontFamily: "'Quicksand', sans-serif",
+                    border: '1.5px solid #E2E8E3', background: 'rgba(255,255,255,0.94)' }}>
+                  <span style={{ height: 46, display: 'flex', alignItems: 'center' }}>
+                    <PresetIcon objects={pre.objects} font={blockFont} />
+                  </span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#3D5A44',
+                    lineHeight: 1.25, textAlign: 'center' }}>{pre.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

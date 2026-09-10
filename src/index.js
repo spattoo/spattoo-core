@@ -137,6 +137,7 @@ export { default as TopperComposer } from './designer/topper/TopperComposer.jsx'
 /* ⚠️ ONE answer to "what shape is this topper", asked by the composer AND by the cake. A private copy
  * in either is two answers to one question, and the cake's is the one the customer sees. */
 export { topperContours, topperSheets, topperBox } from './designer/geometry/topperPiece.js';
+export { TOPPER_PRESETS, PresetIcon } from './designer/topper/topperPresets.jsx';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".

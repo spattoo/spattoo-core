@@ -64,23 +64,49 @@
  *     letters that has since been reverted, so every figure in it — before and after — described a
  *     geometry that does not ship.
  *
- * ⚠️ AND IT IS THE WHOLE FIX — THERE IS NO GEOMETRY HALF. A chamfer on the letters was shipped
- * alongside this and then reverted, because it measured identical: brightness spread across seven
- * turning angles 28.3 either way, contrast within the piece 0.595 chamfered against 0.605 flat. The
- * commit that introduced both claimed "neither half works alone"; that was an inference from two
- * measurements, not three — bevel-with-old-body and bevel-with-new-body were tested, and
- * new-body-without-bevel never was. It is the best of the three. Body colour alone, no geometry.
+ * ⚠️ THERE IS NO GEOMETRY HALF. A chamfer on the letters was shipped alongside the body colours and
+ * then reverted, because it measured identical: brightness spread across seven turning angles 28.3
+ * either way, contrast within the piece 0.595 chamfered against 0.605 flat, and WORSE head-on (0.123
+ * → 0.090 at a low camera). A matcap is sampled by the normal in VIEW space, and a chamfer's normals
+ * turn with the piece — they slide across the same picture together with the face.
  *
- * ⚠️ WHAT THIS DOES NOT FIX, stated so nobody re-opens it expecting otherwise: the piece still
- * changes brightness AS A BLOCK when the cake turns — mean 111 at one edge of the swing, 196
- * head-on. A flat face reads ONE texel of this picture, so every pixel of the word moves together.
- * No matcap can do better; only a surface that responds to the scene can, which is precisely what
- * baking gave up on purpose. See the trade at the top of this file.
+ * ── AND A SECOND HALF THAT THE BODY COLOUR DID NOT COVER: A METAL TINTS ITS OWN REFLECTION ───────
+ *
+ * Reported from the app 2026-09-10: "its front view is dull, other angle view is better". Both
+ * screenshots were the same piece; only the camera HEIGHT differed. That is not a lighting bug, it
+ * is how a matcap works — the eye's height decides which part of this picture a flat letter shows —
+ * but it is also the clue, because it says the head-on look is decided by ONE texel, and which texel
+ * is not the one you would guess.
+ *
+ * A letter standing on the cake WALL is tilted away from the eye, so head-on it does NOT sample the
+ * centre. It samples the ring at about 0.4 radius — and that ring was `sheen`, which was
+ * [255, 240, 186]. A near-white cream. So the lettering rendered rgb(201, 186, 136), chroma 65: not
+ * dark, WASHED OUT, which is what "dull" meant.
+ *
+ * ⚠️ That value was silver's highlight on a gold object. A metal has no white specular: it colours
+ * what it reflects, which is why gold looks gold in its highlights and not just in its shadows. With
+ * the sheen tinted to [255, 180, 55] the same lettering renders rgb(203, 156, 48), chroma 155 —
+ * against the gold BOARD, the metal in the same frame nobody has ever called dull, at rgb(203, 164,
+ * 55), chroma 148. It lands on the reference rather than near it.
+ *
+ * Only `gold` and `rose` changed, and the rule says which: silver's reflection genuinely IS neutral,
+ * and black and white acrylic are DIELECTRICS — their highlight is the colour of the light, so white
+ * is correct there. Do not "make the others consistent".
+ *
+ * ⚠️ AND STOP MEASURING A FLAT FACE WITH CONTRAST. p95−p5 over the mean is the right metric for a
+ * curved or bevelled surface and the wrong one here: the face is ONE colour, so nearly all of that
+ * spread is the letters' antialiased EDGES against the cake. It is why three visibly different
+ * matcaps returned 0.190 to the digit. Measure the FACE COLOUR and its chroma — the harness's
+ * `?cam=` sweep plus a median over the piece's pixels, which is what found this.
+ *
+ * ⚠️ WHAT STILL IS NOT FIXED, and cannot be from here: the word changes brightness AS A BLOCK
+ * through a turn, 111 to 196. One normal, one texel, every pixel moving together. Only a surface
+ * that responds to the scene fixes that, which is what baking deliberately gave up.
  */
 const LOOKS = {
-  gold:   { base: [112, 84, 20],  sheen: [255, 240, 186], rim: [92, 62, 12],  tight: 0.55, spec: 0.95 },
+  gold:   { base: [112, 84, 20],  sheen: [255, 180, 55],  rim: [92, 62, 12],  tight: 0.55, spec: 0.95 },
   silver: { base: [117, 121, 127], sheen: [255, 255, 255], rim: [78, 86, 96],  tight: 0.55, spec: 0.95 },
-  rose:   { base: [132, 92, 80],  sheen: [255, 226, 214], rim: [104, 60, 48], tight: 0.55, spec: 0.90 },
+  rose:   { base: [132, 92, 80],  sheen: [255, 176, 150], rim: [104, 60, 48], tight: 0.55, spec: 0.90 },
   black:  { base: [26, 26, 28],   sheen: [236, 236, 240], rim: [6, 6, 8],     tight: 0.80, spec: 0.75 },
   white:  { base: [232, 230, 226], sheen: [255, 255, 255], rim: [150, 148, 144], tight: 0.80, spec: 0.55 },
 };
