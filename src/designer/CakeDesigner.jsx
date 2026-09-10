@@ -10708,6 +10708,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <EdiblePrintStudio
           apiClient={apiClient}
           elementTypes={elementTypes}
+          /* ⚠️ The cake's OWN card toppers. A topper is the one decoration on that sheet that is
+             genuinely made by printing, so the studio should already have it rather than making the
+             baker go and find what is sitting on the cake behind them. */
+          toppers={design.toppers ?? []}
           onClose={() => setPrintStudioOpen(false)}
         />
       )}
