@@ -608,53 +608,74 @@ describe('fit — letters that meet, instead of a bar bolted across the gap', ()
   });
 });
 
-/* ── The offset band must not PINCH at corners ─────────────────────────────────────────────────
+/* ── The offset band, redrawn at a distance ────────────────────────────────────────────────────
  *
- * ⚠️ THE BUG THIS CATCHES WAS VISIBLE AND UNMEASURED. `offsetRound`'s predecessor moved each VERTEX
- * along the average of its two edge normals by `d`. Along a straight run that is right; at a corner
- * it lands the point `d` from the CORNER rather than `d` from the two EDGES, so the band narrowed to
- * `d·cos(θ/2)` — at a right angle, 71% of its proper width. A "10" showed it exactly: the 0 is all
- * gentle curves and looked correct, while the 1 came out lumpy with its corners cut off.
+ * ⚠️ THE HISTORY IS THE POINT. `offsetParts` moved each VERTEX along its averaged normal, which is
+ * right on a straight run and wrong at every corner. Three patches — a correct mitre, a mitre limit,
+ * arcs on convex corners — each improved it and none fixed it, because a REFLEX corner cannot be
+ * fixed locally: the offset edges cross and the crossing has to be REMOVED, which is a union. On the
+ * digit "1" that left a wedge hanging off the bottom-left with no feature under it, reported three
+ * times.
  *
- * A MITRE is what is shipped, so the corner deliberately runs out past `d` — the band is `d` wide
- * measured off each edge, and the corner point sits at `d / cos(θ/2)`. So the assertion is a FLOOR
- * (nothing thinner than d) and a ceiling at the mitre limit, never uniformity.
+ * It is now drawn as the contour at a distance (offsetField.js), so these assert what that gives:
+ * ONE uniform width everywhere, corners included — which is what a compass draws and a blade cuts.
  */
-describe('offsetParts — the band never pinches', () => {
+describe('offsetParts — a band of one width', () => {
   const distToSegment = (p, a, b) => {
     const vx = b.x - a.x, vy = b.y - a.y;
     const len2 = vx * vx + vy * vy;
     const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2)) : 0;
     return Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
   };
-  const distToRing = (p, ring) => Math.min(...ring.map((a, i) => distToSegment(p, a, ring[(i + 1) % ring.length])));
+  const edges = (parts) => parts.flatMap(p => [p.outer, ...(p.holes ?? [])]
+    .flatMap(r => r.map((a, i) => [a, r[(i + 1) % r.length]])));
+  const widths = (out, src) => out.flatMap(p => p.outer)
+    .map(q => Math.min(...edges(src).map(([a, b]) => distToSegment(q, a, b))));
 
-  // A square has the sharpest corner a letterform will hand it; the L adds a reflex one.
-  const square = [{ x: -1, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 1 }, { x: -1, y: 1 }];
-  const ell = [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 0, y: 2 }];
+  const square = [{ outer: [{ x: -1, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 1 }, { x: -1, y: 1 }], holes: [] }];
+  // The L's inner corner is REFLEX — the case every vertex-wise attempt got wrong.
+  const ell = [{ outer: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 0, y: 2 }], holes: [] }];
 
-  it.each([['square', square], ['L-shape', ell]])('never grows a %s by less than the offset', (_n, ring) => {
+  it.each([['square', square], ['L with a reflex corner', ell]])('grows a %s by one width all round', (_n, src) => {
     const d = 0.2;
-    const [out] = offsetParts([{ outer: ring, holes: [] }], d, { smooth: 0 });
-    const widths = out.outer.map(p => distToRing(p, ring));
-    // The floor is the bug: the old offset gave 0.707d at every right angle.
-    expect(Math.min(...widths)).toBeGreaterThan(d * 0.95);
-    // And nothing runs away — the mitre is clamped.
-    expect(Math.max(...widths)).toBeLessThan(d * 2.6);
+    const out = offsetParts(src, d);
+    const w = widths(out, src);
+    expect(Math.min(...w)).toBeGreaterThan(d * 0.93);
+    expect(Math.max(...w)).toBeLessThan(d * 1.07);
   });
 
-  it('mitres a right angle to its true length', () => {
+  it('rounds a corner rather than mitring or cutting it', () => {
     const d = 0.2;
-    const [out] = offsetParts([{ outer: square, holes: [] }], d, { smooth: 0 });
-    const corner = out.outer.find(p => p.x > 1 && p.y > 1);
-    expect(corner).toBeTruthy();
-    // d / cos(45°) = d·√2 from the corner it was grown from. The old code put it at d.
-    expect(Math.hypot(corner.x - 1, corner.y - 1)).toBeCloseTo(d * Math.SQRT2, 3);
+    const [out] = offsetParts(square, d);
+    // Beyond the corner the band is an ARC about it: several points, each d from the corner itself.
+    const near = out.outer.filter(p => p.x > 1 && p.y > 1);
+    expect(near.length).toBeGreaterThan(2);
+    for (const p of near) expect(Math.hypot(p.x - 1, p.y - 1)).toBeCloseTo(d, 1);
   });
 
-  it('grows the outline outward, never inward', () => {
-    const [out] = offsetParts([{ outer: square, holes: [] }], 0.2, { smooth: 0 });
+  it('keeps a hole, shrunk by the same width', () => {
+    const ring = [{ outer: square[0].outer,
+      holes: [[{ x: -0.5, y: -0.5 }, { x: -0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: -0.5 }]] }];
+    const out = offsetParts(ring, 0.12);
+    expect(out[0].holes.length).toBe(1);
+  });
+
+  /* ⚠️ TWO SHAPES WHOSE BANDS MEET COME OUT AS ONE. That is what happens in card, and it is the
+   * whole reason a thick offset can join separate letters into a single cuttable piece — the old
+   * method left them overlapping instead, which is two pieces that cannot be cut. */
+  it('merges two shapes whose bands meet', () => {
+    const two = [
+      { outer: [{ x: -1.2, y: -0.5 }, { x: -0.3, y: -0.5 }, { x: -0.3, y: 0.5 }, { x: -1.2, y: 0.5 }], holes: [] },
+      { outer: [{ x: 0.3, y: -0.5 }, { x: 1.2, y: -0.5 }, { x: 1.2, y: 0.5 }, { x: 0.3, y: 0.5 }], holes: [] },
+    ];
+    expect(offsetParts(two, 0.4)).toHaveLength(1);
+    expect(offsetParts(two, 0.05)).toHaveLength(2);   // far apart, still two
+  });
+
+  it('grows outward, never inward, and leaves a zero offset alone', () => {
+    const [out] = offsetParts(square, 0.2);
     expect(Math.max(...out.outer.map(p => p.x))).toBeGreaterThan(1);
     expect(Math.min(...out.outer.map(p => p.x))).toBeLessThan(-1);
+    expect(offsetParts(square, 0)).toBe(square);
   });
 });

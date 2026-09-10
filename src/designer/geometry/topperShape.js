@@ -10,6 +10,7 @@ import * as THREE from 'three';
  * decision the way a heart's plump/cleft/tip are, and shapes.js says outright that those two stay
  * analytic in surface.js so no existing cake regresses. */
 import { outlineOf, pointInPolygon } from './shapes.js';
+import { offsetByDistance } from './offsetField.js';
 
 /* ── An acrylic cake topper, as one cut-out ──────────────────────────────────────────────────────
  *
@@ -856,73 +857,19 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96,
   return { kind: 'plate', outer: at(m), holes: [], half: { w: hw * m, h: hh * m } };
 }
 
-/* Drop the spikes an offset leaves behind.
- *
- * ⚠️ THESE ARE NOT SHARP CORNERS AND SMOOTHING THEM DOES NOTHING. Pushing a contour outward makes
- * the boundary DOUBLE BACK at a reflex corner — a point that runs out and returns along almost the
- * same line. Measured on "Emily", the word's worst turn is 147 degrees and its raw offset's is 177,
- * which is a reversal. Two Chaikin passes took 177 to 174 and quadrupled the point count, because a
- * rounded spike is still a spike. The fix is to DELETE the point that doubles back.
- *
- * Done iteratively: removing one reversal can expose the next behind it. Cheap, because each pass
- * only touches the handful of points that qualify.
- */
-function despike(ring, turnDeg = 135) {
-  const cosLimit = Math.cos((turnDeg * Math.PI) / 180);
-  let pts = ring;
-  for (let pass = 0; pass < 6; pass++) {
-    if (pts.length < 5) break;
-    const keep = [];
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
-      const v1x = b.x - a.x, v1y = b.y - a.y, v2x = c.x - b.x, v2y = c.y - b.y;
-      const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
-      if (l1 < 1e-9 || l2 < 1e-9) continue;                       // duplicate point
-      const cosT = (v1x * v2x + v1y * v2y) / (l1 * l2);
-      if (cosT < cosLimit) continue;                              // turns further than the limit
-      keep.push(b);
-    }
-    if (keep.length === pts.length || keep.length < 5) { pts = keep.length >= 5 ? keep : pts; break; }
-    pts = keep;
-  }
-  return pts;
-}
 
-/* Chaikin corner-cutting on a closed ring: each edge contributes two points at a quarter and three
- * quarters along, so every corner is replaced by a short chamfer and repeating rounds it.
- *
- * ⚠️ A LOCAL COPY, and the alternative is worse. `glyphShape.js` already has this — but it also
- * imports the letter-cake engine and helvetiker, so reaching for it would drag a font into every
- * bundle that renders a topper. Eight lines of a published algorithm against ~200KB of font is not a
- * close call. If a third caller appears, lift it into a leaf module both can import.
- */
-function chaikin(ring, passes = 1) {
-  let pts = ring;
-  for (let k = 0; k < passes; k++) {
-    const out = [];
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[i], b = pts[(i + 1) % pts.length];
-      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
-      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
-    }
-    pts = out;
-  }
-  return pts;
-}
 
-export function offsetParts(parts, d, { smooth = 1 } = {}) {
-  if (!Array.isArray(parts) || !d) return parts ?? [];
-  /* ⚠️ SMOOTHED, because offsetting a letterform makes cusps. Pushing a contour outward turns every
-   * concave corner into a near-reversal — measured on "Emily", the word's own worst turn is 147
-   * degrees and its offset backing's is 177, which is a spike, not a corner. It looks ragged and no
-   * blade or die could cut it. `despike` deletes the reversals and one Chaikin pass softens what is
-   * left; the FACE is untouched, so the letters keep their drawn corners and only the backing
-   * softens, which is what a real cut card does. */
-  return parts.map(p => ({
-    ...p,
-    outer: chaikin(despike(offsetRound(p.outer, d)), smooth),
-    holes: (p.holes ?? []).map(h => chaikin(despike(offsetRound(h, -d)), smooth)),
-  }));
+export function offsetParts(parts, d) {
+  if (!Array.isArray(parts) || !(d > 0)) return parts ?? [];
+  /* ⚠️ REDRAWN AT A DISTANCE, NOT MOVED OUTWARD. See offsetField.js: pushing each vertex along its
+   * normal is right on a straight run and wrong at every corner, and at a REFLEX corner it is
+   * unfixable without a boolean union — the offset edges cross and the crossing has to be removed.
+   * Three attempts at patching that (a correct mitre, a mitre limit, arcs on convex corners) each
+   * improved it and none fixed it; the "1"'s flag-to-stem corner kept a wedge hanging off it.
+   *
+   * `despike` and `chaikin` went with the old method: they existed to clean up after it, and a
+   * distance contour has nothing to clean up. */
+  return offsetByDistance(parts, d);
 }
 
 function offsetRing(ring, d) {
@@ -941,111 +888,6 @@ function offsetRing(ring, d) {
   });
 }
 
-/* ⚠️ TWO OFFSETS LIVE HERE, AND THEY ARE NOT INTERCHANGEABLE.
- *
- * `offsetRing` (below) nudges each point along its averaged normal. It under-grows corners — that is
- * its flaw and, for `weight`, also what makes it safe: it never introduces the self-intersections a
- * true offset does, and `weight` is explicitly tested never to break a script apart or raise the
- * piece count. Thickening a hairline in place is a different job from growing a silhouette.
- *
- * `offsetRound` mitres corners to their true length, which is what a BAND wants. It grows corners
- * further than the naive one does, so on the fine strokes of a script it can cross itself — which is
- * why `weight`, whose whole job is not to break a design apart, still uses the cautious one. If a
- * polygon union ever lands here, these two should become one.
- *
- * ── The band's offset: mitred to the correct length ────────────────────────────────────────────────────
- *
- * ⚠️ THIS IS NOT "MOVE EVERY POINT ALONG ITS NORMAL BY d", and that is exactly what it used to be.
- * A vertex pushed `d` along the average of its two edge normals lands `d` from the CORNER, but the
- * true offset corner is `d / cos(θ/2)` away — so the band PINCHED IN at every sharp turn. On a "10"
- * the 0 looked right, because it is all gentle curves, while the 1 came out lumpy and faceted with
- * its corners cut off at angles: `despike` was then deleting the mangled points, which is why it
- * looked chewed rather than merely thin.
- *
- * The fix is to offset the EDGES, not the points, and then join them:
- *
- *   · where the outline turns AWAY from the offset (a convex corner), the two offset edges leave a
- *     wedge — filled with an ARC of radius d about the original corner. Uniform width all the way
- *     round, and a rounded outer corner is what a blade or a die actually cuts. A real card topper
- *     has no needle-sharp offset points.
- *   · where it turns INTO the offset (a reflex corner), the offset edges cross — so the crossing
- *     point is the join. Mitre length is clamped: a nearly-doubled-back corner would otherwise throw
- *     a spike halfway across the card, and a bevel is the honest fallback.
- *
- * Sign handling is unchanged: the ring's own winding decides which way is "out", so a hole offset by
- * -d still shrinks.
- */
-function offsetRound(ring, d) {
-  if (!d) return ring;
-  const n = ring.length;
-  if (n < 3) return ring;
-
-  let twice = 0;
-  for (let i = 0; i < n; i++) { const p = ring[i], q = ring[(i + 1) % n]; twice += p.x * q.y - q.x * p.y; }
-  const D = d * (twice < 0 ? -1 : 1);
-
-  /* How far a corner may run out before it is rounded instead. Below this a mitre is the true
-     parallel offset and looks it; beyond it, an acute corner throws a long blunt spike. */
-  const MITRE_LIMIT = 1.6;
-
-  return ring.map((p, i) => {
-    const prev = ring[(i - 1 + n) % n], next = ring[(i + 1) % n];
-    const e1 = norm(p.x - prev.x, p.y - prev.y);
-    const e2 = norm(next.x - p.x, next.y - p.y);
-    // Outward normal of each edge, for this ring's winding.
-    const n1 = { x: e1.y, y: -e1.x };
-    const n2 = { x: e2.y, y: -e2.x };
-
-    /* ⚠️ THE MITRE LENGTH IS THE WHOLE POINT. Moving a vertex `d` along the AVERAGE of its two edge
-     * normals lands it `d` from the corner — but the true offset corner is `d / cos(θ/2)` away, so
-     * the band pinched in at every sharp turn while staying correct along straight runs. On a "10"
-     * the 0 looked right, being all gentle curves, and the 1 came out lumpy with its corners cut
-     * off. `(n1+n2) / (1 + n1·n2)` is that same bisector scaled to the correct length: it reduces to
-     * the plain normal on a straight edge and to d·√2 on a right angle.
-     *
-     * ⚠️ ONE POINT PER VERTEX, deliberately. Inserting arcs at convex corners is the textbook
-     * answer and it was tried: on real glyph outlines the extra points self-intersect, and with no
-     * polygon union to clean up after them the extrusion tears — a "1" came out in pieces. Keeping
-     * the ring's topology is what makes this safe without a clipper. */
-    const dot = n1.x * n2.x + n1.y * n2.y;
-    const k = 1 + dot;
-    if (k < 1e-6) return [{ x: p.x + n1.x * D, y: p.y + n1.y * D }];  // reversal: no usable bisector
-    let mx = (n1.x + n2.x) / k, my = (n1.y + n2.y) / k;
-    const len = Math.hypot(mx, my);
-    if (len <= MITRE_LIMIT) return [{ x: p.x + mx * D, y: p.y + my * D }];
-
-    /* ⚠️ PAST THE LIMIT THE CORNER IS ROUNDED, NOT CUT FLAT. A mitre at an acute corner runs a long
-     * way out — clamping it leaves a blunt diagonal, and on a "1", whose flag and foot are the
-     * sharpest corners in the digits, those blunt cuts read as a BEVEL: the band stopped looking cut
-     * and started looking moulded. The 0 never showed it, being all gentle curves.
-     *
-     * Where the outline turns AWAY from the offset — a convex corner — the two offset edges leave a
-     * wedge, and an arc of radius d about the original corner fills it at exactly the band's width.
-     * A rounded outer corner is also what a blade actually leaves; no real card topper has a
-     * needle-sharp offset point.
-     *
-     * ⚠️ ONLY WHERE IT IS CONVEX. `cross * D > 0` is that test, and getting it backwards puts arcs
-     * at REFLEX corners instead — which is a guaranteed self-intersection and tore a "1" into
-     * pieces when this was first attempted. A reflex corner keeps the clamped mitre: it needs a
-     * polygon union to do properly, and this file does not have one. */
-    const cross = e1.x * e2.y - e1.y * e2.x;
-    if (cross * D <= 0) {
-      return [{ x: p.x + (mx / len) * MITRE_LIMIT * D, y: p.y + (my / len) * MITRE_LIMIT * D }];
-    }
-    const R = Math.abs(D);
-    let a0 = Math.atan2(n1.y, n1.x);
-    let sweep = Math.atan2(n2.y, n2.x) - a0;
-    while (sweep > Math.PI) sweep -= 2 * Math.PI;
-    while (sweep < -Math.PI) sweep += 2 * Math.PI;
-    const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 12)));
-    const arc = [];
-    for (let t = 0; t <= steps; t++) {
-      const a = a0 + (sweep * t) / steps;
-      arc.push({ x: p.x + Math.cos(a) * R, y: p.y + Math.sin(a) * R });
-    }
-    return arc;
-  }).flat();
-}
 
 const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return { x: x / l, y: y / l }; };
 
