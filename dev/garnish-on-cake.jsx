@@ -271,7 +271,16 @@ const design = {
    * their own RoomEnvironment until 2026-09-05, which is why the glare being complained about was
    * invisible on both of them. `CakePreview` mounts SafeEnvironment and the real rig, so a topper
    * put here is the one a customer sees. `?topper=1`. */
-  writings: new URLSearchParams(location.search).has('topper')
+  /* ⚠️ `?bareword=1` — A WRITING WITH ONLY WHAT A PHOTO CAN TELL YOU: style, text, surface, colour.
+     No font, no angle, no height. That is exactly what `inspirationToDesign` emits when it reads
+     lettering off a customer's reference photo, and the question it answers is whether such an
+     object renders at all — the design model seeds defaults when a message is CREATED in the
+     designer, and a message arriving from a mapper never went through that. (It does: cream falls
+     back via `creamFonts[key] || creamFonts[DEFAULT]`, acrylic via `resolveFace`.) */
+  writings: _q.has('bareword')
+    ? [{ id: 'bw1', style: 'acrylic', text: 'Happy Birthday Aarav', surface: 'side', acrylicFinish: 'gold' },
+       { id: 'bw2', style: 'cream', text: 'Five', surface: 'top', color: '#ffffff' }]
+    : new URLSearchParams(location.search).has('topper')
     /* ⚠️ `?topperside=1` PUTS IT ON THE WALL, which is where it is actually judged. On the TOP the
        piece lies almost edge-on to this camera and reads a few pixels tall — a picture that cannot
        show whether the finish is flat or not. On the wall it faces the viewer at the size a customer
