@@ -41,7 +41,10 @@ export const clampRadius = r => Math.max(0, Math.min(RIM_INSET, r));
 /**
  * params  { theta, radius, yaw, mode, scale }
  * cake    { radius, topY, boardY }
- * piece   { w, h } — the built piece's size, so a standing one can be buried the right depth
+ * piece   { w, h, sink } — the built piece's size, so a standing one can be buried the right depth.
+ *          `sink` is an EXPLICIT bury in world units, for a piece that carries its own answer: a card
+ *          topper on a stick is pushed in as far as the baker said, not by a fraction of its height.
+ *          Absent — which is every garnish — keeps the computed depth, so nothing else moves.
  *
  * Returns everything the renderer needs and nothing it has to compute:
  *   position  [x, y, z] for the piece's own origin (bottom-centre)
@@ -73,7 +76,10 @@ export function garnishPlacement(params, cake, piece = { w: 0.6, h: 0.5 }) {
 
   if (p.mode === 'stand') {
     return {
-      position: [x, cake.topY - insertionDepth(scaled.h, rope), z],
+      /* ⚠️ SEATED BY THE BOTTOM OF WHAT GOES IN, which for a stick is the stick's END and not the
+         card's edge. `sink` is how deep that end goes; seating by the card instead and letting the
+         stick dangle would make "how far into the cake" change nothing anybody can see. */
+      position: [x, cake.topY - (Number.isFinite(piece.sink) ? piece.sink : insertionDepth(scaled.h, rope)), z],
       rotation: [0, facing + p.yaw, 0],
       anchors: footprint(x, z, scaled.w, 0, facing + p.yaw, cake.topY, scaled.h),
     };

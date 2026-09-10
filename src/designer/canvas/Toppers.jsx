@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperSheets, topperBox } from '../geometry/topperPiece.js';
+import { topperSheets, topperBox, topperStick } from '../geometry/topperPiece.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
@@ -135,7 +135,15 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
      * the middle still looks fine, which is the same reason garnishPlacement's own version of this
      * bug survived for so long — its note above the `lie` branch says so. Caught by putting one on
      * a real cake in `dev/topper-on-cake.jsx`; no unit test sees a mesh's origin. */
-    const originY = box.cy - box.h / 2;
+    /* The stick, if this topper has one. Not a sheet — see topperPiece.js — so it is built here and
+       carried alongside them. */
+    const stick = topperStick(box, t.payload?.stick);
+
+    /* ⚠️ WITH A STICK, THE ORIGIN IS THE STICK'S END. `garnishPlacement` puts the origin at the
+       surface and sinks it, so whatever sits at the origin is what goes into the icing: seating by
+       the card's edge and letting the stick dangle below would make "how far in" change nothing
+       visible. Without a stick the card's own bottom edge is still the origin. */
+    const originY = stick ? stick.bottomY : box.cy - box.h / 2;
 
     const sheets = topperSheets(t.payload, fontOf).map((sheet) => {
       const geos = sheet.parts.map((p) => {
@@ -152,7 +160,22 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
       return { geos, colour: sheet.colour };
     });
 
-    return { sheets, size: { w: box.w * k, h: box.h * k } };
+    /* A rod, not a sheet: built here rather than extruded from contours. Behind the card in z, so
+       the overlap that attaches it is hidden exactly as it is on a real one. */
+    let stickGeo = null;
+    if (stick) {
+      stickGeo = new THREE.CylinderGeometry(stick.radius * k, stick.radius * k, (stick.len + stick.tuck) * k, 14);
+      // The cylinder is built about its own middle; slide it so its ends land where the stick's do.
+      stickGeo.translate(0, ((stick.len + stick.tuck) / 2 - stick.len) * k, -depth * 0.9);
+    }
+
+    return {
+      sheets,
+      stickGeo,
+      // What the placement must bury: the stick's buried length, in the cake's units.
+      sink: stick ? stick.buried * k : undefined,
+      size: { w: box.w * k, h: box.h * k },
+    };
   }, [t.payload, t.scale, cake.radius, fonts]);
 
   /* ⚠️ EVERY HOOK BEFORE ANY EARLY RETURN — a topper whose payload failed to build must not skip a
@@ -172,13 +195,21 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
 
   useEffect(() => () => {
     for (const s of built?.sheets ?? []) for (const g of s.geos) g.dispose();
+    built?.stickGeo?.dispose();
   }, [built]);
 
   if (!built) return null;
-  const place = garnishPlacement(t, cake, built.size);
+  const place = garnishPlacement(t, cake, { ...built.size, sink: built.sink });
 
   return (
     <group position={place.position} rotation={place.rotation}>
+      {/* Drawn first, so the card's own sheets cover the tuck. Wood rather than card: a stick is the
+          one part of a topper nobody paints, and a matte pale beech is what a cake-pop stick is. */}
+      {built.stickGeo && (
+        <mesh geometry={built.stickGeo} castShadow receiveShadow {...grabProps}>
+          <meshStandardMaterial color={asRendered('#D8BE93')} roughness={0.85} metalness={0} />
+        </mesh>
+      )}
       {built.sheets.map((sheet, si) => sheet.geos.map((g, i) => (
         <mesh key={`${si}-${i}`} geometry={g} castShadow receiveShadow {...grabProps}>
           {/* Printed card: matte, no clearcoat. A coat lives on the environment map and ADDS light

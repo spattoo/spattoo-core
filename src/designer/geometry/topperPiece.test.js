@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperContours, topperSheets, topperBox } from './topperPiece.js';
+import { topperContours, topperSheets, topperBox, topperStick } from './topperPiece.js';
 
 const font = new FontLoader().parse(helvetikerBold);
 const fontOf = () => font;
@@ -118,5 +118,48 @@ describe('topperBox', () => {
 
   it('is null when there is nothing on it', () => {
     expect(topperBox({ objects: [] }, fontOf)).toBeNull();
+  });
+});
+
+describe('topperStick', () => {
+  const box = { w: 2, h: 1, cx: 0, cy: 0 };
+
+  it('is nothing at all unless there is a stick', () => {
+    expect(topperStick(box, null)).toBeNull();
+    expect(topperStick(box, { on: false, bury: 0.5 })).toBeNull();
+    expect(topperStick(null, { on: true })).toBeNull();
+  });
+
+  /* ⚠️ A stick that stops at the card's bottom edge hangs off it with daylight between the two, and
+   * reads as a card floating above a rod. The tuck is the attachment. */
+  it('runs UP behind the card as well as down below it', () => {
+    const s = topperStick(box, { on: true, bury: 0.5 });
+    expect(s.topY).toBeGreaterThan(box.cy - box.h / 2);   // above the card's bottom edge
+    expect(s.bottomY).toBeLessThan(box.cy - box.h / 2);   // and below it
+  });
+
+  /* ⚠️ `bury` is a FRACTION, so the stick can never be the thing that runs out and nothing has to be
+   * re-measured when the topper is resized. */
+  it('buries a fraction of the hanging part, clamped', () => {
+    expect(topperStick(box, { on: true, bury: 0.5 }).buried).toBeCloseTo(topperStick(box, { on: true }).len * 0.5, 6);
+    expect(topperStick(box, { on: true, bury: 5 }).bury).toBe(1);
+    expect(topperStick(box, { on: true, bury: -3 }).bury).toBe(0);
+    expect(topperStick(box, { on: true, bury: undefined }).bury).toBe(0.5);
+  });
+
+  it('scales with the card, so a resized topper keeps its proportions', () => {
+    const small = topperStick({ ...box, h: 1 }, { on: true, bury: 0.5 });
+    const big   = topperStick({ ...box, h: 2 }, { on: true, bury: 0.5 });
+    expect(big.len / small.len).toBeCloseTo(2, 6);
+    expect(big.tuck / small.tuck).toBeCloseTo(2, 6);
+  });
+
+  /* ⚠️ THE STICK IS NOT A SHEET. If it ever entered topperSheets/topperBox the card would shrink to
+   * fit a box that is mostly rod, and the print sheet would print a picture of a stick. */
+  it('never reaches the sheets or the measured box', () => {
+    const withStick = { v: 1, objects: [text()], stick: { on: true, bury: 0.5 } };
+    const without   = { v: 1, objects: [text()] };
+    expect(topperSheets(withStick, fontOf)).toHaveLength(topperSheets(without, fontOf).length);
+    expect(topperBox(withStick, fontOf)).toEqual(topperBox(without, fontOf));
   });
 });

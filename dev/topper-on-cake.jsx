@@ -44,7 +44,13 @@ const design = {
             topPipings: [], bottomPipings: [], creamLayers: [] }],
   texts: [], ages: [], stickers: [], piping: [], garnishes: [],
   toppers: [{
-    id: 't1', name: 'harness', payload: { v: 1, objects },
+    id: 't1', name: 'harness',
+    /* `?stick=1&bury=0.5` — the stick and how much of it goes in. It is the whole topper's, not an
+       object's, so it rides at the payload root. */
+    payload: {
+      v: 1, objects,
+      ...(q.has('stick') ? { stick: { on: true, bury: num('bury', 0.5) } } : {}),
+    },
     /* Placement keys are the GARNISH's, because a topper is placed by `garnishPlacement`. Leaving
        them out would take the hook's defaults and prove nothing about what a drag writes back. */
     theta: num('theta', 0), radius: num('radius', 0.35), yaw: num('yaw', 0),

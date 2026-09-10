@@ -102,3 +102,47 @@ export function topperBox(payload, fontOf) {
   if (!Number.isFinite(lo)) return null;
   return { w: hi - lo, h: to - bo, cx: (lo + hi) / 2, cy: (bo + to) / 2 };
 }
+
+// ── The stick ────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚠️ NOT A SHEET, AND DELIBERATELY OUTSIDE `topperSheets` AND `topperBox`. A stick is not cut from
+// card — it is taped to the back — so putting it among the sheets would have three consequences, all
+// wrong: the topper's measured height would include it, so the CARD would shrink to fit a box that is
+// mostly rod; the print sheet would print a picture of a stick; and a saved topper's proportions
+// would change the day someone ticked the box.
+//
+// ⚠️ IT TUCKS UP BEHIND THE CARD. A stick that stops at the bottom edge hangs off it with daylight
+// between the two, and reads as a card floating above a rod. A real one runs a good way up the back
+// and you never see the join, because the card hides it — so `tuck` is overlap, and the overlap IS
+// the attachment. Nothing is glued in the geometry.
+//
+// ⚠️ LENGTH IS PROPORTIONAL, so it survives scaling. What matters is only that there is more stick
+// than anyone will push in — `bury` is a FRACTION of it, so the stick can never be the thing that
+// runs out, and the fraction means nothing has to be re-measured when the topper is resized.
+const STICK_BELOW = 0.8;    // how far it hangs below the card, as a fraction of the card's height
+const STICK_TUCK  = 0.55;   // how far it runs UP behind the card, likewise
+
+/**
+ * The stick's geometry in the composer's own units, or null when there is no stick.
+ *
+ * ⚠️ ONE FUNCTION, ASKED BY THE STUDIO AND BY THE CAKE. Two copies of "how long is the stick" is how
+ * a baker buries it to the right depth on one screen and the wrong one on the other.
+ *
+ * `bury` is a fraction of `len` — how much of the hanging part goes into the icing.
+ */
+export function topperStick(box, stick) {
+  if (!stick?.on || !box || !(box.h > 0)) return null;
+  const len = box.h * STICK_BELOW;
+  const tuck = box.h * STICK_TUCK;
+  const bottom = box.cy - box.h / 2;
+  const bury = Math.max(0, Math.min(1, Number.isFinite(stick.bury) ? stick.bury : 0.5));
+  return {
+    len,
+    tuck,
+    bury,
+    buried: len * bury,
+    radius: Math.max(box.h * 0.014, 0.006),
+    topY: bottom + tuck,        // where it ends, hidden behind the card
+    bottomY: bottom - len,      // the end that goes into the cake
+  };
+}

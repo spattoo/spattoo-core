@@ -6,7 +6,7 @@ import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { HexColorPicker } from 'react-colorful';
 import { offsetParts, followsBox} from '../geometry/topperShape.js';
-import { topperContours } from '../geometry/topperPiece.js';
+import { topperContours, topperBox, topperSheets, topperStick } from '../geometry/topperPiece.js';
 import { outlineOf } from '../geometry/shapes.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
 import { SceneLights, SceneEnv, SceneBackground } from '../canvas/CakeCanvas.jsx';
@@ -604,6 +604,27 @@ function ThumbFit({ active, target }) {
 
 /* The picture on a preset button: the real outlines, drawn flat. See presetPaths — it is the same
    function the cake's shapes come from, so this cannot drift from what gets made. */
+/* The stick as the composer shows it: hanging below the card and tucked up behind it, at negative z
+   so the card hides the overlap — which is what attaches it on a real one. */
+function StudioStick({ objects, fontOf, stick }) {
+  const geo = useMemo(() => {
+    if (!stick?.on) return null;
+    const box = topperBox({ v: 1, objects }, fontOf);
+    const s2 = topperStick(box, stick);
+    if (!s2) return null;
+    const g = new THREE.CylinderGeometry(s2.radius, s2.radius, s2.len + s2.tuck, 14);
+    g.translate(box.cx, (s2.len + s2.tuck) / 2 - s2.len + (box.cy - box.h / 2), -CARD_THICK * 1.6);
+    return g;
+  }, [objects, fontOf, stick]);
+  useEffect(() => () => geo?.dispose(), [geo]);
+  if (!geo) return null;
+  return (
+    <mesh geometry={geo} castShadow receiveShadow>
+      <meshStandardMaterial color={asRendered('#D8BE93')} roughness={0.85} metalness={0} />
+    </mesh>
+  );
+}
+
 function PresetIcon({ objects, font, size = 46 }) {
   const built = useMemo(() => presetPaths(objects, font), [objects, font]);
   if (!built) return null;
@@ -663,6 +684,7 @@ export default function TopperComposer({
     const p = openFrom.payload ?? {};
     setObjects(Array.isArray(p.objects) ? p.objects : []);
     setName(openFrom.name ?? '');
+    setStick(p.stick?.on ? { on: true, bury: p.stick.bury ?? 0.5 } : { on: false, bury: 0.5 });
     nextId.current = (p.objects ?? []).reduce((m, o) => Math.max(m, o.id ?? 0), 0) + 1;
   }, [openFrom]);
   const nextId = useRef(1);
@@ -671,6 +693,9 @@ export default function TopperComposer({
    * font cannot be a property of the screen the way it was in the single-word studio. Held in state
    * rather than a ref so arrival re-renders — a ref would load the face and never draw it. */
   const [fonts, setFonts] = useState({ [BLOCK_KEY]: blockFont });
+  /* The face for one object, falling back to the block one — the same rule the cake's renderer uses,
+     so a face still arriving never means a piece that measures as nothing. */
+  const fontOf = useCallback((o) => fonts[o.face] ?? blockFont, [fonts]);
   const wanted = useMemo(
     () => [...new Set(objects.filter(o => o.kind === 'text').map(o => o.face))], [objects]);
   useEffect(() => {
@@ -787,7 +812,9 @@ export default function TopperComposer({
 
   /* ⚠️ THE OBJECT LIST, and nothing derived from it. See the note at the top: a word is stored as its
    * word, so a later improvement to how words are cut reaches every topper already kept. */
-  const payloadOf = () => ({ v: PAYLOAD_VERSION, objects });
+  /* ⚠️ The stick rides at the ROOT and only when it is on, so every topper saved before sticks
+     existed is byte-identical and `v` stays 1 — an absent key reads as "no stick". */
+  const payloadOf = () => ({ v: PAYLOAD_VERSION, objects, ...(stick.on ? { stick } : {}) });
 
   const useOnCake = () => onSave?.({ name: name.trim() || 'Card topper', payload: payloadOf() });
 
@@ -848,6 +875,11 @@ export default function TopperComposer({
   const piecesRef = useRef(null);
   /* True only for the frames being photographed for the shelf tile — see ThumbFit. */
   const [capturing, setCapturing] = useState(false);
+  /* ⚠️ THE STICK BELONGS TO THE WHOLE TOPPER, not to any one piece on it — a card has one stick
+   * however many words and shapes are cut into it, so it lives at the payload's root rather than on
+   * an object. Off by default: a topper that is laid flat on the cake needs no stick, and one that
+   * arrives with a rod nobody asked for is a thing to go and switch off. */
+  const [stick, setStick] = useState({ on: false, bury: 0.5 });
   const empty = objects.length === 0;
 
   const btn = (primary, disabled = false) => ({
@@ -1026,6 +1058,12 @@ export default function TopperComposer({
           ))}
           </group>
           <ThumbFit active={capturing} target={piecesRef} />
+          {/* ⚠️ SHOWN WHILE COMPOSING, because the stick changes what the topper IS — how tall it
+              stands and where the card sits above the cake — and a control whose effect is only
+              visible on another screen is one nobody can judge (INVARIANTS #11). It is drawn from
+              `topperStick`, the same function the cake asks, so the two cannot disagree about how
+              long it is or how much of it goes in. */}
+          <StudioStick objects={objects} fontOf={fontOf} stick={stick} />
           {/* Only in the 3D look. While composing there is nothing to orbit: the camera is the one
               thing on this screen that must hold still. */}
           {view3d && <OrbitControls enablePan={false} makeDefault />}
@@ -1053,6 +1091,39 @@ export default function TopperComposer({
       </div>
 
       {/* Only when there is something selected — see the note on Properties. */}
+      {/* ⚠️ THE STICK IS THE WHOLE TOPPER'S, so it is not in a selected piece's properties — it would
+          appear to belong to whatever you last clicked, and vanish when you clicked away from it.
+          Shown once there is something on the canvas, because a stick with nothing on it is a rod.
+
+          ⚠️ THE DEPTH APPEARS ONLY WITH A STICK. There is no "how far into the cake" without one,
+          and the old card cutout studio showed exactly that — an insertion depth with nothing to
+          insert — which is the example this rebuild was argued against (INVARIANTS #12). */}
+      {objects.length > 0 && (
+        <div className="tcProps" style={{ padding: 16, background: '#fff',
+          borderLeft: '1px solid #E8EFE9', borderTop: selectedIds.length ? '1px solid #E8EFE9' : 'none' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+            <input type="checkbox" checked={stick.on}
+              onChange={e => setStick(v => ({ ...v, on: e.target.checked }))}
+              style={{ width: 17, height: 17, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#3D5A44' }}>On a stick</span>
+          </label>
+          {stick.on ? (
+            <div style={{ marginTop: 12 }}>
+              <Slide label="How far into the cake" value={stick.bury} min={0} max={1} step={0.02}
+                onChange={v => setStick(s2 => ({ ...s2, bury: v }))}
+                fmt={v => (v <= 0.01 ? 'resting on top' : `${Math.round(v * 100)}% of the stick`)} />
+              <p style={{ margin: '4px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+                The stick is taped to the back and runs up behind the card, so the join never shows.
+              </p>
+            </div>
+          ) : (
+            <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
+              Without one the card lies flat on the cake.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ⚠️ ONE PIECE GETS ITS PROPERTIES; SEVERAL GET THE ONE THING THAT APPLIES TO SEVERAL. A
           colour or a size spread across three pieces is three different answers, so those controls
           are absent rather than guessing which piece you meant (INVARIANTS #12) — and what IS true

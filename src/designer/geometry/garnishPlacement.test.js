@@ -279,3 +279,23 @@ movableContract('card_topper', {
     },
   ],
 });
+
+describe('an explicit sink — a piece that carries its own bury', () => {
+  const cake = { radius: 1.2, topY: 1.0, boardY: 0.1 };
+  const stood = (piece) => garnishPlacement({ theta: 0, radius: 0.3, yaw: 0, mode: 'stand', scale: 1 }, cake, piece);
+
+  it('buries a standing piece by exactly what it asked for', () => {
+    const p = stood({ w: 1, h: 1, sink: 0.25 });
+    expect(p.position[1]).toBeCloseTo(cake.topY - 0.25, 6);
+  });
+
+  /* ⚠️ Every garnish leaves `sink` out, and none of them may move because a topper needed one. */
+  it('leaves a piece without one exactly where it was', () => {
+    expect(stood({ w: 1, h: 1 }).position[1]).toBeCloseTo(stood({ w: 1, h: 1, sink: undefined }).position[1], 9);
+    expect(stood({ w: 1, h: 1 }).position[1]).toBeLessThan(cake.topY);
+  });
+
+  it('takes zero literally — a piece asked to sit ON the surface is not pushed in', () => {
+    expect(stood({ w: 1, h: 1, sink: 0 }).position[1]).toBeCloseTo(cake.topY, 6);
+  });
+})
