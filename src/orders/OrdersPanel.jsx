@@ -11,6 +11,7 @@ import {
 import OrdersCalendar from './OrdersCalendar.jsx';
 import XrayReport from './xray/XrayReport.jsx';
 import CutoutSheet from '../chefsdesk/CutoutSheet.jsx';
+import { downloadToppersCutFile } from '../designer/topper/topperCutFile.js';
 import { hasXraySpec, resolveXraySpec } from './xray/resolveXraySpec.js';
 import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
@@ -76,6 +77,16 @@ const CutoutGlyph = () => (
     <line x1="2.5" y1="12" x2="21.5" y2="12" strokeDasharray="2.5 2.5" strokeWidth="1.3" />
   </svg>
 );
+/* A cut path around a card, with the arrow that says "this lands on your computer". Deliberately
+   NOT the scissors of `CutoutGlyph`: that one opens a sheet to print and cut by hand, this one
+   downloads a file for a machine, and two buttons side by side must not wear one icon
+   (INVARIANTS #14). */
+const CutFileGlyph = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3.5" y="3.5" width="13" height="10" rx="2" strokeDasharray="2.6 2.2" />
+    <path d="M19 13.5 V21" /><path d="M15.8 17.8 L19 21 L22.2 17.8" />
+  </svg>
+);
 const Cube3D = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round">
     <path d="M12 2.6 L20.5 7 L20.5 17 L12 21.4 L3.5 17 L3.5 7 Z" /><path d="M3.5 7 L12 11.5 L20.5 7" /><path d="M12 11.5 L12 21.4" />
@@ -96,13 +107,15 @@ const PencilGlyph = () => (
 // `variant='row'` (default) = icon + label inline (desktop, below the cake).
 // `variant='stack'` = compact column, icon over a small caption (`short`) for the
 // mobile side-strip. Full `label` stays as title + aria-label for accessibility.
-function IconAction({ glyph, label, short, onClick, disabled, variant = 'row' }) {
+function IconAction({ glyph, label, short, hint, onClick, disabled, variant = 'row' }) {
   const stack = variant === 'stack';
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      title={label}
+      /* `hint` where there is one: the label names the button, the hint says what pressing it
+         will actually give you — which for a download is the thing you cannot undo by looking. */
+      title={hint ?? label}
       aria-label={label}
       style={{
         display: 'inline-flex', flexDirection: stack ? 'column' : 'row',
@@ -200,6 +213,51 @@ function CutoutLauncher({ order, apiClient, variant }) {
                   onClick={() => setOpen(true)} variant={variant} />
       {open && <CutoutModal ids={ids} prints={prints} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+/* ── A cutting file for this cake's card toppers ────────────────────────────────────────────────
+ *
+ * ⚠️ IT LIVES HERE, BESIDE "Print & cut-outs", AND NOT IN THE CHEF'S DESK MENU. This is about ONE
+ * cake — what a baker downloads to cut the toppers on THIS order — so it belongs where that order
+ * is, next to the other thing they do with the same card and the same scissors. Chef's Desk is for
+ * tools that stand on their own.
+ *
+ * ⚠️ HIDDEN WHEN THERE IS NOTHING TO CUT, exactly as CutoutLauncher hides. Every other control here
+ * opens a screen that can explain its own emptiness; this one produces a FILE, and a downloaded
+ * file with nothing in it is worse than a button that was never there.
+ *
+ * ⚠️ IT NAMES NO MACHINE. "Cricut" is a trademark and a baker with a Silhouette or a Brother would
+ * read a brand as "not for me". The file is a plain SVG and opens in all of them; the hint says so,
+ * where a brand in the label could not.
+ */
+const CUT_FILE_HINT = 'Downloads an SVG of this cake\'s card toppers. Open it in your cutting '
+  + 'machine\'s software (Cricut, Silhouette, Brother) to cut them from card instead of by hand. '
+  + 'Each piece arrives as its own layer, and you set the size there.';
+
+function CutFileLauncher({ order, variant }) {
+  const { design } = resolveXraySpec(order);
+  const toppers = design?.toppers ?? [];
+  const [busy, setBusy] = useState(false);
+  if (!toppers.length) return null;
+
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await downloadToppersCutFile(toppers, { cakeName: order?.customer_name || order?.id });
+      // ⚠️ Says so when it fails. A download that quietly does nothing is indistinguishable from a
+      // browser that blocked it, and the baker is left pressing a button that looks dead.
+      if (!r.ok) window.alert(r.reason);
+    } catch {
+      window.alert('Couldn’t make that cutting file.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <IconAction glyph={<CutFileGlyph />} label="Cutting file" short="Cut file"
+                hint={CUT_FILE_HINT} onClick={go} disabled={busy} variant={variant} />
   );
 }
 
@@ -1132,6 +1190,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         <XrayLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
         <PhotoXrayLauncher order={order} apiClient={apiClient} variant={v} />
         <CutoutLauncher order={order} apiClient={apiClient} variant={v} />
+        <CutFileLauncher order={order} variant={v} />
         <IconAction
           glyph={<Cube3D />}
           label={designLocked ? 'View in 3D' : 'Edit in 3D'}

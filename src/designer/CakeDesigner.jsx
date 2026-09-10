@@ -37,7 +37,6 @@ import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
-import { downloadToppersCutFile } from './topper/topperCutFile.js';
 import { garnishDragTo } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
@@ -1864,16 +1863,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
   const [topperStudio, setTopperStudio] = useState(false);
-  /* ⚠️ SAYS SO WHEN IT FAILS. A download that silently does nothing is indistinguishable from a
-   * browser that blocked it, and the baker is left clicking a menu item that appears to be dead. */
-  const downloadCutFile = useCallback(async () => {
-    try {
-      const r = await downloadToppersCutFile(design.toppers, { cakeName: design.name });
-      if (!r.ok) window.alert(r.reason);
-    } catch {
-      window.alert('Couldn’t make that cutting file.');
-    }
-  }, [design.toppers, design.name]);
   const [pendingTopper, setPendingTopper] = useState(null);
   const [pendingGarnish, setPendingGarnish] = useState(null);
   /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
@@ -2780,21 +2769,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       items: [
         { id: 'colorGuide', label: 'Color Guide', open: () => setColorGuideOpen(true) },
         ...(printStudioEnabled ? [{ id: 'printStudio', label: 'Edible Print Studio', open: () => setPrintStudioOpen(true) }] : []),
-        /* ⚠️ ONLY WHEN THERE IS SOMETHING TO CUT. Every other entry here opens a screen that can
-           explain itself when it is empty; this one downloads a file, and a download that produces
-           an empty file is worse than an item that was never offered.
-
-           ⚠️ AND IT NAMES NO MACHINE. "Cricut" is a trademark, and a baker with a Silhouette or a
-           Brother would read a brand as "not for me" — the file is a plain SVG and works in all of
-           them. `hint` says which, where naming one in the label could not. */
-        ...(design.toppers?.length ? [{
-          id: 'topperCutFile',
-          label: 'Cutting file',
-          hint: 'Downloads an SVG of this cake\'s card toppers. Open it in your cutting machine\'s '
-              + 'software (Cricut, Silhouette, Brother) to cut them from card instead of by hand. '
-              + 'Each colour arrives as its own layer, and you set the size there.',
-          open: downloadCutFile,
-        }] : []),
       ],
     },
     {
@@ -8816,7 +8790,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <RailMenu style={{ top: 'auto', bottom: 0 }}>
                       <div style={s.railDropdownSection}>{menu.label}</div>
                       {menu.items.map(item => (
-                        <button key={item.id} style={s.railDropdownItem} title={item.hint}
+                        <button key={item.id} style={s.railDropdownItem}
                                 onClick={() => { item.open(); setChefsDeskOpen(false); setSettingsOpen(false); }}>
                           {item.label}
                           {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
@@ -10554,21 +10528,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {canManageStore && toolMenus.map(menu => (
                 <div key={menu.id} style={s.mobileSheetSection}>
                   <div style={s.mobileSheetSectionTitle}>{menu.label}</div>
-                  {/* ⚠️ THE HINT IS SHOWN, NOT HOVERED. A `title` is a desktop affordance — there is
-                      no hover on a phone, so the one surface where a baker most needs to know what a
-                      download will give them is the one where a tooltip says nothing. */}
                   {menu.items.map(item => (
-                    <button key={item.id} role="menuitem"
-                            style={{ ...s.mobileSheetRow, ...(item.hint ? { display: 'block', textAlign: 'left' } : {}) }}
+                    <button key={item.id} role="menuitem" style={s.mobileSheetRow}
                             onClick={() => { setMobileMoreOpen(false); item.open(); }}>
                       {item.label}
                       {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
-                      {item.hint && (
-                        <span style={{ display: 'block', marginTop: 3, fontSize: 11.5, lineHeight: 1.45,
-                          fontWeight: 600, color: '#8A8A8A', whiteSpace: 'normal' }}>
-                          {item.hint}
-                        </span>
-                      )}
                     </button>
                   ))}
                 </div>
